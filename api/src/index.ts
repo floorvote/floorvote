@@ -118,7 +118,7 @@ app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
 
-app.get('/api/health', (c) => c.json({ ok: true }))
+app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
 
 // Returns true when the request should be rejected: secret unset (prod lockdown)
 // or header mismatch (wrong caller). In local dev CENTRAL_ADMIN_SECRET is set in
