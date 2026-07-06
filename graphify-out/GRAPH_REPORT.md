@@ -1,12 +1,18 @@
-# Graph Report - .  (2026-07-06)
+# Graph Report - floorvote  (2026-07-06)
 
 ## Corpus Check
-- cluster-only mode — file stats not available
+- 843 files · ~404,270 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3201 nodes · 7148 edges · 164 communities (147 shown, 17 thin omitted)
+- 3201 nodes · 7148 edges · 167 communities (153 shown, 14 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 42 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
+
+## Graph Freshness
+- Built from commit: `24b2ff1f`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - [[_COMMUNITY_Database Seeding and Testing|Database Seeding and Testing]]
@@ -147,6 +153,9 @@
 - [[_COMMUNITY_Navigation Progress Bar|Navigation Progress Bar]]
 - [[_COMMUNITY_Organization Noun Resolution|Organization Noun Resolution]]
 - [[_COMMUNITY_HTML Text Conversion|HTML Text Conversion]]
+- [[_COMMUNITY_Community 164|Community 164]]
+- [[_COMMUNITY_Community 165|Community 165]]
+- [[_COMMUNITY_Community 166|Community 166]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `getDb()` - 102 edges
@@ -161,61 +170,61 @@
 10. `useAuth()` - 27 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `setup()` --calls--> `render()`  [INFERRED]
-  web/src/components/calendar/EventForm.test.tsx → api/src/lib/weekAheadEmail.test.ts
 - `open()` --calls--> `render()`  [INFERRED]
   web/src/components/ChangeHistoryTooltip.test.tsx → api/src/lib/weekAheadEmail.test.ts
+- `wrap()` --calls--> `render()`  [INFERRED]
+  web/src/components/GroupedBillCard.deferredNav.test.tsx → api/src/lib/weekAheadEmail.test.ts
 - `renderApp()` --calls--> `render()`  [INFERRED]
   web/src/lib/unsavedText.guard.test.tsx → api/src/lib/weekAheadEmail.test.ts
-- `renderRow()` --calls--> `render()`  [INFERRED]
-  web/src/components/sidebar/HearingRow.test.tsx → api/src/lib/weekAheadEmail.test.ts
-- `tzOffsetMs()` --calls--> `get()`  [INFERRED]
-  api/src/lib/ical.ts → central/test/routes/api-prefix.test.ts
+- `render0()` --calls--> `render()`  [INFERRED]
+  web/src/components/calendar/AgendaView.test.tsx → api/src/lib/weekAheadEmail.test.ts
+- `setup()` --calls--> `render()`  [INFERRED]
+  web/src/components/calendar/EventForm.test.tsx → api/src/lib/weekAheadEmail.test.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (164 total, 17 thin omitted)
+## Communities (167 total, 14 thin omitted)
 
 ### Community 0 - "Database Seeding and Testing"
 Cohesion: 0.08
-Nodes (27): BillChip, EventRow, getDb(), calendarEvents, baseEnv, seedKnownActivity(), centralRichByBill, TEST_ENV (+19 more)
+Nodes (26): BillChip, EventRow, getDb(), calendarEvents, baseEnv, seedKnownActivity(), centralRichByBill, TEST_ENV (+18 more)
 
 ### Community 1 - "Notifications and Sidebar Context"
 Cohesion: 0.10
-Nodes (26): AdminConfigResponse, Notifications(), PAGE, WEEKDAYS, SidebarRefreshContext, SidebarRefreshProvider(), useSidebarRefresh(), digestCadenceDescription() (+18 more)
+Nodes (25): AdminConfigResponse, Notifications(), PAGE, WEEKDAYS, useDemo(), useSidebarRefresh(), Profile(), digestCadenceDescription() (+17 more)
 
 ### Community 2 - "Comment Content Sanitization"
-Cohesion: 0.07
-Nodes (26): ALLOWED_ATTR, ALLOWED_TAGS, CommentContent(), MentionTooltipData, Props, RoleData, sanitize(), UserData (+18 more)
+Cohesion: 0.09
+Nodes (21): ALLOWED_ATTR, ALLOWED_TAGS, CommentContent(), MentionTooltipData, Props, RoleData, sanitize(), UserData (+13 more)
 
 ### Community 3 - "Bill and Draft API Routes"
-Cohesion: 0.09
-Nodes (45): bills, sessions, registerBulkRoutes(), buildBillDetail(), CentralBillRich, registerDraftRoutes(), registerEngagementRoutes(), billsApiRouter (+37 more)
+Cohesion: 0.08
+Nodes (49): bills, sessions, registerBulkRoutes(), buildBillDetail(), CentralBillRich, registerDraftRoutes(), registerEngagementRoutes(), billsApiRouter (+41 more)
 
 ### Community 4 - "App Infrastructure and Domains"
 Cohesion: 0.08
-Nodes (30): app, queue(), scheduled(), Env, magicLinks, parseAppDomains(), isAllowedOrigin(), DOMAINS (+22 more)
+Nodes (32): app, queue(), scheduled(), authEvents, magicLinks, parseAppDomains(), AuthEventInput, AuthEventType (+24 more)
 
 ### Community 5 - "Database Test Setup"
 Cohesion: 0.05
-Nodes (29): parseMigration(), setupLsDb(), get(), TEST_ENV, AUTH, TEST_ENV, AUTH, TEST_ENV (+21 more)
+Nodes (28): parseMigration(), setupLsDb(), TEST_ENV, AUTH, TEST_ENV, AUTH, TEST_ENV, AUTH (+20 more)
 
 ### Community 6 - "Bill Row UI Components"
-Cohesion: 0.05
-Nodes (44): BillRow, MiniBar(), CollapsibleSection(), CollapsibleSectionProps, CompactPositionSelect(), CompactPositionSelectProps, NO_POSITION, HoverTooltip() (+36 more)
+Cohesion: 0.06
+Nodes (38): BillRow, CompactPositionSelect(), CompactPositionSelectProps, NO_POSITION, HoverTooltip(), HoverTooltipProps, Placement, Align (+30 more)
 
 ### Community 7 - "Rich Text Editor Formatting"
-Cohesion: 0.07
-Nodes (46): canToggleBlockquote(), shouldShowButton(), toggleBlockquote(), useBlockquote(), canToggle(), shouldShowButton(), toggleCodeBlock(), useCodeBlock() (+38 more)
+Cohesion: 0.06
+Nodes (55): canToggleBlockquote(), shouldShowButton(), toggleBlockquote(), useBlockquote(), canToggle(), shouldShowButton(), toggleCodeBlock(), useCodeBlock() (+47 more)
 
 ### Community 8 - "Bill Tooltips and Badges"
-Cohesion: 0.06
-Nodes (44): BillBadge(), BillBadgeProps, BillHoverTooltip(), summaryCache, fetchMock, Harness(), TooltipBill, useBillTooltip() (+36 more)
+Cohesion: 0.09
+Nodes (25): Members(), Sidebar(), useRegisterSidebarRefresh(), displayName(), isModifiedClick(), maybeOpenInNewTab(), formatHearingTime(), formatHearingTimeShort() (+17 more)
 
 ### Community 9 - "Bill List Filtering and Loading"
-Cohesion: 0.06
-Nodes (38): billsApiParams(), billsChipSelection(), BillsFilterValues, billsFilterValuesFromSearch(), SORT_COLS, STATUS_SEMANTIC_ORDER, ActiveChip(), ChipColor (+30 more)
+Cohesion: 0.23
+Nodes (8): billListLoader(), BillsListPage, knownSessions, Bill, CustomFieldDef, NormalizedSession, Selection, useBulkActions()
 
 ### Community 10 - "Calendar Change Detection"
 Cohesion: 0.07
@@ -223,31 +232,31 @@ Nodes (38): BillSnapshot, calendarBlockFromRows(), CalendarChange, calendarIdent
 
 ### Community 11 - "Rich Text Mention Suggestions"
 Cohesion: 0.05
-Nodes (33): ColorHighlightPopoverButton, EveryoneItem, MentionSuggestions(), MentionSuggestionsRef, Props, RoleItem, SuggestionItem, UserItem (+25 more)
+Nodes (34): BlockquoteButton, BlockquoteButtonProps, BlockquoteShortcutBadge(), UseBlockquoteConfig, ColorHighlightPopoverContent(), MentionTooltipData, RichTextEditorProps, RoleData (+26 more)
 
 ### Community 12 - "iCal Export Utilities"
 Cohesion: 0.14
-Nodes (20): buildVCalendar(), buildVEvent(), dateTimeValue(), dateValue(), esc(), formatTime(), IcalEvent, isAllDay() (+12 more)
+Nodes (21): buildVCalendar(), buildVEvent(), dateTimeValue(), dateValue(), esc(), formatTime(), IcalEvent, isAllDay() (+13 more)
 
 ### Community 13 - "LegiScan Sync Utilities"
 Cohesion: 0.09
-Nodes (38): refreshLsSessions(), runFullPass(), runLsSync(), runRawPass(), trackLsCall(), adminSessions, apiCallLog, billAmendments (+30 more)
+Nodes (39): refreshLsSessions(), runFullPass(), runLsSync(), runRawPass(), trackLsCall(), adminSessions, apiCallLog, billAmendments (+31 more)
 
 ### Community 14 - "Dropdown Menu Components"
-Cohesion: 0.11
-Nodes (21): DropdownMenu(), DropdownMenuCheckboxItem(), DropdownMenuContent(), DropdownMenuGroup(), DropdownMenuItem(), DropdownMenuLabel(), DropdownMenuRadioItem(), DropdownMenuSeparator() (+13 more)
+Cohesion: 0.10
+Nodes (25): Button, ButtonProps, ButtonGroup(), ButtonGroupSeparator(), ButtonGroupText(), buttonGroupVariants, DropdownMenu(), DropdownMenuCheckboxItem() (+17 more)
 
 ### Community 15 - "Bill Query and Filtering"
-Cohesion: 0.07
-Nodes (39): BILL_NUM, BILL_PREFIX, BillFilterParams, buildBillsWhere(), buildOrderBy(), buildSearchCondition(), buildSegmentCondition(), canOptimize() (+31 more)
+Cohesion: 0.06
+Nodes (44): BILL_NUM, BILL_PREFIX, BillFilterParams, buildBillsWhere(), buildOrderBy(), buildSearchCondition(), buildSegmentCondition(), canOptimize() (+36 more)
 
 ### Community 16 - "UI Button and Card Components"
-Cohesion: 0.05
-Nodes (50): ButtonProps, ButtonGroup(), ButtonGroupSeparator(), ButtonGroupText(), buttonGroupVariants, Card, CardBody, CardFooter (+42 more)
+Cohesion: 0.06
+Nodes (37): Card, CardBody, CardFooter, CardGroupLabel, CardHeader, CardItemGroup, HighlightColor, ColorHighlightPopoverButton (+29 more)
 
 ### Community 17 - "Bulk Action Bar Logic"
-Cohesion: 0.06
-Nodes (27): BulkActionBar(), BulkActionBarProps, computeDistribution(), computeInitialFromBills(), computeInitialFromDistribution(), CustomFieldDef, FieldValue, FilterState (+19 more)
+Cohesion: 0.07
+Nodes (24): BulkActionBar(), BulkActionBarProps, computeDistribution(), computeInitialFromBills(), computeInitialFromDistribution(), CustomFieldDef, FieldValue, FilterState (+16 more)
 
 ### Community 18 - "Admin Authentication Logic"
 Cohesion: 0.10
@@ -255,63 +264,63 @@ Nodes (25): createAdminSession(), DashEnv, DB, deleteAdminSession(), generateTok
 
 ### Community 19 - "Tenant Engagement Metrics"
 Cohesion: 0.07
-Nodes (26): DB, getTenantSnapshot(), latencyThresholdMs(), METRIC_KEYS, MetricKey, ProbeResult, pullEngagementStats(), pullEngagementStatsForTenant() (+18 more)
+Nodes (28): DB, getTenantSnapshot(), latencyThresholdMs(), mergeResendReading(), METRIC_KEYS, MetricKey, ProbeResult, pullEngagementStats() (+20 more)
 
 ### Community 20 - "Cloudflare Email Provider"
-Cohesion: 0.14
-Nodes (15): Sent, activeProvider(), CloudflareEmailBinding, EmailMessage, EmailSendResult, ProviderName, ResolvedMessage, resolveFrom() (+7 more)
+Cohesion: 0.09
+Nodes (26): activeProvider(), CloudflareEmailBinding, EmailMessage, EmailSendResult, ProviderName, ResolvedMessage, resolveFrom(), resolveReplyTo() (+18 more)
 
 ### Community 21 - "Authentication Hooks and Providers"
-Cohesion: 0.06
-Nodes (35): Config(), Members(), RequireAuth(), RootErrorBoundary(), useAuth(), useDemo(), Probe(), useNavPendingCursor() (+27 more)
+Cohesion: 0.07
+Nodes (26): NavPhase, NavProgressBar(), RequireAuth(), RootErrorBoundary(), AuthContext, AuthProvider(), AuthState, useAuth() (+18 more)
 
 ### Community 22 - "Text Mark Formatting"
 Cohesion: 0.08
-Nodes (27): isMarkInSchema(), MarkButton, MarkButtonProps, canToggleMark(), getFormattedMarkName(), isMarkActive(), Mark, MARK_SHORTCUT_KEYS (+19 more)
+Nodes (26): MarkButton, MarkButtonProps, canToggleMark(), getFormattedMarkName(), isMarkActive(), Mark, MARK_SHORTCUT_KEYS, markIcons (+18 more)
 
 ### Community 23 - "LegiScan and OpenStates Integration"
 Cohesion: 0.11
 Nodes (28): MasterlistCache, LEGISCAN_STATUS, createOpenStatesProvider(), deriveStatus(), assertBillDetailShape(), assertBillStubShape(), normalizeActions(), normalizeDocuments() (+20 more)
 
 ### Community 24 - "Demo Reset and Seeding"
-Cohesion: 0.09
-Nodes (15): NJ_COUNTY_CLERKS, calendarEventBills, runDemoReset(), demoResetAndSeed(), computeEngagementSnapshot(), EngagementSnapshot, computeEngagementStats(), DB (+7 more)
+Cohesion: 0.13
+Nodes (10): computeEngagementSnapshot(), EngagementSnapshot, computeEngagementStats(), DB, EngagementStats, refreshMetadata(), isSampleEmailType(), SampleSendResult (+2 more)
 
 ### Community 25 - "Tenant Sync and Auth Events"
-Cohesion: 0.08
-Nodes (27): registerWithCentral(), testEnv, associationConfig, authEvents, customFieldDefinitions, AuthEventInput, AuthEventType, authReqContext() (+19 more)
+Cohesion: 0.07
+Nodes (34): Env, registerWithCentral(), testEnv, associationConfig, applyPresetConfig(), ensureInstancePreset(), testEnv, matchesKeywords() (+26 more)
 
 ### Community 26 - "Email Digest Rendering"
-Cohesion: 0.11
-Nodes (23): DigestEvent, escHtml(), fmtDay(), NewMatchDigestItem, renderBillCard(), renderDigestEmail(), renderNewMatchSection(), sampleEvents (+15 more)
+Cohesion: 0.10
+Nodes (24): DigestEvent, escHtml(), fmtDay(), renderDigestEmail(), renderNewMatchSection(), sampleEvents, renderMagicLinkEmail(), emailButton() (+16 more)
 
 ### Community 27 - "Calendar Event Popovers"
-Cohesion: 0.15
-Nodes (16): computeDayPopoverPosition(), DayPopover(), dayEvents, EventForm(), computeEventPopoverPosition(), EventPopover(), EventPopoverPosition, PopoverPlacement (+8 more)
+Cohesion: 0.12
+Nodes (21): EventForm(), opts, pos, EventFormFields(), EventFormValues, EventPopoverPosition, clampTargetFor(), rect (+13 more)
 
 ### Community 28 - "Bill Statement Generation"
 Cohesion: 0.12
 Nodes (29): buildBillStatements(), esc(), LegiscanBillJson, num(), completeBill, cleanupTmpFiles(), runInChunks(), runSql() (+21 more)
 
 ### Community 29 - "User Mentions and Notifications"
-Cohesion: 0.19
-Nodes (15): resolveAssocName(), base, escHtml(), extractAndNotifyMentions(), extractMentions(), Mention, MentionEmailInput, mentionEmailsEnabled() (+7 more)
+Cohesion: 0.07
+Nodes (22): MiniBar(), CollapsibleSection(), CollapsibleSectionProps, EveryoneItem, MentionSuggestions(), MentionSuggestionsRef, Props, RoleItem (+14 more)
 
 ### Community 30 - "Queue Management and Coverage"
 Cohesion: 0.13
 Nodes (20): mergeCoverage(), authHeaders(), CfCreate, CfList, CfWrite, ensureQueue(), publishBatch(), publishMessage() (+12 more)
 
 ### Community 31 - "API Fetch and Priority Select"
-Cohesion: 0.05
-Nodes (30): BASE_CONFIG, EMPTY_PRESETS, mockFetch, relativeTimeFromEpoch(), CompactPrioritySelect(), CompactPrioritySelectProps, NO_PRIORITY, apiFetchMock (+22 more)
+Cohesion: 0.09
+Nodes (21): relativeTimeFromEpoch(), auditStyle, CARD, CustomFieldDef, CustomFieldsSection(), CustomFieldsSectionProps, inputStyle, notSetStyle (+13 more)
 
 ### Community 32 - "Bill Text and Reaction UI"
-Cohesion: 0.06
-Nodes (34): BillTextChip(), Props, BillTextPanelProps, TextVersion, ExternalLinkIcon(), ExternalLinkIconProps, EMOJIS, Props (+26 more)
+Cohesion: 0.07
+Nodes (29): BillTextChip(), Props, EMOJIS, Props, ReactionPicker(), normalizeVersionNote(), safeDate(), safeTime() (+21 more)
 
 ### Community 33 - "Text Alignment Controls"
 Cohesion: 0.10
-Nodes (23): IconComponent, IconProps, TextAlignButton, TextAlignButtonProps, canSetTextAlign(), hasSetTextAlign(), isTextAlignActive(), setTextAlign() (+15 more)
+Nodes (24): isExtensionAvailable(), IconComponent, IconProps, TextAlignButton, TextAlignButtonProps, canSetTextAlign(), hasSetTextAlign(), isTextAlignActive() (+16 more)
 
 ### Community 34 - "Worker Dependencies"
 Cohesion: 0.07
@@ -322,76 +331,76 @@ Cohesion: 0.07
 Nodes (30): dompurify, @floating-ui/react, jszip, lodash.throttle, papaparse, @radix-ui/react-dropdown-menu, @radix-ui/react-popover, react-hotkeys-hook (+22 more)
 
 ### Community 36 - "Event Card Styling"
-Cohesion: 0.16
-Nodes (14): EventSourceIcon(), CARD_STYLE, EVENT_CARD_BASE, EVENT_META_STYLE, EVENT_SOURCE_TILE, EVENT_TITLE_STYLE, eventBodyModel, EventEdgeSource (+6 more)
+Cohesion: 0.17
+Nodes (17): EventLines(), META_ICON_STYLE, base, EventSourceIcon(), renderEventCard(), CARD_STYLE, EVENT_CARD_BASE, EVENT_META_STYLE (+9 more)
 
 ### Community 37 - "AI Taxonomy Configuration"
-Cohesion: 0.06
-Nodes (38): aiInstructionsChanged(), ParseResult, parseTagTaxonomy(), TaxonomyEntry, ConfigData, CustomFieldDef, DEFAULT_TAXONOMY, PRESET_NOUNS (+30 more)
+Cohesion: 0.05
+Nodes (45): aiInstructionsChanged(), ParseResult, parseTagTaxonomy(), TaxonomyEntry, Config(), ConfigData, CustomFieldDef, DEFAULT_TAXONOMY (+37 more)
 
 ### Community 38 - "Digest Module Management"
-Cohesion: 0.14
-Nodes (14): DIGEST_CATEGORIES, DigestResult, readModules(), runDigest(), stampLastDigest(), sendBatch(), unsubscribeHeaders(), getNewMatchMinRelevance() (+6 more)
+Cohesion: 0.16
+Nodes (14): Sent, DIGEST_CATEGORIES, DigestResult, readModules(), runDigest(), stampLastDigest(), NewMatchDigestItem, sendBatch() (+6 more)
 
 ### Community 39 - "Agenda and Calendar Views"
-Cohesion: 0.10
-Nodes (24): AgendaView(), baseProps, evs, DOW, DOW_SHORT, MonthGrid(), MONTHS, agendaFooterLabel() (+16 more)
+Cohesion: 0.13
+Nodes (14): DOW, DOW_SHORT, MonthGrid(), MONTHS, billEvent, evs, bucketEventsByDate(), buildMonthMatrix() (+6 more)
 
 ### Community 40 - "React Testing Dependencies"
 Cohesion: 0.07
 Nodes (26): dependencies, react, react-dom, react-router-dom, devDependencies, jsdom, @testing-library/jest-dom, @testing-library/react (+18 more)
 
 ### Community 41 - "Keyword Sweep Schema"
-Cohesion: 0.24
-Nodes (7): bills, sessions, runKeywordSweep(), billTenants, keywordRegistry, tenants, tenantStats
+Cohesion: 0.14
+Nodes (11): bills, sessions, Env, runKeywordSweep(), billTenants, keywordRegistry, tenants, tenantStats (+3 more)
 
 ### Community 42 - "Usage and Settings Management"
-Cohesion: 0.13
-Nodes (19): mergeResendReading(), snapshotResendDaily(), getSetting(), getSettingNumber(), setSetting(), isSuperadminJtiRevoked(), pruneRevokedSuperadminJtis(), revokeSuperadminJti() (+11 more)
+Cohesion: 0.14
+Nodes (16): getSetting(), getSettingNumber(), setSetting(), isSuperadminJtiRevoked(), pruneRevokedSuperadminJtis(), revokeSuperadminJti(), decideMode(), DEFAULT_FULL_HOURS_ET (+8 more)
 
 ### Community 43 - "AI Worker Dependencies"
 Cohesion: 0.08
 Nodes (23): dependencies, drizzle-orm, @google/genai, hono, devDependencies, @cloudflare/vitest-pool-workers, @cloudflare/workers-types, drizzle-kit (+15 more)
 
 ### Community 44 - "LLM Keyword Analysis"
-Cohesion: 0.08
-Nodes (31): WORD_BOUNDARY_KEYWORDS, ELECTION_KEYWORDS, matchesKeywords(), BILL_ANALYSIS_SCHEMA, buildPrompt(), callGemini(), composeSystemInstruction(), processBill() (+23 more)
+Cohesion: 0.13
+Nodes (17): WORD_BOUNDARY_KEYWORDS, ELECTION_KEYWORDS, BILL_ANALYSIS_SCHEMA, buildPrompt(), callGemini(), composeSystemInstruction(), processBill(), ProcessBillParams (+9 more)
 
 ### Community 45 - "Week Ahead Email Reports"
-Cohesion: 0.22
-Nodes (13): emailFooterLink(), escHtml(), formatDateRangeLabel(), renderBillChip(), renderPriorityMarker(), renderWeekAheadEmail(), SAMPLE_DAYS, WeekAheadBill (+5 more)
+Cohesion: 0.20
+Nodes (13): PrioritySquare(), escHtml(), metaIcon(), renderBillChip(), renderPriorityMarker(), SAMPLE_DAYS, WeekAheadBill, WeekAheadDay (+5 more)
 
 ### Community 46 - "Editor Toolbar Buttons"
-Cohesion: 0.07
-Nodes (26): Badge, BadgeProps, BlockquoteButton, BlockquoteButtonProps, BlockquoteShortcutBadge(), UseBlockquoteConfig, CodeBlockButton, CodeBlockButtonProps (+18 more)
+Cohesion: 0.10
+Nodes (21): Badge, BadgeProps, CodeBlockButton, CodeBlockButtonProps, CodeBlockShortcutBadge(), UseCodeBlockConfig, ColorHighlightButton, ColorHighlightButtonProps (+13 more)
 
 ### Community 47 - "Anomaly Detection and Alerts"
-Cohesion: 0.08
-Nodes (24): escHtml(), reportJobFailure(), runJob(), sendEmail, analyzeSeries(), AnomalyWatchOptions, AnomalyWatchResult, DbAnalysis (+16 more)
+Cohesion: 0.15
+Nodes (14): analyzeSeries(), AnomalyWatchOptions, AnomalyWatchResult, DbAnalysis, fmt(), median(), runAnomalyWatch(), WatchEnv (+6 more)
 
 ### Community 48 - "Image Upload Editor Extension"
 Cohesion: 0.10
 Nodes (13): Commands, ImageUploadNode, ImageUploadNodeOptions, UploadFunction, FileItem, ImageUploadDragAreaProps, ImageUploadNode(), ImageUploadPreviewProps (+5 more)
 
 ### Community 49 - "Email Bill Card Styling"
-Cohesion: 0.38
-Nodes (8): model, escHtml(), formatEmailDateTime(), link(), renderBillCardOpen(), renderCommentRow(), BillCardModel, COMMENT_STYLE
+Cohesion: 0.15
+Nodes (18): model, renderBillCard(), toGroup(), escHtml(), formatEmailDateTime(), link(), renderBillCardOpen(), renderCommentRow() (+10 more)
 
 ### Community 50 - "Calendar Event Import"
 Cohesion: 0.14
 Nodes (15): fieldStyle, ImportResult, Props, assembleDetails(), DateResult, HeaderMap, human(), ImportRowPreview (+7 more)
 
 ### Community 51 - "Admin and Auth API"
-Cohesion: 0.15
-Nodes (13): app, scheduled(), apiCallLog, secretsMatch(), getProvider(), createLegiscanProvider(), BillProvider, adminRoutes (+5 more)
+Cohesion: 0.10
+Nodes (20): app, queue(), scheduled(), apiCallLog, secretsMatch(), getProvider(), createLegiscanProvider(), BillProvider (+12 more)
 
 ### Community 52 - "CSS Token Verification"
 Cohesion: 0.17
 Nodes (19): AxisValues, canonicalColor(), canonicalFontSize(), canonicalRadius(), checkAxis(), COLOR_CANON, CSS_NAMED_COLORS, extractNew() (+11 more)
 
 ### Community 53 - "Tiptap Editor List Controls"
-Cohesion: 0.10
-Nodes (23): Button, useTiptapEditor(), ListButton, ListButtonProps, LIST_SHORTCUT_KEYS, listIcons, ListType, UseListConfig (+15 more)
+Cohesion: 0.13
+Nodes (16): listIcons, ListType, ListDropdownMenuProps, canToggleAnyList(), getActiveListType(), isAnyListActive(), ListOption, listOptions (+8 more)
 
 ### Community 54 - "Operations Health Dashboard"
 Cohesion: 0.12
@@ -434,20 +443,20 @@ Cohesion: 0.14
 Nodes (16): argv, BulkAction, BulkBill, BulkVersion, d1ExecuteFile(), d1Query(), detectState(), envVars (+8 more)
 
 ### Community 64 - "Calendar Routing and Slugs"
-Cohesion: 0.12
-Nodes (5): collectPriorityLegiscanIds(), demoGuard, calendarRouter, EventBill, EventResult
+Cohesion: 0.08
+Nodes (17): NJ_COUNTY_CLERKS, calendarEventBills, backfillCalendar(), collectPriorityLegiscanIds(), parseLegiScanId(), centralFetch(), runDemoReset(), demoResetAndSeed() (+9 more)
 
 ### Community 65 - "Budget Tracking Charts"
 Cohesion: 0.18
 Nodes (11): CumulativeBudgetChart(), build90DayPoints(), computePace(), cumulativeFromDaily(), PaceResult, utcDayOfMonth(), Budget(), LegiBudget (+3 more)
 
 ### Community 66 - "Event Line Components"
-Cohesion: 0.40
-Nodes (3): EventLines(), META_ICON_STYLE, base
+Cohesion: 0.11
+Nodes (15): mockFetch, usePolling(), apiFetch(), apiFetchForLoader(), Feed(), feedLoader(), FeedResponse, apiCalls (+7 more)
 
 ### Community 67 - "Image Upload UI"
-Cohesion: 0.18
-Nodes (14): IconComponent, IconProps, ImageShortcutBadge(), ImageUploadButton, ImageUploadButtonProps, canInsertImage(), insertImage(), isImageActive() (+6 more)
+Cohesion: 0.09
+Nodes (27): canColorHighlight(), getHighlightColorValue(), HIGHLIGHT_COLORS, HighlightMode, isColorHighlightActive(), pickHighlightColorsByValue(), removeHighlight(), shouldShowButton() (+19 more)
 
 ### Community 68 - "Project Scripts and DevTools"
 Cohesion: 0.11
@@ -458,12 +467,12 @@ Cohesion: 0.11
 Nodes (10): BillGroup, ChangeEntry, KwUnion, SessionRow, StateRow, subTdStyle, subThStyle, SyncRow (+2 more)
 
 ### Community 70 - "Demo Calendar Loading"
-Cohesion: 0.38
-Nodes (6): addDaysISO(), Db, DemoBillCalendarEntry, loadUpcomingDemoHearings(), todayISO(), UpcomingHearingRow
+Cohesion: 0.17
+Nodes (12): addDaysISO(), Db, DemoBillCalendarEntry, loadUpcomingDemoHearings(), todayISO(), UpcomingHearingRow, getNewMatchMinRelevance(), setConfig() (+4 more)
 
 ### Community 71 - "Event Popover Rendering"
-Cohesion: 0.07
-Nodes (28): render0(), renderItem(), EventPopoverContent(), custom, hearing, wrap(), billEvent, evs (+20 more)
+Cohesion: 0.10
+Nodes (23): BillBadge(), BillBadgeProps, BillHoverTooltip(), summaryCache, fetchMock, Harness(), TooltipBill, useBillTooltip() (+15 more)
 
 ### Community 72 - "Unsaved Changes Guard"
 Cohesion: 0.20
@@ -474,8 +483,8 @@ Cohesion: 0.13
 Nodes (7): DeliveryStatus, getEmailDeliveryStatus(), creds, checkEmailSuppression(), SuppressionStatus, creds, TenantApi
 
 ### Community 74 - "Email Icon Generation"
-Cohesion: 0.17
-Nodes (13): allowlist, ROOT, metaIcon(), renderEventCard(), main(), ROOT, CHANGE_ICONS, USER_EVENT_ICONS (+5 more)
+Cohesion: 0.18
+Nodes (10): allowlist, ROOT, main(), ROOT, CHANGE_ICONS, USER_EVENT_ICONS, EMAIL_ICON_NEEDS, EmailIconNeed (+2 more)
 
 ### Community 75 - "Button and Tooltip Components"
 Cohesion: 0.16
@@ -495,7 +504,7 @@ Nodes (11): billTextCacheTtl(), getCachedText(), putCachedText(), textCacheKey()
 
 ### Community 79 - "Tiptap Utility Functions"
 Cohesion: 0.16
-Nodes (11): findNodeAtPosition(), getSelectedNodesOfType(), isAllowedUri(), MAC_SYMBOLS, ProtocolConfig, ProtocolOptions, sanitizeUrl(), updateNodesAttr() (+3 more)
+Nodes (11): getSelectedNodesOfType(), handleImageUpload(), isAllowedUri(), MAC_SYMBOLS, ProtocolConfig, ProtocolOptions, sanitizeUrl(), updateNodesAttr() (+3 more)
 
 ### Community 80 - "Session History Loading"
 Cohesion: 0.17
@@ -518,8 +527,8 @@ Cohesion: 0.24
 Nodes (14): cross_reference(), download_os_bulk(), load_central_bills(), load_os_csv(), load_os_json(), main(), matches_keywords(), normalize_bill_number() (+6 more)
 
 ### Community 85 - "Event Form Components"
-Cohesion: 0.15
-Nodes (14): opts, pos, setup(), EventFormFields(), EventFormValues, EventItem(), allDayCustom, customCancelled (+6 more)
+Cohesion: 0.11
+Nodes (17): render0(), setup(), EventItem(), allDayCustom, customCancelled, customConfirmed, customWithBill, hearing (+9 more)
 
 ### Community 86 - "Safe Fetch and SSRF Protection"
 Cohesion: 0.27
@@ -530,12 +539,12 @@ Cohesion: 0.19
 Nodes (5): matchPreset(), SYNC_PRESETS, SyncPreset, SessionEditor(), SessionRow
 
 ### Community 88 - "Bill Change History Tooltips"
-Cohesion: 0.09
-Nodes (23): BillTextPanel(), ChangeHistoryTooltip(), ChangeHistoryTooltipProps, changeLogText(), ChangeRecord, resolveUpdatedTs(), actionChange, open() (+15 more)
+Cohesion: 0.11
+Nodes (14): BillTextPanel(), BillTextPanelProps, TextVersion, ExternalLinkIcon(), ExternalLinkIconProps, GroupedBillCard(), PriorityBadge(), PriorityBadgeProps (+6 more)
 
 ### Community 89 - "Data Export Utilities"
-Cohesion: 0.26
-Nodes (9): exportAllData(), fetchAllRich(), fetchAllRows(), PaginatedResponse, RichResponse, rowsToCsv(), sanitizeCsvCell(), EXPORT_TABLES (+1 more)
+Cohesion: 0.33
+Nodes (7): exportAllData(), fetchAllRich(), fetchAllRows(), PaginatedResponse, RichResponse, rowsToCsv(), sanitizeCsvCell()
 
 ### Community 90 - "HTML Sanitization Logic"
 Cohesion: 0.26
@@ -570,16 +579,16 @@ Cohesion: 0.22
 Nodes (9): centralDevVars, centralGet(), __dirname, ELECTION_KEYWORDS, envContent, __filename, main(), sleep() (+1 more)
 
 ### Community 98 - "Superadmin Authentication"
-Cohesion: 0.31
-Nodes (4): isSuperadminEmailViaCentral(), _resetSuperadminAllowlistCache(), sha256Hex(), env
+Cohesion: 0.20
+Nodes (10): AgendaView(), baseProps, evs, agendaFooterLabel(), computeSpacerHeight(), eventDateLabel(), formatDateHeader(), formatTodayHeader() (+2 more)
 
 ### Community 99 - "Queue Processing Logic"
-Cohesion: 0.15
-Nodes (11): queue(), Env, billUuid(), notifyTenants(), processIngestorQueue(), processSingleBill(), fakeBill, mockFetch (+3 more)
+Cohesion: 0.19
+Nodes (10): STATUS_SEMANTIC_ORDER, knownStates, knownStatuses, knownTagsCache, FacetCounts, SearchParams, SetSearchParams, emptyFacets (+2 more)
 
 ### Community 100 - "Bill Card Email Models"
-Cohesion: 0.22
-Nodes (10): model, BillCardRow, buildBillCardModel(), getBillUpdateChanges(), HEARING_TYPES, hearingLine(), userDetailLine(), userEventHash() (+2 more)
+Cohesion: 0.12
+Nodes (16): model, buildBillCardModel(), getBillUpdateChanges(), HEARING_TYPES, hearingLine(), userDetailLine(), userEventHash(), ChangeRecord (+8 more)
 
 ### Community 101 - "Session Sync and Keywords"
 Cohesion: 0.22
@@ -594,8 +603,8 @@ Cohesion: 0.20
 Nodes (9): name, private, scripts, build, dev, preview, test, test:watch (+1 more)
 
 ### Community 105 - "Bounding Box Utilities"
-Cohesion: 0.33
-Nodes (5): clampTargetFor(), rect, computeExpandTarget(), ExpandInputs, base
+Cohesion: 0.26
+Nodes (10): ChangeHistoryTooltip(), ChangeHistoryTooltipProps, changeLogText(), ChangeRecord, resolveUpdatedTs(), actionChange, open(), statusChange (+2 more)
 
 ### Community 106 - "Timestamp Validation Guard"
 Cohesion: 0.31
@@ -607,19 +616,19 @@ Nodes (8): argv, esc(), __filename, main(), REPO_ROOT, runInChunks(), runSql(), 
 
 ### Community 108 - "Instance Provisioning Script"
 Cohesion: 0.50
-Nodes (7): die(), log(), log_ok(), log_warn(), step(), usage(), new-instance.sh script
+Nodes (7): new-instance.sh script, die(), log(), log_ok(), log_warn(), step(), usage()
 
 ### Community 109 - "Bill Detail Testing"
-Cohesion: 0.29
-Nodes (4): authState, BILL, CONFIG, routerMock
+Cohesion: 0.21
+Nodes (7): CompactPrioritySelect(), CompactPrioritySelectProps, NO_PRIORITY, apiFetchMock, NewMatchTriageControl(), NewMatchTriageControlProps, apiFetchMock
 
 ### Community 110 - "Bill Text Smoke Tests"
 Cohesion: 0.48
 Nodes (6): BASE, findBillWithText(), main(), probeText(), resolveCookie(), sleep()
 
 ### Community 111 - "Link Editor UI"
-Cohesion: 0.23
-Nodes (10): LinkContent(), canSetLink(), isLinkActive(), LinkHandlerProps, shouldShowLinkButton(), useLinkHandler(), useLinkPopover(), useLinkState() (+2 more)
+Cohesion: 0.31
+Nodes (7): billsApiParams(), billsChipSelection(), BillsFilterValues, billsFilterValuesFromSearch(), SORT_COLS, prefetchBills(), apiCalls
 
 ### Community 112 - "Bill Detail Copywriting"
 Cohesion: 0.40
@@ -630,8 +639,12 @@ Cohesion: 0.40
 Nodes (3): EventTargetWithScroll, ScrollTarget, UseScrollingOptions
 
 ### Community 114 - "Email Usage Tracking"
-Cohesion: 0.39
-Nodes (7): resendSend(), Db, parseResendUsage(), recordResendThrottle(), recordResendUsage(), ResendReading, writeConfig()
+Cohesion: 0.31
+Nodes (7): escHtml(), reportJobFailure(), runJob(), sendEmail, AlertEnv, alertRecipients(), sendOpsAlert()
+
+### Community 115 - "Intersection Observer Mock"
+Cohesion: 0.22
+Nodes (4): apiCalls, CapturingIntersectionObserver, makeEvent(), pageEvents()
 
 ### Community 116 - "Login Page UI"
 Cohesion: 0.40
@@ -642,12 +655,16 @@ Cohesion: 0.83
 Nodes (3): escHtml(), reportJobFailure(), runJob()
 
 ### Community 119 - "API Error and Fetch Tests"
-Cohesion: 0.12
-Nodes (8): apiCalls, ApiError, BILLS, CONFIG, deferred, FACETS, FakeIntersectionObserver, voteReject
+Cohesion: 0.11
+Nodes (10): apiCalls, ApiError, BILLS, CONFIG, deferred, FACETS, FakeIntersectionObserver, voteReject (+2 more)
 
 ### Community 122 - "Calendar Data Import"
 Cohesion: 0.46
 Nodes (6): importEventHash(), ImportRow, importUid(), normTitle(), sha256Hex(), row
+
+### Community 130 - "Calendar Preload Testing"
+Cohesion: 0.31
+Nodes (6): computeEventPopoverPosition(), EventPopover(), EventPopoverContent(), PopoverPlacement, custom, hearing
 
 ### Community 159 - "Legiscan Ingestion Queue"
 Cohesion: 0.25
@@ -657,21 +674,37 @@ Nodes (3): processLsIngestorQueue(), fetchMock, queue()
 Cohesion: 0.67
 Nodes (4): customBody(), customUrl(), hearingBody(), trackerLink()
 
+### Community 161 - "Navigation Progress Bar"
+Cohesion: 0.36
+Nodes (4): computeDayPopoverPosition(), DayPopover(), dayEvents, isPastDate()
+
 ### Community 162 - "Organization Noun Resolution"
-Cohesion: 0.60
-Nodes (4): resolveOrgNounFromDb(), firstWord(), normalizeOrgNoun(), resolveOrgNoun()
+Cohesion: 0.38
+Nodes (4): ActiveChip(), ChipColor, FilterDropdown(), SortHeader()
+
+### Community 163 - "HTML Text Conversion"
+Cohesion: 0.33
+Nodes (4): SortColumn, SortDir, SearchParams, useBillSort()
+
+### Community 164 - "Community 164"
+Cohesion: 0.40
+Nodes (3): sortDescription(), BillList(), useScrolledUnder()
+
+### Community 165 - "Community 165"
+Cohesion: 0.33
+Nodes (3): fetchDailyRowsRead, listTrackedD1Dbs, sendOpsAlert
 
 ## Knowledge Gaps
 - **863 isolated node(s):** `deploy.sh script`, `name`, `private`, `predev`, `dev` (+858 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **17 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **14 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `getDb()` connect `Database Seeding and Testing` to `Calendar Routing and Slugs`, `Bill and Draft API Routes`, `App Infrastructure and Domains`, `Demo Calendar Loading`, `Digest Module Management`, `Bill Query and Filtering`, `Email Usage Tracking`, `Demo Reset and Seeding`, `Tenant Sync and Auth Events`, `User Mentions and Notifications`?**
+- **Why does `getDb()` connect `Database Seeding and Testing` to `Calendar Routing and Slugs`, `Bill and Draft API Routes`, `App Infrastructure and Domains`, `Demo Calendar Loading`, `Bill Query and Filtering`, `Cloudflare Email Provider`, `Demo Reset and Seeding`, `Tenant Sync and Auth Events`?**
   _High betweenness centrality (0.109) - this node is a cross-community bridge._
-- **Why does `billUrl()` connect `Bill Text and Reaction UI` to `Calendar Routing and Slugs`, `Event Line Components`, `Bill and Draft API Routes`, `Bill Row UI Components`, `Bill Tooltips and Badges`, `Bill List Filtering and Loading`, `Bill Change History Tooltips`, `Email Digest Rendering`, `User Mentions and Notifications`?**
+- **Why does `billUrl()` connect `Email Digest Rendering` to `Bill Text and Reaction UI`, `Calendar Routing and Slugs`, `Comment Content Sanitization`, `Bill and Draft API Routes`, `Event Card Styling`, `Bill Row UI Components`, `Bill Tooltips and Badges`, `Bill List Filtering and Loading`, `Email Bill Card Styling`, `Bill Change History Tooltips`?**
   _High betweenness centrality (0.086) - this node is a cross-community bridge._
 - **Why does `seedKnownActivity()` connect `Database Seeding and Testing` to `Tenant Engagement Dashboard`?**
   _High betweenness centrality (0.058) - this node is a cross-community bridge._
@@ -680,6 +713,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **What connects `deploy.sh script`, `name`, `private` to the rest of the system?**
   _869 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Database Seeding and Testing` be split into smaller, more focused modules?**
-  _Cohesion score 0.08075955159002517 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07984442919240449 - nodes in this community are weakly interconnected._
 - **Should `Notifications and Sidebar Context` be split into smaller, more focused modules?**
-  _Cohesion score 0.09957325746799431 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.10384068278805121 - nodes in this community are weakly interconnected._
