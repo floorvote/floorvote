@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FloorVote — Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px;
+      color: #1a1a2e;
+      line-height: 1.55;
+      background: #fafbfc;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 4px 0;
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 36px 0 12px 0;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    h3 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 20px 0 8px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #475569;
+    }
+    p, li { font-size: 13px; }
+    .subtitle {
+      font-size: 12px;
+      color: #6b7280;
+      margin: 0 0 24px 0;
+    }
+    .companion {
+      font-size: 12px;
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 24px;
+    }
+    .diagram {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 18px;
+      margin: 10px 0 16px 0;
+      overflow-x: auto;
+    }
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      font-size: 12px;
+      margin: 12px 0;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid #94a3b8;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin: 12px 0;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #475569;
+      background: #f8fafc;
+    }
+    .note {
+      font-size: 12px;
+      color: #475569;
+      background: #f8fafc;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border-left: 3px solid #94a3b8;
+      margin: 12px 0;
+    }
+    .stat {
+      display: inline-block;
+      background: #dbeafe;
+      color: #1e40af;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>FloorVote — Architecture</h1>
+<p class="subtitle">Visual companion to <code>docs/architecture.md</code>. Last revised 2026-05-27.</p>
+
+<div class="companion">
+  <strong>Source of truth:</strong> <a href="architecture.md"><code>architecture.md</code></a>. If this diagram disagrees with the text doc, the text doc wins. The <a href="architecture-review.md">architecture review dossier</a> tracks known caveats and open audit items (§A1, §A3, §B5, etc.).
+</div>
+
+<h2>1. Pipeline overview</h2>
+<p>One LegiScan API, one cron, one central, fan-out to per-tenant queues. <span class="stat">30k API calls / month</span> <span class="stat">3 tenants today</span></p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    LS[(LegiScan API)]
+    subgraph CENTRAL [Central Worker]
+        Cron[Cron<br/>0 * * * *]
+        Ingestor[Ingestor<br/>processLsBill]
+    end
+    CentralDB[("Central D1<br/>bills + children")]
+    CentralR2[("Central R2<br/>bill text files")]
+    IQ{{"Ingestor Queue"}}
+    TQ{{"Per-tenant Queues"}}
+    subgraph TENANT [Per-tenant Worker]
+        TenantProc[Tenant Consumer<br/>processCentralNotification]
+    end
+    TenantDB[("Tenant D1<br/>denormalized bill<br/>+ engagement")]
+    UI[Bill UI]
+    Admin[/Admin routes/]
+
+    LS -->|"getMasterList<br/>getMasterListRaw"| Cron
+    Cron -->|"writes change_hash<br/>+ masterlist fields"| CentralDB
+    Cron -->|"matched bills"| IQ
+    Cron -->|"stubOnly for<br/>monitoring-only changes"| TQ
+    IQ --> Ingestor
+    Ingestor -->|"getBill"| LS
+    Ingestor -->|"writes everything"| CentralDB
+    Ingestor -->|"downloads bill text"| CentralR2
+    Ingestor -->|"notifyLsTenants"| TQ
+    TQ --> TenantProc
+    TenantProc -->|"GET /bills/:id<br/>(no API call)"| CentralDB
+    TenantProc -->|"upserts row + AI"| TenantDB
+    TenantDB --> UI
+    Admin -.->|"reprocess, refresh-stubs,<br/>refresh-metadata"| TQ
+    Admin -.->|"reingest-bill,<br/>reingest-tenant, etc."| IQ
+
+    classDef api fill:#fef3c7,stroke:#f59e0b
+    classDef worker fill:#ede9fe,stroke:#8b5cf6
+    classDef store fill:#dbeafe,stroke:#3b82f6
+    classDef queue fill:#dcfce7,stroke:#22c55e
+    classDef ui fill:#fce7f3,stroke:#db2777
+    class LS api
+    class CentralDB,CentralR2,TenantDB store
+    class IQ,TQ queue
+    class UI ui
+    class Admin api
+</pre>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#fef3c7"></div>External API / admin trigger</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#ede9fe"></div>Worker code</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#dbeafe"></div>Data store</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#dcfce7"></div>Queue</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fce7f3"></div>UI</div>
+</div>
+
+<h2>2. Phase 1 — Cron decision tree</h2>
+<p>Runs hourly. Most ticks are no-ops; full passes (3×/day) and raw passes (7×/day) do the actual work. <strong>The cron is the LegiScan API gate</strong> — only matched bills are queued to the ingestor.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    Tick[Hourly tick at 0 * * * *]
+    Tick --> Per[For each session in tracked states]
+    Per --> Mode{decideMode<br/>session, etHour}
+    Mode -->|sine_die or<br/>sync disabled| Skip[skip — no API call]
+    Mode -->|ET 5/13/23| Full[getMasterList full]
+    Mode -->|ET 7/9/11/15/17/19/21| Raw[getMasterListRaw]
+
+    Full --> FullLoop[For each masterlist entry]
+    FullLoop --> FullHash{change_hash<br/>changed?}
+    FullHash -->|no| Done1[ ]
+    FullHash -->|yes| WriteBills[Write bills row<br/>title, status, last_action,<br/>change_hash]
+    WriteBills --> Match[Keyword-match against<br/>per-tenant keyword union]
+    Match --> Decide{matched in<br/>≥1 tenant?}
+    Decide -->|yes — new or<br/>changed match| ToIng[→ Ingestor Queue<br/>billId]
+    Decide -->|no, but link<br/>exists w/ match_type=null| ToStub[→ Tenant Queue<br/>stubOnly: true]
+    Decide -->|no link, no match| Done2[ ]
+
+    Raw --> RawLoop[For each raw entry]
+    RawLoop --> RawHash{change_hash<br/>changed?}
+    RawHash -->|no| Done3[ ]
+    RawHash -->|yes, new bill| RawInsert[INSERT change_hash=''<br/>NOT queued]
+    RawHash -->|yes, existing| RawMatched{already<br/>matched?}
+    RawMatched -->|yes| RawUpdate[UPDATE change_hash<br/>+ queue to ingestor]
+    RawMatched -->|no| Done4[leave hash stale<br/>full pass will catch it]
+    RawUpdate --> ToIng
+
+    ToIng --> Quota["1 getBill call<br/>per queued bill"]
+
+    classDef apicall fill:#fef3c7,stroke:#f59e0b
+    classDef decision fill:#f1f5f9,stroke:#94a3b8
+    classDef done fill:#f8fafc,stroke:#cbd5e1,stroke-dasharray:3 3
+    classDef queue fill:#dcfce7,stroke:#22c55e
+    class Full,Raw apicall
+    class Mode,FullHash,RawHash,Decide,RawMatched decision
+    class Done1,Done2,Done3,Done4,Skip,RawInsert done
+    class ToIng,ToStub,Quota queue
+</pre>
+</div>
+
+<h3>Cron quota cost</h3>
+<div class="note">
+Per session: 3 full + 7 raw = <strong>10 masterlist calls/day</strong> (~300/month). Across N active sessions × ~10/day each, this is the dominant fixed cost. The variable cost is <code>getBill</code> per matched-changed bill, typically a small fraction of total quota.
+</div>
+
+<h2>3. Phase 2 — Ingestor (unified path)</h2>
+<p>Consumes from the ingestor queue. Two top-level branches gated by the <code>skipFetch</code> flag.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    Msg[Message arrives<br/>billId, skipFetch?, forceMetadata?, forceAI?]
+    Msg --> Skip{skipFetch?}
+    Skip -->|true| DL[Download missing text<br/>from state_link → R2]
+    DL --> Notify
+    Skip -->|false| GB[getBill<br/>1 LegiScan API call]
+    GB --> Snap[Snapshot existing child rows<br/>history, sponsors, texts, etc.]
+    Snap --> Detect[detectChanges<br/>compute ChangeRecord list]
+    Detect --> Log[Write bill_change_log rows<br/>one per detected change]
+    Log --> UpBills[Upsert bills row<br/>change_hash, title, status, last_action]
+    UpBills --> Replace["Delete + reinsert:<br/>bill_history<br/>bill_sponsors<br/>bill_sasts<br/>bill_subjects<br/>bill_calendar<br/>bill_referrals"]
+    Replace --> UpsertChildren["Upsert (preserves r2_key):<br/>bill_texts<br/>bill_supplements<br/>bill_amendments<br/>roll_calls"]
+    UpsertChildren --> TextDL[Download new text versions to R2<br/>bills/legiscan-billId/texts/docId.ext]
+    TextDL --> Stamp[Stamp bills.texts_fetched_at<br/>derives text_status]
+    Stamp --> Notify[notifyLsTenants<br/>for each covering tenant]
+    Notify --> End[ack message]
+
+    classDef apicall fill:#fef3c7,stroke:#f59e0b
+    classDef decision fill:#f1f5f9,stroke:#94a3b8
+    classDef write fill:#dbeafe,stroke:#3b82f6
+    classDef done fill:#f8fafc,stroke:#cbd5e1
+    class GB apicall
+    class Skip decision
+    class Log,UpBills,Replace,UpsertChildren,TextDL,Stamp,DL write
+    class End,Notify done
+</pre>
+</div>
+
+<div class="note">
+<strong>roll_call_votes note:</strong> <code>getBill</code> returns vote summaries (<code>LegiscanVoteSummary</code>), not per-legislator records. Live-ingested bills have summary <code>roll_calls</code> rows but no <code>roll_call_votes</code> rows. Bulk-seeded bills have both. See architecture-review §B4.
+</div>
+
+<h2>4. Phase 3 — Tenant consumer</h2>
+<p>Reads from central via HTTP (no LegiScan calls). Three behaviors gated by message flags.</p>
+
+<div class="diagram">
+<pre class="mermaid">
+flowchart TD
+    Msg[Message arrives<br/>tenantId, billId, flags...]
+    Msg --> Fetch["centralFetch /bills/billId<br/>D1 read, no API call"]
+    Fetch --> Branch{which flag?}
+    Branch -->|stubOnly: true<br/>cron full pass only| StubGuard{existing has<br/>aiProcessedAt or<br/>match_type='manual'?}
+    StubGuard -->|yes| StubSkip[Skip - race protection<br/>don't downgrade manual/promoted bill]
+    StubGuard -->|no| StubUpsert[Upsert metadata<br/>match_type from msg or null<br/>no text, no AI]
+    Branch -->|metadataOnly: true<br/>tenant admin only| MdUpsert[Upsert metadata<br/>no text, no AI]
+    Branch -->|normal| Dedup{providerUpdatedAt<br/>unchanged AND no force flags<br/>AND aiProcessedAt set?}
+    Dedup -->|yes| Done1[ ]
+    Dedup -->|no| TS{text_status<br/>available or in_r2?}
+    TS -->|yes| FT[Fetch text from central<br/>HTTP, no API call]
+    TS -->|no| NoText[skip text fetch]
+    FT --> AICheck{shouldRunAi?<br/>forceAI OR derivedMatchType ≠ null}
+    NoText --> AICheck
+    AICheck -->|no| WriteOnly[Upsert bill row<br/>no AI fields]
+    AICheck -->|yes| TextOk{has full text<br/>AND not aiDedup<br/>AND preset configured?}
+    TextOk -->|no| WriteOnly
+    TextOk -->|yes| RunAI[Run Gemini<br/>fallback Claude on 429/503]
+    RunAI --> WriteAI[Upsert bill row<br/>+ ai_processed_at<br/>+ summary, tags, relevance<br/>+ last_ai_text_hash]
+    WriteAI --> FeedEvent{matchType ≠ null<br/>AND queueChanges?}
+    WriteOnly --> FeedEvent
+    StubUpsert --> Done2[ ]
+    MdUpsert --> Done3[ ]
+    FeedEvent -->|yes| Emit[Write feed_events: bill_updated]
+    FeedEvent -->|no| Done4[ ]
+
+    classDef decision fill:#f1f5f9,stroke:#94a3b8
+    classDef write fill:#dbeafe,stroke:#3b82f6
+    classDef ai fill:#ede9fe,stroke:#8b5cf6
+    classDef done fill:#f8fafc,stroke:#cbd5e1
+    class Branch,StubGuard,Dedup,TS,AICheck,TextOk,FeedEvent decision
+    class StubUpsert,MdUpsert,WriteOnly,WriteAI,Emit write
+    class RunAI,FT ai
+    class Done1,Done2,Done3,Done4,StubSkip,NoText done
+</pre>
+</div>
+
+<h3>Canonical bill-state fields (tenant D1)</h3>
+<table>
+  <thead><tr><th>Field</th><th>Values</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>match_type</code></td><td><code>'keyword'</code> · <code>'manual'</code> · <code>null</code></td><td>Tracking tier. <code>null</code> = monitoring-only.</td></tr>
+    <tr><td><code>text_status</code></td><td><code>'in_r2'</code> · <code>'available'</code> · <code>'no_texts'</code> · <code>'not_checked'</code> · <code>null</code></td><td>Whether central confirms full text. Server-derived.</td></tr>
+    <tr><td><code>ai_processed_at</code></td><td>timestamp · <code>null</code></td><td>Whether AI has run and when.</td></tr>
+  </tbody>
+</table>
+
+<h2>5. Where things live</h2>
+<table>
+  <thead><tr><th>Store</th><th>Contents</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Central D1</strong> (<code>central-bills-ls</code>)</td><td>sessions, bills + every child table (history, sponsors, texts, supplements, amendments, sasts, subjects, calendar, referrals, roll_calls, roll_call_votes*), people, committees, bill_change_log, api_call_log, session_sync_log, bill_tenants, keyword_registry.</td></tr>
+    <tr><td><strong>Central R2</strong> (<code>central-bill-texts-ls</code>)</td><td><code>bills/legiscan-{billId}/texts/{docId}.html|pdf</code> — actual bill text files. <code>sessions/{id}/masterlist.json</code> — cached masterlist for keyword resync.</td></tr>
+    <tr><td><strong>Tenant D1</strong> (<code>floorvote-{id}</code>, one per org)</td><td>The denormalized <code>bills</code> row (with title/sponsor/lastAction etc. inlined; canonical state via <code>match_type</code> + <code>text_status</code> + <code>ai_processed_at</code>), member_votes, official_positions, comments, notes, feed_events, custom fields, AI outputs.</td></tr>
+  </tbody>
+</table>
+<p style="font-size:11px;color:#6b7280;margin-top:-8px">* <code>roll_call_votes</code> populated only by bulk seed; live ingest doesn't fetch them.</p>
+
+<h2>6. Operational endpoints — quick reference</h2>
+<table>
+  <thead><tr><th>Endpoint</th><th>Ingestor?</th><th>API cost</th><th>Use case</th></tr></thead>
+  <tbody>
+    <tr><td>Cron (hourly)</td><td>For matched changes</td><td>10/session/day + getBill per match</td><td>Steady state</td></tr>
+    <tr><td><code>POST /tenants/reprocess/:tenantId</code></td><td>No</td><td>0</td><td>Refresh tenant rows from central. AI dedups on text hash.</td></tr>
+    <tr><td><code>POST /admin/refresh-stubs/:tenantId</code></td><td>No</td><td>0</td><td>Same, scoped to <code>match_type=null</code> rows.</td></tr>
+    <tr><td><code>POST /admin/fetch-missing-texts/:tenantId</code></td><td>Yes</td><td>1/bill missing text</td><td>Heal text gaps.</td></tr>
+    <tr><td><code>POST /admin/reingest-bill/:billId</code></td><td>Yes</td><td>1</td><td>Single-bill refresh.</td></tr>
+    <tr><td><code>POST /admin/reingest-tenant/:tenantId</code></td><td>Yes (dry-run default)</td><td>1/matched bill</td><td>Bulk backfill. Pass <code>?confirm=true</code> to actually fire.</td></tr>
+    <tr><td><code>POST /tenants/promote-bill/:tenantId/:billId</code></td><td>Yes, forceAI</td><td>1</td><td>Manual add: <code>match_type='manual'</code>.</td></tr>
+    <tr><td>Bulk seed (script)</td><td>Yes, skipFetch</td><td>0</td><td>Initial seed from LegiScan bulk JSON.</td></tr>
+  </tbody>
+</table>
+
+<h2>7. Known caveats and open audit items</h2>
+<p>See <a href="architecture-review.md">architecture-review.md</a> for the full dossier. Active items as of 2026-05-27:</p>
+<ul>
+  <li><strong>§A3 — change_log fidelity for top-level fields.</strong> Cron pre-writes <code>bills.title/status/description</code> before queuing, so the ingestor's snapshot reads the post-change value and <code>detectChanges</code> never emits <code>title_changed</code>/<code>status_change</code>/<code>description_changed</code> for cron-triggered messages. Child-collection diffs (history, votes, etc.) are still captured correctly.</li>
+  <li><strong>§B4 — roll_call_votes gap.</strong> <code>getBill</code> returns summaries only. Live ingest never populates per-legislator vote rows. Bulk-seeded bills have them.</li>
+  <li><strong>§C3 — change_hash sentinel.</strong> Raw pass inserts new bills with <code>change_hash = ''</code>. Cosmetic.</li>
+  <li><strong>§F1 — Monitoring-only latency (swallow bug fixed).</strong> Raw pass doesn't notify stub bills (no fresh metadata to deliver), so <code>match_type=null</code> bills update only on full pass (~8h); matched bills update on raw pass too (~1h). This relies on the full pass <em>seeing</em> the change — but the raw pass used to advance an unmatched bill's <code>change_hash</code> anyway, hiding the change from the next full pass and swallowing it permanently. <strong>Fixed:</strong> the raw pass now leaves unmatched hashes stale; <code>POST /admin/backfill-stub-actions/:tenantId</code> heals stubs swallowed before the fix.</li>
+  <li><strong>F7 audit (pending)</strong> — see <a href="superpowers/plans/2026-05-27-f7-pruning-audit.md">F7 handoff plan</a>: queue message flag surface, two-central divergence, residual data-gap verification.</li>
+</ul>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 20,
+    },
+    securityLevel: 'loose',
+  });
+</script>
+</body>
+</html>

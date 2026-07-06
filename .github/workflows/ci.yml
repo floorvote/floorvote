@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'research/**'
+      - '**/*.md'
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'research/**'
+      - '**/*.md'
+
+# Cancel in-progress CI when a new push arrives on the same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Secret scanning. Runs the gitleaks BINARY (MIT, free) rather
+  # than gitleaks-action, which requires a paid GITLEAKS_LICENSE for ORG repos.
+  # Pinned to a specific release + sha256-verified. Config + allowlist: .gitleaks.toml.
+  # Operator: make this a REQUIRED status check via branch protection once the
+  # first run is reviewed (see docs/security-ci.md).
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0 # full history so gitleaks scans all commits, not just HEAD
+      - name: Run gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "" # optional: paste the linux_x64 tarball sha256 to hard-verify the download
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" -o gitleaks.tar.gz
+          if [ -n "${GITLEAKS_SHA256}" ]; then
+            echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          fi
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
+
+  check-api-central:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.build.json
+        working-directory: api
+      # eslint + @typescript-eslint resolve from the root install above (shared
+      # with web/); no per-package devDeps, so central's lockfile is untouched.
+      - run: npm run lint
+        working-directory: api
+      - run: npm test
+        working-directory: api
+      - run: npm ci
+        working-directory: central
+      - run: npx tsc --noEmit -p tsconfig.build.json
+        working-directory: central
+      - run: npm run lint
+        working-directory: central
+      - run: npm test
+        working-directory: central
+
+  check-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+        working-directory: web
+      - run: npm run lint
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - run: npm run build
+        working-directory: web

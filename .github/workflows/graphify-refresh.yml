@@ -1,0 +1,55 @@
+name: graphify-refresh
+
+# Nightly rebuild of the knowledge graph in graphify-out/.
+# One bot commit per day, only when the graph changes. AST extraction is free;
+# if GEMINI_API_KEY is set as a repo secret, Gemini names communities (low cost).
+# Scope (application code, docs excluded) is governed by .graphifyignore.
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: graphify-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      # Pin the package version: this is a `contents: write` job that
+      # `git push`es, so a floating `latest` is a typosquat/hijack → push-access
+      # risk. `graphifyy` (double-y) is the correct PyPI package (single-y 404s).
+      # Bump deliberately; optionally harden further with a hash-locked
+      # requirements file (pip install --require-hashes).
+      - run: pip install "graphifyy[openai]==0.8.44"
+
+      # Rebuild the graph: re-extract code, update graph.json + GRAPH_REPORT.md +
+      # manifest.json + .graphify_labels.json. graph.html/cache/backups are
+      # gitignored. graphify leaves outputs untouched when topology is unchanged.
+      # When GEMINI_API_KEY is set, graphify uses Gemini to name communities;
+      # without it, communities are structural only (numbered, not named).
+      - run: graphify update .
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Commit graph if it changed
+        run: |
+          git config user.name  "graphify-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add graphify-out/
+          if git diff --cached --quiet; then
+            echo "No graph changes — nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(graphify): refresh knowledge graph [skip ci]"
+          git push

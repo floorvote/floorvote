@@ -1,0 +1,24 @@
+# Keep the knowledge graph a clean CODE graph.
+#
+# The post-commit/post-checkout hooks rebuild structurally (AST only, no LLM).
+# For markdown that means disconnected heading-trees with NO edges into the code
+# graph — pure node-count bloat that wrecks the "weakly-connected nodes" signal
+# and clutters the visualization. So exclude docs from graph extraction.
+#
+# NOTE: this also applies to manual `/graphify` runs. To do a deliberate run that
+# includes docs (e.g. the LLM prose->code pass), temporarily remove or comment
+# these lines, then restore them.
+#
+# To switch to "exclude superpowers only", delete the *.md / docs/ lines below
+# and keep just `docs/superpowers/`.
+
+*.md
+*.mdx
+*.qmd
+docs/
+
+# Non-app code excluded from the graph: research notes, the LegiScan API
+# reference, and CI/workflow config aren't part of the application architecture.
+research/
+legiscan/
+.github/

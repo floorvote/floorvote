@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bill Detail — Redesign Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #f8fafc;
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 0 32px 48px; }
+  .columns { display: flex; gap: 24px; margin-top: 24px; }
+  .col-left  { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+  .col-right { width: 268px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  /* ── Single card style ── */
+  .card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+  /* Section label — one style for everything */
+  .label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* ── Top header block ── */
+  .header-block {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 20px 0 24px;
+  }
+
+  /* Chip strip */
+  .chip-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .chip-strip .right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .badge {
+    display: inline-flex; align-items: center;
+    font-size: 12px; font-weight: 700;
+    padding: 3px 10px; border-radius: 5px;
+    letter-spacing: 0.02em;
+  }
+  .badge-bill  { background: #1e3a5f; color: #fff; }
+  .badge-status { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-weight: 600; font-size: 11px; }
+  .badge-session { background: #f1f5f9; color: #64748b; font-size: 11px; font-weight: 500; }
+  .badge-priority {
+    background: #fca5a5; color: #7f1d1d;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  .updated-time { font-size: 11px; color: #94a3b8; }
+
+  .btn-small {
+    font-size: 11px; padding: 3px 10px;
+    background: none; border: 1px solid #e2e8f0;
+    border-radius: 5px; cursor: pointer; color: #64748b;
+    font-family: inherit;
+  }
+  .btn-small.danger { color: #dc2626; border-color: #fca5a5; }
+  .btn-nav { font-size: 13px; color: #2563eb; background: none; border: none; cursor: pointer; padding: 2px 4px; font-family: inherit; }
+  .btn-nav.dim { color: #cbd5e1; cursor: default; }
+
+  /* Title */
+  h1.bill-title {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.3;
+    margin-bottom: 12px;
+  }
+
+  /* Meta rows */
+  .meta-row {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 6px;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .meta-row .meta-label { color: #94a3b8; }
+  .meta-sep { color: #d1d5db; }
+  a.meta-link { color: #2563eb; text-decoration: none; font-size: 12px; }
+  a.meta-link:hover { text-decoration: underline; }
+  .party-d { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: #dbeafe; color: #1d4ed8; margin-left: 2px; }
+  .party-r { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px; background: #fee2e2; color: #b91c1c; margin-left: 2px; }
+
+  /* Divider */
+  .divider { border: none; border-top: 1px solid #f1f5f9; margin: 16px 0; }
+
+  /* AI summary area */
+  .ai-area { margin-bottom: 0; }
+  .ai-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .ai-header .label { margin-bottom: 0; }
+  .relevance-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    background: #d1fae5; color: #065f46;
+    margin-left: auto;
+  }
+  p.summary-text {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 14px;
+    color: #374151;
+    line-height: 1.55;
+    margin-bottom: 10px;
+  }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; background: #eff6ff; color: #475569;
+    padding: 2px 8px; border-radius: 4px;
+    border: 1px solid #dbeafe; cursor: pointer;
+  }
+
+  /* Collapsible row (bill text, documents) */
+  .collapsible-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: #374151;
+    padding: 8px 0; cursor: pointer;
+    border-top: 1px solid #f1f5f9;
+    user-select: none;
+  }
+  .collapsible-row .toggle-label { font-weight: 500; }
+  .collapsible-row .toggle-arrow { color: #94a3b8; font-size: 11px; }
+  .collapsible-row .count-badge {
+    font-size: 10px; color: #94a3b8; background: #f1f5f9;
+    padding: 1px 6px; border-radius: 10px;
+  }
+
+  /* Hearings */
+  .hearings-section { margin-top: 4px; }
+  .hearing-row {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid #f8fafc;
+    font-size: 13px;
+  }
+  .hearing-row .hearing-date { color: #1e3a5f; font-weight: 600; min-width: 72px; }
+  .hearing-row .hearing-desc { color: #374151; }
+  .hearing-row .hearing-loc  { color: #94a3b8; font-size: 12px; }
+  .hearing-row.past { opacity: 0.4; }
+
+  /* ── Right column cards ── */
+
+  /* Vote bars */
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .bar-btn {
+    width: 72px; font-size: 12px; padding: 4px 6px; flex-shrink: 0;
+    background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    cursor: pointer; text-align: center; color: #475569; font-family: inherit;
+  }
+  .bar-btn.active-support { background: #22c55e18; border-color: #22c55e; color: #16a34a; font-weight: 600; }
+  .bar-btn.active-oppose  { background: #ef444418; border-color: #ef4444; color: #dc2626; font-weight: 600; }
+  .bar-btn.active-neutral { background: #94a3b818; border-color: #94a3b8; color: #64748b;  font-weight: 600; }
+  .bar-track { flex: 1; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+  .bar-fill  { height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .bar-count { width: 24px; text-align: right; font-size: 12px; color: #64748b; }
+
+  /* Position badge */
+  .pos-badge {
+    display: inline-block;
+    font-size: 12px; font-weight: 600;
+    padding: 4px 12px; border-radius: 6px;
+    background: #d1fae5; color: #065f46;
+    border: 1px solid #6ee7b7;
+  }
+  .pos-meta { font-size: 11px; color: #94a3b8; margin-top: 5px; }
+
+  /* Private note */
+  .note-textarea {
+    width: 100%; min-height: 72px;
+    font-size: 13px; font-family: inherit;
+    background: rgb(255,255,252);
+    border: 1px solid rgb(247,247,196);
+    border-radius: 6px; padding: 10px;
+    resize: vertical;
+    color: #374151;
+  }
+
+  /* ── Comments ── */
+  .comment { padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid #f1f5f9; }
+  .comment:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .comment-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .comment-name  { font-size: 13px; font-weight: 600; color: #0f172a; }
+  .comment-sub   { font-size: 11px; color: #94a3b8; font-weight: 400; margin-left: 4px; }
+  .comment-time  { font-size: 11px; color: #94a3b8; }
+  .comment-body  { font-size: 14px; color: #374151; line-height: 1.5; margin-bottom: 8px; }
+  .reactions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+  .reaction-pill {
+    font-size: 12px; padding: 2px 8px; border-radius: 12px;
+    border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
+  }
+  .reaction-pill.mine { border-color: #93c5fd; background: #eff6ff; }
+  .add-reaction-btn {
+    font-size: 13px; padding: 2px 8px; border-radius: 12px;
+    border: 1px solid #e2e8f0; background: #fff; cursor: pointer; color: #94a3b8;
+    font-family: inherit;
+  }
+  .comment-input {
+    width: 100%; font-size: 13px; font-family: inherit;
+    border: 1px solid #e2e8f0; border-radius: 6px;
+    padding: 10px; resize: vertical; min-height: 64px;
+    margin-top: 14px; color: #374151; background: #fff;
+  }
+  .comment-input:focus { outline: none; border-color: #93c5fd; }
+  .post-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .btn-post {
+    font-size: 13px; padding: 6px 16px;
+    background: #2563eb; color: #fff; border: none; border-radius: 6px;
+    cursor: pointer; font-family: inherit;
+  }
+  .post-hint { font-size: 11px; color: #94a3b8; }
+
+  /* ── Footer ── */
+  .footer {
+    display: flex; justify-content: space-between;
+    padding: 14px 0 0; margin-top: 8px;
+    font-size: 12px; color: #94a3b8;
+    border-top: 1px solid #e2e8f0;
+  }
+  .footer a { color: #2563eb; text-decoration: none; }
+
+  /* Annotation overlays for mockup */
+  .anno {
+    display: inline-block;
+    background: #fef9c3; border: 1px solid #fde68a;
+    font-size: 10px; color: #92400e; font-weight: 600;
+    padding: 1px 5px; border-radius: 3px;
+    margin-left: 6px; vertical-align: middle;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .change-note {
+    font-size: 11px; font-style: italic; color: #92400e;
+    background: #fef3c7; border-left: 3px solid #f59e0b;
+    padding: 6px 10px; border-radius: 3px; margin: 10px 0;
+    font-family: 'Inter', sans-serif;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Change summary banner -->
+  <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin:20px 0 0;font-size:12px;color:#78350f;line-height:1.6;">
+    <strong>Redesign mockup — key changes:</strong>
+    Chip strip now includes "Last updated" on the right. &nbsp;·&nbsp;
+    Meta info: type + related bills on one line with bullets, then last action, then sponsors. &nbsp;·&nbsp;
+    AI summary inline below sponsors (no nested box). &nbsp;·&nbsp;
+    Bill text: no emoji, collapsed row style. &nbsp;·&nbsp;
+    Hearings: past events grayed out. &nbsp;·&nbsp;
+    Documents: collapsed by default. &nbsp;·&nbsp;
+    All section headers unified: 11px / 600 / #94a3b8 / uppercase.
+    Private note: label only on the textarea container, not the card header.
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       TOP HEADER BLOCK
+  ═══════════════════════════════════════════ -->
+  <div class="header-block">
+
+    <!-- Chip strip -->
+    <div class="chip-strip">
+      <span class="badge badge-bill">HB 123</span>
+      <span class="badge badge-status">In Committee</span>
+      <span class="badge badge-session">2026 Session</span>
+
+      <div class="right">
+        <span class="updated-time">Last updated 41m ago</span>
+        <!-- priority select or badge -->
+        <span class="badge-priority">High</span>
+        <button class="btn-small danger">Delete bill</button>
+        <button class="btn-nav dim">←</button>
+        <button class="btn-nav">→</button>
+      </div>
+    </div>
+
+    <!-- Title -->
+    <h1 class="bill-title">Elections Modernization and Voter Registration Integrity Act of 2026</h1>
+
+    <!-- Meta line 1: bill type + cross-references + external link -->
+    <div class="meta-row">
+      <span>Assembly bill</span>
+      <span class="meta-sep">·</span>
+      <span>Carryover from 2024</span>
+      <span class="meta-sep">·</span>
+      <span>Same as <a href="#" style="color:#2563eb;text-decoration:none;">SB 456</a></span>
+      <span class="meta-sep">·</span>
+      <span>Related: <a href="#" style="color:#2563eb;text-decoration:none;">HB 89</a></span>
+      <span class="meta-sep" style="margin-left:4px;">·</span>
+      <a href="#" class="meta-link" style="margin-left:2px;">View on legislature ↗</a>
+    </div>
+
+    <!-- Meta line 2: last action -->
+    <div class="meta-row">
+      <span class="meta-label">Last action:</span>
+      <span>Referred to the Assembly Committee on State Government — <span style="color:#94a3b8">Jan 12, 2026</span></span>
+    </div>
+
+    <!-- Meta line 3: sponsors -->
+    <div class="meta-row" style="flex-wrap:wrap;">
+      <span class="meta-label" style="white-space:nowrap;flex-shrink:0;">Sponsors:</span>
+      <span style="white-space:nowrap;">
+        <a href="#" style="color:#2563eb;text-decoration:none;font-weight:600;">Assemblymember Sarah Chen</a><span class="party-d">D</span>
+      </span>
+      <span class="meta-sep" style="margin:0 4px;">·</span>
+      <span class="meta-label" style="white-space:nowrap;flex-shrink:0;">Co-sponsors:</span>
+      <span style="color:#64748b;white-space:nowrap;">
+        <a href="#" style="color:#2563eb;text-decoration:none;">Michael Torres</a><span class="party-r">R</span>,
+        <a href="#" style="color:#2563eb;text-decoration:none;">Diana Reyes</a><span class="party-d">D</span>,
+        <a href="#" style="color:#2563eb;text-decoration:none;">Kevin Park</a><span class="party-d">D</span>
+        <button style="margin-left:6px;font-size:11px;color:#2563eb;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline;font-family:inherit;">+4 more</button>
+      </span>
+    </div>
+
+    <hr class="divider">
+
+    <!-- AI Summary (inline, no nested box) -->
+    <div class="ai-area">
+      <div class="ai-header">
+        <span class="label">AI Summary</span>
+        <span class="relevance-chip">High relevance</span>
+      </div>
+      <p class="summary-text">
+        This bill modernizes voter registration procedures by establishing automatic registration at state agencies, creating an online portal for address updates, and requiring counties to use HAVA-compliant equipment. It also mandates post-election audits in all 21 counties, expands early voting to 15 days, and creates criminal penalties for voter roll interference.
+      </p>
+      <div class="tags">
+        <span class="tag">Election Administration</span>
+        <span class="tag">Voter Registration</span>
+        <span class="tag">Audits</span>
+        <span class="tag">Early Voting</span>
+        <span class="tag">HAVA</span>
+      </div>
+      <!-- admin only -->
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+        <button class="btn-small">Reprocess bill</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Bill text (collapsed, no emoji) -->
+    <div class="collapsible-row">
+      <span class="toggle-label">Bill text</span>
+      <span class="count-badge">3 versions</span>
+      <span class="toggle-arrow" style="margin-left:auto;">▼</span>
+    </div>
+
+    <!-- Hearings -->
+    <div class="hearings-section">
+      <div class="collapsible-row" style="cursor:default;border-top:1px solid #f1f5f9;padding-bottom:4px;">
+        <span class="toggle-label">Hearings</span>
+        <span class="count-badge">3</span>
+      </div>
+
+      <!-- Past hearing — grayed out -->
+      <div class="hearing-row past">
+        <span class="hearing-date">Dec 4, 2025</span>
+        <span class="hearing-desc">Committee Hearing — Assembly State Government</span>
+        <span class="hearing-loc">Room 101</span>
+      </div>
+      <!-- Past hearing — grayed out -->
+      <div class="hearing-row past">
+        <span class="hearing-date">Jan 8, 2026</span>
+        <span class="hearing-desc">Committee Hearing</span>
+        <span class="hearing-loc">Room 101</span>
+      </div>
+      <!-- Future hearing — full opacity -->
+      <div class="hearing-row">
+        <span class="hearing-date" style="color:#dc2626;">Apr 30, 2026</span>
+        <span class="hearing-desc">Floor Vote — Full Assembly</span>
+        <span class="hearing-loc">Chamber</span>
+      </div>
+    </div>
+
+    <!-- Documents (collapsed by default) -->
+    <div class="collapsible-row">
+      <span class="toggle-label">Documents</span>
+      <span class="count-badge">2 amendments · 1 fiscal note</span>
+      <span class="toggle-arrow" style="margin-left:auto;">▼</span>
+    </div>
+
+  </div><!-- /header-block -->
+
+
+  <!-- ═══════════════════════════════════════════
+       TWO-COLUMN BODY
+  ═══════════════════════════════════════════ -->
+  <div class="columns">
+
+    <!-- ── Left: Comments ── -->
+    <div class="col-left">
+      <div class="card">
+        <div class="label">Comments <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:#94a3b8;">(3)</span></div>
+
+        <!-- Comment 1 -->
+        <div class="comment">
+          <div class="comment-header">
+            <span class="comment-name">Sarah Mitchell<span class="comment-sub">Bergen County</span></span>
+            <span class="comment-time">2h ago</span>
+          </div>
+          <p class="comment-body">The automatic registration provision is excellent, but I'm concerned about the county implementation timeline. We'd need at least 18 months to update our systems.</p>
+          <div class="reactions">
+            <button class="reaction-pill mine">👍 3</button>
+            <button class="reaction-pill">💯 1</button>
+            <button class="add-reaction-btn">🙂 +</button>
+          </div>
+        </div>
+
+        <!-- Comment 2 -->
+        <div class="comment">
+          <div class="comment-header">
+            <span class="comment-name">James Okafor<span class="comment-sub">Essex County</span></span>
+            <span class="comment-time">Yesterday</span>
+          </div>
+          <p class="comment-body">We're tracking the audit mandate carefully — the HAVA equipment requirement may conflict with our current contracts. Flagging for legal review.</p>
+          <div class="reactions">
+            <button class="reaction-pill">🚨 2</button>
+            <button class="add-reaction-btn">🙂 +</button>
+          </div>
+        </div>
+
+        <!-- Comment 3 -->
+        <div class="comment">
+          <div class="comment-header">
+            <span class="comment-name">Priya Sharma<span class="comment-sub">Mercer County</span></span>
+            <span class="comment-time">3d ago</span>
+          </div>
+          <p class="comment-body">Section 14(c) on provisional ballots is a significant improvement over current law. Strong support from our office.</p>
+          <div class="reactions">
+            <button class="add-reaction-btn">🙂 +</button>
+          </div>
+        </div>
+
+        <textarea class="comment-input" placeholder="Add a comment…"></textarea>
+        <div class="post-row">
+          <button class="btn-post">Post comment</button>
+          <span class="post-hint">or ⌘↵</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right column ── -->
+    <div class="col-right">
+
+      <!-- Association Position -->
+      <div class="card">
+        <div class="label">Association position</div>
+        <div class="pos-badge">Support</div>
+        <div class="pos-meta">Set by Sarah Mitchell · 2d ago</div>
+      </div>
+
+      <!-- Member sentiment -->
+      <div class="card">
+        <div class="label">Member sentiment <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:#94a3b8;">(7 votes)</span></div>
+
+        <div class="bar-row">
+          <button class="bar-btn active-support">Support</button>
+          <div class="bar-track"><div class="bar-fill" style="width:57%;background:#22c55e;"></div></div>
+          <span class="bar-count">4</span>
+        </div>
+        <div class="bar-row">
+          <button class="bar-btn">Neutral</button>
+          <div class="bar-track"><div class="bar-fill" style="width:29%;background:#94a3b8;"></div></div>
+          <span class="bar-count">2</span>
+        </div>
+        <div class="bar-row" style="margin-bottom:0;">
+          <button class="bar-btn">Oppose</button>
+          <div class="bar-track"><div class="bar-fill" style="width:14%;background:#ef4444;"></div></div>
+          <span class="bar-count">1</span>
+        </div>
+
+        <!-- admin breakdown toggle -->
+        <button style="font-size:12px;color:#2563eb;background:none;border:none;cursor:pointer;padding:10px 0 0;display:block;font-family:inherit;">
+          ▼ View individual votes
+        </button>
+      </div>
+
+      <!-- Private note -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span class="label" style="margin-bottom:0;">Private note</span>
+          <span style="font-size:11px;color:#94a3b8;">only you</span>
+        </div>
+        <textarea class="note-textarea" placeholder="Write a private note…">Need to follow up with James re: HAVA contract issue before the floor vote. Also check if the organization has a position paper on automatic registration.</textarea>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <a href="#">← Back to bills</a>
+    <span>Source: LegiScan · Last synced 41m ago</span>
+  </div>
+
+</div>
+</body>
+</html>

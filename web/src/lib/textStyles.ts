@@ -1,0 +1,38 @@
+import type React from 'react'
+import { color, fontSize, fontWeight } from '../styles/tokens'
+
+export const SECTION_LABEL: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  fontWeight: fontWeight.semibold,
+  color: color.textMuted,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+}
+
+export const CHROME_TEXT: React.CSSProperties = {
+  fontSize: fontSize.xs,
+  color: color.textMuted,
+}
+
+// Title for a settings/account card section (e.g. "Profile", "Invite a new member").
+export const CARD_TITLE: React.CSSProperties = {
+  fontSize: fontSize.lg,
+  fontWeight: fontWeight.bold,
+  color: color.textPrimary,
+  marginBottom: 6,
+}
+
+// Label sitting above a form input (e.g. "Name", "Email(s)").
+export const FORM_LABEL: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  fontWeight: fontWeight.semibold,
+  color: color.textSlate,
+  display: 'block',
+  marginBottom: 4,
+}
+
+// Helper/hint text shown below an input or title.
+export const HELPER_TEXT: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  color: color.textMuted,
+}

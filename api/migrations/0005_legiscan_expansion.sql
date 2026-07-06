@@ -1,0 +1,10 @@
+ALTER TABLE bills ADD COLUMN bill_type TEXT;
+ALTER TABLE bills ADD COLUMN body TEXT;
+ALTER TABLE bills ADD COLUMN current_body TEXT;
+ALTER TABLE bills ADD COLUMN state_link TEXT;
+ALTER TABLE bills ADD COLUMN legiscan_url TEXT;
+ALTER TABLE bills ADD COLUMN committee TEXT;
+ALTER TABLE bills ADD COLUMN status_date TEXT;
+ALTER TABLE bills ADD COLUMN co_sponsors TEXT;
+ALTER TABLE bills ADD COLUMN vote_summary TEXT;
+ALTER TABLE bills ADD COLUMN subjects TEXT;

@@ -1,0 +1,32 @@
+# gitleaks configuration. Extends gitleaks' built-in default
+# rules and adds a narrow allowlist for KNOWN-SAFE committed fixtures so the CI
+# secret-scan gate doesn't false-positive on them.
+#
+# Real secrets never live in git here: `.dev.vars` and `.env.secrets` are
+# gitignored and all Worker secrets are set via `wrangler secret put`. The only
+# key-shaped material committed on purpose is a throwaway ES256 TEST keypair
+# used by the test suite. It is allowlisted below by exact values, so the
+# allowlist stays precise rather than blanket-ignoring whole paths.
+title = "floorvote gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe committed fixtures (no production value)"
+regexTarget = "match"
+regexes = [
+  # ES256 throwaway TEST keypair (api/test, api/vitest.config.mts) — all components.
+  '''goMnWG7NT0ErjBM6BH8a_rf1hUjMvLB3o3h4f5sE-aY''',  # test private `d`
+  '''jMeKJ1Tf0sgE37Rzg02ARwUKvJ2hF6Zy2gI3mluSjpg''',  # test `x`
+  '''vJ0-S0RvpYh3Z87ti61CrBjprBhpmiA4WujS6_Yb_lQ''',  # test `y`
+  # The production superadmin JWK public key is NOT committed in this repo.
+  # It goes in your wrangler.toml (gitignored) and is not secret, but is
+  # deployment-specific. Only the throwaway TEST keypair above is allowlisted.
+  # LegiScan API reference sample access_key (per-dataset download token, not a secret).
+  '''3Qd0kRszXtZuRloonDQx63''',
+]
+paths = [
+  '''.env.secrets''',
+  '''.dev.vars''',
+]

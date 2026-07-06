@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FloorVote — Sync Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #f5f6f8;
+      color: #1a1a2e;
+      padding: 32px;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    /* ── Controls ─────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .controls-label {
+      font-size: 11px;
+      color: #9ca3af;
+      font-weight: 500;
+    }
+    .btn {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 5px;
+      border: 1.5px solid #e2e8f0;
+      background: #fff;
+      color: #374151;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+    .btn.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+    /* ── Collapsible ─────────────────────────────────────── */
+    .collapsible-body {
+      overflow: hidden;
+      max-height: 3000px;
+      transition: max-height 0.3s ease, opacity 0.2s ease;
+      opacity: 1;
+    }
+    .collapsed > .collapsible-body { max-height: 0; opacity: 0; }
+    .collapsed > * > .collapsible-body { max-height: 0; opacity: 0; }
+
+    .collapsible-header {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .collapsible-header:hover .chevron { color: #374151; }
+
+    .chevron {
+      transition: transform 0.2s ease;
+      color: #9ca3af;
+      font-size: 10px;
+      line-height: 1;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .collapsed .chevron { transform: rotate(-90deg); }
+
+    /* one-liner shown when a box is collapsed */
+    .collapsed-summary {
+      display: none;
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 4px;
+      font-style: italic;
+      max-height: none;     /* override any inherited transition */
+    }
+    .collapsed > .collapsed-summary { display: block; }
+
+    /* ── Boxes ───────────────────────────────────────────── */
+    .box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      line-height: 1.45;
+    }
+    .box-title {
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .box-body {
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .box-body li {
+      margin-left: 14px;
+      margin-bottom: 3px;
+      list-style: disc;
+    }
+    .box-body .note {
+      font-size: 11px;
+      opacity: 0.75;
+      margin-top: 6px;
+      font-style: italic;
+    }
+
+    /* colour themes */
+    .theme-blue   { background: #dbeafe; border: 1.5px solid #3b82f6; }
+    .theme-blue .box-title { color: #1d4ed8; }
+    .theme-green  { background: #dcfce7; border: 1.5px solid #22c55e; }
+    .theme-green .box-title { color: #15803d; }
+    .theme-purple { background: #ede9fe; border: 1.5px solid #8b5cf6; }
+    .theme-purple .box-title { color: #6d28d9; }
+    .theme-orange { background: #ffedd5; border: 1.5px solid #f97316; }
+    .theme-orange .box-title { color: #c2410c; }
+    .theme-gray   { background: #f1f5f9; border: 1.5px solid #94a3b8; }
+    .theme-gray .box-title { color: #475569; }
+    .theme-teal   { background: #ccfbf1; border: 1.5px solid #14b8a6; }
+    .theme-teal .box-title { color: #0f766e; }
+
+    /* ── Step blocks ─────────────────────────────────────── */
+    .step {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+    .step-num {
+      font-size: 10px;
+      font-weight: 700;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-text { font-size: 12px; line-height: 1.4; }
+    .step-text strong { font-weight: 600; }
+    .step-text .dim { font-size: 11px; color: #9ca3af; }
+
+    /* ── Quota callout ───────────────────────────────────── */
+    .quota-callout {
+      font-size: 11px;
+      padding: 6px 10px;
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 5px;
+      margin-top: 8px;
+      margin-bottom: 6px;
+      color: #92400e;
+    }
+    .quota-callout strong { font-weight: 600; }
+
+    /* ── Stage connectors ────────────────────────────────── */
+    .stage-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 0;
+      gap: 12px;
+    }
+    .stage-connector-line { display: flex; flex-direction: column; align-items: center; }
+    .stage-connector-line .line { width: 1.5px; height: 20px; background: #cbd5e1; }
+    .stage-connector-line .head {
+      width: 0; height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 6px solid #cbd5e1;
+    }
+    .stage-connector-text { font-size: 10px; color: #9ca3af; }
+
+    /* ── Cron branches ───────────────────────────────────── */
+    .cron-branches {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .branch-wrap { display: flex; flex-direction: column; }
+    .branch-header {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 5px 8px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .branch-header:hover { opacity: 0.85; }
+    .branch-body {
+      overflow: hidden;
+      max-height: 600px;
+      transition: max-height 0.3s ease, opacity 0.2s ease;
+      opacity: 1;
+      margin-top: 4px;
+    }
+    .branch-wrap.collapsed .branch-body { max-height: 0; opacity: 0; }
+    .branch-wrap.collapsed .chevron { transform: rotate(-90deg); }
+
+    /* ── Big layout ──────────────────────────────────────── */
+    .outer {
+      display: grid;
+      grid-template-columns: 1fr 220px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .stages {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .stage {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      position: relative;
+    }
+
+    /* ── Badge ───────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .badge-blue   { background: #bfdbfe; color: #1e40af; }
+    .badge-green  { background: #bbf7d0; color: #166534; }
+    .badge-orange { background: #fed7aa; color: #9a3412; }
+
+    /* ── Right sidebar sub-sections ─────────────────────── */
+    .sub-section {
+      border-top: 1px solid rgba(0,0,0,0.08);
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+    .sub-section:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+    .sub-section-title {
+      font-weight: 600;
+      font-size: 12px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .sub-section-title:hover { opacity: 0.8; }
+    .sub-section-title .note-inline {
+      font-weight: 400;
+      font-size: 11px;
+      color: #6b7280;
+      margin-left: 4px;
+    }
+    .sub-section-body {
+      overflow: hidden;
+      max-height: 600px;
+      transition: max-height 0.25s ease, opacity 0.2s ease;
+      opacity: 1;
+    }
+    .sub-section.collapsed .sub-section-body { max-height: 0; opacity: 0; }
+    .sub-section.collapsed .chevron { transform: rotate(-90deg); }
+
+    /* ── Timing table ────────────────────────────────────── */
+    .timing-section { margin-top: 28px; }
+    .timing-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 0;
+      cursor: pointer;
+      user-select: none;
+      padding: 6px 0;
+    }
+    .timing-header h2 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #374151;
+    }
+    .timing-header:hover h2 { color: #1a1a2e; }
+    .timing-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .timing-table th {
+      text-align: left;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+      padding: 6px 8px;
+      border-bottom: 1.5px solid #e2e8f0;
+    }
+    .timing-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .timing-table tr:last-child td { border-bottom: none; }
+    .timing-table .event-col { color: #374151; font-weight: 500; }
+    .timing-table .latency-col { white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="page-header">
+  <div>
+    <h1>FloorVote — Sync Architecture</h1>
+    <p class="subtitle">How legislative data flows from LegiScan → central → tenants</p>
+  </div>
+  <div class="controls">
+    <span class="controls-label">Detail:</span>
+    <button class="btn active" id="btn-expand" onclick="expandAll()">Expand All</button>
+    <button class="btn" id="btn-collapse" onclick="collapseAll()">Collapse All</button>
+  </div>
+</div>
+
+<div class="outer">
+
+  <!-- ── LEFT: pipeline stages ── -->
+  <div class="stages">
+
+    <!-- ═══ STAGE 1: LegiScan ═══ -->
+    <div class="stage">
+      <div class="box theme-gray collapsible" style="flex:1">
+        <div class="box-title collapsible-header" onclick="toggle(this)">
+          🏛 LegiScan Pull API
+          <span class="chevron">▼</span>
+        </div>
+        <div class="collapsed-summary">Source of truth for 50 states + Congress. Four key endpoints.</div>
+        <div class="box-body collapsible-body">
+          Source of truth for all 50 states + US Congress.<br>
+          Updates bill data as state legislatures act; reflects changes in <code>change_hash</code>.
+          <ul style="margin-top:6px">
+            <li><strong>getMasterList</strong> — all bills with title + description (~400 KB)</li>
+            <li><strong>getMasterListRaw</strong> — all bills, hash only (~100 KB)</li>
+            <li><strong>getBill</strong> — single bill, full JSON (sponsors, history, votes, texts, roll calls…)</li>
+            <li><strong>getBillText</strong> — base64-encoded HTML or PDF, fetched from state legislature site</li>
+          </ul>
+          <div class="note">Only central calls LegiScan — tenant workers never call it directly. Quota: 30,000 calls/month.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-connector">
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+      <div class="stage-connector-text">every hour</div>
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+    </div>
+
+    <!-- ═══ STAGE 2: Central cron ═══ -->
+    <div class="stage">
+      <div class="box theme-blue collapsible" style="flex:1">
+        <div class="box-title collapsible-header" onclick="toggle(this)">
+          ⏰ Central Cron — fires every hour (<code>0 * * * *</code>)
+          <span class="chevron">▼</span>
+        </div>
+        <div class="collapsed-summary">Per-state keyword union → change detection or full sync depending on session age.</div>
+        <div class="collapsible-body">
+          <div class="box-body">
+            Determines <strong>tracked states</strong> = explicit non-wildcard <code>stateCoverage</code> + any state where an active tenant already has bills.<br>
+            Builds a <strong>per-state keyword union</strong> (only keywords from tenants that cover each state — prevents cross-state keyword pollution).<br>
+            For each tracked state, checks if any session is past its sync frequency:
+          </div>
+          <div class="cron-branches">
+            <!-- Branch A -->
+            <div class="branch-wrap">
+              <div class="branch-header" style="background:#dbeafe;color:#1d4ed8;" onclick="toggleBranch(this)">
+                Raw pass — default ET hours 7, 9, 11, 15, 17, 19, 21
+                <span class="chevron">▼</span>
+              </div>
+              <div class="branch-body">
+                <div class="box theme-blue" style="background:#eff6ff; border-style:dashed;">
+                  <div class="box-body">
+                    <div class="step" style="background:#dbeafe; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#3b82f6;color:#fff;">1</div>
+                      <div class="step-text"><strong>getMasterListRaw</strong> per active session<br><span class="dim">~100 KB • bill_id + change_hash only</span></div>
+                    </div>
+                    <div class="step" style="background:#dbeafe; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#3b82f6;color:#fff;">2</div>
+                      <div class="step-text">Compare hashes against central <code>bills</code> table; for new bills, insert with <code>change_hash=''</code> sentinel (not queued). The stored hash is advanced <strong>only for matched bills</strong> — unmatched (<code>match_type=null</code>) changed bills are left stale so the next full pass still detects them (advancing it here would hide the change from the full pass and swallow it).</div>
+                    </div>
+                    <div class="step" style="background:#dbeafe; border-radius:6px;">
+                      <div class="step-num" style="background:#3b82f6;color:#fff;">3</div>
+                      <div class="step-text"><strong>Queue to ingestor only:</strong> bills where <code>match_type ∈ {'keyword','manual'}</code> for at least one covering tenant AND the hash changed (the ingestor re-writes the hash via <code>getBill</code>). No <code>stubOnly</code> notifications — raw pass has no titles, so stubs go quiet until the next full pass picks up the (intentionally still-stale) hash.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Branch B -->
+            <div class="branch-wrap">
+              <div class="branch-header" style="background:#dcfce7;color:#15803d;" onclick="toggleBranch(this)">
+                Full pass — default ET hours 5, 13, 23
+                <span class="chevron">▼</span>
+              </div>
+              <div class="branch-body">
+                <div class="box theme-green" style="background:#f0fdf4; border-style:dashed;">
+                  <div class="box-body">
+                    <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#22c55e;color:#fff;">1</div>
+                      <div class="step-text"><strong>refreshStateSessions</strong> → <code>getSessionList</code> (once daily at 5 ET only)<br><span class="dim">Corrects sine_die, auto-discovers new sessions</span></div>
+                    </div>
+                    <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#22c55e;color:#fff;">2</div>
+                      <div class="step-text"><strong>getMasterList?id=&lt;sessionId&gt;</strong> → full list with title + description<br><span class="dim">Same LegiScan op as <code>getMasterList?state=</code>, called via the <code>getMasterListBySession</code> wrapper. ~400 KB per session.</span></div>
+                    </div>
+                    <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#22c55e;color:#fff;">3</div>
+                      <div class="step-text"><strong>Save to R2 cache</strong> at <code>sessions/{id}/masterlist.json</code><br><span class="dim">Used by keyword-resync for instant matching without an API call</span></div>
+                    </div>
+                    <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
+                      <div class="step-num" style="background:#22c55e;color:#fff;">4</div>
+                      <div class="step-text"><strong>Keyword match</strong> title + description against per-tenant union<br><span class="dim">Matching → <code>bill_tenants.match_type='keyword'</code>; non-matching → <code>match_type=null</code> stub link (still tracked metadata-wise, no AI).</span></div>
+                    </div>
+                    <div class="step" style="background:#dcfce7; border-radius:6px;">
+                      <div class="step-num" style="background:#22c55e;color:#fff;">5</div>
+                      <div class="step-text"><strong>Dispatch:</strong> writes new <code>change_hash</code> + masterlist fields to central <code>bills</code> table, then:
+                        <ul style="margin-left:14px; margin-top:4px;">
+                          <li><strong>→ ingestor queue</strong> (will fire <code>getBill</code>): newly-matched bills, OR matched bills with changed hash.</li>
+                          <li><strong>→ tenant queue directly</strong> (no API): <code>stubOnly</code> messages for <code>match_type=null</code> links whose hash changed, so tenant refreshes denormalized status/last_action.</li>
+                          <li><strong>Nothing</strong>: unchanged bills, or never-matched bills that still don't match.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div><!-- /cron-branches -->
+          <div style="margin-top:10px; padding:8px; background:#eff6ff; border-radius:6px; font-size:11px; border:1px dashed #3b82f6;">
+            <strong>API gate:</strong> the cron is the only thing that controls <code>getBill</code> spend. A bill triggers a <code>getBill</code> call only when it is keyword- or manually-tracked by at least one covering tenant AND its <code>change_hash</code> moved (or it just newly matched). Unmatched changes update central state but never reach the ingestor.
+          </div>
+        </div><!-- /collapsible-body -->
+      </div>
+    </div>
+
+    <div class="stage-connector">
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+      <div class="stage-connector-text">→ ingestor queue (central-ingestor, batches of 5)</div>
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+    </div>
+
+    <!-- ═══ STAGE 3: Ingestor queue ═══ -->
+    <div class="stage">
+      <div class="box theme-purple collapsible" style="flex:1">
+        <div class="box-title collapsible-header" onclick="toggle(this)">
+          ⚙️ Central Ingestor Queue — <code>central-ingestor</code>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="collapsed-summary">getBill + persist child tables + store text in R2 → notify tenant queues.</div>
+        <div class="collapsible-body">
+          <div class="quota-callout">
+            <strong>⚠ API quota:</strong> each non-skipFetch message triggers one <code>getBill()</code> call — 30,000 calls/month total. <strong>The cron (Stage 2) is the API gate</strong>: it only queues bills whose <code>change_hash</code> moved, so unchanged bills never reach the ingestor. <strong>reprocess</strong> bypasses the ingestor entirely (zero calls); <strong>redownload-texts</strong> uses <code>skipFetch: true</code>.
+          </div>
+          <div class="box-body">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">
+              <div>
+                <div class="step" style="background:#ede9fe; border-radius:6px; margin-bottom:4px;">
+                  <div class="step-num" style="background:#8b5cf6;color:#fff;">1</div>
+                  <div class="step-text"><strong>skipFetch branch</strong>: if message has <code>skipFetch: true</code> (bulk seed, redownload-texts) → download any missing texts from state legislature, skip <code>getBill</code>, jump to step 4.<br><span class="dim">All other messages fall through to step 2.</span></div>
+                </div>
+                <div class="step" style="background:#ede9fe; border-radius:6px; margin-bottom:4px;">
+                  <div class="step-num" style="background:#8b5cf6;color:#fff;">2</div>
+                  <div class="step-text"><strong>getBill</strong> from LegiScan — always, for non-skipFetch messages.<br><span class="dim">Full JSON: bill row + sponsors, history, votes, texts, supplements, amendments, calendar, subjects, SASTSs…</span></div>
+                </div>
+              </div>
+              <div>
+                <div class="step" style="background:#ede9fe; border-radius:6px; margin-bottom:4px;">
+                  <div class="step-num" style="background:#8b5cf6;color:#fff;">3</div>
+                  <div class="step-text"><strong>Unified persist to D1 + R2</strong>: snapshot existing child rows → run <code>detectChanges</code> → write <code>bill_change_log</code> rows for each diff → upsert <code>bills</code> row → delete+reinsert <code>bill_history</code> / <code>bill_sponsors</code> / <code>bill_sasts</code> / <code>bill_subjects</code> / <code>bill_calendar</code> / <code>bill_referrals</code> → upsert <code>bill_texts</code> / <code>bill_supplements</code> / <code>bill_amendments</code> / <code>roll_calls</code> → download any new text versions to <code>bills/legiscan-{billId}/texts/{docId}.{ext}</code> → stamp <code>texts_fetched_at</code> → derive <code>text_status</code>.<br><span class="dim">Single path — no fast/full bifurcation. Heals missing R2 text on every ingest.</span></div>
+                </div>
+                <div class="step" style="background:#ede9fe; border-radius:6px;">
+                  <div class="step-num" style="background:#8b5cf6;color:#fff;">4</div>
+                  <div class="step-text"><strong>notifyTenants</strong>: read bill_tenants → send {tenantId, billId, <strong>text_status</strong>, match_type, changes} to each tenant queue.<br><span class="dim">Marks notifiedAt.</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px; padding:8px; background:#ede9fe; border-radius:6px; font-size:11px;">
+              <strong>Note:</strong> per-legislator vote rows (<code>roll_call_votes</code>) are NOT written by this path — <code>getBill</code> returns summaries only. Bulk-seeded bills have them; live-ingested bills do not.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-connector">
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+      <div class="stage-connector-text">→ per-tenant queue (floorvote-{id}-queue)</div>
+      <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
+    </div>
+
+    <!-- ═══ STAGE 4: Tenant queue ═══ -->
+    <div class="stage">
+      <div class="box theme-orange collapsible" style="flex:1">
+        <div class="box-title collapsible-header" onclick="toggle(this)">
+          🏢 Tenant Queue + Worker — one per org
+          <span class="chevron">▼</span>
+        </div>
+        <div class="collapsed-summary">Fetch bill + text → AI (if keyword/manual match + text available) → upsert to tenant D1.</div>
+        <div class="collapsible-body">
+          <div class="box-body">
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:4px;">
+              <div class="step" style="background:#ffedd5; border-radius:6px;">
+                <div class="step-num" style="background:#f97316;color:#fff;">1</div>
+                <div class="step-text"><strong>Fetch bill</strong> from central<br><code>GET /bills/{id}</code><br><span class="dim">Metadata + fullJson + match_type + text_status</span></div>
+              </div>
+              <div class="step" style="background:#ffedd5; border-radius:6px;">
+                <div class="step-num" style="background:#f97316;color:#fff;">2</div>
+                <div class="step-text"><strong>Fetch text</strong> from central<br><code>GET /bills/{id}/text</code><br><span class="dim">HTML or PDF from R2 — only if text_status is 'available' or 'in_r2'</span></div>
+              </div>
+              <div class="step" style="background:#ffedd5; border-radius:6px;">
+                <div class="step-num" style="background:#f97316;color:#fff;">3</div>
+                <div class="step-text"><strong>AI processing</strong><br>One-pass: summary + tags + relevance<br><span class="dim">Only when match_type IN ('keyword', 'manual') <em>and</em> text confirmed available. Bills with <code>text_status='no_texts'</code> wait for LegiScan to publish text.</span></div>
+              </div>
+            </div>
+            <div style="margin-top:8px; padding:8px; background:#ffedd5; border-radius:6px; font-size:11px;">
+              Result upserted into tenant D1 → visible in UI. Three independent concepts: <strong>match_type</strong> (keyword / manual / null), <strong>text_status</strong> (not_checked / available / no_texts / in_r2), <strong>ai_processed_at</strong>. Feed events emitted for status/text/action changes. <code>change_hash</code> dedup prevents redundant AI re-runs.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /stages -->
+
+  <!-- ── RIGHT: manual triggers + storage ── -->
+  <div style="display:flex; flex-direction:column; gap:16px;">
+
+    <div class="box theme-teal">
+      <div class="box-title">🖱 Manual Triggers</div>
+      <div class="box-body">
+
+        <div class="sub-section">
+          <div class="sub-section-title" onclick="toggleSub(this)">
+            Add Bill (by number)
+            <span class="chevron">▼</span>
+          </div>
+          <div class="sub-section-body">
+            <ol style="margin-left:14px; font-size:11px; line-height:1.5; margin-top:2px;">
+              <li>Tenant → <code>POST central/admin/ingest-bill</code></li>
+              <li>Central: getBill + store text in R2</li>
+              <li>Tenant creates bill_tenants entry (<code>match_type='manual'</code>)</li>
+              <li>Tenant queue runs AI</li>
+            </ol>
+            <div class="note" style="font-size:10px; margin-top:3px;">Manual bills are never demoted or removed by keyword-resync.</div>
+          </div>
+        </div>
+
+        <div class="sub-section">
+          <div class="sub-section-title" onclick="toggleSub(this)">
+            Sync Bill Tracker<span class="note-inline">(auto on keyword save)</span>
+            <span class="chevron">▼</span>
+          </div>
+          <div class="sub-section-body">
+            <div style="font-size:11px; font-weight:600; color:#0f766e; margin-bottom:2px; margin-top:2px;">Cleanup pass (remove old)</div>
+            <ol style="margin-left:14px; font-size:11px; line-height:1.5; margin-bottom:6px;">
+              <li>Find keyword bills that no longer match any keyword</li>
+              <li>If engaged (votes/comments) → promote to <code>match_type='manual'</code></li>
+              <li>If unengaged → demote to <code>match_type=null</code> (lightweight stub)</li>
+            </ol>
+            <div style="font-size:11px; font-weight:600; color:#0f766e; margin-bottom:2px;">Forward pass (add new)</div>
+            <ol style="margin-left:14px; font-size:11px; line-height:1.5;">
+              <li><code>POST central/admin/keyword-resync-tenant</code></li>
+              <li>Central scans bills table + R2 masterlist cache</li>
+              <li>New matches → bill_tenants + ingestor queue → AI</li>
+            </ol>
+            <div class="note" style="font-size:10px; margin-top:3px;">R2 cache catches bills never previously fetched. Warm after first full sync (~24h of tracking a state).</div>
+          </div>
+        </div>
+
+        <div class="sub-section">
+          <div class="sub-section-title" onclick="toggleSub(this)">
+            Admin: Reprocess / Redownload
+            <span class="chevron">▼</span>
+          </div>
+          <div class="sub-section-body" style="font-size:11px; line-height:1.6; margin-top:2px;">
+            <strong>Reprocess</strong>: re-queues every linked bill directly to the tenant queue. Zero LegiScan API calls — re-runs AI from existing data.<br><br>
+            <strong>Redownload texts</strong>: sends linked bills to ingestor with <code>skipFetch: true</code> — downloads text from the legislature site, no <code>getBill()</code> (zero API quota). Use to heal missing bill text.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="box theme-gray collapsible">
+      <div class="box-title collapsible-header" onclick="toggle(this)">
+        🗄 Storage
+        <span class="chevron">▼</span>
+      </div>
+      <div class="collapsed-summary">Central R2 + D1 (central-bills-ls) and one D1 per tenant.</div>
+      <div class="box-body collapsible-body" style="margin-top:6px; font-size:11px; line-height:1.7;">
+        <strong>Central R2</strong> (<code>central-bill-texts</code>)<br>
+        &nbsp;• <code>bills/{id}/{docId}.html|pdf</code> — bill text<br>
+        &nbsp;• <code>sessions/{id}/masterlist.json</code> — masterlist cache<br><br>
+        <strong>Central D1</strong> (<code>central-bills-ls</code>, LegiScan env)<br>
+        &nbsp;Core: <code>sessions</code>, <code>bills</code>, <code>bill_tenants</code>, <code>tenants</code>, <code>keyword_registry</code><br>
+        &nbsp;Rich: <code>people</code>, <code>committees</code>, <code>roll_calls</code>, <code>bill_sponsors</code>, <code>bill_history</code>, <code>bill_texts</code>, <code>bill_amendments</code>, <code>bill_change_log</code>, <code>session_sync_log</code>, <code>api_call_log</code><br><br>
+        <strong>Tenant D1</strong> (<code>floorvote-{id}</code>, one per org)<br>
+        &nbsp;• <code>bills</code>: match_type · text_status · ai_processed_at<br>
+        &nbsp;• AI results, engagement (votes, comments, notes, positions)
+      </div>
+    </div>
+
+  </div><!-- /right sidebar -->
+
+</div><!-- /outer -->
+
+<!-- ── Timing table ── -->
+<div class="timing-section collapsible">
+  <div class="timing-header collapsible-header" onclick="toggle(this)">
+    <h2>End-to-End Latency</h2>
+    <span class="chevron" style="font-size:12px; margin-left:8px;">▼</span>
+  </div>
+  <div class="collapsible-body">
+    <table class="timing-table">
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>Mechanism</th>
+          <th class="latency-col">Latency</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="event-col">New bill introduced in LegiScan</td>
+          <td>Next full sync discovers it via getMasterList + keyword match</td>
+          <td><span class="badge badge-orange">up to 24h</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Tracked bill gets status/text update</td>
+          <td>Hourly change check (getMasterListRaw) detects changed hash → ingestor</td>
+          <td><span class="badge badge-blue">≤ 1h</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Bill with no text → text published by LegiScan</td>
+          <td>Hash changes → ingestor fetches text → AI runs automatically</td>
+          <td><span class="badge badge-blue">≤ 1h</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Keywords updated → remove old bills</td>
+          <td>keyword-resync cleanup pass runs synchronously on save</td>
+          <td><span class="badge badge-green">immediate</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Keywords updated → add bills (in central DB)</td>
+          <td>keyword-resync scans central bills table</td>
+          <td><span class="badge badge-green">immediate</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Keywords updated → add bills (never fetched)</td>
+          <td>keyword-resync scans R2 masterlist cache (populated by first full sync)</td>
+          <td><span class="badge badge-green">immediate</span> <span style="font-size:11px;color:#9ca3af">if cache warm, else up to 24h</span></td>
+        </tr>
+        <tr>
+          <td class="event-col">Manual "Add bill" by number</td>
+          <td>ingest-bill → ingestor → tenant queue → AI</td>
+          <td><span class="badge badge-green">1–3 min</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  function toggle(header) {
+    header.closest('.collapsible').classList.toggle('collapsed');
+    syncButtons();
+  }
+
+  function toggleBranch(header) {
+    header.closest('.branch-wrap').classList.toggle('collapsed');
+  }
+
+  function toggleSub(title) {
+    title.closest('.sub-section').classList.toggle('collapsed');
+  }
+
+  function expandAll() {
+    document.querySelectorAll('.collapsible').forEach(el => el.classList.remove('collapsed'));
+    document.querySelectorAll('.branch-wrap').forEach(el => el.classList.remove('collapsed'));
+    document.querySelectorAll('.sub-section').forEach(el => el.classList.remove('collapsed'));
+    syncButtons();
+  }
+
+  function collapseAll() {
+    document.querySelectorAll('.collapsible').forEach(el => el.classList.add('collapsed'));
+    document.querySelectorAll('.branch-wrap').forEach(el => el.classList.add('collapsed'));
+    document.querySelectorAll('.sub-section').forEach(el => el.classList.add('collapsed'));
+    syncButtons();
+  }
+
+  function syncButtons() {
+    const anyCollapsed = document.querySelector('.collapsible.collapsed') !== null;
+    document.getElementById('btn-expand').classList.toggle('active', !anyCollapsed);
+    document.getElementById('btn-collapse').classList.toggle('active', anyCollapsed);
+  }
+</script>
+</body>
+</html>

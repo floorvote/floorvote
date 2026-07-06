@@ -1,0 +1,115 @@
+# central/wrangler.example.toml — example configuration for the central worker.
+# Copy to central/wrangler.toml and fill in your resource IDs.
+#
+# The central worker supports two legislative data providers:
+#   - OpenStates (default env) — open data, good for self-hosting
+#   - LegiScan  ([env.legiscan]) — commercial API, richer data
+# Deploy one or both depending on your needs.
+
+# ── OpenStates central (default env) ─────────────────────────────────────────
+name = "floorvote-central"
+main = "src/index.ts"
+compatibility_date = "2026-06-18"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[d1_databases]]
+binding = "DB"
+database_name = "central-bills"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BILLS_BUCKET"
+bucket_name = "central-bill-texts"
+
+[[queues.producers]]
+binding = "INGESTOR_QUEUE"
+queue = "central-ingestor"
+
+[[queues.consumers]]
+queue = "central-ingestor"
+max_batch_size = 5
+max_batch_timeout = 30
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+OPERATOR_NAME = "Your Org"
+BILL_PROVIDER = "openstates"
+EMAIL_PROVIDER = "cloudflare"
+# ADMIN_APP_URL = "https://admin.example.com"       # base URL for admin dashboard magic-link emails
+# EMAIL_FROM = "notifications@example.com"           # sender address for admin email
+# ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients
+# CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # for D1 anomaly watch analytics
+# SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
+
+[[send_email]]
+name = "EMAIL"
+
+# Secrets (set via `wrangler secret put`):
+# OPENSTATES_API_KEY    — OpenStates bill data
+# ADMIN_SECRET          — protects /admin/* and /tenants/* routes
+# RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)
+# SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
+# SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
+# CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)
+
+# ── LegiScan central (alternative provider) ──────────────────────────────────
+# Uncomment and fill in to use LegiScan instead of (or alongside) OpenStates.
+#
+# [env.legiscan]
+# main = "src/index-legiscan.ts"
+# # routes = [{ pattern = "admin.example.com", custom_domain = true }]
+# # workers_dev = true
+#
+# [[env.legiscan.d1_databases]]
+# binding = "DB"
+# database_name = "central-bills-ls"
+# database_id = "REPLACE_WITH_D1_DATABASE_ID"
+# migrations_dir = "migrations-legiscan"
+#
+# [[env.legiscan.r2_buckets]]
+# binding = "BILLS_BUCKET"
+# bucket_name = "central-bill-texts-ls"
+#
+# [[env.legiscan.queues.producers]]
+# binding = "INGESTOR_QUEUE"
+# queue = "central-legiscan-ingestor"
+#
+# [[env.legiscan.queues.consumers]]
+# queue = "central-legiscan-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+#
+# # Per-tenant queue bindings (optional — without these, central uses HTTP publish
+# # via CF_QUEUES_TOKEN if set, which requires no central redeploy per new tenant):
+# # [[env.legiscan.queues.producers]]
+# # binding = "TENANT_QUEUE_MY_ORG"
+# # queue = "floorvote-my-org-queue"
+#
+# # Per-tenant service bindings for central→tenant RPC:
+# # [[env.legiscan.services]]
+# # binding = "TENANT_MY_ORG"
+# # service = "floorvote-my-org"
+# # entrypoint = "CentralApi"
+#
+# [env.legiscan.vars]
+# OPERATOR_NAME = "Your Org"
+# BILL_PROVIDER = "legiscan"
+# EMAIL_PROVIDER = "cloudflare"
+# # ADMIN_APP_URL = "https://admin.example.com"
+#
+# [env.legiscan.triggers]
+# crons = ["0 * * * *"]
+#
+# [[env.legiscan.send_email]]
+# name = "EMAIL"
+#
+# # Additional secrets for LegiScan env (set via `wrangler secret put --env legiscan`):
+# # LEGISCAN_API_KEY      — LegiScan bill data
+# # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery

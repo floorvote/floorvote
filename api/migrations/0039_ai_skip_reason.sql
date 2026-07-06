@@ -1,0 +1,19 @@
+-- Add a permanent-failure flag for AI processing, paired with `ai_processed_at`.
+--
+-- Canonical state semantics for AI on a bill row:
+--   ai_processed_at IS NULL AND ai_skip_reason IS NULL  -> AI not yet attempted
+--   ai_processed_at IS NOT NULL                         -> AI succeeded at that time
+--   ai_skip_reason  IS NOT NULL                         -> AI permanently skipped for this text
+--
+-- Set by the tenant queue processor when the AI provider rejects the input
+-- in a non-retryable way (e.g. Gemini's 1000-page PDF limit). Cleared on
+-- the next successful AI run (which can happen when the text changes, the
+-- provider's limits change, or an admin forces a re-run).
+--
+-- Current reasons:
+--   'pdf_too_large'  -> Gemini returned INVALID_ARGUMENT / page limit
+--
+-- The column is text (not enum) so adding new reasons later doesn't require
+-- another migration.
+
+ALTER TABLE bills ADD COLUMN ai_skip_reason TEXT;

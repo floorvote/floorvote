@@ -1,0 +1,25 @@
+{
+  "name": "floorvote",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w api\" \"npm run dev -w web\"",
+    "dev:local": "bash scripts/dev-local.sh",
+    "gen:email-icons": "tsx scripts/gen-email-icons.ts",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "devDependencies": {
+    "@material-symbols/svg-400": "^0.45.4",
+    "@resvg/resvg-js": "^2.6.2",
+    "concurrently": "^10.0.3",
+    "fflate": "^0.8.3",
+    "tsx": "^4.22.4",
+    "vitepress": "^1.6.4"
+  }
+}

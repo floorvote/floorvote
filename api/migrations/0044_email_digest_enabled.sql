@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN email_digest_enabled INTEGER NOT NULL DEFAULT 1;

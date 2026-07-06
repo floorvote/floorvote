@@ -1,0 +1,28 @@
+{
+  "name": "floorvote-api",
+  "private": true,
+  "scripts": {
+    "predev": "rm -rf ../web/dist && mkdir -p ../web/dist",
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --max-warnings 0",
+    "migrate:local": "wrangler d1 migrations apply floorvote-dev --local --env dev",
+    "migrate:remote": "wrangler d1 migrations apply floorvote-dev --env dev",
+    "deploy:tenant": "bash deploy.sh"
+  },
+  "dependencies": {
+    "@google/genai": "^2.10.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.12.27"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.20",
+    "@cloudflare/workers-types": "^4.20260629.1",
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.105.0"
+  }
+}

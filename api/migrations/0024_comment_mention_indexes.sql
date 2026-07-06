@@ -1,0 +1,1 @@
+-- No-op: indexes already created in 0023_comment_mentions.sql

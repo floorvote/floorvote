@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Scan staged changes for secrets before committing
+if command -v gitleaks &> /dev/null; then
+  gitleaks protect --staged --no-banner
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ gitleaks found secrets in staged changes. Commit blocked."
+    echo "If this is a false positive, add the fingerprint to .gitleaksignore"
+    exit 1
+  fi
+fi

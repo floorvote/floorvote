@@ -1,0 +1,19 @@
+:root {
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --muted: #64748b;
+  --accent: #1e3a5f;
+  --warning: #f59e0b;
+  --danger: #dc2626;
+  --success: #16a34a;
+  --border: #e2e8f0;
+  --card: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.row-stale { background: #fef2f2; }

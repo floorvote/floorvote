@@ -1,0 +1,36 @@
+node_modules/
+node_modules
+dist/
+.wrangler/
+.dev.vars
+*.local
+.env
+.env.secrets
+.DS_Store
+tsconfig.tsbuildinfo
+
+# Real wrangler config (contains account IDs, database IDs, custom domains).
+# Ship *.example.toml only; copy to wrangler.toml and fill in your values.
+api/wrangler.toml
+central/wrangler.toml
+
+# VitePress build output
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# Claude Code personal overrides (settings.json and launch.json are shared)
+.claude/settings.local.json
+.claude/worktrees/
+
+# Git worktrees
+.worktrees/
+
+# graphify: track graph.json and GRAPH_REPORT.md (nightly CI regenerates).
+# Ignore everything else (build cache, HTML viewer, backups).
+graphify-out/graph.html
+graphify-out/cost.json
+graphify-out/.graphify_python
+graphify-out/.graphify_root
+graphify-out/cache/
+graphify-out/wiki/
+graphify-out/20*/

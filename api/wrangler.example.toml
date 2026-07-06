@@ -1,0 +1,125 @@
+# api/wrangler.example.toml — example single-tenant configuration.
+# Copy to api/wrangler.toml, add your [env.<slug>] block, and deploy:
+#   npm run deploy:tenant -- <slug>
+#
+# wrangler never auto-discovers *.example.toml — this file is pure documentation.
+
+# ── Shared top-level config (inherited by all envs) ──────────────────────────
+name = "floorvote-api"
+main = "src/index.ts"
+compatibility_date = "2026-06-18"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[build]
+[build.alias]
+"@google/genai" = "../node_modules/@google/genai/dist/web/index.mjs"
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# ── Local dev env ────────────────────────────────────────────────────────────
+[env.dev]
+name = "floorvote-dev"
+
+[env.dev.vars]
+APP_URL = "http://localhost:5173"
+ASSOCIATION_NAME = "Dev Association"
+STATE = "NJ"
+TENANT_ID = "dev"
+CENTRAL_API_URL = "http://localhost:8788"
+PROVIDER = "legiscan"
+# AI_GATEWAY_ENABLED = "true"
+# CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
+# CF_AIG_GATEWAY = "your-gateway-slug"
+
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "floorvote-dev"
+database_id = "REPLACE_WITH_DEV_DB_ID"
+migrations_dir = "migrations"
+
+[[env.dev.queues.producers]]
+binding = "BILL_QUEUE"
+queue = "floorvote-dev-queue"
+
+[[env.dev.queues.consumers]]
+queue = "floorvote-dev-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+
+[[env.dev.send_email]]
+name = "EMAIL"
+
+[[env.dev.ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "2099"
+  [env.dev.ratelimits.simple]
+  limit = 10
+  period = 60
+
+# ── Example production tenant ────────────────────────────────────────────────
+# Copy this block, replace "example" with your org slug, and fill in IDs.
+
+[env.example]
+name = "floorvote-example"
+routes = [{ pattern = "app.example.com", custom_domain = true }]
+
+[env.example.vars]
+APP_URL = "https://app.example.com"
+TENANT_ID = "example"
+CENTRAL_API_URL = "https://your-central.your-subdomain.workers.dev"
+PROVIDER = "legiscan"                            # "legiscan" or "openstates"
+STATE = "NJ"                                      # 2-letter state; "" for multi-state
+APP_DOMAINS = "example.com"
+EMAIL_FROM = "notifications@example.com"
+EMAIL_PROVIDER = "cloudflare"                     # "cloudflare" or "resend"
+SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
+# OPERATOR_NAME = "Your Org"
+# OPERATOR_URL = "https://yourorg.example.com"
+# OPERATOR_CONTACT_EMAILS = "feedback@example.com"
+# AI_GATEWAY_ENABLED = "true"
+# CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
+# CF_AIG_GATEWAY = "your-gateway-slug"
+# ALERT_EMAILS = "ops@example.com"
+
+[[env.example.d1_databases]]
+binding = "DB"
+database_name = "floorvote-example"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[[env.example.queues.producers]]
+binding = "BILL_QUEUE"
+queue = "floorvote-example-queue"
+
+[[env.example.queues.consumers]]
+queue = "floorvote-example-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+
+[[env.example.services]]
+binding = "CENTRAL"
+service = "floorvote-central"       # or your central worker name
+entrypoint = "TenantApi"
+
+[[env.example.send_email]]
+name = "EMAIL"
+
+[[env.example.ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "3001"               # unique per env
+  [env.example.ratelimits.simple]
+  limit = 10
+  period = 60
+
+# Secrets (set via `wrangler secret put --env example`):
+# RESEND_API_KEY           — magic-link email (if EMAIL_PROVIDER=resend)
+# GEMINI_API_KEY           — Google Gemini AI (fallback when AI_GATEWAY_ENABLED != true)
+# CF_AIG_TOKEN             — Cloudflare AI Gateway auth token (when AI_GATEWAY_ENABLED=true)
+# CENTRAL_ADMIN_SECRET     — required until migrated to CentralApi RPC binding

@@ -1,0 +1,75 @@
+name: Deploy (manual)
+
+# Manually-triggered deploy for tenant or central workers.
+# Run from the Actions tab → "Deploy (manual)" → Run workflow, pick a target.
+#
+# SETUP (one-time):
+#   1. Create a Cloudflare API token (Account → Workers Scripts:Edit,
+#      D1:Edit, Queues:Edit). Add it as the repo secret CLOUDFLARE_API_TOKEN.
+#   2. (Recommended) Create a GitHub Environment named "production" with
+#      required reviewers, and uncomment the `environment:` line below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "What to deploy"
+        type: choice
+        options:
+          - tenant
+          - central
+          - central-legiscan
+        required: true
+      tenant:
+        description: "Tenant env name (only when target = tenant)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.target }}-${{ inputs.tenant }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Uncomment to gate deploys on approval via a GitHub Environment:
+    # environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Require Cloudflare token
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN repo secret is not set — add a scoped token before deploying."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          case "${{ inputs.target }}" in
+            central|central-legiscan) cd central && npm ci ;;
+            *) npm ci ;;
+          esac
+
+      - name: Deploy
+        run: |
+          set -euo pipefail
+          case "${{ inputs.target }}" in
+            tenant)
+              t="${{ inputs.tenant }}"
+              if [ -z "$t" ]; then echo "::error::'tenant' input is required when target = tenant"; exit 1; fi
+              cd api && npm run deploy:tenant -- "$t" ;;
+            central)         cd central && npm run deploy ;;
+            central-legiscan) cd central && npm run deploy:legiscan ;;
+            *) echo "::error::unknown target ${{ inputs.target }}"; exit 1 ;;
+          esac

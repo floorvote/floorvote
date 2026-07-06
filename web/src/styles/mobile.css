@@ -1,0 +1,465 @@
+/* web/src/styles/mobile.css */
+
+/* The app shell fills the viewport and scrolls internally (via .app-main); the
+   document itself must never scroll. Using 100vh would make the shell taller
+   than the *visual* viewport on mobile (the dynamic browser URL bar), so the
+   document becomes scrollable — which lets the fixed top bar scroll off-screen
+   (Calendar's scroll-to-today) and leaves pages nudged down on load. 100dvh
+   sizes the shell to the current visual viewport so there's no document
+   overflow on any page; 100vh is the fallback for browsers without dvh. */
+.app-layout {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* In-app navigation (e.g. opening a bill from the list) shows a wait cursor
+   until the prefetch resolves. Setting document.body.style.cursor alone loses
+   to elements that declare their own cursor — bill rows use cursor: pointer —
+   so the hand stays put over the table and the wait cursor only appears once
+   the pointer leaves the row. Key off a body class and override every
+   descendant with !important so the wait cursor wins everywhere immediately. */
+body.nav-pending,
+body.nav-pending * { cursor: wait !important; }
+
+/* Ambient top progress bar for in-app navigation (NavProgressBar in App.tsx
+   drives transform/opacity/transition per phase). The wait cursor is invisible
+   on touch, so this gives feedback during the prefetch window. A bright color +
+   3px height keep it legible where it crosses the navy sidebar / mobile top bar
+   as well as the light main area. */
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  transform-origin: left center;
+  background: #60a5fa;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Seamless slide of a repeating-linear-gradient(45deg) with 16px period.
+   22.627px = 16 * sqrt(2), so the perpendicular shift is exactly one period. */
+@keyframes stripe-slide { to { background-position: 22.627px 0; } }
+
+/* "Analyzing" box — used in BillDetail for lightweight bills.
+   The stripe layer extends 23px past the visible left edge (ceil(16 * sqrt(2)))
+   so the gradient's 0% origin sits in the clipped region, hiding the wedge-growth
+   artifact that's otherwise visible as a "seam" at the left edge during animation. */
+.analyzing-box {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: white;
+  padding: 12px 16px;
+  margin-top: 14px;
+}
+
+.analyzing-box__stripes {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: -23px;
+  background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #f1f5f9 8px, #f1f5f9 16px);
+  pointer-events: none;
+}
+
+.analyzing-box__stripes--animated {
+  animation: stripe-slide 0.8s linear infinite;
+}
+
+.analyzing-box__content { position: relative; }
+
+.blue-link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.blue-link:hover {
+  text-decoration: underline;
+}
+
+/* Settings tab bar scrolls horizontally on narrow screens (see SettingsNav);
+   hide the scrollbar so the tab row stays clean. No-op on wide screens where
+   the tabs fit and nothing scrolls. */
+.settings-nav {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.settings-nav::-webkit-scrollbar {
+  display: none;
+}
+
+/* MobileTopBar: hidden on desktop, shown on mobile */
+.mobile-topbar {
+  display: none;
+}
+
+/* Sidebar overlay: hidden always on desktop */
+.sidebar-overlay {
+  display: none;
+}
+
+/* Hide mobile filter button on desktop */
+.mobile-filter-btn {
+  display: none;
+}
+
+/* Desktop filter dropdowns visible by default.
+   display:contents makes children direct flex items of the parent filter bar row,
+   so the search input and all dropdowns stay on the same line. */
+.desktop-filter-dropdowns {
+  display: contents;
+}
+
+/* Sidebar close button: hidden on desktop */
+.sidebar-close-btn {
+  display: none;
+}
+
+/* Mobile meta line: hidden on desktop by default */
+.bill-row-mobile-meta {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Progressive column hiding using container queries.
+   Order of disappearance as width decreases: status → session → last action → position.
+   Each surviving column keeps its full-layout width (status 100 / year 90 /
+   last action 130 — matching CHIP_GRID in constants.ts) so when a column drops
+   the survivors shift left into the freed slot rather than re-tuning widths;
+   relevance (auto) absorbs the reclaimed space. This keeps the layout cascading
+   cleanly instead of jumping. The bill column width comes from --bill-col-w (set
+   inline per row: 70px single-state, 105px multi-state where the badge carries a
+   state prefix like "US SB1383") so the wider badge can't overflow its track and
+   overlap the next chip. */
+@container (max-width: 1000px) {
+  .bill-col-status {
+    display: none !important;
+  }
+  .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
+  }
+}
+
+@container (max-width: 870px) {
+  .bill-col-status,
+  .bill-col-year {
+    display: none !important;
+  }
+  .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
+  }
+}
+
+@container (max-width: 740px) {
+  .bill-col-status,
+  .bill-col-year,
+  .bill-col-lastaction {
+    display: none !important;
+  }
+  .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+}
+
+@container (max-width: 580px) {
+  .bill-col-status,
+  .bill-col-year,
+  .bill-col-lastaction,
+  .bill-col-position {
+    display: none !important;
+  }
+  .bill-list-header-row,
+  .bill-row-grid {
+    /* Priority keeps its full 120px so the dropdown isn't clipped when Team drops. */
+    grid-template-columns: 12px minmax(0, 1fr) 120px !important;
+  }
+  .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+}
+
+/* Multi-state shifts every breakpoint 35px earlier. The layout is identical to
+   single-state except the bill chip reserves 105px instead of 70px (it carries a
+   state prefix like "US SB1383"), so the chips area is 35px wider and runs out of
+   room 35px sooner. Without this, the relevance column gets squeezed past the chips
+   area and collides with Team just before the last-action and Team breakpoints.
+   The .bill-list-ms marker (set on the row + header row when bills span >1 state)
+   raises specificity so these win over the single-state rules above for those rows. */
+@container (max-width: 1035px) {
+  .bill-list-ms .bill-col-status {
+    display: none !important;
+  }
+  .bill-list-ms .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
+  }
+}
+
+@container (max-width: 905px) {
+  .bill-list-ms .bill-col-status,
+  .bill-list-ms .bill-col-year {
+    display: none !important;
+  }
+  .bill-list-ms .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
+  }
+}
+
+@container (max-width: 775px) {
+  .bill-list-ms .bill-col-status,
+  .bill-list-ms .bill-col-year,
+  .bill-list-ms .bill-col-lastaction {
+    display: none !important;
+  }
+  .bill-list-ms .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+}
+
+@container (max-width: 615px) {
+  .bill-list-ms .bill-col-status,
+  .bill-list-ms .bill-col-year,
+  .bill-list-ms .bill-col-lastaction,
+  .bill-list-ms .bill-col-position {
+    display: none !important;
+  }
+  .bill-list-header-row.bill-list-ms,
+  .bill-row-grid.bill-list-ms {
+    grid-template-columns: 12px minmax(0, 1fr) 120px !important;
+  }
+  .bill-list-ms .bill-row-chips-cell {
+    grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+}
+
+/* Fallback for browsers WITHOUT container-query support. Gated behind @supports
+   so it never applies in modern browsers — otherwise they match both this and the
+   @container rules above and, since this is later in source, it clobbers them with
+   a coarser grid (e.g. relevance squeezed into a 100px track). */
+@supports not (container-type: inline-size) {
+  @media (max-width: 960px) {
+    .bill-col-year,
+    .bill-col-lastaction {
+      display: none !important;
+    }
+    .bill-row-chips-cell {
+      grid-template-columns: var(--bill-col-w, 70px) 100px auto !important;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  /* Hide column header bar on mobile — header row is already hidden, but wrapper padding creates gap */
+  .bill-list-header-wrapper {
+    display: none !important;
+  }
+
+  /* Hide sort description on mobile — too verbose for narrow screens */
+  .bill-list-sort-desc {
+    display: none !important;
+  }
+
+  /* Stack layout vertically — sidebar becomes a fixed drawer */
+  .app-layout {
+    flex-direction: column !important;
+  }
+
+  /* Mobile top bar appears. It lives in the app-layout column flow (a flex
+     item), so it sits above the demo banner and the scroll area instead of
+     overlaying them — no fixed positioning or padding offsets needed. */
+  .mobile-topbar {
+    display: flex;
+    height: 48px;
+    background: #1e3a5f;
+    color: #fff;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .app-main {
+    width: 100%;
+  }
+
+  /* Sidebar becomes a fixed off-screen drawer */
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 280px !important;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    height: 100vh !important;
+  }
+
+  .sidebar.drawer-open {
+    transform: translateX(0);
+  }
+
+  /* Dim overlay behind open drawer */
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 150;
+  }
+
+  /* Sidebar close button visible on mobile */
+  .sidebar-close-btn {
+    display: block !important;
+  }
+
+  /* Bill list: hide desktop-only columns */
+  .bill-row-desktop-only {
+    display: none !important;
+  }
+
+  /* Bill list: full-width filter bar row */
+  .bill-list-filter-bar {
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  /* Hide desktop sort header row */
+  .bill-list-header-row {
+    display: none !important;
+  }
+
+  /* Each bill row becomes a simple stacked card */
+  .bill-row {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 12px 14px !important;
+    gap: 5px !important;
+    grid-template-columns: none !important;
+  }
+
+  /* Hide checkbox column on mobile */
+  .bill-row-checkbox {
+    display: none !important;
+  }
+  .bill-list-header-checkbox {
+    display: none !important;
+  }
+
+  /* Hide desktop-only cells in rows */
+  .bill-row-chips-cell {
+    display: none !important;
+  }
+
+  /* Show the mobile-only bill meta line */
+  .bill-row-mobile-meta {
+    display: flex !important;
+    margin-bottom: 6px;
+  }
+
+  /* Hide desktop priority column — priority lives in mobile-meta instead */
+  .bill-col-priority {
+    display: none !important;
+  }
+
+  /* Show mobile filter button, hide desktop dropdowns */
+  .mobile-filter-btn {
+    display: flex !important;
+  }
+  .desktop-filter-dropdowns {
+    display: none !important;
+  }
+
+  /* Ensure bill detail sections have comfortable tap targets */
+  .collapsible-section-header {
+    padding: 14px 14px !important;
+    min-height: 48px;
+  }
+
+  .bill-detail-outer {
+    padding: 12px !important;
+  }
+
+  .bill-detail-columns {
+    flex-direction: column !important;
+  }
+
+  .bill-detail-right-col {
+    width: 100% !important;
+  }
+
+  /* Admin invite form: stack Name / Email fields vertically */
+  .admin-invite-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Bill detail sponsors row: wrap onto multiple lines instead of clipping.
+     On desktop this row is a single clipped line with a "+N more" toggle;
+     at phone width that hides the co-sponsors entirely (and cuts off the
+     "Co-sponsors:" label). Allow it to wrap; each name (SponsorLink) keeps
+     its own nowrap so a name + party never splits mid-token. */
+  #section-sponsors {
+    flex-wrap: wrap !important;
+    overflow: visible !important;
+    row-gap: 2px;
+  }
+  #section-sponsors > span {
+    white-space: normal !important;
+  }
+
+  /* Admin members table -> stacked cards on mobile. The 8-column table only
+     fits via horizontal scroll otherwise. Each row becomes a card with the
+     name as the title and the remaining cells labeled (via data-label). */
+  .members-table-wrap {
+    overflow-x: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .members-table,
+  .members-table tbody,
+  .members-table tr,
+  .members-table td {
+    display: block !important;
+    width: 100% !important;
+  }
+  .members-table thead {
+    display: none !important;
+  }
+  .members-table tr {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .members-table td {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0 !important;
+    border: none !important;
+    text-align: left !important;
+  }
+  .members-table td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #64748b;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  /* Name cell is the card title: full-width block, no label. */
+  .members-table td.members-name-cell {
+    display: block !important;
+    padding: 0 0 8px !important;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #f1f5f9 !important;
+  }
+}
