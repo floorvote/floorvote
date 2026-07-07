@@ -12,7 +12,8 @@ npm run build --prefix ../web
 echo "Applying migrations to ${DB}..."
 npx wrangler d1 migrations apply "$DB" --env "$ENV" --remote
 
-echo "Deploying worker (env: ${ENV})..."
-npx wrangler deploy --env "$ENV"
+SHA=$(git rev-parse --short HEAD)
+echo "Deploying worker (env: ${ENV}, build: ${SHA})..."
+npx wrangler deploy --env "$ENV" --define "BUILD_SHA:'\"${SHA}\"'"
 
 echo "Done: ${ENV}"
