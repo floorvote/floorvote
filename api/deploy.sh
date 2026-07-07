@@ -14,6 +14,6 @@ npx wrangler d1 migrations apply "$DB" --env "$ENV" --remote
 
 SHA=$(git rev-parse --short HEAD)
 echo "Deploying worker (env: ${ENV}, build: ${SHA})..."
-npx wrangler deploy --env "$ENV" --define "BUILD_SHA:'\"${SHA}\"'"
+npx wrangler deploy --env "$ENV" --define "BUILD_SHA:'${SHA}'"
 
 echo "Done: ${ENV}"
