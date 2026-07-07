@@ -15,11 +15,11 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.45.4",
+    "@material-symbols/svg-400": "^0.45.5",
     "@resvg/resvg-js": "^2.6.2",
     "concurrently": "^10.0.3",
     "fflate": "^0.8.3",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.0",
     "vitepress": "^1.6.4"
   }
 }
