@@ -23,9 +23,8 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({ user: { id: 'u1', email: 'a@b.com', name: 'Admin', role: 'admin' }, loading: false }),
 }))
 
-vi.mock('../../context/DemoContext', () => ({
-  useDemo: () => ({ demoLocked: false }),
-}))
+const { demo } = vi.hoisted(() => ({ demo: { demoMode: false, demoLocked: false } }))
+vi.mock('../../context/DemoContext', () => ({ useDemo: () => demo }))
 
 // Stub heavy components that aren't under test
 vi.mock('../../components/SettingsNav', () => ({
@@ -75,6 +74,7 @@ const EMPTY_PRESETS: never[] = []
 
 beforeEach(() => {
   vi.resetAllMocks()
+  demo.demoLocked = false
   mockFetch.mockImplementation(async (path: string) => {
     if (path === '/admin/config') return { ...BASE_CONFIG }
     if (path === '/admin/presets') return EMPTY_PRESETS
@@ -187,5 +187,17 @@ describe('Config — org noun select', () => {
     expect(screen.queryByPlaceholderText(/topic relevance/i)).toBeNull()
     // And the noun select must exist (confirm we're looking at the right rendered state)
     expect(getNounSelect()).toBeTruthy()
+  })
+})
+
+describe('Config — demo gating', () => {
+  it('in demo: relevance slider is draggable but Save is disabled', async () => {
+    demo.demoLocked = true
+    render(<Config />)
+    const slider = await screen.findByRole('slider')      // the relevance range input
+    expect(slider).not.toBeDisabled()
+    // The New-matches Save button sits in the same section as the slider.
+    const saveButtons = screen.getAllByRole('button', { name: /^save$/i })
+    expect(saveButtons.some((b) => (b as HTMLButtonElement).disabled)).toBe(true)
   })
 })
