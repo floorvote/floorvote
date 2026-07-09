@@ -52,6 +52,23 @@ interface LegiscanSponsor {
   district: string
   sponsor_type_id: number  // 1=Primary, 2=Co-Sponsor, 3=Joint Sponsor
   sponsor_order: number
+  // getBill embeds the full person record on each sponsor (same shape as
+  // getPerson). We persist these into `people` at ingest so names resolve
+  // without a separate bulk seed.
+  person_hash?: string
+  party_id?: string
+  state_id?: number
+  first_name?: string
+  middle_name?: string
+  last_name?: string
+  suffix?: string
+  nickname?: string
+  ftm_eid?: number
+  votesmart_id?: number
+  opensecrets_id?: string
+  knowwho_pid?: number
+  ballotpedia?: string
+  bioguide_id?: string
   bio?: {
     social?: {
       biography?: string

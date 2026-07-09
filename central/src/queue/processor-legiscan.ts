@@ -215,6 +215,41 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
 
   await db.delete(billSponsors).where(eq(billSponsors.billId, bill.bill_id))
   for (const s of bill.sponsors ?? []) {
+    // Persist the person record embedded on the sponsor. bills-legiscan resolves
+    // sponsor display names by joining bill_sponsors -> people; without this,
+    // any state that arrives via keyword sync (rather than a bulk dataset seed)
+    // has no people rows and falls back to showing the numeric people_id.
+    // Update the display fields on conflict but preserve bio_json, which only
+    // the richer bulk/getSessionPeople sources populate.
+    if (s.people_id) {
+      const personValues = {
+        peopleId:      s.people_id,
+        personHash:    s.person_hash ?? null,
+        stateId:       s.state_id ?? bill.state_id ?? null,
+        partyId:       s.party_id ?? null,
+        party:         s.party || null,
+        roleId:        s.role_id ?? null,
+        role:          s.role || null,
+        name:          s.name || String(s.people_id),
+        firstName:     s.first_name ?? null,
+        middleName:    s.middle_name ?? null,
+        lastName:      s.last_name ?? null,
+        suffix:        s.suffix ?? null,
+        nickname:      s.nickname ?? null,
+        district:      s.district || null,
+        ftmEid:        s.ftm_eid ?? null,
+        votesmartId:   s.votesmart_id ?? null,
+        opensecretsId: s.opensecrets_id ?? null,
+        knowwhoPid:    s.knowwho_pid ?? null,
+        ballotpedia:   s.ballotpedia ?? null,
+        bioguideId:    s.bioguide_id ?? null,
+      }
+      const { peopleId: _omit, ...personUpdate } = personValues
+      await db.insert(people).values(personValues).onConflictDoUpdate({
+        target: people.peopleId,
+        set: personUpdate,
+      })
+    }
     await db.insert(billSponsors).values({
       id: crypto.randomUUID(), billId: bill.bill_id,
       peopleId: s.people_id || null,
