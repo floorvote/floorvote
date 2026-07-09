@@ -205,6 +205,55 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     expect(rollCallRows.length, 'roll_calls must be written').toBeGreaterThan(0)
   })
 
+  it('upserts a people row from the getBill sponsor payload so names resolve without bulk seeding', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    // No people row pre-seeded — the WI case. The sponsor name lives in the
+    // getBill payload; ingest must persist it into `people` so the read-time
+    // join in bills-legiscan resolves a name instead of falling back to the id.
+    const fixture = buildFixtureBill()
+    vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
+
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const person = await db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
+    expect(person, 'people row must be created from the sponsor payload').toBeDefined()
+    expect(person?.name).toBe('Sen Alpha')
+    expect(person?.party).toBe('R')
+    expect(person?.role).toBe('Senator')
+    expect(person?.district).toBe('01')
+  })
+
+  it('does not clobber an existing people row bio_json on re-ingest', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    // A richly-seeded person (e.g. from a bulk dataset) already exists with bio_json.
+    await db.insert(schema.people).values({
+      peopleId: 5001, name: 'Senator Alpha Beta', party: 'R', role: 'Senator',
+      bioJson: JSON.stringify({ social: { biography: 'https://ballotpedia.org/Alpha_Beta' } }),
+    })
+
+    const fixture = buildFixtureBill()
+    vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
+
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const person = await db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
+    expect(person?.bioJson, 'bio_json must be preserved across re-ingest').toContain('ballotpedia.org')
+    // Display fields still refresh from the latest payload.
+    expect(person?.name).toBe('Sen Alpha')
+  })
+
   it('writes bill_change_log rows when title changes between ingests', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.sessions).values({
