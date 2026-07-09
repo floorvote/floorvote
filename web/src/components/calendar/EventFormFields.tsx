@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { BillPicker, type BillOption } from '../BillPicker'
 import { todayIso } from '../../lib/calendarGrid'
+import { useDemo } from '../../context/DemoContext'
 
 export interface EventFormValues {
   id?: string
@@ -31,6 +32,7 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
   const [billIds, setBillIds] = useState<string[]>(initial?.billIds ?? [])
   const [details, setDetails] = useState(initial?.details ?? '')
   const [url, setUrl] = useState(initial?.url ?? '')
+  const { demoLocked } = useDemo()
 
   const dateValid = DATE_RE.test(date)
   const urlValid = url.trim() === '' || /^https?:\/\//i.test(url.trim())
@@ -116,9 +118,9 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button type="button" onClick={onClose} style={{ background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '7px 14px', cursor: 'pointer', fontSize: fontSize.sm }}>Cancel</button>
-        <button type="button" disabled={!canSave} onClick={submit} style={{
-          background: canSave ? color.accentBlue : color.accentBlueMuted, color: color.white, border: 'none',
-          borderRadius: radius.md, padding: '7px 14px', cursor: canSave ? 'pointer' : 'not-allowed',
+        <button type="button" disabled={!canSave || demoLocked} onClick={submit} style={{
+          background: (canSave && !demoLocked) ? color.accentBlue : color.accentBlueMuted, color: color.white, border: 'none',
+          borderRadius: radius.md, padding: '7px 14px', cursor: (canSave && !demoLocked) ? 'pointer' : 'not-allowed',
           fontSize: fontSize.sm, fontWeight: fontWeight.medium,
         }}>Save</button>
       </div>

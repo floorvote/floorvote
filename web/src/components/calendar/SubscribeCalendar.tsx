@@ -3,8 +3,10 @@ import { apiFetch } from '../../lib/api'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { PopPanel, type PopPanelHandle } from '../ui/PopPanel'
 import { computeEventPopoverPosition, type EventPopoverPosition } from './EventPopover'
+import { useDemo } from '../../context/DemoContext'
 
 export function SubscribeCalendar() {
+  const { demoLocked } = useDemo()
   const [info, setInfo] = useState<{ webcalUrl: string; feedUrl: string; googleUrl: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [hovered, setHovered] = useState<number | null>(null)
@@ -24,11 +26,12 @@ export function SubscribeCalendar() {
     background: color.white, color: color.textSlate, fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
     padding: '9px 16px', borderRadius: radius.md, border: `1px solid ${color.borderDefault}`, cursor: 'pointer',
   }
-  const rowStyle = (i: number): React.CSSProperties => ({
-    display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+  const rowStyle = (i: number, disabled: boolean): React.CSSProperties => ({
+    display: 'block', width: '100%', textAlign: 'left', border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
     padding: '8px 10px', borderRadius: radius.md, fontSize: fontSize.sm, color: color.textSlate,
     // fontFamily (not `font: inherit`, which would reset font-size to 16px).
-    textDecoration: 'none', fontFamily: 'inherit', background: hovered === i ? color.surfaceMuted : color.white,
+    textDecoration: 'none', fontFamily: 'inherit', background: (!disabled && hovered === i) ? color.surfaceMuted : color.white,
   })
 
   function open() {
@@ -51,12 +54,16 @@ export function SubscribeCalendar() {
           positionStyle={pos.positionStyle}
         >
           <div style={{ padding: 6 }}>
-            <a href={info.webcalUrl} type="text/calendar" style={rowStyle(0)}
-              onMouseEnter={() => setHovered(0)} onMouseLeave={() => setHovered(null)}>Subscribe in your calendar app (like Microsoft Outlook or Apple Calendar)</a>
-            <a href={info.googleUrl} target="_blank" rel="noopener noreferrer" style={rowStyle(1)}
-              onMouseEnter={() => setHovered(1)} onMouseLeave={() => setHovered(null)}>Add to Google Calendar</a>
-            <button type="button" style={rowStyle(2)}
-              onMouseEnter={() => setHovered(2)} onMouseLeave={() => setHovered(null)}
+            <a href={demoLocked ? undefined : info.webcalUrl} type="text/calendar" style={rowStyle(0, demoLocked)}
+              aria-disabled={demoLocked || undefined} tabIndex={demoLocked ? -1 : undefined}
+              onClick={demoLocked ? (e) => e.preventDefault() : undefined}
+              onMouseEnter={() => !demoLocked && setHovered(0)} onMouseLeave={() => setHovered(null)}>Subscribe in your calendar app (like Microsoft Outlook or Apple Calendar)</a>
+            <a href={demoLocked ? undefined : info.googleUrl} target="_blank" rel="noopener noreferrer" style={rowStyle(1, demoLocked)}
+              aria-disabled={demoLocked || undefined} tabIndex={demoLocked ? -1 : undefined}
+              onClick={demoLocked ? (e) => e.preventDefault() : undefined}
+              onMouseEnter={() => !demoLocked && setHovered(1)} onMouseLeave={() => setHovered(null)}>Add to Google Calendar</a>
+            <button type="button" style={rowStyle(2, demoLocked)} disabled={demoLocked}
+              onMouseEnter={() => !demoLocked && setHovered(2)} onMouseLeave={() => setHovered(null)}
               onClick={() => {
                 navigator.clipboard.writeText(info.feedUrl); setCopied(true); setTimeout(() => setCopied(false), 1500)
               }}>{copied ? 'Copied!' : 'Copy feed URL'}</button>

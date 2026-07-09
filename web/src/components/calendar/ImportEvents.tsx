@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { apiFetch } from '../../lib/api'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { matchHeaders, rowToImport, type ImportRowPreview, type RawRow } from '../../lib/calendarImportParse'
+import { useDemo } from '../../context/DemoContext'
 
 interface Props {
   onClose: () => void
@@ -49,6 +50,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { demoLocked } = useDemo()
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -201,9 +203,11 @@ export function ImportEvents({ onClose, onImported }: Props) {
         <button
           type="button"
           onClick={downloadTemplate}
+          disabled={demoLocked}
           style={{
             background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
-            padding: '5px 12px', fontSize: fontSize.sm, color: color.textSlate, cursor: 'pointer', marginBottom: 16,
+            padding: '5px 12px', fontSize: fontSize.sm, color: color.textSlate, marginBottom: 16,
+            cursor: demoLocked ? 'not-allowed' : 'pointer', opacity: demoLocked ? 0.5 : 1,
           }}
         >
           Download template
@@ -216,7 +220,8 @@ export function ImportEvents({ onClose, onImported }: Props) {
             type="file"
             accept=".csv,text/csv"
             onChange={handleFileChange}
-            style={{ fontSize: fontSize.sm, color: color.textPrimary }}
+            disabled={demoLocked}
+            style={{ fontSize: fontSize.sm, color: color.textPrimary, cursor: demoLocked ? 'not-allowed' : undefined, opacity: demoLocked ? 0.5 : 1 }}
           />
         </div>
 

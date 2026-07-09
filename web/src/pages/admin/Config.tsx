@@ -818,8 +818,7 @@ export function Config() {
                 step={1}
                 value={newMatchMinRelevance}
                 onChange={(e) => setNewMatchMinRelevance(Number(e.target.value))}
-                disabled={demoLocked}
-                style={{ width: 240, display: 'block', marginTop: 6, accentColor: color.accentBlue, cursor: demoLocked ? 'default' : 'pointer' }}
+                style={{ width: 240, display: 'block', marginTop: 6, accentColor: color.accentBlue, cursor: 'pointer' }}
               />
               <div style={hintStyle}>Relevance runs 1–10. “All matches” (0) surfaces every match; higher values hide lower-relevance bills.</div>
             </div>
