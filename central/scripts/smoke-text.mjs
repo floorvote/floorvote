@@ -10,11 +10,14 @@
 // exercises tenant → binding → central → R2. Central has no staging, so we run
 // this right after `deploy:legiscan` to catch breakage within seconds.
 //
-// It drives the demo tenant: DEMO_MODE gives us a known shared session cookie, and
-// demo has ~100% R2 text coverage. Override the target with SMOKE_BASE_URL /
-// SMOKE_COOKIE to point at another tenant. Exits non-zero (loudly) on failure.
+// The check is opt-in: it needs a reachable tenant to probe, so it runs ONLY when
+// SMOKE_BASE_URL is set. Point it at a DEMO_MODE tenant (its shared auto-login
+// session and ~100% R2 text coverage make it the easiest target — no SMOKE_COOKIE
+// needed), or at any tenant plus a SMOKE_COOKIE. If SMOKE_BASE_URL is unset the
+// check is skipped (exit 0) — a demo site is optional, so a deployment without one
+// shouldn't fail its deploy here. Exits non-zero (loudly) on a real failure.
 
-const BASE = (process.env.SMOKE_BASE_URL || 'https://demo.example.com').replace(/\/$/, '')
+const BASE = process.env.SMOKE_BASE_URL ? process.env.SMOKE_BASE_URL.replace(/\/$/, '') : null
 const ATTEMPTS = 4
 const RETRY_MS = 5000
 
@@ -69,6 +72,11 @@ async function probeText({ id, docId, ident }, headers) {
 }
 
 async function main() {
+  if (!BASE) {
+    console.log('[smoke-text] SMOKE_BASE_URL not set — skipping bill-text smoke check (no demo/tenant target).')
+    console.log('[smoke-text] To enable, set SMOKE_BASE_URL to a DEMO_MODE tenant, e.g. SMOKE_BASE_URL=https://demo.yourdomain.com')
+    return
+  }
   console.log(`[smoke-text] probing ${BASE} bill-text path through the tenant→central binding…`)
   let lastErr
   for (let i = 1; i <= ATTEMPTS; i++) {
