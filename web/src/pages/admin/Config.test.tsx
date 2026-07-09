@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, act } from '@testing-library/react'
+import { render, screen, waitFor, act, within } from '@testing-library/react'
 import React from 'react'
 
 // Mock heavy dependencies before importing Config
@@ -196,8 +196,11 @@ describe('Config — demo gating', () => {
     render(<Config />)
     const slider = await screen.findByRole('slider')      // the relevance range input
     expect(slider).not.toBeDisabled()
-    // The New-matches Save button sits in the same section as the slider.
-    const saveButtons = screen.getAllByRole('button', { name: /^save$/i })
-    expect(saveButtons.some((b) => (b as HTMLButtonElement).disabled)).toBe(true)
+    // Scope to the New-matches section card, which holds both the slider and
+    // its own Save button, so this pins the specific control under test rather
+    // than any Save button on the page.
+    const section = slider.closest('div')!.parentElement as HTMLElement
+    const saveButton = within(section).getByRole('button', { name: /^save$/i })
+    expect(saveButton).toBeDisabled()
   })
 })
