@@ -807,21 +807,41 @@ export function Config() {
           <div style={hintStyle}>Loading…</div>
         ) : (
           <>
-            <div>
-              <label style={labelStyle}>
-                Minimum relevance score: {newMatchMinRelevance === 0 ? 'All matches' : newMatchMinRelevance < 10 ? `${newMatchMinRelevance}+` : '10'}
+            <style>{`
+              input[type=range].config-relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; }
+              input[type=range].config-relevance-slider::-webkit-slider-runnable-track {
+                background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(newMatchMinRelevance / 10) * 100}%, ${color.borderDefault} ${(newMatchMinRelevance / 10) * 100}%, ${color.borderDefault} 100%);
+                height: 4px; border-radius: 4px;
+              }
+              input[type=range].config-relevance-slider::-webkit-slider-thumb {
+                -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
+                border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+              }
+              input[type=range].config-relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
+              input[type=range].config-relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
+              input[type=range].config-relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
+            `}</style>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: newMatchMinRelevance > 0 ? color.bgInfo : color.white,
+              border: `1px solid ${newMatchMinRelevance > 0 ? color.tagBorderBlue : color.borderDefault}`,
+              borderRadius: radius.md, padding: '6px 10px',
+            }}>
+              <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: newMatchMinRelevance > 0 ? color.partyDemBlue : color.textSlate, fontWeight: newMatchMinRelevance > 0 ? fontWeight.medium : fontWeight.normal }}>
+                Minimum relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{newMatchMinRelevance === 0 ? 'All' : newMatchMinRelevance < 10 ? `${newMatchMinRelevance}+` : '10'}</span>
               </label>
               <input
                 type='range'
+                className='config-relevance-slider'
                 min={0}
                 max={10}
                 step={1}
                 value={newMatchMinRelevance}
                 onChange={(e) => setNewMatchMinRelevance(Number(e.target.value))}
-                style={{ width: 240, display: 'block', marginTop: 6, accentColor: color.accentBlue, cursor: 'pointer' }}
+                style={{ width: 120, cursor: 'pointer' }}
               />
-              <div style={hintStyle}>Relevance runs 1–10. “All matches” (0) surfaces every match; higher values hide lower-relevance bills.</div>
             </div>
+            <div style={{ ...hintStyle, marginTop: 8 }}>Relevance runs 1–10. “All” (0) surfaces every match; higher values hide lower-relevance bills.</div>
             <div style={saveRowStyle}>
               <button onClick={handleSaveNewMatch} disabled={savingNewMatch || demoLocked} style={saveBtn(savingNewMatch || demoLocked)}>
                 {savingNewMatch ? 'Saving…' : 'Save'}

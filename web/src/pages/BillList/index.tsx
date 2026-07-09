@@ -570,16 +570,16 @@ export function BillList() {
               <style>{`
                 input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; }
                 input[type=range].relevance-slider::-webkit-slider-runnable-track {
-                  background: linear-gradient(to right, #f59e0b 0%, #f59e0b ${(relevanceDraft / 10) * 100}%, #ddc9a0 ${(relevanceDraft / 10) * 100}%, #ddc9a0 100%);
+                  background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
                   height: 4px; border-radius: 4px;
                 }
                 input[type=range].relevance-slider::-webkit-slider-thumb {
-                  -webkit-appearance: none; width: 14px; height: 14px; background: #f59e0b;
+                  -webkit-appearance: none; width: 14px; height: 14px; background: ${color.accentAmber};
                   border-radius: 50%; margin-top: -5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
                 }
-                input[type=range].relevance-slider::-moz-range-track { background: #ddc9a0; height: 4px; border-radius: 4px; }
-                input[type=range].relevance-slider::-moz-range-progress { background: #f59e0b; height: 4px; border-radius: 4px 0 0 4px; }
-                input[type=range].relevance-slider::-moz-range-thumb { background: #f59e0b; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
+                input[type=range].relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 4px; border-radius: 4px; }
+                input[type=range].relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 4px; border-radius: 4px 0 0 4px; }
+                input[type=range].relevance-slider::-moz-range-thumb { background: ${color.accentAmber}; border-radius: 50%; width: 14px; height: 14px; border: none; cursor: pointer; }
               `}</style>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -587,8 +587,8 @@ export function BillList() {
                 border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
                 borderRadius: radius.md, padding: '6px 10px',
               }}>
-                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', minWidth: 80, color: relevanceDraft > 0 ? color.partyDemBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
-                  Relevance: {relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}
+                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.partyDemBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
+                  Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
                 </label>
                 <input
                   type="range"
