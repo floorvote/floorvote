@@ -121,19 +121,21 @@ describe('POST /tenants/register — state_coverage merge still works after H3 f
 
 // ── H4: cross-tenant re-homing mitigation ─────────────────────────────────
 
-describe('POST /tenants/register — apiUrl re-homing protection (H4)', () => {
-  it('rejects a re-register that changes the origin to a different domain', async () => {
+describe('POST /tenants/register — apiUrl origin change (H4: auto-heal + warn)', () => {
+  it('accepts an origin change and auto-heals the stored apiUrl', async () => {
     // First registration
     await register({ tenantId: 'ri', name: 'RI', apiUrl: 'https://ri.example.com', stateCoverage: ['RI'] })
 
-    // Attacker tries to point the same tenantId at a different origin
-    const res = await register({ tenantId: 'ri', name: 'RI-hijacked', apiUrl: 'https://evil.example.com', stateCoverage: ['RI'] })
-    expect(res.status).toBeGreaterThanOrEqual(400)
-    expect(res.status).toBeLessThan(500)
+    // A changed origin (e.g. an operator domain migration) is accepted rather than
+    // rejected: register is already ADMIN_SECRET/binding-gated, and a hard 400 here
+    // silently froze a tenant's config/keyword sync after a real migration. The handler
+    // logs a warning and updates the stored apiUrl.
+    const res = await register({ tenantId: 'ri', name: 'RI-migrated', apiUrl: 'https://ri.newdomain.com', stateCoverage: ['RI'] })
+    expect(res.status).toBe(200)
 
-    // Stored apiUrl must be unchanged
+    // Stored apiUrl is auto-healed to the new origin
     const row = await tenantRow('ri')
-    expect(row!.apiUrl).toBe('https://ri.example.com')
+    expect(row!.apiUrl).toBe('https://ri.newdomain.com')
   })
 
   it('allows re-register with the same origin (update name / add states)', async () => {
