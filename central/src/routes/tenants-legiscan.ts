@@ -9,7 +9,7 @@ import type { LsEnv } from '../types-legiscan'
 import { calendarBlockFromRows, type StoredCalendarRow } from '../lib/detect-changes'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
-import { ensureQueue, queuesRestEnabled } from '../lib/queuesRest'
+import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRest'
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
@@ -47,12 +47,15 @@ tenantsLsRoutes.post('/register', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const now = nowDb()
 
-  // H4: cross-tenant re-homing mitigation.
-  // If a row already exists for this tenantId, reject the registration when the
-  // incoming apiUrl has a different origin (scheme + hostname + port) than the
-  // stored one. Legitimate re-registrations (restart, redeploy) keep the same
-  // origin; only an attacker trying to redirect engagement-stats calls would
-  // supply a different hostname.
+  // H4: cross-tenant re-homing mitigation (auto-heal variant).
+  // If a row already exists and the incoming apiUrl origin differs from the stored one,
+  // this is almost always a legitimate operator action (e.g. migrating a tenant to a new
+  // domain). register is already gated by ADMIN_SECRET / the same-account TenantApi
+  // binding, so a changed origin is not an open re-homing vector. This previously
+  // hard-rejected (400), which silently froze a tenant's config/keyword sync to central
+  // after a domain migration until someone noticed. Instead, accept the new origin (the
+  // upsert below updates the stored apiUrl) and log loudly so an *unexpected* change is
+  // still visible.
   const existingForRehome = await db
     .select({ apiUrl: schema.tenants.apiUrl })
     .from(schema.tenants)
@@ -63,15 +66,15 @@ tenantsLsRoutes.post('/register', async (c) => {
       const storedOrigin = new URL(existingForRehome.apiUrl).origin
       const incomingOrigin = new URL(body.apiUrl).origin
       if (storedOrigin !== incomingOrigin) {
-        return c.json(
-          { error: 'apiUrl origin mismatch: re-registration cannot change the tenant origin' },
-          400,
+        console.warn(
+          `[register] tenant "${body.tenantId}" apiUrl origin changed ` +
+          `${storedOrigin} -> ${incomingOrigin}; accepting and updating the stored apiUrl. ` +
+          `If this was not an intended migration, investigate.`,
         )
       }
     } catch {
-      // If either URL fails to parse (shouldn't happen after isSafeTenantApiUrl),
-      // be conservative and reject.
-      return c.json({ error: 'apiUrl origin comparison failed' }, 400)
+      // Unparseable URL shouldn't happen after isSafeTenantApiUrl; ignore and let the
+      // upsert proceed with the already-validated incoming apiUrl.
     }
   }
 
@@ -113,14 +116,36 @@ tenantsLsRoutes.post('/register', async (c) => {
     }
   }
 
-  // Dynamic delivery: resolve (or create) this tenant's Cloudflare queue and store
+  // Delivery is binding-first (see lib/tenantDelivery.ts): a static TENANT_QUEUE_<ID>
+  // producer binding, when present, is used and the stored queue_id is ignored. So if a
+  // binding exists we must NOT run the dynamic resolver — resolving a guessed queue name
+  // could create a phantom queue and clobber a known-good queue_id.
+  const queueBindingPresent = !!getTenantQueue(c.env, body.tenantId)
+
+  // Dynamic delivery (unbound tenants): resolve this tenant's Cloudflare queue and store
   // its id, so central can HTTP-publish bills without a hand-added TENANT_QUEUE_<ID>
-  // binding + redeploy. The tenant's own consumer still binds the queue at deploy
-  // time, so the queue normally already exists here and this just resolves its id.
+  // binding + redeploy. The queue-name prefix is operator-configurable via
+  // TENANT_QUEUE_PREFIX (default "floorvote"); a deployment that renames its tenant queues
+  // (e.g. "acme-<id>-queue") sets it so the resolver finds the REAL queue. The tenant's own
+  // consumer creates this queue at deploy time, so it normally already exists here — a
+  // MISSING queue almost always means a naming mismatch (prefix not set), and creating one
+  // then yields a phantom queue with no consumer while the tenant silently receives no
+  // bills. So warn loudly on create rather than failing silently.
   let queueId: string | null = null
-  if (queuesRestEnabled(c.env)) {
+  if (!queueBindingPresent && queuesRestEnabled(c.env)) {
+    const prefix = c.env.TENANT_QUEUE_PREFIX || 'floorvote'
+    const queueName = `${prefix}-${body.tenantId}-queue`
     try {
-      queueId = await ensureQueue(c.env, `floorvote-${body.tenantId}-queue`)
+      queueId = await resolveQueueId(c.env, queueName)
+      if (!queueId) {
+        console.warn(
+          `[register] no existing queue named "${queueName}" for tenant "${body.tenantId}" — ` +
+          `creating it, but if this tenant's worker consumes a differently-named queue it will ` +
+          `receive NO bills. Set TENANT_QUEUE_PREFIX on central to match your queue naming, or add ` +
+          `a static ${tenantQueueBindingName(body.tenantId)} producer binding.`,
+        )
+        queueId = await ensureQueue(c.env, queueName)
+      }
       if (queueId) {
         await db.update(schema.tenants)
           .set({ queueId })
@@ -133,7 +158,6 @@ tenantsLsRoutes.post('/register', async (c) => {
 
   // Surface a tenant with NO delivery path at all (no static binding and no
   // dynamic queue id) — its bills would be silently dropped at fan-out time.
-  const queueBindingPresent = !!getTenantQueue(c.env, body.tenantId)
   if (!queueBindingPresent && !queueId) {
     console.warn(
       `[register] tenant "${body.tenantId}" has no queue binding ` +
