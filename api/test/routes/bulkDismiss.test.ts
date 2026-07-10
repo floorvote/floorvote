@@ -3,7 +3,7 @@ import { SELF, env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 const MATCH = '2026-06-20 00:00:00'
 
@@ -64,5 +64,28 @@ describe('POST /bills/bulk-dismiss', () => {
     })
     const body = await res.json() as { newMatchCount: number }
     expect(body.newMatchCount).toBe(2)
+  })
+
+  it('dismisses a selection that crosses the chunk boundary (>100 bills)', async () => {
+    const ids: string[] = []
+    for (let i = 0; i < 120; i++) {
+      ids.push(await seedBill({ billNumber: `BIG ${i}`, matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 80 }))
+    }
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ dismissed: 120 })
+
+    const db = getDb(env.DB)
+    // Verify in chunks — a single inArray over 120 ids would blow D1's 100-param cap.
+    let triaged = 0
+    for (let i = 0; i < ids.length; i += 90) {
+      const rows = await db.select().from(bills).where(inArray(bills.id, ids.slice(i, i + 90))).all()
+      triaged += rows.filter(r => r.triagedAt !== null).length
+    }
+    expect(triaged).toBe(120)
   })
 })

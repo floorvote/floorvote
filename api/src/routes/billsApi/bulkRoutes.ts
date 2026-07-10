@@ -339,7 +339,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap: f.cf ?? {}, userId: currentUser.id,
       })
-      const rows = await db.select({ id: bills.id }).from(bills).where(where).limit(1000).all()
+      const rows = await db.select({ id: bills.id }).from(bills).where(where).all()
       billIds = rows.map(r => r.id)
     }
 
@@ -351,18 +351,23 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const min = await getNewMatchMinRelevance(db)
     const now = nowDb()
 
+    // D1 caps a query at 100 bound params. Both statements below add a few params on top of
+    // the inArray list (SELECT: newMatchWhere's matchType + threshold; UPDATE: triagedAt +
+    // triagedBy), so the chunk must be < 100 to stay under the limit with a selection up to 1000.
+    const DISMISS_CHUNK = 90
+
     // Restrict to the un-triaged keyword new-matches within the selection (same predicate as the worklist).
     const toDismiss: string[] = []
-    for (let i = 0; i < billIds.length; i += 100) {
-      const chunk = billIds.slice(i, i + 100)
+    for (let i = 0; i < billIds.length; i += DISMISS_CHUNK) {
+      const chunk = billIds.slice(i, i + DISMISS_CHUNK)
       const rows = await db.select({ id: bills.id }).from(bills)
         .where(and(inArray(bills.id, chunk), newMatchWhere(min))).all()
       toDismiss.push(...rows.map(r => r.id))
     }
-    for (let i = 0; i < toDismiss.length; i += 100) {
+    for (let i = 0; i < toDismiss.length; i += DISMISS_CHUNK) {
       await db.update(bills)
         .set({ triagedAt: now, triagedBy: currentUser.id })
-        .where(inArray(bills.id, toDismiss.slice(i, i + 100)))
+        .where(inArray(bills.id, toDismiss.slice(i, i + DISMISS_CHUNK)))
     }
     return c.json({ dismissed: toDismiss.length })
   })
