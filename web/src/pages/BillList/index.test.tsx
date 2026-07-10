@@ -18,7 +18,10 @@ const apiCalls: string[] = []
 
 // Lets a test hold the `/bills/:id` prefetch open so it can observe the
 // navigation-pending window (when the body should carry the wait-cursor class).
-const deferred: { resolveBillDetail: ((v: unknown) => void) | null } = { resolveBillDetail: null }
+const deferred: {
+  resolveBillDetail: ((v: unknown) => void) | null
+  rejectVote: ((reason?: unknown) => void) | null
+} = { resolveBillDetail: null, rejectVote: null }
 
 // Lets a test force the vote endpoint to reject so we can assert the optimistic
 // vote rolls back.
@@ -79,7 +82,12 @@ vi.mock('../../lib/api', () => {
     if (path === '/config/custom-fields') return [] as T
     if (path.startsWith('/bills/facets')) return FACETS as T
     if (path.endsWith('/votes')) {
-      if (voteReject.value) throw new ApiError(500, 'fail')
+      // When a test wants the vote to fail, hold the rejection open (deferred) so
+      // the optimistic count stays observable until the test triggers the failure
+      // — otherwise the rollback can beat the assertion on a loaded CI runner.
+      if (voteReject.value) {
+        return new Promise<T>((_resolve, reject) => { deferred.rejectVote = reject })
+      }
       return {} as T
     }
     // A single-bill prefetch (e.g. /bills/bill-early-vote) — held open so a
@@ -114,6 +122,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 }))
 
 import { BillList } from './index'
+import { ApiError } from '../../lib/api'
 import { AuthProvider } from '../../context/AuthContext'
 import { SidebarRefreshProvider } from '../../context/SidebarRefreshContext'
 
@@ -140,6 +149,7 @@ class FakeIntersectionObserver {
 beforeEach(() => {
   apiCalls.length = 0
   deferred.resolveBillDetail = null
+  deferred.rejectVote = null
   voteReject.value = false
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
@@ -156,15 +166,19 @@ describe('BillList vote failure rollback', () => {
     await screen.findByText('Early Voting Centers')
 
     // First bill (Early Voting Centers) — its Support vote button + count.
-    const supportBtn = screen.getAllByRole('button', { name: 'Support' })[0]
-    const supportRow = supportBtn.parentElement!.parentElement!
-    expect(within(supportRow).getByText('0')).toBeInTheDocument()
+    // Re-resolve the row on each check rather than caching the node: an optimistic
+    // re-render can replace the row's DOM element, so a reference captured once can
+    // go stale (an intermittent "unable to find 1/0" under load).
+    const supportRow = () => screen.getAllByRole('button', { name: 'Support' })[0].parentElement!.parentElement!
+    expect(within(supportRow()).getByText('0')).toBeInTheDocument()
 
-    fireEvent.click(supportBtn)
-    // Optimistic update bumps the count to 1...
-    await within(supportRow).findByText('1')
-    // ...then the failed request must roll it back to 0.
-    await waitFor(() => expect(within(supportRow).getByText('0')).toBeInTheDocument())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Support' })[0])
+    // Optimistic update bumps the count to 1 (the failing vote request is held
+    // pending by the mock, so the count stays observably at 1)...
+    await waitFor(() => expect(within(supportRow()).getByText('1')).toBeInTheDocument())
+    // ...now fail the request; the count must roll back to 0.
+    deferred.rejectVote?.(new ApiError(500, 'fail'))
+    await waitFor(() => expect(within(supportRow()).getByText('0')).toBeInTheDocument())
   })
 })
 

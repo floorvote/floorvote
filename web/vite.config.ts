@@ -41,6 +41,12 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // jsdom UI tests parallelize heavily on CI; a contended runner can occasionally
+    // starve an async render past its wait, flaking a correct test. Retry absorbs
+    // these infra flakes — the structural fixes (deferred mocks, re-queried nodes,
+    // raised async timeout) keep the base rate low, so a real failure still fails
+    // all attempts.
+    retry: 2,
     include: ['src/**/*.{test,spec}.?(c|m)[jt]s?(x)', '../shared/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
   },
 })

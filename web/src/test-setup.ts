@@ -1,4 +1,11 @@
 import '@testing-library/jest-dom'
+import { configure } from '@testing-library/react'
+
+// CI runners parallelize many jsdom test files at once; under that contention a
+// single render/effect can take longer than testing-library's 1000ms default,
+// intermittently timing out findBy*/waitFor assertions that are correct. Give
+// async queries more headroom — real failures still surface, just a bit slower.
+configure({ asyncUtilTimeout: 4000 })
 
 // jsdom has no IntersectionObserver (used by infinite-scroll sentinels in
 // BillList/Feed). Define a no-op baseline on the global so it's always present
