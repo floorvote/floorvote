@@ -56,6 +56,7 @@ import migrationSql52 from '../migrations/0052_new_match_columns.sql?raw'
 import migrationSql53 from '../migrations/0053_feed_events_bill_matched.sql?raw'
 import migrationSql55 from '../migrations/0055_auth_events.sql?raw'
 import migrationSql56 from '../migrations/0056_auth_events_unknown_email.sql?raw'
+import migrationSql58 from '../migrations/0058_triaged_at_rename.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -146,6 +147,7 @@ export async function applyMigrations(): Promise<void> {
       "CREATE INDEX IF NOT EXISTS idx_bills_tracked_cover ON bills(status, priority, state, year_start, session, relevance_score, last_action_date) WHERE match_type IS NOT NULL;",
       "ANALYZE;",
     ] },
+    parseMigration(migrationSql58, '0058_triaged_at_rename'),
   ])
 }
 
@@ -238,7 +240,7 @@ export async function seedBill(overrides?: {
   isDraft?: boolean
   draftText?: string | null
   newMatchAt?: string | null
-  triageDismissedAt?: string | null
+  triagedAt?: string | null
 }): Promise<string> {
   const db = getDb(env.DB)
   const id = crypto.randomUUID()
@@ -273,7 +275,7 @@ export async function seedBill(overrides?: {
     isDraft: overrides?.isDraft ?? false,
     draftText: overrides?.draftText ?? null,
     newMatchAt: overrides?.newMatchAt ?? null,
-    triageDismissedAt: overrides?.triageDismissedAt ?? null,
+    triagedAt: overrides?.triagedAt ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })

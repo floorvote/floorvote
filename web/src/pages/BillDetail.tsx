@@ -193,7 +193,7 @@ type BillDetailData = {
   customFieldValues: Record<string, { value: string; setBy: string | null; updatedAt: string }>
   matchType: 'keyword' | 'manual' | null
   newMatchAt?: string | null
-  triageDismissedAt?: string | null
+  triagedAt?: string | null
   isDraft?: boolean
   draftText?: string | null
   createdAt: string
@@ -843,7 +843,7 @@ export function BillDetail() {
             {isAdmin
               ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                  {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triageDismissedAt && !triageDismissed
+                  {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
                     ? (
                       <HoverTooltip text="New keyword match — set a priority or dismiss">
                         <NewMatchTriageControl

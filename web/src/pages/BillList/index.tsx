@@ -334,7 +334,7 @@ export function BillList() {
   // dismissed locally so the row's triage control reverts to a plain priority
   // select, and refresh facets so the "New matches" count drops.
   const handleTriageDismiss = useCallback((billId: string) => {
-    setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triageDismissedAt: new Date().toISOString() } : b))
+    setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()
   }, [fetchFacets])
 

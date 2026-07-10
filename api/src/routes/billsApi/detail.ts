@@ -224,7 +224,7 @@ export async function buildBillDetail(
     companionBillIds: bill.companionBillIds ? JSON.parse(bill.companionBillIds) : [],
     matchType: bill.matchType,
     newMatchAt: bill.newMatchAt ?? null,
-    triageDismissedAt: bill.triageDismissedAt ?? null,
+    triagedAt: bill.triagedAt ?? null,
     isDraft: bill.isDraft,
     draftText: bill.draftText,
     textR2Key: bill.textR2Key,

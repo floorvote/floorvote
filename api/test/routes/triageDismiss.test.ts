@@ -25,8 +25,8 @@ describe('PATCH /bills/:id/triage-dismiss', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true })
     const row = await getDb(env.DB).select().from(bills).where(eq(bills.id, billId)).get()
-    expect(row!.triageDismissedAt).not.toBeNull()
-    expect(row!.triageDismissedBy).toBe(adminId)
+    expect(row!.triagedAt).not.toBeNull()
+    expect(row!.triagedBy).toBe(adminId)
   })
 
   it('is idempotent — second dismiss preserves the original dismisser', async () => {
@@ -42,8 +42,8 @@ describe('PATCH /bills/:id/triage-dismiss', () => {
     })
     expect(res.status).toBe(200)
     const row = await getDb(env.DB).select().from(bills).where(eq(bills.id, billId)).get()
-    expect(row!.triageDismissedBy).toBe(adminId)
-    expect(row!.triageDismissedAt).toBe(firstRow!.triageDismissedAt)
+    expect(row!.triagedBy).toBe(adminId)
+    expect(row!.triagedAt).toBe(firstRow!.triagedAt)
   })
 
   it('returns 403 for members', async () => {

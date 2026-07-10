@@ -209,8 +209,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Bill not found' }, 404)
     await db.update(bills)
-      .set({ triageDismissedAt: nowDb(), triageDismissedBy: c.get('user').id })
-      .where(and(eq(bills.id, id), isNull(bills.triageDismissedAt)))
+      .set({ triagedAt: nowDb(), triagedBy: c.get('user').id })
+      .where(and(eq(bills.id, id), isNull(bills.triagedAt)))
     return c.json({ ok: true })
   })
 }

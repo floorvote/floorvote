@@ -24,7 +24,7 @@ describe('new-match data model', () => {
 
     const row = await db.select().from(bills).where(eq(bills.id, id)).get()
     expect(row?.newMatchAt).toBe('2026-06-21 00:00:00')
-    expect(row?.triageDismissedAt).toBeNull()
+    expect(row?.triagedAt).toBeNull()
     const ev = await db.select().from(feedEvents).where(eq(feedEvents.billId, id)).get()
     expect(ev?.type).toBe('bill_matched')
   })

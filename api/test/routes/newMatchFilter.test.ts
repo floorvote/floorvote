@@ -21,7 +21,7 @@ describe('GET /bills?newMatches=1 — worklist predicate', () => {
     // Excluded: has a priority.
     await seedBill({ billNumber: 'PRI 2', title: 'Prioritized', matchType: 'keyword', newMatchAt: MATCH, priority: 'high', relevanceScore: 80 })
     // Excluded: dismissed.
-    await seedBill({ billNumber: 'DIS 3', title: 'Dismissed', matchType: 'keyword', newMatchAt: MATCH, triageDismissedAt: MATCH, relevanceScore: 80 })
+    await seedBill({ billNumber: 'DIS 3', title: 'Dismissed', matchType: 'keyword', newMatchAt: MATCH, triagedAt: MATCH, relevanceScore: 80 })
     // Excluded: manual match.
     await seedBill({ billNumber: 'MAN 4', title: 'Manual', matchType: 'manual', newMatchAt: MATCH, relevanceScore: 80 })
     // Excluded: not yet analyzed (no new_match_at).

@@ -197,7 +197,7 @@ describe('runDigest', () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), priority: 'high', relevanceScore: 90 })
-    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triageDismissedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
