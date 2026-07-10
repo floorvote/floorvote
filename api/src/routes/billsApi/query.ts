@@ -13,8 +13,7 @@ export function newMatchWhere(minRelevance: number): SQL {
   return and(
     eq(bills.matchType, 'keyword'),
     isNotNull(bills.newMatchAt),
-    isNull(bills.priority),
-    isNull(bills.triageDismissedAt),
+    isNull(bills.triagedAt),
     sql`COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}`,
   )!
 }

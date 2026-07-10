@@ -22,7 +22,7 @@ export type Bill = {
   relevanceScore: number | null
   aiProcessedAt: string | null
   newMatchAt: string | null
-  triageDismissedAt: string | null
+  triagedAt: string | null
   voteCounts: { support: number; oppose: number; neutral: number }
   myVote: 'support' | 'neutral' | 'oppose' | null
   commentCount: number

@@ -10,6 +10,15 @@ import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
 
+// Latch a bill as triaged. Idempotent: the isNull guard means only the first
+// triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
+// preserves the original attribution. Shared by the dismiss and priority routes.
+async function latchTriaged(db: ReturnType<typeof getDb>, id: string, userId: string): Promise<void> {
+  await db.update(bills)
+    .set({ triagedAt: nowDb(), triagedBy: userId })
+    .where(and(eq(bills.id, id), isNull(bills.triagedAt)))
+}
+
 export function registerDraftRoutes(router: Hono<AppEnv>) {
   // DELETE /bills/:id — admin only
   router.delete('/:id', requireAdmin, async (c) => {
@@ -171,6 +180,9 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     let promoted = false
     if (priority) {
       const userId = c.get('user').id
+      // Setting a priority is an act of triage — latch the match as triaged so
+      // clearing the priority later doesn't send it back to the New queue.
+      await latchTriaged(db, id, userId)
       await db.insert(feedEvents).values({
         id: crypto.randomUUID(),
         type: 'priority_set',
@@ -208,9 +220,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     const { id } = c.req.param()
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Bill not found' }, 404)
-    await db.update(bills)
-      .set({ triageDismissedAt: nowDb(), triageDismissedBy: c.get('user').id })
-      .where(and(eq(bills.id, id), isNull(bills.triageDismissedAt)))
+    await latchTriaged(db, id, c.get('user').id)
     return c.json({ ok: true })
   })
 }

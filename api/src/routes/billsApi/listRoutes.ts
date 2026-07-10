@@ -209,7 +209,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       relevanceScore: b.relevanceScore,
       aiProcessedAt: b.aiProcessedAt,
       newMatchAt: b.newMatchAt,
-      triageDismissedAt: b.triageDismissedAt,
+      triagedAt: b.triagedAt,
       lastAiTextDocId: b.lastAiTextDocId,
       createdAt: b.createdAt,
       updatedAt: b.updatedAt,

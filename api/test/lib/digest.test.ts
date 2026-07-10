@@ -196,12 +196,13 @@ describe('runDigest', () => {
   it('excludes prioritized and dismissed bills from the new-match section', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
-    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), priority: 'high', relevanceScore: 90 })
-    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triageDismissedAt: recentMatch(), relevanceScore: 90 })
+    // PRI 1 is prioritized, which latches triaged_at (setting a priority is an act of triage).
+    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
-    // PRI 1 has a priority (drives the normal digest? no event → not in events); DIS 1 dismissed.
+    // PRI 1 has a priority and is latched as triaged (no event → not in events); DIS 1 dismissed.
     // Neither qualifies as a new match, and there are no priority events → nothing sent.
     expect(calls).toHaveLength(0)
     expect(result.sent).toBe(0)

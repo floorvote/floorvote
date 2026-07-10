@@ -123,7 +123,7 @@ export const BillRow = memo(function BillRow({
   // Un-triaged keyword match → show the segmented set-priority/dismiss control in
   // place of the plain priority select. Once resolved (priority set or dismissed),
   // this predicate flips false and the row reverts to CompactPrioritySelect.
-  const isNewMatch = isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !bill.priority && !bill.triageDismissedAt
+  const isNewMatch = isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !bill.priority && !bill.triagedAt
   const renderPriorityControl = () => isNewMatch
     ? (
       <NewMatchTriageControl
@@ -193,7 +193,7 @@ export const BillRow = memo(function BillRow({
         color: 'inherit',
       }}
     >
-      {(isSelectionMode || hovered) ? (
+      {isAdmin && (isSelectionMode || hovered) ? (
         <div className="bill-row-checkbox" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <input
             type="checkbox"

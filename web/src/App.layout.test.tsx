@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom'
 import { useEffect } from 'react'
 
@@ -50,7 +50,10 @@ describe('shared layout route (data router)', () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
     render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
     expect(await screen.findByText('bills page')).toBeInTheDocument()
-    expect(hoisted.sidebarMounts).toBe(1)
+    // The mock Sidebar increments this counter in a passive effect, which can
+    // flush a tick after 'bills page' commits on a loaded CI runner — poll rather
+    // than assert synchronously (fixes an intermittent "expected 0 to be 1").
+    await waitFor(() => expect(hoisted.sidebarMounts).toBe(1))
 
     fireEvent.click(screen.getByText('go admin'))
     expect(await screen.findByText('config page')).toBeInTheDocument()
