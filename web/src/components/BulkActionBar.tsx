@@ -45,6 +45,24 @@ type FilterState = {
   cf: Record<string, string[]>
 }
 
+// Builds the `filter` request body from the active filter state (shared by the
+// bulk-edit apply and bulk-dismiss flows so the two stay byte-identical).
+function buildFilterBody(f: FilterState): Record<string, unknown> {
+  return {
+    ...(f.status.length > 0 && { status: f.status }),
+    ...(f.priority.length > 0 && { priority: f.priority }),
+    ...(f.position.length > 0 && { position: f.position }),
+    ...(f.year.length > 0 && { year: f.year }),
+    ...(f.state.length > 0 && { state: f.state }),
+    ...(f.tag.length > 0 && { tag: f.tag }),
+    ...(f.q && { q: f.q }),
+    ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
+    ...(f.myBills && { myBills: '1' }),
+    ...(f.unvoted && { unvoted: '1' }),
+    ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
+  }
+}
+
 // 'mixed' means selected bills have different values for this field
 type FieldValue = string | null | 'mixed'
 
@@ -88,6 +106,7 @@ interface BulkActionBarProps {
         | { fieldId: string; value: string | null }
         | { fieldId: string; additions: string[]; removals: string[] }
       >
+      triagedAt?: string | null
     }
   ) => void
 }
@@ -208,7 +227,7 @@ export function BulkActionBar({
   // Pre-populate from API (filter mode, count ≤ 1000)
   useEffect(() => {
     if (selection.mode !== 'filter') return
-    if (total > 1000) { setInitialValues(null); return }
+    if (total > 1000) { setInitialValues(null); setNullMatchCount(null); setApiNewMatchCount(null); return }
 
     const params = new URLSearchParams()
     currentFilters.status.forEach(s => params.append('status', s))
@@ -349,20 +368,7 @@ export function BulkActionBar({
       if (selection.mode === 'ids') {
         body.ids = [...selection.ids]
       } else {
-        const f = currentFilters
-        body.filter = {
-          ...(f.status.length > 0 && { status: f.status }),
-          ...(f.priority.length > 0 && { priority: f.priority }),
-          ...(f.position.length > 0 && { position: f.position }),
-          ...(f.year.length > 0 && { year: f.year }),
-          ...(f.state.length > 0 && { state: f.state }),
-          ...(f.tag.length > 0 && { tag: f.tag }),
-          ...(f.q && { q: f.q }),
-          ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
-          ...(f.myBills && { myBills: '1' }),
-          ...(f.unvoted && { unvoted: '1' }),
-          ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
-        }
+        body.filter = buildFilterBody(currentFilters)
       }
       if (staged.priority !== undefined) body.priority = staged.priority
       if (staged.position !== undefined) body.position = staged.position
@@ -397,7 +403,7 @@ export function BulkActionBar({
     : selectedBills.filter(b => b.matchType === 'keyword' && b.newMatchAt && !b.triagedAt).length
 
   async function handleDismissNewMatches() {
-    if (newMatchCount === 0 || applying) return
+    if (newMatchCount === 0 || applying || overLimit) return
     if (!window.confirm(`Dismiss ${newMatchCount.toLocaleString()} new match${newMatchCount !== 1 ? 'es' : ''} (mark reviewed, no priority)? They leave the New-matches queue but stay tracked.`)) return
     setApplying(true)
     setError(null)
@@ -406,23 +412,19 @@ export function BulkActionBar({
       if (selection.mode === 'ids') {
         body.ids = [...selection.ids]
       } else {
-        const f = currentFilters
-        body.filter = {
-          ...(f.status.length > 0 && { status: f.status }),
-          ...(f.priority.length > 0 && { priority: f.priority }),
-          ...(f.position.length > 0 && { position: f.position }),
-          ...(f.year.length > 0 && { year: f.year }),
-          ...(f.state.length > 0 && { state: f.state }),
-          ...(f.tag.length > 0 && { tag: f.tag }),
-          ...(f.q && { q: f.q }),
-          ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
-          ...(f.myBills && { myBills: '1' }),
-          ...(f.unvoted && { unvoted: '1' }),
-          ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
-        }
+        body.filter = buildFilterBody(currentFilters)
       }
       await apiFetch<{ dismissed: number }>('/bills/bulk-dismiss', { method: 'POST', body: JSON.stringify(body) })
-      onApplied(selection.mode === 'ids' ? [...selection.ids] : 'filter', {})
+      if (selection.mode === 'ids') {
+        // Stamp only the dismissed subset so those rows leave the New-matches
+        // queue locally (filter mode refetches, so no local stamp needed).
+        const dismissedIds = selectedBills
+          .filter(b => b.matchType === 'keyword' && b.newMatchAt && !b.triagedAt)
+          .map(b => b.id)
+        onApplied(dismissedIds, { triagedAt: new Date().toISOString() })
+      } else {
+        onApplied('filter', {})
+      }
       onClearSelection()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to dismiss new matches')

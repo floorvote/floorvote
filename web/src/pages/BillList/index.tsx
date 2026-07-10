@@ -360,6 +360,7 @@ export function BillList() {
         | { fieldId: string; value: string | null }
         | { fieldId: string; additions: string[]; removals: string[] }
       >
+      triagedAt?: string | null
     },
   ) => {
     if (updatedIds === 'filter') {
@@ -374,6 +375,7 @@ export function BillList() {
       const next = { ...b }
       if ('priority' in updates) next.priority = updates.priority ?? null
       if ('position' in updates) next.position = updates.position ?? null
+      if (updates.triagedAt !== undefined) next.triagedAt = updates.triagedAt
       if (updates.customFields) {
         const cfv = { ...(b.customFieldValues ?? {}) }
         for (const entry of updates.customFields) {

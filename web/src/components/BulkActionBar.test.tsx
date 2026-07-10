@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BulkActionBar, type Selection } from './BulkActionBar'
 
 vi.mock('../lib/api', () => ({ apiFetch: vi.fn(() => Promise.resolve({ dismissed: 1 })) }))
@@ -13,8 +13,10 @@ const noFilters = {
 
 function Harness({
   selectedBills = [{ id: 'bill-1', priority: null as string | null, position: null as string | null }],
+  onApplied = vi.fn(),
 }: {
   selectedBills?: Array<{ id: string; priority: string | null; position: string | null; matchType?: string | null; newMatchAt?: string | null; triagedAt?: string | null }>
+  onApplied?: (updatedIds: string[] | 'filter', updates: Record<string, unknown>) => void
 }) {
   const [selection] = useState<Selection>({ mode: 'ids', ids: new Set(selectedBills.map(b => b.id)) })
   return (
@@ -26,7 +28,7 @@ function Harness({
       currentFilters={noFilters}
       selectedBills={selectedBills}
       onClearSelection={vi.fn()}
-      onApplied={vi.fn()}
+      onApplied={onApplied}
     />
   )
 }
@@ -91,5 +93,28 @@ describe('BulkActionBar — dismiss new matches', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(btn!)
     expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-dismiss', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('stays hidden for an already-triaged keyword match', () => {
+    render(<Harness selectedBills={[{ id: 'a', priority: null, position: null, matchType: 'keyword', newMatchAt: '2026-06-20', triagedAt: '2026-06-20' }]} />)
+    expect(dismissBtn()).not.toBeInTheDocument()
+  })
+
+  it('calls onApplied with only the dismissed subset ids and a triagedAt stamp (ids mode)', async () => {
+    vi.mocked(apiFetch).mockClear()
+    const onApplied = vi.fn()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(
+      <Harness
+        onApplied={onApplied}
+        selectedBills={[
+          { id: 'a', priority: null, position: null, matchType: 'keyword', newMatchAt: '2026-06-20', triagedAt: null },
+          { id: 'm', priority: null, position: null, matchType: 'manual', newMatchAt: null, triagedAt: null },
+        ]}
+      />,
+    )
+    fireEvent.click(dismissBtn()!)
+    await waitFor(() => expect(onApplied).toHaveBeenCalled())
+    expect(onApplied).toHaveBeenCalledWith(['a'], expect.objectContaining({ triagedAt: expect.any(String) }))
   })
 })
