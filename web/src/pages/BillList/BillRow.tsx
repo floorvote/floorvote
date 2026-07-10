@@ -193,7 +193,7 @@ export const BillRow = memo(function BillRow({
         color: 'inherit',
       }}
     >
-      {(isSelectionMode || hovered) ? (
+      {isAdmin && (isSelectionMode || hovered) ? (
         <div className="bill-row-checkbox" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <input
             type="checkbox"
