@@ -28,6 +28,7 @@ export type LsEnv = {
   D_LATENCY_THRESHOLD_MS?: string  // engagement-pull latency (ms) above which a tenant is flagged slow (default 3000)
   BILL_TEXT_CACHE_TTL?: string  // GET /bills/:id/text cache TTL in seconds (default 300; 0 disables)
   CF_QUEUES_TOKEN?: string  // CF API token (Queues: Edit) for dynamic per-tenant queue create + HTTP publish
+  TENANT_QUEUE_PREFIX?: string  // prefix for dynamic queue-name resolution: `${prefix}-<tenantId>-queue` (default "floorvote"). Set to match your tenant queue naming if you rename resources (e.g. "acme").
   ADMIN_APP_URL?: string
   ASSETS?: Fetcher
   // Workers Rate Limiting binding for the unauthenticated dashboard /login POST

@@ -6,6 +6,16 @@ Replace `[slug]` with a lowercase identifier (e.g., `org-nj`, `org-ca`) and `[ST
 
 > **Provisioning script.** `scripts/new-instance.sh` automates the steps below end-to-end. It creates the D1 + Queue, appends the env block, deploys the tenant, sets `CF_AIG_TOKEN`, binds `CentralApi` on central and redeploys it, force-registers, optionally seeds history (`--seed-dir`/`--session-id`), and creates the first admin. Use `--from-step N` to resume after a failure. The manual steps below remain the canonical reference and are worth reading before your first run.
 
+> **Renaming resources (forks / rebranding).** The docs and scripts name Workers, D1
+> databases, and queues `floorvote-<slug>` by default. If you rebrand — e.g. `acme-<slug>` —
+> set **one** value and every derived name follows: `RESOURCE_PREFIX=acme` for the scripts
+> (`new-instance.sh`, `teardown-instance.sh`, `deploy.sh`; or drop it in a gitignored
+> `scripts/.env.ops`). Critically, set the **matching** `TENANT_QUEUE_PREFIX=acme` var on the
+> central Worker (`[env.legiscan.vars]`): central resolves each tenant's delivery queue *by
+> name*, so if its prefix doesn't match yours it creates a **phantom queue with no consumer**
+> and the tenant silently receives no bills. Keep `RESOURCE_PREFIX` and central's
+> `TENANT_QUEUE_PREFIX` in lockstep.
+
 ---
 
 ## What can and can't be scripted
@@ -208,6 +218,11 @@ Commit `api/wrangler.toml` before deploying.
 
 ## Step 4: Set Secrets
 
+> **Deploy first.** `wrangler secret put` attaches a secret to an **already-deployed**
+> Worker, so for a brand-new tenant run **Step 6 (deploy) once first**, then set secrets
+> and redeploy is not needed (the secret takes effect immediately). `scripts/new-instance.sh`
+> does this automatically — it deploys, then sets secrets.
+
 From the `api/` directory. **Only `CF_AIG_TOKEN` is required.**
 
 ```bash
@@ -325,13 +340,27 @@ Non-keyword bills arrive as monitor stubs (keyword/manual-matched bills get full
 
 ## Step 8: Seed the Active Session(s) for Whole-Session Monitoring
 
+> **Customize keywords BEFORE seeding if you can.** Seeding is where central decides which
+> bills get full AI (keyword/manual matches) vs. lightweight stubs — using the keywords
+> **already synced to central**. If you intend to change the preset's keywords, AI context,
+> or taxonomy, do it now (Settings → Configuration, or via `association_config`) and let it
+> sync to central **first**, so the initial AI pass uses your final settings. Editing after
+> seeding also works, but then you must "Rerun AI on all bills" (Step 12) to regenerate —
+> extra time and AI cost.
+
 Every bill in the active session is seeded into the tenant at standup — keyword/manual-matched bills get full AI processing; all others land as lightweight monitor stubs (no Generate button, no AI cost). This means the tenant mirrors the full session from day one.
 
 Two paths depending on whether central already holds the state's bills:
 
 ### Path A: Central already has the session (most tenants)
 
-If the state is already tracked by another tenant, central has the sessions and bills in its DB. Paginate `seed-session` per active session until `"done": true`:
+If the state is already tracked by another tenant, central has the sessions and bills in its DB. Paginate `seed-session` per session until `"done": true`:
+
+> **"Active" here includes the current session even if it has adjourned.** Seed the most
+> recent regular (and any special) session for the state — a legislature that has gone
+> `sine_die` for the cycle is still exactly what a new tenant wants to monitor. Find the
+> `session_id`(s) in central's `sessions` table; don't filter on `sine_die = 0`, which
+> silently skips a just-adjourned session (and can leave the tenant with zero bills).
 
 ```bash
 curl -s -X POST \

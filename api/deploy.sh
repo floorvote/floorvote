@@ -2,7 +2,9 @@
 set -e
 
 ENV=${1:?Usage: npm run deploy:tenant -- <wrangler-env-name>  (e.g. my-org)}
-DB="floorvote-${ENV}"
+# Resource-name prefix — override RESOURCE_PREFIX if you renamed your Workers/DBs/queues
+# (default "floorvote", matching the docs). Must match the database_name in wrangler.toml.
+DB="${RESOURCE_PREFIX:-floorvote}-${ENV}"
 
 cd "$(dirname "$0")"
 

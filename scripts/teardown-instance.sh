@@ -56,9 +56,15 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-WORKER_NAME="floorvote-${TENANT_ID}"
-QUEUE_NAME="floorvote-${TENANT_ID}-queue"
-D1_NAME="floorvote-${TENANT_ID}"
+# Resource-name prefix — must match new-instance.sh / your wrangler.toml. Default
+# "floorvote"; set RESOURCE_PREFIX (or scripts/.env.ops) if you renamed resources, so
+# teardown targets YOUR Workers/DBs/queues and not a nonexistent "floorvote-*" set.
+[[ -f "$SCRIPT_DIR/.env.ops" ]] && { set -a; source "$SCRIPT_DIR/.env.ops"; set +a; }
+RESOURCE_PREFIX="${RESOURCE_PREFIX:-floorvote}"
+
+WORKER_NAME="${RESOURCE_PREFIX}-${TENANT_ID}"
+QUEUE_NAME="${RESOURCE_PREFIX}-${TENANT_ID}-queue"
+D1_NAME="${RESOURCE_PREFIX}-${TENANT_ID}"
 CENTRAL_DB="central-bills-ls"
 CENTRAL_CONFIG="$REPO_ROOT/central/wrangler.toml"
 CENTRALAPI_BINDING="TENANT_$(echo "$TENANT_ID" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"

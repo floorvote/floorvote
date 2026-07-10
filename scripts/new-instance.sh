@@ -48,13 +48,24 @@ API_DIR="$REPO_ROOT/api"
 CENTRAL_DIR="$REPO_ROOT/central"
 
 # ── Shared, account-level values (identical on every tenant) ──────────────────
-CENTRAL_URL="https://floorvote-central-legiscan.<your-subdomain>.workers.dev"
-ACCOUNT_SUBDOMAIN="<your-subdomain>"
-CF_ACCOUNT_ID="REPLACE_WITH_ACCOUNT_ID"
-CF_AIG_GATEWAY="tracker"
+# Keep these here, or (recommended) set them in a gitignored scripts/.env.ops so a
+# rebranded fork never edits this committed file. Env / .env.ops values win over the
+# defaults below.
+[[ -f "$SCRIPT_DIR/.env.ops" ]] && { set -a; source "$SCRIPT_DIR/.env.ops"; set +a; }
+
+# Resource-name prefix for this deployment's Workers / D1 / queues. Default "floorvote"
+# matches the docs. A rebranded deployment sets RESOURCE_PREFIX (e.g. "acme") ONCE and
+# every derived name below follows. It MUST match central's TENANT_QUEUE_PREFIX so
+# central resolves this tenant's real queue instead of creating a phantom (no consumer).
+RESOURCE_PREFIX="${RESOURCE_PREFIX:-floorvote}"
+CENTRAL_WORKER_NAME="${CENTRAL_WORKER_NAME:-${RESOURCE_PREFIX}-central-legiscan}"
+ACCOUNT_SUBDOMAIN="${ACCOUNT_SUBDOMAIN:-<your-subdomain>}"
+CENTRAL_URL="${CENTRAL_URL:-https://${CENTRAL_WORKER_NAME}.${ACCOUNT_SUBDOMAIN}.workers.dev}"
+CF_ACCOUNT_ID="${CF_ACCOUNT_ID:-REPLACE_WITH_ACCOUNT_ID}"
+CF_AIG_GATEWAY="${CF_AIG_GATEWAY:-}"           # your Cloudflare AI Gateway slug (required)
 # ES256 public JWK — central is the sole issuer; tenants only verify. Not a secret;
 # the same value is committed in every [env.*] block in api/wrangler.toml.
-SUPERADMIN_JWT_PUBLIC_KEY='<your-ES256-public-JWK>'  # paste the full JSON from your existing tenant block
+SUPERADMIN_JWT_PUBLIC_KEY="${SUPERADMIN_JWT_PUBLIC_KEY:-<your-ES256-public-JWK>}"  # paste the full JSON from your existing tenant block
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 log()      { echo "[$(date '+%Y-%m-%d %H:%M:%S')]  $*"; }
@@ -156,10 +167,10 @@ if [[ $FROM_STEP -le 5 ]]; then
 fi
 
 APP_URL="${APP_URL:-https://${SLUG}.example.com}"
-WORKER_NAME="floorvote-${SLUG}"
+WORKER_NAME="${RESOURCE_PREFIX}-${SLUG}"
 WORKER_URL="https://${WORKER_NAME}.${ACCOUNT_SUBDOMAIN}.workers.dev"
-DB_NAME="floorvote-${SLUG}"
-QUEUE_NAME="floorvote-${SLUG}-queue"
+DB_NAME="${RESOURCE_PREFIX}-${SLUG}"
+QUEUE_NAME="${RESOURCE_PREFIX}-${SLUG}-queue"
 SLUG_UPPER="$(echo "$SLUG" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
 CENTRALAPI_BINDING="TENANT_${SLUG_UPPER}"
 # Each tenant needs a unique ratelimits namespace_id. Find the max existing id
@@ -258,7 +269,7 @@ queue = "${QUEUE_NAME}"
 max_batch_size = 10
 max_batch_timeout = 30
 max_concurrency = 3
-dead_letter_queue = "floorvote-dlq"
+dead_letter_queue = "${RESOURCE_PREFIX}-dlq"
 
 [[env.${SLUG}.ratelimits]]
 name = "LOGIN_RATE_LIMITER"
@@ -269,7 +280,7 @@ namespace_id = "${RATELIMIT_NS_ID}"
 
 [[env.${SLUG}.services]]
 binding = "CENTRAL"
-service = "floorvote-central-legiscan"
+service = "${CENTRAL_WORKER_NAME}"
 entrypoint = "TenantApi"
 
 [[env.${SLUG}.send_email]]
@@ -387,10 +398,15 @@ if step "Seed active session(s) for whole-session monitoring"; then
       --session-id "$SESSION_ID" --tenant "$SLUG" --remote
     log_ok "Seeded central from zip + linked session $SESSION_ID"
   else
-    # No zip: seed-session for every active session central already holds for our state(s).
+    # No zip: seed-session for the current session(s) central already holds for our
+    # state(s). Include sessions still active (sine_die=0) OR whose year_end is the current
+    # year or later. A just-adjourned session is still exactly what a new tenant wants to
+    # monitor — the old sine_die=0-only filter silently seeded NOTHING when a legislature
+    # had adjourned its regular session mid-cycle (e.g. a state whose only current sessions
+    # are already sine_die).
     for st in "${STATES_ARR[@]}"; do
       SIDS=$(npx wrangler d1 execute central-bills-ls --env legiscan --remote --json \
-        --command "SELECT s.session_id AS id FROM sessions s WHERE s.state='${st}' AND s.sine_die=0 AND s.sync_enabled=1 AND EXISTS (SELECT 1 FROM bills b WHERE b.session_id=s.session_id)" \
+        --command "SELECT s.session_id AS id FROM sessions s WHERE s.state='${st}' AND s.sync_enabled=1 AND (s.sine_die=0 OR s.year_end >= CAST(strftime('%Y','now') AS INTEGER)) AND EXISTS (SELECT 1 FROM bills b WHERE b.session_id=s.session_id)" \
         2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(' '.join(str(r['id']) for r in d[0]['results']))" 2>/dev/null || echo "")
       if [[ -z "$SIDS" ]]; then
         log_warn "central has no bills yet for ${st} — tenant will fill on the next full pass (or pass --seed-dir to bulk-load)"
