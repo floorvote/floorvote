@@ -3,7 +3,7 @@ import { SELF, env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 const MATCH = '2026-06-20 00:00:00'
 type ListResp = { bills: { billNumber: string }[] }
@@ -71,12 +71,12 @@ describe('setting a priority latches a new match as triaged', () => {
 })
 
 describe('bulk priority-set latches new matches as triaged', () => {
-  let adminToken: string, a: string, b: string
+  let adminToken: string, adminId: string, a: string, b: string
 
   beforeEach(async () => {
     await resetDb()
     await applyMigrations()
-    const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
+    adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
     a = await seedBill({ billNumber: 'B A', matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 })
     b = await seedBill({ billNumber: 'B B', matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 })
@@ -89,7 +89,10 @@ describe('bulk priority-set latches new matches as triaged', () => {
       body: JSON.stringify({ ids: [a, b], priority: 'low' }),
     })
     expect(res.status).toBe(200)
-    const rows = await getDb(env.DB).select().from(bills)
-    for (const r of rows) expect(r.triagedAt).not.toBeNull()
+    const rows = await getDb(env.DB).select().from(bills).where(inArray(bills.id, [a, b])).all()
+    for (const r of rows) {
+      expect(r.triagedAt).not.toBeNull()
+      expect(r.triagedBy).toBe(adminId)
+    }
   })
 })
