@@ -170,6 +170,11 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     await db.update(bills).set({ priority, updatedAt: nowDb() }).where(eq(bills.id, id))
     let promoted = false
     if (priority) {
+      // Setting a priority is an act of triage — latch the match as triaged so
+      // clearing the priority later doesn't send it back to the New queue. Idempotent.
+      await db.update(bills)
+        .set({ triagedAt: nowDb(), triagedBy: c.get('user').id })
+        .where(and(eq(bills.id, id), isNull(bills.triagedAt)))
       const userId = c.get('user').id
       await db.insert(feedEvents).values({
         id: crypto.randomUUID(),

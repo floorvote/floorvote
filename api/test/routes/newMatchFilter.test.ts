@@ -18,8 +18,8 @@ describe('GET /bills?newMatches=1 — worklist predicate', () => {
 
     // In the worklist: keyword + analyzed (new_match_at) + no priority + not dismissed.
     await seedBill({ billNumber: 'IN 1', title: 'In worklist', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 80 })
-    // Excluded: has a priority.
-    await seedBill({ billNumber: 'PRI 2', title: 'Prioritized', matchType: 'keyword', newMatchAt: MATCH, priority: 'high', relevanceScore: 80 })
+    // Excluded: prioritized bills are latched as triaged.
+    await seedBill({ billNumber: 'PRI 2', title: 'Prioritized', matchType: 'keyword', newMatchAt: MATCH, priority: 'high', triagedAt: MATCH, relevanceScore: 80 })
     // Excluded: dismissed.
     await seedBill({ billNumber: 'DIS 3', title: 'Dismissed', matchType: 'keyword', newMatchAt: MATCH, triagedAt: MATCH, relevanceScore: 80 })
     // Excluded: manual match.

@@ -72,7 +72,6 @@ export async function runDigest(
     .where(and(
       eq(bills.matchType, 'keyword'),
       isNotNull(bills.newMatchAt),
-      isNull(bills.priority),
       isNull(bills.triagedAt),
       sql`datetime(${bills.newMatchAt}) > datetime(${since})`,
       sql`datetime(${bills.newMatchAt}) <= datetime(${now})`,
