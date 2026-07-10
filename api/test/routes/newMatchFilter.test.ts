@@ -16,7 +16,7 @@ describe('GET /bills?newMatches=1 — worklist predicate', () => {
     const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
     adminToken = await seedSession(adminId)
 
-    // In the worklist: keyword + analyzed (new_match_at) + no priority + not dismissed.
+    // In the worklist: keyword + analyzed (new_match_at) + not yet triaged (triaged_at IS NULL) + at/above the relevance threshold.
     await seedBill({ billNumber: 'IN 1', title: 'In worklist', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 80 })
     // Excluded: prioritized bills are latched as triaged.
     await seedBill({ billNumber: 'PRI 2', title: 'Prioritized', matchType: 'keyword', newMatchAt: MATCH, priority: 'high', triagedAt: MATCH, relevanceScore: 80 })

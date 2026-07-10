@@ -49,4 +49,23 @@ describe('setting a priority latches a new match as triaged', () => {
     expect(row!.triagedAt).not.toBeNull()
     expect(await newMatchNumbers()).toEqual([])
   })
+
+  it('is idempotent — a later priority change by another admin preserves the original triager', async () => {
+    await setPriority('high')
+    const firstRow = await getDb(env.DB).select().from(bills).where(eq(bills.id, billId)).get()
+
+    const admin2 = await seedUser({ role: 'admin', email: 'admin2@example.com' })
+    const admin2Token = await seedSession(admin2)
+    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${admin2Token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priority: 'medium' }),
+    })
+    expect(res.status).toBe(200)
+
+    const row = await getDb(env.DB).select().from(bills).where(eq(bills.id, billId)).get()
+    expect(row!.priority).toBe('medium')
+    expect(row!.triagedBy).toBe(adminId)
+    expect(row!.triagedAt).toBe(firstRow!.triagedAt)
+  })
 })
