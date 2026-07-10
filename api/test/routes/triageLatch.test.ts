@@ -95,4 +95,29 @@ describe('bulk priority-set latches new matches as triaged', () => {
       expect(r.triagedBy).toBe(adminId)
     }
   })
+
+  it('applies priority and latches triage across a selection that crosses the chunk boundary (>100 bills)', async () => {
+    const ids: string[] = []
+    for (let i = 0; i < 120; i++) {
+      ids.push(await seedBill({ billNumber: `BIG ${i}`, matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 }))
+    }
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, priority: 'low' }),
+    })
+    expect(res.status).toBe(200)
+
+    const db = getDb(env.DB)
+    // Verify in chunks — a single inArray over 120 ids would blow D1's 100-param cap.
+    let withLowPriority = 0
+    let withTriagedAt = 0
+    for (let i = 0; i < ids.length; i += 90) {
+      const rows = await db.select().from(bills).where(inArray(bills.id, ids.slice(i, i + 90))).all()
+      withLowPriority += rows.filter(r => r.priority === 'low').length
+      withTriagedAt += rows.filter(r => r.triagedAt !== null).length
+    }
+    expect(withLowPriority).toBe(120)
+    expect(withTriagedAt).toBe(120)
+  })
 })

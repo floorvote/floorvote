@@ -10,6 +10,11 @@ import { nowDb } from '../../lib/dbTime'
 import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 
+// Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
+// below 100 to leave headroom for the extra SET/predicate params some queries add
+// (e.g. .set({ triagedAt, triagedBy }) or newMatchWhere's matchType + relevance).
+const BULK_CHUNK = 90
+
 export function registerBulkRoutes(router: Hono<AppEnv>) {
   router.post('/bulk', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
@@ -103,17 +108,17 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     // Apply priority
     if (hasPriority) {
       const priority = (body.priority ?? null) as 'high' | 'medium' | 'low' | null
-      for (let i = 0; i < billIds.length; i += 100) {
+      for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
         await db.update(bills)
           .set({ priority, updatedAt: now })
-          .where(inArray(bills.id, billIds.slice(i, i + 100)))
+          .where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)))
       }
       if (priority) {
         // Latch each newly-prioritized match as triaged (idempotent — first actor wins).
-        for (let i = 0; i < billIds.length; i += 100) {
+        for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
           await db.update(bills)
             .set({ triagedAt: now, triagedBy: currentUser.id })
-            .where(and(inArray(bills.id, billIds.slice(i, i + 100)), isNull(bills.triagedAt)))
+            .where(and(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)), isNull(bills.triagedAt)))
         }
         if (!isBulk) {
           await db.insert(feedEvents).values(
@@ -135,8 +140,13 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           })
         }
         // Fetch externalId + matchType once for both calendar backfill and promotion.
-        const ext = await db.select({ externalId: bills.externalId, matchType: bills.matchType })
-          .from(bills).where(inArray(bills.id, billIds)).all()
+        // Chunked — billIds can be up to 1000, well over D1's 100-bound-param cap.
+        const ext: { externalId: string | null; matchType: 'keyword' | 'manual' | null }[] = []
+        for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+          const rows = await db.select({ externalId: bills.externalId, matchType: bills.matchType })
+            .from(bills).where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK))).all()
+          ext.push(...rows)
+        }
         const legiscanIds = ext
           .map(r => parseLegiScanId(r.externalId))
           .filter((n): n is number => n !== null)
@@ -165,14 +175,14 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     // Apply position
     if (hasPosition) {
       if (body.position === null) {
-        for (let i = 0; i < billIds.length; i += 100) {
-          await db.delete(officialPositions).where(inArray(officialPositions.billId, billIds.slice(i, i + 100)))
+        for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+          await db.delete(officialPositions).where(inArray(officialPositions.billId, billIds.slice(i, i + BULK_CHUNK)))
         }
       } else {
         const position = body.position!
-        for (let i = 0; i < billIds.length; i += 100) {
+        for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
           await db.batch(
-            billIds.slice(i, i + 100).map(billId =>
+            billIds.slice(i, i + BULK_CHUNK).map(billId =>
               db.insert(officialPositions)
                 .values({ id: crypto.randomUUID(), billId, position, setBy: currentUser.id, createdAt: now, updatedAt: now })
                 .onConflictDoUpdate({
@@ -215,15 +225,20 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           const removals = ('removals' in entry ? entry.removals : undefined) ?? []
           if (additions.length === 0 && removals.length === 0) continue
 
-          // Read existing values for all affected bills
-          const existingRows = await db
-            .select({ billId: billCustomFieldValues.billId, value: billCustomFieldValues.value })
-            .from(billCustomFieldValues)
-            .where(and(
-              inArray(billCustomFieldValues.billId, billIds),
-              eq(billCustomFieldValues.fieldId, fieldId),
-            ))
-            .all()
+          // Read existing values for all affected bills. Chunked — billIds can be up to
+          // 1000, well over D1's 100-bound-param cap (plus the fieldId eq param).
+          const existingRows: { billId: string; value: string }[] = []
+          for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+            const rows = await db
+              .select({ billId: billCustomFieldValues.billId, value: billCustomFieldValues.value })
+              .from(billCustomFieldValues)
+              .where(and(
+                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
+                eq(billCustomFieldValues.fieldId, fieldId),
+              ))
+              .all()
+            existingRows.push(...rows)
+          }
           const existingByBill = new Map(existingRows.map(r => [r.billId, r.value]))
 
           const additionsSet = new Set(additions)
@@ -275,18 +290,18 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
         const value = 'value' in entry ? entry.value : null
         if (value === null) {
-          for (let i = 0; i < billIds.length; i += 100) {
+          for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
             await db.delete(billCustomFieldValues).where(
               and(
-                inArray(billCustomFieldValues.billId, billIds.slice(i, i + 100)),
+                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
                 eq(billCustomFieldValues.fieldId, fieldId),
               )
             )
           }
         } else {
-          for (let i = 0; i < billIds.length; i += 100) {
+          for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
             await db.batch(
-              billIds.slice(i, i + 100).map(billId =>
+              billIds.slice(i, i + BULK_CHUNK).map(billId =>
                 db.insert(billCustomFieldValues)
                   .values({ billId, fieldId, value, setBy: currentUser.id, updatedAt: now })
                   .onConflictDoUpdate({
@@ -351,23 +366,22 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const min = await getNewMatchMinRelevance(db)
     const now = nowDb()
 
-    // D1 caps a query at 100 bound params. Both statements below add a few params on top of
-    // the inArray list (SELECT: newMatchWhere's matchType + threshold; UPDATE: triagedAt +
-    // triagedBy), so the chunk must be < 100 to stay under the limit with a selection up to 1000.
-    const DISMISS_CHUNK = 90
+    // Both statements below add a few params on top of the inArray list (SELECT:
+    // newMatchWhere's matchType + threshold; UPDATE: triagedAt + triagedBy), which is why
+    // they're chunked at the shared BULK_CHUNK rather than the raw 100-param cap.
 
     // Restrict to the un-triaged keyword new-matches within the selection (same predicate as the worklist).
     const toDismiss: string[] = []
-    for (let i = 0; i < billIds.length; i += DISMISS_CHUNK) {
-      const chunk = billIds.slice(i, i + DISMISS_CHUNK)
+    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+      const chunk = billIds.slice(i, i + BULK_CHUNK)
       const rows = await db.select({ id: bills.id }).from(bills)
         .where(and(inArray(bills.id, chunk), newMatchWhere(min))).all()
       toDismiss.push(...rows.map(r => r.id))
     }
-    for (let i = 0; i < toDismiss.length; i += DISMISS_CHUNK) {
+    for (let i = 0; i < toDismiss.length; i += BULK_CHUNK) {
       await db.update(bills)
         .set({ triagedAt: now, triagedBy: currentUser.id })
-        .where(inArray(bills.id, toDismiss.slice(i, i + DISMISS_CHUNK)))
+        .where(inArray(bills.id, toDismiss.slice(i, i + BULK_CHUNK)))
     }
     return c.json({ dismissed: toDismiss.length })
   })
@@ -429,15 +443,15 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       return c.json({ count: 0, priorities: {}, positions: {}, customFields: {}, nullMatchCount: 0, newMatchCount: 0 })
     }
 
-    // Fetch priority + position in chunks of 100 for inArray safety
+    // Fetch priority + position in chunks for inArray safety
     const priorityCounts: Record<string, number> = {}
     const positionCounts: Record<string, number> = {}
     let nullMatchCount = 0
     const newMatchMin = await getNewMatchMinRelevance(db)
     let newMatchCount = 0
 
-    for (let i = 0; i < billIds.length; i += 100) {
-      const chunk = billIds.slice(i, i + 100)
+    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+      const chunk = billIds.slice(i, i + BULK_CHUNK)
 
       const billRows = await db
         .select({ id: bills.id, priority: bills.priority, externalId: bills.externalId, matchType: bills.matchType, newMatchAt: bills.newMatchAt, triagedAt: bills.triagedAt, relevanceScore: bills.relevanceScore })
@@ -472,8 +486,8 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     // Fetch custom field values
     const cfCounts: Record<string, Record<string, number>> = {}
-    for (let i = 0; i < billIds.length; i += 100) {
-      const chunk = billIds.slice(i, i + 100)
+    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+      const chunk = billIds.slice(i, i + BULK_CHUNK)
       const cfRows = await db
         .select({
           billId: billCustomFieldValues.billId,
