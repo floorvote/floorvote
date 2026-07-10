@@ -75,6 +75,8 @@ interface BulkActionBarProps {
     matchType?: string | null
     position: string | null
     customFieldValues?: Record<string, string>
+    newMatchAt?: string | null
+    triagedAt?: string | null
   }>
   onClearSelection: () => void
   onApplied: (
@@ -180,6 +182,7 @@ export function BulkActionBar({
   const [error, setError] = useState<string | null>(null)
   const [visible, setVisible] = useState(false)
   const [nullMatchCount, setNullMatchCount] = useState<number | null>(null)
+  const [apiNewMatchCount, setApiNewMatchCount] = useState<number | null>(null)
   const prevModeRef = useRef(selection.mode)
 
   const count = selection.mode === 'ids' ? selection.ids.size
@@ -222,12 +225,13 @@ export function BulkActionBar({
       values.forEach(v => params.append(`cf_${fieldId}`, v))
     }
 
-    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
+    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; nullMatchCount: number; newMatchCount: number }>(
       `/bills/bulk-values?${params}`
     ).then(data => {
       setInitialValues(computeInitialFromDistribution(data, data.count, customFieldDefs))
       setNullMatchCount(data.nullMatchCount)
-    }).catch(() => { setInitialValues(null); setNullMatchCount(null) })
+      setApiNewMatchCount(data.newMatchCount)
+    }).catch(() => { setInitialValues(null); setNullMatchCount(null); setApiNewMatchCount(null) })
   }, [selection.mode, total, currentFilters, customFieldDefs])
 
   // Reset staged values when selection changes mode
@@ -388,6 +392,45 @@ export function BulkActionBar({
     }
   }
 
+  const newMatchCount = selection.mode === 'filter'
+    ? (apiNewMatchCount ?? 0)
+    : selectedBills.filter(b => b.matchType === 'keyword' && b.newMatchAt && !b.triagedAt).length
+
+  async function handleDismissNewMatches() {
+    if (newMatchCount === 0 || applying) return
+    if (!window.confirm(`Dismiss ${newMatchCount.toLocaleString()} new match${newMatchCount !== 1 ? 'es' : ''} (mark reviewed, no priority)? They leave the New-matches queue but stay tracked.`)) return
+    setApplying(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = {}
+      if (selection.mode === 'ids') {
+        body.ids = [...selection.ids]
+      } else {
+        const f = currentFilters
+        body.filter = {
+          ...(f.status.length > 0 && { status: f.status }),
+          ...(f.priority.length > 0 && { priority: f.priority }),
+          ...(f.position.length > 0 && { position: f.position }),
+          ...(f.year.length > 0 && { year: f.year }),
+          ...(f.state.length > 0 && { state: f.state }),
+          ...(f.tag.length > 0 && { tag: f.tag }),
+          ...(f.q && { q: f.q }),
+          ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
+          ...(f.myBills && { myBills: '1' }),
+          ...(f.unvoted && { unvoted: '1' }),
+          ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
+        }
+      }
+      await apiFetch<{ dismissed: number }>('/bills/bulk-dismiss', { method: 'POST', body: JSON.stringify(body) })
+      onApplied(selection.mode === 'ids' ? [...selection.ids] : 'filter', {})
+      onClearSelection()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dismiss new matches')
+    } finally {
+      setApplying(false)
+    }
+  }
+
   const applyable = hasPending && !applying && !overLimit
 
   // Renders a filter-bar-style pill button with a dropdown for a single field
@@ -541,22 +584,40 @@ export function BulkActionBar({
           onUndo: () => clearStaged('position'),
         })}
 
-        {/* Priority pill */}
-        {renderPill({
-          fieldKey: 'priority',
-          label: 'Priority',
-          eff: effVal(staged.priority, initialValues?.priority),
-          isStaged: staged.priority !== undefined,
-          isPriority: true,
-          options: [
-            { value: null, label: 'Not set' },
-            { value: 'high', label: 'High' },
-            { value: 'medium', label: 'Medium' },
-            { value: 'low', label: 'Low' },
-          ],
-          onSelect: val => setStagedField('priority', val, initialValues?.priority),
-          onUndo: () => clearStaged('priority'),
-        })}
+        {/* Priority pill + dismiss-new-matches, stacked (mirrors the single-row triage control) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+          {renderPill({
+            fieldKey: 'priority',
+            label: 'Priority',
+            eff: effVal(staged.priority, initialValues?.priority),
+            isStaged: staged.priority !== undefined,
+            isPriority: true,
+            options: [
+              { value: null, label: 'Not set' },
+              { value: 'high', label: 'High' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'low', label: 'Low' },
+            ],
+            onSelect: val => setStagedField('priority', val, initialValues?.priority),
+            onUndo: () => clearStaged('priority'),
+          })}
+          {newMatchCount > 0 && (
+            <button
+              type="button"
+              onClick={handleDismissNewMatches}
+              disabled={applying}
+              title="Mark the new matches in this selection as reviewed — no priority"
+              style={{
+                fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
+                border: `1px solid ${color.borderDefault}`, background: color.white,
+                color: color.textMuted, cursor: applying ? 'not-allowed' : 'pointer',
+                textAlign: 'left', whiteSpace: 'nowrap',
+              }}
+            >
+              ✕ Dismiss new matches ({newMatchCount.toLocaleString()})
+            </button>
+          )}
+        </div>
 
         {/* Custom field pills */}
         {customFieldDefs.map(field => {

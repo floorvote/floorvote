@@ -346,6 +346,8 @@ export function BillList() {
       matchType: b.matchType ?? null,
       position: b.position ?? null,
       customFieldValues: b.customFieldValues ?? {},
+      newMatchAt: b.newMatchAt ?? null,
+      triagedAt: b.triagedAt ?? null,
     }))
   }, [selection, allBills])
 
