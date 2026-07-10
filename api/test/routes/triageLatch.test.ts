@@ -69,3 +69,27 @@ describe('setting a priority latches a new match as triaged', () => {
     expect(row!.triagedAt).toBe(firstRow!.triagedAt)
   })
 })
+
+describe('bulk priority-set latches new matches as triaged', () => {
+  let adminToken: string, a: string, b: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
+    adminToken = await seedSession(adminId)
+    a = await seedBill({ billNumber: 'B A', matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 })
+    b = await seedBill({ billNumber: 'B B', matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 })
+  })
+
+  it('stamps triaged_at on all selected bills when a bulk priority is applied', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [a, b], priority: 'low' }),
+    })
+    expect(res.status).toBe(200)
+    const rows = await getDb(env.DB).select().from(bills)
+    for (const r of rows) expect(r.triagedAt).not.toBeNull()
+  })
+})

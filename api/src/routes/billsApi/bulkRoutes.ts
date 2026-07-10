@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, isNull } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { bills, officialPositions, feedEvents, billCustomFieldValues } from '../../db/schema'
@@ -109,6 +109,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           .where(inArray(bills.id, billIds.slice(i, i + 100)))
       }
       if (priority) {
+        // Latch each newly-prioritized match as triaged (idempotent — first actor wins).
+        for (let i = 0; i < billIds.length; i += 100) {
+          await db.update(bills)
+            .set({ triagedAt: now, triagedBy: currentUser.id })
+            .where(and(inArray(bills.id, billIds.slice(i, i + 100)), isNull(bills.triagedAt)))
+        }
         if (!isBulk) {
           await db.insert(feedEvents).values(
             billIds.map(billId => ({
