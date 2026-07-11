@@ -167,6 +167,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     recipients.map(r => ({ to: [r.email], subject, html, headers })),
     'week-ahead',
     db,
+    { bulk: true },
   )
   await stampLastWeekAhead(db, nowDb())
 }

@@ -4,6 +4,7 @@ import { gte, asc, eq, and } from 'drizzle-orm'
 import * as schema from '../db/schema-legiscan'
 import { requireAdmin, type DashEnv } from '../lib/adminAuth'
 import { pullEngagementStatsForTenant } from '../cron/engagement-pull'
+import { getSetting, setSetting } from '../lib/settings'
 
 export const dashEngagementRoutes = new Hono<DashEnv>()
 
@@ -27,6 +28,23 @@ const METRIC_KEYS = [
   'bills_ai_processed',
 ] as const
 type MetricKey = (typeof METRIC_KEYS)[number]
+
+// The user-attributable metrics that support an "internal users excluded" variant
+// (stored per-row in tenant_stats.excluded_json). Suffix `__excl` on the series
+// response so the Adoption page can swap them in when the toggle is on.
+const EXCLUDABLE_KEYS = [
+  'total_members', 'active_members_7d', 'active_members_30d',
+  'votes_cast', 'comments_written', 'comment_reactions',
+] as const
+
+/** Normalize a raw exclusion-domain list (mirror of the tenant-side normalizer). */
+function normalizeExcludeDomains(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  const cleaned = input
+    .map(d => String(d).trim().toLowerCase().replace(/[^a-z0-9.-]/g, ''))
+    .filter(d => d.length > 0 && d.includes('.'))
+  return [...new Set(cleaned)]
+}
 
 function toCamel(key: MetricKey): keyof typeof schema.tenantStats.$inferSelect {
   switch (key) {
@@ -160,10 +178,50 @@ dashEngagementRoutes.get('/series', async (c) => {
     }
   }
 
+  // "Internal users excluded" variants, keyed `<metric>__excl`, parsed from each
+  // row's excluded_json. Null where a row has no variant (historical rows, or
+  // pulls taken before an exclusion list was configured) — the client falls back
+  // to the full value per data point in that case.
+  const parseExcluded = (row: typeof statsRows[number] | undefined): Record<string, number> | null => {
+    if (!row?.excludedJson) return null
+    try { return JSON.parse(row.excludedJson) as Record<string, number> } catch { return null }
+  }
+  for (const key of EXCLUDABLE_KEYS) {
+    metrics[`${key}__excl`] = {}
+    for (const t of tenants) {
+      metrics[`${key}__excl`][t.id] = dates.map(d => {
+        const ex = parseExcluded(byTenantDate.get(t.id)?.get(d))
+        return ex && typeof ex[key] === 'number' ? ex[key] : null
+      })
+    }
+  }
+
   return c.json({
     data: { tenants, dates, metrics },
     meta: { generatedAt: new Date().toISOString() },
   })
+})
+
+// ---------- GET/PUT /exclude-config ----------
+// The super-admin exclusion-domain list that drives the Adoption "exclude internal
+// users" toggle. Stored centrally as a JSON array; the daily engagement pull reads
+// it and asks each tenant to recompute the excludable metrics with those domains
+// removed. Changing it only affects future pulls.
+
+dashEngagementRoutes.get('/exclude-config', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const raw = await getSetting(db, 'engagement_exclude_domains', '')
+  let domains: string[] = []
+  try { domains = normalizeExcludeDomains(JSON.parse(raw || '[]')) } catch { /* ignore malformed */ }
+  return c.json({ data: { domains }, meta: { generatedAt: new Date().toISOString() } })
+})
+
+dashEngagementRoutes.put('/exclude-config', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const body = await c.req.json<{ domains?: unknown }>().catch(() => ({} as { domains?: unknown }))
+  const domains = normalizeExcludeDomains(body.domains)
+  await setSetting(db, 'engagement_exclude_domains', JSON.stringify(domains))
+  return c.json({ data: { domains }, meta: { generatedAt: new Date().toISOString() } })
 })
 
 // ---------- GET /tenants/:id ----------

@@ -1,5 +1,21 @@
 import '@testing-library/jest-dom'
 
+// jsdom's localStorage is absent/incomplete depending on the run origin (pages
+// that persist UI prefs call .clear()/.setItem()). Provide a simple in-memory
+// Storage polyfill when the real one is missing a working `clear`.
+if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localStorage.clear !== 'function') {
+  const store = new Map<string, string>()
+  const ls: Storage = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => { store.set(k, String(v)) },
+    removeItem: (k: string) => { store.delete(k) },
+    clear: () => { store.clear() },
+    key: (i: number) => [...store.keys()][i] ?? null,
+    get length() { return store.size },
+  }
+  Object.defineProperty(globalThis, 'localStorage', { value: ls, configurable: true, writable: true })
+}
+
 // IntersectionObserver: used by Overview's infinite-scroll. jsdom doesn't ship one.
 if (typeof (globalThis as any).IntersectionObserver === 'undefined') {
   ;(globalThis as any).IntersectionObserver = class {

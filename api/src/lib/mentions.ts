@@ -2,6 +2,7 @@ import { getDb } from '../db/client'
 import { commentMentions, userRoles, users, bills, roles, sessions, associationConfig, comments } from '../db/schema'
 import { eq, inArray, exists, and } from 'drizzle-orm'
 import { billUrl } from '../../../shared/sessionSlug'
+import { PRODUCT_NAME } from '../../../shared/brand'
 import { sendBatch, resolveAssocName } from './email'
 import { color, fontSize, fontWeight, radius } from '../../../shared/tokens'
 import { buildBillCardModel } from '../../../shared/billCardModel'
@@ -170,7 +171,7 @@ export function renderMentionEmail(input: MentionEmailInput): string {
     dateLabel: formatEmailDateTime(comment.createdAt),
     bodyHtml: `${card}${roleNote}${everyoneNote}`,
     ctaHtml: emailButton(escHtml(commentUrl), 'View comment'),
-    footerHtml: emailFooterLink(escHtml(appUrl), 'example.com'),
+    footerHtml: emailFooterLink(escHtml(appUrl), PRODUCT_NAME),
   })
 }
 

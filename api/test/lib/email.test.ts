@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { activeProvider, sendEmail, sendBatch, sendMagicLink } from '../../src/lib/email'
+import { activeProvider, sendEmail, sendBatch, sendMagicLink, resolveFromBulk } from '../../src/lib/email'
 
 const DEFAULT_FROM = 'FloorVote <notifications@example.com>'
 const DEFAULT_REPLY_TO = 'notifications@example.com'
@@ -92,6 +92,44 @@ describe('sendBatch', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { n++; return new Response('', { status: n === 1 ? 500 : 200 }) }))
     const r = await sendBatch(baseEnv, [{ to: ['a@e.com'], subject: 's', html: 'h' }, { to: ['b@e.com'], subject: 's', html: 'h' }])
     expect(r).toEqual({ sent: 1, failed: 1 })
+  })
+})
+
+describe('resolveFromBulk', () => {
+  it('uses EMAIL_FROM_BULK when set', () => {
+    expect(resolveFromBulk({ EMAIL_FROM: 'notifications@floor.vote', EMAIL_FROM_BULK: 'notifications@mail.floor.vote' } as any))
+      .toBe('FloorVote <notifications@mail.floor.vote>')
+  })
+  it('falls back to EMAIL_FROM when EMAIL_FROM_BULK is unset', () => {
+    expect(resolveFromBulk({ EMAIL_FROM: 'notifications@floor.vote' } as any))
+      .toBe('FloorVote <notifications@floor.vote>')
+  })
+  it('falls back to the example.com sender when neither is set', () => {
+    expect(resolveFromBulk({} as any)).toBe('FloorVote <notifications@example.com>')
+  })
+})
+
+describe('sendBatch bulk sender', () => {
+  const bulkEnv = { RESEND_API_KEY: 'k', EMAIL_FROM: 'notifications@floor.vote', EMAIL_FROM_BULK: 'notifications@mail.floor.vote' } as any
+  function captureFrom() {
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    return calls
+  }
+  it('bulk sends inherit EMAIL_FROM_BULK', async () => {
+    const calls = captureFrom()
+    await sendBatch(bulkEnv, [{ to: ['a@e.com'], subject: 's', html: 'h' }], 'digest', undefined, { bulk: true })
+    expect(calls[0].from).toBe('FloorVote <notifications@mail.floor.vote>')
+  })
+  it('non-bulk sends use the transactional EMAIL_FROM', async () => {
+    const calls = captureFrom()
+    await sendBatch(bulkEnv, [{ to: ['a@e.com'], subject: 's', html: 'h' }])
+    expect(calls[0].from).toBe('FloorVote <notifications@floor.vote>')
+  })
+  it('an explicit per-message from overrides the bulk sender', async () => {
+    const calls = captureFrom()
+    await sendBatch(bulkEnv, [{ to: ['a@e.com'], subject: 's', html: 'h', from: 'custom@floor.vote' }], 'digest', undefined, { bulk: true })
+    expect(calls[0].from).toBe('custom@floor.vote')
   })
 })
 

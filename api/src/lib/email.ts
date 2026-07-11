@@ -32,6 +32,18 @@ export function resolveFrom(env: Pick<Env, 'EMAIL_FROM'>): string {
   return `${PRODUCT_NAME} <${env.EMAIL_FROM ?? FALLBACK_EMAIL}>`
 }
 
+/**
+ * Sender line for BULK mail (daily digest, week-ahead). Uses EMAIL_FROM_BULK when
+ * set — a dedicated sending subdomain (e.g. `notifications@mail.floor.vote`) that
+ * segments bulk-mail reputation away from transactional login mail, so a spam
+ * complaint on a digest can't degrade magic-link deliverability. Falls back to
+ * EMAIL_FROM (then the example.com fallback) when unset, so this is inert until an
+ * operator verifies the subdomain and sets the var.
+ */
+export function resolveFromBulk(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_FROM_BULK'>): string {
+  return `${PRODUCT_NAME} <${env.EMAIL_FROM_BULK ?? env.EMAIL_FROM ?? FALLBACK_EMAIL}>`
+}
+
 /** Reply-To, from EMAIL_REPLY_TO, else EMAIL_FROM, else the example.com fallback. */
 export function resolveReplyTo(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>): string {
   return env.EMAIL_REPLY_TO ?? env.EMAIL_FROM ?? FALLBACK_EMAIL
@@ -64,7 +76,7 @@ export interface CloudflareEmailBinding {
 // `text` is always resolved (derived from html when not supplied).
 type ResolvedMessage = EmailMessage & { from: string; replyTo: string; text: string }
 
-type SendEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>
+type SendEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'EMAIL_FROM' | 'EMAIL_FROM_BULK' | 'EMAIL_REPLY_TO'>
 
 export function activeProvider(env: Pick<Env, 'EMAIL_PROVIDER' | 'EMAIL'>): ProviderName {
   if (env.EMAIL_PROVIDER === 'cloudflare' && env.EMAIL) return 'cloudflare'
@@ -125,17 +137,26 @@ export async function sendEmail(env: SendEnv, message: EmailMessage, db?: AppDb)
  */
 const BATCH_CONCURRENCY = 8
 
-/** Bulk send: provider-agnostic, bounded-concurrency fan-out. Suppressed entirely in DEMO_MODE. Returns {sent, failed}. */
-export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'email', db?: AppDb): Promise<{ sent: number; failed: number }> {
+/**
+ * Bulk send: provider-agnostic, bounded-concurrency fan-out. Suppressed entirely
+ * in DEMO_MODE. Returns {sent, failed}.
+ *
+ * Pass `{ bulk: true }` for recurring mass mail (digest, week-ahead): messages
+ * that don't set their own `from` inherit the bulk sender (EMAIL_FROM_BULK), so
+ * bulk reputation can be segmented onto a dedicated sending subdomain.
+ */
+export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'email', db?: AppDb, opts?: { bulk?: boolean }): Promise<{ sent: number; failed: number }> {
   if (messages.length === 0) return { sent: 0, failed: 0 }
   if (env.DEMO_MODE === 'true') {
     console.log(`[${tag}] demo mode — suppressing ${messages.length} email(s)`)
     return { sent: 0, failed: 0 }
   }
+  const bulkFrom = opts?.bulk ? resolveFromBulk(env) : undefined
   let sent = 0, failed = 0
   for (let i = 0; i < messages.length; i += BATCH_CONCURRENCY) {
     const chunk = messages.slice(i, i + BATCH_CONCURRENCY)
-    const results = await Promise.all(chunk.map(m => sendEmail(env, m, db)))
+    const results = await Promise.all(chunk.map(m =>
+      sendEmail(env, bulkFrom && !m.from ? { ...m, from: bulkFrom } : m, db)))
     for (const r of results) { if (r.ok) sent++; else failed++ }
   }
   console.log(`[${tag}] sent ${sent}, failed ${failed}`)
@@ -261,7 +282,7 @@ export function renderMagicLinkEmail(input: {
     signalHtml: isInvite ? 'You\'ve been invited' : `Sign in to ${PRODUCT_NAME}`,
     bodyHtml: `<p style="margin:0;font-size:${fontSize.base}px;line-height:1.6;color:${color.textSlate};">${bodyText}</p>`,
     ctaHtml: emailButton(input.magicLinkUrl, buttonLabel),
-    footerHtml: `If you didn't expect this email, you can safely ignore it.<br>${emailFooterLink('https://example.com', 'example.com')}`,
+    footerHtml: `If you didn't expect this email, you can safely ignore it.<br>${emailFooterLink(escHtml(input.appUrl), PRODUCT_NAME)}`,
   })
   return { subject, html }
 }

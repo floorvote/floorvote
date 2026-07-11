@@ -198,7 +198,9 @@ app.post('/api/internal/register', async (c) => {
 
 app.get('/api/internal/engagement-stats', async (c) => {
   if (await internalAuthFail(c)) return c.json({ error: 'unauthorized' }, 401)
-  const snap = await computeEngagementSnapshot(getDb(c.env.DB))
+  const raw = c.req.query('excludeDomains')
+  const excludeDomains = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : undefined
+  const snap = await computeEngagementSnapshot(getDb(c.env.DB), excludeDomains)
   return c.json({ data: snap, meta: { generatedAt: snap.computedAt } })
 })
 

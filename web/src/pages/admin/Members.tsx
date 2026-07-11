@@ -654,7 +654,7 @@ export function Members() {
                     <InfoTooltip
                       align="center"
                       maxWidth={320}
-                      text={<>All members can comment and leave personal notes. <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can promote and demote other owners and delete all user interactions.</>}
+                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can promote and demote other owners and delete all user interactions.</>}
                     />
                   </span>
                 </th>

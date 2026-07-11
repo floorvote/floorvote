@@ -4,6 +4,13 @@ import { EngagementChart } from '../components/EngagementChart'
 import { tenantColor } from '../lib/seriesColors'
 
 const HIDDEN_KEY = 'adoption.hiddenTenants'
+const EXCLUDE_INTERNAL_KEY = 'adoption.excludeInternal'
+
+// Metrics the server offers an "internal users excluded" variant for (`<key>__excl`).
+const EXCLUDABLE = new Set([
+  'total_members', 'active_members_7d', 'active_members_30d',
+  'votes_cast', 'comments_written', 'comment_reactions',
+])
 
 function loadHidden(): Set<string> {
   try {
@@ -11,6 +18,10 @@ function loadHidden(): Set<string> {
     if (raw) return new Set(JSON.parse(raw) as string[])
   } catch { /* ignore malformed storage */ }
   return new Set()
+}
+
+function loadExcludeInternal(): boolean {
+  try { return localStorage.getItem(EXCLUDE_INTERNAL_KEY) === '1' } catch { return false }
 }
 
 type Series = {
@@ -65,14 +76,43 @@ export default function Adoption() {
   const [downloading, setDownloading] = useState(false)
   const [format, setFormat] = useState<'csv' | 'json'>('csv')
   const [hidden, setHidden] = useState<Set<string>>(loadHidden)
+  const [excludeInternal, setExcludeInternal] = useState<boolean>(loadExcludeInternal)
+  const [excludeDomains, setExcludeDomains] = useState<string[]>([])
+  const [domainDraft, setDomainDraft] = useState('')
+  const [savingDomains, setSavingDomains] = useState(false)
 
   useEffect(() => {
     api<Series>(`/admin/dash/engagement/series?days=${days}`).then(setSeries)
   }, [days])
 
   useEffect(() => {
+    api<{ domains: string[] }>('/admin/dash/engagement/exclude-config')
+      .then(d => { setExcludeDomains(d.domains); setDomainDraft(d.domains.join(', ')) })
+      .catch(() => { /* leave empty on failure */ })
+  }, [])
+
+  useEffect(() => {
     try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])) } catch { /* ignore */ }
   }, [hidden])
+
+  useEffect(() => {
+    try { localStorage.setItem(EXCLUDE_INTERNAL_KEY, excludeInternal ? '1' : '0') } catch { /* ignore */ }
+  }, [excludeInternal])
+
+  async function saveDomains() {
+    setSavingDomains(true)
+    try {
+      const parsed = domainDraft.split(',').map(s => s.trim()).filter(Boolean)
+      const d = await api<{ domains: string[] }>('/admin/dash/engagement/exclude-config', {
+        method: 'PUT',
+        body: JSON.stringify({ domains: parsed }),
+      })
+      setExcludeDomains(d.domains)
+      setDomainDraft(d.domains.join(', '))
+    } finally {
+      setSavingDomains(false)
+    }
+  }
 
   // Stable color per tenant, keyed off the full tenant list order so a tenant's
   // color stays put even when others are toggled off.
@@ -207,6 +247,32 @@ export default function Adoption() {
         )}
       </div>
 
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: excludeInternal ? 8 : 24, fontSize: 13 }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={excludeInternal} onChange={e => setExcludeInternal(e.target.checked)} />
+          Exclude internal users
+        </label>
+        <input
+          type="text"
+          value={domainDraft}
+          onChange={e => setDomainDraft(e.target.value)}
+          placeholder="internal domains, comma-separated (e.g. bipartisanpolicy.org)"
+          style={{ flex: '1 1 320px', minWidth: 220, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13 }}
+        />
+        <button
+          onClick={savingDomains ? undefined : saveDomains}
+          disabled={savingDomains}
+          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', cursor: savingDomains ? 'not-allowed' : 'pointer', fontSize: 13 }}
+        >
+          {savingDomains ? 'Saving…' : 'Save domains'}
+        </button>
+      </div>
+      {excludeInternal && (
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 24 }}>
+          Membership and member-engagement charts exclude activity from {excludeDomains.length > 0 ? excludeDomains.join(', ') : '(no domains set)'}. Applies to data collected after the domains were saved; earlier points show full totals. Other metric groups are unaffected.
+        </div>
+      )}
+
       {groups.map(group => {
         const metrics = METRIC_TITLES.filter(m => m.group === group)
         return (
@@ -216,12 +282,17 @@ export default function Adoption() {
             </h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
               {metrics.map(m => {
-                const perTenant = tenantsForChart.map(t => ({
-                  id: t.id,
-                  name: t.name,
-                  color: colorById[t.id],
-                  values: series.metrics[m.key]?.[t.id] ?? series.dates.map(() => null),
-                }))
+                const perTenant = tenantsForChart.map(t => {
+                  const base = series.metrics[m.key]?.[t.id] ?? series.dates.map(() => null)
+                  // When excluding internal users, swap in the `__excl` variant for
+                  // excludable metrics — falling back to the full value per data point
+                  // where no variant was collected (historical rows / no domains set).
+                  const excl = excludeInternal && EXCLUDABLE.has(m.key)
+                    ? series.metrics[`${m.key}__excl`]?.[t.id]
+                    : undefined
+                  const values = excl ? base.map((v, i) => (excl[i] != null ? excl[i] : v)) : base
+                  return { id: t.id, name: t.name, color: colorById[t.id], values }
+                })
                 const aggregate = sumDown(perTenant.map(p => p.values))
                 return (
                   <EngagementChart

@@ -22,6 +22,7 @@ export type LsEnv = {
   CF_ANALYTICS_TOKEN?: string  // CF API token (Account Analytics: Read + D1 read + Zone Analytics: Read) for anomaly watch + email delivery
   CF_FLOORVOTE_ZONE_ID?: string  // Cloudflare zone id for emailSendingAdaptive GraphQL dataset
   CF_ACCOUNT_ID?: string  // Cloudflare account id; used by D1 list + analytics GraphQL queries
+  CF_AIG_GATEWAY?: string  // AI Gateway slug (e.g. "tracker"); scopes the AI-usage analytics query. Unset → AI usage panel shows "not configured"
   CF_EMAIL_TOKEN?: string  // CF API token (Email Sending: Read) for suppression-list checks
   D1_ANOMALY_FACTOR?: string  // rows-read spike multiple over baseline (default 5)
   D1_ANOMALY_FLOOR?: string  // minimum rows-read to consider a spike (default 50,000,000)

@@ -18,8 +18,8 @@ import type { Env } from './types'
  * endpoints, so the tenant holds no shared secret in production.
  */
 export class CentralApi extends WorkerEntrypoint<Env> {
-  async engagementStats(): Promise<EngagementSnapshot> {
-    return computeEngagementSnapshot(getDb(this.env.DB))
+  async engagementStats(excludeDomains?: string[]): Promise<EngagementSnapshot> {
+    return computeEngagementSnapshot(getDb(this.env.DB), excludeDomains)
   }
 
   async forceRegister(): Promise<boolean> {

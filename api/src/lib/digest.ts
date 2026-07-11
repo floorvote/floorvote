@@ -115,7 +115,7 @@ export async function runDigest(
   })
   if (messages.length === 0) { await stampLastDigest(db, now); return { ok: true, recipients: 0, sent: 0, failed: 0 } }
 
-  const { sent, failed } = await sendBatch(env, messages, 'digest', db)
+  const { sent, failed } = await sendBatch(env, messages, 'digest', db, { bulk: true })
   await stampLastDigest(db, now)
   return { ok: true, recipients: messages.length, sent, failed }
 }

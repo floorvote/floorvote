@@ -9,15 +9,10 @@ type LegiBudget = {
   monthDaily: { date: string; calls: number }[]
   topCalls: { callType: string; calls: number }[]
 }
-type ResendBudget = {
-  monthlyUsed: number
-  monthlyLimit: number
-  dailyUsed: number
-  dailyLimit: number | null
-  usedAt: string
-  last429At: string
-  monthDaily: { date: string; monthlyUsed: number }[]
-}
+
+type AiBudget =
+  | { available: true; total: number; windowDays: number; daily: { date: string; count: number }[]; topModels: { model: string; count: number }[] }
+  | { available: false; reason: string }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -45,11 +40,11 @@ function PaceLine({ used, limit, monthElapsed }: { used: number; limit: number; 
 
 export default function Budget() {
   const [legi, setLegi] = useState<LegiBudget | null>(null)
-  const [resend, setResend] = useState<ResendBudget | null>(null)
+  const [ai, setAi] = useState<AiBudget | null>(null)
 
   useEffect(() => {
     api<LegiBudget>('/admin/dash/sync/api-budget').then(setLegi)
-    api<ResendBudget>('/admin/dash/budget/resend').then(setResend)
+    api<AiBudget>('/admin/dash/budget/ai').then(setAi)
   }, [])
 
   const now = new Date()
@@ -83,36 +78,31 @@ export default function Budget() {
         )}
       </Section>
 
-      <Section title="Resend email">
-        {resend && (
+      <Section title="AI usage">
+        {ai && (ai.available ? (
           <div style={{ padding: 16 }}>
             <div style={{ display: 'flex', gap: 16, alignItems: 'baseline' }}>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{resend.monthlyUsed.toLocaleString()}</div>
-              <div style={{ color: 'var(--muted)' }}>of {resend.monthlyLimit.toLocaleString()} this month ({pct(resend.monthlyUsed, resend.monthlyLimit)})</div>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{ai.total.toLocaleString()}</div>
+              <div style={{ color: 'var(--muted)' }}>Gemini requests · last {ai.windowDays} days (via Cloudflare AI Gateway)</div>
             </div>
-            {resend.dailyLimit !== null && (
-              <div style={{ marginTop: 8, fontSize: 13, color: 'var(--muted)' }}>
-                Today: {resend.dailyUsed.toLocaleString()} of {resend.dailyLimit.toLocaleString()} ({pct(resend.dailyUsed, resend.dailyLimit)})
-              </div>
-            )}
-            <PaceLine used={resend.monthlyUsed} limit={resend.monthlyLimit} monthElapsed={monthElapsed} />
             <CumulativeBudgetChart
-              points={build90DayPoints(resend.monthDaily.map(r => ({ date: r.date, value: r.monthlyUsed })), resend.monthlyLimit, 'snapshots')}
-              label="Emails"
+              points={(() => { let s = 0; return ai.daily.map(d => { s += d.count; return { date: d.date, actual: s, budget: 0 } }) })()}
+              label="AI requests"
             />
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-              Last reading: {resend.usedAt ? new Date(resend.usedAt).toLocaleString() : 'never'}
-            </div>
-            {resend.last429At && (
-              <div style={{ marginTop: 6, fontSize: 13, color: 'var(--danger)' }}>
-                Throttled (429) at {new Date(resend.last429At).toLocaleString()}
+            {ai.topModels.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <strong style={{ fontSize: 13 }}>Top models (last {ai.windowDays}d)</strong>
+                <ul style={{ marginTop: 4, fontSize: 13 }}>
+                  {ai.topModels.map(r => <li key={r.model}>{r.model}: {r.count.toLocaleString()}</li>)}
+                </ul>
               </div>
             )}
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-              Account-wide across all tenants + central (shared Resend account); no per-tenant split.
-            </div>
           </div>
-        )}
+        ) : (
+          <div style={{ padding: 16, fontSize: 13, color: 'var(--muted)' }}>
+            AI usage unavailable — {ai.reason}. Requires <code>CF_AIG_GATEWAY</code> on central plus a <code>CF_ANALYTICS_TOKEN</code> with AI Gateway analytics access.
+          </div>
+        ))}
       </Section>
     </div>
   )
