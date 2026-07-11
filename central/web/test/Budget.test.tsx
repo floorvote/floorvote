@@ -22,19 +22,14 @@ beforeEach(() => {
         meta: {},
       }))
     }
-    if (u.includes('/budget/resend')) {
+    if (u.includes('/budget/ai')) {
       return new Response(JSON.stringify({
         data: {
-          monthlyUsed: 4200,
-          monthlyLimit: 50000,
-          dailyUsed: 12,
-          dailyLimit: 100,
-          usedAt: '2026-06-05T06:00:00Z',
-          last429At: '',
-          monthDaily: [
-            { date: '2026-06-01', monthlyUsed: 100 },
-            { date: '2026-06-02', monthlyUsed: 250 },
-          ],
+          available: true,
+          total: 321,
+          windowDays: 30,
+          daily: [{ date: '2026-07-01', count: 5 }],
+          topModels: [{ model: 'gemini-2.5-flash', count: 321 }],
         },
         meta: {},
       }))
@@ -44,13 +39,10 @@ beforeEach(() => {
 })
 
 describe('Budget page', () => {
-  it('renders LegiScan and Resend usage', async () => {
+  it('renders LegiScan usage', async () => {
     render(<MemoryRouter><Budget /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText(/12,000/)).toBeInTheDocument())
     expect(screen.getByText(/of 30,000/)).toBeInTheDocument()
-    expect(screen.getByText(/4,200/)).toBeInTheDocument()
-    expect(screen.getByText(/of 50,000/)).toBeInTheDocument()
-    expect(screen.getByText(/account-wide/i)).toBeInTheDocument()
   })
 
   it('renders on-pace readout for LegiScan', async () => {
@@ -59,9 +51,9 @@ describe('Budget page', () => {
     expect(screen.getAllByText(/maximum pace/).length).toBeGreaterThan(0)
   })
 
-  it('renders on-pace readout for Resend', async () => {
+  it('renders AI usage from the gateway analytics', async () => {
     render(<MemoryRouter><Budget /></MemoryRouter>)
-    await waitFor(() => expect(screen.getByText(/4,200/)).toBeInTheDocument())
-    expect(screen.getAllByText(/maximum pace/).length).toBeGreaterThan(0)
+    await waitFor(() => expect(screen.getByText(/Gemini requests · last 30 days/)).toBeInTheDocument())
+    expect(screen.getByText(/gemini-2\.5-flash/)).toBeInTheDocument()
   })
 })

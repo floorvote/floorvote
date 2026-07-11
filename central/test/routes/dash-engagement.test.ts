@@ -90,6 +90,50 @@ describe('GET /admin/dash/engagement/series', () => {
   })
 })
 
+describe('GET /admin/dash/engagement/series — excluded variants', () => {
+  it('exposes <metric>__excl from excluded_json, null where a row has none', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values([
+      { tenantId: 'ri', name: 'Rhode Island', apiUrl: 'https://ri.example/api', stateCoverage: '["RI"]', active: true } as any,
+    ])
+    await db.insert(schema.tenantStats).values([
+      { tenantId: 'ri', statDate: '2026-05-27', totalMembers: 10, votesCast: 30 } as any, // no excluded_json
+      { tenantId: 'ri', statDate: '2026-05-28', totalMembers: 11, votesCast: 33, excludedJson: JSON.stringify({ total_members: 9, votes_cast: 20 }) } as any,
+    ])
+    const res = await app.fetch(
+      new Request('http://central/admin/dash/engagement/series?days=7', { headers: AUTH }),
+      TEST_ENV,
+    )
+    const body = await res.json() as any
+    const dates: string[] = body.data.dates
+    const i27 = dates.indexOf('2026-05-27')
+    const i28 = dates.indexOf('2026-05-28')
+    expect(body.data.metrics['votes_cast__excl'].ri[i28]).toBe(20)
+    expect(body.data.metrics['total_members__excl'].ri[i28]).toBe(9)
+    expect(body.data.metrics['votes_cast__excl'].ri[i27]).toBeNull()
+  })
+})
+
+describe('GET/PUT /admin/dash/engagement/exclude-config', () => {
+  it('round-trips and normalizes the exclusion domain list', async () => {
+    const put = await app.fetch(new Request('http://central/admin/dash/engagement/exclude-config', {
+      method: 'PUT',
+      headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domains: [' BiPartisanPolicy.org ', 'bipartisanpolicy.org', 'localhost'] }),
+    }), TEST_ENV)
+    expect(put.status).toBe(200)
+    expect((await put.json() as any).data.domains).toEqual(['bipartisanpolicy.org'])
+
+    const get = await app.fetch(new Request('http://central/admin/dash/engagement/exclude-config', { headers: AUTH }), TEST_ENV)
+    expect((await get.json() as any).data.domains).toEqual(['bipartisanpolicy.org'])
+  })
+
+  it('defaults to an empty list when unset', async () => {
+    const res = await app.fetch(new Request('http://central/admin/dash/engagement/exclude-config', { headers: AUTH }), TEST_ENV)
+    expect((await res.json() as any).data.domains).toEqual([])
+  })
+})
+
 describe('GET /admin/dash/engagement/tenants/:id', () => {
   it('returns one tenant\'s series', async () => {
     await seedSomeStats()

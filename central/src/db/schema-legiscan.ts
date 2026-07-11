@@ -326,6 +326,9 @@ export const tenantStats = sqliteTable('tenant_stats', {
   pulledAt:             text('pulled_at').notNull().default(sql`(datetime('now'))`),
   probeLatencyMs:       integer('probe_latency_ms'),
   probeOk:              integer('probe_ok'),
+  // JSON of the six user-attributable metrics recomputed with configured internal
+  // domains excluded; null when no exclusion list is set (see migration 0014).
+  excludedJson:         text('excluded_json'),
 }, (t) => [
   primaryKey({ columns: [t.tenantId, t.statDate] }),
   index('idx_tenant_stats_date').on(t.statDate),

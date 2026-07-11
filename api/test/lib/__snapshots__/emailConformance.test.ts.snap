@@ -211,7 +211,7 @@ exports[`email conformance — every sample type shares the shell contract > inv
             <div style="margin-top:18px;"><a href="https://sample.test/login?token=sample-link-not-functional" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">Accept your invitation</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            If you didn't expect this email, you can safely ignore it.<br><a href="https://example.com" style="font-size:12px;color:#667386;text-decoration:underline;">example.com</a>
+            If you didn't expect this email, you can safely ignore it.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
           </td></tr>
         </tbody>
       </table>
@@ -245,7 +245,7 @@ exports[`email conformance — every sample type shares the shell contract > log
             <div style="margin-top:18px;"><a href="https://sample.test/login?token=sample-link-not-functional" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">Sign in to FloorVote</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            If you didn't expect this email, you can safely ignore it.<br><a href="https://example.com" style="font-size:12px;color:#667386;text-decoration:underline;">example.com</a>
+            If you didn't expect this email, you can safely ignore it.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
           </td></tr>
         </tbody>
       </table>
@@ -301,7 +301,7 @@ exports[`email conformance — every sample type shares the shell contract > men
             <div style="margin-top:18px;"><a href="https://sample.test/RI/2026/HB 1234#comment-sample-comment" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View comment</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">example.com</a>
+            <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
           </td></tr>
         </tbody>
       </table>

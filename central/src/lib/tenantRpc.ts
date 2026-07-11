@@ -3,12 +3,13 @@ import type { LsEnv } from '../types-legiscan'
 export type EngagementSnapshotData = {
   computedAt: string
   metrics: Record<string, number>
+  excluded?: Record<string, number>  // user-attributable metrics recomputed with internal domains excluded (see adoption exclusion)
   resend?: { monthlyUsed?: number; dailyUsed?: number; usedAt?: string; last429At?: string }
 }
 
 /** RPC surface exposed by the tenant's CentralApi WorkerEntrypoint. */
 export interface TenantRpc {
-  engagementStats(): Promise<EngagementSnapshotData>
+  engagementStats(excludeDomains?: string[]): Promise<EngagementSnapshotData>
   forceRegister(): Promise<boolean>
   demoReset(): Promise<{ ok: boolean; billsSeeded: boolean }>
   runDigestNow(): Promise<{ ok: boolean }>

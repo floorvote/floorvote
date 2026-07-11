@@ -82,6 +82,7 @@ STATE = "NJ"                                      # 2-letter state; "" for multi
 APP_DOMAINS = "example.com"
 EMAIL_FROM = "notifications@example.com"
 EMAIL_PROVIDER = "cloudflare"                     # "cloudflare" or "resend"
+# EMAIL_FROM_BULK = "notifications@mail.example.com"  # optional: dedicated sending subdomain for bulk mail (digest, week-ahead) to segment reputation from login mail. Verify the subdomain as its own Email Sending domain first. Falls back to EMAIL_FROM when unset.
 SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # OPERATOR_NAME = "Your Org"
 # OPERATOR_URL = "https://yourorg.example.com"

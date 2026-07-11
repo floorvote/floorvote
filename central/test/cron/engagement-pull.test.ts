@@ -5,7 +5,6 @@ import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema-legiscan'
 import { setupLsDb } from '../helpers/setupLsDb'
 import { pullEngagementStats, pullEngagementStatsForTenant, shouldRunEngagementPull } from '../../src/cron/engagement-pull'
-import { getSetting } from '../../src/lib/settings'
 import { sendOpsAlert } from '../../src/lib/jobAlert'
 
 vi.mock('../../src/lib/jobAlert', async (importOriginal) => ({
@@ -348,81 +347,5 @@ describe('shouldRunEngagementPull', () => {
     expect(shouldRunEngagementPull(new Date('2026-05-29T05:59:00Z'))).toBe(false)
     expect(shouldRunEngagementPull(new Date('2026-05-29T07:00:00Z'))).toBe(false)
     expect(shouldRunEngagementPull(new Date('2026-05-29T00:00:00Z'))).toBe(false)
-  })
-})
-
-function snapshotWithResend(resend: any) {
-  return new Response(JSON.stringify({ data: {
-    computedAt: '2026-06-05T06:00:00Z',
-    metrics: { total_members: 1 },
-    resend,
-  }, meta: {} }), { status: 200 })
-}
-
-describe('pullEngagementStats — resend merge', () => {
-  it('writes the tenant resend reading into settings', async () => {
-    const db = drizzle(env.DB, { schema })
-    await db.insert(schema.tenants).values([{ tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true, apiUrl: 'http://ri' } as any])
-    vi.stubGlobal('fetch', vi.fn(async () => snapshotWithResend({ monthlyUsed: 500, dailyUsed: 9, usedAt: '2026-06-05T06:00:00Z', last429At: '' })))
-
-    await pullEngagementStats({ ...env, ADMIN_SECRET: 'sek' } as any, db)
-
-    expect(await getSetting(db, 'resend_monthly_used', '')).toBe('500')
-    expect(await getSetting(db, 'resend_used_at', '')).toBe('2026-06-05T06:00:00Z')
-  })
-
-  it('keeps the newest reading when a second tenant reports an older one', async () => {
-    const db = drizzle(env.DB, { schema })
-    await db.insert(schema.tenants).values([
-      { tenantId: 'a', name: 'A', stateCoverage: '["RI"]', active: true, apiUrl: 'http://a' } as any,
-      { tenantId: 'b', name: 'B', stateCoverage: '["NJ"]', active: true, apiUrl: 'http://b' } as any,
-    ])
-    const responses: Record<string, any> = {
-      'http://a': { monthlyUsed: 500, dailyUsed: 9, usedAt: '2026-06-05T06:00:00Z', last429At: '' },
-      'http://b': { monthlyUsed: 100, dailyUsed: 1, usedAt: '2026-06-04T06:00:00Z', last429At: '' },
-    }
-    vi.stubGlobal('fetch', vi.fn(async (url: any) => {
-      const base = String(url).replace(/\/api\/internal\/engagement-stats$/, '')
-      return snapshotWithResend(responses[base])
-    }))
-
-    await pullEngagementStats({ ...env, ADMIN_SECRET: 'sek' } as any, db)
-
-    expect(await getSetting(db, 'resend_monthly_used', '')).toBe('500')
-    expect(await getSetting(db, 'resend_used_at', '')).toBe('2026-06-05T06:00:00Z')
-  })
-
-  it('writes a resend_usage_daily snapshot when merging a reading', async () => {
-    const db = drizzle(env.DB, { schema })
-    await db.insert(schema.tenants).values([{ tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true, apiUrl: 'http://ri' } as any])
-    vi.stubGlobal('fetch', vi.fn(async () => snapshotWithResend({ monthlyUsed: 500, dailyUsed: 9, usedAt: '2026-06-05T06:00:00Z', last429At: '' })))
-    await pullEngagementStats({ ...env, ADMIN_SECRET: 'sek' } as any, db)
-    const today = new Date().toISOString().slice(0, 10)
-    const row = await db.select().from(schema.resendUsageDaily).where(eq(schema.resendUsageDaily.date, today)).get()
-    expect(row?.monthlyUsed).toBe(500)
-    expect(row?.dailyUsed).toBe(9)
-  })
-
-  it('overwrites an older stored reading when a newer one arrives later in iteration', async () => {
-    const db = drizzle(env.DB, { schema })
-    // older tenant inserted FIRST so it is iterated first
-    await db.insert(schema.tenants).values([
-      { tenantId: 'old', name: 'Old', stateCoverage: '["RI"]', active: true, apiUrl: 'http://old' } as any,
-      { tenantId: 'new', name: 'New', stateCoverage: '["NJ"]', active: true, apiUrl: 'http://new' } as any,
-    ])
-    const responses: Record<string, any> = {
-      'http://old': { monthlyUsed: 100, dailyUsed: 1, usedAt: '2026-06-04T06:00:00Z', last429At: '' },
-      'http://new': { monthlyUsed: 500, dailyUsed: 9, usedAt: '2026-06-05T06:00:00Z', last429At: '' },
-    }
-    vi.stubGlobal('fetch', vi.fn(async (url: any) => {
-      const base = String(url).replace(/\/api\/internal\/engagement-stats$/, '')
-      return snapshotWithResend(responses[base])
-    }))
-
-    await pullEngagementStats({ ...env, ADMIN_SECRET: 'sek' } as any, db)
-
-    expect(await getSetting(db, 'resend_monthly_used', '')).toBe('500')
-    expect(await getSetting(db, 'resend_daily_used', '')).toBe('9')
-    expect(await getSetting(db, 'resend_used_at', '')).toBe('2026-06-05T06:00:00Z')
   })
 })

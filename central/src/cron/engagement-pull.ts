@@ -2,9 +2,8 @@ import { and, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema-legiscan'
 import type { LsEnv } from '../types-legiscan'
-import { getSetting, setSetting } from '../lib/settings'
-import { snapshotResendDaily } from '../lib/resendUsage'
 import { nowDb } from '../lib/dbTime'
+import { getSetting } from '../lib/settings'
 import { resolveTenantRpc, type EngagementSnapshotData } from '../lib/tenantRpc'
 import { sendOpsAlert, escHtml } from '../lib/jobAlert'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -27,26 +26,41 @@ const METRIC_KEYS = [
 ] as const
 type MetricKey = (typeof METRIC_KEYS)[number]
 
-type ResendBlock = { monthlyUsed?: number; dailyUsed?: number; usedAt?: string; last429At?: string }
+type Snapshot = { metrics: Record<MetricKey, number>; excluded: Record<string, number> | null }
 
 function todayUtcDate(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function snapshotToMetrics(data: EngagementSnapshotData): { metrics: Record<MetricKey, number>; resend: ResendBlock | null } {
+function snapshotToMetrics(data: EngagementSnapshotData): Snapshot {
   const out = {} as Record<MetricKey, number>
   for (const k of METRIC_KEYS) {
     const v = data.metrics?.[k]
     out[k] = typeof v === 'number' && Number.isFinite(v) ? v : 0
   }
-  return { metrics: out, resend: data.resend ?? null }
+  return { metrics: out, excluded: data.excluded ?? null }
 }
 
-async function getTenantSnapshot(env: LsEnv, tenantId: string, apiUrl: string): Promise<{ metrics: Record<MetricKey, number>; resend: ResendBlock | null }> {
+/**
+ * Central super-admin exclusion domain list (JSON array of domain strings), used
+ * by the Adoption page's "exclude internal users" toggle. Empty when unset/invalid,
+ * which makes tenants skip the excluded-variant computation entirely.
+ */
+async function getExcludeDomains(db: DB): Promise<string[]> {
+  const raw = await getSetting(db, 'engagement_exclude_domains', '')
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : []
+  } catch { return [] }
+}
+
+async function getTenantSnapshot(env: LsEnv, tenantId: string, apiUrl: string, excludeDomains: string[]): Promise<Snapshot> {
   const rpc = resolveTenantRpc(env, tenantId)
-  if (rpc) return snapshotToMetrics(await rpc.engagementStats())
+  if (rpc) return snapshotToMetrics(await rpc.engagementStats(excludeDomains))
   // Fallback: HTTP + shared secret (local dev, un-bound tenants, self-host)
-  const url = `${apiUrl.replace(/\/$/, '')}/api/internal/engagement-stats`
+  const qs = excludeDomains.length ? `?excludeDomains=${encodeURIComponent(excludeDomains.join(','))}` : ''
+  const url = `${apiUrl.replace(/\/$/, '')}/api/internal/engagement-stats${qs}`
   const res = await fetch(url, {
     headers: { 'x-admin-secret': env.ADMIN_SECRET ?? '' },
     signal: AbortSignal.timeout(30_000),
@@ -62,6 +76,7 @@ async function upsertRow(
   statDate: string,
   metrics: Record<MetricKey, number>,
   probe: { latencyMs: number; ok: boolean },
+  excluded: Record<string, number> | null,
 ): Promise<typeof schema.tenantStats.$inferSelect> {
   const values = {
     tenantId,
@@ -81,6 +96,7 @@ async function upsertRow(
     rolesDefined:        metrics.roles_defined,
     customFieldsDefined: metrics.custom_fields_defined,
     billsAiProcessed:    metrics.bills_ai_processed,
+    excludedJson:        excluded ? JSON.stringify(excluded) : null,
     pulledAt:            nowDb(),
   }
   await db.insert(schema.tenantStats).values(values)
@@ -94,27 +110,6 @@ async function upsertRow(
   return row!
 }
 
-async function mergeResendReading(db: DB, resend: ResendBlock | null): Promise<void> {
-  if (!resend || !resend.usedAt) return
-  const prevAt = await getSetting(db, 'resend_used_at', '')
-  if (prevAt && prevAt >= resend.usedAt) {
-    // Older-or-equal reading; still surface a more recent 429 if present.
-    if (resend.last429At) {
-      const prev429 = await getSetting(db, 'resend_last_429_at', '')
-      if (resend.last429At > prev429) await setSetting(db, 'resend_last_429_at', resend.last429At)
-    }
-    return
-  }
-  if (typeof resend.monthlyUsed === 'number') await setSetting(db, 'resend_monthly_used', String(resend.monthlyUsed))
-  if (typeof resend.dailyUsed === 'number') await setSetting(db, 'resend_daily_used', String(resend.dailyUsed))
-  await setSetting(db, 'resend_used_at', resend.usedAt)
-  if (typeof resend.monthlyUsed === 'number') {
-    try { await snapshotResendDaily(db, resend.monthlyUsed, typeof resend.dailyUsed === 'number' ? resend.dailyUsed : 0) }
-    catch (e) { console.error('[resend-snapshot]', e) }
-  }
-  if (resend.last429At) await setSetting(db, 'resend_last_429_at', resend.last429At)
-}
-
 export async function pullEngagementStatsForTenant(
   env: LsEnv,
   db: DB,
@@ -123,11 +118,11 @@ export async function pullEngagementStatsForTenant(
   const tenant = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
   if (!tenant) throw new Error(`tenant ${tenantId} not found`)
   if (!tenant.apiUrl) throw new Error(`tenant ${tenantId} has no apiUrl`)
+  const excludeDomains = await getExcludeDomains(db)
   const t0 = Date.now()
-  const { metrics, resend } = await getTenantSnapshot(env, tenantId, tenant.apiUrl)
+  const { metrics, excluded } = await getTenantSnapshot(env, tenantId, tenant.apiUrl, excludeDomains)
   const latencyMs = Date.now() - t0
-  const row = await upsertRow(db, tenantId, todayUtcDate(), metrics, { latencyMs, ok: true })
-  await mergeResendReading(db, resend)
+  const row = await upsertRow(db, tenantId, todayUtcDate(), metrics, { latencyMs, ok: true }, excluded)
   await db.update(schema.tenants)
     .set({ lastSeenAt: nowDb() })
     .where(eq(schema.tenants.tenantId, tenantId))
@@ -139,11 +134,12 @@ type ProbeResult = {
   latencyMs: number
   ok: boolean
   error?: string
-} & ({ ok: true; metrics: Record<MetricKey, number>; resend: ResendBlock | null } | { ok: false })
+} & ({ ok: true; metrics: Record<MetricKey, number>; excluded: Record<string, number> | null } | { ok: false })
 
 export async function pullEngagementStats(env: LsEnv, db: DB): Promise<void> {
   const tenants = await db.select().from(schema.tenants).all()
   const date = todayUtcDate()
+  const excludeDomains = await getExcludeDomains(db)
 
   // Fetch every tenant's snapshot in parallel, timing each round trip. Network
   // is the slow part (each call can take up to 30s); done sequentially this
@@ -157,8 +153,8 @@ export async function pullEngagementStats(env: LsEnv, db: DB): Promise<void> {
     }
     const t0 = Date.now()
     try {
-      const { metrics, resend } = await getTenantSnapshot(env, t.tenantId, t.apiUrl)
-      return { tenant: t, latencyMs: Date.now() - t0, ok: true, metrics, resend }
+      const { metrics, excluded } = await getTenantSnapshot(env, t.tenantId, t.apiUrl, excludeDomains)
+      return { tenant: t, latencyMs: Date.now() - t0, ok: true, metrics, excluded }
     } catch (err: any) {
       const error = err?.message ?? String(err)
       console.error('engagement pull failed', { tenantId: t.tenantId, error })
@@ -166,14 +162,11 @@ export async function pullEngagementStats(env: LsEnv, db: DB): Promise<void> {
     }
   }))
 
-  // Apply DB writes sequentially in tenant order. mergeResendReading does a
-  // read-modify-write keyed on "newest reading wins", so ordering must be
-  // deterministic — keep it serial rather than racing concurrent writers.
+  // Apply DB writes sequentially in deterministic tenant order.
   for (const r of results) {
     if (!r) continue
     if (r.ok) {
-      await upsertRow(db, r.tenant.tenantId, date, r.metrics, { latencyMs: r.latencyMs, ok: true })
-      await mergeResendReading(db, r.resend)
+      await upsertRow(db, r.tenant.tenantId, date, r.metrics, { latencyMs: r.latencyMs, ok: true }, r.excluded)
       await db.update(schema.tenants)
         .set({ lastSeenAt: nowDb() })
         .where(eq(schema.tenants.tenantId, r.tenant.tenantId))

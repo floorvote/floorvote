@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import * as schema from '../../src/db/schema'
 import { getDb } from '../../src/db/client'
-import { computeEngagementStats } from '../../src/lib/engagementStats'
+import { computeEngagementStats, computeExcludedEngagementStats, normalizeExcludeDomains } from '../../src/lib/engagementStats'
 import { resetDb, applyMigrations } from '../helpers'
 
 beforeEach(async () => {
@@ -94,5 +94,61 @@ describe('computeEngagementStats', () => {
     expect(result.total_members).toBe(0)
     expect(result.bills_with_engagement).toBe(0)
     expect(result.bills_ai_processed).toBe(0)
+  })
+})
+
+async function seedForExclusion() {
+  const db = getDb(env.DB)
+  const now = new Date().toISOString()
+  const recent = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  await db.insert(schema.users).values([
+    { id: 'ext1', email: 'a@external.org', name: 'Ext1', role: 'member' },
+    { id: 'ext2', email: 'b@external.org', name: 'Ext2', role: 'member' },
+    { id: 'int1', email: 'staff@bipartisanpolicy.org', name: 'Int1', role: 'admin' },
+    { id: 'int2', email: 'x@mail.bipartisanpolicy.org', name: 'Int2', role: 'member' }, // subdomain
+  ])
+  await db.insert(schema.sessions).values([
+    { id: 's1', userId: 'ext1', tokenHash: 'h1', expiresAt: now, lastActive: recent },
+    { id: 's2', userId: 'int1', tokenHash: 'h2', expiresAt: now, lastActive: recent },
+  ])
+  await db.insert(schema.bills).values([{ id: 'b1', billNumber: 'H1', title: 't', state: 'RI' }])
+  await db.insert(schema.memberVotes).values([
+    { id: 'v1', billId: 'b1', userId: 'ext1', position: 'support' },
+    { id: 'v2', billId: 'b1', userId: 'int1', position: 'oppose' },
+    { id: 'v3', billId: 'b1', userId: 'int2', position: 'neutral' },
+  ])
+  await db.insert(schema.comments).values([
+    { id: 'c1', billId: 'b1', userId: 'ext1', content: 'hi', deletedAt: null },
+    { id: 'c2', billId: 'b1', userId: 'int1', content: 'yo', deletedAt: null },
+  ])
+  await db.insert(schema.commentReactions).values([
+    { id: 'r1', commentId: 'c1', userId: 'int1', emoji: '👍' },
+  ])
+}
+
+describe('computeExcludedEngagementStats', () => {
+  it('drops users on excluded domains, matching exact + subdomain', async () => {
+    await seedForExclusion()
+    const db = getDb(env.DB)
+    const ex = await computeExcludedEngagementStats(db, ['bipartisanpolicy.org'])
+    expect(ex).not.toBeNull()
+    expect(ex!.total_members).toBe(2)     // int1 (@) + int2 (.subdomain) excluded
+    expect(ex!.active_members_7d).toBe(1) // only ext1's session remains
+    expect(ex!.votes_cast).toBe(1)        // v2/v3 excluded
+    expect(ex!.comments_written).toBe(1)  // c2 excluded
+    expect(ex!.comment_reactions).toBe(0) // r1 (by int1) excluded
+  })
+
+  it('returns null when no valid domains are configured', async () => {
+    await seedForExclusion()
+    const db = getDb(env.DB)
+    expect(await computeExcludedEngagementStats(db, [])).toBeNull()
+    expect(await computeExcludedEngagementStats(db, ['localhost'])).toBeNull() // no dot → normalized out
+  })
+})
+
+describe('normalizeExcludeDomains', () => {
+  it('lowercases, strips junk, dedupes, and requires a dot', () => {
+    expect(normalizeExcludeDomains([' BiPartisanPolicy.org ', 'bipartisanpolicy.org', 'localhost', ''])).toEqual(['bipartisanpolicy.org'])
   })
 })

@@ -25,7 +25,7 @@ export default function UnknownLogins() {
     <div>
       <h1 style={{ fontSize: 22, fontWeight: 800, marginBottom: 16 }}>Unknown login attempts</h1>
       <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20 }}>
-        Login attempts from email addresses not registered on any tenant. Pulled from each tenant via RPC.
+        Login attempts from email addresses not registered on a particular tenant. Pulled from each tenant via RPC.
       </p>
       {loading ? (
         <div style={{ color: 'var(--muted)' }}>Loading…</div>

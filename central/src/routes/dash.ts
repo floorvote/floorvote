@@ -4,8 +4,9 @@ import { drizzle } from 'drizzle-orm/d1'
 import { sql, eq, gte, desc, inArray, isNull, and } from 'drizzle-orm'
 import * as schema from '../db/schema-legiscan'
 import { DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET } from '../lib/sync-schedule'
-import { getSetting, getSettingNumber } from '../lib/settings'
+import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
+import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 
 export const dashRoutes = new Hono<DashEnv>()
 
@@ -365,30 +366,18 @@ dashRoutes.get('/sync/api-budget', async (c) => {
   })
 })
 
-dashRoutes.get('/budget/resend', async (c) => {
-  const db = drizzle(c.env.DB, { schema })
-  const dailyLimitRaw = await getSetting(db, 'resend_daily_limit', '')
-  const ninetyDaysAgo = new Date()
-  ninetyDaysAgo.setUTCDate(ninetyDaysAgo.getUTCDate() - 89)
-  const ninetyDaysAgoStr = ninetyDaysAgo.toISOString().slice(0, 10)
-  const monthDailyRows = await db
-    .select({ date: schema.resendUsageDaily.date, monthlyUsed: schema.resendUsageDaily.monthlyUsed })
-    .from(schema.resendUsageDaily)
-    .where(gte(schema.resendUsageDaily.date, ninetyDaysAgoStr))
-    .orderBy(schema.resendUsageDaily.date)
-    .all()
-  return c.json({
-    data: {
-      monthlyUsed:  await getSettingNumber(db, 'resend_monthly_used', 0),
-      monthlyLimit: await getSettingNumber(db, 'resend_monthly_limit', 0),
-      dailyUsed:    await getSettingNumber(db, 'resend_daily_used', 0),
-      dailyLimit:   dailyLimitRaw === '' ? null : Number(dailyLimitRaw),
-      usedAt:       await getSetting(db, 'resend_used_at', ''),
-      last429At:    await getSetting(db, 'resend_last_429_at', ''),
-      monthDaily:   monthDailyRows.map(r => ({ date: r.date, monthlyUsed: Number(r.monthlyUsed) })),
-    },
-    meta: { generatedAt: new Date().toISOString() },
-  })
+// AI (Gemini) usage, read back from Cloudflare AI Gateway analytics. Fail-safe:
+// returns { available: false, reason } when unconfigured or the query errors, so
+// the Budget page degrades to a muted note instead of erroring.
+dashRoutes.get('/budget/ai', async (c) => {
+  try {
+    const usage = await fetchAiUsage(c.env)
+    return c.json({ data: { available: true, ...usage }, meta: { generatedAt: new Date().toISOString() } })
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    console.warn('[budget/ai] unavailable:', reason)
+    return c.json({ data: { available: false, reason }, meta: { generatedAt: new Date().toISOString() } })
+  }
 })
 
 dashRoutes.get('/sync/ticks', async (c) => {

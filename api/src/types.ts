@@ -23,6 +23,7 @@ export type Env = {
   APP_URL: string
   APP_DOMAINS?: string      // comma-separated registrable domains served; drives CORS apex + superadmin cookie scope. Empty/unset = same-origin only + host-only cookie.
   EMAIL_FROM?: string       // full sender address; defaults to notifications@example.com
+  EMAIL_FROM_BULK?: string  // sender for bulk mail (digest, week-ahead); segments reputation onto a dedicated sending subdomain (e.g. mail.floor.vote). Falls back to EMAIL_FROM when unset.
   EMAIL_REPLY_TO?: string   // reply-to address; defaults to EMAIL_FROM
   ASSOCIATION_NAME?: string
   OPERATOR_NAME?: string            // sidebar footer operator label; empty = no name line

@@ -12,6 +12,7 @@ import migration0010 from '../../migrations-legiscan/0010_settings.sql?raw'
 import migration0011 from '../../migrations-legiscan/0011_resend_usage_daily.sql?raw'
 import migration0012 from '../../migrations-legiscan/0012_tenant_stats_probe.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
+import migration0014 from '../../migrations-legiscan/0014_tenant_stats_excluded.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -38,5 +39,6 @@ export async function setupLsDb(): Promise<void> {
     parseMigration(migration0011, '0011_resend_usage_daily'),
     parseMigration(migration0012, '0012_tenant_stats_probe'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
+    parseMigration(migration0014, '0014_tenant_stats_excluded'),
   ])
 }

@@ -37,9 +37,12 @@ const SERIES_RESPONSE = {
 beforeEach(() => {
   localStorage.clear()
   vi.restoreAllMocks()
-  vi.spyOn(globalThis, 'fetch').mockImplementation(
-    async () => new Response(JSON.stringify(SERIES_RESPONSE)),
-  )
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+    if (String(url).includes('/exclude-config')) {
+      return new Response(JSON.stringify({ data: { domains: ['bipartisanpolicy.org'] }, meta: {} }))
+    }
+    return new Response(JSON.stringify(SERIES_RESPONSE))
+  })
 })
 
 describe('Adoption page', () => {
@@ -67,5 +70,16 @@ describe('Adoption page', () => {
     render(<MemoryRouter><Adoption /></MemoryRouter>)
     await screen.findByText('Show all')
     expect(screen.getByRole('button', { name: 'Demo' }).title).toBe('Show Demo')
+  })
+
+  it('loads the exclusion domain list and toggles the internal-users note', async () => {
+    render(<MemoryRouter><Adoption /></MemoryRouter>)
+    const input = await screen.findByPlaceholderText(/internal domains/i)
+    await waitFor(() => expect((input as HTMLInputElement).value).toBe('bipartisanpolicy.org'))
+
+    const checkbox = screen.getByRole('checkbox', { name: /exclude internal users/i })
+    expect(screen.queryByText(/Membership and member-engagement charts exclude activity/i)).not.toBeInTheDocument()
+    fireEvent.click(checkbox)
+    expect(screen.getByText(/Membership and member-engagement charts exclude activity/i)).toBeInTheDocument()
   })
 })
