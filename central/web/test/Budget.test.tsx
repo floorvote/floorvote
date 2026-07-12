@@ -27,9 +27,12 @@ beforeEach(() => {
         data: {
           available: true,
           total: 321,
+          cost: 4.33,
+          tokensIn: 11702187,
+          tokensOut: 386911,
           windowDays: 30,
-          daily: [{ date: '2026-07-01', count: 5 }],
-          topModels: [{ model: 'gemini-2.5-flash', count: 321 }],
+          daily: [{ date: '2026-07-01', count: 5, cost: 0.1 }],
+          topModels: [{ model: 'gemini-2.5-flash', count: 321, cost: 4.25 }],
         },
         meta: {},
       }))
@@ -53,7 +56,8 @@ describe('Budget page', () => {
 
   it('renders AI usage from the gateway analytics', async () => {
     render(<MemoryRouter><Budget /></MemoryRouter>)
-    await waitFor(() => expect(screen.getByText(/Gemini requests · last 30 days/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/estimated Gemini spend · last 30 days/)).toBeInTheDocument())
+    expect(screen.getByText(/\$4\.33/)).toBeInTheDocument()
     expect(screen.getByText(/gemini-2\.5-flash/)).toBeInTheDocument()
   })
 })

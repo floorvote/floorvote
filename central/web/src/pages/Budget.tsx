@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { CumulativeBudgetChart } from '../components/CumulativeBudgetChart'
+import { DailyCostChart } from '../components/DailyCostChart'
 import { build90DayPoints, computePace } from '../lib/budget'
 
 type LegiBudget = {
@@ -11,8 +12,21 @@ type LegiBudget = {
 }
 
 type AiBudget =
-  | { available: true; total: number; windowDays: number; daily: { date: string; count: number }[]; topModels: { model: string; count: number }[] }
+  | {
+      available: true
+      total: number
+      cost: number
+      tokensIn: number
+      tokensOut: number
+      windowDays: number
+      daily: { date: string; count: number; cost: number }[]
+      topModels: { model: string; count: number; cost: number }[]
+    }
   | { available: false; reason: string }
+
+function usd(n: number): string {
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -82,18 +96,22 @@ export default function Budget() {
         {ai && (ai.available ? (
           <div style={{ padding: 16 }}>
             <div style={{ display: 'flex', gap: 16, alignItems: 'baseline' }}>
-              <div style={{ fontSize: 24, fontWeight: 700 }}>{ai.total.toLocaleString()}</div>
-              <div style={{ color: 'var(--muted)' }}>Gemini requests · last {ai.windowDays} days (via Cloudflare AI Gateway)</div>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{usd(ai.cost)}</div>
+              <div style={{ color: 'var(--muted)' }}>estimated Gemini spend · last {ai.windowDays} days (via Cloudflare AI Gateway)</div>
             </div>
-            <CumulativeBudgetChart
-              points={(() => { let s = 0; return ai.daily.map(d => { s += d.count; return { date: d.date, actual: s, budget: 0 } }) })()}
-              label="AI requests"
+            <div style={{ marginTop: 4, fontSize: 12, color: 'var(--muted)' }}>
+              {ai.total.toLocaleString()} requests · {(ai.tokensIn + ai.tokensOut).toLocaleString()} tokens ({ai.tokensIn.toLocaleString()} in / {ai.tokensOut.toLocaleString()} out)
+            </div>
+            <DailyCostChart
+              points={ai.daily.map(d => ({ date: d.date, value: d.cost }))}
+              label="Spend"
+              valueFormat={usd}
             />
             {ai.topModels.length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <strong style={{ fontSize: 13 }}>Top models (last {ai.windowDays}d)</strong>
                 <ul style={{ marginTop: 4, fontSize: 13 }}>
-                  {ai.topModels.map(r => <li key={r.model}>{r.model}: {r.count.toLocaleString()}</li>)}
+                  {ai.topModels.map(r => <li key={r.model}>{r.model}: {r.count.toLocaleString()} · {usd(r.cost)}</li>)}
                 </ul>
               </div>
             )}
