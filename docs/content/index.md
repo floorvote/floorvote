@@ -2,22 +2,32 @@
 layout: home
 hero:
   name: FloorVote
-  text: Legislative bill tracking for teams
-  tagline: Monitor state legislation, filter by keywords, summarize with AI, and organize for collective review.
+  text: Documentation
+  tagline: Everything you need to deploy, operate, and understand your own FloorVote instance.
   actions:
     - theme: brand
       text: Self-hosting guide
-      link: /self-hosting
+      link: /self-hosting/
     - theme: alt
       text: Architecture
-      link: /architecture
+      link: /architecture/
 features:
-  - title: Keyword filtering
-    details: Only bills matching your issue area are ingested — no noise.
-  - title: AI summaries
-    details: Gemini-powered summaries, tags, and relevance scores tuned to your organization's context.
-  - title: Per-org isolation
-    details: Every organization gets its own database, worker, and queue. No shared multi-tenant database.
-  - title: Hourly sync
-    details: Central worker syncs from LegiScan every hour and fans bills out to tenant queues.
+  - title: Features
+    details: Email digests, a hearing calendar, and Turnstile login protection.
+    link: /features/emails
+    linkText: Browse features
+  - title: Self-hosting
+    details: Deploy your own instance, add tenants, and load issue presets.
+    link: /self-hosting/
+    linkText: Get it running
+  - title: Architecture
+    details: How the central and tenant workers fit together, plus the LegiScan API.
+    link: /architecture/
+    linkText: How it works
+  - title: Contributing
+    details: Project conventions for style tokens and dates.
+    link: /contributing/style-tokens
+    linkText: Read the conventions
 ---
+
+New to FloorVote? [See the product overview.](https://floorvote.org/)
