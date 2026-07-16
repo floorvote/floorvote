@@ -52,7 +52,7 @@ Central uses the union of all tenant keywords to filter the legislative masterli
 
 ## Adding a new preset
 
-Presets are defined in [`api/src/lib/presets.ts`](../api/src/lib/presets.ts). Add a new entry to the `PRESETS` record:
+Presets are defined in [`api/src/lib/presets.ts`](../../../api/src/lib/presets.ts). Add a new entry to the `PRESETS` record:
 
 ```ts
 my_preset: {

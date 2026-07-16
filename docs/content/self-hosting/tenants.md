@@ -88,7 +88,7 @@ Superadmin SSO is ES256: **central is the sole issuer** (holds the private key) 
 
 ### Central-side tokens
 
-The steps above cover the **tenant** and **deploy** credentials. The central worker holds its own set of secrets — `CF_QUEUES_TOKEN` (queue delivery), `SUPERADMIN_JWT_PRIVATE_KEY` + `SUPERADMIN_EMAILS` (admin dashboard), and optionally `CF_ANALYTICS_TOKEN` + `CF_EMAIL_TOKEN` (observability). These are set once on central and you don't touch them when adding a tenant. If you're standing up a brand-new central, provision them per [self-hosting.md](self-hosting.md).
+The steps above cover the **tenant** and **deploy** credentials. The central worker holds its own set of secrets — `CF_QUEUES_TOKEN` (queue delivery), `SUPERADMIN_JWT_PRIVATE_KEY` + `SUPERADMIN_EMAILS` (admin dashboard), and optionally `CF_ANALYTICS_TOKEN` + `CF_EMAIL_TOKEN` (observability). These are set once on central and you don't touch them when adding a tenant. If you're standing up a brand-new central, provision them per [self-hosting.md](/self-hosting/).
 
 ---
 
@@ -436,7 +436,7 @@ The user can then log in via magic link at the custom domain.
 
 Once logged in, go to **Settings → Configuration**.
 
-If you set `INSTANCE_PRESET` in `api/wrangler.toml` (recommended), the worker auto-applies it the first time it registers, so keywords, AI context, taxonomy, and relevance question are already in place. If you didn't, apply a preset now from the dropdown; this seeds those fields, syncs keywords to central, and queues AI for any already-ingested bills missing summaries. See [`docs/presets.md`](presets.md).
+If you set `INSTANCE_PRESET` in `api/wrangler.toml` (recommended), the worker auto-applies it the first time it registers, so keywords, AI context, taxonomy, and relevance question are already in place. If you didn't, apply a preset now from the dropdown; this seeds those fields, syncs keywords to central, and queues AI for any already-ingested bills missing summaries. See [`docs/presets.md`](/self-hosting/presets).
 
 Then review instance-specific copy:
 - **Org noun** (team / association / coalition / custom) — drives position-section and relevance labels.
