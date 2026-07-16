@@ -8,7 +8,8 @@
     "gen:email-icons": "tsx scripts/gen-email-icons.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "docs:deploy": "rm -rf docs/.vitepress/dist && npm run docs:build && wrangler deploy -c docs/wrangler.toml"
   },
   "workspaces": [
     "api",
@@ -21,6 +22,7 @@
     "fflate": "^0.8.3",
     "tsx": "^4.23.1",
     "vite": "^8.1.5",
-    "vitepress": "^1.6.4"
+    "vitepress": "^1.6.4",
+    "wrangler": "^4"
   }
 }

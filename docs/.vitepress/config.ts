@@ -5,6 +5,7 @@ export default defineConfig({
   description: 'Legislative bill tracking for teams',
   base: '/docs/',
   srcDir: 'content',
+  outDir: '.vitepress/dist/docs',
   themeConfig: {
     nav: [
       { text: 'Self-hosting', link: '/self-hosting/' },
