@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PRODUCT_NAME, SOURCE_URL } from '../../../shared/brand'
+import { hasTerms, hasPrivacy } from '../lib/legalDocs'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
 import { color, fontSize } from '../styles/tokens'
 
@@ -19,10 +21,24 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
  * load, the credit block collapses — only the LegiScan / CC BY attribution remains
  * (that line is a data-provider license credit and always renders).
  *
- * The "Source (AGPLv3)" link renders only when `SOURCE_URL` is set (empty while
- * the repo is private); `sourceUrl` is an optional prop only so tests can drive it.
+ * The footer shows up to three muted lines below the operator credit, each
+ * independently conditional: a "Source: <product> (AGPLv3)" line gated on
+ * `SOURCE_URL`, the always-on "Data: LegiScan (CC BY 4.0)" credit, and a
+ * "Terms · Privacy" line gated on `showTerms`/`showPrivacy` (defaulting to
+ * whether the docs were bundled). `sourceUrl`/`showTerms`/`showPrivacy` are
+ * optional props only so tests can drive them.
  */
-export function OperatorBranding({ operator: propOperator, sourceUrl = SOURCE_URL }: { operator?: OperatorConfig, sourceUrl?: string } = {}) {
+export function OperatorBranding({
+  operator: propOperator,
+  sourceUrl = SOURCE_URL,
+  showTerms = hasTerms,
+  showPrivacy = hasPrivacy,
+}: {
+  operator?: OperatorConfig
+  sourceUrl?: string
+  showTerms?: boolean
+  showPrivacy?: boolean
+} = {}) {
   const { config } = useConfig()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
   const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
@@ -67,14 +83,25 @@ export function OperatorBranding({ operator: propOperator, sourceUrl = SOURCE_UR
         )
         : <div>{credit}</div>
       )}
-      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0 }}>
-        Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
-        {' · '}
-        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>
-      </div>
       {sourceUrl && (
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0 }}>
+          Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a>
+          {' ('}
+          <a href={`${sourceUrl.replace(/\/$/, '')}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>AGPLv3</a>
+          {')'}
+        </div>
+      )}
+      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: sourceUrl ? 4 : (hasVisibleCredit ? 10 : 0) }}>
+        Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
+        {' ('}
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>
+        {')'}
+      </div>
+      {(showTerms || showPrivacy) && (
         <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4 }}>
-          <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Source (AGPLv3)</a>
+          {showTerms && <Link to="/terms" style={{ color: color.textMuted }}>Terms</Link>}
+          {showTerms && showPrivacy && ' · '}
+          {showPrivacy && <Link to="/privacy" style={{ color: color.textMuted }}>Privacy</Link>}
         </div>
       )}
     </div>
