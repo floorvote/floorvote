@@ -1,10 +1,11 @@
 import React, { useState, useEffect, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { Wordmark as BrandWordmark } from '../components/Wordmark'
 import { Turnstile } from '../components/Turnstile'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
+import { hasTerms, hasPrivacy } from '../lib/legalDocs'
 
 const AUTH_ERRORS: Record<string, string> = {
   expired: 'This link has expired. Request a new one.',
@@ -172,6 +173,7 @@ export function Login() {
           </div>
         )}
       </div>
+      <LegalLinks />
     </div>
   )
 }
@@ -180,6 +182,17 @@ function Wordmark() {
   return (
     <div style={{ marginBottom: 24 }}>
       <BrandWordmark size={fontSize.xxxl} />
+    </div>
+  )
+}
+
+function LegalLinks() {
+  if (!hasTerms && !hasPrivacy) return null
+  return (
+    <div style={{ marginTop: 20, fontSize: fontSize.sm, color: color.textMuted }}>
+      {hasTerms && <Link to="/terms" style={{ color: color.textMuted }}>Terms of Use</Link>}
+      {hasTerms && hasPrivacy && ' · '}
+      {hasPrivacy && <Link to="/privacy" style={{ color: color.textMuted }}>Privacy Policy</Link>}
     </div>
   )
 }
