@@ -1,8 +1,8 @@
 import snarkdown from 'snarkdown'
 import { sanitizeHtml } from './sanitizeHtml'
 
-// Legal docs are static prose: headings, paragraphs, emphasis, links, lists,
-// blockquotes, rules. Wider than the comment allowlist (adds h1-h4 and hr).
+// Tailored for static legal prose: adds headings (h1-h4), hr, code, and pre;
+// drops the comment-only span/s tags and mention data-* attributes.
 const ALLOWED_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'p', 'strong', 'em', 'a',
   'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr', 'br',

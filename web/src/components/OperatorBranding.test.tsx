@@ -34,6 +34,14 @@ describe('OperatorBranding', () => {
     expect(screen.getByText('Example Org')).toBeInTheDocument()
   })
 
+  it('collapses the operator credit when the logo fails and there is no name', () => {
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} sourceUrl="" />)
+    fireEvent.error(screen.getByAltText('FloorVote')) // alt falls back to PRODUCT_NAME
+    expect(screen.queryByAltText('FloorVote')).toBeNull()
+    // Credit collapsed: no operator link; the always-on Data attribution remains.
+    expect(screen.getByRole('link', { name: 'LegiScan' })).toBeInTheDocument()
+  })
+
   it('always renders the LegiScan / CC BY data attribution', () => {
     renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} />)
     expect(screen.getByRole('link', { name: 'LegiScan' })).toHaveAttribute('href', 'https://legiscan.com')

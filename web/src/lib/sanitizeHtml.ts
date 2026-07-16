@@ -1,8 +1,10 @@
 import DOMPurify from 'dompurify'
 
 // Explicit URI allowlist: restrict link schemes to http(s)/mailto/tel. The shape
-// mirrors DOMPurify's default (scheme branch + a non-scheme branch for plain /
-// relative values) so non-URI attribute values like target="_blank" still pass.
+// (a scheme branch PLUS a non-scheme branch for plain/relative values) intentionally
+// mirrors DOMPurify's default, so that non-URI attribute values like target="_blank"
+// and rel still pass — a naive /^https?:/ would make DOMPurify reject those and strip
+// target/rel.
 export const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
 
 // Force rel="noopener noreferrer" on any anchor that opens a new context
