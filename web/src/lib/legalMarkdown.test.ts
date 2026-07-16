@@ -19,4 +19,13 @@ describe('renderLegalMarkdown', () => {
     const html = renderLegalMarkdown('<a href="https://x.org" target="_blank">x</a>')
     expect(html).toContain('rel="noopener noreferrer"')
   })
+
+  it('unescapes generator-style backslash-escaped punctuation snarkdown leaves literal', () => {
+    // Legal-doc generators over-escape inert punctuation (e.g. "1\." so it is not
+    // parsed as a list). snarkdown passes the backslash through unchanged; we strip it.
+    const html = renderLegalMarkdown('Registered at DC 20005\\. Done.\n\n1\\. OUR SERVICES')
+    expect(html).not.toContain('\\')
+    expect(html).toContain('20005. Done.')
+    expect(html).toContain('1. OUR SERVICES')
+  })
 })
