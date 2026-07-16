@@ -42,4 +42,15 @@ describe('OperatorBranding', () => {
     expect(screen.getByRole('link', { name: 'LegiScan' })).toHaveAttribute('href', 'https://legiscan.com')
     expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toBeInTheDocument()
   })
+
+  it('hides the AGPLv3 source link when no source URL is configured (private repo)', () => {
+    render(<OperatorBranding operator={full} sourceUrl="" />)
+    expect(screen.queryByRole('link', { name: /Source \(AGPLv3\)/i })).toBeNull()
+  })
+
+  it('renders the AGPLv3 source link when a source URL is configured (public repo)', () => {
+    render(<OperatorBranding operator={full} sourceUrl="https://github.com/floorvote/floorvote" />)
+    const link = screen.getByRole('link', { name: /Source \(AGPLv3\)/i })
+    expect(link).toHaveAttribute('href', 'https://github.com/floorvote/floorvote')
+  })
 })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { PRODUCT_NAME } from '../../../shared/brand'
+import { PRODUCT_NAME, SOURCE_URL } from '../../../shared/brand'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
 import { color, fontSize } from '../styles/tokens'
 
@@ -18,8 +18,11 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
  * onLoad; onError leaves it hidden. When there is no name and the logo did not
  * load, the credit block collapses — only the LegiScan / CC BY attribution remains
  * (that line is a data-provider license credit and always renders).
+ *
+ * The "Source (AGPLv3)" link renders only when `SOURCE_URL` is set (empty while
+ * the repo is private); `sourceUrl` is an optional prop only so tests can drive it.
  */
-export function OperatorBranding({ operator: propOperator }: { operator?: OperatorConfig } = {}) {
+export function OperatorBranding({ operator: propOperator, sourceUrl = SOURCE_URL }: { operator?: OperatorConfig, sourceUrl?: string } = {}) {
   const { config } = useConfig()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
   const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
@@ -69,6 +72,11 @@ export function OperatorBranding({ operator: propOperator }: { operator?: Operat
         {' · '}
         <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>
       </div>
+      {sourceUrl && (
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4 }}>
+          <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Source (AGPLv3)</a>
+        </div>
+      )}
     </div>
   )
 }
