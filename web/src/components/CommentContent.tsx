@@ -1,38 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import DOMPurify from 'dompurify'
 import { MarkdownSummary } from './MarkdownSummary'
+import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { TOOLTIP_STYLE, ROLE_CHIP, tooltipPositionBelow, displayName, sortRoles } from '../lib/chipStyles'
 import { color, fontSize, fontWeight } from '../styles/tokens'
 
 const ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'blockquote', 'ul', 'ol', 'li', 'span', 'br', 's']
 const ALLOWED_ATTR = ['href', 'target', 'rel', 'data-type', 'data-id', 'data-label']
 
-// Explicit URI allowlist: restrict link schemes to http(s)/mailto/tel.
-// DOMPurify already blocks `javascript:`/`data:` by default; pinning the regexp is
-// defense-in-depth so a config/version change can't silently widen it. The shape
-// mirrors DOMPurify's default (scheme branch + a non-scheme branch for plain /
-// relative values) so non-URI attribute values like target="_blank" still pass —
-// a naive `/^https?:/` regexp makes DOMPurify reject those and strips target/rel.
-const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-
-// Force rel="noopener noreferrer" on any anchor that opens a new context
-// (target=...), closing reverse-tabnabbing on user-authored comment links.
-function forceLinkRel(node: Element) {
-  if (node.tagName === 'A' && node.hasAttribute('target')) {
-    node.setAttribute('rel', 'noopener noreferrer')
-  }
-}
-
 export function sanitize(html: string): string {
-  // Scope the hook to this call (add → sanitize → remove) so it can't leak into
-  // other DOMPurify consumers in the app.
-  DOMPurify.addHook('afterSanitizeAttributes', forceLinkRel)
-  try {
-    return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR, ALLOWED_URI_REGEXP })
-  } finally {
-    DOMPurify.removeHook('afterSanitizeAttributes')
-  }
+  return sanitizeHtml(html, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
 }
 
 interface UserData {
