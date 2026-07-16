@@ -1,0 +1,22 @@
+import { describe, it, expect } from 'vitest'
+import { renderLegalMarkdown } from './legalMarkdown'
+
+describe('renderLegalMarkdown', () => {
+  it('renders headings, bold, and mailto links', () => {
+    const html = renderLegalMarkdown('# Terms\n\nHello **world** and [contact](mailto:a@b.org).')
+    expect(html).toContain('<h1>Terms</h1>')
+    expect(html).toContain('<strong>world</strong>')
+    expect(html).toContain('href="mailto:a@b.org"')
+  })
+
+  it('strips script tags and javascript: URLs', () => {
+    const html = renderLegalMarkdown('[x](javascript:alert(1))\n\n<script>alert(2)</script>')
+    expect(html).not.toContain('<script')
+    expect(html.toLowerCase()).not.toContain('javascript:')
+  })
+
+  it('forces rel=noopener on links that open a new context', () => {
+    const html = renderLegalMarkdown('<a href="https://x.org" target="_blank">x</a>')
+    expect(html).toContain('rel="noopener noreferrer"')
+  })
+})

@@ -39,6 +39,7 @@
     "react-dom": "^19.2.7",
     "react-hotkeys-hook": "^5.3.3",
     "react-router-dom": "^7.18.1",
+    "snarkdown": "^2.0.0",
     "tippy.js": "^6.3.7"
   },
   "devDependencies": {
