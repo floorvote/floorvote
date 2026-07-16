@@ -34,3 +34,8 @@ graphify-out/.graphify_root
 graphify-out/cache/
 graphify-out/wiki/
 graphify-out/20*/
+
+# Legal docs: operators' real Terms/Privacy stay untracked until a deliberate
+# `git add -f` at launch. Only the *.example.md placeholders ship.
+docs/legal/*.md
+!docs/legal/*.example.md
