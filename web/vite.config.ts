@@ -15,6 +15,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@legal': path.resolve(__dirname, '../docs/legal'),
     },
   },
   server: {
