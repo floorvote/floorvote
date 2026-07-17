@@ -44,7 +44,12 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
-  check-api-central:
+  # api and central are independent packages with independent test suites, so
+  # they run as parallel jobs — the critical path is max(api, central), not the
+  # sum. Each job repeats the root `npm ci` (its only shared cost), which also
+  # provides the eslint + @typescript-eslint toolchain that central's lint/tsc
+  # resolve against.
+  check-api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
@@ -55,12 +60,22 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit -p tsconfig.build.json
         working-directory: api
-      # eslint + @typescript-eslint resolve from the root install above (shared
-      # with web/); no per-package devDeps, so central's lockfile is untouched.
       - run: npm run lint
         working-directory: api
       - run: npm test
         working-directory: api
+
+  check-central:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+      # Root install for the shared eslint/tsc toolchain; central's own runtime
+      # deps (separate package, not a root workspace) are installed below.
+      - run: npm ci
       - run: npm ci
         working-directory: central
       - run: npx tsc --noEmit -p tsconfig.build.json
