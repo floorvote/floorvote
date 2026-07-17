@@ -29,10 +29,7 @@ export function LegalPage({ title, content }: Props) {
         <div style={{ marginBottom: 24 }}>
           <Link to="/" style={{ textDecoration: 'none' }}><Wordmark /></Link>
         </div>
-        {/* snarkdown uses <br> (not <p>) for blank-line paragraph breaks; give them height */}
-        <style>{'.legal-content br { display: block; margin-top: 0.75em; }'}</style>
         <div
-          className="legal-content"
           style={{ fontSize: fontSize.base, color: color.textSlate, lineHeight: 1.6 }}
           dangerouslySetInnerHTML={{ __html: html }}
         />

@@ -16,6 +16,19 @@ const ALLOWED_ATTR = ['href', 'target', 'rel']
 // this cannot re-trigger it, and excluding < > & " ' leaves tags/attrs/entities intact.
 const UNESCAPE_PUNCT = /\\([-!#$%()*+,.\/:;=?@[\]^_`{|}~])/g
 
+// snarkdown uses <br> for blank-line paragraph breaks. Upgrade each <br> that sits
+// between prose segments to a real <p> boundary; leave segments that open with a
+// block-level tag (heading, list, blockquote, pre, hr) unwrapped so we don't nest
+// block elements inside <p>.
+const BLOCK_RE = /^\s*<(h[1-6]|ul|ol|li|blockquote|pre|hr)/i
+function wrapParagraphs(html: string): string {
+  return html
+    .split(/<br\s*\/?>/i)
+    .map(seg => (BLOCK_RE.test(seg) ? seg : `<p>${seg}</p>`))
+    .join('')
+    .replace(/<p>\s*<\/p>/g, '')
+}
+
 /**
  * Convert operator-authored legal markdown to sanitized HTML via the shared
  * sanitizer. Content is first-party (committed by the operator), so the
@@ -27,6 +40,6 @@ export function renderLegalMarkdown(md: string): string {
   // misreads as in-list hard-breaks, collapsing ordered/unordered lists into a single
   // <li> with <br> separators. The source should be clean, but strip defensively.
   const cleaned = md.replace(/[ \t]+$/gm, '')
-  const html = snarkdown(cleaned).replace(UNESCAPE_PUNCT, '$1')
+  const html = wrapParagraphs(snarkdown(cleaned).replace(UNESCAPE_PUNCT, '$1'))
   return sanitizeHtml(html, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
 }
