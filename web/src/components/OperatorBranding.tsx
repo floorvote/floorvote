@@ -84,21 +84,21 @@ export function OperatorBranding({
         : <div>{credit}</div>
       )}
       {sourceUrl && (
-        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0 }}>
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0, textAlign: 'left' }}>
           Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a>
           {' ('}
           <a href={`${sourceUrl.replace(/\/$/, '')}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>AGPLv3</a>
           {')'}
         </div>
       )}
-      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: sourceUrl ? 4 : (hasVisibleCredit ? 10 : 0) }}>
+      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: sourceUrl ? 4 : (hasVisibleCredit ? 10 : 0), textAlign: 'left' }}>
         Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
         {' ('}
         <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>
         {')'}
       </div>
       {(showTerms || showPrivacy) && (
-        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4 }}>
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
           {showTerms && <Link to="/terms" style={{ color: color.textMuted }}>Terms</Link>}
           {showTerms && showPrivacy && ' · '}
           {showPrivacy && <Link to="/privacy" style={{ color: color.textMuted }}>Privacy</Link>}

@@ -22,6 +22,11 @@ const UNESCAPE_PUNCT = /\\([-!#$%()*+,.\/:;=?@[\]^_`{|}~])/g
  * sanitizer is defense-in-depth.
  */
 export function renderLegalMarkdown(md: string): string {
-  const html = snarkdown(md).replace(UNESCAPE_PUNCT, '$1')
+  // Strip trailing horizontal whitespace per line before parsing. Generator-produced
+  // docs often have trailing two-space hard-breaks (CommonMark) that snarkdown
+  // misreads as in-list hard-breaks, collapsing ordered/unordered lists into a single
+  // <li> with <br> separators. The source should be clean, but strip defensively.
+  const cleaned = md.replace(/[ \t]+$/gm, '')
+  const html = snarkdown(cleaned).replace(UNESCAPE_PUNCT, '$1')
   return sanitizeHtml(html, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
 }
