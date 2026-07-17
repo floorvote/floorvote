@@ -19,16 +19,16 @@
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "fflate": "^0.8.3",
-    "hono": "^4.12.28"
+    "hono": "^4.12.30"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.20",
     "@cloudflare/workers-types": "^4.20260702.1",
     "@types/adm-zip": "^0.5.8",
-    "adm-zip": "^0.5.18",
+    "adm-zip": "^0.6.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "wrangler": "^4.107.0"
+    "wrangler": "^4.110.0"
   }
 }
