@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'node:fs'
 import path from 'path'
 import { PRODUCT_NAME } from '../shared/brand'
 
@@ -11,11 +12,32 @@ export default defineConfig({
       name: 'inject-product-name',
       transformIndexHtml: (html) => html.replaceAll('%PRODUCT_NAME%', PRODUCT_NAME),
     },
+    {
+      // Expose the operator's legal docs as `virtual:legal-docs`, read with Node
+      // fs at build time. Reliable for the repo-root docs/legal/ dir in both dev
+      // and the rolldown production build — unlike an outside-root
+      // `import.meta.glob`, which the production build silently drops. Real-named
+      // files are gitignored until launch; absent files resolve to null, so no
+      // /terms or /privacy routes and no footer/login legal links render.
+      name: 'legal-docs',
+      resolveId(id) {
+        if (id === 'virtual:legal-docs') return '\0virtual:legal-docs'
+      },
+      load(id) {
+        if (id !== '\0virtual:legal-docs') return
+        const dir = path.resolve(__dirname, '../docs/legal')
+        const read = (name) => {
+          try { return fs.readFileSync(path.join(dir, name), 'utf8') } catch { return null }
+        }
+        const terms = read('TERMS OF USE.md')
+        const privacy = read('PRIVACY POLICY.md')
+        return `export const terms = ${JSON.stringify(terms)}\nexport const privacy = ${JSON.stringify(privacy)}\n`
+      },
+    },
   ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@legal': path.resolve(__dirname, '../docs/legal'),
     },
   },
   server: {
