@@ -25,7 +25,8 @@ import { ConfigProvider } from './context/ConfigContext'
 import { NavProgressBar } from './components/NavProgressBar'
 import { useNavPendingCursor } from './hooks/useNavPendingCursor'
 import { UnsavedTextProvider } from './lib/unsavedText'
-import { useState } from 'react'
+import { legalDocs, hasTerms, hasPrivacy } from './lib/legalDocs'
+import { useState, lazy, Suspense } from 'react'
 
 function DemoBanner() {
   const { demoMode } = useDemo()
@@ -114,6 +115,8 @@ function RequireAdmin() {
   return <Outlet />
 }
 
+const LegalPage = lazy(() => import('./pages/LegalPage').then((m) => ({ default: m.LegalPage })))
+
 // Route tree shared by the live browser router and tests (which build a
 // createMemoryRouter from these same route objects). Same tree as the prior
 // <Routes>; the v6→v7 data-router swap is intentionally behavior-neutral here —
@@ -122,6 +125,16 @@ export const routes = createRoutesFromElements(
   <>
     <Route path="/login" element={<Login />} />
     <Route path="/auth/verify" element={<AuthVerify />} />
+    {hasTerms && (
+      <Route path="/terms" element={
+        <Suspense fallback={null}><LegalPage title="Terms of Use" content={legalDocs.terms!} /></Suspense>
+      } />
+    )}
+    {hasPrivacy && (
+      <Route path="/privacy" element={
+        <Suspense fallback={null}><LegalPage title="Privacy Policy" content={legalDocs.privacy!} /></Suspense>
+      } />
+    )}
     <Route element={<RequireAuth />} errorElement={<RootErrorBoundary />}>
       <Route element={<AppLayout />}>
         <Route index element={<Feed />} loader={feedLoader} />

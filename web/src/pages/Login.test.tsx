@@ -13,6 +13,8 @@ vi.mock('../components/Turnstile', () => ({
   ),
 }))
 
+vi.mock('../lib/legalDocs', () => ({ hasTerms: true, hasPrivacy: true }))
+
 import { Login } from './Login'
 
 // Default bootstrap: Turnstile configured (sitekey present), not demo.
@@ -105,5 +107,13 @@ describe('Login — Turnstile not configured (fail-open, self-host default)', ()
       expect(call).toBeTruthy()
       expect(JSON.parse((call![1] as { body: string }).body)).toEqual({ email: 'a@b.org', turnstileToken: null })
     })
+  })
+})
+
+describe('Login — legal links', () => {
+  it('links to Terms of Use and Privacy Policy when the docs exist', async () => {
+    renderLogin()
+    expect(await screen.findByRole('link', { name: 'Terms of Use' })).toHaveAttribute('href', '/terms')
+    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy')
   })
 })
