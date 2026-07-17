@@ -1,45 +1,21 @@
-import snarkdown from 'snarkdown'
+import { marked } from 'marked'
 import { sanitizeHtml } from './sanitizeHtml'
 
-// Tailored for static legal prose: adds headings (h1-h4), hr, code, and pre;
-// drops the comment-only span/s tags and mention data-* attributes.
+// Tailored for static legal prose: block elements including table support,
+// inline formatting, links. Drops comment-only span/s tags and data-* attrs.
 const ALLOWED_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'p', 'strong', 'em', 'a',
   'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'hr', 'br',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td',
 ]
-const ALLOWED_ATTR = ['href', 'target', 'rel']
-
-// snarkdown does not implement CommonMark backslash escapes, so generator-produced
-// legal docs (which over-escape inert punctuation like "1\." so it is not parsed as a
-// list) render the backslash literally. Strip a backslash before non-HTML-structural
-// ASCII punctuation on the rendered HTML: snarkdown has already parsed the markdown, so
-// this cannot re-trigger it, and excluding < > & " ' leaves tags/attrs/entities intact.
-const UNESCAPE_PUNCT = /\\([-!#$%()*+,.\/:;=?@[\]^_`{|}~])/g
-
-// snarkdown uses <br> for blank-line paragraph breaks. Upgrade each <br> that sits
-// between prose segments to a real <p> boundary; leave segments that open with a
-// block-level tag (heading, list, blockquote, pre, hr) unwrapped so we don't nest
-// block elements inside <p>.
-const BLOCK_RE = /^\s*<(h[1-6]|ul|ol|li|blockquote|pre|hr)/i
-function wrapParagraphs(html: string): string {
-  return html
-    .split(/<br\s*\/?>/i)
-    .map(seg => (BLOCK_RE.test(seg) ? seg : `<p>${seg}</p>`))
-    .join('')
-    .replace(/<p>\s*<\/p>/g, '')
-}
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'scope', 'colspan', 'rowspan']
 
 /**
- * Convert operator-authored legal markdown to sanitized HTML via the shared
- * sanitizer. Content is first-party (committed by the operator), so the
- * sanitizer is defense-in-depth.
+ * Convert operator-authored legal markdown to sanitized HTML. marked (GFM)
+ * handles tables, proper <p> paragraphs, lists, and CommonMark backslash
+ * escapes. DOMPurify is defense-in-depth — content is first-party.
  */
 export function renderLegalMarkdown(md: string): string {
-  // Strip trailing horizontal whitespace per line before parsing. Generator-produced
-  // docs often have trailing two-space hard-breaks (CommonMark) that snarkdown
-  // misreads as in-list hard-breaks, collapsing ordered/unordered lists into a single
-  // <li> with <br> separators. The source should be clean, but strip defensively.
-  const cleaned = md.replace(/[ \t]+$/gm, '')
-  const html = wrapParagraphs(snarkdown(cleaned).replace(UNESCAPE_PUNCT, '$1'))
+  const html = marked.parse(md, { async: false }) as string
   return sanitizeHtml(html, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
 }
