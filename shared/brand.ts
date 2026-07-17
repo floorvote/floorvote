@@ -19,4 +19,4 @@ export const PRODUCT_NAME_WORDMARK = { primary: 'Floor', accent: 'Vote' } as con
  * this to the public repository URL in the same commit that makes the repo
  * public (a deliberate, one-time flip — see docs/backlog.md open-source hygiene).
  */
-export const SOURCE_URL = 'https://github.com/floorvote/floorvote'
+export const SOURCE_URL = ''
