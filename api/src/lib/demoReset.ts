@@ -198,18 +198,14 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['legiscan:2099056', 'medium'],  // A2670 — canvassing early votes
     ['legiscan:2096553', 'low'],     // A548  — county clerk death filing
   ]
-  for (const [extId, priority] of priorities) {
-    await db
-      .prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`)
-      .bind(priority, extId)
-      .run()
-  }
   const priorityExtIds = priorities.map(([extId]) => extId)
   const priorityPlaceholders = priorityExtIds.map(() => '?').join(',')
-  await db
-    .prepare(`UPDATE bills SET priority = NULL WHERE external_id NOT IN (${priorityPlaceholders})`)
-    .bind(...priorityExtIds)
-    .run()
+  await db.batch([
+    ...priorities.map(([extId, priority]) =>
+      db.prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`).bind(priority, extId),
+    ),
+    db.prepare(`UPDATE bills SET priority = NULL WHERE external_id NOT IN (${priorityPlaceholders})`).bind(...priorityExtIds),
+  ])
 
   // Official positions
   // [id, extId, position, set_by, createdAt]
@@ -221,16 +217,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['demo-pos-5', 'legiscan:2096183', 'Support', 'demo-dep', threeWeeksAgo], // A251  — voting machines
     ['demo-pos-6', 'legiscan:2098113', 'Support', 'demo-dir', twoMonthsAgo],  // A1715 — John R. Lewis Act
   ]
-  for (const [id, extId, position, setBy, createdAt] of positions) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at)
-         SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(id, extId, position, setBy, createdAt, extId)
-      .run()
-  }
+  await db.batch(positions.map(([id, extId, position, setBy, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO official_positions (id, bill_id, position, set_by, created_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(id, extId, position, setBy, createdAt, extId),
+  ))
 
   // Member votes spread across several bills
   // [id, extId, userId, position, createdAt]
@@ -268,16 +261,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['demo-vote-25', 'legiscan:2098630', 'demo-m4',   'neutral',  twoWeeksAgo],
     ['demo-vote-26', 'legiscan:2098630', 'demo-m9',   'support',  twoWeeksAgo],
   ]
-  for (const [id, extId, userId, position, createdAt] of votes) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO member_votes (id, bill_id, user_id, position, created_at, updated_at)
-         SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(id, extId, userId, position, createdAt, createdAt, extId)
-      .run()
-  }
+  await db.batch(votes.map(([id, extId, userId, position, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO member_votes (id, bill_id, user_id, position, created_at, updated_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(id, extId, userId, position, createdAt, createdAt, extId),
+  ))
 
   // Comments — some include @mentions (span[data-type=mention] format)
   // [id, extId, userId, content, createdAt]
@@ -392,16 +382,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
       '<p>Advanced to Appropriations on a 6-2 vote. The fiscal note request we submitted is referenced in the committee statement. If Appropriations funds the temporary staffing line for the final two weeks, our amendment ask is effectively satisfied.</p>',
       daysAgo(9)],
   ]
-  for (const [id, extId, userId, content, createdAt] of comments) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO comments (id, bill_id, user_id, content, created_at)
-         SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(id, extId, userId, content, createdAt, extId)
-      .run()
-  }
+  await db.batch(comments.map(([id, extId, userId, content, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO comments (id, bill_id, user_id, content, created_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(id, extId, userId, content, createdAt, extId),
+  ))
 
   // comment_mentions — one row per (comment, notified user)
   // demo-role-2 members: demo-dep
@@ -425,16 +412,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     // demo-comment-27: @Maria Santos (demo-dir) mentioned by demo-dep
     ['demo-mention-10', 'demo-comment-27', 'demo-dir', 'user', 'demo-dir', daysAgo(6)],
   ]
-  for (const [id, commentId, userId, sourceType, sourceId, createdAt] of mentions) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO comment_mentions (id, comment_id, user_id, source_type, source_id, created_at)
-         SELECT ?, id, ?, ?, ?, ?
-         FROM comments WHERE id = ? LIMIT 1`
-      )
-      .bind(id, userId, sourceType, sourceId, createdAt, commentId)
-      .run()
-  }
+  await db.batch(mentions.map(([id, commentId, userId, sourceType, sourceId, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO comment_mentions (id, comment_id, user_id, source_type, source_id, created_at)
+       SELECT ?, id, ?, ?, ?, ?
+       FROM comments WHERE id = ? LIMIT 1`
+    ).bind(id, userId, sourceType, sourceId, createdAt, commentId),
+  ))
 
   // Feed events
   // priority_set: { priority }
@@ -595,16 +579,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
       chg('action_added', { newValue: 'Introduced, referred to Assembly State & Local Government Committee' }),
     ] }), threeWeeksAgo],
   ]
-  for (const [id, type, extId, userId, metadata, createdAt] of feedEvents) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, created_at)
-         SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(id, type, extId, userId, metadata, createdAt, extId)
-      .run()
-  }
+  await db.batch(feedEvents.map(([id, type, extId, userId, metadata, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO feed_events (id, type, bill_id, user_id, metadata, created_at)
+       SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(id, type, extId, userId, metadata, createdAt, extId),
+  ))
 
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
   // past timestamps, so a "now" baseline keeps the Feed nav dot dark for fresh
@@ -644,16 +625,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['legiscan:2099974', 'demo-cf-5', '1', 'demo-dir', oneMonthAgo],
     ['legiscan:2100182', 'demo-cf-5', '1', 'demo-dir', oneMonthAgo],
   ]
-  for (const [extId, fieldId, value, setBy, updatedAt] of cfvRows) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO bill_custom_field_values (bill_id, field_id, value, set_by, updated_at)
-         SELECT (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(extId, fieldId, value, setBy, updatedAt, extId)
-      .run()
-  }
+  await db.batch(cfvRows.map(([extId, fieldId, value, setBy, updatedAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO bill_custom_field_values (bill_id, field_id, value, set_by, updated_at)
+       SELECT (SELECT id FROM bills WHERE external_id = ? LIMIT 1), ?, ?, ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(extId, fieldId, value, setBy, updatedAt, extId),
+  ))
 
   // Personal notes for demo-user
   const notes: Array<[string, string, string, string]> = [
@@ -666,16 +644,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['demo-note-7', 'legiscan:2098113', 'Monitor committee hearings — highest-profile bill this session. Sponsor briefing requested; coordinate with Maria on implementation working group.', twoMonthsAgo],
     ['demo-note-8', 'legiscan:2098630', 'Compare with A1680 — both touch late registration; may need coordinated testimony if both advance. Ask James to map the workflow differences.', threeWeeksAgo],
   ]
-  for (const [id, extId, content, createdAt] of notes) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO notes (id, bill_id, user_id, content, created_at)
-         SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'demo-user', ?, ?
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(id, extId, content, createdAt, extId)
-      .run()
-  }
+  await db.batch(notes.map(([id, extId, content, createdAt]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO notes (id, bill_id, user_id, content, created_at)
+       SELECT ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'demo-user', ?, ?
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(id, extId, content, createdAt, extId),
+  ))
 
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
   // hearings widget always show fresh upcoming events; the nightly reset re-derives them.
@@ -692,16 +667,13 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['demo-hearing-4', 'legiscan:2098113', 18, '14:00:00', 'State House, Committee Room 6, Trenton',        'Assembly Appropriations Committee — hearing'],
     ['demo-hearing-5', 'legiscan:2096183', 27, '11:00:00', 'State House Annex, Committee Room 11, Trenton', 'Assembly State & Local Government Committee — hearing'],
   ]
-  for (const [slug, extId, offset, time, location, description] of hearings) {
-    await db
-      .prepare(
-        `INSERT OR IGNORE INTO calendar_events (id, uid, bill_id, source, sequence, date, time, location, description, status, event_hash)
-         SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'hearing', 0, ?, ?, ?, ?, 'confirmed', NULL
-         WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-      )
-      .bind(slug, `${slug}@example.com`, extId, calDate(offset), time, location, description, extId)
-      .run()
-  }
+  await db.batch(hearings.map(([slug, extId, offset, time, location, description]) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO calendar_events (id, uid, bill_id, source, sequence, date, time, location, description, status, event_hash)
+       SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'hearing', 0, ?, ?, ?, ?, 'confirmed', NULL
+       WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
+    ).bind(slug, `${slug}@example.com`, extId, calDate(offset), time, location, description, extId),
+  ))
 
   // Custom events: [slug, extId|null, offsetDays, time|null, location|null, description]
   const customEvents: Array<[string, string | null, number, string | null, string | null, string]> = [
@@ -711,24 +683,16 @@ export async function runDemoReset(db: D1Database): Promise<void> {
     ['demo-event-4', null,               20, '09:00:00', 'Trenton Marriott', 'NJ County Clerks Association — spring conference'],
     ['demo-event-5', null,               25, '14:00:00', 'Zoom',             'Legislative strategy working group'],
   ]
-  for (const [slug, extId, offset, time, location, description] of customEvents) {
-    if (extId === null) {
-      await db
-        .prepare(
+  await db.batch(customEvents.map(([slug, extId, offset, time, location, description]) =>
+    extId === null
+      ? db.prepare(
           `INSERT OR IGNORE INTO calendar_events (id, uid, bill_id, source, sequence, date, time, location, description, status, event_hash)
            VALUES (?, ?, NULL, 'custom', 0, ?, ?, ?, ?, 'confirmed', NULL)`
-        )
-        .bind(slug, `${slug}@example.com`, calDate(offset), time, location, description)
-        .run()
-    } else {
-      await db
-        .prepare(
+        ).bind(slug, `${slug}@example.com`, calDate(offset), time, location, description)
+      : db.prepare(
           `INSERT OR IGNORE INTO calendar_events (id, uid, bill_id, source, sequence, date, time, location, description, status, event_hash)
            SELECT ?, ?, (SELECT id FROM bills WHERE external_id = ? LIMIT 1), 'custom', 0, ?, ?, ?, ?, 'confirmed', NULL
            WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
-        )
-        .bind(slug, `${slug}@example.com`, extId, calDate(offset), time, location, description, extId)
-        .run()
-    }
-  }
+        ).bind(slug, `${slug}@example.com`, extId, calDate(offset), time, location, description, extId),
+  ))
 }
