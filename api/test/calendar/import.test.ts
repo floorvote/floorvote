@@ -66,13 +66,15 @@ describe('POST /calendar/import', () => {
     expect(j.error).toMatch(/1000/)
   })
 
+  // Inserts the full 1000-row batch, so it does real D1 work — the default 5s
+  // vitest timeout is too tight under loaded CI and flakes. Give it headroom.
   it('accepts a payload with exactly 1000 rows without 413', async () => {
     const exactRows = Array.from({ length: 1000 }, (_, i) => ({
       title: `Event ${i}`, date: '2026-05-14', details: null, time: null, location: null, url: null,
     }))
     const r = await adminPost('/api/calendar/import', { rows: exactRows }, adminToken)
     expect(r.status).toBe(200)
-  })
+  }, 30_000)
 
   it('creates valid rows, skips invalid, and is idempotent', async () => {
     const r1 = await adminPost('/api/calendar/import', { rows }, adminToken)
