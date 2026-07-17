@@ -1,0 +1,11 @@
+# Header rules for Cloudflare Workers Assets.
+# Docs: https://developers.cloudflare.com/workers/static-assets/headers/
+#
+# Everything under /assets/ is fingerprinted by Vite (a content hash in the
+# filename), so the bytes at a given URL never change -- a new build produces a
+# new name. Cache them immutably so repeat visits and in-session navigation
+# never revalidate. The non-fingerprinted HTML shell keeps the Workers Assets
+# default (max-age=0, must-revalidate) so it always resolves to the current
+# hashes; that freshness is what makes caching the assets immutably safe.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

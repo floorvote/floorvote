@@ -3,6 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Stale-deploy recovery. A browser- or edge-cached index.html can reference a
+      hashed bundle that a later deploy rotated away. Because Workers Assets uses
+      not_found_handling=single-page-application, the missing /assets/*.js is
+      answered with the HTML shell (200, text/html), so the browser refuses it
+      ("Expected a JavaScript module but got text/html") and the app never mounts.
+      Catch that failed asset load and reload once to fetch fresh HTML + current
+      hashes. Guarded to at most one reload per 10s to prevent loops.
+    -->
+    <script>
+      (function () {
+        window.addEventListener(
+          'error',
+          function (event) {
+            var el = event && event.target;
+            if (!el || (el.tagName !== 'SCRIPT' && el.tagName !== 'LINK')) return;
+            var url = el.src || el.href || '';
+            if (url.indexOf('/assets/') === -1) return;
+            try {
+              var KEY = 'fv:asset-reload-at';
+              var now = Date.now();
+              if (now - parseInt(sessionStorage.getItem(KEY) || '0', 10) < 10000) return;
+              sessionStorage.setItem(KEY, String(now));
+            } catch (e) {
+              return; // no sessionStorage -> can't guard a loop, so don't reload
+            }
+            window.location.reload();
+          },
+          true // capture phase: resource load errors don't bubble
+        );
+      })();
+    </script>
     <link rel="icon" href="/favicon-v3.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-v3-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-v3-16.png" />
