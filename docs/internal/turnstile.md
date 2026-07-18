@@ -37,7 +37,7 @@ public bootstrap endpoint — tenants via `GET /auth/demo-mode`
 form renders the widget **only when the var is set**; unset → no widget (fail-open,
 mirroring the secret gate). Set this to your own Turnstile sitekey on each tenant and central legiscan.
 (Local `dev` deliberately leaves it unset so local login needs no challenge.)
-See `docs/self-hosting.md` for setup instructions.
+See the self-hosting guide (`docs/content/self-hosting/index.md`) for setup instructions.
 
 Gate semantics (`shared/turnstile.ts`): secret **unset** → fails **open** (login
 works without a token); secret **set** → fails **closed** (missing/invalid token

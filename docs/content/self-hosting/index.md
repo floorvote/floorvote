@@ -71,7 +71,7 @@ deployment domain-agnostic:
   `*.workers.dev` host cannot send), independent of where the app is served. Unset falls
   back to a default sender address. Optional `EMAIL_REPLY_TO` defaults to `EMAIL_FROM`.
 
-See `docs/spinning-up-instances.md` for a more detailed step-by-step guide.
+See the [Adding tenants](/self-hosting/tenants) guide for a more detailed step-by-step walkthrough.
 
 ---
 
@@ -501,7 +501,7 @@ sends a token), *then* set the secret — setting the secret first 403s every lo
 because the gate fails closed before the form is sending tokens. To disable
 Turnstile later, delete the secret (`wrangler secret delete TURNSTILE_SECRET_KEY
 --env <id>`); the gate reverts to fail-open instantly. Full reference:
-`docs/turnstile-setup.md`.
+`docs/internal/turnstile.md` in the repository.
 
 ---
 
