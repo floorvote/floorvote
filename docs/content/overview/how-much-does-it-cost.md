@@ -4,7 +4,7 @@ Running FloorVote means keeping two accounts: Cloudflare and LegiScan.
 
 ## Cloudflare — about $5/month
 
-Cloudflare provides the hosting, email, and artificial intelligence (AI) billing, all in one bill. The Workers Paid plan is $5/month and includes a large usage allowance — most deployments never come close to it, though a busy deployment with many users may go somewhat over.
+Cloudflare provides the hosting, email, and artificial intelligence billing, all in one bill. The Workers Paid plan is $5/month and includes a large usage allowance — most deployments never come close to it, though a busy deployment with many users may go somewhat over.
 
 AI summarization also runs through Cloudflare, and it's inexpensive: about $10 summarizes roughly 2,000 bills. Your AI cost scales with how much you're actually tracking — the number of keywords your team watches, the number of states you cover, and how often the bill text you're tracking changes.
 
