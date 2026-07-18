@@ -17,9 +17,11 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 2. Ingestor → fetch bill + text from LegiScan → store in R2 → notify tenants
 3. Tenant queue consumer → fetch from central → run AI → upsert to tenant D1
 
-For the full sync pipeline (cron passes, ingestor fast/full path, deduplication, tenant message flags), see [`docs/architecture.md`](docs/architecture.md). The visual at [`docs/public/sync-flow.html`](docs/public/sync-flow.html) is a companion.
+For the full sync pipeline (cron passes, ingestor fast/full path, deduplication, tenant message flags), see [`docs/internal/sync-pipeline.md`](docs/internal/sync-pipeline.md). The visual at [`docs/internal/sync-flow.html`](docs/internal/sync-flow.html) is a companion.
 
-**Providers:** LegiScan is the recommended and actively maintained provider (`legiscan` wrangler env). An OpenStates provider also exists but is experimental and not at feature parity — see the note at the bottom of [`docs/self-hosting.md`](docs/self-hosting.md).
+**Providers:** LegiScan is the recommended and actively maintained provider (`legiscan` wrangler env). An OpenStates provider also exists but is experimental and not at feature parity — see the note at the bottom of [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md).
+
+Maintainer-grade docs (sync pipeline, LegiScan API reference, email/calendar/Turnstile internals, style-token and date conventions) live in [docs/internal/](docs/internal/README.md) — flat, and not on the published docs site.
 
 ## Layout
 
@@ -29,7 +31,7 @@ central/    Central Worker (standalone package, separate npm install)
 web/        React 19 + Vite 8 + React Router 7 frontend
 shared/     Shared modules (bill model, feed utils, markdown, tokens)
 scripts/    Seeders and dev tooling
-docs/       Architecture docs, self-hosting guide
+docs/content/  Published docs site (VitePress); docs/internal/ holds maintainer docs
 ```
 
 ## Stack
@@ -65,7 +67,7 @@ npm run deploy              # OpenStates central (experimental)
 
 **Deploy ordering:** central first when adding endpoints tenants need; tenants first when removing endpoints; central first as safe default.
 
-See [`docs/self-hosting.md`](docs/self-hosting.md) for full setup (D1, Queue, secrets, first admin user).
+See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) for full setup (D1, Queue, secrets, first admin user).
 
 ### Secrets and tokens
 

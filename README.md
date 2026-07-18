@@ -103,7 +103,7 @@ Open http://localhost:5173.
 
 ## Deployment
 
-Each tenant is a separate Cloudflare Worker deployment. See [`docs/self-hosting.md`](docs/self-hosting.md) for the complete setup guide.
+Each tenant is a separate Cloudflare Worker deployment. See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) for the complete setup guide.
 
 ```bash
 # Deploy a tenant (from api/)

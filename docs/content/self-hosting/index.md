@@ -50,7 +50,7 @@ Legislative API (LegiScan or OpenStates)
 - **Central service** — one per operator. Owns all legislative API calls and bill storage. You pay for one API key regardless of how many tenants you run. AI processing happens tenant-side only.
 - **Tenant Workers** — one per organization or topic focus. Each tenant has its own users, votes, comments, positions, and relevance configuration. Tenants never call LegiScan directly.
 
-For a detailed walkthrough of the sync pipeline (cron passes, ingestor behavior, deduplication), see [`architecture.md`](/architecture/) and the visual at [`sync-flow.html`](/sync-flow.html).
+For a detailed walkthrough of the sync pipeline (cron passes, ingestor behavior, and deduplication), see the [Architecture overview](/architecture/). The full code-grounded pipeline and the interactive `sync-flow.html` companion live in `docs/internal/` in the repository.
 
 ---
 
@@ -71,7 +71,7 @@ deployment domain-agnostic:
   `*.workers.dev` host cannot send), independent of where the app is served. Unset falls
   back to a default sender address. Optional `EMAIL_REPLY_TO` defaults to `EMAIL_FROM`.
 
-See `docs/spinning-up-instances.md` for a more detailed step-by-step guide.
+See the [Adding tenants](/self-hosting/tenants) guide for a more detailed step-by-step walkthrough.
 
 ---
 
@@ -501,7 +501,7 @@ sends a token), *then* set the secret — setting the secret first 403s every lo
 because the gate fails closed before the form is sending tokens. To disable
 Turnstile later, delete the secret (`wrangler secret delete TURNSTILE_SECRET_KEY
 --env <id>`); the gate reverts to fail-open instantly. Full reference:
-`docs/turnstile-setup.md`.
+`docs/internal/turnstile.md` in the repository.
 
 ---
 

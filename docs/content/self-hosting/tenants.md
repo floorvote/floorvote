@@ -436,7 +436,7 @@ The user can then log in via magic link at the custom domain.
 
 Once logged in, go to **Settings → Configuration**.
 
-If you set `INSTANCE_PRESET` in `api/wrangler.toml` (recommended), the worker auto-applies it the first time it registers, so keywords, AI context, taxonomy, and relevance question are already in place. If you didn't, apply a preset now from the dropdown; this seeds those fields, syncs keywords to central, and queues AI for any already-ingested bills missing summaries. See [`docs/presets.md`](/self-hosting/presets).
+If you set `INSTANCE_PRESET` in `api/wrangler.toml` (recommended), the worker auto-applies it the first time it registers, so keywords, AI context, taxonomy, and relevance question are already in place. If you didn't, apply a preset now from the dropdown; this seeds those fields, syncs keywords to central, and queues AI for any already-ingested bills missing summaries. See [Presets](#presets) below.
 
 Then review instance-specific copy:
 - **Org noun** (team / association / coalition / custom) — drives position-section and relevance labels.
@@ -453,3 +453,36 @@ Each instance is a separate Worker in the Cloudflare dashboard. Health check:
 curl https://[slug].[your-domain]/api/health
 # { "ok": true }
 ```
+
+---
+
+## Presets
+
+Presets bundle the four AI and content settings (AI context, relevance question, tag taxonomy, and keywords) into named configurations for specific use cases. They make it fast to set up a new instance without configuring each field by hand.
+
+### Available presets
+
+| Slug | Name | Use case |
+|------|------|----------|
+| `generic` | Generic (Policy Organization) | Any policy org tracking legislation. Broad taxonomy (~15 policy areas), neutral framing, empty keyword list. |
+| `election_officials` | Election Officials | State associations of local election officials. Election-specific keywords, taxonomy, AI framing, and relevance question. |
+
+### Applying a preset
+
+**Via setup (`api/wrangler.toml`):** set `INSTANCE_PRESET = "election_officials"`. When present, the worker auto-applies that preset into `association_config` the first time it registers with central or serves config. This is the recommended path for new tenant setup, because bills will not run AI until a preset is configured.
+
+**Via the UI (Settings → Config):** open **Settings → Configuration**, select a preset in the **Preset** bar, and click **Apply**. This overwrites the current AI context, relevance question, tag taxonomy, and keywords with the preset values, records `instance_preset` (so "Reset to preset" knows what to restore), syncs keywords to central, and queues AI for existing bills still missing summaries.
+
+**Via the API:** `POST /api/admin/apply-preset/:slug` with an admin session cookie. Returns `{ ok: true, preset: "slug", queuedForAi: 0 }`.
+
+### "Reset to preset" buttons
+
+When an `instance_preset` is set, the **Reset to preset** button on each AI field restores that field to the preset's value. If no preset is active, the button reverts to the code-level generic default (or clears the field).
+
+### Keyword sync
+
+Keywords are synced to central when a preset is applied, when keywords are saved in the Config form (`PUT /api/admin/config`), or manually via `POST /api/admin/register-with-central`. Central uses the union of all tenant keywords to filter the legislative masterlist before queuing bills. If you clear all keywords, this tenant's bills will come only from the keyword union of other tenants — usually not what you want.
+
+### Adding a new preset
+
+Presets are defined in `api/src/lib/presets.ts`. Add an entry to the `PRESETS` record — no database migration is needed. They are served via `GET /api/admin/presets` and applied via `POST /api/admin/apply-preset/:slug`.

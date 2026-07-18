@@ -1,52 +1,53 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
-export default defineConfig({
-  title: 'FloorVote',
-  description: 'Legislative bill tracking for teams',
-  base: '/docs/',
-  srcDir: 'content',
-  outDir: '.vitepress/dist/docs',
-  themeConfig: {
-    nav: [
-      { text: 'Self-hosting', link: '/self-hosting/' },
-      { text: 'Architecture', link: '/architecture/' },
-      { text: 'GitHub', link: 'https://github.com/floorvote/floorvote' },
+export default withMermaid(
+  defineConfig({
+    title: 'FloorVote',
+    description: 'Bill tracking for teams',
+    base: '/docs/',
+    srcDir: 'content',
+    outDir: '.vitepress/dist/docs',
+    head: [
+      ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
+      ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
+      ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@800&display=swap' }],
     ],
-    sidebar: [
-      {
-        text: 'Features',
-        items: [
-          { text: 'Email digests', link: '/features/emails' },
-          { text: 'Calendar (iCal)', link: '/features/calendar' },
-          { text: 'Turnstile login protection', link: '/features/turnstile' },
-        ],
-      },
-      {
-        text: 'Self-hosting',
-        items: [
-          { text: 'Self-hosting', link: '/self-hosting/' },
-          { text: 'Adding tenants', link: '/self-hosting/tenants' },
-          { text: 'Presets', link: '/self-hosting/presets' },
-        ],
-      },
-      {
-        text: 'Architecture',
-        items: [
-          { text: 'Overview', link: '/architecture/' },
-          { text: 'LegiScan API', link: '/architecture/legiscan' },
-        ],
-      },
-      {
-        text: 'Contributing',
-        items: [
-          { text: 'Style tokens', link: '/contributing/style-tokens' },
-          { text: 'Date/time convention', link: '/contributing/dates' },
-        ],
-      },
-    ],
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/floorvote/floorvote' },
-    ],
-    search: { provider: 'local' },
-  },
-})
+    themeConfig: {
+      siteTitle: false,
+      sidebar: [
+        {
+          text: 'Should I use FloorVote?',
+          items: [
+            { text: 'What can it do?', link: '/overview/what-can-it-do' },
+            { text: 'How much does it cost?', link: '/overview/how-much-does-it-cost' },
+            { text: 'How hard is it to set up?', link: '/overview/how-hard-is-it-to-set-up' },
+          ],
+        },
+        {
+          text: 'Set up',
+          items: [
+            { text: 'Self-hosting', link: '/self-hosting/' },
+            { text: 'Adding tenants', link: '/self-hosting/tenants' },
+          ],
+        },
+        {
+          text: 'Architecture',
+          items: [
+            { text: 'Overview', link: '/architecture/' },
+          ],
+        },
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'Contributing', link: '/contributing/' },
+          ],
+        },
+      ],
+      socialLinks: [
+        { icon: 'github', link: 'https://github.com/floorvote/floorvote' },
+      ],
+      search: { provider: 'local' },
+    },
+  }),
+)
