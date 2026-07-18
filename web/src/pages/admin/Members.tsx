@@ -981,10 +981,10 @@ export function Members() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
                 <div style={{ fontWeight: fontWeight.bold, color: color.textErrorRed }}>
-                  Allow owners and admins to irreversibly delete member accounts.
+                  Allow accounts to be permanently deleted.
                 </div>
                 <div>
-                  When on, owners and admins can delete accounts and members can delete their own accounts — irreversibly removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless and until the account is reactivated. <strong>Only owners can adjust this setting.</strong>
+                  When on, owners and admins can delete accounts and members can delete their own accounts — permanently removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless the account is reactivated. <strong>Only owners can adjust this setting.</strong>
                 </div>
               </div>
               <label
