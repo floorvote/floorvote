@@ -1,22 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
+import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
 import { apiFetch, ApiError } from '../../lib/api'
 import { normalizeOrgNoun, MAX_ORG_NOUN_LENGTH } from '../../lib/orgNoun'
 import { exportAllData } from '../../lib/exportData'
 import { SettingsNav } from '../../components/SettingsNav'
 import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../../lib/textStyles'
-import { ADMIN_BADGE, TOOLTIP_STYLE, tooltipPosition } from '../../lib/chipStyles'
+import { TOOLTIP_STYLE, tooltipPosition } from '../../lib/chipStyles'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useAuth } from '../../hooks/useAuth'
 import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
-import { RichTextEditor } from '../../components/RichTextEditor'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { parseTagTaxonomy, aiInstructionsChanged } from './aiConfig'
-import { BillBadge } from '../../components/BillBadge'
 
 type ConfigData = {
   keywords?: string[]
@@ -71,7 +69,6 @@ const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
 
 export function Config() {
   usePageTitle('Settings')
-  const navigate = useNavigate()
   const { user } = useAuth()
   const { demoLocked } = useDemo()
   const [loading, setLoading] = useState(true)
@@ -144,24 +141,8 @@ export function Config() {
   const [cfDragOver, setCfDragOver] = useState<number | null>(null)
   const [cfTooltip, setCfTooltip] = useState<{ key: string; x: number; y: number } | null>(null)
 
-  const [showDraftForm, setShowDraftForm] = useState(false)
-  const [draftTitle, setDraftTitle] = useState('')
-  const [draftSummary, setDraftSummary] = useState('')
-  const [draftSponsor, setDraftSponsor] = useState('')
-  const [draftText, setDraftText] = useState('')
-  const [creatingDraft, setCreatingDraft] = useState(false)
-  const [createDraftError, setCreateDraftError] = useState<string | null>(null)
-  const [draftList, setDraftList] = useState<{ id: string; billNumber: string; title: string; state: string | null }[] | null>(null)
-
-
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/admin/custom-fields').then(setCustomFields).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    apiFetch<{ drafts: { id: string; billNumber: string; title: string; state: string | null }[] }>('/bills/drafts')
-      .then(r => setDraftList(r.drafts))
-      .catch(() => setDraftList([]))
   }, [])
 
   useEffect(() => {
@@ -399,6 +380,7 @@ export function Config() {
   }
 
   async function handleClearInteractions() {
+    if (demoLocked || user?.role !== 'owner') return
     const input = prompt('This will permanently delete all votes, comments, notes, official positions, bill priorities, and feed history. Type RESET to confirm.')
     if (input !== 'RESET') return
     setClearingInteractions(true)
@@ -490,29 +472,6 @@ export function Config() {
     }
   }
 
-  async function handleCreateDraft() {
-    const title = draftTitle.trim()
-    if (!title) return
-    setCreatingDraft(true)
-    setCreateDraftError(null)
-    try {
-      const hasContent = (html: string) => html.replace(/<[^>]*>/g, '').trim().length > 0
-      const body: Record<string, unknown> = { title }
-      if (draftSponsor.trim()) body.sponsor = draftSponsor.trim()
-      if (hasContent(draftSummary)) body.summary = draftSummary
-      if (hasContent(draftText)) body.text = draftText
-      const created = await apiFetch<{ id: string }>('/bills/draft', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      navigate('/bills/' + created.id)
-    } catch (err) {
-      setCreateDraftError(err instanceof ApiError ? err.message : 'Failed to create draft.')
-    } finally {
-      setCreatingDraft(false)
-    }
-  }
-
   async function handleDeleteCustomField(id: string) {
     if (!window.confirm('Delete this custom field? All values on all bills will be removed.')) return
     try {
@@ -570,12 +529,6 @@ export function Config() {
   const inputStyle: React.CSSProperties = { width: '100%', fontSize: fontSize.sm, padding: '8px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, boxSizing: 'border-box', fontFamily: 'inherit' }
   const selectStyle: React.CSSProperties = { fontSize: fontSize.sm, padding: '8px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, boxSizing: 'border-box', fontFamily: 'inherit', color: color.textSlate, background: color.white }
   const resetBtnStyle: React.CSSProperties = { fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: demoLocked ? 'not-allowed' : 'pointer', padding: 0, textDecoration: 'underline' }
-  const saveRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginTop: 20, paddingTop: 16, borderTop: `1px solid ${color.surfaceMuted}` }
-  const saveBtn = (disabled: boolean): React.CSSProperties => ({
-    background: disabled ? color.accentBlueMuted : color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md,
-    padding: '8px 14px', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
-    width: 224, flexShrink: 0, whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.4,
-  })
 
   if (fetchError) return <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}><SettingsNav /><div style={{ color: color.textErrorRed, fontSize: fontSize.sm, marginTop: 24 }}>{fetchError}</div></div>
 
@@ -583,11 +536,6 @@ export function Config() {
   const sectionCard: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
   const sectionTitle: React.CSSProperties = CARD_TITLE
   const sectionIntro: React.CSSProperties = { fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginBottom: 20 }
-  const redBtn = (disabled: boolean): React.CSSProperties => ({
-    background: disabled ? color.bgRedDisabled : color.textErrorRed, color: color.white, border: 'none', borderRadius: radius.md,
-    padding: '8px 14px', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
-    width: 224, flexShrink: 0, whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.4,
-  })
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
@@ -684,8 +632,8 @@ export function Config() {
               </div>
             </div>
 
-            <div style={saveRowStyle}>
-              <button onClick={handleSaveKeywords} disabled={savingKeywords || demoLocked} style={redBtn(savingKeywords || demoLocked)}>
+            <div style={actionRowStyle}>
+              <button onClick={handleSaveKeywords} disabled={savingKeywords || demoLocked} style={actionBtnRed(savingKeywords || demoLocked)}>
                 {savingKeywords ? 'Saving…' : 'Save keywords and sync'}
               </button>
               <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
@@ -782,8 +730,8 @@ export function Config() {
               </div>
             </div>
 
-            <div style={saveRowStyle}>
-              <button onClick={handleSaveAi} disabled={savingAi || demoLocked} style={saveBtn(savingAi || demoLocked)}>
+            <div style={actionRowStyle}>
+              <button onClick={handleSaveAi} disabled={savingAi || demoLocked} style={actionBtnBlue(savingAi || demoLocked)}>
                 {savingAi ? 'Saving…' : 'Save AI instructions'}
               </button>
               {savedAi && (
@@ -842,8 +790,8 @@ export function Config() {
               />
             </div>
             <div style={{ ...hintStyle, marginTop: 8 }}>Relevance runs 1–10. “All” (0) surfaces every match; higher values hide lower-relevance bills.</div>
-            <div style={saveRowStyle}>
-              <button onClick={handleSaveNewMatch} disabled={savingNewMatch || demoLocked} style={saveBtn(savingNewMatch || demoLocked)}>
+            <div style={actionRowStyle}>
+              <button onClick={handleSaveNewMatch} disabled={savingNewMatch || demoLocked} style={actionBtnBlue(savingNewMatch || demoLocked)}>
                 {savingNewMatch ? 'Saving…' : 'Save'}
               </button>
               {savedNewMatch && <span style={{ fontSize: fontSize.sm, color: color.textSuccess, flexShrink: 0 }}>Saved</span>}
@@ -1169,125 +1117,14 @@ export function Config() {
               </div>
             </div>
 
-            <div style={saveRowStyle}>
-              <button onClick={handleSaveLabels} disabled={savingLabels || demoLocked} style={saveBtn(savingLabels || demoLocked)}>
+            <div style={actionRowStyle}>
+              <button onClick={handleSaveLabels} disabled={savingLabels || demoLocked} style={actionBtnBlue(savingLabels || demoLocked)}>
                 {savingLabels ? 'Saving…' : 'Save'}
               </button>
               {savedLabels && <span style={{ fontSize: fontSize.sm, color: color.textSuccess }}>Saved</span>}
               {saveLabelsError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{saveLabelsError}</span>}
             </div>
           </>
-        )}
-      </div>
-
-      {/* Draft bills */}
-      <div style={sectionCard}>
-        <div style={sectionTitle}>Draft bills</div>
-        <div style={sectionIntro}>
-          Create draft bills to track legislation before it is officially filed. Once a bill is filed, you can link it to the draft to merge all engagement (votes, positions, comments, notes) onto the filed bill.
-        </div>
-        {!showDraftForm && (
-          <button
-            onClick={() => { setShowDraftForm(true); setCreateDraftError(null) }}
-            disabled={demoLocked}
-            style={saveBtn(demoLocked)}
-          >
-            Add draft bill
-          </button>
-        )}
-        {showDraftForm && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Title <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span></label>
-              <input
-                value={draftTitle}
-                onChange={e => setDraftTitle(e.target.value)}
-                placeholder="Bill title…"
-                style={inputStyle}
-                autoFocus
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Sponsor(s)</label>
-              <input
-                value={draftSponsor}
-                onChange={e => setDraftSponsor(e.target.value)}
-                placeholder="Sponsor name…"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Summary</label>
-              <RichTextEditor
-                onChange={html => setDraftSummary(html)}
-                initialContent={draftSummary}
-                placeholder="Optional summary…"
-                enableMentions={false}
-                allowEmpty
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Bill text</label>
-              <RichTextEditor
-                onChange={html => setDraftText(html)}
-                initialContent={draftText}
-                placeholder="Paste or type the bill text…"
-                enableMentions={false}
-                allowEmpty
-              />
-            </div>
-            {createDraftError && (
-              <div style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{createDraftError}</div>
-            )}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button
-                onClick={handleCreateDraft}
-                disabled={!draftTitle.trim() || creatingDraft}
-                style={saveBtn(!draftTitle.trim() || creatingDraft)}
-              >
-                {creatingDraft ? 'Creating…' : 'Create draft'}
-              </button>
-              <button
-                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setCreateDraftError(null) }}
-                style={{ fontSize: fontSize.sm, color: color.textSecondary, background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '8px 14px', cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-        {draftList !== null && (
-          <div style={{ marginTop: showDraftForm ? 20 : 12 }}>
-            {draftList.length === 0
-              ? <div style={{ fontSize: fontSize.sm, color: color.textMuted }}>No draft bills yet.</div>
-              : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {draftList.map(d => (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <BillBadge billNumber={d.billNumber} state={d.state} to={'/bills/' + d.id} />
-                      <span style={{ fontSize: fontSize.sm, color: color.textSecondary, flex: 1 }}>{d.title}</span>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation()
-                          if (!window.confirm('Delete this draft bill? This permanently removes it and its votes, positions, comments, and notes.')) return
-                          try {
-                            await apiFetch('/bills/' + d.id, { method: 'DELETE' })
-                            setDraftList(prev => prev ? prev.filter(x => x.id !== d.id) : prev)
-                          } catch (err) {
-                            alert(err instanceof Error ? err.message : 'Failed to delete draft.')
-                          }
-                        }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: color.textDeleteRed, display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                        title="Delete draft"
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )
-            }
-          </div>
         )}
       </div>
 
@@ -1304,7 +1141,7 @@ export function Config() {
       <div style={{ ...sectionCard, marginBottom: 0 }}>
         <div style={sectionTitle}>Additional operations</div>
 
-        <div style={saveRowStyle}>
+        <div style={actionRowStyleFirst}>
           <div
             role="button"
             onClick={exporting || demoLocked ? undefined : handleExport}
@@ -1339,13 +1176,13 @@ export function Config() {
             )}
           </div>
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-            Downloads a zip of your tracked bills — those analyzed, prioritized, or with any engagement (votes, positions, comments, notes) — plus all related data: members, votes, positions, comments, notes, custom fields, calendar events, and bill amendments, supplements, and roll-call votes. Bills outside your keywords that are only being monitored are excluded, and full bill text is not included — use the state legislature links in the export to access it.
+            Downloads a zip of every bill you track, have analyzed with AI, have prioritized, or that has any engagement — votes, positions, comments, or notes. The zip also contains data on members, votes, positions, comments, personal notes, custom fields, calendar events, and bill amendments, supplements, and roll-call votes. Bills that have not been analyzed and have no priority or engagement are excluded. Full bill text is also excluded; access that text via the state legislature links in the export.
           </span>
           {exportError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, flexShrink: 0 }}>{exportError}</span>}
         </div>
 
-        <div style={saveRowStyle}>
-          <button onClick={handleRefreshMetadata} disabled={refreshingAll || demoLocked} style={redBtn(refreshingAll || demoLocked)}>
+        <div style={actionRowStyle}>
+          <button onClick={handleRefreshMetadata} disabled={refreshingAll || demoLocked} style={actionBtnRed(refreshingAll || demoLocked)}>
             {refreshingAll ? 'Working…' : 'Refresh bill metadata'}
           </button>
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
@@ -1355,8 +1192,8 @@ export function Config() {
         </div>
 
         {(user?.role === 'admin' || user?.role === 'owner') && (
-          <div style={saveRowStyle}>
-            <button onClick={handleRotateCalendarSlug} disabled={rotatingCalSlug || demoLocked} style={redBtn(rotatingCalSlug || demoLocked)}>
+          <div style={actionRowStyle}>
+            <button onClick={handleRotateCalendarSlug} disabled={rotatingCalSlug || demoLocked} style={actionBtnRed(rotatingCalSlug || demoLocked)}>
               {rotatingCalSlug ? 'Resetting…' : 'Reset calendar link'}
             </button>
             <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
@@ -1366,15 +1203,14 @@ export function Config() {
           </div>
         )}
 
-        {user?.role === 'owner' && (
-          <div style={saveRowStyle}>
-            <button onClick={handleClearInteractions} disabled={clearingInteractions || demoLocked} style={redBtn(clearingInteractions || demoLocked)}>
+        {(user?.role === 'admin' || user?.role === 'owner') && (
+          <div style={actionRowStyle}>
+            <button onClick={handleClearInteractions} disabled={clearingInteractions || demoLocked || user?.role !== 'owner'} style={actionBtnRed(clearingInteractions || demoLocked || user?.role !== 'owner')}>
               {clearingInteractions ? 'Clearing…' : 'Clear all user interactions'}
             </button>
             <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Users, bills, and AI summaries are kept. This cannot be undone.
+              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Users, bills, and AI summaries are kept. <strong>Only Owners can do this. It cannot be undone.</strong>
             </span>
-            <span style={ADMIN_BADGE}>Owner only</span>
             {clearResult && <span style={{ fontSize: fontSize.sm, color: clearResult === 'Cleared.' ? color.textSuccess : color.textErrorRed, flexShrink: 0 }}>{clearResult}</span>}
           </div>
         )}

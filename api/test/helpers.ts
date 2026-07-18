@@ -158,6 +158,7 @@ export async function seedUser(overrides?: {
   subtitle?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
+  deactivatedAt?: string | null
 }): Promise<string> {
   const db = getDb(env.DB)
   const id = crypto.randomUUID()
@@ -169,6 +170,7 @@ export async function seedUser(overrides?: {
     subtitle: overrides?.subtitle ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
+    deactivatedAt: overrides?.deactivatedAt ?? null,
   })
   return id
 }

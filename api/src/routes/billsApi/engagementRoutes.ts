@@ -10,6 +10,7 @@ import { extractAndNotifyMentions, stripHtml } from '../../lib/mentions'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
 import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
+import { activeUser } from '../../lib/accountDeletion'
 
 export function registerEngagementRoutes(router: Hono<AppEnv>) {
   // POST /bills/:id/votes
@@ -139,7 +140,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
-      .where(and(eq(comments.billId, id), isNull(comments.deletedAt)))
+      .where(and(eq(comments.billId, id), isNull(comments.deletedAt), activeUser))
       .orderBy(comments.createdAt)
       .all()
 
@@ -148,7 +149,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       ? await db.select({ reaction: commentReactions, user: users })
           .from(commentReactions)
           .innerJoin(users, eq(commentReactions.userId, users.id))
-          .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt)))
+          .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt), activeUser))
           .all()
       : []
 

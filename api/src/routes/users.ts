@@ -1,22 +1,27 @@
 import { Hono } from 'hono'
-import { eq, ne, and, inArray, isNull, exists } from 'drizzle-orm'
+import { eq, ne, and, inArray, isNull, exists, desc } from 'drizzle-orm'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
-import { users, bills, memberVotes, comments, notes, officialPositions, roles, userRoles, sessions, magicLinks, feedEvents, commentReactions } from '../db/schema'
+import { users, bills, memberVotes, comments, notes, officialPositions, roles, userRoles, sessions, magicLinks, feedEvents, commentReactions, authEvents } from '../db/schema'
 import type { AppEnv } from '../types'
 import { stripHtml } from '../lib/mentions'
 import { dbTsToEpoch } from '../../../shared/time'
+import { getAccountDeletionEnabled, activeUser } from '../lib/accountDeletion'
+import { nowDb } from '../lib/dbTime'
+import { countActiveOwners } from '../lib/owners'
 
 export const usersRouter = new Hono<AppEnv>()
 
 usersRouter.use('*', requireAuth)
 
 // GET /users — list all members (basic info, available to all authenticated users)
+// Member-facing @-mention directory; excludes deactivated members. (Admin roster is GET /admin/members.)
 usersRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const rows = await db
     .select({ id: users.id, name: users.name, email: users.email, subtitle: users.subtitle, role: users.role })
     .from(users)
+    .where(activeUser)
     .orderBy(users.name)
     .all()
 
@@ -71,7 +76,12 @@ usersRouter.patch('/me', async (c) => {
 // DELETE /users/me — delete own account
 usersRouter.delete('/me', async (c) => {
   const db = getDb(c.env.DB)
+  if (!(await getAccountDeletionEnabled(db))) return c.json({ error: 'Account deletion is disabled' }, 403)
   const currentUser = c.get('user')
+
+  if (currentUser.role === 'owner' && (await countActiveOwners(db)) <= 1) {
+    return c.json({ error: 'Transfer ownership before deactivating or deleting your account.' }, 409)
+  }
 
   const userCommentIds = await db
     .select({ id: comments.id })
@@ -95,6 +105,20 @@ usersRouter.delete('/me', async (c) => {
     db.delete(users).where(eq(users.id, currentUser.id)),
   ])
 
+  return c.json({ ok: true })
+})
+
+// POST /users/me/deactivate — self-service deactivate (reversible; only an admin can reactivate)
+usersRouter.post('/me/deactivate', async (c) => {
+  const db = getDb(c.env.DB)
+  const currentUser = c.get('user')
+
+  if (currentUser.role === 'owner' && (await countActiveOwners(db)) <= 1) {
+    return c.json({ error: 'Transfer ownership before deactivating or deleting your account.' }, 409)
+  }
+
+  await db.update(users).set({ deactivatedAt: nowDb() }).where(eq(users.id, currentUser.id))
+  await db.delete(sessions).where(eq(sessions.userId, currentUser.id))
   return c.json({ ok: true })
 })
 
@@ -179,6 +203,29 @@ usersRouter.get('/me/bills', async (c) => {
     .sort((a, b) => b!.lastTouched.localeCompare(a!.lastTouched))
 
   return c.json(result)
+})
+
+// GET /users/me/auth-events — caller's own login-activity timeline (events-only; no
+// suppression/delivery central lookups — those are admin-only, see adminApi.ts).
+usersRouter.get('/me/auth-events', async (c) => {
+  const db = getDb(c.env.DB)
+  const userId = c.get('user').id
+  const events = await db
+    .select({
+      id: authEvents.id,
+      event: authEvents.event,
+      reason: authEvents.reason,
+      linkType: authEvents.linkType,
+      provider: authEvents.provider,
+      ipCountry: authEvents.ipCountry,
+      createdAt: authEvents.createdAt,
+    })
+    .from(authEvents)
+    .where(eq(authEvents.userId, userId))
+    .orderBy(desc(authEvents.createdAt))
+    .limit(50)
+    .all()
+  return c.json({ events })
 })
 
 // -- Roles router --

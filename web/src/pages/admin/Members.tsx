@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, Fragment } from 'react'
 import { apiFetch, ApiError } from '../../lib/api'
 import { parseInvitees } from '../../lib/parseInvitees'
 import { useAuth } from '../../hooks/useAuth'
 import { SettingsNav } from '../../components/SettingsNav'
 import { InfoTooltip } from '../../components/InfoTooltip'
+import { HoverTooltip } from '../../components/HoverTooltip'
 import { HintText } from '../../components/HintText'
 import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../../lib/textStyles'
@@ -131,6 +132,9 @@ export function Members() {
   usePageTitle('Members')
   const { user } = useAuth()
   const { demoLocked } = useDemo()
+  const isOwner = user?.role === 'owner'
+  // The members card is the clamp boundary for the actions-menu hover bubbles.
+  const cardRef = useRef<HTMLDivElement>(null)
 
   // Invite form state
   const [inviteText, setInviteText] = useState('')
@@ -146,6 +150,7 @@ export function Members() {
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [memberSearch, setMemberSearch] = useState('')
+  const [troubleFilter, setTroubleFilter] = useState(false)
 
   // Role management state
   const [orgRoles, setOrgRoles] = useState<Role[]>([])
@@ -175,17 +180,22 @@ export function Members() {
   // Toast state
   const [toast, setToast] = useState<string | null>(null)
 
+  // Owner-only account-deletion policy toggle
+  const [accountDeletionEnabled, setAccountDeletionEnabled] = useState(false)
+  const [deletionPolicySaving, setDeletionPolicySaving] = useState(false)
+
   useEffect(() => {
     Promise.all([
       apiFetch<Member[]>('/admin/members'),
       apiFetch<Role[]>('/admin/roles'),
-      apiFetch<{ org_noun?: string }>('/admin/config'),
+      apiFetch<{ org_noun?: string; accountDeletionEnabled?: boolean }>('/admin/config'),
     ])
       .then(([memberData, roleData, configData]) => {
         setMembers(memberData)
         setOrgRoles(roleData)
         const noun = configData.org_noun ?? 'team'
         setRolesLabel(`${titleCase(noun)} roles`)
+        setAccountDeletionEnabled(configData.accountDeletionEnabled ?? false)
       })
       .catch(() => setListError('Failed to load members.'))
       .finally(() => setListLoading(false))
@@ -321,15 +331,21 @@ export function Members() {
     }
   }
 
-  async function handleDeleteSelf() {
-    if (!window.confirm(
-      `Delete your own account?\n\nThis permanently removes your account, votes, comments, notes, and activity. You will be logged out immediately. This cannot be undone.`
-    )) return
+  async function handleDeletionPolicyToggle() {
+    if (demoLocked || deletionPolicySaving || !isOwner) return
+    const next = !accountDeletionEnabled
+    setAccountDeletionEnabled(next)
+    setDeletionPolicySaving(true)
     try {
-      await apiFetch('/users/me', { method: 'DELETE' })
-      window.location.href = '/'
+      await apiFetch('/admin/deletion-policy', {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: next }),
+      })
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Failed to delete account.')
+      setAccountDeletionEnabled(!next)
+      alert(err instanceof ApiError ? err.message : 'Failed to update account-deletion setting.')
+    } finally {
+      setDeletionPolicySaving(false)
     }
   }
 
@@ -438,6 +454,84 @@ export function Members() {
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Failed to update roles.')
     }
+  }
+
+  function memberMatchesFilters(m: Member): boolean {
+    if (troubleFilter && !m.loginTrouble) return false
+    const q = memberSearch.trim().toLowerCase()
+    if (!q) return true
+    return displayName(m).toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+  }
+
+  type MenuItem = { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void; tooltip?: string }
+
+  function buildMenuItems(member: Member): MenuItem[] {
+    const isSelf = member.id === user?.id
+    if (isSelf) return []
+    const isDeactivated = !!member.deactivatedAt
+    const currentUserIsOwner = user?.role === 'owner'
+    const ownerCount = members.filter(m => m.role === 'owner' && !m.deactivatedAt).length
+    const isLastOwner = member.role === 'owner' && ownerCount <= 1
+    const canManageThisMember = currentUserIsOwner || member.role !== 'owner'
+    const close = () => { setOpenActionsMenu(null); setActionsAnchor(null) }
+
+    const items: MenuItem[] = []
+
+    items.push({
+      kind: 'action',
+      label: 'Login activity',
+      onClick: () => { close(); openActivity(member) },
+    })
+
+    if (!isSelf && !member.hasLoggedIn && !isDeactivated && member.invitedBy !== null) {
+      items.push({ kind: 'action', label: 'Resend invite', disabled: demoLocked, onClick: () => { close(); handleResendInvite(member) } })
+    }
+
+    if (!isSelf && member.hasLoggedIn && !isDeactivated) {
+      items.push({ kind: 'action', label: 'Resend login link', disabled: demoLocked, onClick: () => { close(); resendLogin(member.email) } })
+    }
+
+    if (isDeactivated) {
+      if (canManageThisMember) {
+        items.push({ kind: 'action', label: 'Reactivate', disabled: demoLocked, onClick: () => { close(); handleDeactivateToggle(member) } })
+      }
+    } else {
+      if (member.role === 'owner') {
+        if (currentUserIsOwner && !isLastOwner) {
+          items.push({ kind: 'action', label: 'Demote to Admin', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'admin') } })
+        }
+      } else if (member.role === 'admin') {
+        items.push({ kind: 'action', label: 'Demote to Member', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'member') } })
+        if (currentUserIsOwner) {
+          items.push({ kind: 'action', label: 'Promote to Owner', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'owner') } })
+        }
+      } else {
+        if (!isSelf) items.push({ kind: 'action', label: 'Promote to Admin', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'admin') } })
+      }
+      if (canManageThisMember && !(isSelf && isLastOwner)) {
+        items.push({
+          kind: 'action',
+          label: 'Deactivate',
+          danger: true,
+          disabled: demoLocked,
+          onClick: () => { close(); handleDeactivateToggle(member) },
+          tooltip: 'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An admin can reactivate it later.',
+        })
+      }
+    }
+
+    if (canManageThisMember && !isLastOwner && accountDeletionEnabled) {
+      items.push({
+        kind: 'action',
+        label: 'Permanently delete',
+        danger: true,
+        disabled: demoLocked,
+        onClick: () => { close(); handleDelete(member) },
+        tooltip: 'Permanently removes the account and all its activity (votes, comments, and notes). This cannot be undone.',
+      })
+    }
+
+    return items
   }
 
   const inputStyle: React.CSSProperties = {
@@ -605,7 +699,7 @@ export function Members() {
         </div>
       </div>
       {/* Members table card */}
-      <div style={{ ...CARD, padding: 24 }}>
+      <div ref={cardRef} style={{ ...CARD, padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={CARD_TITLE}>All members</div>
           <button
@@ -629,14 +723,38 @@ export function Members() {
           placeholder="Search members by name or email…"
           style={{ ...inputStyle, maxWidth: 320, marginTop: 12 }}
         />
+        {!listLoading && !listError && members.some(m => m.loginTrouble) && (() => {
+          const loginTroubleCount = members.filter(m => m.loginTrouble).length
+          return (
+            <button
+              onClick={() => setTroubleFilter(v => !v)}
+              aria-pressed={troubleFilter}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 12,
+                padding: '6px 12px',
+                borderRadius: radius.md,
+                border: `1px solid ${color.textAmberDark}`,
+                background: troubleFilter ? color.textAmberDark : color.bgWarnSoft,
+                color: troubleFilter ? color.white : color.textAmberDark,
+                fontSize: fontSize.sm,
+                fontWeight: fontWeight.semibold,
+                cursor: 'pointer',
+              }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
+              {loginTroubleCount} {loginTroubleCount === 1 ? 'member' : 'members'} with login trouble
+            </button>
+          )
+        })()}
         {!listLoading && !listError && (
           <div style={{ ...HELPER_TEXT, marginTop: 14, marginBottom: 8 }}>
             {(() => {
-              const q = memberSearch.trim().toLowerCase()
-              const shown = q
-                ? members.filter(m => displayName(m).toLowerCase().includes(q) || m.email.toLowerCase().includes(q)).length
-                : members.length
-              return q ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`
+              const shown = members.filter(memberMatchesFilters).length
+              const filtering = memberSearch.trim() !== '' || troubleFilter
+              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`
             })()}
           </div>
         )}
@@ -654,7 +772,7 @@ export function Members() {
                     <InfoTooltip
                       align="center"
                       maxWidth={320}
-                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can promote and demote other owners and delete all user interactions.</>}
+                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other owners and delete all user interactions.</>}
                     />
                   </span>
                 </th>
@@ -668,11 +786,7 @@ export function Members() {
             </thead>
             <tbody>
               {[...members]
-                .filter((m) => {
-                  const q = memberSearch.trim().toLowerCase()
-                  if (!q) return true
-                  return displayName(m).toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
-                })
+                .filter(memberMatchesFilters)
                 .sort((a, b) => {
                   const rolePriority = { owner: 0, admin: 1, member: 2 } as const
                   if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
@@ -681,11 +795,7 @@ export function Members() {
                 .map((member) => {
                 const isSelf = member.id === user?.id
                 const isDeactivated = !!member.deactivatedAt
-                const currentUserIsOwner = user?.role === 'owner'
-                const ownerCount = members.filter(m => m.role === 'owner' && !m.deactivatedAt).length
-                const isLastOwner = member.role === 'owner' && ownerCount <= 1
-                const canManageThisMember = currentUserIsOwner || member.role !== 'owner'
-                const hasAnyAction = canManageThisMember && !(isSelf && isLastOwner && !isDeactivated)
+                const hasAnyAction = buildMenuItems(member).some(i => i.kind === 'action')
                 return (
                   <tr key={member.id} style={{ borderBottom: `1px solid ${color.surfaceMuted}`, opacity: isDeactivated ? 0.6 : 1 }}>
                     <td className="members-name-cell" style={{ padding: '10px 12px' }}>
@@ -793,21 +903,6 @@ export function Members() {
                             Active
                           </span>
                         )}
-                        {member.loginTrouble && (
-                          <span
-                            title="Multiple login-link requests with no successful sign-in in the last 14 days — open Login activity to investigate."
-                            style={{
-                              fontSize: fontSize.sm,
-                              padding: '2px 8px',
-                              borderRadius: radius.sm,
-                              fontWeight: fontWeight.semibold,
-                              background: color.bgWarnSoft,
-                              color: color.textAmberDark,
-                            }}
-                          >
-                            ⚠️ Login trouble
-                          </span>
-                        )}
                       </div>
                     </td>
                     <td data-label="Can vote" style={{ padding: '10px 12px', textAlign: 'center' }}>
@@ -821,25 +916,46 @@ export function Members() {
                       />
                     </td>
                     <td data-label="Actions" style={{ padding: '10px 12px' }}>
-                      {hasAnyAction ? (
-                        <button
-                          onClick={(e) => {
-                            if (openActionsMenu === member.id) {
-                              setOpenActionsMenu(null)
-                              setActionsAnchor(null)
-                            } else {
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                              const openUp = rect.bottom + 240 > window.innerHeight
-                              setActionsAnchor({ top: openUp ? rect.top : rect.bottom, left: rect.right, openUp })
-                              setOpenActionsMenu(member.id)
-                            }
-                          }}
-                          style={{ ...btnSmall, fontWeight: fontWeight.semibold, letterSpacing: '0.1em', padding: '4px 8px' }}
-                          title="Actions"
-                        >···</button>
-                      ) : (
-                        <span style={{ fontWeight: fontWeight.semibold, letterSpacing: '0.1em', padding: '4px 8px', color: color.borderStrong, fontSize: fontSize.sm }}>···</span>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {member.loginTrouble && (
+                          <button
+                            onClick={() => openActivity(member)}
+                            title="Login trouble — multiple login-link requests with no recent sign-in. Click to view login activity."
+                            aria-label="Login trouble — click to view login activity"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              background: 'none',
+                              border: 'none',
+                              padding: 4,
+                              margin: 0,
+                              cursor: 'pointer',
+                              color: color.textAmberDark,
+                            }}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
+                          </button>
+                        )}
+                        {hasAnyAction ? (
+                          <button
+                            onClick={(e) => {
+                              if (openActionsMenu === member.id) {
+                                setOpenActionsMenu(null)
+                                setActionsAnchor(null)
+                              } else {
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                const openUp = rect.bottom + 240 > window.innerHeight
+                                setActionsAnchor({ top: openUp ? rect.top : rect.bottom, left: rect.right, openUp })
+                                setOpenActionsMenu(member.id)
+                              }
+                            }}
+                            style={{ ...btnSmall, fontWeight: fontWeight.semibold, letterSpacing: '0.1em', padding: '4px 8px' }}
+                            title="Actions"
+                          >···</button>
+                        ) : (
+                          <span style={{ fontWeight: fontWeight.semibold, letterSpacing: '0.1em', padding: '4px 8px', color: color.borderStrong, fontSize: fontSize.sm }}>···</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -848,75 +964,85 @@ export function Members() {
           </table>
           </div>
         )}
+        {/* Account-deletion policy switch — visible to admins, editable only by owners */}
+        {(user?.role === 'owner' || user?.role === 'admin') && (
+          <div
+            style={{
+              marginTop: 24,
+              padding: '12px 14px',
+              border: `1px solid ${color.borderDefault}`,
+              borderRadius: radius.lg,
+              background: color.white,
+              // Grayed out whole-block for non-owners (view-only), matching the
+              // admin-disabled email-digest box on the Account page.
+              opacity: (demoLocked || !isOwner) ? 0.55 : 1,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: fontWeight.bold, color: color.textErrorRed }}>
+                  Allow owners and admins to irreversibly delete member accounts.
+                </div>
+                <div>
+                  When on, owners and admins can delete accounts and members can delete their own accounts — irreversibly removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless and until the account is reactivated. <strong>Only owners can adjust this setting.</strong>
+                </div>
+              </div>
+              <label
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  width: 38,
+                  height: 22,
+                  flexShrink: 0,
+                  cursor: (demoLocked || !isOwner) ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Toggle account deletion"
+                  checked={accountDeletionEnabled}
+                  disabled={deletionPolicySaving || demoLocked || !isOwner}
+                  onChange={handleDeletionPolicyToggle}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: accountDeletionEnabled ? color.textErrorRed : color.borderStrong,
+                    borderRadius: radius.pill,
+                    transition: 'background 0.18s ease',
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: accountDeletionEnabled ? 18 : 2,
+                    width: 18,
+                    height: 18,
+                    background: color.white,
+                    borderRadius: '50%',
+                    transition: 'left 0.18s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        )}
       </div>
       {/* Actions dropdown — rendered fixed so it's never clipped by table overflow */}
       {openActionsMenu && actionsAnchor && (() => {
         const member = members.find(m => m.id === openActionsMenu)
         if (!member) return null
-        const isSelf = member.id === user?.id
-        const isDeactivated = !!member.deactivatedAt
-        const close = () => { setOpenActionsMenu(null); setActionsAnchor(null) }
-
-        type MenuItem =
-          | { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void }
-          | { kind: 'separator' }
-
-        const items: MenuItem[] = []
-
-        if (!isSelf) {
-          items.push({ kind: 'action', label: 'Login activity', onClick: () => { close(); openActivity(member) } })
-        }
-
-        if (!isSelf && !member.hasLoggedIn && !isDeactivated && member.invitedBy !== null) {
-          items.push({ kind: 'action', label: 'Resend invite', disabled: demoLocked, onClick: () => { close(); handleResendInvite(member) } })
-        }
-
-        if (!isSelf && member.hasLoggedIn && !isDeactivated) {
-          items.push({ kind: 'action', label: 'Resend login link', disabled: demoLocked, onClick: () => { close(); resendLogin(member.email) } })
-        }
-
-        const currentUserIsOwner = user?.role === 'owner'
-
-        const ownerCount = members.filter(m => m.role === 'owner' && !m.deactivatedAt).length
-        const isLastOwner = member.role === 'owner' && ownerCount <= 1
-        const canManageThisMember = currentUserIsOwner || member.role !== 'owner'
-
-        if (isDeactivated) {
-          if (canManageThisMember) {
-            items.push({ kind: 'action', label: 'Reactivate', disabled: demoLocked, onClick: () => { close(); handleDeactivateToggle(member) } })
-          }
-        } else {
-          if (member.role === 'owner') {
-            if (currentUserIsOwner && !isLastOwner) {
-              items.push({ kind: 'action', label: 'Demote to Admin', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'admin') } })
-            }
-          } else if (member.role === 'admin') {
-            items.push({ kind: 'action', label: 'Demote to Member', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'member') } })
-            if (currentUserIsOwner) {
-              items.push({ kind: 'action', label: 'Promote to Owner', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'owner') } })
-            }
-          } else {
-            if (!isSelf) items.push({ kind: 'action', label: 'Promote to Admin', disabled: demoLocked, onClick: () => { close(); handleRoleChange(member, 'admin') } })
-          }
-          if (canManageThisMember && !(isSelf && isLastOwner)) {
-            items.push({ kind: 'action', label: isSelf ? 'Deactivate my account' : 'Deactivate', disabled: demoLocked, onClick: () => { close(); handleDeactivateToggle(member) } })
-          }
-        }
-
-        if (canManageThisMember && !isLastOwner) {
-          items.push({ kind: 'separator' })
-          items.push({
-            kind: 'action',
-            label: isSelf ? 'Permanently delete my account' : 'Permanently delete',
-            danger: true,
-            disabled: demoLocked,
-            onClick: () => { close(); isSelf ? handleDeleteSelf() : handleDelete(member) },
-          })
-        }
+        const items = buildMenuItems(member)
+        const closeMenu = () => { setOpenActionsMenu(null); setActionsAnchor(null) }
 
         return (
           <>
-            <div onClick={close} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
             <div style={{
               position: 'fixed',
               top: actionsAnchor.openUp ? 'auto' : actionsAnchor.top + 4,
@@ -927,25 +1053,39 @@ export function Members() {
               boxShadow: shadow.md, zIndex: 101,
               minWidth: 200, padding: '4px 0',
             }}>
-              {items.map((item, i) =>
-                item.kind === 'separator'
-                  ? <div key={i} style={{ height: 1, background: color.surfaceMuted, margin: '4px 0' }} />
-                  : (
-                    <div
-                      key={i}
-                      onClick={item.disabled ? undefined : item.onClick}
-                      style={{
-                        padding: '7px 14px', fontSize: fontSize.sm,
-                        cursor: item.disabled ? 'not-allowed' : 'pointer',
-                        color: item.disabled ? color.borderStrong : item.danger ? color.textErrorRed : color.textSlate,
-                      }}
-                      onMouseOver={item.disabled ? undefined : e => (e.currentTarget.style.background = item.danger ? color.bgDangerSoft : color.surfaceSubtle)}
-                      onMouseOut={item.disabled ? undefined : e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      {item.label}
-                    </div>
-                  )
-              )}
+              {items.map((item, i) => {
+                const itemColor = item.disabled ? color.borderStrong : item.danger ? color.textErrorRed : color.textSlate
+                const row = (
+                  <div
+                    onClick={item.disabled ? undefined : item.onClick}
+                    style={{
+                      padding: '7px 14px', fontSize: fontSize.sm,
+                      cursor: item.disabled ? 'not-allowed' : 'pointer',
+                      color: itemColor,
+                    }}
+                    onMouseOver={item.disabled ? undefined : e => (e.currentTarget.style.background = item.danger ? color.bgDangerSoft : color.surfaceSubtle)}
+                    onMouseOut={item.disabled ? undefined : e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {item.label}
+                  </div>
+                )
+                // The dropdown is position: fixed and overflow-clipped, so the
+                // bubble portals to body. `block` makes the whole row the hover
+                // target (not just the label); 'top' centers the bubble on the
+                // menu, and boundaryRef clamps its right edge to the members card
+                // so it can't spill past the card's right edge.
+                return (
+                  <Fragment key={i}>
+                    {item.tooltip
+                      ? (
+                        <HoverTooltip text={item.tooltip} portal block placement="top" maxWidth={280} boundaryRef={cardRef}>
+                          {row}
+                        </HoverTooltip>
+                      )
+                      : row}
+                  </Fragment>
+                )
+              })}
             </div>
           </>
         )

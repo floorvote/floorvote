@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -22,11 +22,19 @@ interface HoverTooltipProps {
   placement?: Placement
   maxWidth?: number
   portal?: boolean
+  // Make the hover target fill its container (block wrapper, width 100%) instead
+  // of shrink-wrapping the children — so a whole row is hoverable, not just its
+  // text.
+  block?: boolean
+  // For 'top' placement: also clamp the bubble's right edge to this element's
+  // right edge (not just the viewport), so a wide bubble centered on a control
+  // near a card's edge can't spill past that card.
+  boundaryRef?: RefObject<HTMLElement | null>
 }
 
-export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false }: HoverTooltipProps) {
+export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef }: HoverTooltipProps) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
-  const ref = useRef<HTMLSpanElement>(null)
+  const ref = useRef<HTMLElement | null>(null)
 
   const position = (r: DOMRect) => {
     if (placement === 'right') {
@@ -47,10 +55,14 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
     if (placement === 'top-end') {
       return { position: 'fixed' as const, left: r.right, top: r.top, transform: 'translateX(-100%) translateY(calc(-100% - 6px))' }
     }
-    // 'top' — centered above, clamped so a wide bubble can't spill off-screen.
+    // 'top' — centered above, clamped so a wide bubble can't spill off-screen or
+    // (when boundaryRef is given) past that element's right edge.
     let x = r.left + r.width / 2
     if (maxWidth) {
-      x = Math.max(maxWidth / 2 + 8, Math.min(x, window.innerWidth - maxWidth / 2 - 8))
+      const rightLimit = boundaryRef?.current
+        ? Math.min(window.innerWidth, boundaryRef.current.getBoundingClientRect().right)
+        : window.innerWidth
+      x = Math.max(maxWidth / 2 + 8, Math.min(x, rightLimit - maxWidth / 2 - 8))
     }
     return tooltipPosition({ x, y: r.top })
   }
@@ -67,18 +79,23 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
     )
     : null
 
-  return (
-    <span
-      ref={ref}
-      style={{ display: 'inline-flex', alignItems: 'center' }}
-      onPointerEnter={(e) => {
-        if (e.pointerType !== 'mouse') return
-        if (ref.current) setAnchor(ref.current.getBoundingClientRect())
-      }}
-      onPointerLeave={() => setAnchor(null)}
-    >
-      {children}
-      {portal && bubble ? createPortal(bubble, document.body) : bubble}
-    </span>
-  )
+  const setRef = (el: HTMLElement | null) => { ref.current = el }
+  const handlePointerEnter = (e: ReactPointerEvent) => {
+    if (e.pointerType !== 'mouse') return
+    if (ref.current) setAnchor(ref.current.getBoundingClientRect())
+  }
+  const handlePointerLeave = () => setAnchor(null)
+  const inner = <>{children}{portal && bubble ? createPortal(bubble, document.body) : bubble}</>
+
+  return block
+    ? (
+      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+        {inner}
+      </div>
+    )
+    : (
+      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+        {inner}
+      </span>
+    )
 }

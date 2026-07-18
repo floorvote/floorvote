@@ -272,6 +272,37 @@ describe('GET /auth/me', () => {
     const row = await db.select({ lastActive: users.lastActive }).from(users).where(eq(users.id, userId)).get()
     expect(row!.lastActive).not.toBe(oldDate)
   })
+
+  it('returns isLastOwner: true for the sole active owner', async () => {
+    const userId = await seedUser({ email: 'sole-owner@example.com', role: 'owner' })
+    const rawToken = await seedSession(userId)
+
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `session=${rawToken}` } }, env)
+    expect(res.status).toBe(200)
+    const json = await res.json() as { isLastOwner: boolean }
+    expect(json.isLastOwner).toBe(true)
+  })
+
+  it('returns isLastOwner: false for an owner when a second active owner exists', async () => {
+    const userId = await seedUser({ email: 'owner-1@example.com', role: 'owner' })
+    await seedUser({ email: 'owner-2@example.com', role: 'owner' })
+    const rawToken = await seedSession(userId)
+
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `session=${rawToken}` } }, env)
+    expect(res.status).toBe(200)
+    const json = await res.json() as { isLastOwner: boolean }
+    expect(json.isLastOwner).toBe(false)
+  })
+
+  it('returns isLastOwner: false for an admin', async () => {
+    const userId = await seedUser({ email: 'admin@example.com', role: 'admin' })
+    const rawToken = await seedSession(userId)
+
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `session=${rawToken}` } }, env)
+    expect(res.status).toBe(200)
+    const json = await res.json() as { isLastOwner: boolean }
+    expect(json.isLastOwner).toBe(false)
+  })
 })
 
 describe('POST /auth/verify', () => {

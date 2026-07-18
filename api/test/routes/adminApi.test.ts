@@ -454,10 +454,153 @@ describe('Admin Members API', () => {
       )
       expect(res.status).toBe(401)
     })
+
+    it('blocks demoting the last active owner even when a deactivated owner exists', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner User' })
+      const ownerToken = await seedSession(ownerId)
+      const ownerCookie = `session=${ownerToken}`
+      await seedUser({
+        role: 'owner',
+        email: 'owner2@example.com',
+        name: 'Deactivated Owner',
+        deactivatedAt: new Date().toISOString(),
+      })
+
+      const res = await app.request(
+        `/api/admin/members/${ownerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: ownerCookie },
+          body: JSON.stringify({ role: 'admin' }),
+        },
+        env,
+      )
+      expect(res.status).toBe(400)
+      const body = await res.json() as { error: string }
+      expect(body.error).toBe('Cannot demote the last owner')
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerId)).get()
+      expect(user!.role).toBe('owner')
+    })
+
+    it('blocks a non-owner admin from deactivating an owner', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner User' })
+
+      const res = await app.request(
+        `/api/admin/members/${ownerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+          body: JSON.stringify({ deactivated: true }),
+        },
+        env,
+      )
+      expect(res.status).toBe(403)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerId)).get()
+      expect(user!.deactivatedAt).toBeNull()
+    })
+
+    it('blocks deactivating the last active owner (self via admin PATCH)', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner User' })
+      const ownerToken = await seedSession(ownerId)
+
+      const res = await app.request(
+        `/api/admin/members/${ownerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: `session=${ownerToken}` },
+          body: JSON.stringify({ deactivated: true }),
+        },
+        env,
+      )
+      expect(res.status).toBe(400)
+      const body = await res.json() as { error: string }
+      expect(body.error).toBe('Cannot deactivate the last owner')
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerId)).get()
+      expect(user!.deactivatedAt).toBeNull()
+    })
+
+    it('lets an owner deactivate another owner when a second active owner remains', async () => {
+      const ownerAId = await seedUser({ role: 'owner', email: 'ownera@example.com', name: 'Owner A' })
+      const ownerAToken = await seedSession(ownerAId)
+      const ownerBId = await seedUser({ role: 'owner', email: 'ownerb@example.com', name: 'Owner B' })
+
+      const res = await app.request(
+        `/api/admin/members/${ownerBId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: `session=${ownerAToken}` },
+          body: JSON.stringify({ deactivated: true }),
+        },
+        env,
+      )
+      expect(res.status).toBe(200)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerBId)).get()
+      expect(user!.deactivatedAt).not.toBeNull()
+    })
+
+    it('does not last-owner-block acting on an already-deactivated owner (deactivate)', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner' })
+      const ownerToken = await seedSession(ownerId)
+      const exOwnerId = await seedUser({
+        role: 'owner', email: 'exowner@example.com', name: 'Ex Owner',
+        deactivatedAt: new Date().toISOString(),
+      })
+
+      // Sole ACTIVE owner acts on a DEACTIVATED owner — not the last active one, so allowed.
+      const res = await app.request(
+        `/api/admin/members/${exOwnerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: `session=${ownerToken}` },
+          body: JSON.stringify({ deactivated: true }),
+        },
+        env,
+      )
+      expect(res.status).toBe(200)
+    })
+
+    it('does not last-owner-block demoting an already-deactivated owner', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner' })
+      const ownerToken = await seedSession(ownerId)
+      const exOwnerId = await seedUser({
+        role: 'owner', email: 'exowner@example.com', name: 'Ex Owner',
+        deactivatedAt: new Date().toISOString(),
+      })
+
+      const res = await app.request(
+        `/api/admin/members/${exOwnerId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Cookie: `session=${ownerToken}` },
+          body: JSON.stringify({ role: 'admin' }),
+        },
+        env,
+      )
+      expect(res.status).toBe(200)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, exOwnerId)).get()
+      expect(user!.role).toBe('admin')
+    })
   })
 
   // DELETE /admin/members/:id
   describe('DELETE /admin/members/:id', () => {
+    beforeEach(async () => {
+      // Hard delete is gated behind account_deletion_enabled; enable it so these
+      // cascade-behavior tests reach the delete logic. Gate behavior itself is
+      // covered in accountDelete.gate.test.ts.
+      await getDb(env.DB).insert(associationConfig).values({ key: 'account_deletion_enabled', value: 'true' })
+    })
+
     it('returns 403 for a member user', async () => {
       const res = await app.request(
         `/api/admin/members/${adminId}`,
@@ -485,6 +628,59 @@ describe('Admin Members API', () => {
         env,
       )
       expect(res.status).toBe(404)
+    })
+
+    it('blocks a non-owner admin from deleting an owner', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner User' })
+
+      const res = await app.request(
+        `/api/admin/members/${ownerId}`,
+        { method: 'DELETE', headers: { Cookie: adminCookie } },
+        env,
+      )
+      expect(res.status).toBe(403)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerId)).get()
+      expect(user).toBeDefined()
+    })
+
+    it('lets an owner delete another owner when a second active owner remains', async () => {
+      const ownerAId = await seedUser({ role: 'owner', email: 'ownera@example.com', name: 'Owner A' })
+      const ownerAToken = await seedSession(ownerAId)
+      const ownerBId = await seedUser({ role: 'owner', email: 'ownerb@example.com', name: 'Owner B' })
+
+      const res = await app.request(
+        `/api/admin/members/${ownerBId}`,
+        { method: 'DELETE', headers: { Cookie: `session=${ownerAToken}` } },
+        env,
+      )
+      expect(res.status).toBe(200)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, ownerBId)).get()
+      expect(user).toBeUndefined()
+    })
+
+    it('does not last-owner-block deleting an already-deactivated owner', async () => {
+      const ownerId = await seedUser({ role: 'owner', email: 'owner@example.com', name: 'Owner' })
+      const ownerToken = await seedSession(ownerId)
+      const exOwnerId = await seedUser({
+        role: 'owner', email: 'exowner@example.com', name: 'Ex Owner',
+        deactivatedAt: new Date().toISOString(),
+      })
+
+      // Sole ACTIVE owner deletes a DEACTIVATED ex-owner — not the last active one, so allowed.
+      const res = await app.request(
+        `/api/admin/members/${exOwnerId}`,
+        { method: 'DELETE', headers: { Cookie: `session=${ownerToken}` } },
+        env,
+      )
+      expect(res.status).toBe(200)
+
+      const db = getDb(env.DB)
+      const user = await db.select().from(users).where(eq(users.id, exOwnerId)).get()
+      expect(user).toBeUndefined()
     })
 
     it('deletes user, their sessions, and their magic links', async () => {

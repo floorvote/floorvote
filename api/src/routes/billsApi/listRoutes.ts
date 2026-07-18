@@ -10,6 +10,7 @@ import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMa
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
+import { activeUser } from '../../lib/accountDeletion'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -149,12 +150,14 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       }).from(memberVotes)
         .innerJoin(users, eq(memberVotes.userId, users.id))
         // D1 limits bound params to 100 per statement. canVote uses a SQL literal (not a bound param) to stay within budget.
-        .where(and(inArray(memberVotes.billId, billIds), sql`${users.canVote} = 1`))
+        .where(and(inArray(memberVotes.billId, billIds), sql`${users.canVote} = 1`, activeUser))
         .groupBy(memberVotes.billId).all(),
       db.select({ billId: officialPositions.billId, position: officialPositions.position })
         .from(officialPositions).where(inArray(officialPositions.billId, billIds)).all(),
       db.select({ billId: comments.billId, count: sql<number>`COUNT(*)` })
-        .from(comments).where(and(inArray(comments.billId, billIds), isNull(comments.deletedAt)))
+        .from(comments)
+        .innerJoin(users, eq(comments.userId, users.id))
+        .where(and(inArray(comments.billId, billIds), isNull(comments.deletedAt), activeUser))
         .groupBy(comments.billId).all(),
       // Per-user queries: omit billIds filter (user data is small; extra rows are harmless since we only look up by current page's bill IDs)
       db.select({ billId: memberVotes.billId, position: memberVotes.position })

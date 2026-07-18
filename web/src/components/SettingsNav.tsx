@@ -8,9 +8,10 @@ const MEMBER_TABS = [
 ]
 
 const ADMIN_TABS = [
-  { to: '/admin/members', label: 'Members' },
   { to: '/admin/config', label: 'Config' },
+  { to: '/admin/members', label: 'Members' },
   { to: '/admin/notifications', label: 'Notifications' },
+  { to: '/admin/drafts', label: 'Draft bills' },
 ]
 
 function Tab({ to, label, variant }: { to: string; label: string; variant: 'member' | 'admin' }) {
@@ -58,8 +59,8 @@ export function SettingsNav() {
       gap: 2,
       borderBottom: `1px solid ${color.borderStrong}`,
       marginBottom: 24,
-      // Narrow phones can't fit all tabs (Account · Admin · Members/Config/
-      // Notifications) — let the row scroll horizontally instead of overflowing.
+      // Narrow phones can't fit all tabs (Account · Config/Members/
+      // Notifications/Draft bills) — let the row scroll horizontally instead of overflowing.
       overflowX: 'auto',
     }}>
       {MEMBER_TABS.map(({ to, label }) => (
@@ -68,7 +69,6 @@ export function SettingsNav() {
 
       {isAdmin && (
         <>
-          <div style={{ width: 1, height: 18, background: color.borderStrong, margin: '0 8px', alignSelf: 'center', flexShrink: 0 }} />
           <span style={{
             fontSize: fontSize.xs,
             fontWeight: fontWeight.semibold,
@@ -78,6 +78,7 @@ export function SettingsNav() {
             userSelect: 'none',
             cursor: 'default',
             paddingBottom: 2,
+            marginLeft: 8,
             flexShrink: 0,
           }}>
             Admin

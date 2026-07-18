@@ -190,6 +190,16 @@ describe('Config — org noun select', () => {
   })
 })
 
+describe('Config — owner-only Clear interactions button', () => {
+  it('shows the button to a non-owner Admin but disabled', async () => {
+    // useAuth is mocked as an Admin (not owner) at module scope.
+    render(<Config />)
+    const btn = await screen.findByRole('button', { name: 'Clear all user interactions' })
+    expect(btn).toBeInTheDocument()
+    expect(btn).toBeDisabled()
+  })
+})
+
 describe('Config — demo gating', () => {
   it('in demo: relevance slider is draggable but Save is disabled', async () => {
     demo.demoLocked = true

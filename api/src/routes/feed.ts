@@ -6,6 +6,7 @@ import { getDb } from '../db/client'
 import { feedEvents, bills, users } from '../db/schema'
 import { PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
+import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
 
 export const feedRouter = new Hono<AppEnv>()
@@ -21,9 +22,12 @@ feedRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const currentUser = c.get('user')
 
+  // activeUser is evaluated against the left-joined `users` row; events whose
+  // userId doesn't match any user (e.g. the synthetic 'system' author) leave
+  // users.deactivatedAt NULL, and isNull(NULL) is true — so those are unaffected.
   const baseWhere = scope === 'analyzed'
-    ? and(ne(feedEvents.suppressed, true), isNotNull(bills.matchType))
-    : ne(feedEvents.suppressed, true)
+    ? and(ne(feedEvents.suppressed, true), isNotNull(bills.matchType), activeUser)
+    : and(ne(feedEvents.suppressed, true), activeUser)
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
@@ -68,10 +72,12 @@ feedRouter.get('/', async (c) => {
     db.select({ latestEventAt: sql<string | null>`max(datetime(${feedEvents.createdAt}))` })
       .from(feedEvents)
       .innerJoin(bills, eq(feedEvents.billId, bills.id))
+      .leftJoin(users, eq(feedEvents.userId, users.id))
       .where(and(
         ne(feedEvents.suppressed, true),
         ne(feedEvents.userId, currentUser.id),
         or(isNotNull(bills.priority), notInArray(feedEvents.type, [...PASSIVE_EVENT_TYPES])),
+        activeUser,
       ))
       .get(),
     // Current user's seen baseline, so other open windows can clear the nav dot
