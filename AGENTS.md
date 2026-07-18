@@ -182,6 +182,10 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 10. Don't mock D1 in tests — use real @cloudflare/vitest-pool-workers bindings.
 11. Don't leave `web/dist` around during local dev — it breaks the Vite `/api` proxy.
 
+### Conventions
+
+- **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [CONTRIBUTING.md](CONTRIBUTING.md#forking-and-operator-overlays).
+
 ## graphify
 
 If `graphify-out/graph.json` exists, run `graphify query "<question>"` before grepping source files.
