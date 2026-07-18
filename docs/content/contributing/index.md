@@ -1,5 +1,5 @@
 # Contributing
 
-FloorVote is open source. The code lives at [github.com/floorvote/floorvote](https://github.com/floorvote/floorvote).
+FloorVote is open source, and contributions are welcome.
 
-Deeper maintainer conventions — style tokens, the date and time convention, the email-shell contract, and more — live in `docs/internal/` in the repository. They're written for contributors and coding agents rather than for the public docs site. Start with `docs/internal/README.md` for an index.
+This site covers the public-facing product; contributor and developer detail lives in the repository itself. For local development setup, running tests, opening pull requests, and forking or building operator overlays, start at `CONTRIBUTING.md` in the repository root. For the full set of coding conventions, see the `Developing` section of `AGENTS.md` (`AGENTS.md#developing`). Deeper design and maintainer documentation lives in `docs/internal/`.
