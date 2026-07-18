@@ -8,6 +8,7 @@ import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
+import { activeUser } from '../../lib/accountDeletion'
 
 type CentralBillRich = {
   billType?: string | null
@@ -68,7 +69,7 @@ export async function buildBillDetail(
     db.select({ position: memberVotes.position })
       .from(memberVotes)
       .innerJoin(users, eq(memberVotes.userId, users.id))
-      .where(and(eq(memberVotes.billId, billId), eq(users.canVote, 1)))
+      .where(and(eq(memberVotes.billId, billId), eq(users.canVote, 1), activeUser))
       .all(),
     db.select({
         c: comments,
@@ -78,19 +79,20 @@ export async function buildBillDetail(
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
-      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt)))
+      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
       .orderBy(comments.createdAt)
       .limit(20)
       .all(),
     db.select({ count: sql<number>`count(*)` })
       .from(comments)
-      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt)))
+      .innerJoin(users, eq(comments.userId, users.id))
+      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
       .get(),
     db.select().from(billTexts).where(eq(billTexts.billId, billId)).orderBy(desc(billTexts.date)).all(),
     db.select({ setByName: users.name, createdAt: feedEvents.createdAt })
       .from(feedEvents)
       .innerJoin(users, eq(feedEvents.userId, users.id))
-      .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'priority_set')))
+      .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'priority_set'), activeUser))
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),
@@ -107,7 +109,7 @@ export async function buildBillDetail(
     ? await db.select({ reaction: commentReactions, user: users })
         .from(commentReactions)
         .innerJoin(users, eq(commentReactions.userId, users.id))
-        .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt)))
+        .where(and(inArray(commentReactions.commentId, commentIds), isNull(commentReactions.deletedAt), activeUser))
         .all()
     : []
 

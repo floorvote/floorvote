@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
 import { ensureInstancePreset } from '../lib/instancePreset'
+import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { centralFetch } from '../lib/centralFetch'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -27,6 +28,7 @@ const DEFAULT_POSITION_VOCABULARY = ['Support', 'Oppose', 'Amend', 'Monitor', 'N
 configRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   await ensureInstancePreset(c.env, db)
+  const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
   const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
@@ -155,7 +157,7 @@ configRouter.get('/', async (c) => {
     contactEmails: parseEmailList(c.env.OPERATOR_CONTACT_EMAILS),
   }
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central

@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { memberVotes, comments, notes, users } from '../../src/db/schema'
+import { memberVotes, comments, notes, users, associationConfig } from '../../src/db/schema'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
+
+const LAST_OWNER_ERROR = 'Transfer ownership before deactivating or deleting your account.'
 
 describe('PATCH /users/me', () => {
   let memberToken: string
@@ -301,5 +303,120 @@ describe('GET /roles', () => {
   it('rejects unauthenticated requests', async () => {
     const res = await SELF.fetch('http://localhost/api/roles')
     expect(res.status).toBe(401)
+  })
+})
+
+describe('DELETE /users/me — last-owner guard', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    await getDb(env.DB).insert(associationConfig).values({ key: 'account_deletion_enabled', value: 'true' })
+  })
+
+  it('blocks the sole active owner with 409', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner@x.com' })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me', {
+      method: 'DELETE',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as Record<string, unknown>
+    expect(body.error).toBe(LAST_OWNER_ERROR)
+    const row = await getDb(env.DB).select().from(users).where(eq(users.id, ownerId)).get()
+    expect(row).toBeDefined()
+  })
+
+  it('allows an owner to delete when a second active owner exists', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner1@x.com' })
+    await seedUser({ role: 'owner', email: 'owner2@x.com' })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me', {
+      method: 'DELETE',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+  })
+
+  it('blocks when the only peer owner is deactivated (deactivated peer does not rescue)', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner1@x.com' })
+    await seedUser({ role: 'owner', email: 'owner2@x.com', deactivatedAt: new Date().toISOString() })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me', {
+      method: 'DELETE',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as Record<string, unknown>
+    expect(body.error).toBe(LAST_OWNER_ERROR)
+  })
+
+  it('does not block a non-owner (member)', async () => {
+    const memberId = await seedUser({ role: 'member', email: 'member@x.com' })
+    const token = await seedSession(memberId)
+    const res = await SELF.fetch('http://localhost/api/users/me', {
+      method: 'DELETE',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+  })
+})
+
+describe('POST /users/me/deactivate — last-owner guard', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('blocks the sole active owner with 409', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner@x.com' })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me/deactivate', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as Record<string, unknown>
+    expect(body.error).toBe(LAST_OWNER_ERROR)
+    const row = await getDb(env.DB).select().from(users).where(eq(users.id, ownerId)).get()
+    expect(row?.deactivatedAt).toBeNull()
+  })
+
+  it('allows an owner to deactivate when a second active owner exists', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner1@x.com' })
+    await seedUser({ role: 'owner', email: 'owner2@x.com' })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me/deactivate', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+  })
+
+  it('blocks when the only peer owner is deactivated (deactivated peer does not rescue)', async () => {
+    const ownerId = await seedUser({ role: 'owner', email: 'owner1@x.com' })
+    await seedUser({ role: 'owner', email: 'owner2@x.com', deactivatedAt: new Date().toISOString() })
+    const token = await seedSession(ownerId)
+    const res = await SELF.fetch('http://localhost/api/users/me/deactivate', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(409)
+    const body = await res.json() as Record<string, unknown>
+    expect(body.error).toBe(LAST_OWNER_ERROR)
+  })
+
+  it('does not block a non-owner (admin)', async () => {
+    const adminId = await seedUser({ role: 'admin', email: 'admin@x.com' })
+    const token = await seedSession(adminId)
+    const res = await SELF.fetch('http://localhost/api/users/me/deactivate', {
+      method: 'POST',
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
   })
 })

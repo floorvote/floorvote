@@ -6,6 +6,7 @@ import { commentMentions, comments, users, bills, roles } from '../db/schema'
 import { sessionToSlug } from '../lib/sessionSlug'
 import { stripHtml } from '../lib/mentions'
 import { nowDb } from '../lib/dbTime'
+import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
 
 export const notificationsRouter = new Hono<AppEnv>()
@@ -38,7 +39,7 @@ notificationsRouter.get('/', async (c) => {
     .innerJoin(comments, eq(commentMentions.commentId, comments.id))
     .innerJoin(users, eq(comments.userId, users.id))
     .innerJoin(bills, eq(comments.billId, bills.id))
-    .where(and(eq(commentMentions.userId, currentUser.id), isNull(comments.deletedAt)))
+    .where(and(eq(commentMentions.userId, currentUser.id), isNull(comments.deletedAt), activeUser))
     .orderBy(desc(commentMentions.createdAt))
     .limit(50)
     .all()

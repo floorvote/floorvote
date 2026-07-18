@@ -9,6 +9,7 @@ vi.mock('../context/AuthContext', () => ({
     user: {
       id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
       canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null,
+      isLastOwner: false,
     },
     loading: false, authError: false,
     setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},

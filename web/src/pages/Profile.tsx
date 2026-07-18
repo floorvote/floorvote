@@ -3,23 +3,63 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import { SettingsNav } from '../components/SettingsNav'
-import { apiFetch } from '../lib/api'
+import { apiFetch, ApiError } from '../lib/api'
 import { CARD } from '../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
+import { relativeTime, absoluteTime } from '../lib/time'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useDemo } from '../context/DemoContext'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../styles/actionRow'
 import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 
 const SECTION_CARD: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
 
+type AccountAuthEvent = {
+  id: string
+  event: string
+  reason: string | null
+  linkType: string | null
+  provider: string | null
+  ipCountry: string | null
+  createdAt: string
+}
+
+function accountEventLabel(e: AccountAuthEvent): string {
+  switch (e.event) {
+    case 'link_requested':
+      return e.linkType === 'invite' ? 'Invite sent' : 'Login link requested'
+    case 'email_sent':
+      return 'Email sent'
+    case 'email_bounced':
+      return 'Email bounced'
+    case 'email_send_failed':
+      return e.reason ? `Email send failed (${e.reason})` : 'Email send failed'
+    case 'verify_success':
+      return 'Signed in'
+    case 'verify_failed':
+      return e.reason ? `Link failed (${e.reason})` : 'Link failed'
+    case 'logout':
+      return 'Logged out'
+    case 'rate_limited':
+      return 'Rate-limited (too many active links)'
+    case 'email_delivered':
+      return 'Email delivered'
+    case 'email_complained':
+      return 'Spam complaint'
+    default:
+      return e.event
+  }
+}
+
 export function Profile() {
   usePageTitle('Account')
   const { user, setSubtitle, setName, setEmailDigestEnabled } = useAuth()
   const { demoLocked } = useDemo()
-  const orgNoun = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
+  const { config } = useConfig()
+  const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
   const adminOffNote = `Turned off by your ${orgNoun}.`
 
   // Deep-link from the email footers: #setting-email-digest / #setting-week-ahead
@@ -145,6 +185,86 @@ export function Profile() {
       setSaveError('Failed to save. Please try again.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Account: login activity, deactivation, deletion
+  const [activityOpen, setActivityOpen] = useState(false)
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityError, setActivityError] = useState<string | null>(null)
+  const [authEvents, setAuthEvents] = useState<AccountAuthEvent[] | null>(null)
+
+  async function handleToggleActivity() {
+    if (activityOpen) {
+      setActivityOpen(false)
+      return
+    }
+    setActivityOpen(true)
+    if (authEvents !== null) return
+    setActivityLoading(true)
+    setActivityError(null)
+    try {
+      const data = await apiFetch<{ events: AccountAuthEvent[] }>('/users/me/auth-events')
+      setAuthEvents(data.events)
+    } catch {
+      setActivityError('Failed to load login activity.')
+    } finally {
+      setActivityLoading(false)
+    }
+  }
+
+  // A sole owner can't demote, deactivate, or delete — doing so would leave
+  // the account ownerless. Server-computed; only ever true for role === 'owner'.
+  const gated = !!user?.isLastOwner
+  const lastOwnerBlock = "You're the only owner. Make another member an owner before you can demote, deactivate, or delete your account."
+
+  const [deactivating, setDeactivating] = useState(false)
+
+  async function handleDeactivate() {
+    if (demoLocked || deactivating || gated) return
+    if (!window.confirm("Deactivate your account?\n\nYou'll be logged out immediately. An admin can reactivate it later.")) return
+    setDeactivating(true)
+    try {
+      await apiFetch('/users/me/deactivate', { method: 'POST' })
+      window.location.href = '/'
+    } catch {
+      setDeactivating(false)
+      alert('Failed to deactivate your account. Please try again.')
+    }
+  }
+
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // Self role-change (demote): owner -> admin, admin -> member. No self-promote.
+  const demoteTarget = user?.role === 'owner' ? 'admin' : user?.role === 'admin' ? 'member' : null
+  const [demoting, setDemoting] = useState(false)
+
+  async function handleSelfDemote() {
+    if (!user || !demoteTarget || demoLocked || demoting || gated) return
+    const label = demoteTarget === 'admin' ? 'Admin' : 'Member'
+    if (!window.confirm(`Demote yourself to ${label}?\n\nYou may lose access to some features immediately.`)) return
+    setDemoting(true)
+    try {
+      await apiFetch(`/admin/members/${user.id}`, { method: 'PATCH', body: JSON.stringify({ role: demoteTarget }) })
+      window.location.href = demoteTarget === 'member' ? '/' : '/profile'
+    } catch (err) {
+      setDemoting(false)
+      alert(err instanceof ApiError ? err.message : 'Failed to change your role.')
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (demoLocked || deleting || gated) return
+    if (!window.confirm('Permanently delete your account?\n\nThis removes your account and all its activity (votes, comments, and notes). This cannot be undone.')) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await apiFetch('/users/me', { method: 'DELETE' })
+      window.location.href = '/'
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete your account. Please try again.')
+      setDeleting(false)
     }
   }
 
@@ -377,6 +497,119 @@ export function Profile() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Account card */}
+      <div style={SECTION_CARD}>
+        <div style={CARD_TITLE}>Account</div>
+
+        {/* Login activity */}
+        <div style={actionRowStyleFirst}>
+          <button
+            onClick={handleToggleActivity}
+            disabled={activityLoading}
+            style={actionBtnBlue(activityLoading)}
+          >
+            Show my login activity
+          </button>
+        </div>
+
+        {activityOpen && (
+          <div style={{ marginTop: 12, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, padding: '4px 14px' }}>
+            {activityLoading && (
+              <div style={{ fontSize: fontSize.sm, color: color.textMuted, padding: '8px 0' }}>Loading…</div>
+            )}
+            {activityError && (
+              <div style={{ fontSize: fontSize.sm, color: color.textErrorRed, padding: '8px 0' }}>{activityError}</div>
+            )}
+            {!activityLoading && !activityError && authEvents && (
+              authEvents.length === 0 ? (
+                <div style={{ fontSize: fontSize.sm, color: color.textMuted, padding: '8px 0' }}>No login activity recorded.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {authEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: 16,
+                        padding: '8px 0',
+                        borderBottom: `1px solid ${color.surfaceMuted}`,
+                      }}
+                    >
+                      <div style={{ fontSize: fontSize.sm, color: color.textSlate }}>{accountEventLabel(event)}</div>
+                      <div
+                        title={absoluteTime(event.createdAt)}
+                        style={{ fontSize: fontSize.sm, color: color.textMuted, whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
+                        {relativeTime(event.createdAt)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        )}
+
+        {/* Demote yourself (owner -> admin, admin -> member); no self-promote */}
+        {demoteTarget && (
+          <div style={actionRowStyle}>
+            <button
+              onClick={handleSelfDemote}
+              disabled={demoLocked || demoting || gated}
+              style={actionBtnRed(demoLocked || demoting || gated)}
+            >
+              {demoteTarget === 'admin' ? 'Demote my account from Owner to Admin' : 'Demote my account from Admin to Member'}
+            </button>
+            <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
+              {gated
+                ? lastOwnerBlock
+                : demoteTarget === 'admin'
+                  ? 'Immediately lose your Owner permissions. An Owner can restore your role later.'
+                  : 'Immediately lose your Admin permissions. An Owner or Admin can restore your role later.'}
+            </span>
+          </div>
+        )}
+
+        {/* Deactivate my account */}
+        <div style={actionRowStyle}>
+          <button
+            onClick={handleDeactivate}
+            disabled={demoLocked || deactivating || gated}
+            style={actionBtnRed(demoLocked || deactivating || gated)}
+          >
+            {deactivating ? 'Deactivating…' : 'Deactivate my account'}
+          </button>
+          <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
+            {gated
+              ? lastOwnerBlock
+              : "You'll be logged out immediately and your activity (votes, comments, and notes) will be hidden. An admin can reactivate your account and activity later."}
+          </span>
+        </div>
+
+        {/* Delete my account (only when enabled by the operator) */}
+        {config?.accountDeletionEnabled && (
+          <div style={actionRowStyle}>
+            <button
+              onClick={handleDeleteAccount}
+              disabled={demoLocked || deleting || gated}
+              style={actionBtnRed(demoLocked || deleting || gated)}
+            >
+              {deleting ? 'Deleting…' : 'Delete my account'}
+            </button>
+            <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
+              {gated
+                ? lastOwnerBlock
+                : 'Permanently remove your account and all its activity (votes, comments, and notes). This cannot be undone.'}
+            </span>
+            {deleteError && (
+              <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, flexShrink: 0 }}>{deleteError}</span>
+            )}
+          </div>
+        )}
       </div>
 
     </div>

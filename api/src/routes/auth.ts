@@ -14,6 +14,7 @@ import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
+import { countActiveOwners } from '../lib/owners'
 import type { AppEnv } from '../types'
 
 export const authRoutes = new Hono<AppEnv>()
@@ -293,6 +294,7 @@ authRoutes.get('/me', async (c) => {
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
+            isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
           })
         }
       }
@@ -367,6 +369,7 @@ authRoutes.get('/me', async (c) => {
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
+    isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
   })
 })
 

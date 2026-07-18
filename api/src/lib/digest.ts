@@ -4,6 +4,7 @@ import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './
 import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance } from './newMatch'
+import { activeUser } from './accountDeletion'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting, type ModulesConfig } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -57,7 +58,9 @@ export async function runDigest(
     .from(feedEvents)
     .innerJoin(bills, eq(feedEvents.billId, bills.id))
     .leftJoin(users, eq(feedEvents.userId, users.id))
-    .where(and(isNotNull(bills.priority), inArray(feedEvents.type, DIGEST_CATEGORIES as any), sql`datetime(${feedEvents.createdAt}) > datetime(${since})`, eq(feedEvents.suppressed, false)))
+    // activeUser excludes events authored by a deactivated member; events from the
+    // synthetic 'system' author don't match a users row, so it's a no-op for those.
+    .where(and(isNotNull(bills.priority), inArray(feedEvents.type, DIGEST_CATEGORIES as any), sql`datetime(${feedEvents.createdAt}) > datetime(${since})`, eq(feedEvents.suppressed, false), activeUser))
     .all()
 
   // New keyword matches awaiting triage — admin/owner section only. Bill-based

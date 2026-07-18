@@ -15,6 +15,8 @@ import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { nowDb } from '../lib/dbTime'
 import { recordAuthEvent, authReqContext } from '../lib/authEvents'
+import { getAccountDeletionEnabled, ACCOUNT_DELETION_KEY } from '../lib/accountDeletion'
+import { countActiveOwners } from '../lib/owners'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import type { AppEnv } from '../types'
@@ -327,7 +329,7 @@ adminApiRouter.patch('/members/:id', async (c) => {
 
   const db = getDb(c.env.DB)
   const target = await db
-    .select({ id: users.id, role: users.role })
+    .select({ id: users.id, role: users.role, deactivatedAt: users.deactivatedAt })
     .from(users)
     .where(eq(users.id, targetId))
     .get()
@@ -352,16 +354,23 @@ adminApiRouter.patch('/members/:id', async (c) => {
         return c.json({ error: 'Only owners can change owner status' }, 403)
       }
     }
-    if (target.role === 'owner' && body.role !== 'owner') {
-      const ownerCount = await db.select({ count: sql<number>`count(*)` })
-        .from(users)
-        .where(eq(users.role, 'owner'))
-        .get()
-      if (ownerCount && ownerCount.count <= 1) {
+    if (target.role === 'owner' && body.role !== 'owner' && target.deactivatedAt == null) {
+      if ((await countActiveOwners(db)) <= 1) {
         return c.json({ error: 'Cannot demote the last owner' }, 400)
       }
     }
     updates.role = body.role
+  }
+  // Changing an owner's active status is owner-only, and the last active owner
+  // cannot be deactivated (mirrors the demote guard above; the client already
+  // hides these actions via canManageThisMember + last-owner checks).
+  if (body.deactivated !== undefined && target.role === 'owner') {
+    if (currentUser.role !== 'owner') {
+      return c.json({ error: 'Only owners can deactivate or reactivate an owner' }, 403)
+    }
+    if (body.deactivated === true && target.deactivatedAt == null && (await countActiveOwners(db)) <= 1) {
+      return c.json({ error: 'Cannot deactivate the last owner' }, 400)
+    }
   }
   if (body.deactivated === true) {
     updates.deactivatedAt = nowDb()
@@ -396,13 +405,26 @@ adminApiRouter.delete('/members/:id', demoGuard, async (c) => {
   }
 
   const db = getDb(c.env.DB)
+  if (!(await getAccountDeletionEnabled(db))) return c.json({ error: 'Account deletion is disabled' }, 403)
+
   const target = await db
-    .select({ id: users.id })
+    .select({ id: users.id, role: users.role, deactivatedAt: users.deactivatedAt })
     .from(users)
     .where(eq(users.id, targetId))
     .get()
   if (!target) {
     return c.json({ error: 'User not found' }, 404)
+  }
+
+  // Deleting an owner is owner-only, and the last active owner cannot be deleted
+  // (the client already hides this via canManageThisMember + last-owner checks).
+  if (target.role === 'owner') {
+    if (currentUser.role !== 'owner') {
+      return c.json({ error: 'Only owners can delete an owner' }, 403)
+    }
+    if (target.deactivatedAt == null && (await countActiveOwners(db)) <= 1) {
+      return c.json({ error: 'Cannot delete the last owner' }, 400)
+    }
   }
 
   // Delete comment reactions on the user's comments first (no direct userId column)
@@ -654,7 +676,19 @@ adminApiRouter.get('/config', async (c) => {
     typeof result.org_noun === 'string' ? result.org_noun : null,
     typeof result.position_label === 'string' ? result.position_label : null,
   )
+  result.accountDeletionEnabled = await getAccountDeletionEnabled(db)
   return c.json(result)
+})
+
+// PUT /admin/deletion-policy — Owner-only master switch for hard account deletion
+adminApiRouter.put('/deletion-policy', requireOwner, async (c) => {
+  const body = await c.req.json<{ enabled?: boolean }>().catch(() => ({} as { enabled?: boolean }))
+  if (typeof body.enabled !== 'boolean') return c.json({ error: 'enabled (boolean) is required' }, 400)
+  const db = getDb(c.env.DB)
+  await db.insert(associationConfig)
+    .values({ key: ACCOUNT_DELETION_KEY, value: JSON.stringify(body.enabled) })
+    .onConflictDoUpdate({ target: associationConfig.key, set: { value: sql`excluded.value` } })
+  return c.json({ enabled: body.enabled })
 })
 
 // PUT /admin/config

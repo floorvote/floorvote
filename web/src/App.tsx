@@ -17,6 +17,7 @@ import { Profile } from './pages/Profile'
 import { Members } from './pages/admin/Members'
 import { Config } from './pages/admin/Config'
 import { Notifications } from './pages/admin/Notifications'
+import { DraftBills } from './pages/admin/DraftBills'
 import { Calendar, calendarLoader } from './pages/Calendar'
 import { useAuth } from './hooks/useAuth'
 import { SidebarRefreshProvider } from './context/SidebarRefreshContext'
@@ -147,6 +148,7 @@ export const routes = createRoutesFromElements(
           <Route path="admin/members" element={<Members />} />
           <Route path="admin/config" element={<Config />} />
           <Route path="admin/notifications" element={<Notifications />} />
+          <Route path="admin/drafts" element={<DraftBills />} />
         </Route>
         {/* Canonical + legacy bill URLs — greedy param routes; React Router
             ranks static segments above these, so order vs. /admin etc. is safe. */}

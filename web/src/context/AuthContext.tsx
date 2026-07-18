@@ -11,6 +11,7 @@ type User = {
   emailDigestEnabled: boolean
   emailWeekAheadEnabled: boolean
   lastSeenFeed: string | null
+  isLastOwner: boolean
 }
 
 type AuthState = {

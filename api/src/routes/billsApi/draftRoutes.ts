@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNull, ne } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
@@ -24,8 +24,18 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
   router.delete('/:id', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const { id } = c.req.param()
-    const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
+    const bill = await db.select({ id: bills.id, isDraft: bills.isDraft }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Bill not found' }, 404)
+    if (!bill.isDraft) return c.json({ error: 'Only draft bills can be deleted' }, 403)
+
+    const [v, p, cm, nt] = await Promise.all([
+      db.select({ id: memberVotes.id }).from(memberVotes).where(eq(memberVotes.billId, id)).get(),
+      db.select({ billId: officialPositions.billId }).from(officialPositions).where(eq(officialPositions.billId, id)).get(),
+      db.select({ id: comments.id }).from(comments).where(and(eq(comments.billId, id), isNull(comments.deletedAt))).get(),
+      db.select({ id: notes.id }).from(notes).where(and(eq(notes.billId, id), ne(notes.content, ''))).get(),
+    ])
+    if (v || p || cm || nt) return c.json({ error: 'This draft has engagement; unlink or merge it into a filed bill instead.' }, 409)
+
     await db.batch([
       db.delete(feedEvents).where(eq(feedEvents.billId, id)),
       db.delete(comments).where(eq(comments.billId, id)),

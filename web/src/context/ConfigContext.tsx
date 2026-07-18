@@ -16,6 +16,7 @@ export interface AppConfig {
   instanceDomains?: Record<string, string>
   demoLocked?: boolean
   operator?: OperatorConfig
+  accountDeletionEnabled?: boolean
 }
 
 interface ConfigValue {
