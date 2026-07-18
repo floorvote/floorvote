@@ -123,7 +123,7 @@ describe('Members owner-only deletion-policy switch', () => {
       </MemoryRouter>,
     )
 
-    const toggleLabel = await screen.findByText('Allow owners and admins to irreversibly delete member accounts.')
+    const toggleLabel = await screen.findByText('Allow accounts to be permanently deleted.')
     const tableWrap = container.querySelector('.members-table-wrap')
     expect(tableWrap).not.toBeNull()
 
