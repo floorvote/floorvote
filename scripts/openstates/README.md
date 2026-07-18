@@ -20,4 +20,4 @@ Two centrals exist as separate wrangler environments in `central/`:
 
 The LegiScan-side seeding lives in the parent directory (`scripts/seed-legiscan.ts`).
 
-See `docs/architecture.md` for the canonical pipeline description.
+See `docs/internal/sync-pipeline.md` for the canonical pipeline description.

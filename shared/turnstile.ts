@@ -8,7 +8,7 @@
 //                     error/outage, denies the request.
 // FRONTEND GAP (operator to close): when the secret is set, the login form must
 // render the Turnstile widget (with the matching SITE KEY) and POST its token as
-// `turnstileToken`, or login will fail closed. See docs/turnstile-setup.md.
+// `turnstileToken`, or login will fail closed. See docs/internal/turnstile.md.
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
