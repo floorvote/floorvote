@@ -1,9 +1,9 @@
 # How hard is it to set up?
 
-Setup is a technical task — you provision Cloudflare resources and run deploy scripts. Start with the [Self-hosting guide](/self-hosting/) and see how it looks.
+Let's be honest about it: setting up FloorVote is a technical task. You'll be provisioning Cloudflare resources and running deploy scripts, not clicking through a simple signup form. Take a look at the [Self-hosting guide](/self-hosting/) to see exactly what's involved before you commit — it walks through every step in order, so there's no guesswork about what comes next.
 
-- If you have a teammate who's comfortable with the command line, it should go smoothly.
-- If the guide looks intimidating, an artificial intelligence coding agent such as Claude Code can do most of the setup for you.
-- Still stuck? Reach out and we can help point you in the right direction.
+That said, it's manageable, not daunting:
 
-<!-- content pass: add a real contact route -->
+- If you have a teammate who's comfortable with the command line, setup should go smoothly.
+- If the guide looks intimidating on your own, an artificial intelligence coding agent such as Claude Code can carry most of the setup for you.
+- Still stuck? Open an issue at [github.com/floorvote/floorvote](https://github.com/floorvote/floorvote) and we can help point you in the right direction.
