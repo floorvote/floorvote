@@ -39,8 +39,8 @@ import type { SidebarProps, SidebarData, Stats, Config, Member } from './sidebar
 export { formatHearingTime } from '../lib/hearingTime'
 export { calendarChipLabel, showCustomizeControl }
 
-const DEFAULT_WIDTH = 225
-const MIN_WIDTH = 210
+const DEFAULT_WIDTH = 230
+const MIN_WIDTH = 230
 const MAX_WIDTH = 400
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
