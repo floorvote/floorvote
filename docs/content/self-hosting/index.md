@@ -10,10 +10,11 @@ Self-hosting means you'll be setting up two things: your own Cloudflare infrastr
 
 Before you start, set up these two accounts:
 
-- **Cloudflare** — this is where FloorVote itself runs. You'll need the **Workers Paid** plan ($5/month), which is required for Queues (used to move bill updates from the central service out to tenants).
-- **LegiScan** — this is where the legislative data comes from. Register for a free API key at [legiscan.com/legiscan](https://legiscan.com/legiscan); the free tier is sufficient to start.
+- **Cloudflare** — this is where FloorVote itself runs. You'll need the [**Workers Paid**](https://www.cloudflare.com/plans/developer-platform/) plan ($5/month), which is required for Queues (used to move bill updates from the central service out to tenants).
+- **LegiScan** — this is where the legislative data comes from. Register for a LegiScan OneVote account [here](https://legiscan.com/user/register), confirm your account, and then generate a free API key [here](https://legiscan.com/legiscan). The free tier is sufficient to start.
 
-> **LegiScan does not provide support for FloorVote.** FloorVote is an independent, open-source project that uses LegiScan's data through its public API. Using that data doesn't make FloorVote LegiScan's product or LegiScan's responsibility — if something goes wrong with your FloorVote deployment, LegiScan is not who to contact.
+> Legiscan provides bill data via their API but is not involved with FloorVote. If you become a free LegiScan user, please do not reach out to them for support with FloorVote.
+
 
 ---
 
@@ -23,7 +24,7 @@ FloorVote supports two legislative data providers. **LegiScan is the recommended
 
 | | **LegiScan** (recommended) | **OpenStates** |
 |---|---|---|
-| API key | Free tier (1k queries/day, ~30k/month) is sufficient | Free; no key required for bulk seeding |
+| API key | Free tier (~30k queries/month) is sufficient | Free; no key required for bulk seeding |
 | Coverage | All 50 US states + DC + US Congress | All 50 US states + DC |
 | Maturity | Production path; actively maintained | Experimental; less maintained, not at feature parity |
 | Bill IDs | Integer IDs (`legiscan:<id>`) | OCD string IDs (`ocd-bill/UUID`) |
@@ -93,7 +94,7 @@ See the [Adding tenants](/self-hosting/tenants) guide for a more detailed step-b
 - Cloudflare account with Workers, D1, R2, and Queues enabled (Workers Paid plan required for Queues)
 - `wrangler` CLI: `npm install -g wrangler` — authenticate via `CLOUDFLARE_API_TOKEN` env var (recommended; doesn't expire) or `wrangler login` (OAuth; expires periodically). Create a token at Cloudflare dashboard → My Profile → API Tokens using the "Edit Cloudflare Workers" template.
 - API keys:
-  - **LegiScan** — Free tier (1k queries/day) is sufficient for a national deployment across all 52 jurisdictions. Register at [legiscan.com/legiscan](https://legiscan.com/legiscan). Pull tier (100k/month) gives extra headroom.
+  - **LegiScan** — Free tier (~30k queries/month) is sufficient for a national deployment across all 52 jurisdictions. Register at [legiscan.com/legiscan](https://legiscan.com/legiscan). Pull tier (100k/month) gives extra headroom.
   - *(OpenStates path only)* **OpenStates** — free; no key required for bulk data. For live cron sync, register at [openstates.org/api/register](https://openstates.org/api/register/).
   - **Cloudflare AI Gateway** — Routes Gemini API calls through your Cloudflare account for unified billing and observability. Create a gateway in the Cloudflare dashboard (Workers & Pages → AI Gateway). Gemini 2.5 Flash is cost-effective. Set `AI_GATEWAY_ENABLED=true`, `CF_ACCOUNT_ID`, and `CF_AIG_GATEWAY` on each tenant, plus the `CF_AIG_TOKEN` secret.
   - **Cloudflare Email Service** — For magic link authentication emails. Configure a `[[send_email]]` binding in wrangler.toml. Resend is included as an optional fallback (`EMAIL_PROVIDER=resend`) if you prefer a third-party email provider.
@@ -548,7 +549,7 @@ Each tenant Worker exposes `GET /api/health`. On the LegiScan central, the healt
 
 ## LegiScan API notes
 
-- **Free tier** (1k queries/day, ~30k/month) is sufficient for a national election-bill deployment across all 52 jurisdictions. Pull tier (100k/month) gives extra headroom.
+- **Free tier** (~30k queries/month) is sufficient for a national election-bill deployment across all 52 jurisdictions. Pull tier (100k/month) gives extra headroom.
 - **Never bulk-queue bills to the ingestor without `skipFetch: true`** — each ingestor message triggers a `getBill()` API call. For bulk operations use `reprocess` (zero API calls) or `seed-session` (uses `skipFetch: true`).
 - Bill data is licensed CC BY 4.0. All UI displaying LegiScan data must include "Data provided by LegiScan" attribution.
 - If you plan to charge tenants for platform access, get written confirmation from LegiScan that a central-cache architecture is permitted under your tier's terms.

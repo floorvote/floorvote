@@ -2,32 +2,32 @@
 layout: home
 hero:
   name: FloorVote
-  text: Documentation
-  tagline: Deploy, operate, and understand your own FloorVote instance.
-  actions:
-    - theme: brand
-      text: Self-hosting guide
-      link: /self-hosting/
-    - theme: alt
-      text: Should I use FloorVote?
-      link: /overview/what-can-it-do
+  # text: 
+  tagline: FloorVote is a self-hosted bill tracker for your team. Here's how to understand, deploy, and operate it.
+  # actions:
+  #   - theme: brand
+  #     text: Self-hosting guide
+  #     link: /self-hosting/
+  #   - theme: alt
+  #     text: Should I use FloorVote?
+  #     link: /overview/what-can-it-do
 features:
-  - title: Should I use FloorVote?
+  - title: Is FloorVote for me?
     details: What it does, what it costs, and how hard it is to set up.
     link: /overview/what-can-it-do
-    linkText: Evaluate it
+    # linkText: Learn more
   - title: Set up
-    details: Deploy your own instance and add tenants.
+    details: Deploy FloorVote instances, for yourself, for your team, or for multiple teams.
     link: /self-hosting/
-    linkText: Get it running
+    # linkText: Get it running
   - title: Architecture
-    details: How the central and tenant Workers fit together.
+    details: How it works under the hood.
     link: /architecture/
-    linkText: How it works
+    # linkText: How it works
   - title: Contributing
-    details: Where the code and maintainer conventions live.
+    details: How to raise issues or add features yourself.
     link: /contributing/
-    linkText: Contribute
+    # linkText: Contribute
 ---
-
-New to FloorVote? [See the product overview.](https://floorvote.org/)
+<!--  -->
+<!-- New to FloorVote? [See the product overview.](https://floorvote.org/) -->

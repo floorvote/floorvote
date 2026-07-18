@@ -1,17 +1,22 @@
 # How much does it cost?
 
-Running FloorVote means keeping two accounts: Cloudflare and LegiScan.
+To run FloorVote, you'll need to make two accounts: Cloudflare and LegiScan. You can realistically expect that running FloorVote will cost you about $5-7/month to start.
 
-## Cloudflare — about $5/month
+## Cloudflare — about $5-$7/month
 
-Cloudflare provides the hosting, email, and artificial intelligence billing, all in one bill. The Workers Paid plan is $5/month and includes a large usage allowance — most deployments never come close to it, though a busy deployment with many users may go somewhat over.
+Cloudflare provides the hosting and email services, and bills for AI usage. The [Cloudflare Workers Paid](https://developers.cloudflare.com/workers/platform/pricing/) plan is $5/month and includes a large usage and email allowance — most teams should never hit limits, though a busy deployment with many users may go somewhat over.
 
-AI summarization also runs through Cloudflare, and it's inexpensive: about $10 summarizes roughly 2,000 bills. Your AI cost scales with how much you're actually tracking — the number of keywords your team watches, the number of states you cover, and how often the bill text you're tracking changes.
+### Emails
 
-## LegiScan — free to start
+Your Cloudflare Workers Paid account includes [3,000 emails per month](https://developers.cloudflare.com/email-service/platform/pricing/), and then it's $0.35 per 1,000 emails. Most teams shouldn't need to pay for those extra emails unless they have hundreds of users and have daily email updates set to go out to everybody. Even then, costs should be very manageable.
 
-LegiScan is the source of the legislative data itself. Its free tier — 1,000 queries a day, roughly 30,000 a month — is enough to run a national deployment, covering every state at once. A paid tier only becomes worth considering if you're tracking a very high volume of states, keywords, or bill updates.
+### AI bill summaries
+When a tracked bill gets new text, the bill is sent to an AI model for summarizing, scoring, and tagging according to your team's tags. Cloudflare's [AI Gateway](https://developers.cloudflare.com/ai-gateway/) routes the text to an AI model and Cloudflare bills you for that usage. Your AI cost scales with the number of bills you're summarizing, which is a function of the keywords your team watches, the number of states you cover, and how often the bill text you're tracking changes.
 
-## The takeaway
+Typical AI usage is pretty cheap: With Google Gemini 2.5 Flash, $10 summarizes about 2,000 bills. You can change the model if you like, but Gemini 2.5 Flash appears to be cost-effective and does a good job with bill formats (HTML and long PDFs).
 
-Realistically, expect about $5/month to start. See the [Self-hosting](/self-hosting/) guide for how to set both accounts up.
+## LegiScan — free for most, paid for heavy users
+
+LegiScan's API is the source of the bill data itself. Its free "Public" tier allows for 30,000 calls a day. Whether that will be enough for your team depends on the number of bills you track (which is a function of the number of states you want to track and the breadth of the keywords that you set) and the frequency of bill updates that you need (which you can set). A free API account is probably enough for most teams, but teams that need more might need to pay for [LegiScan's "Pull API,"](https://legiscan.com/pricing) which costs between $1,000/year (for one state) and $6,000/year (for all states). (Congress is considered a single state.)
+
+> Legiscan provides bill data via their API but is not involved with FloorVote. If you become a free LegiScan user, please do not reach out to LegiScan for support with FloorVote.

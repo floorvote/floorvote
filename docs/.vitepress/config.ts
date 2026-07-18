@@ -15,6 +15,7 @@ export default withMermaid(
     ],
     themeConfig: {
       siteTitle: false,
+      logoLink: 'https://floorvote.org/',
       sidebar: [
         {
           text: 'Should I use FloorVote?',
