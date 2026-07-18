@@ -2,45 +2,37 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'FloorVote',
-  description: 'Legislative bill tracking for teams',
+  description: 'Bill tracking for teams',
   base: '/docs/',
   srcDir: 'content',
   outDir: '.vitepress/dist/docs',
   themeConfig: {
-    nav: [
-      { text: 'Self-hosting', link: '/self-hosting/' },
-      { text: 'Architecture', link: '/architecture/' },
-      { text: 'GitHub', link: 'https://github.com/floorvote/floorvote' },
-    ],
     sidebar: [
       {
-        text: 'Features',
+        text: 'Should I use FloorVote?',
         items: [
-          { text: 'Email digests', link: '/features/emails' },
-          { text: 'Calendar (iCal)', link: '/features/calendar' },
-          { text: 'Turnstile login protection', link: '/features/turnstile' },
+          { text: 'What can it do?', link: '/overview/what-can-it-do' },
+          { text: 'How much does it cost?', link: '/overview/how-much-does-it-cost' },
+          { text: 'How hard is it to set up?', link: '/overview/how-hard-is-it-to-set-up' },
         ],
       },
       {
-        text: 'Self-hosting',
+        text: 'Set up',
         items: [
           { text: 'Self-hosting', link: '/self-hosting/' },
           { text: 'Adding tenants', link: '/self-hosting/tenants' },
-          { text: 'Presets', link: '/self-hosting/presets' },
         ],
       },
       {
         text: 'Architecture',
         items: [
           { text: 'Overview', link: '/architecture/' },
-          { text: 'LegiScan API', link: '/architecture/legiscan' },
         ],
       },
       {
         text: 'Contributing',
         items: [
-          { text: 'Style tokens', link: '/contributing/style-tokens' },
-          { text: 'Date/time convention', link: '/contributing/dates' },
+          { text: 'Contributing', link: '/contributing/' },
         ],
       },
     ],
