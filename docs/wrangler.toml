@@ -1,0 +1,19 @@
+name = "floorvote-docs"
+compatibility_date = "2025-06-01"
+
+# Intercept /docs on the floorvote.org zone. The marketing Worker keeps the rest;
+# the more-specific route wins over its custom domain. Two patterns so both the
+# bare /docs and everything under it are captured.
+# (Top-level keys must precede the [assets] table header in TOML.)
+routes = [
+  { pattern = "floorvote.org/docs", zone_name = "floorvote.org" },
+  { pattern = "floorvote.org/docs/*", zone_name = "floorvote.org" },
+]
+
+# Assets-only Worker: no `main`, and no `binding` (binding is only valid with a
+# Worker script). The site is served under /docs, so the assets directory holds
+# a `docs/` subfolder — VitePress `outDir` nests the build one level below this
+# directory, so a request for /docs/x resolves to <directory>/docs/x.
+[assets]
+directory = ".vitepress/dist"
+not_found_handling = "404-page"

@@ -50,7 +50,7 @@ Legislative API (LegiScan or OpenStates)
 - **Central service** — one per operator. Owns all legislative API calls and bill storage. You pay for one API key regardless of how many tenants you run. AI processing happens tenant-side only.
 - **Tenant Workers** — one per organization or topic focus. Each tenant has its own users, votes, comments, positions, and relevance configuration. Tenants never call LegiScan directly.
 
-For a detailed walkthrough of the sync pipeline (cron passes, ingestor behavior, deduplication), see [`architecture.md`](architecture.md) and the visual at [`sync-flow.html`](sync-flow.html).
+For a detailed walkthrough of the sync pipeline (cron passes, ingestor behavior, deduplication), see [`architecture.md`](/architecture/) and the visual at [`sync-flow.html`](/sync-flow.html).
 
 ---
 
