@@ -2,6 +2,19 @@
 
 This guide is for organizations that want to run their own independent deployment of FloorVote. You will provision your own Cloudflare infrastructure.
 
+Self-hosting means you'll be setting up two things: your own Cloudflare infrastructure to run FloorVote, and an account with a legislative data provider to feed it bills. It's a guided, one-time setup — once it's deployed, running FloorVote day to day doesn't require touching this guide again. The steps below walk through both, in order.
+
+---
+
+## Accounts you'll need
+
+Before you start, set up these two accounts:
+
+- **Cloudflare** — this is where FloorVote itself runs. You'll need the **Workers Paid** plan ($5/month), which is required for Queues (used to move bill updates from the central service out to tenants).
+- **LegiScan** — this is where the legislative data comes from. Register for a free API key at [legiscan.com/legiscan](https://legiscan.com/legiscan); the free tier is sufficient to start.
+
+> **LegiScan does not provide support for FloorVote.** FloorVote is an independent, open-source project that uses LegiScan's data through its public API. Using that data doesn't make FloorVote LegiScan's product or LegiScan's responsibility — if something goes wrong with your FloorVote deployment, LegiScan is not who to contact.
+
 ---
 
 ## Choosing a legislative data provider
