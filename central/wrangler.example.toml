@@ -103,6 +103,8 @@ name = "EMAIL"
 # BILL_PROVIDER = "legiscan"
 # EMAIL_PROVIDER = "cloudflare"
 # # ADMIN_APP_URL = "https://admin.example.com"
+# # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
+# # CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
 #
 # [env.legiscan.triggers]
 # crons = ["0 * * * *"]

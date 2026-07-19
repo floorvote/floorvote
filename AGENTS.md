@@ -106,7 +106,8 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
-| `CF_ANALYTICS_TOKEN` | Cloudflare API token (Account Analytics: Read + D1: Read) for D1 anomaly watch (optional) |
+| `CF_ANALYTICS_TOKEN` | Cloudflare API token for two features: D1 anomaly watch (Account → D1: Read) and Login Activity delivery status (Zone → Analytics: Read, scoped to `CF_FLOORVOTE_ZONE_ID`'s zone). Both permission groups can live on one token. (optional) |
+| `CF_FLOORVOTE_ZONE_ID` | Cloudflare zone ID (not account ID — found on the domain's Overview page) for the Login Activity delivery-status GraphQL query. Required alongside `CF_ANALYTICS_TOKEN`'s zone permission for that feature; otherwise it silently no-ops. (optional) |
 | `CF_EMAIL_TOKEN` | Cloudflare API token (Email Sending: Read) for login-activity suppression banner (optional) |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile for dashboard login (optional) |
 

@@ -92,7 +92,7 @@ See the [Adding tenants](/self-hosting/tenants) guide for a more detailed step-b
 ## Prerequisites
 
 - Cloudflare account with Workers, D1, R2, and Queues enabled (Workers Paid plan required for Queues)
-- `wrangler` CLI: `npm install -g wrangler` — authenticate via `CLOUDFLARE_API_TOKEN` env var (recommended; doesn't expire) or `wrangler login` (OAuth; expires periodically). Create a token at Cloudflare dashboard → My Profile → API Tokens using the "Edit Cloudflare Workers" template.
+- `wrangler` CLI: `npm install -g wrangler` — authenticate via `CLOUDFLARE_API_TOKEN` env var (recommended; doesn't expire) or `wrangler login` (OAuth; expires periodically). Create a token at Cloudflare dashboard → My Profile → API Tokens: start from the "Edit Cloudflare Workers" template, then add **D1: Edit** and **Queues: Edit** (the template omits both) plus, if you'll set up custom domains, your zone's **Workers Routes: Edit** and **DNS: Edit**. See [Deploy API token](/self-hosting/tenants#_2-deploy-api-token-cloudflare-api-token) for the full permission list.
 - API keys:
   - **LegiScan** — Free tier (~30k queries/month) is sufficient for a national deployment across all 52 jurisdictions. Register at [legiscan.com/legiscan](https://legiscan.com/legiscan). Pull tier (100k/month) gives extra headroom.
   - *(OpenStates path only)* **OpenStates** — free; no key required for bulk data. For live cron sync, register at [openstates.org/api/register](https://openstates.org/api/register/).
@@ -194,13 +194,13 @@ openssl rand -base64 32
 
 #### Queue delivery (recommended)
 
-Central delivers bills to each tenant's queue. Unless you add a static `TENANT_QUEUE_<ID>` producer binding for every tenant in `central/wrangler.toml`, central resolves and HTTP-publishes to tenant queues dynamically — which needs a Cloudflare API token scoped **Queues: Edit**:
+Central delivers bills to each tenant's queue. Unless you add a static `TENANT_QUEUE_<ID>` producer binding for every tenant in `central/wrangler.toml`, central resolves and HTTP-publishes to tenant queues dynamically — which needs **both** a Cloudflare API token scoped **Queues: Edit** and central's `CF_ACCOUNT_ID` **var** (set in `[env.legiscan.vars]`, not a secret — see `wrangler whoami`):
 
 ```bash
 wrangler secret put CF_QUEUES_TOKEN --env legiscan
 ```
 
-Without it, only statically-bound tenants receive bills — a tenant can register cleanly yet never receive a single bill, with no error. Create the token at Cloudflare dashboard → My Profile → API Tokens → Create Custom Token (Queues: Edit).
+Without either one, only statically-bound tenants receive bills — a tenant can register cleanly yet never receive a single bill, with no error. Create the token at Cloudflare dashboard → My Profile → API Tokens → Create Custom Token (Queues: Edit).
 
 #### Admin dashboard
 
@@ -216,10 +216,15 @@ The matching ES256 **public** JWK is not a secret — it goes in each tenant's `
 
 #### Observability (optional)
 
-These power the ops dashboards and the Members "Login activity" panel. Each cleanly no-ops when unset — no crash, the feature simply stays dark. Both require the `CF_ACCOUNT_ID` **var** (set in `[env.legiscan.vars]` in `central/wrangler.toml`, not a secret):
+These power the ops dashboards and the Members "Login activity" panel. Each cleanly no-ops when unset — no crash, the feature simply stays dark.
+
+`CF_ANALYTICS_TOKEN` covers two separate features and needs a permission for each — both can live on the same token:
+
+- **D1 anomaly watch** — needs the `CF_ACCOUNT_ID` **var** (set in `[env.legiscan.vars]`, not a secret) plus **Account → D1: Read**.
+- **Login Activity delivery status** — a zone-level lookup, so it needs **Zone → Analytics: Read** on your app's zone, plus the zone's ID in the `CF_FLOORVOTE_ZONE_ID` **var** (also in `[env.legiscan.vars]` — this is the zone ID from the domain's Overview page in the dashboard, not the account ID). Skip this if you don't need delivery-status detail; the token still works for D1 anomaly watch with just the account permission.
 
 ```bash
-wrangler secret put CF_ANALYTICS_TOKEN --env legiscan  # Cloudflare API token, scoped: Account Analytics: Read + D1: Read
+wrangler secret put CF_ANALYTICS_TOKEN --env legiscan  # Cloudflare API token: Account "D1: Read" + Zone "Analytics: Read"
 wrangler secret put CF_EMAIL_TOKEN --env legiscan      # Cloudflare API token, scoped: Email Sending: Read
 ```
 
