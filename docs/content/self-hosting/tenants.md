@@ -1,108 +1,31 @@
-# Spinning Up a New Tenant Instance
+# Adding a tenant
 
-Each tenant deployment is a single Cloudflare Worker + D1 database + Queue. The Worker serves both the API and the React frontend via Workers Assets — no separate Pages project required. All bill data flows from the shared **central Worker** — tenants never call LegiScan directly. Bill text is stored in central's R2; tenants have no R2 bucket of their own.
+A tenant is one team's instance: a single Cloudflare Worker + D1 database + queue. The Worker serves both the API and the app, and all bill data flows from your [central service](/self-hosting/) — tenants never call LegiScan directly. This page assumes your central service is already running.
 
-Replace `[slug]` with a lowercase identifier (e.g., `org-nj`, `org-ca`) and `[STATE]` with the two-letter abbreviation.
+Throughout, replace `[slug]` with a lowercase identifier for the team (e.g. `org-nj`) and `[STATE]` with its two-letter abbreviation.
 
-> **Provisioning script.** `scripts/new-instance.sh` automates the steps below end-to-end. It creates the D1 + Queue, appends the env block, deploys the tenant, sets `CF_AIG_TOKEN`, binds `CentralApi` on central and redeploys it, force-registers, optionally seeds history (`--seed-dir`/`--session-id`), and creates the first admin. Use `--from-step N` to resume after a failure. The manual steps below remain the canonical reference and are worth reading before your first run.
+> **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database and queue, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user. Use `--from-step N` to resume after a failure. The manual steps below are the reference, and worth reading once before your first run.
 
-> **Renaming resources (forks / rebranding).** The docs and scripts name Workers, D1
-> databases, and queues `floorvote-<slug>` by default. If you rebrand — e.g. `acme-<slug>` —
-> set **one** value and every derived name follows: `RESOURCE_PREFIX=acme` for the scripts
-> (`new-instance.sh`, `teardown-instance.sh`, `deploy.sh`; or drop it in a gitignored
-> `scripts/.env.ops`). Critically, set the **matching** `TENANT_QUEUE_PREFIX=acme` var on the
-> central Worker (`[env.legiscan.vars]`): central resolves each tenant's delivery queue *by
-> name*, so if its prefix doesn't match yours it creates a **phantom queue with no consumer**
-> and the tenant silently receives no bills. Keep `RESOURCE_PREFIX` and central's
-> `TENANT_QUEUE_PREFIX` in lockstep.
+## Cloudflare credentials
 
----
+Adding a tenant reuses the account-level credentials you set up once and then reuse for every team:
 
-## What can and can't be scripted
+- **Deploy token (`CLOUDFLARE_API_TOKEN`)** — the one you already created and exported when setting up the [central service](/self-hosting/#cloudflare-api-tokens). Same token here.
+- **AI Gateway** — AI runs on the tenant side, routed through a Cloudflare AI Gateway for keyless, unified billing. Create one gateway once and every tenant shares it: in the dashboard, **AI → AI Gateway → Create Gateway**, name it (e.g. `floorvote`), and put the slug in each tenant's `CF_AIG_GATEWAY` var.
+- **AI Gateway token (`CF_AIG_TOKEN`)** — in your gateway's **Settings**, **Create authentication token** (it gets the "Run" permission — copy it now, it's shown once) and toggle **Authenticated Gateway** on. This is the one secret you set on every tenant, with the same value each time.
 
-Almost everything per-tenant is scriptable with `wrangler`: creating the D1 database (Step 1), the Queue (Step 2), running migrations (Step 5), and deploying (Step 6). The Cloudflare **credentials** are not — and they don't need to be, because they are **account-level and created once, then reused by every tenant**:
+> The AI Gateway token is account-scoped — any "AI Gateway Run" token can send requests through every gateway on the account. That's fine here because all tenants intentionally share one gateway.
 
-| Credential | Scriptable? | How it's obtained |
-|---|---|---|
-| `CF_ACCOUNT_ID` | Read-only | `wrangler whoami`, or dashboard. Same value for every tenant. |
-| `CLOUDFLARE_API_TOKEN` (deploy) | **No** — dashboard only | Dashboard → My Profile → API Tokens. One token deploys every tenant. |
-| AI Gateway (`CF_AIG_GATEWAY`) | **No** — dashboard only | `wrangler` has no AI Gateway command. Create once; all tenants share it. |
-| `CF_AIG_TOKEN` (gateway auth) | **No** — dashboard only | Generated inside the gateway's Settings; account-scoped, so one token serves every tenant. |
-| `SUPERADMIN_JWT_PUBLIC_KEY` | n/a (committed var) | The ES256 public JWK, identical on every env — copy from any existing `[env.*]` block. |
-
-So the per-tenant "secret setting" work is small: only `CF_AIG_TOKEN` is strictly required, and you paste the same value you used for the last tenant. See [Generating Cloudflare credentials](#generating-cloudflare-credentials) for the one-time setup.
-
----
-
-## Generating Cloudflare credentials
-
-Do this **once** for your Cloudflare account. After the initial setup, you reuse the same values for every new tenant.
-
-### 1. Account ID (`CF_ACCOUNT_ID`)
-
-```bash
-npx wrangler whoami
-```
-
-Copy the account ID from the output (or dashboard → any domain → Overview → right sidebar). It is **not** a secret — it lives in `[env.*.vars]` in `api/wrangler.toml`.
-
-### 2. Deploy API token (`CLOUDFLARE_API_TOKEN`)
-
-Created in the dashboard — **wrangler cannot create API tokens**.
-
-1. Dashboard → **My Profile → API Tokens → Create Token**.
-2. Start from the **"Edit Cloudflare Workers"** template, then add two account permissions the template omits: **D1 → Edit** and **Queues → Edit**. The full set you want:
-   - **Account** → Workers Scripts: Edit, D1: Edit, Queues: Edit, Workers KV Storage: Edit, Account Settings: Read
-   - **Zone** (your app-domain zone(s)) → Workers Routes: Edit, DNS: Edit  *(needed for custom-domain provisioning in Step 10)*
-3. Create, copy the token (shown once), and export it in your shell:
-
-```bash
-# in ~/.zshrc or ~/.bashrc (tokens don't expire)
-export CLOUDFLARE_API_TOKEN="..."
-```
-
-One token deploys every tenant. (Alternative: `npx wrangler login` for OAuth, which expires periodically.)
-
-### 3. AI Gateway (`CF_AIG_GATEWAY`)
-
-The gateway is what gives keyless, unified AI billing. **wrangler has no AI Gateway command** — create it in the dashboard or via the REST API.
-
-- **Dashboard:** AI → AI Gateway → **Create Gateway** → name it (e.g. `floorvote`) → Create.
-- **API:** `POST https://api.cloudflare.com/client/v4/accounts/{account_id}/ai-gateway/gateways` with a token scoped **AI Gateway: Read + Edit**.
-
-One gateway serves every tenant; the slug goes in `[env.*.vars]` as `CF_AIG_GATEWAY`.
-
-### 4. AI Gateway auth token (`CF_AIG_TOKEN`)
-
-This is the only Cloudflare credential you set as a per-tenant **secret** (with the same value each time).
-
-1. AI → AI Gateway → select your gateway → **Settings**.
-2. **Create authentication token** → this generates a token with the **Run** permission. **Copy it now — it is shown only once.**
-3. Toggle **Authenticated Gateway** on.
-
-> **Security note:** AI Gateway tokens are **account-scoped** — they cannot be restricted to one gateway, and any token with `AI Gateway Run` can send requests through every gateway on the account. That's acceptable here because all tenants intentionally share the one gateway.
-
-### 5. Superadmin JWT key (`SUPERADMIN_JWT_PUBLIC_KEY`)
-
-Superadmin SSO is ES256: **central is the sole issuer** (holds the private key) and tenants only **verify** with the public key. The public JWK is not a secret — it is committed as a `[env.*.vars]` entry, identical on every env. Copy the exact `SUPERADMIN_JWT_PUBLIC_KEY = '...'` line from any existing tenant block in `api/wrangler.toml`. The private key lives only on central (`SUPERADMIN_JWT_PRIVATE_KEY` secret); you do **not** touch it when adding a tenant.
-
-### Central-side tokens
-
-The steps above cover the **tenant** and **deploy** credentials. The central worker holds its own set of secrets — `CF_QUEUES_TOKEN` (queue delivery), `SUPERADMIN_JWT_PRIVATE_KEY` + `SUPERADMIN_EMAILS` (admin dashboard), and optionally `CF_ANALYTICS_TOKEN` + `CF_EMAIL_TOKEN` (observability). These are set once on central and you don't touch them when adding a tenant. If you're standing up a brand-new central, provision them per [self-hosting.md](/self-hosting/).
-
----
+> For which pieces can be scripted versus created by hand in the dashboard, see `docs/internal/tenant-automation.md` in the repository.
 
 ## Prerequisites
 
-- Cloudflare account with Workers, D1, and Queues enabled
-- `wrangler` CLI installed and authenticated (`CLOUDFLARE_API_TOKEN` exported — see above)
-- Access to the repo; dependencies installed (`npm install` from repo root, and once in `central/`)
-- The LegiScan central Worker is already deployed and running
-- The shared Cloudflare credentials from the previous section
+- Your central service is deployed and running.
+- `wrangler` installed and your `CLOUDFLARE_API_TOKEN` exported (see the [central setup](/self-hosting/#cloudflare-api-tokens)).
+- The repository cloned, with dependencies installed.
+- Your AI Gateway created, and its token and slug handy.
 
----
-
-## Step 1: Create a D1 Database
+## Step 1: Create a database
 
 ```bash
 npx wrangler d1 create floorvote-[slug]
@@ -110,21 +33,15 @@ npx wrangler d1 create floorvote-[slug]
 
 Save the `database_id` from the output.
 
----
-
-## Step 2: Create a Queue
+## Step 2: Create a queue
 
 ```bash
 npx wrangler queues create floorvote-[slug]-queue
 ```
 
----
+## Step 3: Add a config block to `api/wrangler.toml`
 
-## Step 3: Add an Environment Block to `api/wrangler.toml`
-
-Copy the `CF_ACCOUNT_ID`, `CF_AIG_GATEWAY`, and `SUPERADMIN_JWT_PUBLIC_KEY` values verbatim from an existing tenant block. See `api/wrangler.example.toml` for a documented template.
-
-**Single-state instance:**
+Copy the `CF_ACCOUNT_ID`, `CF_AIG_GATEWAY`, and `SUPERADMIN_JWT_PUBLIC_KEY` values from an existing tenant block (they're identical across tenants). See `api/wrangler.example.toml` for a documented template.
 
 ```toml
 [env.[slug]]
@@ -134,11 +51,11 @@ routes = [{ pattern = "[slug].[your-domain]", custom_domain = true }]
 [env.[slug].vars]
 APP_URL = "https://[slug].[your-domain]"
 ASSOCIATION_NAME = "[Full Organization Name]"
-OPERATOR_NAME = "Your Operator Name"            # optional — sidebar footer label
-OPERATOR_URL = "https://example.org"            # optional — operator link
+OPERATOR_NAME = "Your Operator Name"            # optional — footer credit
+OPERATOR_URL = "https://example.org"            # optional — footer link
 OPERATOR_CONTACT_EMAILS = "support@example.org" # optional — feedback recipient(s)
-INSTANCE_PRESET = "election_officials"           # auto-applied on first register
-STATE = "[STATE]"                                # e.g. "NJ"
+INSTANCE_PRESET = "election_officials"           # applied automatically on first register
+STATE = "[STATE]"                                # e.g. "NJ"; leave "" for a multi-state team
 TENANT_ID = "[slug]"
 PROVIDER = "legiscan"
 CENTRAL_API_URL = "https://<your-central>.workers.dev"
@@ -146,12 +63,11 @@ AI_GATEWAY_ENABLED = "true"
 CF_ACCOUNT_ID = "<your-account-id>"
 CF_AIG_GATEWAY = "<your-gateway-slug>"
 EMAIL_PROVIDER = "cloudflare"
-ALERT_EMAILS = "ops@example.org"                 # cron-failure alert recipients
-APP_DOMAINS = "[your-domain]"
-EMAIL_FROM = "notifications@[your-domain]"
-# Copy this exact public JWK from any existing tenant block — identical on every env:
-SUPERADMIN_JWT_PUBLIC_KEY = '<your-ES256-public-JWK>'
-TURNSTILE_SITE_KEY = "<your-turnstile-site-key>"  # optional; pairs with TURNSTILE_SECRET_KEY
+ALERT_EMAILS = "ops@example.org"                 # who gets cron-failure alerts
+APP_DOMAINS = "[your-domain]"                    # the domain this team is served on
+EMAIL_FROM = "notifications@[your-domain]"        # sender address (domain must be verified to send)
+SUPERADMIN_JWT_PUBLIC_KEY = '<your-ES256-public-JWK>'  # copy verbatim from any existing tenant block
+TURNSTILE_SITE_KEY = "<your-turnstile-site-key>"  # optional; see the Turnstile page
 
 [[env.[slug].d1_databases]]
 binding = "DB"
@@ -171,7 +87,7 @@ max_concurrency = 3
 dead_letter_queue = "floorvote-dlq"
 
 # Login rate limiter — 10 requests per 60s per IP. Each tenant needs a unique
-# namespace_id (arbitrary integer, must not collide with other tenants).
+# namespace_id (any integer, just not shared with another tenant).
 [[env.[slug].ratelimits]]
 name = "LOGIN_RATE_LIMITER"
 namespace_id = "<unique-integer>"
@@ -188,66 +104,28 @@ entrypoint = "TenantApi"
 name = "EMAIL"
 
 [env.[slug].triggers]
-crons = ["0 11 * * *"]   # daily — drives digest emails and week-ahead
+crons = ["0 11 * * *"]   # daily — sends digest and week-ahead emails
 ```
 
-`APP_DOMAINS` is normally a single domain; list two (comma-separated) only while migrating domains, then drop back to one.
+The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound tenant-to-central calls authenticate by *arrival* (that named entrypoint is only reachable over same-account bindings), so the tenant carries no shared secret.
 
-**Multi-state instance:** set `STATE = ""` (the per-state list is stored in `association_config.state_coverage` — see Step 5b):
+> **Multi-state team:** set `STATE = ""` and store the state list in the database instead (Step 5b). `APP_DOMAINS` is normally one domain; list two only while migrating domains, then drop back to one.
 
-```toml
-[env.[slug].vars]
-# ...same as above except:
-STATE = ""   # empty for multi-state — state_coverage is seeded in D1 instead
-```
-
-The `entrypoint = "TenantApi"` on the `CENTRAL` service binding is what makes outbound tenant→central calls authenticate by *arrival* (the named entrypoint is reachable only over same-account bindings) — the tenant transmits no shared secret outbound.
-
-**Queue delivery — no central change needed.** As long as `CF_QUEUES_TOKEN` (a Queues:Edit token) is set on central, central resolves this tenant's queue at registration, stores its `queue_id`, and HTTP-publishes bills to it. **You do not need to add a `TENANT_QUEUE_` producer binding to `central/wrangler.toml` for delivery.** Add a static producer binding only for a **very high-volume** tenant where you want the binding's `sendBatch(100)` on the hourly cron fan-out instead of HTTP publish:
-
-```toml
-# OPTIONAL — high-volume tenants only; requires a central redeploy.
-[[env.legiscan.queues.producers]]
-binding = "TENANT_QUEUE_[SLUG_UPPERCASED]"   # hyphens → underscores
-queue = "floorvote-[slug]-queue"
-```
+> **Queue delivery needs no central change.** As long as `CF_QUEUES_TOKEN` is set on central, central finds this tenant's queue at registration and delivers to it. (A static `TENANT_QUEUE_` producer binding on central is only worth adding for a very high-volume tenant; most never need it.)
 
 Commit `api/wrangler.toml` before deploying.
 
----
+## Step 4: Set the tenant secret
 
-## Step 4: Set Secrets
-
-> **Deploy first.** `wrangler secret put` attaches a secret to an **already-deployed**
-> Worker, so for a brand-new tenant run **Step 6 (deploy) once first**, then set secrets
-> and redeploy is not needed (the secret takes effect immediately). `scripts/new-instance.sh`
-> does this automatically — it deploys, then sets secrets.
-
-From the `api/` directory. **Only `CF_AIG_TOKEN` is required.**
+From `api/`. **Only `CF_AIG_TOKEN` is required** — paste the same value you used for your last tenant:
 
 ```bash
-npx wrangler secret put CF_AIG_TOKEN --env [slug]      # required — AI Gateway auth (Run); same value every tenant
+npx wrangler secret put CF_AIG_TOKEN --env [slug]
 ```
 
-**Optional rollback credentials** — set these only if you want the two fallback levers to work. With the vars above (`AI_GATEWAY_ENABLED="true"`, `EMAIL_PROVIDER="cloudflare"` + the `EMAIL` binding), neither is read on the happy path:
+> **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
-```bash
-npx wrangler secret put GEMINI_API_KEY --env [slug]    # optional — only read if AI_GATEWAY_ENABLED is flipped to "false"
-npx wrangler secret put RESEND_API_KEY --env [slug]    # optional — only used if EMAIL_PROVIDER="resend" (or the EMAIL binding is absent)
-```
-
-- **AI:** when `AI_GATEWAY_ENABLED="true"`, Gemini is reached keylessly through the gateway using `CF_AIG_TOKEN`; `GEMINI_API_KEY` is referenced **only** on the direct-fallback branch.
-- **Email:** when `EMAIL_PROVIDER="cloudflare"` and the `[[send_email]]` binding is present, mail goes through Cloudflare Email Service; Resend is the code-level fail-safe.
-
-**Secrets you do not set on a tenant:**
-
-- `CENTRAL_ADMIN_SECRET` — not needed. New tenants use the `CentralApi` RPC binding (Step 6b), so both directions are binding-authenticated. (Still required in `api/.dev.vars` for local dev, which has no service bindings.)
-- `SUPERADMIN_EMAILS` — lives only on central.
-- `LEGISCAN_API_KEY` — only the central Worker calls LegiScan.
-
----
-
-## Step 5: Run Migrations
+## Step 5: Run migrations
 
 From `api/`:
 
@@ -255,24 +133,18 @@ From `api/`:
 npx wrangler d1 migrations apply floorvote-[slug] --remote --env [slug]
 ```
 
-> **Important:** Always use `migrations apply`, never `d1 execute` with raw SQL files. The `apply` command tracks which migrations have run.
+> Always use `migrations apply`, never `d1 execute` with raw SQL files — `apply` tracks which migrations have run.
 
----
+## Step 5b: Seed the state list (multi-state teams only)
 
-## Step 5b: Seed `state_coverage` (multi-state instances only)
-
-For multi-state instances, store the list of tracked states in `association_config`:
+Single-state teams skip this — the `STATE` var is enough. For a multi-state team, store the list in the database:
 
 ```bash
 npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
   --command "INSERT OR REPLACE INTO association_config (key, value) VALUES ('state_coverage', '[\"NJ\",\"RI\",\"WY\",\"WI\"]')"
 ```
 
-Single-state instances skip this step — the `STATE` env var is sufficient.
-
----
-
-## Step 6: Deploy the Worker
+## Step 6: Deploy the worker
 
 From `api/`:
 
@@ -280,15 +152,11 @@ From `api/`:
 npm run deploy:tenant -- [slug]
 ```
 
-This builds the frontend, applies pending migrations, and deploys the Worker (including its `CentralApi` entrypoint, which Step 6b binds to). Never run `wrangler deploy --env [slug]` directly — that skips the web build and migrations.
+This builds the frontend, applies pending migrations, and deploys the worker. Never run `wrangler deploy --env [slug]` directly — that skips the build and migrations.
 
----
+## Step 6b: Bind the tenant on central
 
-## Step 6b: Bind the Tenant on Central (`CentralApi` RPC)
-
-Central→tenant and operator→tenant calls (engagement pull, force-register, run-digest, etc.) run over a per-tenant `CentralApi` RPC binding. Because the tenant worker must exist before central can bind to it, do this **after** the first deploy (Step 6).
-
-1. Add the binding to `central/wrangler.toml` (the name is `TENANT_` + slug uppercased, hyphens → underscores):
+Central-to-tenant calls (engagement stats, force-register, digests) run over a per-tenant binding. Because the tenant worker must exist first, do this **after** the first deploy. Add the binding to `central/wrangler.toml` (the name is `TENANT_` + the slug uppercased, hyphens becoming underscores):
 
 ```toml
 [[env.legiscan.services]]
@@ -297,87 +165,67 @@ service = "floorvote-[slug]"
 entrypoint = "CentralApi"
 ```
 
-2. Deploy central so the binding resolves:
+Then redeploy central so the binding resolves:
 
 ```bash
 cd central && npm run deploy:legiscan
 ```
 
-Once bound, every operator action targets central (which fans out over the binding), and the tenant holds no shared secret.
+## Step 7: Register the tenant with central
 
----
-
-## Step 7: Register the Tenant with Central
-
-This applies `INSTANCE_PRESET` to the tenant's `association_config` (keywords, AI context, taxonomy, relevance question), syncs keywords to central, and registers the tenant's state coverage. Trigger it through central:
+This applies the `INSTANCE_PRESET` (keywords, AI context, taxonomy, relevance question), syncs the keywords to central, and registers the team's state coverage:
 
 ```bash
 curl -X POST https://<your-central>.workers.dev/api/tenants/[slug]/force-register \
   -H "x-admin-secret: <central ADMIN_SECRET>"
 ```
 
-(The tenant also self-registers on its daily cron and whenever config is saved in the admin UI — but `force-register` does it immediately.)
-
-Verify:
+(The tenant also self-registers on its daily cron and whenever you save config in the app — `force-register` just does it right now.) Verify:
 
 ```bash
 curl https://[slug].[your-domain]/api/health   # { "ok": true }
 ```
 
----
+## Step 8: Seed the active session(s)
 
-## When do bills start flowing in?
+Seeding loads a whole legislative session into the team at once — bills matching its keywords get full AI summaries, and the rest come in as lightweight "monitor" stubs (no AI cost). This means the team mirrors the full session from day one.
 
-Registration stores the tenant's keywords + state coverage on central and provisions its queue — but it does **not** itself queue any bills. Delivery is driven by the **central cron** (`0 * * * *`, hourly), and the timing depends on whether central already tracks the tenant's state:
+> **Set your keywords first if you can.** Seeding is where central decides which bills get full AI versus a stub, using the keywords already synced to central. If you plan to change the preset's keywords or AI context, do it now (Settings → Configuration) and let it sync **first**, so the initial AI pass uses your final settings. Changing them later works too, but then you'd "Rerun AI on all bills" to regenerate.
 
-- **State already tracked by another tenant** (its `sessions` rows exist in central): the next **full-sync pass** for that session links the new tenant's bills and queues keyword matches. Full passes run three times a day by default — so within ~10 hours, no seeding required.
-- **Brand-new state, not seeded:** central must first *discover* the session, which only happens once per day. Bills then flow on that same pass. Worst case ~24 hours.
-- **Want bills immediately:** run the standup seed (Step 8). When central already has the session, `seed-session` links and queues bills right away — no cron wait. For a brand-new state, pass `--seed-dir` to bulk-load central from the LegiScan zip first, then `seed-session` handles the rest.
+There are two paths, depending on whether central already has the state's bills.
 
-Non-keyword bills arrive as monitor stubs (keyword/manual-matched bills get full AI; everything else lands as a lightweight stub with no Generate button).
+### Path A: central already has the session (most teams)
 
----
-
-## Step 8: Seed the Active Session(s) for Whole-Session Monitoring
-
-> **Customize keywords BEFORE seeding if you can.** Seeding is where central decides which
-> bills get full AI (keyword/manual matches) vs. lightweight stubs — using the keywords
-> **already synced to central**. If you intend to change the preset's keywords, AI context,
-> or taxonomy, do it now (Settings → Configuration, or via `association_config`) and let it
-> sync to central **first**, so the initial AI pass uses your final settings. Editing after
-> seeding also works, but then you must "Rerun AI on all bills" (Step 12) to regenerate —
-> extra time and AI cost.
-
-Every bill in the active session is seeded into the tenant at standup — keyword/manual-matched bills get full AI processing; all others land as lightweight monitor stubs (no Generate button, no AI cost). This means the tenant mirrors the full session from day one.
-
-Two paths depending on whether central already holds the state's bills:
-
-### Path A: Central already has the session (most tenants)
-
-If the state is already tracked by another tenant, central has the sessions and bills in its DB. Paginate `seed-session` per session until `"done": true`:
-
-> **"Active" here includes the current session even if it has adjourned.** Seed the most
-> recent regular (and any special) session for the state — a legislature that has gone
-> `sine_die` for the cycle is still exactly what a new tenant wants to monitor. Find the
-> `session_id`(s) in central's `sessions` table; don't filter on `sine_die = 0`, which
-> silently skips a just-adjourned session (and can leave the tenant with zero bills).
+If another team already tracks the state, central has its bills. Seed in pages — the command handles up to 500 bills per call and tells you whether it finished:
 
 ```bash
 curl -s -X POST \
   "https://<your-central>.workers.dev/api/tenants/seed-session/[slug]?sessionId=[sessionId]&offset=0" \
   -H "x-admin-secret: <central ADMIN_SECRET>"
-# advance offset by nextOffset until "done":true
 ```
 
-Quota-free — no LegiScan API calls. Takes a few minutes for large states (~10,000 bills).
+If the response shows `"done": true`, you're finished. If not, run it again with `offset` set to the `nextOffset` it returned. This loop does that for you until it's done:
 
-### Path B: Brand-new state (central has no bills yet)
+```bash
+OFFSET=0
+while true; do
+  RESP=$(curl -s -X POST "https://<your-central>.workers.dev/api/tenants/seed-session/[slug]?sessionId=[sessionId]&offset=$OFFSET&limit=500" \
+    -H "x-admin-secret: <central ADMIN_SECRET>")
+  echo "$RESP"
+  DONE=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('done',''))")
+  NEXT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('nextOffset') or '')")
+  if [ "$DONE" = "True" ] || [ -z "$NEXT" ]; then break; fi
+  OFFSET=$NEXT
+done
+```
 
-Central must be loaded from the LegiScan bulk zip first; then `seed-session` handles the tenant link.
+This makes no LegiScan API calls, and takes a few minutes for a large state (~10,000 bills).
 
-**1. Download the bulk JSON dataset** from [legiscan.com/gaits/datasets](https://legiscan.com/gaits/datasets). Extract it — you'll get a directory like `RI/2026-2026_Regular_Session/` containing `bill/`, `vote/`, and `people/` subdirectories.
+> **"Active" includes a session that has already adjourned.** Seed the most recent regular (and any special) session — a legislature that has gone `sine_die` for the cycle is still exactly what a new team wants to monitor. Find the `session_id`(s) in central's `sessions` table.
 
-**2. Seed the central DB and link to the tenant** (runs ~1,000 bills/min against remote D1):
+### Path B: brand-new state (central has no bills yet)
+
+Load central from the LegiScan bulk zip first (as in [Preload historical bills](/self-hosting/#optional-preload-historical-bills-now)), but include the `--tenant` flag so it links the bills to this team in one shot:
 
 ```bash
 npx tsx scripts/seed-legiscan.ts \
@@ -388,101 +236,67 @@ npx tsx scripts/seed-legiscan.ts \
   --remote
 ```
 
-The `--tenant` flag links bills to the tenant and updates its `state_coverage` in one shot — no separate `seed-session` curl needed.
+The `--tenant` flag links the bills and updates the team's `state_coverage` — no separate `seed-session` call needed.
 
-Per-legislator `roll_call_votes` are slow (large states: 20–30 min) and are skipped by default. Pass `--with-individual-votes` to seed them upfront, or backfill later with `--individual-votes-only`. Use `--skip-votes` to skip roll calls entirely.
+> Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `--skip-fetch`/`skipFetch` — the seeder handles this for you; the free LegiScan tier is 30,000 calls/month.
 
-**Multi-state instances:** run the script once per state/session. Pass `--seed-dir` only for states central hasn't seen; for already-tracked states, `seed-session` (Path A) suffices.
+## Step 9: Link bills and queue AI (only if you skipped `--tenant`)
 
-> **LegiScan quota — 30,000 calls/month.** Never bulk-queue bills to the ingestor without `skipFetch: true`. The seeder uses `skipFetch` for keyword matches; safe bulk operations are `reprocess` (zero API calls) and `redownload-texts` (zero API calls).
-
----
-
-## Step 9: Link Bills to Tenant + Queue AI Processing (optional)
-
-Only needed if you ran Step 8 Path B **without** `--tenant`. This links the seeded bills to the tenant, queues keyword-matching bills through the ingestor (fetches text → stores in R2 → runs AI), and pushes non-keyword bills as monitor stubs:
+Only needed if you ran Path B **without** `--tenant`. This links the seeded bills to the team and queues the keyword matches for text download and AI:
 
 ```bash
 curl -X POST "https://<your-central>.workers.dev/api/tenants/seed-session/[slug]?sessionId=[sessionId]" \
   -H "x-admin-secret: <central ADMIN_SECRET>"
 ```
 
-For sessions with more than 500 bills, paginate: repeat with `&offset=500`, `&offset=1000`, etc. until the response contains `"done": true`.
+For more than 500 bills, page through it the same way as Path A (advance `&offset=` until `"done": true`).
 
----
+## Step 10: Set up the custom domain
 
-## Step 10: Configure Custom Domain
+The custom domain comes from the `routes` field in your config block (Step 3) — when you deploy, Cloudflare provisions the domain and its TLS certificate automatically. If your domain's DNS is managed in Cloudflare, there's nothing more to do. For an external domain, add a CNAME pointing the subdomain at `floorvote-[slug].<your-account>.workers.dev` and update `APP_URL` to match.
 
-The custom domain is declared in `api/wrangler.toml` via the `routes` field (Step 3). When you deploy, Cloudflare automatically provisions the custom domain and TLS certificate.
+## Step 11: Create the founding owner
 
-DNS: if your app domain is managed in Cloudflare DNS, no manual record is needed. If using an external domain (e.g. `bills.someorg.com`), add a CNAME pointing the subdomain to `floorvote-[slug].<your-account>.workers.dev`, and update `APP_URL` to match.
-
----
-
-## Step 11: Create the Founding Owner User
-
-The first user must be created with the `owner` role, **not** `admin`. Only an owner can grant the owner role to anyone else, so a tenant whose first user is a plain `admin` can never have an owner.
+There's no self-signup. Insert the first user directly, and make them an `owner`, **not** an `admin` — only an owner can grant the owner role, so a team whose first user is a plain admin can never have one:
 
 ```bash
 npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
   --command "INSERT INTO users (id, email, name, role) VALUES ('$(uuidgen)', 'owner@example.com', 'Owner Name', 'owner')"
 ```
 
-The user can then log in via magic link at the custom domain.
+They then log in with a magic link sent to that email address.
 
----
+## Step 12: Confirm the preset and configuration
 
-## Step 12: Confirm Preset and Configure via Admin UI
+Log in and go to **Settings → Configuration**. If you set `INSTANCE_PRESET` in Step 3 (recommended), the keywords, AI context, taxonomy, and relevance question are already in place. If not, apply a preset now — see [Presets](/self-hosting/presets).
 
-Once logged in, go to **Settings → Configuration**.
+You can also set these four fields directly in the database if you prefer. They live in the `association_config` table:
 
-If you set `INSTANCE_PRESET` in `api/wrangler.toml` (recommended), the worker auto-applies it the first time it registers, so keywords, AI context, taxonomy, and relevance question are already in place. If you didn't, apply a preset now from the dropdown; this seeds those fields, syncs keywords to central, and queues AI for any already-ingested bills missing summaries. See [Presets](#presets) below.
-
-Then review instance-specific copy:
-- **Org noun** (team / association / coalition / custom) — drives position-section and relevance labels.
-
-Use **Rerun AI on all bills** only if you want to regenerate already-processed summaries with different instructions.
-
----
-
-## Observability
-
-Each instance is a separate Worker in the Cloudflare dashboard. Health check:
+| Key | Example |
+|-----|---------|
+| `keywords` | `["election","voter","ballot","polling","absentee","referendum"]` |
+| `ai_context` | `"You are analyzing bills for an association of local election officials who administer elections at the county and municipal level."` |
+| `relevance_question` | `"Is this bill relevant to local election administration? Consider operational impact, funding, staffing, and legal authority."` |
+| `state_coverage` | `["NJ"]` — or `["*"]` for all states, `["*","US"]` for all states plus Congress |
+| `tag_taxonomy` | `["Voter Registration","Ballot Access","Election Funding","Poll Workers","Redistricting","Election Security"]` |
 
 ```bash
-curl https://[slug].[your-domain]/api/health
-# { "ok": true }
+wrangler d1 execute floorvote-[slug] --remote --env [slug] \
+  --command "INSERT INTO association_config (key, value) VALUES
+    ('keywords', '[\"election\",\"voter\",\"ballot\"]'),
+    ('ai_context', 'You are analyzing bills for an association of local election officials.'),
+    ('relevance_question', 'Is this bill relevant to local election administration?'),
+    ('state_coverage', '[\"NJ\"]')"
 ```
 
----
+While you're here, set the **org noun** (team / association / coalition / custom) — it drives the labels on the positions section. Use **Rerun AI on all bills** only if you want to regenerate existing summaries after changing your instructions.
 
-## Presets
+## When do bills start flowing in?
 
-Presets bundle the four AI and content settings (AI context, relevance question, tag taxonomy, and keywords) into named configurations for specific use cases. They make it fast to set up a new instance without configuring each field by hand.
+Registration stores the team's keywords and state coverage and provisions its queue, but doesn't itself queue any bills. Delivery is driven by the hourly **central cron**, and timing depends on whether central already tracks the state:
 
-### Available presets
+- **State already tracked by another team:** the next full-sync pass links this team's bills and queues the keyword matches. Full passes run three times a day, so within ~10 hours — no seeding required.
+- **Brand-new state, not seeded:** central discovers the session on its once-a-day pass, then bills flow — worst case ~24 hours.
+- **Want bills immediately:** run the seed in Step 8.
 
-| Slug | Name | Use case |
-|------|------|----------|
-| `generic` | Generic (Policy Organization) | Any policy org tracking legislation. Broad taxonomy (~15 policy areas), neutral framing, empty keyword list. |
-| `election_officials` | Election Officials | State associations of local election officials. Election-specific keywords, taxonomy, AI framing, and relevance question. |
-
-### Applying a preset
-
-**Via setup (`api/wrangler.toml`):** set `INSTANCE_PRESET = "election_officials"`. When present, the worker auto-applies that preset into `association_config` the first time it registers with central or serves config. This is the recommended path for new tenant setup, because bills will not run AI until a preset is configured.
-
-**Via the UI (Settings → Config):** open **Settings → Configuration**, select a preset in the **Preset** bar, and click **Apply**. This overwrites the current AI context, relevance question, tag taxonomy, and keywords with the preset values, records `instance_preset` (so "Reset to preset" knows what to restore), syncs keywords to central, and queues AI for existing bills still missing summaries.
-
-**Via the API:** `POST /api/admin/apply-preset/:slug` with an admin session cookie. Returns `{ ok: true, preset: "slug", queuedForAi: 0 }`.
-
-### "Reset to preset" buttons
-
-When an `instance_preset` is set, the **Reset to preset** button on each AI field restores that field to the preset's value. If no preset is active, the button reverts to the code-level generic default (or clears the field).
-
-### Keyword sync
-
-Keywords are synced to central when a preset is applied, when keywords are saved in the Config form (`PUT /api/admin/config`), or manually via `POST /api/admin/register-with-central`. Central uses the union of all tenant keywords to filter the legislative masterlist before queuing bills. If you clear all keywords, this tenant's bills will come only from the keyword union of other tenants — usually not what you want.
-
-### Adding a new preset
-
-Presets are defined in `api/src/lib/presets.ts`. Add an entry to the `PRESETS` record — no database migration is needed. They are served via `GET /api/admin/presets` and applied via `POST /api/admin/apply-preset/:slug`.
+Non-keyword bills arrive as lightweight monitor stubs; keyword and manually-added bills get full AI summaries.

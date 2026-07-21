@@ -15,3 +15,7 @@ Rule: relocate technical depth here — don't delete it.
 | `turnstile.md` | Turnstile and login rate-limiting internals. |
 | `style-tokens.md` | Style-token consolidation decisions. |
 | `dates.md` | Date and time storage and display convention. |
+| `domains-and-email.md` | `APP_DOMAINS` / `EMAIL_FROM` nuance (CORS, cookie scope, domain migration). |
+| `tenant-automation.md` | What can and can't be scripted when adding a tenant (agent-facing). |
+| `legiscan-notes.md` | LegiScan operational + licensing notes (quota, `skipFetch`, attribution). |
+| `rebranding.md` | Renaming resources via `RESOURCE_PREFIX` for forks. |

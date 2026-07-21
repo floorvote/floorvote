@@ -30,6 +30,16 @@ export default withMermaid(
           items: [
             { text: 'Self-hosting', link: '/self-hosting/' },
             { text: 'Adding tenants', link: '/self-hosting/tenants' },
+            { text: 'Presets', link: '/self-hosting/presets' },
+            {
+              text: 'Optional',
+              collapsed: false,
+              items: [
+                { text: 'Operating', link: '/self-hosting/operating' },
+                { text: 'Turnstile', link: '/self-hosting/turnstile' },
+                { text: 'Public demo site', link: '/self-hosting/demo' },
+              ],
+            },
           ],
         },
         {
