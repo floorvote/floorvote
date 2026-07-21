@@ -19,6 +19,18 @@ function renderWithConfig(operator: AppConfig['operator']) {
 describe('FeedbackModal', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('exposes the message field with an accessible name', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    render(<FeedbackModal onClose={() => {}} />, { container: root })
+    expect(screen.getByRole('textbox', { name: /message|feedback/i })).toBeTruthy()
+  })
+
+  it('renders inside a named dialog', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    render(<FeedbackModal onClose={() => {}} />, { container: root })
+    expect(screen.getByRole('dialog', { name: /feedback/i })).toBeTruthy()
+  })
+
   it('shows a mailto to all operator contacts (text = first) when the send fails', async () => {
     renderWithConfig({ name: '', url: '', contactEmails: ['a@x.org', 'b@y.org'] })
     fireEvent.change(screen.getByPlaceholderText("What's on your mind?"), { target: { value: 'hi' } })

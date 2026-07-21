@@ -51,7 +51,6 @@ export default [
       'src/components/BulkActionBar.tsx',
       'src/components/CommentContent.tsx',
       'src/components/CustomFieldsSection.tsx',
-      'src/components/FeedbackModal.tsx',
       'src/components/FilterSheet.tsx',
       'src/components/GroupedBillCard.tsx',
       'src/components/NotificationsSlideOver.tsx',
