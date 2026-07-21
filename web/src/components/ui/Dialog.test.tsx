@@ -44,7 +44,10 @@ describe('Dialog', () => {
   })
 
   it('has no axe violations when given an accessible name', async () => {
-    const { root } = mount()
-    expect(await axe(root)).toHaveNoViolations()
+    // Dialog portals to document.body, so the rendered tree is under the
+    // backdrop node, not `root` (which stays empty). Scan the actual subtree —
+    // otherwise the assertion is vacuous and would pass even for a broken dialog.
+    mount()
+    expect(await axe(screen.getByTestId('dialog-backdrop'))).toHaveNoViolations()
   })
 })
