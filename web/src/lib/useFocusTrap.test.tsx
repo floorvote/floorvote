@@ -19,6 +19,28 @@ function Harness({ active, onEscape }: { active: boolean; onEscape?: () => void 
   )
 }
 
+function NestedHarness({ outerActive, innerActive }: { outerActive: boolean; innerActive: boolean }) {
+  const outerRef = useRef<HTMLDivElement>(null)
+  const innerRef = useRef<HTMLDivElement>(null)
+  useFocusTrap({ active: outerActive, containerRef: outerRef, initialFocus: 'first' })
+  useFocusTrap({ active: innerActive, containerRef: innerRef, initialFocus: 'first' })
+  return (
+    <div>
+      <button>outside</button>
+      {outerActive && (
+        <div ref={outerRef} data-testid="outer">
+          <button>outer button</button>
+          {innerActive && (
+            <div ref={innerRef} data-testid="inner">
+              <button>inner button</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 describe('useFocusTrap', () => {
   it('moves focus to the first focusable inside the container when activated', () => {
     const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
@@ -57,5 +79,21 @@ describe('useFocusTrap', () => {
     rerender(<Harness active={false} />)
     expect(document.activeElement).toBe(trigger)
     trigger.remove(); root.remove()
+  })
+
+  it('ref-counts nested traps: #root stays inert until the last (outer) trap deactivates', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    const { rerender } = render(<NestedHarness outerActive innerActive />, { container: root })
+    expect(root.hasAttribute('inert')).toBe(true)
+
+    // deactivate the inner trap only — outer trap is still active, #root must stay inert
+    rerender(<NestedHarness outerActive innerActive={false} />)
+    expect(root.hasAttribute('inert')).toBe(true)
+
+    // deactivate the outer trap too — now #root should be released
+    rerender(<NestedHarness outerActive={false} innerActive={false} />)
+    expect(root.hasAttribute('inert')).toBe(false)
+
+    root.remove()
   })
 })
