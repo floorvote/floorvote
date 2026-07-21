@@ -11,8 +11,10 @@ Set up two accounts before you start:
 - **Cloudflare** — where FloorVote runs. You'll need the [**Workers Paid**](https://www.cloudflare.com/plans/developer-platform/) plan ($5/month), which is required for Queues (how bill updates move from central out to your teams).
 - **LegiScan** — where the bill data comes from. Register for a LegiScan account [here](https://legiscan.com/user/register), confirm it, then generate a free API key [here](https://legiscan.com/legiscan). The free tier — **30,000 API calls per month** — is enough for a national deployment.
 
+> [!IMPORTANT]
 > LegiScan provides the bill data through their API but is not involved with FloorVote. If you sign up for LegiScan, please don't contact them for help with FloorVote.
 
+> [!NOTE]
 > FloorVote also contains some code for interfacing with the [OpenStates API](https://v3.openstates.org/) as an alternative to LegiScan, but this code path is not actively maintained and lacks features present in the LegiScan path.
 
 ## Cloudflare API tokens
@@ -22,6 +24,7 @@ You'll use two kinds of Cloudflare API token. Knowing the difference up front ma
 - **One broad *deploy* token**, kept on your own machine. This is what `wrangler` (Cloudflare's command-line tool, used throughout this guide) uses to create resources and deploy workers. It lives in your shell as `CLOUDFLARE_API_TOKEN`.
 - **A few narrow *runtime* tokens**, which the deployed worker itself uses for the handful of Cloudflare APIs it calls — for example, delivering bills to each team's queue. Each is stored as a worker secret, scoped to only what it needs. You create these at the steps that use them (the first is `CF_QUEUES_TOKEN`, below).
 
+> [!WARNING]
 > **Save each token as you create it.** Cloudflare shows a token's value only once. Paste each one into a password manager or a secure note the moment you create it — that's your record of your deploy token and each runtime token.
 
 ### Create the deploy token
@@ -86,7 +89,8 @@ name = "floorvote-central-legiscan"
 main = "src/index-legiscan.ts"
 
 [env.legiscan.vars]
-OPERATOR_NAME = "Your Organization Name"   # optional — shown as a credit in each team's footer
+# optional — shown as a credit in each team's footer
+OPERATOR_NAME = "Your Organization Name"
 BILL_PROVIDER = "legiscan"
 
 [[env.legiscan.d1_databases]]
@@ -114,6 +118,7 @@ crons = ["0 * * * *"]
 
 See `central/wrangler.example.toml` for the complete template, including optional bindings.
 
+> [!TIP]
 > To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` and rebuild. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
 
 ### 3. Set central secrets
@@ -122,7 +127,9 @@ From inside `central/`:
 
 ```bash
 wrangler secret put LEGISCAN_API_KEY --env legiscan
-wrangler secret put ADMIN_SECRET --env legiscan         # a strong random string that guards admin endpoints
+
+# A strong random string that guards admin endpoints
+wrangler secret put ADMIN_SECRET --env legiscan
 ```
 
 Generate a strong `ADMIN_SECRET` with:
@@ -141,6 +148,7 @@ wrangler secret put CF_QUEUES_TOKEN --env legiscan
 
 Also set `CF_ACCOUNT_ID` in `[env.legiscan.vars]` (it's not a secret — get it from `wrangler whoami`). Without both, a team can register cleanly yet never receive a single bill, with no error. You can reuse your broad token from above, or create a narrow Queues: Edit token at **My Profile → API Tokens → Create Custom Token**.
 
+> [!TIP]
 > Central also offers an optional superadmin dashboard and observability panels. They're not needed to get running — see [Operating your deployment](/self-hosting/operating).
 
 ### 4. Run migrations and deploy
@@ -184,6 +192,7 @@ npx tsx scripts/seed-legiscan.ts \
 
 This loads the bills into central only. Linking them to a team and running AI summaries happens when you [add the tenant](/self-hosting/tenants#step-8-seed-the-active-session-s).
 
+> [!CAUTION]
 > **Speed:** about 1,000 bills per minute against the remote database, so a typical state session (500–3,000 bills) takes 1–5 minutes. There's a `--from-api` option that downloads the dataset for you, but it can run out of memory on very large states (16,000+ bills) — use the manual download with `--from-dir` for those.
 
 ## Next steps
@@ -192,4 +201,5 @@ This loads the bills into central only. Linking them to a team and running AI su
 - **[Operating your deployment](/self-hosting/operating)** — optional central features (superadmin dashboard, observability) and day-2 tasks (adding states, upgrading, monitoring).
 - **[Turnstile](/self-hosting/turnstile)** and **[Public demo site](/self-hosting/demo)** — optional add-ons.
 
-> **Using LegiScan data:** the free tier is 30,000 API calls per month. Bill data is licensed CC BY 4.0, so any UI that displays it must include "Data provided by LegiScan" attribution (FloorVote does this by default). Deeper LegiScan operational notes are in `docs/internal/legiscan-notes.md` in the repository.
+> [!IMPORTANT]
+> **Using LegiScan data:** the free tier is 30,000 API calls per month. Bill data is licensed CC BY 4.0, so any UI that displays it must include "Data provided by LegiScan" attribution (FloorVote does this by default). Deeper LegiScan operational notes are in [`docs/internal/legiscan-notes.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/legiscan-notes.md) in the repository.

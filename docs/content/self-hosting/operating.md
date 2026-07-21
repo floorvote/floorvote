@@ -7,9 +7,14 @@ Once your central service and at least one tenant are running, this page covers 
 The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, set these secrets on central (run from inside `central/`):
 
 ```bash
-wrangler secret put RESEND_API_KEY --env legiscan              # magic-link email for the dashboard
-wrangler secret put SUPERADMIN_JWT_PRIVATE_KEY --env legiscan  # ES256 private JWK (JSON string); central is the sole issuer
-wrangler secret put SUPERADMIN_EMAILS --env legiscan           # comma-separated list of superadmin email addresses
+# Magic-link email for the dashboard
+wrangler secret put RESEND_API_KEY --env legiscan
+
+# ES256 private JWK (JSON string); central is the sole issuer
+wrangler secret put SUPERADMIN_JWT_PRIVATE_KEY --env legiscan
+
+# Comma-separated list of superadmin email addresses
+wrangler secret put SUPERADMIN_EMAILS --env legiscan
 ```
 
 Generate an ES256 keypair with any JWK tool. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
@@ -24,8 +29,11 @@ These power the operations dashboards and the Members "Login activity" panel. Ea
 - **Login Activity delivery status** — a zone-level lookup, so it needs **Zone → Analytics: Read** on your app's zone, plus the zone's ID in the `CF_FLOORVOTE_ZONE_ID` **var** (also in `[env.legiscan.vars]` — this is the zone ID from your domain's Overview page in the Cloudflare dashboard, not the account ID). Skip this if you don't need delivery-status detail; the token still works for D1 anomaly watch with just the account permission.
 
 ```bash
-wrangler secret put CF_ANALYTICS_TOKEN --env legiscan  # Cloudflare API token: Account "D1: Read" + Zone "Analytics: Read"
-wrangler secret put CF_EMAIL_TOKEN --env legiscan      # Cloudflare API token, scoped: Email Sending: Read
+# Cloudflare API token: Account "D1: Read" + Zone "Analytics: Read"
+wrangler secret put CF_ANALYTICS_TOKEN --env legiscan
+
+# Cloudflare API token, scoped: Email Sending: Read
+wrangler secret put CF_EMAIL_TOKEN --env legiscan
 ```
 
 ## Adding a new state to an existing tenant
@@ -43,7 +51,9 @@ Pull the latest code and redeploy. Always use the deploy scripts so migrations a
 ```bash
 git pull origin main
 cd central && npm install && npm run deploy:legiscan
-cd ../api && npm run deploy:tenant -- org-nj   # repeat for each tenant
+
+# Repeat for each tenant
+cd ../api && npm run deploy:tenant -- org-nj
 ```
 
 ## Monitoring

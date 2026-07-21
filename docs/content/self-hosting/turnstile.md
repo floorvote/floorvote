@@ -20,9 +20,12 @@ Turnstile protects the unauthenticated login requests (`POST /api/auth/magic-lin
 
 # 3. Set the secret on each worker (tenants from api/, dashboard from central/):
 wrangler secret put TURNSTILE_SECRET_KEY --env org-nj
-wrangler secret put TURNSTILE_SECRET_KEY --env legiscan   # dashboard
+
+# dashboard
+wrangler secret put TURNSTILE_SECRET_KEY --env legiscan
 ```
 
+> [!WARNING]
 > **Order matters.** Because the check fails closed once the secret is set, setting the secret *before* the login form is sending a token will 403 every login. Deploy the sitekey-bearing frontend **first**, then set the secret.
 
 To turn Turnstile off later, delete the secret — the check reverts to "skipped" instantly, no redeploy needed:
@@ -31,4 +34,4 @@ To turn Turnstile off later, delete the secret — the check reverts to "skipped
 wrangler secret delete TURNSTILE_SECRET_KEY --env org-nj
 ```
 
-The full maintainer reference lives in `docs/internal/turnstile.md` in the repository.
+The full maintainer reference lives in [`docs/internal/turnstile.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/turnstile.md) in the repository.

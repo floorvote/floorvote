@@ -3,7 +3,7 @@
 FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to LegiScan, stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls LegiScan directly. That way your legislative-API usage stays on a single account no matter how many tenants you run.
 
 ```mermaid
-flowchart LR
+flowchart TB
     LS[(LegiScan API)]
     subgraph CENTRAL [Central Worker]
         Cron[Cron<br/>0 * * * *]
@@ -37,7 +37,7 @@ flowchart LR
     Admin -.->|"reingest-bill,<br/>reingest-tenant, etc."| IQ
 ```
 
-For the full, code-grounded pipeline — the cron passes, the ingestor, deduplication, and queue boundaries — see `docs/internal/sync-pipeline.md` in the repository.
+For the full, code-grounded pipeline — the cron passes, the ingestor, deduplication, and queue boundaries — see [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md) in the repository.
 
 ## Why it's built this way
 

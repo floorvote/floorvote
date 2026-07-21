@@ -39,3 +39,7 @@ graphify-out/20*/
 # `git add -f` at launch. Only the *.example.md placeholders ship.
 docs/legal/*.md
 !docs/legal/*.example.md
+
+# Editor / tool workspaces under docs (local only)
+docs/.obsidian/
+docs/.claudian/

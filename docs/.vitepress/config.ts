@@ -18,7 +18,7 @@ export default withMermaid(
       logoLink: 'https://floorvote.org/',
       sidebar: [
         {
-          text: 'Should I use FloorVote?',
+          text: 'Is FloorVote for me?',
           items: [
             { text: 'What can it do?', link: '/overview/what-can-it-do' },
             { text: 'How much does it cost?', link: '/overview/how-much-does-it-cost' },

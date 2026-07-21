@@ -4,6 +4,7 @@ A tenant is one team's instance: a single Cloudflare Worker + D1 database + queu
 
 Throughout, replace `[slug]` with a lowercase identifier for the team (e.g. `org-nj`) and `[STATE]` with its two-letter abbreviation.
 
+> [!TIP]
 > **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database and queue, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user. Use `--from-step N` to resume after a failure. The manual steps below are the reference, and worth reading once before your first run.
 
 ## Cloudflare credentials
@@ -14,9 +15,10 @@ Adding a tenant reuses the account-level credentials you set up once and then re
 - **AI Gateway** — AI runs on the tenant side, routed through a Cloudflare AI Gateway for keyless, unified billing. Create one gateway once and every tenant shares it: in the dashboard, **AI → AI Gateway → Create Gateway**, name it (e.g. `floorvote`), and put the slug in each tenant's `CF_AIG_GATEWAY` var.
 - **AI Gateway token (`CF_AIG_TOKEN`)** — in your gateway's **Settings**, **Create authentication token** (it gets the "Run" permission — copy it now, it's shown once) and toggle **Authenticated Gateway** on. This is the one secret you set on every tenant, with the same value each time.
 
+> [!NOTE]
 > The AI Gateway token is account-scoped — any "AI Gateway Run" token can send requests through every gateway on the account. That's fine here because all tenants intentionally share one gateway.
 
-> For which pieces can be scripted versus created by hand in the dashboard, see `docs/internal/tenant-automation.md` in the repository.
+For which pieces can be scripted versus created by hand in the dashboard, see [`docs/internal/tenant-automation.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/tenant-automation.md) in the repository.
 
 ## Prerequisites
 
@@ -51,11 +53,22 @@ routes = [{ pattern = "[slug].[your-domain]", custom_domain = true }]
 [env.[slug].vars]
 APP_URL = "https://[slug].[your-domain]"
 ASSOCIATION_NAME = "[Full Organization Name]"
-OPERATOR_NAME = "Your Operator Name"            # optional — footer credit
-OPERATOR_URL = "https://example.org"            # optional — footer link
-OPERATOR_CONTACT_EMAILS = "support@example.org" # optional — feedback recipient(s)
-INSTANCE_PRESET = "election_officials"           # applied automatically on first register
-STATE = "[STATE]"                                # e.g. "NJ"; leave "" for a multi-state team
+
+# optional — footer credit
+OPERATOR_NAME = "Your Operator Name"
+
+# optional — footer link
+OPERATOR_URL = "https://example.org"
+
+# optional — feedback recipient(s)
+OPERATOR_CONTACT_EMAILS = "support@example.org"
+
+# applied automatically on first register
+INSTANCE_PRESET = "election_officials"
+
+# e.g. "NJ"; leave "" for a multi-state team
+STATE = "[STATE]"
+
 TENANT_ID = "[slug]"
 PROVIDER = "legiscan"
 CENTRAL_API_URL = "https://<your-central>.workers.dev"
@@ -63,11 +76,21 @@ AI_GATEWAY_ENABLED = "true"
 CF_ACCOUNT_ID = "<your-account-id>"
 CF_AIG_GATEWAY = "<your-gateway-slug>"
 EMAIL_PROVIDER = "cloudflare"
-ALERT_EMAILS = "ops@example.org"                 # who gets cron-failure alerts
-APP_DOMAINS = "[your-domain]"                    # the domain this team is served on
-EMAIL_FROM = "notifications@[your-domain]"        # sender address (domain must be verified to send)
-SUPERADMIN_JWT_PUBLIC_KEY = '<your-ES256-public-JWK>'  # copy verbatim from any existing tenant block
-TURNSTILE_SITE_KEY = "<your-turnstile-site-key>"  # optional; see the Turnstile page
+
+# who gets cron-failure alerts
+ALERT_EMAILS = "ops@example.org"
+
+# the domain this team is served on
+APP_DOMAINS = "[your-domain]"
+
+# sender address (domain must be verified to send)
+EMAIL_FROM = "notifications@[your-domain]"
+
+# copy verbatim from any existing tenant block
+SUPERADMIN_JWT_PUBLIC_KEY = '<your-ES256-public-JWK>'
+
+# optional; see the Turnstile page
+TURNSTILE_SITE_KEY = "<your-turnstile-site-key>"
 
 [[env.[slug].d1_databases]]
 binding = "DB"
@@ -104,13 +127,16 @@ entrypoint = "TenantApi"
 name = "EMAIL"
 
 [env.[slug].triggers]
-crons = ["0 11 * * *"]   # daily — sends digest and week-ahead emails
+# daily — sends digest and week-ahead emails
+crons = ["0 11 * * *"]
 ```
 
 The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound tenant-to-central calls authenticate by *arrival* (that named entrypoint is only reachable over same-account bindings), so the tenant carries no shared secret.
 
+> [!NOTE]
 > **Multi-state team:** set `STATE = ""` and store the state list in the database instead (Step 5b). `APP_DOMAINS` is normally one domain; list two only while migrating domains, then drop back to one.
 
+> [!NOTE]
 > **Queue delivery needs no central change.** As long as `CF_QUEUES_TOKEN` is set on central, central finds this tenant's queue at registration and delivers to it. (A static `TENANT_QUEUE_` producer binding on central is only worth adding for a very high-volume tenant; most never need it.)
 
 Commit `api/wrangler.toml` before deploying.
@@ -123,6 +149,7 @@ From `api/`. **Only `CF_AIG_TOKEN` is required** — paste the same value you us
 npx wrangler secret put CF_AIG_TOKEN --env [slug]
 ```
 
+> [!TIP]
 > **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
 ## Step 5: Run migrations
@@ -133,6 +160,7 @@ From `api/`:
 npx wrangler d1 migrations apply floorvote-[slug] --remote --env [slug]
 ```
 
+> [!WARNING]
 > Always use `migrations apply`, never `d1 execute` with raw SQL files — `apply` tracks which migrations have run.
 
 ## Step 5b: Seed the state list (multi-state teams only)
@@ -183,13 +211,15 @@ curl -X POST https://<your-central>.workers.dev/api/tenants/[slug]/force-registe
 (The tenant also self-registers on its daily cron and whenever you save config in the app — `force-register` just does it right now.) Verify:
 
 ```bash
-curl https://[slug].[your-domain]/api/health   # { "ok": true }
+# Expected response: { "ok": true }
+curl https://[slug].[your-domain]/api/health
 ```
 
 ## Step 8: Seed the active session(s)
 
 Seeding loads a whole legislative session into the team at once — bills matching its keywords get full AI summaries, and the rest come in as lightweight "monitor" stubs (no AI cost). This means the team mirrors the full session from day one.
 
+> [!TIP]
 > **Set your keywords first if you can.** Seeding is where central decides which bills get full AI versus a stub, using the keywords already synced to central. If you plan to change the preset's keywords or AI context, do it now (Settings → Configuration) and let it sync **first**, so the initial AI pass uses your final settings. Changing them later works too, but then you'd "Rerun AI on all bills" to regenerate.
 
 There are two paths, depending on whether central already has the state's bills.
@@ -221,6 +251,7 @@ done
 
 This makes no LegiScan API calls, and takes a few minutes for a large state (~10,000 bills).
 
+> [!NOTE]
 > **"Active" includes a session that has already adjourned.** Seed the most recent regular (and any special) session — a legislature that has gone `sine_die` for the cycle is still exactly what a new team wants to monitor. Find the `session_id`(s) in central's `sessions` table.
 
 ### Path B: brand-new state (central has no bills yet)
@@ -238,6 +269,7 @@ npx tsx scripts/seed-legiscan.ts \
 
 The `--tenant` flag links the bills and updates the team's `state_coverage` — no separate `seed-session` call needed.
 
+> [!WARNING]
 > Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `--skip-fetch`/`skipFetch` — the seeder handles this for you; the free LegiScan tier is 30,000 calls/month.
 
 ## Step 9: Link bills and queue AI (only if you skipped `--tenant`)

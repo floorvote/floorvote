@@ -6,7 +6,7 @@
 
 Each tenant exposes a public, unauthenticated iCalendar feed at:
 
-```
+```http
 GET /api/calendar/feed/:slugIcs
 ```
 

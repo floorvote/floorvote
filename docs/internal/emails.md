@@ -45,8 +45,11 @@ api/src/lib/sampleEmails.ts   renderSampleEmail() registry + sendSampleEmail()  
 ## Previewing
 
 ```bash
-npx tsx scripts/render-digest-sample.ts       # → docs/digest-email-sample.html
-npx tsx scripts/render-week-ahead-sample.ts   # → docs/week-ahead-email-sample.html
+# → docs/digest-email-sample.html
+npx tsx scripts/render-digest-sample.ts
+
+# → docs/week-ahead-email-sample.html
+npx tsx scripts/render-week-ahead-sample.ts
 ```
 
 Both call `renderSampleEmail`, so the committed previews, the QA send path, and the
