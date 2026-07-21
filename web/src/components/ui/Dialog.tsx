@@ -23,6 +23,7 @@ export function Dialog({
   return createPortal(
     <div
       data-testid="dialog-backdrop"
+      role="presentation"
       onClick={(e) => { if (dismissOnBackdrop && e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)',
                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}

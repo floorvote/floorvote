@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Dialog } from './Dialog'
+import { axe } from '../../test/axe'
 
 function mount(extra?: Partial<React.ComponentProps<typeof Dialog>>) {
   const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
@@ -40,5 +41,10 @@ describe('Dialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('dialog'))
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('has no axe violations when given an accessible name', async () => {
+    const { root } = mount()
+    expect(await axe(root)).toHaveNoViolations()
   })
 })
