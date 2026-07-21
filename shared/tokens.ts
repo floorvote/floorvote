@@ -49,6 +49,10 @@ export const color = {
   voteSupport:       '#22c55e', // support vote bar / cast-pill fill
   partyDemBlue:      '#1d4ed8', // Democrat party badge
   billBadgeNavy:     '#1e3a5f', // bill number badge background
+  // Keyboard focus ring. Navy on light surfaces; the sidebar overrides
+  // --fv-focus-ring to white. Distinct from accentBlue (chip "selected") and
+  // accentBlueMuted (chip hover) so a focused chip never reads as selected.
+  focusRing:         '#1e3a5f',
   filterBadgeNavy:   '#1e40af', // active-filter count badge background
   roleChipBlue:      '#0369a1', // role chip text
   roleChipXBlue:     '#7dd3fc', // role chip dismiss button
