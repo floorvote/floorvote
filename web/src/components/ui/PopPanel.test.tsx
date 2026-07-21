@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useRef, createRef } from 'react'
+import { useRef, useState, createRef } from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PopPanel, type PopPanelHandle } from './PopPanel'
 
@@ -18,6 +18,7 @@ function Harness({ onClose }: { onClose: () => void }) {
     </div>
   )
 }
+
 
 describe('PopPanel', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -120,6 +121,68 @@ describe('PopPanel cornerRadius', () => {
     )
     const dlg = document.querySelector('[role="dialog"]') as HTMLElement
     expect(dlg.style.borderRadius).toBe('12px')
+  })
+})
+
+describe('PopPanel focus trap', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('inerts #root while open and clears it on close', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    const { unmount } = render(
+      <PopPanel onClose={() => {}} positionStyle={{}} transformOrigin="top left" ariaLabel="Menu">
+        <button>item</button>
+      </PopPanel>, { container: root })
+    expect(root.hasAttribute('inert')).toBe(true)
+    unmount()
+    expect(root.hasAttribute('inert')).toBe(false)
+    root.remove()
+  })
+
+  it('moves focus into the panel on open and restores it to the trigger on close', () => {
+    const onClose = vi.fn()
+    function Wrapper() {
+      const [open, setOpen] = useState(false)
+      const triggerRef = useRef<HTMLButtonElement>(null)
+      return (
+        <div>
+          <button ref={triggerRef} onClick={() => setOpen(true)}>trigger</button>
+          {open && (
+            <PopPanel
+              onClose={() => { onClose(); setOpen(false) }}
+              positionStyle={{ position: 'fixed', top: 10, left: 10 }}
+              transformOrigin="top left"
+              triggerRef={triggerRef}
+              ariaLabel="Test panel"
+            >
+              <div>panel body</div>
+              <button>inside</button>
+            </PopPanel>
+          )}
+        </div>
+      )
+    }
+    render(<Wrapper />)
+    const trigger = screen.getByText('trigger')
+    trigger.focus()
+    fireEvent.click(trigger) // mounts PopPanel; trigger is still focused at this instant
+    act(() => { vi.advanceTimersByTime(20) })
+    expect(screen.getByText('inside')).toHaveFocus()
+    fireEvent.keyDown(window, { key: 'Escape' }) // PopPanel's own Escape handler, not useFocusTrap's
+    act(() => { vi.advanceTimersByTime(300) }) // exit animation completes -> onClose -> unmount
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(trigger).toHaveFocus()
+  })
+
+  it('focuses the panel container itself when it has no focusable content', () => {
+    render(
+      <PopPanel onClose={vi.fn()} positionStyle={{}} transformOrigin="top left" ariaLabel="Empty panel">
+        <div>no focusable content</div>
+      </PopPanel>,
+    )
+    const dlg = screen.getByRole('dialog', { name: 'Empty panel' })
+    expect(dlg).toHaveFocus()
   })
 })
 
