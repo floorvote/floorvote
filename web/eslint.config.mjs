@@ -60,9 +60,6 @@ export default [
       'src/components/calendar/SubscribeCalendar.tsx',
       'src/components/sidebar/MembersPopup.tsx',
       'src/pages/BillList/BillRow.tsx',
-      'src/pages/admin/Config.tsx',
-      'src/pages/admin/DraftBills.tsx',
-      'src/pages/admin/Notifications.tsx',
     ],
     rules: {
       'jsx-a11y/click-events-have-key-events': 'off',

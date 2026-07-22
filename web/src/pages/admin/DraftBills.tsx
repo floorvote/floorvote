@@ -70,7 +70,7 @@ export function DraftBills() {
 
       {/* Draft bills */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>Draft bills</div>
+        <h1 style={sectionTitle}>Draft bills</h1>
         <div style={sectionIntro}>
           Create draft bills to track legislation before it is officially filed. Once a bill is filed, you can link it to the draft to merge all engagement (votes, positions, comments, notes) onto the filed bill.
         </div>
@@ -86,18 +86,21 @@ export function DraftBills() {
         {showDraftForm && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={labelStyle}>Title <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span></label>
+              <label htmlFor="draft-title" style={labelStyle}>Title <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span></label>
               <input
+                id="draft-title"
                 value={draftTitle}
                 onChange={e => setDraftTitle(e.target.value)}
                 placeholder="Bill title…"
                 style={inputStyle}
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- intentional: this field appears only after the user clicks "Add draft bill", so moving focus into the newly-revealed form (rather than leaving it on the trigger button) matches WAI-ARIA guidance for on-demand-revealed forms.
                 autoFocus
               />
             </div>
             <div>
-              <label style={labelStyle}>Sponsor(s)</label>
+              <label htmlFor="draft-sponsor" style={labelStyle}>Sponsor(s)</label>
               <input
+                id="draft-sponsor"
                 value={draftSponsor}
                 onChange={e => setDraftSponsor(e.target.value)}
                 placeholder="Sponsor name…"
@@ -105,6 +108,7 @@ export function DraftBills() {
               />
             </div>
             <div>
+              {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- RichTextEditor is a Tiptap wrapper with no id/aria-labelledby prop to associate with; giving it one is a component-API change out of scope here. */}
               <label style={labelStyle}>Summary</label>
               <RichTextEditor
                 onChange={html => setDraftSummary(html)}
@@ -115,6 +119,7 @@ export function DraftBills() {
               />
             </div>
             <div>
+              {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- RichTextEditor is a Tiptap wrapper with no id/aria-labelledby prop to associate with; giving it one is a component-API change out of scope here. */}
               <label style={labelStyle}>Bill text</label>
               <RichTextEditor
                 onChange={html => setDraftText(html)}

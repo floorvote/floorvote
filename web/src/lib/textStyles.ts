@@ -15,10 +15,15 @@ export const CHROME_TEXT: React.CSSProperties = {
 }
 
 // Title for a settings/account card section (e.g. "Profile", "Invite a new member").
+// marginTop is pinned to 0 (not just marginBottom) because several call sites now
+// render this on <h1>/<h2> elements (Task 17) rather than <div>s — without it, the
+// UA stylesheet's default heading margin-block would add unwanted top spacing that
+// a plain <div> never had.
 export const CARD_TITLE: React.CSSProperties = {
   fontSize: fontSize.lg,
   fontWeight: fontWeight.bold,
   color: color.textPrimary,
+  marginTop: 0,
   marginBottom: 6,
 }
 

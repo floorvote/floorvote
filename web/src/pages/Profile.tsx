@@ -280,7 +280,7 @@ export function Profile() {
 
       {/* Profile card */}
       <div style={SECTION_CARD}>
-        <div style={CARD_TITLE}>Profile</div>
+        <h1 style={CARD_TITLE}>Profile</h1>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
           <div>
             <label style={FORM_LABEL} htmlFor="name-input">Name</label>
@@ -365,7 +365,7 @@ export function Profile() {
 
       {/* Preferences card */}
       <div style={SECTION_CARD}>
-        <div style={CARD_TITLE}>Preferences</div>
+        <h2 style={CARD_TITLE}>Preferences</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div
             id="setting-email-digest"
@@ -501,7 +501,7 @@ export function Profile() {
 
       {/* Account card */}
       <div style={SECTION_CARD}>
-        <div style={CARD_TITLE}>Account</div>
+        <h2 style={CARD_TITLE}>Account</h2>
 
         {/* Login activity */}
         <div style={actionRowStyleFirst}>
