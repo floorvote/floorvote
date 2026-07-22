@@ -12,17 +12,18 @@ interface Options {
   onEscape?: () => void
   initialFocus?: 'first' | 'container' | React.RefObject<HTMLElement | null>
   /**
-   * Inert a specific element instead of the default `#root`. Dialogs/PopPanels
-   * portal to `document.body` (siblings of `#root`), so inerting `#root` is
-   * safe for them. But some trapped containers (e.g. the mobile nav drawer)
-   * render IN-TREE inside `#root` — inerting `#root` would inert the drawer
-   * itself, making it unfocusable. Pass the sibling content to inert instead
-   * (e.g. the `<main>` behind the drawer). Single-owner: not ref-counted like
-   * the `#root` default, since exactly one active trap is expected to target
-   * a given element at a time; guarded so cleanup only clears attributes this
-   * activation actually set.
+   * Inert a specific element (or set of elements) instead of the default
+   * `#root`. Dialogs/PopPanels portal to `document.body` (siblings of
+   * `#root`), so inerting `#root` is safe for them. But some trapped
+   * containers (e.g. the mobile nav drawer) render IN-TREE inside `#root` —
+   * inerting `#root` would inert the drawer itself, making it unfocusable.
+   * Pass the sibling content to inert instead (e.g. the `<main>` behind the
+   * drawer, plus any other siblings that must be covered — an array inerts
+   * all of them). Single-owner: not ref-counted like the `#root` default,
+   * since exactly one active trap is expected to target a given element at a
+   * time.
    */
-  inertTarget?: React.RefObject<HTMLElement | null>
+  inertTarget?: React.RefObject<HTMLElement | null> | React.RefObject<HTMLElement | null>[]
 }
 
 export function useFocusTrap({ active, containerRef, onEscape, initialFocus = 'first', inertTarget }: Options): void {
@@ -36,7 +37,10 @@ export function useFocusTrap({ active, containerRef, onEscape, initialFocus = 'f
     // existing ref-counted #root behavior (Dialog/PopPanel) is otherwise
     // untouched.
     const root = inertTarget ? null : (typeof document !== 'undefined' ? document.getElementById('root') : null)
-    const inertTargetEl = inertTarget ? inertTarget.current : null
+    const inertTargetRefs = inertTarget ? (Array.isArray(inertTarget) ? inertTarget : [inertTarget]) : []
+    const inertTargetEls = inertTargetRefs
+      .map((ref) => ref.current)
+      .filter((el): el is HTMLElement => el != null)
     restoreRef.current = (document.activeElement as HTMLElement) ?? null
 
     // Move focus in.
@@ -50,15 +54,16 @@ export function useFocusTrap({ active, containerRef, onEscape, initialFocus = 'f
     }
 
     // Inert the rest of the app (dialogs portal to body, siblings of #root) —
-    // or, when inertTarget is given, inert that element instead.
-    let clearedInertTarget = false
+    // or, when inertTarget is given, inert that element (or elements) instead.
     if (root) {
       inertCount++
       root.setAttribute('inert', '')
       root.setAttribute('aria-hidden', 'true')
-    } else if (inertTargetEl) {
-      inertTargetEl.setAttribute('inert', '')
-      inertTargetEl.setAttribute('aria-hidden', 'true')
+    } else {
+      for (const el of inertTargetEls) {
+        el.setAttribute('inert', '')
+        el.setAttribute('aria-hidden', 'true')
+      }
     }
 
     function onKey(e: KeyboardEvent) {
@@ -74,10 +79,11 @@ export function useFocusTrap({ active, containerRef, onEscape, initialFocus = 'f
           root.removeAttribute('inert')
           root.removeAttribute('aria-hidden')
         }
-      } else if (inertTargetEl && !clearedInertTarget) {
-        clearedInertTarget = true
-        inertTargetEl.removeAttribute('inert')
-        inertTargetEl.removeAttribute('aria-hidden')
+      } else {
+        for (const el of inertTargetEls) {
+          el.removeAttribute('inert')
+          el.removeAttribute('aria-hidden')
+        }
       }
       // Only restore focus if it hasn't already moved to some other element
       // outside this (now-unmounting) container. Without this guard, when

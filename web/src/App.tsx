@@ -70,19 +70,25 @@ function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
   const mainRef = useRef<HTMLElement>(null)
+  // Covers everything above the inner flex row (skip-link, nav progress bar,
+  // mobile hamburger, demo banner) — see the wrapping div below.
+  const topRef = useRef<HTMLDivElement>(null)
   useNavPendingCursor()
   // Trap focus in the mobile drawer while it's open (sidebarOpen is only ever
   // toggled true on mobile — the desktop sidebar is always visible, so this is
   // a no-op there and the desktop sidebar stays fully tabbable). The drawer
   // renders in-tree inside #root (unlike Dialog/PopPanel, which portal to
   // document.body), so inerting the default #root would inert the drawer
-  // itself; inertTarget instead inerts the main content behind it.
+  // itself; inertTarget instead inerts the content around it — both the
+  // column-top region (topRef) and <main> (mainRef) — which are siblings of
+  // the drawer, not ancestors, so inerting them leaves the drawer (and its
+  // dismiss overlay) interactive.
   useFocusTrap({
     active: sidebarOpen,
     containerRef: sidebarRef,
     onEscape: () => setSidebarOpen(false),
     initialFocus: 'first',
-    inertTarget: mainRef,
+    inertTarget: [topRef, mainRef],
   })
   return (
     <UnsavedTextProvider>
@@ -96,13 +102,19 @@ function AppLayout() {
                   the dynamic URL bar) and the document itself never scrolls —
                   keeping the top bar pinned and every page starting at the top. */}
               <div className="app-layout" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: color.surfaceMuted }}>
-                <a className="skip-link" href="#main-content">Skip to main content</a>
-                <NavProgressBar />
-                {/* MobileTopBar lives in the column flow (hidden on desktop via
-                    `.mobile-topbar { display:none }`) so it sits above the demo
-                    banner rather than overlaying it as a fixed/absolute element. */}
-                <MobileTopBar onHamburgerClick={() => setSidebarOpen(true)} />
-                <DemoBanner />
+                {/* display:'contents' adds no layout box of its own — the
+                    children remain direct flex items of .app-layout, so this
+                    wrapper is a zero-visual-impact hook for the drawer's focus
+                    trap to inert this whole region at once. */}
+                <div style={{ display: 'contents' }} ref={topRef} data-testid="app-top-region">
+                  <a className="skip-link" href="#main-content">Skip to main content</a>
+                  <NavProgressBar />
+                  {/* MobileTopBar lives in the column flow (hidden on desktop via
+                      `.mobile-topbar { display:none }`) so it sits above the demo
+                      banner rather than overlaying it as a fixed/absolute element. */}
+                  <MobileTopBar onHamburgerClick={() => setSidebarOpen(true)} />
+                  <DemoBanner />
+                </div>
                 <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                   {sidebarOpen && (
                     <div className="sidebar-overlay" role="presentation" onClick={() => setSidebarOpen(false)} />

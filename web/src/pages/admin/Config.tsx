@@ -1154,6 +1154,7 @@ export function Config() {
           <div
             role="button"
             tabIndex={0}
+            aria-disabled={exporting || demoLocked}
             onClick={exporting || demoLocked ? undefined : handleExport}
             onKeyDown={(e) => {
               if (exporting || demoLocked) return

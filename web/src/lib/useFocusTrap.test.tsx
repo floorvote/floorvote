@@ -37,6 +37,28 @@ function InertTargetHarness({ active }: { active: boolean }) {
   )
 }
 
+function ArrayInertTargetHarness({ active }: { active: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const targetARef = useRef<HTMLDivElement>(null)
+  const targetBRef = useRef<HTMLDivElement>(null)
+  useFocusTrap({ active, containerRef, initialFocus: 'first', inertTarget: [targetARef, targetBRef] })
+  return (
+    <div>
+      <div ref={targetARef} data-testid="target-a">
+        <button>background button a</button>
+      </div>
+      <div ref={targetBRef} data-testid="target-b">
+        <button>background button b</button>
+      </div>
+      {active && (
+        <div ref={containerRef} data-testid="panel">
+          <button>inside</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NestedHarness({ outerActive, innerActive }: { outerActive: boolean; innerActive: boolean }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -141,6 +163,27 @@ describe('useFocusTrap', () => {
     rerender(<InertTargetHarness active={false} />)
     expect(target.hasAttribute('inert')).toBe(false)
     expect(target.hasAttribute('aria-hidden')).toBe(false)
+    root.remove()
+  })
+
+  it('with an array inertTarget: inerts every target (not #root) while active, and clears all after', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    const { rerender } = render(<ArrayInertTargetHarness active />, { container: root })
+    const targetA = screen.getByTestId('target-a')
+    const targetB = screen.getByTestId('target-b')
+    expect(targetA.hasAttribute('inert')).toBe(true)
+    expect(targetA.getAttribute('aria-hidden')).toBe('true')
+    expect(targetB.hasAttribute('inert')).toBe(true)
+    expect(targetB.getAttribute('aria-hidden')).toBe('true')
+    // #root itself must be untouched in this mode.
+    expect(root.hasAttribute('inert')).toBe(false)
+    expect(root.hasAttribute('aria-hidden')).toBe(false)
+
+    rerender(<ArrayInertTargetHarness active={false} />)
+    expect(targetA.hasAttribute('inert')).toBe(false)
+    expect(targetA.hasAttribute('aria-hidden')).toBe(false)
+    expect(targetB.hasAttribute('inert')).toBe(false)
+    expect(targetB.hasAttribute('aria-hidden')).toBe(false)
     root.remove()
   })
 
