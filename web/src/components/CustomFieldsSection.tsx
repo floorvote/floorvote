@@ -206,6 +206,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                   value={knownValues}
                   options={parsedOptions.map(o => ({ value: o, label: o }))}
                   onChange={(next) => save(field.id, next)}
+                  ariaLabel={field.name}
                   trigger={({ toggle, open }) => (
                     <button type="button" onClick={toggle} style={pickerTriggerStyle(arrayValue.length > 0)}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{display}</span>
@@ -238,6 +239,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                 options={parsedOptions.map(o => ({ value: o, label: o }))}
                 emptyOption={{ label: 'Not set' }}
                 onChange={(next) => save(field.id, next)}
+                ariaLabel={field.name}
                 trigger={({ toggle, open }) => (
                   <button type="button" onClick={toggle} style={pickerTriggerStyle(singleValue !== null)}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{display}</span>

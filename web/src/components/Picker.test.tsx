@@ -1,9 +1,16 @@
 import { useState } from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, fireEvent, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Picker } from './Picker'
 
-function SingleHarness({ initial = null as string | null }) {
+function SingleHarness({
+  initial = null as string | null,
+  ariaLabel,
+}: {
+  initial?: string | null
+  ariaLabel?: string
+}) {
   const [value, setValue] = useState<string | null>(initial)
   return (
     <Picker
@@ -15,6 +22,7 @@ function SingleHarness({ initial = null as string | null }) {
       ]}
       onChange={(v) => setValue(v)}
       emptyOption={{ label: 'Not set' }}
+      ariaLabel={ariaLabel}
       trigger={({ toggle }) => (
         <button onClick={toggle}>{`val:${value ?? ''}`}</button>
       )}
@@ -25,9 +33,11 @@ function SingleHarness({ initial = null as string | null }) {
 function MultiHarness({
   initial = [] as string[],
   indeterminate,
+  ariaLabel,
 }: {
   initial?: string[]
   indeterminate?: Set<string>
+  ariaLabel?: string
 }) {
   const [value, setValue] = useState<string[]>(initial)
   return (
@@ -41,6 +51,7 @@ function MultiHarness({
         { value: 'c', label: 'Cherry' },
       ]}
       onChange={(v) => setValue(v)}
+      ariaLabel={ariaLabel}
       trigger={({ toggle }) => (
         <button onClick={toggle}>{`val:${value.join(',')}`}</button>
       )}
@@ -122,5 +133,115 @@ describe('Picker — multi mode', () => {
     fireEvent.click(screen.getByRole('button'))
     fireEvent.click(screen.getByText('Apple'))
     expect(screen.getByRole('button').textContent).toBe('val:a')
+  })
+})
+
+describe('Picker — ARIA roles', () => {
+  it('single mode exposes a named radiogroup, not a listbox', () => {
+    render(<SingleHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('radiogroup', { name: 'Options' })).toBeInTheDocument()
+  })
+
+  it('multi mode exposes a named group, not a listbox', () => {
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Options' })).toBeInTheDocument()
+  })
+
+  it('uses a caller-supplied ariaLabel as the accessible name (single mode)', () => {
+    render(<SingleHarness ariaLabel="Fruit" />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('radiogroup', { name: 'Fruit' })).toBeInTheDocument()
+  })
+
+  it('uses a caller-supplied ariaLabel as the accessible name (multi mode)', () => {
+    render(<MultiHarness ariaLabel="Tags" />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('group', { name: 'Tags' })).toBeInTheDocument()
+  })
+
+  it('rows still expose native radio/checkbox controls (correct checked-state semantics)', () => {
+    render(<SingleHarness initial="a" />)
+    fireEvent.click(screen.getByRole('button'))
+    const radios = screen.getAllByRole('radio')
+    expect(radios).toHaveLength(3) // "Not set" + Apple + Banana
+    expect((radios[1] as HTMLInputElement).checked).toBe(true)
+  })
+})
+
+describe('Picker — keyboard navigation', () => {
+  it('ArrowDown/ArrowUp move focus between option rows (single mode), clamping at the ends', async () => {
+    const user = userEvent.setup()
+    render(<SingleHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const radios = screen.getAllByRole('radio') // Not set, Apple, Banana
+    radios[0].focus()
+    await user.keyboard('{ArrowDown}')
+    expect(radios[1]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(radios[2]).toHaveFocus()
+    await user.keyboard('{ArrowDown}') // clamps — no wrap past the last option
+    expect(radios[2]).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(radios[1]).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(radios[0]).toHaveFocus()
+    await user.keyboard('{ArrowUp}') // clamps — no wrap past the first option
+    expect(radios[0]).toHaveFocus()
+  })
+
+  it('ArrowDown/ArrowUp move focus between option rows (multi mode)', async () => {
+    const user = userEvent.setup()
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    checkboxes[0].focus()
+    await user.keyboard('{ArrowDown}')
+    expect(checkboxes[1]).toHaveFocus()
+    await user.keyboard('{ArrowUp}')
+    expect(checkboxes[0]).toHaveFocus()
+  })
+
+  it('Home/End jump focus to the first/last option', async () => {
+    const user = userEvent.setup()
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    checkboxes[0].focus()
+    await user.keyboard('{End}')
+    expect(checkboxes[2]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(checkboxes[0]).toHaveFocus()
+  })
+
+  it('Escape closes the menu and restores focus to the trigger', async () => {
+    const user = userEvent.setup()
+    render(<SingleHarness />)
+    const trigger = screen.getByRole('button')
+    fireEvent.click(trigger)
+    const radios = screen.getAllByRole('radio')
+    radios[0].focus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it('selection via click still works (single mode closes on select)', () => {
+    render(<SingleHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Apple'))
+    expect(screen.getByRole('button').textContent).toBe('val:a')
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+  })
+
+  it('selection via click still works (multi mode stays open)', () => {
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Apple'))
+    expect(screen.getByRole('button').textContent).toBe('val:a')
+    expect(screen.getByRole('group')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { color, radius, fontSize, shadow } from '../styles/tokens'
 import { TOOLTIP_STYLE } from '../lib/chipStyles'
@@ -21,6 +21,8 @@ type SingleProps = {
   placement?: 'top' | 'bottom'
   panelMinWidth?: number
   closeOnSelect?: boolean
+  /** Accessible name for the option group, e.g. "Priority". Defaults to "Options". */
+  ariaLabel?: string
 }
 
 type MultiProps = {
@@ -33,6 +35,8 @@ type MultiProps = {
   align?: 'left' | 'right'
   placement?: 'top' | 'bottom'
   panelMinWidth?: number
+  /** Accessible name for the option group, e.g. "Tags". Defaults to "Options". */
+  ariaLabel?: string
 }
 
 export type PickerProps = SingleProps | MultiProps
@@ -40,6 +44,7 @@ export type PickerProps = SingleProps | MultiProps
 export function Picker(props: PickerProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -54,17 +59,63 @@ export function Picker(props: PickerProps) {
   const placement = props.placement ?? 'bottom'
   const minWidth = props.panelMinWidth ?? 180
   const closeOnSelect = props.mode === 'single' && (props.closeOnSelect ?? true)
+  const groupLabel = props.ariaLabel ?? 'Options'
 
   const panelPosition: React.CSSProperties = placement === 'top'
     ? { bottom: 'calc(100% + 4px)' }
     : { top: 'calc(100% + 4px)' }
+
+  // Moves focus back to the trigger element. The trigger is arbitrary
+  // (render-prop) markup rendered as a sibling of the panel inside `ref`, so
+  // find the first focusable descendant of `ref` that isn't inside the panel.
+  function focusTrigger() {
+    const root = ref.current
+    if (!root) return
+    const candidates = root.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]',
+    )
+    for (const el of Array.from(candidates)) {
+      if (panelRef.current?.contains(el)) continue
+      el.focus()
+      return
+    }
+  }
+
+  function getOptionEls(): HTMLInputElement[] {
+    const panel = panelRef.current
+    if (!panel) return []
+    return Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+  }
+
+  function handleMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      focusTrigger()
+      return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
+    const items = getOptionEls()
+    if (items.length === 0) return
+    const activeIndex = items.indexOf(document.activeElement as HTMLInputElement)
+    e.preventDefault()
+    let nextIndex: number
+    if (e.key === 'Home') nextIndex = 0
+    else if (e.key === 'End') nextIndex = items.length - 1
+    else if (e.key === 'ArrowDown') nextIndex = activeIndex < 0 ? 0 : Math.min(activeIndex + 1, items.length - 1)
+    else nextIndex = activeIndex < 0 ? items.length - 1 : Math.max(activeIndex - 1, 0)
+    items[nextIndex].focus()
+  }
 
   return (
     <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
       {props.trigger({ open, toggle: () => setOpen(o => !o) })}
       {open && (
         <div
-          role="listbox"
+          ref={panelRef}
+          role={props.mode === 'single' ? 'radiogroup' : 'group'}
+          aria-label={groupLabel}
+          onKeyDown={handleMenuKeyDown}
           style={{
             position: 'absolute',
             ...panelPosition,
@@ -166,6 +217,8 @@ function Row({
       ref={ref}
       onMouseEnter={enter}
       onMouseLeave={() => setTip(null)}
+      onFocus={enter}
+      onBlur={() => setTip(null)}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -176,15 +229,15 @@ function Row({
         color: checked || indeterminate ? color.partyDemBlue : color.textSlate,
         background: checked ? color.bgDropdownActive : 'transparent',
       }}
-      onClick={e => {
-        e.preventDefault()
-        onClick()
-      }}
     >
       <input
         type={control}
         checked={checked}
         readOnly
+        onClick={e => {
+          e.preventDefault()
+          onClick()
+        }}
         ref={el => {
           if (el && control === 'checkbox') el.indeterminate = !!indeterminate
         }}
