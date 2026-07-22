@@ -49,9 +49,14 @@ interface HoverTooltipProps {
   // Opt-in standalone toggletip archetype — see file header. Default false
   // keeps today's exact wrapper/behavior so untouched consumers are unaffected.
   toggletip?: boolean
+  // toggletip mode only: accessible name for the button. Required whenever
+  // `children` is a bare icon glyph with no text name of its own — combined
+  // with the bubble's aria-describedby, a screen reader announces "<ariaLabel>,
+  // button" followed by the tooltip text on reveal.
+  ariaLabel?: string
 }
 
-export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef, toggletip = false }: HoverTooltipProps) {
+export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef, toggletip = false, ariaLabel }: HoverTooltipProps) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const ref = useRef<HTMLElement | null>(null)
   // toggletip mode only: click's own open/closed parity, independent of the
@@ -153,6 +158,7 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
       <button
         type="button"
         ref={setRef}
+        aria-label={ariaLabel}
         style={{
           display: block ? 'block' : 'inline-flex',
           width: block ? '100%' : undefined,
