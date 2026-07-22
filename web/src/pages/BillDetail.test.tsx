@@ -328,6 +328,43 @@ describe('BillDetail vote failure rollback', () => {
   })
 })
 
+describe('BillDetail draft admin inline edit (title/sponsor) keyboard access', () => {
+  beforeEach(() => { vi.restoreAllMocks(); authState.role = 'admin' })
+  afterEach(() => { authState.role = 'member' })
+
+  // The title and sponsor "click to edit" affordances are admin-only controls
+  // shown on draft bills. They must be real, keyboard-operable buttons — not
+  // divs/spans that only respond to a mouse click.
+  it('lets an admin enter title-edit mode from the keyboard', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const edit = screen.getByRole('button', { name: /edit title/i })
+    edit.focus()
+    await user.keyboard('{Enter}')
+
+    // Scope to the draft-title input by name: the draft banner's BillPicker
+    // also renders a "Search bills…" textbox, so an unscoped role query would
+    // be ambiguous.
+    expect(document.querySelector('input[name="draftTitle"]')).toBeInTheDocument()
+  })
+
+  it('lets an admin enter sponsor-edit mode from the keyboard', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({ isDraft: true, sponsor: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const edit = screen.getByRole('button', { name: /edit sponsor/i })
+    edit.focus()
+    await user.keyboard('{Enter}')
+
+    expect(document.querySelector('input[name="draftSponsor"]')).toBeInTheDocument()
+  })
+})
+
 describe('BillDetail deferred-nav entry (prefetchedBill without billPaths)', () => {
   beforeEach(() => vi.restoreAllMocks())
 

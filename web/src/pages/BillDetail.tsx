@@ -1011,11 +1011,25 @@ export function BillDetail() {
             </form>
           </div>
         ) : bill.isDraft && isAdmin ? (
-          <div
+          <button
+            type="button"
+            aria-label="Edit title"
             onClick={() => setEditingDraftField('title')}
             onMouseEnter={() => setHoveredDraftField('title')}
             onMouseLeave={() => setHoveredDraftField(null)}
-            style={{ ...editableFieldBox(hoveredDraftField === 'title'), padding: '4px 8px', marginBottom: 4 }}
+            style={{
+              display: 'block',
+              width: '100%',
+              margin: 0,
+              background: 'none',
+              border: 'none',
+              font: 'inherit',
+              textAlign: 'left',
+              cursor: 'text',
+              ...editableFieldBox(hoveredDraftField === 'title'),
+              padding: '4px 8px',
+              marginBottom: 4,
+            }}
           >
             <h1
               style={{
@@ -1024,7 +1038,7 @@ export function BillDetail() {
             >
               {bill.title || bill.abstract}
             </h1>
-          </div>
+          </button>
         ) : (
           <h1
             style={{
@@ -1215,18 +1229,26 @@ export function BillDetail() {
                 <button type="button" onClick={() => setEditingDraftField(null)} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
               </form>
             ) : (
-              <span
+              <button
+                type="button"
+                aria-label="Edit sponsor"
                 onClick={() => setEditingDraftField('sponsor')}
                 onMouseEnter={() => setHoveredDraftField('sponsor')}
                 onMouseLeave={() => setHoveredDraftField(null)}
                 style={{
                   display: 'inline-block',
+                  margin: 0,
+                  background: 'none',
+                  border: 'none',
+                  font: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'text',
                   ...editableFieldBox(hoveredDraftField === 'sponsor'),
                   padding: '1px 6px',
                 }}
               >
                 {bill.sponsor ?? <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span>}
-              </span>
+              </button>
             )}
           </div>
         )}
