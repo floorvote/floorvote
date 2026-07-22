@@ -351,6 +351,21 @@ describe('BillDetail draft admin inline edit (title/sponsor) keyboard access', (
     expect(document.querySelector('input[name="draftTitle"]')).toBeInTheDocument()
   })
 
+  // <button> permits only phrasing content, and <h1> is not phrasing content,
+  // so a <button><h1>…</h1></button> nesting is an invalid HTML5 content
+  // model. The edit control must live inside the heading, not wrap it.
+  it('exposes the title as a valid level-1 heading with the edit button inside it, not wrapping it', async () => {
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const heading = screen.getByRole('heading', { level: 1 })
+    const edit = screen.getByRole('button', { name: /edit title/i })
+
+    expect(heading.contains(edit)).toBe(true)
+    expect(edit.contains(heading)).toBe(false)
+  })
+
   it('lets an admin enter sponsor-edit mode from the keyboard', async () => {
     const user = userEvent.setup()
     makeMockApiFetch({ isDraft: true, sponsor: null })

@@ -1012,34 +1012,34 @@ export function BillDetail() {
             </form>
           </div>
         ) : bill.isDraft && isAdmin ? (
-          <button
-            type="button"
-            aria-label="Edit title"
-            onClick={() => setEditingDraftField('title')}
-            onMouseEnter={() => setHoveredDraftField('title')}
-            onMouseLeave={() => setHoveredDraftField(null)}
+          <h1
             style={{
-              display: 'block',
-              width: '100%',
-              margin: 0,
-              background: 'none',
-              border: 'none',
-              font: 'inherit',
-              textAlign: 'left',
-              cursor: 'text',
-              ...editableFieldBox(hoveredDraftField === 'title'),
-              padding: '4px 8px',
-              marginBottom: 4,
+              fontSize: fontSize.xxxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: '0 0 4px', fontFamily: "'Source Serif 4', serif",
             }}
           >
-            <h1
+            <button
+              type="button"
+              aria-label="Edit title"
+              onClick={() => setEditingDraftField('title')}
+              onMouseEnter={() => setHoveredDraftField('title')}
+              onMouseLeave={() => setHoveredDraftField(null)}
               style={{
-                fontSize: fontSize.xxxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0, fontFamily: "'Source Serif 4', serif",
+                display: 'block',
+                width: '100%',
+                margin: 0,
+                background: 'none',
+                border: 'none',
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'inherit',
+                cursor: 'text',
+                ...editableFieldBox(hoveredDraftField === 'title'),
+                padding: '4px 8px',
               }}
             >
               {bill.title || bill.abstract}
-            </h1>
-          </button>
+            </button>
+          </h1>
         ) : (
           <h1
             style={{
