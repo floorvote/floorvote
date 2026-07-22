@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 const MEMBER_TABS = [
@@ -51,43 +51,116 @@ function Tab({ to, label, variant }: { to: string; label: string; variant: 'memb
 export function SettingsNav() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
+  const navRef = useRef<HTMLElement | null>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  // Scroll-position-aware edge fades: show a fade wherever there's more tab
+  // row to scroll toward, hide it once that edge is reached. Recomputed on
+  // scroll/resize and whenever the tab set changes (isAdmin toggles how many
+  // tabs render, which can flip the row from non-overflowing to overflowing).
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+
+    const update = () => {
+      // 1px epsilon absorbs subpixel scroll-position rounding at either end.
+      setCanScrollLeft(nav.scrollLeft > 1)
+      setCanScrollRight(nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1)
+    }
+
+    update()
+    nav.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      nav.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [isAdmin])
 
   return (
-    <nav className="settings-nav" style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 2,
-      borderBottom: `1px solid ${color.borderStrong}`,
-      marginBottom: 24,
-      // Narrow phones can't fit all tabs (Account · Config/Members/
-      // Notifications/Draft bills) — let the row scroll horizontally instead of overflowing.
-      overflowX: 'auto',
-    }}>
-      {MEMBER_TABS.map(({ to, label }) => (
-        <Tab key={to} to={to} label={label} variant="member" />
-      ))}
+    <div style={{ position: 'relative', marginBottom: 24 }}>
+      <nav
+        ref={navRef}
+        className="settings-nav"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          borderBottom: `1px solid ${color.borderStrong}`,
+          // Narrow phones can't fit all tabs (Account · Config/Members/
+          // Notifications/Draft bills) — let the row scroll horizontally instead
+          // of overflowing. overflowY is explicitly 'clip' (never 'visible', which
+          // is the only value the CSS spec would force to match overflowX's
+          // 'auto') so the row never becomes independently vertically
+          // scrollable too. The nav hugs the tabs with no vertical padding, so
+          // a small overflow-clip-margin gives the focused tab's outline ring
+          // (2px, offset 2px) room to paint without being clipped.
+          overflowX: 'auto',
+          overflowY: 'clip',
+          overflowClipMargin: 4,
+        }}
+      >
+        {MEMBER_TABS.map(({ to, label }) => (
+          <Tab key={to} to={to} label={label} variant="member" />
+        ))}
 
-      {isAdmin && (
-        <>
-          <span style={{
-            fontSize: fontSize.xs,
-            fontWeight: fontWeight.semibold,
-            color: color.textMuted,
-            letterSpacing: '0.07em',
-            textTransform: 'uppercase',
-            userSelect: 'none',
-            cursor: 'default',
-            paddingBottom: 2,
-            marginLeft: 8,
-            flexShrink: 0,
-          }}>
-            Admin
-          </span>
-          {ADMIN_TABS.map(({ to, label }) => (
-            <Tab key={to} to={to} label={label} variant="admin" />
-          ))}
-        </>
-      )}
-    </nav>
+        {isAdmin && (
+          <>
+            <span style={{
+              fontSize: fontSize.xs,
+              fontWeight: fontWeight.semibold,
+              color: color.textMuted,
+              letterSpacing: '0.07em',
+              textTransform: 'uppercase',
+              userSelect: 'none',
+              cursor: 'default',
+              paddingBottom: 2,
+              marginLeft: 8,
+              flexShrink: 0,
+            }}>
+              Admin
+            </span>
+            {ADMIN_TABS.map(({ to, label }) => (
+              <Tab key={to} to={to} label={label} variant="admin" />
+            ))}
+          </>
+        )}
+      </nav>
+
+      {/* Edge fades: purely decorative scroll affordances, so they're
+          aria-hidden and pointer-events:none keeps them from ever stealing a
+          tap/click meant for the tab underneath. */}
+      <div
+        aria-hidden="true"
+        data-testid="settings-nav-fade-left"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: 24,
+          background: `linear-gradient(to right, ${color.surfaceSubtle}, transparent)`,
+          opacity: canScrollLeft ? 1 : 0,
+          transition: 'opacity 0.15s ease',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        data-testid="settings-nav-fade-right"
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 24,
+          background: `linear-gradient(to left, ${color.surfaceSubtle}, transparent)`,
+          opacity: canScrollRight ? 1 : 0,
+          transition: 'opacity 0.15s ease',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
   )
 }
