@@ -110,6 +110,18 @@ describe('Login — Turnstile not configured (fail-open, self-host default)', ()
   })
 })
 
+describe('Login — error announcement', () => {
+  it('announces the submit error via role=alert', async () => {
+    renderLogin()
+    await screen.findByTestId('solve')
+    fireEvent.click(screen.getByTestId('solve'))
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: 'a@b.org' } })
+    fetchMock.mockRejectedValueOnce(new Error('boom')) // the magic-link POST fails
+    fireEvent.click(screen.getByRole('button', { name: /send sign-in link/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/something went wrong/i)
+  })
+})
+
 describe('Login — legal links', () => {
   it('links to Terms of Use and Privacy Policy when the docs exist', async () => {
     renderLogin()

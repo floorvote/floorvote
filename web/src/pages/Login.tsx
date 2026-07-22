@@ -129,7 +129,7 @@ export function Login() {
             placeholder="you@example.com"
             style={styles.input}
           />
-          {error && <p style={styles.error}>{error}</p>}
+          {error && <p role="alert" style={styles.error}>{error}</p>}
           {turnstileSiteKey ? (
             <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
           ) : null}
