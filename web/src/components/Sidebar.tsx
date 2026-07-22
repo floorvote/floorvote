@@ -567,27 +567,31 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
         <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
           {/* Header row — the whole bar links to the prioritized-bills filter.
               Hovering the bar highlights it and the count chip; the unvoted chip
-              is its own link and highlights only when hovered directly. */}
+              is its own link and highlights only when hovered directly.
+              The row itself is NOT interactive (no role/onClick) — only the
+              title text is (role="link"). Its ::after (.sidebar-widget-header-link
+              in mobile.css) is absolutely positioned over the whole row (the
+              row is .sidebar-widget-header, position:relative) so the bar
+              still navigates edge-to-edge on click, without nesting an
+              interactive element inside another: the chips below sit on top
+              of that overlay as independent siblings (position:relative +
+              zIndex so they paint above it), not descendants of the title link. */}
           {(() => {
             const priorityFilter = '/bills?priority=high&priority=medium&priority=low'
             const headerActive = priorityHeaderHover && !unvotedChipHover
             const goToPriority = () => { onClose(); navigate(priorityFilter) }
-            // The leftmost count chip is a plain (non-interactive) span nested
-            // inside this already-interactive header row — making it its own
-            // toggletip would nest interactive elements inside the row's own
-            // role="link". Instead its meaning goes onto the row's own
-            // aria-label, since the row is what a keyboard/touch user actually
-            // lands on.
+            // The leftmost count chip is a plain (non-interactive) span — since
+            // it now sits above the title link's stretched overlay (so its own
+            // hover tooltip still works), a direct click on it is a dead zone:
+            // it no longer forwards to the header's navigation the way it did
+            // when nested inside the old whole-bar role="link". Its meaning
+            // still goes on the title link's aria-label below, since that's
+            // the control a keyboard/screen-reader user actually lands on.
             const priorityMeaning = `${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`
             const unvotedMeaning = `${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`
             return (
               <div
-                role="link"
-                tabIndex={0}
-                aria-label={priorityMeaning}
-                onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
-                onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPriority() } }}
+                className="sidebar-widget-header"
                 onMouseEnter={() => setPriorityHeaderHover(true)}
                 onMouseLeave={() => setPriorityHeaderHover(false)}
                 style={{
@@ -601,10 +605,19 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   borderBottom: sidebarData.priorityBills.length > 0 ? `1px solid ${color.borderDefault}` : 'none',
                 }}
               >
-                <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy }}>
+                <span
+                  role="link"
+                  tabIndex={0}
+                  aria-label={priorityMeaning}
+                  className="sidebar-widget-header-link"
+                  onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
+                  onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPriority() } }}
+                  style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, cursor: 'pointer' }}
+                >
                   Prioritized bills
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative', zIndex: 1 }}>
                   {/* Leftmost chip melts into the orange header on header hover. */}
                   <HoverTooltip text={priorityMeaning} maxWidth={220}>
                     <span style={countBadge(headerActive)}>
@@ -616,7 +629,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                       <Link
                         to={`${priorityFilter}&unvoted=1`}
                         aria-label={unvotedMeaning}
-                        onClick={(e) => { e.stopPropagation(); onClose() }}
+                        onClick={() => onClose()}
                         onMouseEnter={() => setUnvotedChipHover(true)}
                         onMouseLeave={() => setUnvotedChipHover(false)}
                         // Hovered on its own → the chip itself takes the header's orange.
@@ -703,15 +716,14 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
         return (
           <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
             {/* Header row — the whole bar links to the calendar; hovering
-                highlights the bar and the count chip. */}
+                highlights the bar and the count chip. Same structure as the
+                prioritized-bills header above: the row itself isn't
+                interactive, only the title (role="link") is, and its
+                stretched ::after overlay (mobile.css) keeps the whole bar
+                clickable without nesting the count chip inside the link. */}
             <div
-              role="link"
-              tabIndex={0}
+              className="sidebar-widget-header"
               title="Upcoming hearings for prioritized bills in the next 30 days"
-              aria-label={hearingsMeaning}
-              onClick={(e) => { if (maybeOpenInNewTab(e, '/calendar')) return; onClose(); navigate('/calendar') }}
-              onAuxClick={(e) => { maybeOpenInNewTab(e, '/calendar') }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); navigate('/calendar') } }}
               onMouseEnter={() => setHearingsHeaderHover(true)}
               onMouseLeave={() => setHearingsHeaderHover(false)}
               style={{
@@ -725,11 +737,23 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                 borderBottom: `1px solid ${color.borderDefault}`,
               }}
             >
-              <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy }}>
+              <span
+                role="link"
+                tabIndex={0}
+                aria-label={hearingsMeaning}
+                className="sidebar-widget-header-link"
+                onClick={(e) => { if (maybeOpenInNewTab(e, '/calendar')) return; onClose(); navigate('/calendar') }}
+                onAuxClick={(e) => { maybeOpenInNewTab(e, '/calendar') }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); navigate('/calendar') } }}
+                style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, cursor: 'pointer' }}
+              >
                 Upcoming hearings
               </span>
-              {/* Only chip — melts into the orange header on hover. */}
-              <span style={countBadge(hearingsHeaderHover)}>
+              {/* Only chip — melts into the orange header on hover. Sits above
+                  the title link's stretched overlay (position/zIndex) so a
+                  direct click on it is a dead zone rather than double-firing
+                  navigation — same tradeoff as the prioritized-bills chip above. */}
+              <span style={{ ...countBadge(hearingsHeaderHover), position: 'relative', zIndex: 1 }}>
                 {totalHearings}
               </span>
             </div>

@@ -9,6 +9,22 @@
 *:focus:not(:focus-visible) { outline: none; }
 .sidebar { --fv-focus-ring: #ffffff; }
 
+/* Stretched-link overlay for sidebar widget headers (Prioritized bills /
+   Upcoming hearings — see Sidebar.tsx). The header row lays out its title
+   link and its chips as flex siblings, so no interactive element nests
+   inside another. The title link's ::after is absolutely positioned over
+   the whole row (its nearest positioned ancestor, via .sidebar-widget-header)
+   so the entire bar still navigates on click, matching the old whole-bar
+   role="link" div's behavior; the chips get position:relative + a higher
+   z-index inline in Sidebar.tsx so they paint above this overlay and stay
+   independently clickable/hoverable rather than becoming a dead zone. */
+.sidebar-widget-header { position: relative; }
+.sidebar-widget-header-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
 /* Skip-to-content link: off-screen until it takes keyboard focus. */
 .skip-link {
   position: absolute; left: 8px; top: -48px; z-index: 3000;
