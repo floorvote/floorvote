@@ -115,16 +115,22 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
 
   const setRef = (el: HTMLElement | null) => { ref.current = el }
   const show = () => { if (ref.current) setAnchor(ref.current.getBoundingClientRect()) }
-  // Hiding always resets pinnedRef too, so a later Escape/blur/pointerleave
-  // can't leave click's toggle parity stale — the next click still correctly
-  // reads as "currently closed" and reopens rather than no-op-closing again.
+  // Hiding always resets pinnedRef too, so a later Escape/blur (or an
+  // unpinned pointerleave) can't leave click's toggle parity stale — the next
+  // click still correctly reads as "currently closed" and reopens rather than
+  // no-op-closing again.
   const hide = () => { pinnedRef.current = false; setAnchor(null) }
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
     show()
   }
-  const handlePointerLeave = () => hide()
+  // Gated on pinnedRef so a click-pinned toggletip survives the mouse moving
+  // away — the toggletip hide-trigger contract is Escape/blur/second-click
+  // only, not a plain pointerleave. Default mode never sets pinnedRef, so its
+  // hover-leave behavior is unaffected; toggletip's plain hover (no click)
+  // still closes on leave, since pinnedRef stays false until a click sets it.
+  const handlePointerLeave = () => { if (!pinnedRef.current) hide() }
   const handleFocus = () => show()
   const handleBlur = () => hide()
 

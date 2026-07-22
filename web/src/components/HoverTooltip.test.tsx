@@ -134,12 +134,42 @@ describe('HoverTooltip', () => {
       expect(screen.queryByRole('tooltip')).toBeNull()
     })
 
-    it('still reveals on mouse hover', () => {
+    it('still reveals on mouse hover, and a plain (unpinned) hover still closes on leave', () => {
       render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
       const trigger = screen.getByRole('button')
       fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
       expect(screen.getByRole('tooltip')).toBeInTheDocument()
       fireEvent.pointerLeave(trigger)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('a click-pinned bubble survives the mouse leaving, and still closes on Escape', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+
+      await user.click(trigger) // pins the bubble open
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      fireEvent.pointerLeave(trigger) // the toggletip hide contract is Escape/blur/second-click only
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('a click-pinned bubble survives the mouse leaving, and still closes on a second click', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+
+      await user.click(trigger) // pins the bubble open
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      fireEvent.pointerLeave(trigger)
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      await user.click(trigger) // second click un-pins and closes
       expect(screen.queryByRole('tooltip')).toBeNull()
     })
   })
