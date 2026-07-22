@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { usePrefersReducedMotion } from '../lib/usePrefersReducedMotion'
 
 const MEMBER_TABS = [
   { to: '/profile', label: 'Account' },
@@ -54,6 +55,7 @@ export function SettingsNav() {
   const navRef = useRef<HTMLElement | null>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
+  const reduceMotion = usePrefersReducedMotion()
 
   // Scroll-position-aware edge fades: show a fade wherever there's more tab
   // row to scroll toward, hide it once that edge is reached. Recomputed on
@@ -130,7 +132,11 @@ export function SettingsNav() {
 
       {/* Edge fades: purely decorative scroll affordances, so they're
           aria-hidden and pointer-events:none keeps them from ever stealing a
-          tap/click meant for the tab underneath. */}
+          tap/click meant for the tab underneath. The opacity transition is
+          skipped under prefers-reduced-motion — mobile.css's blanket
+          reduced-motion rule only zeroes animation-* durations, not
+          transition-*, so this component opts out itself (mirrors
+          PinnedShadow.tsx's same reduceMotion check). */}
       <div
         aria-hidden="true"
         data-testid="settings-nav-fade-left"
@@ -142,7 +148,7 @@ export function SettingsNav() {
           width: 24,
           background: `linear-gradient(to right, ${color.surfaceSubtle}, transparent)`,
           opacity: canScrollLeft ? 1 : 0,
-          transition: 'opacity 0.15s ease',
+          transition: reduceMotion ? 'none' : 'opacity 0.15s ease',
           pointerEvents: 'none',
         }}
       />
@@ -157,7 +163,7 @@ export function SettingsNav() {
           width: 24,
           background: `linear-gradient(to left, ${color.surfaceSubtle}, transparent)`,
           opacity: canScrollRight ? 1 : 0,
-          transition: 'opacity 0.15s ease',
+          transition: reduceMotion ? 'none' : 'opacity 0.15s ease',
           pointerEvents: 'none',
         }}
       />

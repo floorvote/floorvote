@@ -83,6 +83,15 @@ describe('SettingsNav', () => {
     // vertically as well as horizontally.
     expect(nav.style.overflowX).toBe('auto')
     expect(['hidden', 'clip']).toContain(nav.style.overflowY)
+
+    // overflow-clip-margin is a no-op under overflow-y: hidden — it only takes
+    // effect for 'clip' — so this only guards the ring when 'clip' is in use.
+    // Pins the margin to a real, static inline style so a future swap to
+    // 'hidden', or a shrunk/removed margin, fails a test instead of silently
+    // re-clipping the focused tab's outline ring (2px + 2px offset = 4px).
+    if (nav.style.overflowY === 'clip') {
+      expect(parseFloat(nav.style.overflowClipMargin)).toBeGreaterThanOrEqual(4)
+    }
   })
 
   it('shows a right-edge fade when the tab row overflows and there is more to scroll', () => {
