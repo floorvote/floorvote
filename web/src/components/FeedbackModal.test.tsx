@@ -80,6 +80,20 @@ describe('FeedbackModal', () => {
     expect(screen.getByText(/to send/i)).toBeInTheDocument()
   })
 
+  it('hides the keyboard hint while sending, but shows it in the editable state', async () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    apiFetchMock.mockImplementation(() => new Promise(() => {})) // never resolves — stays in 'sending'
+    render(<FeedbackModal onClose={() => {}} />, { container: root })
+
+    expect(screen.getByText(/to send/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText("What's on your mind?"), { target: { value: 'hi' } })
+    fireEvent.click(screen.getByRole('button', { name: /send feedback/i }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /sending/i })).toBeInTheDocument())
+    expect(screen.queryByText(/to send/i)).toBeNull()
+  })
+
   it('shows a mailto to all operator contacts (text = first) when the send fails', async () => {
     renderWithConfig({ name: '', url: '', contactEmails: ['a@x.org', 'b@y.org'] })
     fireEvent.change(screen.getByPlaceholderText("What's on your mind?"), { target: { value: 'hi' } })

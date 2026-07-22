@@ -107,9 +107,11 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
             >
               {status === 'sending' ? 'Sending…' : 'Send feedback'}
             </button>
-            <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>
-              {isMac() ? '⌘↵' : 'Ctrl+Enter'} to send
-            </span>
+            {status !== 'sending' && (
+              <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>
+                {isMac() ? '⌘↵' : 'Ctrl+Enter'} to send
+              </span>
+            )}
           </div>
         </>
       )}
