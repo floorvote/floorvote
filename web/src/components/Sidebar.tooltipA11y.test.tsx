@@ -102,6 +102,12 @@ describe('Sidebar tooltip chips carry meaning as accessible names', () => {
     renderSidebar()
     expect(await screen.findByRole('link', { name: /2 upcoming hearings for prioritized bills in the next 30 days/i })).toBeTruthy()
   })
+
+  it('the hearings widget header has no redundant title now that aria-label carries its meaning', async () => {
+    const { container } = renderSidebar()
+    await screen.findByRole('link', { name: /2 upcoming hearings for prioritized bills in the next 30 days/i })
+    expect(container.querySelector('.sidebar-widget-header[title]')).toBeNull()
+  })
 })
 
 // Regression: these two chips live inside the sidebar's scrollable widget

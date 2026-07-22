@@ -5,6 +5,7 @@ import { useConfig } from '../context/ConfigContext'
 import { isMac } from '../lib/tiptap-utils'
 import { useIsBreakpoint } from '../hooks/use-is-breakpoint'
 import { Dialog } from './ui/Dialog'
+import { SR_ONLY } from '../lib/textStyles'
 
 interface FeedbackModalProps {
   onClose: () => void
@@ -54,10 +55,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
         <p role="alert" style={{ fontSize: fontSize.base, color: color.textVoteSupport, margin: 0 }}>Feedback sent — thanks!</p>
       ) : (
         <>
-          <label
-            htmlFor="feedback-message"
-            style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}
-          >
+          <label htmlFor="feedback-message" style={SR_ONLY}>
             Your message
           </label>
           <textarea

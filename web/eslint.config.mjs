@@ -39,13 +39,14 @@ export default [
   {
     // Pre-existing jsx-a11y debt, uncovered by newly enabling eslint-plugin-jsx-a11y
     // in this task (guardrails for the accessibility feature — see Dialog.tsx /
-    // useFocusTrap). These files predate that feature and were not touched by
-    // it; fixing them (deciding keyboard equivalents for click-only rows, adding
-    // real accessible names for icon-only labels, reworking existing autoFocus
-    // usage, etc.) is a real UX/behavior judgment call, not a mechanical lint fix,
-    // so it's out of scope here. Scoped to this exact file list — NOT a blanket
-    // rule-level downgrade — so every other file, including all new code, keeps
-    // full jsx-a11y/recommended enforcement. Tracked as follow-up cleanup debt.
+    // useFocusTrap). These files predate that feature; some were touched in passing
+    // (e.g. an ariaLabel prop added) without fixing the underlying violations. Fixing
+    // them (deciding keyboard equivalents for click-only rows, adding real accessible
+    // names for icon-only labels, reworking existing autoFocus usage, etc.) is a real
+    // UX/behavior judgment call, not a mechanical lint fix, so it's out of scope here.
+    // Scoped to this exact file list — NOT a blanket rule-level downgrade — so every
+    // other file, including all new code, keeps full jsx-a11y/recommended enforcement.
+    // Tracked as follow-up cleanup debt.
     files: [
       'src/components/BulkActionBar.tsx',
       'src/components/CommentContent.tsx',

@@ -736,8 +736,8 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
         // The count chip here has no HoverTooltip of its own, but the row's
         // detail ("...in the next 30 days") previously lived only in a `title`
         // attribute — a native tooltip that doesn't reveal on keyboard focus.
-        // aria-label carries the same detail as the row's own accessible name
-        // (title stays too, for the native mouse-hover affordance).
+        // aria-label carries the same detail as the row's own accessible name;
+        // the header's own `title` was dropped as a redundant name+description.
         const hearingsMeaning = `${totalHearings} upcoming hearing${totalHearings === 1 ? '' : 's'} for prioritized bills in the next 30 days`
         return (
           <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
@@ -749,7 +749,6 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                 clickable without nesting the count chip inside the link. */}
             <div
               className="sidebar-widget-header"
-              title="Upcoming hearings for prioritized bills in the next 30 days"
               onMouseEnter={() => setHearingsHeaderHover(true)}
               onMouseLeave={() => setHearingsHeaderHover(false)}
               style={{
