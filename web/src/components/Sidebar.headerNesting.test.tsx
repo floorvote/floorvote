@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { Location } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
@@ -166,5 +167,68 @@ describe('Sidebar widget headers do not nest interactive elements', () => {
       const last = locations[locations.length - 1]
       expect(last?.search).toContain('unvoted=1')
     })
+  })
+
+  // Regression: the count chip sits above the title link's stretched overlay
+  // (so its own HoverTooltip can receive hover — see the priorityMeaning
+  // comment in Sidebar.tsx), which used to leave a direct click on it doing
+  // nothing. Rather than re-nesting it inside the header's role="link" (invalid
+  // ARIA — the whole point of this file), it's its own real <button> that
+  // reaches the same destination independently.
+  describe('the prioritized-bills count chip is its own interactive control', () => {
+    it('is a real button with an accessible name matching the header', async () => {
+      renderSidebar()
+      const chip = await screen.findByRole('button', { name: HEADER_NAME })
+      expect(chip.tagName.toLowerCase()).toBe('button')
+    })
+
+    it('is not nested inside the header link (siblings, not descendants)', async () => {
+      renderSidebar()
+      const header = await screen.findByRole('link', { name: HEADER_NAME })
+      const chip = await screen.findByRole('button', { name: HEADER_NAME })
+      expect(header.contains(chip)).toBe(false)
+    })
+
+    it('clicking it navigates to the same destination as the header', async () => {
+      const locations: Location[] = []
+      renderSidebar(loc => { locations.push(loc) })
+      const chip = await screen.findByRole('button', { name: HEADER_NAME })
+      fireEvent.click(chip, { button: 0 })
+
+      await waitFor(() => {
+        const last = locations[locations.length - 1]
+        expect(last?.pathname).toBe('/bills')
+      })
+      const last = locations[locations.length - 1]
+      expect(last?.search).toContain('priority=high')
+    })
+
+    it('is keyboard-activatable (Enter navigates, same as the header)', async () => {
+      const user = userEvent.setup()
+      const locations: Location[] = []
+      renderSidebar(loc => { locations.push(loc) })
+      const chip = await screen.findByRole('button', { name: HEADER_NAME })
+      chip.focus()
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => {
+        const last = locations[locations.length - 1]
+        expect(last?.pathname).toBe('/bills')
+      })
+      const last = locations[locations.length - 1]
+      expect(last?.search).toContain('priority=high')
+    })
+
+    it('still shows its own hover tooltip (stays above the stretched overlay)', async () => {
+      renderSidebar()
+      const chip = await screen.findByRole('button', { name: HEADER_NAME })
+      fireEvent.pointerEnter(chip, { pointerType: 'mouse' })
+      expect(screen.getByText('3 prioritized bills')).toBeInTheDocument()
+    })
+  })
+
+  it('the upcoming-hearings count chip stays a plain badge — clicking it still reaches the header via the overlay, not its own control', async () => {
+    renderSidebar()
+    expect(screen.queryByRole('button', { name: /upcoming hearings/i })).toBeNull()
   })
 })

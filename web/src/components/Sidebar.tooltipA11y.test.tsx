@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { AuthProvider } from '../context/AuthContext'
@@ -101,5 +101,35 @@ describe('Sidebar tooltip chips carry meaning as accessible names', () => {
   it('the hearings widget header is named with its count and detail', async () => {
     renderSidebar()
     expect(await screen.findByRole('link', { name: /2 upcoming hearings for prioritized bills in the next 30 days/i })).toBeTruthy()
+  })
+})
+
+// Regression: these two chips live inside the sidebar's scrollable widget
+// region (overflowY: auto), which clips a non-portaled position:fixed bubble
+// once an ancestor establishes a containing block for it (e.g. the mobile
+// drawer's transform on .sidebar) — reported as the unvoted chip's tooltip
+// getting clipped by the sidebar's right edge. Portaling to document.body
+// escapes that ancestor subtree entirely. The nav Bills/New/Calendar chips
+// above live in the pinned (non-scrolling) nav section, outside that overflow
+// container, so they aren't affected and are left as-is.
+describe('sidebar tooltips inside the scrollable widget region are portaled to escape clipping', () => {
+  it('the unvoted-chip tooltip bubble renders under document.body, not inside the sidebar', async () => {
+    const { container } = renderSidebar()
+    const unvotedLink = await screen.findByRole('link', { name: /waiting on your vote/i })
+    fireEvent.pointerEnter(unvotedLink, { pointerType: 'mouse' })
+    const bubble = screen.getByText(/2 prioritized bills waiting on your vote/i)
+    expect(bubble).toBeInTheDocument()
+    expect(container.contains(bubble)).toBe(false)
+    expect(document.body.contains(bubble)).toBe(true)
+  })
+
+  it('the prioritized-bills count-chip tooltip bubble is also portaled (same overflow container)', async () => {
+    const { container } = renderSidebar()
+    const chip = await screen.findByRole('button', { name: /3 prioritized bills/i })
+    fireEvent.pointerEnter(chip, { pointerType: 'mouse' })
+    const bubble = screen.getByText('3 prioritized bills')
+    expect(bubble).toBeInTheDocument()
+    expect(container.contains(bubble)).toBe(false)
+    expect(document.body.contains(bubble)).toBe(true)
   })
 })

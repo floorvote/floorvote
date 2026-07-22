@@ -580,13 +580,14 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             const priorityFilter = '/bills?priority=high&priority=medium&priority=low'
             const headerActive = priorityHeaderHover && !unvotedChipHover
             const goToPriority = () => { onClose(); navigate(priorityFilter) }
-            // The leftmost count chip is a plain (non-interactive) span — since
-            // it now sits above the title link's stretched overlay (so its own
-            // hover tooltip still works), a direct click on it is a dead zone:
-            // it no longer forwards to the header's navigation the way it did
-            // when nested inside the old whole-bar role="link". Its meaning
-            // still goes on the title link's aria-label below, since that's
-            // the control a keyboard/screen-reader user actually lands on.
+            // The leftmost count chip sits above the title link's stretched
+            // overlay so its own HoverTooltip can still receive hover — which
+            // otherwise leaves a direct click on it doing nothing (the overlay
+            // can't capture a click that lands on an element painted above
+            // it). Rather than re-nesting it inside the header's role="link"
+            // (invalid ARIA — the whole point of the un-nesting above), it's
+            // its own real <button> with the same aria-label/onClick as the
+            // header, reaching the same destination independently.
             const priorityMeaning = `${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`
             const unvotedMeaning = `${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`
             return (
@@ -618,14 +619,28 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   Prioritized bills
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative', zIndex: 1 }}>
-                  {/* Leftmost chip melts into the orange header on header hover. */}
-                  <HoverTooltip text={priorityMeaning} maxWidth={220}>
-                    <span style={countBadge(headerActive)}>
+                  {/* Leftmost chip melts into the orange header on header hover.
+                      A real <button> (not a plain span) so it stays clickable
+                      on its own — see the priorityMeaning comment above.
+                      portal: this tooltip lives inside the sidebar's scrollable
+                      widget region (overflow), which can clip a non-portaled
+                      bubble; portal escapes that ancestor entirely. */}
+                  <HoverTooltip text={priorityMeaning} maxWidth={220} portal>
+                    <button
+                      type="button"
+                      aria-label={priorityMeaning}
+                      onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
+                      onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
+                      style={{ ...countBadge(headerActive), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
                       {sidebarData.priorityBillCount}
-                    </span>
+                    </button>
                   </HoverTooltip>
                   {user?.canVote && sidebarData.unvotedPriorityCount > 0 && (
-                    <HoverTooltip text={unvotedMeaning} maxWidth={220}>
+                    // portal: same overflow-clipping concern as the chip above —
+                    // this one was the reported regression (bubble clipped by
+                    // the sidebar's right edge, being the rightmost chip).
+                    <HoverTooltip text={unvotedMeaning} maxWidth={220} portal>
                       <Link
                         to={`${priorityFilter}&unvoted=1`}
                         aria-label={unvotedMeaning}
