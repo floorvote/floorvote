@@ -84,10 +84,15 @@ describe('Picker — single mode', () => {
 })
 
 describe('Picker — option descriptions', () => {
-  // `describedFirst` controls whether the row with a description is the one
-  // that gets auto-focused on open (index 0) or not — see the two tests below.
-  function DescHarness({ describedFirst = true }: { describedFirst?: boolean } = {}) {
-    const [value, setValue] = useState<string | null>(null)
+  // `describedFirst` controls whether the row with a description would be
+  // auto-focused on open by virtue of being first (index 0) when nothing is
+  // selected. `initial` lets a test make the described option the SELECTED
+  // one instead, so it's the one auto-focused regardless of array order.
+  function DescHarness({
+    describedFirst = true,
+    initial = null as string | null,
+  }: { describedFirst?: boolean; initial?: string | null } = {}) {
+    const [value, setValue] = useState<string | null>(initial)
     const options = describedFirst
       ? [
           { value: 'a', label: 'Apple', description: 'A red fruit' },
@@ -120,12 +125,29 @@ describe('Picker — option descriptions', () => {
     expect(screen.queryByText('A red fruit')).not.toBeInTheDocument()
   })
 
-  it('auto-focusing an option on open also reveals its description tooltip (focus and hover share the same affordance)', () => {
-    // Apple (with a description) is first here, so it is the option auto-focused
-    // on open (R4 fix) — its tooltip should appear immediately, same as it would
-    // for a keyboard user tabbing onto the row.
-    render(<DescHarness />)
+  it('does not pop the description tooltip for the synthetic auto-focus on open, even when the SELECTED option has one — but hover and later real focus still reveal it', async () => {
+    const user = userEvent.setup()
+    // Apple has a description and is the selected value, so it's the option
+    // R4's open-effect auto-focuses. This mirrors the real regression: Feed's
+    // scope selector defaults to its first ("default") option, which has a
+    // description, and CustomizeSidebar's "rich" selects behave the same way.
+    render(<DescHarness initial="a" />)
     fireEvent.click(screen.getByRole('button'))
+    const radios = screen.getAllByRole('radio') // Apple, Banana
+    expect(radios[0]).toHaveFocus() // R4 still works: focus lands on the selected option
+    expect(screen.queryByText('A red fruit')).not.toBeInTheDocument() // but no unrequested tooltip pop
+
+    // Hover still reveals it, exactly as before.
+    fireEvent.mouseEnter(screen.getByText('Apple'))
+    expect(screen.getByText('A red fruit')).toBeInTheDocument()
+    fireEvent.mouseLeave(screen.getByText('Apple'))
+    expect(screen.queryByText('A red fruit')).not.toBeInTheDocument()
+
+    // A subsequent *real* focus move (arrow-key nav away and back) still reveals it too.
+    await user.keyboard('{ArrowDown}') // -> Banana
+    expect(screen.queryByText('A red fruit')).not.toBeInTheDocument()
+    await user.keyboard('{ArrowUp}') // -> back to Apple, a genuine focus move
+    expect(radios[0]).toHaveFocus()
     expect(screen.getByText('A red fruit')).toBeInTheDocument()
   })
 })

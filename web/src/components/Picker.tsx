@@ -45,6 +45,9 @@ export function Picker(props: PickerProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
+  // Distinguishes the one synthetic focus() call the open-effect below makes
+  // from real user focus (hover, Tab, arrow-key nav) — see Row's onFocus.
+  const autoFocusingRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -70,7 +73,13 @@ export function Picker(props: PickerProps) {
     const items = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
     if (items.length === 0) return
     const selected = items.find(el => el.checked)
+    // Flag this one focus() call as synthetic so Row's onFocus can skip the
+    // description-tooltip reveal for it (real hover/Tab/arrow-key focus is
+    // unaffected — this ref is false in every other code path). Cleared right
+    // after, since React dispatches the resulting onFocus synchronously.
+    autoFocusingRef.current = true
     ;(selected ?? items[0]).focus()
+    autoFocusingRef.current = false
   }, [open])
 
   const align = props.align ?? 'left'
@@ -159,6 +168,7 @@ export function Picker(props: PickerProps) {
                 if (closeOnSelect) setOpen(false)
               }}
               control="radio"
+              autoFocusingRef={autoFocusingRef}
             />
           )}
           {props.options.map(opt => {
@@ -175,6 +185,7 @@ export function Picker(props: PickerProps) {
                     if (closeOnSelect) setOpen(false)
                   }}
                   control="radio"
+                  autoFocusingRef={autoFocusingRef}
                 />
               )
             } else {
@@ -194,6 +205,7 @@ export function Picker(props: PickerProps) {
                       props.onChange(props.value.filter(v => v !== opt.value))
                     }
                   }}
+                  autoFocusingRef={autoFocusingRef}
                   control="checkbox"
                 />
               )
@@ -212,6 +224,7 @@ function Row({
   indeterminate,
   onClick,
   control,
+  autoFocusingRef,
 }: {
   label: string
   description?: string
@@ -219,6 +232,8 @@ function Row({
   indeterminate?: boolean
   onClick: () => void
   control: 'radio' | 'checkbox'
+  /** True while Picker's open-effect is making its one synthetic focus() call — see there. */
+  autoFocusingRef: React.RefObject<boolean>
 }) {
   const ref = useRef<HTMLLabelElement>(null)
   // Tooltip is rendered in a portal with fixed positioning so it escapes the
@@ -231,12 +246,19 @@ function Row({
     // extend past the dropdown — keeps it balanced. It grows leftward up to TIP_MAX.
     if (r) setTip({ right: Math.max(8, window.innerWidth - r.right), top: r.top - 6 })
   }
+  // Real focus (hover, Tab, arrow-key nav) still reveals the tooltip like
+  // before; only the one synthetic auto-focus-on-open call is skipped so
+  // opening a Picker doesn't pop a tooltip the user didn't ask for.
+  function handleFocus() {
+    if (autoFocusingRef.current) return
+    enter()
+  }
   return (
     <label
       ref={ref}
       onMouseEnter={enter}
       onMouseLeave={() => setTip(null)}
-      onFocus={enter}
+      onFocus={handleFocus}
       onBlur={() => setTip(null)}
       style={{
         display: 'flex',
