@@ -36,3 +36,18 @@ export const HELPER_TEXT: React.CSSProperties = {
   fontSize: fontSize.sm,
   color: color.textMuted,
 }
+
+// Visually hides an element while keeping it in the accessibility tree — e.g. a
+// polite aria-live status region, or a <label> for a visually-labeled input.
+// Shared so call sites don't each hand-roll the clip-rect incantation.
+export const SR_ONLY: React.CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+}

@@ -25,6 +25,7 @@ import type { PopPanelHandle } from './ui/PopPanel'
 import { PinnedShadow } from './ui/PinnedShadow'
 import { useScrolledUnder } from '../hooks/useScrolledUnder'
 import { color, radius, fontSize, fontWeight, shadow, BRAND_FONT } from '../styles/tokens'
+import { SR_ONLY } from '../lib/textStyles'
 import { CustomizeSidebar } from './sidebar/CustomizeSidebar'
 import { BillBadge } from './BillBadge'
 import { PriorityChip } from './sidebar/PriorityChip'
@@ -53,6 +54,10 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   const [config, setConfig] = useState<Config | null>(null)
   const [sidebarData, setSidebarData] = useState<SidebarData | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
+  // Status text for the polite live region below — announces optimistic
+  // vote/priority saves (and rollbacks) to screen-reader users, who otherwise
+  // get no feedback from a purely visual optimistic UI update.
+  const [liveMessage, setLiveMessage] = useState('')
   const [members, setMembers] = useState<Member[] | null>(null)
   const { unreadCount } = useNotifications()
   const [showNotifications, setShowNotifications] = useState(false)
@@ -209,6 +214,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
     if (!bill) return
     const prevVote = bill.myVote
     const isToggle = prevVote === pos
+    const billNumber = bill.billNumber
 
     // Optimistic update
     setSidebarData(prev => {
@@ -227,6 +233,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       } else {
         await apiFetch(`/bills/${billId}/votes`, { method: 'POST', body: JSON.stringify({ position: pos }) })
       }
+      setLiveMessage(isToggle ? `Removed your vote on ${billNumber}` : `Voted ${pos} on ${billNumber}`)
     } catch {
       // Revert on failure
       setSidebarData(prev => {
@@ -237,10 +244,15 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
         const unvotedDelta = isToggle ? -1 : prevVote ? 0 : 1
         return { ...prev, priorityBills: revertedBills, unvotedPriorityCount: prev.unvotedPriorityCount + unvotedDelta }
       })
+      setLiveMessage(`Couldn't save your vote on ${billNumber}`)
     }
   }
 
   function handleSidebarPriorityChange(billId: string, newPriority: 'high' | 'medium' | 'low' | null) {
+    // CompactPrioritySelect only calls onChange after its own PATCH request has
+    // already resolved (see its onChange handler), so there's no failure path
+    // to announce here — just the successful new state.
+    setLiveMessage(newPriority ? `Priority set to ${newPriority}` : 'Priority removed')
     setSidebarData(prev => {
       if (!prev) return prev
       if (newPriority === null) {
@@ -302,6 +314,13 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
         flexShrink: 0,
       }}
     >
+      {/* Screen-reader-only status region announcing optimistic vote/priority
+          saves (and rollbacks on failure). Rendered unconditionally — not
+          mounted only while a save is in flight — so assistive tech has
+          already registered the node before its text changes, which is what
+          makes aria-live announcements fire reliably. */}
+      <div aria-live="polite" style={SR_ONLY}>{liveMessage}</div>
+
       {/* Drag-to-resize handle */}
       <div
         onPointerDown={startResize}
