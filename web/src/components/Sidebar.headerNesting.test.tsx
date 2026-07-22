@@ -12,7 +12,7 @@
  * navigation still work for both the header and the sibling unvoted link.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { Location } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
@@ -108,6 +108,19 @@ describe('Sidebar widget headers do not nest interactive elements', () => {
     renderSidebar()
     const header = await screen.findByRole('link', { name: /upcoming hearings/i })
     expect(header.querySelector('a,button,[role="link"],[role="button"]')).toBeNull()
+  })
+
+  it('the hearings count badge has no stacking override — no HoverTooltip of its own to protect, so it stays under the stretched overlay and clicking it still reaches the header link', async () => {
+    renderSidebar()
+    const header = await screen.findByRole('link', { name: /upcoming hearings/i })
+    const row = header.parentElement as HTMLElement
+    const badge = within(row).getByText('2')
+    // Unlike the prioritized-bills chip (which DOES get lifted, to keep its
+    // own HoverTooltip working), this badge has no hover affordance to lose —
+    // giving it position:relative/zIndex would only create a needless dead
+    // zone where a click used to reach the header's /calendar navigation.
+    expect(badge.style.position).not.toBe('relative')
+    expect(badge.style.zIndex).toBe('')
   })
 
   it('the unvoted link is its own separate control, not a descendant of the header', async () => {

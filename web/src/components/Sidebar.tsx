@@ -749,11 +749,14 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
               >
                 Upcoming hearings
               </span>
-              {/* Only chip — melts into the orange header on hover. Sits above
-                  the title link's stretched overlay (position/zIndex) so a
-                  direct click on it is a dead zone rather than double-firing
-                  navigation — same tradeoff as the prioritized-bills chip above. */}
-              <span style={{ ...countBadge(hearingsHeaderHover), position: 'relative', zIndex: 1 }}>
+              {/* Only chip — melts into the orange header on hover. Unlike the
+                  prioritized-bills chip above, this one has no HoverTooltip of
+                  its own to protect, so it's deliberately left UNDER the
+                  title link's stretched overlay (no position/zIndex override)
+                  — clicking it still navigates to /calendar via the overlay,
+                  same as the rest of the row, instead of becoming a needless
+                  dead zone. */}
+              <span style={countBadge(hearingsHeaderHover)}>
                 {totalHearings}
               </span>
             </div>
