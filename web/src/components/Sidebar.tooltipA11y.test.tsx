@@ -133,3 +133,21 @@ describe('sidebar tooltips inside the scrollable widget region are portaled to e
     expect(document.body.contains(bubble)).toBe(true)
   })
 })
+
+// Regression: the keyboard focus ring was invisible everywhere in the sidebar
+// except its navy brand strip. A blanket `.sidebar { --fv-focus-ring: #fff }`
+// rule made the ring white for the whole sidebar, including its white-background
+// body — white-on-white is invisible. The fix scopes the white ring to just the
+// navy brand strip (this class) via mobile.css, so the white-background body
+// falls through to the navy default instead. See mobile.css for the CSS-variable
+// cascade; this test only guards the structural half (the class is present on
+// the actual navy surface) since jsdom doesn't apply the stylesheet.
+describe('sidebar brand strip carries the class that scopes the white focus ring', () => {
+  it('the navy brand strip (wordmark/bell/close button) has the sidebar-brand class', async () => {
+    const { container } = renderSidebar()
+    await screen.findByRole('link', { name: /3 prioritized bills/i })
+    const brandStrip = container.querySelector('.sidebar-brand')
+    expect(brandStrip).not.toBeNull()
+    expect(brandStrip?.querySelector('[aria-label="Notifications"], [aria-label="Close menu"]')).not.toBeNull()
+  })
+})

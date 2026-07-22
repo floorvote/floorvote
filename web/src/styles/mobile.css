@@ -3,11 +3,14 @@
 /* Keyboard focus ring — paints only on :focus-visible, so mouse clicks never
    show it. Outline (not box-shadow) so it's never clipped by the app's many
    overflow:hidden cards/widgets. --fv-focus-ring defaults to navy on light
-   surfaces; the navy sidebar flips it to white below. */
+   surfaces; the sidebar body is white (inherits the navy default), so only
+   its navy surfaces — the brand strip and the mobile top bar — flip it to
+   white below. */
 :root { --fv-focus-ring: #1e3a5f; }
 *:focus-visible { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
 *:focus:not(:focus-visible) { outline: none; }
-.sidebar { --fv-focus-ring: #ffffff; }
+.sidebar-brand { --fv-focus-ring: #ffffff; }
+.mobile-topbar { --fv-focus-ring: #ffffff; }
 
 /* Stretched-link overlay for sidebar widget headers (Prioritized bills /
    Upcoming hearings — see Sidebar.tsx). The header row lays out its title

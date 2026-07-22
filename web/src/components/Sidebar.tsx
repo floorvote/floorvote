@@ -338,7 +338,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
 
       {/* Pinned top: brand + nav (does not scroll) */}
       <div style={{ flexShrink: 0 }}>
-      <div style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
+      <div className="sidebar-brand" style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <Wordmark dark size={fontSize.xl} />
