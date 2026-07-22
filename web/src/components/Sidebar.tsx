@@ -3,6 +3,7 @@ import { billsChipSelection } from '../pages/BillList/billsQuery'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { usePolling } from '../hooks/usePolling'
 import { useRegisterSidebarRefresh } from '../context/SidebarRefreshContext'
 import { Wordmark } from './Wordmark'
@@ -318,8 +319,18 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
           saves (and rollbacks on failure). Rendered unconditionally — not
           mounted only while a save is in flight — so assistive tech has
           already registered the node before its text changes, which is what
-          makes aria-live announcements fire reliably. */}
-      <div aria-live="polite" style={SR_ONLY}>{liveMessage}</div>
+          makes aria-live announcements fire reliably.
+          Portaled to document.body — a sibling of #root, same as PopPanel —
+          rather than left in-tree under this <aside>. Priority changes are
+          made through a Picker/PopPanel, and useFocusTrap sets
+          inert + aria-hidden="true" on #root for as long as that overlay is
+          open; a live region living inside #root would have its updates
+          swallowed by assistive tech during that window. Portaling keeps it
+          reachable regardless of what's open. */}
+      {createPortal(
+        <div aria-live="polite" style={SR_ONLY}>{liveMessage}</div>,
+        document.body,
+      )}
 
       {/* Drag-to-resize handle */}
       <div
