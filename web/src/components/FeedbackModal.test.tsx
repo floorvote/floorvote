@@ -11,6 +11,19 @@ vi.mock('../lib/api', () => ({
   apiFetch: (path: string, init?: RequestInit) => apiFetchMock(path, init),
 }))
 
+function mockMatchMedia(matches: boolean) {
+  vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })))
+}
+
 function renderWithConfig(operator: AppConfig['operator']) {
   const value = { config: { states: [], operator } as AppConfig, multiState: false, loading: false }
   return render(
@@ -24,6 +37,7 @@ describe('FeedbackModal', () => {
   beforeEach(() => {
     apiFetchMock.mockReset()
     apiFetchMock.mockImplementation(() => Promise.reject(new Error('boom')))
+    mockMatchMedia(false) // desktop by default
   })
 
   it('exposes the message field with an accessible name', () => {
@@ -77,6 +91,20 @@ describe('FeedbackModal', () => {
   it('shows a platform-aware hint to send with the keyboard', () => {
     const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
     render(<FeedbackModal onClose={() => {}} />, { container: root })
+    expect(screen.getByText(/to send/i)).toBeInTheDocument()
+  })
+
+  it('hides the keyboard hint on mobile, but shows it on desktop', () => {
+    const mobileRoot = document.createElement('div'); mobileRoot.id = 'root'; document.body.appendChild(mobileRoot)
+    mockMatchMedia(true) // mobile: matches (max-width: 767px)
+    const { unmount } = render(<FeedbackModal onClose={() => {}} />, { container: mobileRoot })
+    expect(screen.queryByText(/to send/i)).toBeNull()
+    unmount()
+    mobileRoot.remove()
+
+    const desktopRoot = document.createElement('div'); desktopRoot.id = 'root'; document.body.appendChild(desktopRoot)
+    mockMatchMedia(false) // desktop: no match
+    render(<FeedbackModal onClose={() => {}} />, { container: desktopRoot })
     expect(screen.getByText(/to send/i)).toBeInTheDocument()
   })
 

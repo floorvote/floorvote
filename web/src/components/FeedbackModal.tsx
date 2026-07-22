@@ -3,6 +3,7 @@ import { apiFetch } from '../lib/api'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { useConfig } from '../context/ConfigContext'
 import { isMac } from '../lib/tiptap-utils'
+import { useIsBreakpoint } from '../hooks/use-is-breakpoint'
 import { Dialog } from './ui/Dialog'
 
 interface FeedbackModalProps {
@@ -15,6 +16,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const isMobile = useIsBreakpoint('max', 768)
 
   async function handleSubmit() {
     if (!message.trim() || status === 'sending') return
@@ -107,7 +109,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
             >
               {status === 'sending' ? 'Sending…' : 'Send feedback'}
             </button>
-            {status !== 'sending' && (
+            {status !== 'sending' && !isMobile && (
               <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>
                 {isMac() ? '⌘↵' : 'Ctrl+Enter'} to send
               </span>
