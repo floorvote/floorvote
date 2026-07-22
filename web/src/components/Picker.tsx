@@ -55,6 +55,24 @@ export function Picker(props: PickerProps) {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Move focus into the menu as soon as it opens, regardless of how it was
+  // opened. A mouse click on the trigger leaves focus on the trigger button,
+  // so arrow keys never reach handleMenuKeyDown below and instead scroll the
+  // surrounding page (R4 bug report: "up/down scroll the bills table rather
+  // than select options"). Focusing the selected option (or the first option
+  // when nothing is selected) as soon as the panel mounts means arrow-key
+  // navigation works immediately no matter how the menu was opened. Guarded
+  // to the open transition so it never runs while the panel is closed/unmounted.
+  useEffect(() => {
+    if (!open) return
+    const panel = panelRef.current
+    if (!panel) return
+    const items = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+    if (items.length === 0) return
+    const selected = items.find(el => el.checked)
+    ;(selected ?? items[0]).focus()
+  }, [open])
+
   const align = props.align ?? 'left'
   const placement = props.placement ?? 'bottom'
   const minWidth = props.panelMinWidth ?? 180
@@ -102,8 +120,9 @@ export function Picker(props: PickerProps) {
     let nextIndex: number
     if (e.key === 'Home') nextIndex = 0
     else if (e.key === 'End') nextIndex = items.length - 1
-    else if (e.key === 'ArrowDown') nextIndex = activeIndex < 0 ? 0 : Math.min(activeIndex + 1, items.length - 1)
-    else nextIndex = activeIndex < 0 ? items.length - 1 : Math.max(activeIndex - 1, 0)
+    // Wrap around at the ends, per the WAI-ARIA radiogroup/menu convention (#5 follow-up).
+    else if (e.key === 'ArrowDown') nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % items.length
+    else nextIndex = activeIndex < 0 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length
     items[nextIndex].focus()
   }
 

@@ -84,16 +84,24 @@ describe('Picker — single mode', () => {
 })
 
 describe('Picker — option descriptions', () => {
-  function DescHarness() {
+  // `describedFirst` controls whether the row with a description is the one
+  // that gets auto-focused on open (index 0) or not — see the two tests below.
+  function DescHarness({ describedFirst = true }: { describedFirst?: boolean } = {}) {
     const [value, setValue] = useState<string | null>(null)
+    const options = describedFirst
+      ? [
+          { value: 'a', label: 'Apple', description: 'A red fruit' },
+          { value: 'b', label: 'Banana' },
+        ]
+      : [
+          { value: 'b', label: 'Banana' },
+          { value: 'a', label: 'Apple', description: 'A red fruit' },
+        ]
     return (
       <Picker
         mode="single"
         value={value}
-        options={[
-          { value: 'a', label: 'Apple', description: 'A red fruit' },
-          { value: 'b', label: 'Banana' },
-        ]}
+        options={options}
         onChange={(v) => setValue(v)}
         trigger={({ toggle }) => <button onClick={toggle}>open</button>}
       />
@@ -101,13 +109,24 @@ describe('Picker — option descriptions', () => {
   }
 
   it('reveals the description tooltip on row hover and hides it otherwise', () => {
-    render(<DescHarness />)
+    // Banana (no description) is first, so it — not Apple — gets auto-focused
+    // on open; this isolates hover as the thing revealing Apple's tooltip.
+    render(<DescHarness describedFirst={false} />)
     fireEvent.click(screen.getByRole('button'))
     expect(screen.queryByText('A red fruit')).not.toBeInTheDocument()
     fireEvent.mouseEnter(screen.getByText('Apple'))
     expect(screen.getByText('A red fruit')).toBeInTheDocument()
     fireEvent.mouseLeave(screen.getByText('Apple'))
     expect(screen.queryByText('A red fruit')).not.toBeInTheDocument()
+  })
+
+  it('auto-focusing an option on open also reveals its description tooltip (focus and hover share the same affordance)', () => {
+    // Apple (with a description) is first here, so it is the option auto-focused
+    // on open (R4 fix) — its tooltip should appear immediately, same as it would
+    // for a keyboard user tabbing onto the row.
+    render(<DescHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('A red fruit')).toBeInTheDocument()
   })
 })
 
@@ -172,8 +191,53 @@ describe('Picker — ARIA roles', () => {
   })
 })
 
+describe('Picker — focus management on open (R4)', () => {
+  it('focuses the selected option when the menu opens (single mode)', () => {
+    render(<SingleHarness initial="a" />)
+    fireEvent.click(screen.getByRole('button'))
+    const radios = screen.getAllByRole('radio') // Not set, Apple, Banana
+    expect(radios[1]).toHaveFocus() // Apple is selected
+  })
+
+  it('focuses the empty-option row when it is the selected one (single mode, no value)', () => {
+    render(<SingleHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const radios = screen.getAllByRole('radio')
+    expect(radios[0]).toHaveFocus() // "Not set" is selected when value is null
+  })
+
+  it('focuses the first option when the menu opens with no selection (multi mode)', () => {
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes[0]).toHaveFocus()
+  })
+
+  it('lets arrow keys navigate immediately after a mouse-driven open, with no prior focus into the panel', async () => {
+    // Regression test for the reported bug: opening by clicking the trigger left
+    // focus on the trigger, so ArrowDown/ArrowUp never reached handleMenuKeyDown
+    // and instead scrolled the surrounding page/table.
+    const user = userEvent.setup()
+    render(<SingleHarness />)
+    fireEvent.click(screen.getByRole('button')) // mouse-driven open — no manual focus into the menu
+    const radios = screen.getAllByRole('radio')
+    await user.keyboard('{ArrowDown}')
+    expect(radios[1]).toHaveFocus()
+  })
+
+  it('closing still restores focus to the trigger after an auto-focused open', async () => {
+    const user = userEvent.setup()
+    render(<SingleHarness />)
+    const trigger = screen.getByRole('button')
+    fireEvent.click(trigger)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+})
+
 describe('Picker — keyboard navigation', () => {
-  it('ArrowDown/ArrowUp move focus between option rows (single mode), clamping at the ends', async () => {
+  it('ArrowDown/ArrowUp move focus between option rows (single mode), wrapping at the ends', async () => {
     const user = userEvent.setup()
     render(<SingleHarness />)
     fireEvent.click(screen.getByRole('button'))
@@ -183,14 +247,25 @@ describe('Picker — keyboard navigation', () => {
     expect(radios[1]).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(radios[2]).toHaveFocus()
-    await user.keyboard('{ArrowDown}') // clamps — no wrap past the last option
+    await user.keyboard('{ArrowDown}') // wraps past the last option to the first
+    expect(radios[0]).toHaveFocus()
+    await user.keyboard('{ArrowUp}') // wraps past the first option to the last
     expect(radios[2]).toHaveFocus()
     await user.keyboard('{ArrowUp}')
     expect(radios[1]).toHaveFocus()
+  })
+
+  it('ArrowDown on the last option wraps to the first, and ArrowUp on the first wraps to the last (multi mode, #5 follow-up)', async () => {
+    const user = userEvent.setup()
+    render(<MultiHarness />)
+    fireEvent.click(screen.getByRole('button'))
+    const checkboxes = screen.getAllByRole('checkbox') // Apple, Banana, Cherry
+    checkboxes[2].focus()
+    await user.keyboard('{ArrowDown}')
+    expect(checkboxes[0]).toHaveFocus()
+    checkboxes[0].focus()
     await user.keyboard('{ArrowUp}')
-    expect(radios[0]).toHaveFocus()
-    await user.keyboard('{ArrowUp}') // clamps — no wrap past the first option
-    expect(radios[0]).toHaveFocus()
+    expect(checkboxes[2]).toHaveFocus()
   })
 
   it('ArrowDown/ArrowUp move focus between option rows (multi mode)', async () => {
