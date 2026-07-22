@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { useConfig } from '../context/ConfigContext'
+import { isMac } from '../lib/tiptap-utils'
 import { Dialog } from './ui/Dialog'
 
 interface FeedbackModalProps {
@@ -13,6 +14,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
   const contactEmails = config?.operator?.contactEmails ?? []
   const [message, setMessage] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   async function handleSubmit() {
     if (!message.trim() || status === 'sending') return
@@ -29,7 +31,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
   }
 
   return (
-    <Dialog onClose={status === 'sending' ? () => {} : onClose} labelledBy="feedback-title">
+    <Dialog onClose={status === 'sending' ? () => {} : onClose} labelledBy="feedback-title" initialFocus={textareaRef}>
       <button
         onClick={onClose}
         disabled={status === 'sending'}
@@ -58,8 +60,15 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
           </label>
           <textarea
             id="feedback-message"
+            ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && message.trim() && status !== 'sending') {
+                e.preventDefault()
+                handleSubmit()
+              }
+            }}
             placeholder="What's on your mind?"
             disabled={status === 'sending'}
             style={{
@@ -85,18 +94,23 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
             </p>
           )}
 
-          <button
-            onClick={handleSubmit}
-            disabled={!message.trim() || status === 'sending'}
-            style={{
-              marginTop: 12, padding: '8px 20px', background: color.billBadgeNavy, color: color.white,
-              border: 'none', borderRadius: radius.md, fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
-              cursor: !message.trim() || status === 'sending' ? 'not-allowed' : 'pointer',
-              opacity: !message.trim() || status === 'sending' ? 0.5 : 1,
-            }}
-          >
-            {status === 'sending' ? 'Sending…' : 'Send feedback'}
-          </button>
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={handleSubmit}
+              disabled={!message.trim() || status === 'sending'}
+              style={{
+                padding: '8px 20px', background: color.billBadgeNavy, color: color.white,
+                border: 'none', borderRadius: radius.md, fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
+                cursor: !message.trim() || status === 'sending' ? 'not-allowed' : 'pointer',
+                opacity: !message.trim() || status === 'sending' ? 0.5 : 1,
+              }}
+            >
+              {status === 'sending' ? 'Sending…' : 'Send feedback'}
+            </button>
+            <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>
+              {isMac() ? '⌘↵' : 'Ctrl+Enter'} to send
+            </span>
+          </div>
         </>
       )}
     </Dialog>
