@@ -81,6 +81,35 @@ describe('useFocusTrap', () => {
     trigger.remove(); root.remove()
   })
 
+  it('does not yank focus back when it has already moved outside the container before deactivate (popover-switch case)', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    const trigger = document.createElement('button'); document.body.appendChild(trigger); trigger.focus()
+    const { rerender } = render(<Harness active={false} />, { container: root })
+
+    // Activate: focus moves into the trapped container (captured restore target is `trigger`).
+    trigger.focus()
+    rerender(<Harness active />)
+    expect(document.activeElement).toBe(screen.getByLabelText('field'))
+
+    // Simulate the user activating a DIFFERENT control outside the trap
+    // (e.g. picking another event/day/form) before this trap deactivates —
+    // this is what happens when Calendar.tsx re-mounts popovers via
+    // `key={token}` and React unmounts the old panel + mounts the new one
+    // in the same commit.
+    const otherControl = document.createElement('button')
+    otherControl.setAttribute('data-testid', 'other-control')
+    document.body.appendChild(otherControl)
+    otherControl.focus()
+    expect(document.activeElement).toBe(otherControl)
+
+    // Deactivate the (now stale) trap. Its cleanup must NOT steal focus back
+    // to `trigger` — the user has already moved on to `otherControl`.
+    rerender(<Harness active={false} />)
+    expect(document.activeElement).toBe(otherControl)
+
+    otherControl.remove(); trigger.remove(); root.remove()
+  })
+
   it('ref-counts nested traps: #root stays inert until the last (outer) trap deactivates', () => {
     const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
     const { rerender } = render(<NestedHarness outerActive innerActive />, { container: root })

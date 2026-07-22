@@ -54,7 +54,15 @@ export function useFocusTrap({ active, containerRef, onEscape, initialFocus = 'f
           root.removeAttribute('aria-hidden')
         }
       }
-      restoreRef.current?.focus?.()
+      // Only restore focus if it hasn't already moved to some other element
+      // outside this (now-unmounting) container. Without this guard, when
+      // one trap deactivates in the same commit that mounts a replacement
+      // (e.g. Calendar.tsx swapping popovers via `key={token}`), the outgoing
+      // trap's cleanup would yank focus off the element the user just
+      // activated and back onto its own stale restore target.
+      const el = document.activeElement
+      const focusStillInsideOrLoose = !el || el === document.body || (container ? container.contains(el) : false)
+      if (focusStillInsideOrLoose) restoreRef.current?.focus?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
