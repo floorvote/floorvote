@@ -698,6 +698,7 @@ export function Members() {
                   border: 'none',
                   font: 'inherit',
                   fontSize: fontSize.sm,
+                  lineHeight: '1',
                 }}
               >✕</button>
             </span>
@@ -1072,8 +1073,7 @@ export function Members() {
 
         return (
           <>
-            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: invisible click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
-            <div onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div role="presentation" onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
             <div style={{
               position: 'fixed',
               top: actionsAnchor.openUp ? 'auto' : actionsAnchor.top + 4,
@@ -1125,8 +1125,8 @@ export function Members() {
       {/* Login activity panel — modal overlay */}
       {activityMember && (
         <>
-          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
           <div
+            role="presentation"
             onClick={() => { setActivityMember(null); setActivityData(null) }}
             style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.25)' }}
           />
@@ -1230,8 +1230,7 @@ export function Members() {
       )}
       {unknownOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setUnknownOpen(false)} />
+          <div role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setUnknownOpen(false)} />
           <div style={{ position: 'relative', background: color.white, borderRadius: radius.lg, boxShadow: shadow.lg, width: 560, maxHeight: '80vh', overflow: 'auto', padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h2 style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, margin: 0 }}>Unknown login attempts</h2>
@@ -1290,8 +1289,7 @@ export function Members() {
         const available = orgRoles.filter(r => !member.roles.some(mr => mr.id === r.id))
         return (
           <>
-            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: invisible click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
-            <div onClick={() => { setOpenRoleDropdown(null); setDropdownAnchor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div role="presentation" onClick={() => { setOpenRoleDropdown(null); setDropdownAnchor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
             <div style={{
               position: 'fixed',
               top: dropdownAnchor.openUp ? 'auto' : dropdownAnchor.top + 4,
