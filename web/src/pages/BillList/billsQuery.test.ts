@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { billsApiParams, billsFilterValuesFromSearch, billsChipSelection } from './billsQuery'
+import { billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection } from './billsQuery'
 
 describe('billsApiParams', () => {
   it('emits params in the canonical order matching fetchBills', () => {
@@ -50,5 +50,46 @@ describe('billsChipSelection', () => {
     expect(billsChipSelection('/feed', '')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/bills/HB123', '')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/calendar', '?newMatches=1')).toEqual({ allBills: false, newMatches: false })
+  })
+})
+
+describe('prioritizedChipSelection', () => {
+  const PRIORITY_QS = '?priority=high&priority=medium&priority=low'
+
+  it('selects the priority chip when the filter is exactly the three priority tiers', () => {
+    expect(prioritizedChipSelection('/bills', PRIORITY_QS)).toEqual({ priority: true, unvoted: false })
+  })
+
+  it('selects the unvoted chip when unvoted=1 joins the same priority filter', () => {
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&unvoted=1`)).toEqual({ priority: false, unvoted: true })
+  })
+
+  it('is order-independent for the priority tiers', () => {
+    expect(prioritizedChipSelection('/bills', '?priority=low&priority=high&priority=medium')).toEqual({ priority: true, unvoted: false })
+  })
+
+  it('selects neither chip when the priority filter is incomplete or has an extra value', () => {
+    expect(prioritizedChipSelection('/bills', '?priority=high&priority=medium')).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', '?priority=high')).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', '')).toEqual({ priority: false, unvoted: false })
+  })
+
+  it('selects neither chip when any other filter joins the priority filter', () => {
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&status=2`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&myBills=1`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&newMatches=1`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&tag=elections`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&minRelevance=5`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&cf_42=foo`)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&unvoted=1&status=2`)).toEqual({ priority: false, unvoted: false })
+  })
+
+  it('ignores sort/dir — a sort is not a filter', () => {
+    expect(prioritizedChipSelection('/bills', `${PRIORITY_QS}&sort=relevance&dir=desc`)).toEqual({ priority: true, unvoted: false })
+  })
+
+  it('selects neither chip away from the bills list (other pages, bill detail)', () => {
+    expect(prioritizedChipSelection('/feed', PRIORITY_QS)).toEqual({ priority: false, unvoted: false })
+    expect(prioritizedChipSelection('/bills/HB123', PRIORITY_QS)).toEqual({ priority: false, unvoted: false })
   })
 })

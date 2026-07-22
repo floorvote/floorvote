@@ -1,5 +1,5 @@
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom'
-import { billsChipSelection } from '../pages/BillList/billsQuery'
+import { billsChipSelection, prioritizedChipSelection } from '../pages/BillList/billsQuery'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -77,6 +77,10 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   // `priorityHeaderHover` so the two highlights are mutually exclusive.
   const [priorityHeaderHover, setPriorityHeaderHover] = useState(false)
   const [unvotedChipHover, setUnvotedChipHover] = useState(false)
+  // Own hover state for the prioritized-bills widget's leftmost count chip —
+  // mirrors billsChipHover/newChipHover below, giving the chip its own orange
+  // highlight independent of the header row's melt-on-hover behavior.
+  const [priorityChipHover, setPriorityChipHover] = useState(false)
   const [newChipHover, setNewChipHover] = useState(false)
   const [billsChipHover, setBillsChipHover] = useState(false)
   const [hearingsHeaderHover, setHearingsHeaderHover] = useState(false)
@@ -89,6 +93,9 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   // current view is exactly that chip's canonical destination (all bills vs.
   // new matches). See billsChipSelection.
   const billsChips = billsChipSelection(location.pathname, location.search)
+  // Same persistent-highlight idea, for the prioritized-bills widget's own
+  // count chip and "N unvoted" chip. See prioritizedChipSelection.
+  const prioritizedChips = prioritizedChipSelection(location.pathname, location.search)
   const membersButtonRef = useRef<HTMLDivElement>(null)
   // Each widget's list is independently resizable. The whole widget area
   // scrolls (see the scroll region in the JSX), so there's no shared budget to
@@ -630,7 +637,10 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   Prioritized bills
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative', zIndex: 1 }}>
-                  {/* Leftmost chip melts into the orange header on header hover.
+                  {/* Leftmost chip: its own orange highlight on hover, and
+                      persistently when the current view is exactly the
+                      prioritized filter — same treatment as the nav "N
+                      bills"/"N new" chips (see prioritizedChipSelection).
                       A real <button> (not a plain span) so it stays clickable
                       on its own — see the priorityMeaning comment above.
                       portal: this tooltip lives inside the sidebar's scrollable
@@ -642,7 +652,12 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                       aria-label={priorityMeaning}
                       onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
                       onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
-                      style={{ ...countBadge(headerActive), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                      onMouseEnter={() => setPriorityChipHover(true)}
+                      onMouseLeave={() => setPriorityChipHover(false)}
+                      // Orange when the current view is exactly the prioritized
+                      // filter (persistent), or the chip itself is hovered —
+                      // same treatment as the nav "N bills"/"N new" chips.
+                      style={{ ...countBadge(prioritizedChips.priority || priorityChipHover, color.bgAmberPriority), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
                       {sidebarData.priorityBillCount}
                     </button>
@@ -658,8 +673,9 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         onClick={() => onClose()}
                         onMouseEnter={() => setUnvotedChipHover(true)}
                         onMouseLeave={() => setUnvotedChipHover(false)}
-                        // Hovered on its own → the chip itself takes the header's orange.
-                        style={{ ...countBadge(unvotedChipHover, color.bgAmberPriority), textDecoration: 'none' }}
+                        // Orange when the current view is exactly the prioritized+unvoted
+                        // filter (persistent), or hovered on its own.
+                        style={{ ...countBadge(prioritizedChips.unvoted || unvotedChipHover, color.bgAmberPriority), textDecoration: 'none' }}
                       >
                         {sidebarData.unvotedPriorityCount} unvoted
                       </Link>

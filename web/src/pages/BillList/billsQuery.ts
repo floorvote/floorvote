@@ -78,3 +78,33 @@ export function billsChipSelection(pathname: string, search: string): { allBills
   if (v.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
 }
+
+const PRIORITY_TIERS = ['high', 'medium', 'low']
+
+// True when the active priority filter is exactly all three tiers — no more,
+// no less — matching the prioritized-bills widget's canonical destination.
+function isExactlyPriorityTiers(priorities: string[]): boolean {
+  return priorities.length === 3 && PRIORITY_TIERS.every(tier => priorities.includes(tier))
+}
+
+// Which prioritized-bills widget chip (if any) is "selected" — i.e. the current
+// view is exactly that chip's canonical destination. Drives the persistent
+// orange chip state in the sidebar's Prioritized bills widget, mirroring
+// billsChipSelection for the nav Bills chips above.
+//   - priority: on /bills with priority=[high,medium,low] (all three, no more,
+//     no less) as the only active filter — unvoted NOT set.
+//   - unvoted:  the same priority filter, but WITH unvoted=1 also set, and
+//     nothing else active.
+// Any other filter combination — or being off the /bills list — selects neither.
+export function prioritizedChipSelection(pathname: string, search: string): { priority: boolean; unvoted: boolean } {
+  if (pathname !== '/bills') return { priority: false, unvoted: false }
+  const v = billsFilterValuesFromSearch(new URLSearchParams(search))
+  if (!isExactlyPriorityTiers(v.priorities)) return { priority: false, unvoted: false }
+  const otherFiltersActive =
+    v.statuses.length > 0 || v.positions.length > 0 ||
+    v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
+    v.myBills || v.newMatches || v.tags.length > 0 || Object.keys(v.cfFilters).length > 0
+  if (otherFiltersActive) return { priority: false, unvoted: false }
+  if (v.unvoted) return { priority: false, unvoted: true }
+  return { priority: true, unvoted: false }
+}
