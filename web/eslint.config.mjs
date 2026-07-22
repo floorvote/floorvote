@@ -55,7 +55,6 @@ export default [
       'src/components/NotificationsSlideOver.tsx',
       'src/components/PersonalNote.tsx',
       'src/components/Picker.tsx',
-      'src/components/ReprocessScopeModal.tsx',
       'src/components/RichTextEditor.tsx',
       'src/components/calendar/EventFormFields.tsx',
       'src/components/calendar/EventItem.tsx',
