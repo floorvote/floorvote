@@ -49,7 +49,6 @@ export default [
     files: [
       'src/components/BulkActionBar.tsx',
       'src/components/CommentContent.tsx',
-      'src/components/CustomFieldsSection.tsx',
       'src/components/FilterSheet.tsx',
       'src/components/GroupedBillCard.tsx',
       'src/components/NotificationsSlideOver.tsx',
@@ -62,11 +61,9 @@ export default [
       'src/components/calendar/MonthGrid.tsx',
       'src/components/calendar/SubscribeCalendar.tsx',
       'src/components/sidebar/MembersPopup.tsx',
-      'src/pages/BillDetail.tsx',
       'src/pages/BillList/BillRow.tsx',
       'src/pages/admin/Config.tsx',
       'src/pages/admin/DraftBills.tsx',
-      'src/pages/admin/Members.tsx',
       'src/pages/admin/Notifications.tsx',
     ],
     rules: {

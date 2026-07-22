@@ -157,7 +157,10 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
         <div key={field.id} style={ROW}>
           <span style={labelStyle}>{field.name}</span>
           <div style={{ display: 'flex' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', cursor: isAdmin ? 'pointer' : 'default' }}>
+            <label
+              aria-label={field.name}
+              style={{ display: 'inline-flex', alignItems: 'center', cursor: isAdmin ? 'pointer' : 'default' }}
+            >
               <input
                 type="checkbox"
                 checked={checked}
@@ -277,16 +280,24 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                 allowEmpty
                 initialContent={currentValue ?? ''}
                 submitLabel="Save"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                 autoFocus
                 onSubmit={html => save(field.id, html.replace(/<[^>]*>/g, '').trim() ? html : null)}
                 onCancel={() => setEditingFieldId(null)}
               />
             ) : (
-              <div
+              <button
+                type="button"
+                aria-label={`Edit ${field.name}`}
                 onClick={() => setEditingFieldId(field.id)}
                 onMouseEnter={() => setHoveredFieldId(field.id)}
                 onMouseLeave={() => setHoveredFieldId(null)}
                 style={{
+                  display: 'block',
+                  width: '100%',
+                  margin: 0,
+                  font: 'inherit',
+                  textAlign: 'left',
                   cursor: 'text',
                   minHeight: 28,
                   border: `1px solid ${hoveredFieldId === field.id ? color.borderStrong : color.borderDefault}`,
@@ -300,7 +311,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                   ? <CommentContent content={currentValue} fontSize={12} />
                   : <span style={notSetStyle}>Click to add…</span>
                 }
-              </div>
+              </button>
             )}
             {!isEditing && auditLine(entry)}
           </div>

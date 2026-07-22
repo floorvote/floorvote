@@ -365,6 +365,112 @@ describe('BillDetail draft admin inline edit (title/sponsor) keyboard access', (
   })
 })
 
+describe('BillDetail draft admin inline edit (summary/text) keyboard access', () => {
+  beforeEach(() => { vi.restoreAllMocks(); authState.role = 'admin' })
+  afterEach(() => { authState.role = 'member' })
+
+  // The draft summary and bill-text "click to edit" affordances are admin-only
+  // controls, same as title/sponsor. They must be real, keyboard-operable
+  // buttons — not divs that only respond to a mouse click.
+  it('lets an admin enter summary-edit mode from the keyboard', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const edit = screen.getByRole('button', { name: /edit summary/i })
+    edit.focus()
+    await user.keyboard('{Enter}')
+
+    // RichTextEditor is mocked to render null, so entering edit mode removes
+    // the read-only edit affordance from the DOM — confirming the handler fired.
+    expect(screen.queryByRole('button', { name: /edit summary/i })).not.toBeInTheDocument()
+  })
+
+  it('lets an admin enter bill-text-edit mode from the keyboard', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const edit = screen.getByRole('button', { name: /edit bill text/i })
+    edit.focus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.queryByRole('button', { name: /edit bill text/i })).not.toBeInTheDocument()
+  })
+
+  it('does not render summary/text edit affordances as buttons for non-admins', async () => {
+    authState.role = 'member'
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    expect(screen.queryByRole('button', { name: /edit summary/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit bill text/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('BillDetail pinned custom field inline edit keyboard access', () => {
+  beforeEach(() => { vi.restoreAllMocks(); authState.role = 'admin' })
+  afterEach(() => { authState.role = 'member' })
+
+  function mockWithPinnedField() {
+    const billWithField = {
+      ...BILL,
+      customFieldValues: { f1: { value: 'Committee notes here', setBy: 'Admin', updatedAt: '2025-01-01 00:00:00' } },
+    }
+    routerMock.loaderData = billWithField
+    return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
+      if (path === '/bills/42') return billWithField as never
+      if (path === '/config') return { ...CONFIG } as never
+      if (path === '/config/custom-fields') return [
+        { id: 'f1', name: 'Committee Notes', slug: null, type: 'text', options: null, multiple: false, displayOrder: 0, pinned: true },
+      ] as never
+      if (path === '/notifications/mark-read-by-bill/42') return {} as never
+      if (path === '/roles') return [] as never
+      if (path === '/users') return [] as never
+      return {} as never
+    })
+  }
+
+  // The pinned custom field "click to edit" affordance is admin-only, same
+  // pattern as title/sponsor/summary/text — must be keyboard-operable.
+  it('renders the pinned custom field edit affordance as a button and enters edit mode from the keyboard', async () => {
+    const user = userEvent.setup()
+    mockWithPinnedField()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    // A pinned field with a value also renders in the full custom-fields list
+    // further down the page (CustomFieldsSection), so there are two buttons
+    // with this accessible name — the pinned box's is first in DOM order.
+    const edits = await screen.findAllByRole('button', { name: /edit committee notes/i })
+    expect(edits.length).toBeGreaterThanOrEqual(1)
+    const edit = edits[0]
+    edit.focus()
+    await user.keyboard('{Enter}')
+
+    // RichTextEditor is mocked to render null, so entering edit mode removes
+    // just the pinned box's edit affordance — one fewer button afterward.
+    const remaining = screen.queryAllByRole('button', { name: /edit committee notes/i })
+    expect(remaining.length).toBe(edits.length - 1)
+  })
+
+  it('does not render the pinned custom field edit affordance as a button for non-admins', async () => {
+    authState.role = 'member'
+    mockWithPinnedField()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    // The same value also appears in the full custom-fields list elsewhere on
+    // the page, so there are multiple matches — findAllByText both waits for
+    // render and tolerates that, unlike findByText.
+    await screen.findAllByText('Committee notes here')
+
+    expect(screen.queryByRole('button', { name: /edit committee notes/i })).not.toBeInTheDocument()
+  })
+})
+
 describe('BillDetail deferred-nav entry (prefetchedBill without billPaths)', () => {
   beforeEach(() => vi.restoreAllMocks())
 

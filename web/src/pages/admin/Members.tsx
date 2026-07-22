@@ -586,8 +586,9 @@ export function Members() {
         <div style={CARD_TITLE}>Invite new members</div>
         <form onSubmit={demoLocked ? (e) => e.preventDefault() : handleInvite}>
           <div style={{ marginBottom: 16 }}>
-            <label style={FORM_LABEL}>Invitees</label>
+            <label htmlFor="invite-text" style={FORM_LABEL}>Invitees</label>
             <textarea
+              id="invite-text"
               value={inviteText}
               onChange={(e) => { setInviteText(e.target.value); setInviteResult(null) }}
               placeholder={'Jane Doe, jane@example.com'}
@@ -599,8 +600,9 @@ export function Members() {
             </div>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={FORM_LABEL}>Role</label>
+            <label htmlFor="invite-role" style={FORM_LABEL}>Role</label>
             <select
+              id="invite-role"
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as 'member' | 'admin')}
               style={{ ...inputStyle, width: 200 }}
@@ -647,6 +649,7 @@ export function Members() {
             <span key={role.id} style={ROLE_CHIP}>
               {editingRoleId === role.id ? (
                 <input
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into rename mode, out of scope for this task's focus-management redesign
                   autoFocus
                   value={editingRoleName}
                   onChange={e => setEditingRoleName(e.target.value.replace(/@/g, ''))}
@@ -661,19 +664,42 @@ export function Members() {
                   }}
                 />
               ) : (
-                <span
+                <button
+                  type="button"
+                  disabled={demoLocked}
+                  aria-label={`Rename role ${role.name}`}
                   onClick={demoLocked ? undefined : () => { setEditingRoleId(role.id); setEditingRoleName(role.name) }}
                   title={demoLocked ? undefined : 'Click to rename'}
-                  style={{ cursor: demoLocked ? 'default' : 'text' }}
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    color: 'inherit',
+                    cursor: demoLocked ? 'default' : 'text',
+                  }}
                 >
                   {role.name}
-                </span>
+                </button>
               )}
-              <span
-                style={demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X}
+              <button
+                type="button"
+                disabled={demoLocked}
+                aria-label={`Delete role ${role.name}`}
                 onClick={demoLocked ? undefined : () => handleDeleteRole(role.id)}
                 title={demoLocked ? undefined : `Delete role "${role.name}"`}
-              >✕</span>
+                style={{
+                  ...(demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X),
+                  padding: 0,
+                  margin: 0,
+                  marginLeft: 1,
+                  background: 'none',
+                  border: 'none',
+                  font: 'inherit',
+                  fontSize: fontSize.sm,
+                }}
+              >✕</button>
             </span>
           ))}
           {orgRoles.length === 0 && (
@@ -817,6 +843,8 @@ export function Members() {
                         style={{ fontSize: fontSize.sm, color: color.textMuted, textDecoration: 'none' }}
                         onMouseOver={e => (e.currentTarget.style.textDecoration = 'underline')}
                         onMouseOut={e => (e.currentTarget.style.textDecoration = 'none')}
+                        onFocus={e => (e.currentTarget.style.textDecoration = 'underline')}
+                        onBlur={e => (e.currentTarget.style.textDecoration = 'none')}
                       >
                         {member.email}
                       </a>
@@ -831,6 +859,7 @@ export function Members() {
                         {sortRoles(member.roles).map(role => (
                           <span key={role.id} style={ROLE_CHIP}>
                             {role.name}
+                            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events -- pre-existing: member-role assignment chip, a separate feature from this task's edit affordances; keyboard support tracked as follow-up */}
                             <span
                               style={demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X}
                               onClick={demoLocked ? undefined : () => handleSetMemberRoles(member.id, member.roles.filter(r => r.id !== role.id).map(r => r.id))}
@@ -838,6 +867,7 @@ export function Members() {
                             >✕</span>
                           </span>
                         ))}
+                        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events -- pre-existing: opens the add-role dropdown (anchor-positioned popup); keyboard support tracked as follow-up alongside the dropdown's own focus management */}
                         <span
                           style={demoLocked ? { ...chipAddRole, opacity: 0.4, cursor: 'not-allowed' } : chipAddRole}
                           onClick={demoLocked ? undefined : (e) => {
@@ -1042,6 +1072,7 @@ export function Members() {
 
         return (
           <>
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: invisible click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
             <div onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
             <div style={{
               position: 'fixed',
@@ -1056,6 +1087,7 @@ export function Members() {
               {items.map((item, i) => {
                 const itemColor = item.disabled ? color.borderStrong : item.danger ? color.textErrorRed : color.textSlate
                 const row = (
+                  // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- pre-existing: "···" actions-menu item; a proper accessible menu (role="menu"/"menuitem", arrow-key nav, focus return) is a larger redesign, tracked as follow-up
                   <div
                     onClick={item.disabled ? undefined : item.onClick}
                     style={{
@@ -1093,6 +1125,7 @@ export function Members() {
       {/* Login activity panel — modal overlay */}
       {activityMember && (
         <>
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
           <div
             onClick={() => { setActivityMember(null); setActivityData(null) }}
             style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.25)' }}
@@ -1197,6 +1230,7 @@ export function Members() {
       )}
       {unknownOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setUnknownOpen(false)} />
           <div style={{ position: 'relative', background: color.white, borderRadius: radius.lg, boxShadow: shadow.lg, width: 560, maxHeight: '80vh', overflow: 'auto', padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -1256,6 +1290,7 @@ export function Members() {
         const available = orgRoles.filter(r => !member.roles.some(mr => mr.id === r.id))
         return (
           <>
+            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: invisible click-outside-to-dismiss backdrop, not a content element; keyboard dismissal needs the Dialog.tsx focus-trap pattern, tracked as follow-up */}
             <div onClick={() => { setOpenRoleDropdown(null); setDropdownAnchor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
             <div style={{
               position: 'fixed',
@@ -1267,6 +1302,7 @@ export function Members() {
               minWidth: 160, padding: '4px 0',
             }}>
               {available.map(role => (
+                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- pre-existing: add-role dropdown item, a separate feature from this task's edit affordances; keyboard support tracked as follow-up alongside the dropdown's own focus management
                 <div
                   key={role.id}
                   onClick={() => {
@@ -1275,7 +1311,9 @@ export function Members() {
                     setDropdownAnchor(null)
                   }}
                   style={{ padding: '6px 12px', fontSize: fontSize.sm, cursor: 'pointer', color: color.textSlate }}
+                  // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events -- pre-existing: paired with this element's not-yet-keyboard-operable state above
                   onMouseOver={e => (e.currentTarget.style.background = color.surfaceSubtle)}
+                  // eslint-disable-next-line jsx-a11y/mouse-events-have-key-events -- pre-existing: paired with this element's not-yet-keyboard-operable state above
                   onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   {role.name}
