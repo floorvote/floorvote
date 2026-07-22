@@ -227,8 +227,19 @@ describe('Sidebar widget headers do not nest interactive elements', () => {
     })
   })
 
-  it('the upcoming-hearings count chip stays a plain badge — clicking it still reaches the header via the overlay, not its own control', async () => {
+  it('the upcoming-hearings count chip stays a plain badge (not a button) — clicking it still reaches the header via the overlay, not its own control', async () => {
     renderSidebar()
-    expect(screen.queryByRole('button', { name: /upcoming hearings/i })).toBeNull()
+    const header = await screen.findByRole('link', { name: /upcoming hearings/i })
+    const row = header.parentElement as HTMLElement
+    // Scope to the badge itself (found by its text, "2") rather than querying
+    // for a role="button" named "upcoming hearings" — the badge has no
+    // aria-label of its own, so even a wrongly-converted <button> would never
+    // match that name query and the assertion would pass for the wrong
+    // reason. Asserting the badge's own tag directly makes this fail if
+    // someone converts it to a button (mirroring the R1 fix on the
+    // prioritized-bills chip, which this widget deliberately does not get).
+    const badge = within(row).getByText('2')
+    expect(badge.tagName).not.toBe('BUTTON')
+    expect(within(row).queryByRole('button')).toBeNull()
   })
 })
