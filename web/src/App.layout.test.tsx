@@ -45,6 +45,17 @@ import { AuthProvider } from './context/AuthContext'
 
 beforeEach(() => { hoisted.sidebarMounts = 0 })
 
+describe('AppLayout skip link', () => {
+  it('renders a skip-to-content link targeting #main-content, and <main> has that id', async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
+    render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
+    await screen.findByText('bills page')
+    const link = screen.getByRole('link', { name: /skip to (main )?content/i })
+    expect(link.getAttribute('href')).toBe('#main-content')
+    expect(document.getElementById('main-content')?.tagName).toBe('MAIN')
+  })
+})
+
 describe('shared layout route (data router)', () => {
   it('keeps the sidebar mounted when crossing the admin boundary', async () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })

@@ -43,7 +43,7 @@ const DEFAULT_WIDTH = 230
 const MIN_WIDTH = 230
 const MAX_WIDTH = 400
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   const { user } = useAuth()
   const { hasUnread, visitHadUnread } = useFeedUnread()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -288,6 +288,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   return (
     <aside
+      ref={containerRef}
       className={`sidebar${isOpen ? ' drawer-open' : ''}`}
       style={{
         position: 'relative',

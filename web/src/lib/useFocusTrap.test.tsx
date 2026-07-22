@@ -19,6 +19,24 @@ function Harness({ active, onEscape }: { active: boolean; onEscape?: () => void 
   )
 }
 
+function InertTargetHarness({ active }: { active: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const targetRef = useRef<HTMLDivElement>(null)
+  useFocusTrap({ active, containerRef, initialFocus: 'first', inertTarget: targetRef })
+  return (
+    <div>
+      <div ref={targetRef} data-testid="target">
+        <button>background button</button>
+      </div>
+      {active && (
+        <div ref={containerRef} data-testid="panel">
+          <button>inside</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NestedHarness({ outerActive, innerActive }: { outerActive: boolean; innerActive: boolean }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
@@ -108,6 +126,22 @@ describe('useFocusTrap', () => {
     expect(document.activeElement).toBe(otherControl)
 
     otherControl.remove(); trigger.remove(); root.remove()
+  })
+
+  it('with inertTarget: inerts that element (not #root) while active, and clears it after', () => {
+    const root = document.createElement('div'); root.id = 'root'; document.body.appendChild(root)
+    const { rerender } = render(<InertTargetHarness active />, { container: root })
+    const target = screen.getByTestId('target')
+    expect(target.hasAttribute('inert')).toBe(true)
+    expect(target.getAttribute('aria-hidden')).toBe('true')
+    // #root itself must be untouched in this mode.
+    expect(root.hasAttribute('inert')).toBe(false)
+    expect(root.hasAttribute('aria-hidden')).toBe(false)
+
+    rerender(<InertTargetHarness active={false} />)
+    expect(target.hasAttribute('inert')).toBe(false)
+    expect(target.hasAttribute('aria-hidden')).toBe(false)
+    root.remove()
   })
 
   it('ref-counts nested traps: #root stays inert until the last (outer) trap deactivates', () => {
