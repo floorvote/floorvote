@@ -51,7 +51,6 @@ export default [
       'src/components/CommentContent.tsx',
       'src/components/FilterSheet.tsx',
       'src/components/GroupedBillCard.tsx',
-      'src/components/NotificationsSlideOver.tsx',
       'src/components/PersonalNote.tsx',
       'src/components/Picker.tsx',
       'src/components/RichTextEditor.tsx',

@@ -105,7 +105,15 @@ export function NotificationsSlideOver(
     void markAllRead()
   }, [refresh])
 
-  function handleCommentMouseOver(e: React.MouseEvent) {
+  // Shared by mouse hover (onMouseOver/onMouseOut) and keyboard focus
+  // (onFocus/onBlur, added below to satisfy jsx-a11y/mouse-events-have-key-events)
+  // — both only read `e.target`, so a common React.SyntheticEvent parameter
+  // type-checks for either event kind. None of today's mention spans carry a
+  // tabIndex, so onFocus/onBlur don't yet fire from them in practice; they're
+  // wired so a real focusable descendant (e.g. a link inside the comment body)
+  // doesn't silently skip this affordance, and so the row is no longer
+  // mouse-only per jsx-a11y's rule.
+  function handleCommentMouseOver(e: React.SyntheticEvent) {
     const target = e.target as HTMLElement
     if (target.dataset.type !== 'mention') return
     const dataId = target.dataset.id || ''
@@ -119,7 +127,7 @@ export function NotificationsSlideOver(
     })
   }
 
-  function handleCommentMouseOut(e: React.MouseEvent) {
+  function handleCommentMouseOut(e: React.SyntheticEvent) {
     if ((e.target as HTMLElement).dataset.type === 'mention') setRoleTooltip(null)
   }
 
@@ -207,6 +215,14 @@ export function NotificationsSlideOver(
                 <>
                   mentioned{' '}
                   <span
+                    // The member list is also shown in a hover-only tooltip
+                    // (onMouseEnter/onMouseLeave below) — that bubble is a
+                    // purely mouse-triggered affordance, so `title` carries
+                    // the same list as a native, non-hover-dependent fallback
+                    // for screen-reader and keyboard/touch users.
+                    title={attributionRole
+                      ? `${attributionRole.name}: ${attributionRole.members.map(mb => mb.name).join(', ')}`
+                      : undefined}
                     style={{
                       display: 'inline-block',
                       background: color.bgBlueChip,
@@ -308,6 +324,8 @@ export function NotificationsSlideOver(
                     }}
                     onMouseOver={handleCommentMouseOver}
                     onMouseOut={handleCommentMouseOut}
+                    onFocus={handleCommentMouseOver}
+                    onBlur={handleCommentMouseOut}
                     dangerouslySetInnerHTML={{ __html: safeHtml }}
                   />
                 </div>

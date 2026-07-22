@@ -463,41 +463,53 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             <>
               <span style={{ fontFamily: BRAND_FONT }}>Bills</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                {stats?.billCount != null && (
-                  <HoverTooltip text={`${stats.billCount.toLocaleString()} bills available`} maxWidth={220}>
-                    {/* Orange (melts into the active row) when you're on the unfiltered
-                        /bills view; gray clickable pill otherwise. Click clears all filters. */}
-                    <span
-                      role="link"
-                      tabIndex={0}
-                      onClick={(e) => { if (maybeOpenInNewTab(e, '/bills')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') }}
-                      onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills') }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
-                      onMouseEnter={() => setBillsChipHover(true)}
-                      onMouseLeave={() => setBillsChipHover(false)}
-                      style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgAmberPriority), cursor: 'pointer' }}
-                    >
-                      {stats.billCount.toLocaleString()} bills
-                    </span>
-                  </HoverTooltip>
-                )}
-                {isAdmin && (stats?.newMatchesCount ?? 0) > 0 && (
-                  <HoverTooltip text={`${stats!.newMatchesCount} new bill${stats!.newMatchesCount === 1 ? '' : 's'} awaiting a priority decision`} maxWidth={220}>
-                    <span
-                      role="link"
-                      tabIndex={0}
-                      onClick={(e) => { if (maybeOpenInNewTab(e, '/bills?newMatches=1')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') }}
-                      onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills?newMatches=1') }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') } }}
-                      onMouseEnter={() => setNewChipHover(true)}
-                      onMouseLeave={() => setNewChipHover(false)}
-                      // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
-                      style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgAmberPriority), cursor: 'pointer' }}
-                    >
-                      {stats!.newMatchesCount} new
-                    </span>
-                  </HoverTooltip>
-                )}
+                {stats?.billCount != null && (() => {
+                  // The HoverTooltip bubble is aria-hidden (a purely visual affordance) —
+                  // this span is the interactive element itself, so its own aria-label
+                  // must carry the same meaning for screen-reader/touch users who never
+                  // trigger hover.
+                  const billsMeaning = `${stats.billCount.toLocaleString()} bills available`
+                  return (
+                    <HoverTooltip text={billsMeaning} maxWidth={220}>
+                      {/* Orange (melts into the active row) when you're on the unfiltered
+                          /bills view; gray clickable pill otherwise. Click clears all filters. */}
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        aria-label={billsMeaning}
+                        onClick={(e) => { if (maybeOpenInNewTab(e, '/bills')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') }}
+                        onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills') }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
+                        onMouseEnter={() => setBillsChipHover(true)}
+                        onMouseLeave={() => setBillsChipHover(false)}
+                        style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgAmberPriority), cursor: 'pointer' }}
+                      >
+                        {stats.billCount.toLocaleString()} bills
+                      </span>
+                    </HoverTooltip>
+                  )
+                })()}
+                {isAdmin && (stats?.newMatchesCount ?? 0) > 0 && (() => {
+                  const newMeaning = `${stats!.newMatchesCount} new bill${stats!.newMatchesCount === 1 ? '' : 's'} awaiting a priority decision`
+                  return (
+                    <HoverTooltip text={newMeaning} maxWidth={220}>
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        aria-label={newMeaning}
+                        onClick={(e) => { if (maybeOpenInNewTab(e, '/bills?newMatches=1')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') }}
+                        onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills?newMatches=1') }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') } }}
+                        onMouseEnter={() => setNewChipHover(true)}
+                        onMouseLeave={() => setNewChipHover(false)}
+                        // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
+                        style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgAmberPriority), cursor: 'pointer' }}
+                      >
+                        {stats!.newMatchesCount} new
+                      </span>
+                    </HoverTooltip>
+                  )
+                })()}
               </span>
             </>
           )}
@@ -560,10 +572,19 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             const priorityFilter = '/bills?priority=high&priority=medium&priority=low'
             const headerActive = priorityHeaderHover && !unvotedChipHover
             const goToPriority = () => { onClose(); navigate(priorityFilter) }
+            // The leftmost count chip is a plain (non-interactive) span nested
+            // inside this already-interactive header row — making it its own
+            // toggletip would nest interactive elements inside the row's own
+            // role="link". Instead its meaning goes onto the row's own
+            // aria-label, since the row is what a keyboard/touch user actually
+            // lands on.
+            const priorityMeaning = `${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`
+            const unvotedMeaning = `${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`
             return (
               <div
                 role="link"
                 tabIndex={0}
+                aria-label={priorityMeaning}
                 onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
                 onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPriority() } }}
@@ -585,15 +606,16 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   {/* Leftmost chip melts into the orange header on header hover. */}
-                  <HoverTooltip text={`${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`} maxWidth={220}>
+                  <HoverTooltip text={priorityMeaning} maxWidth={220}>
                     <span style={countBadge(headerActive)}>
                       {sidebarData.priorityBillCount}
                     </span>
                   </HoverTooltip>
                   {user?.canVote && sidebarData.unvotedPriorityCount > 0 && (
-                    <HoverTooltip text={`${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`} maxWidth={220}>
+                    <HoverTooltip text={unvotedMeaning} maxWidth={220}>
                       <Link
                         to={`${priorityFilter}&unvoted=1`}
+                        aria-label={unvotedMeaning}
                         onClick={(e) => { e.stopPropagation(); onClose() }}
                         onMouseEnter={() => setUnvotedChipHover(true)}
                         onMouseLeave={() => setUnvotedChipHover(false)}
@@ -672,6 +694,12 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       {/* Upcoming hearings widget */}
       {sidebarData !== null && sidebarData.upcomingHearings.length > 0 && isModuleEnabled(config?.modules, 'upcoming-hearings') && (() => {
         const totalHearings = sidebarData.upcomingHearings.length
+        // The count chip here has no HoverTooltip of its own, but the row's
+        // detail ("...in the next 30 days") previously lived only in a `title`
+        // attribute — a native tooltip that doesn't reveal on keyboard focus.
+        // aria-label carries the same detail as the row's own accessible name
+        // (title stays too, for the native mouse-hover affordance).
+        const hearingsMeaning = `${totalHearings} upcoming hearing${totalHearings === 1 ? '' : 's'} for prioritized bills in the next 30 days`
         return (
           <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
             {/* Header row — the whole bar links to the calendar; hovering
@@ -680,6 +708,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
               role="link"
               tabIndex={0}
               title="Upcoming hearings for prioritized bills in the next 30 days"
+              aria-label={hearingsMeaning}
               onClick={(e) => { if (maybeOpenInNewTab(e, '/calendar')) return; onClose(); navigate('/calendar') }}
               onAuxClick={(e) => { maybeOpenInNewTab(e, '/calendar') }}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); navigate('/calendar') } }}

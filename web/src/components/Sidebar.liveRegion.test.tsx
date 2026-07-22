@@ -89,7 +89,10 @@ describe('Sidebar vote live region', () => {
 
   it('announces a successful vote with the bill number and position', async () => {
     renderSidebar()
-    const supportBtn = await screen.findByRole('button', { name: 'Support' })
+    // The button's accessible name is now the vote hint (see VoteButton's
+    // aria-label), not the short visible label — the visible text is still
+    // "Support" (asserted in VoteButton.test.tsx).
+    const supportBtn = await screen.findByRole('button', { name: /vote support on this bill/i })
     fireEvent.click(supportBtn)
 
     await waitFor(() => {
@@ -100,7 +103,7 @@ describe('Sidebar vote live region', () => {
   it('announces rollback when the vote request fails', async () => {
     hoisted.voteShouldFail = true
     renderSidebar()
-    const supportBtn = await screen.findByRole('button', { name: 'Support' })
+    const supportBtn = await screen.findByRole('button', { name: /vote support on this bill/i })
     fireEvent.click(supportBtn)
 
     await waitFor(() => {
