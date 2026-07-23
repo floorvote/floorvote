@@ -451,10 +451,14 @@ export function Members() {
     setUnknownLoading(false)
   }
 
-  async function resendLogin(email: string) {
+  async function resendLogin(member: Member) {
+    // Use the authenticated admin endpoint, NOT the public POST /auth/magic-link:
+    // that public route is Turnstile-gated, and an admin has no widget to produce a
+    // token, so a tokenless POST 403s ("Verification required.") on any tenant with
+    // TURNSTILE_SECRET_KEY set. The admin is already authenticated here.
     try {
-      await apiFetch('/auth/magic-link', { method: 'POST', body: JSON.stringify({ email }) })
-      setToast(`Login link sent to ${email}.`)
+      await apiFetch(`/admin/members/${member.id}/resend-login`, { method: 'POST' })
+      setToast(`Login link sent to ${member.email}.`)
       setTimeout(() => setToast(null), 4000)
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Failed to send login link.')
@@ -510,7 +514,7 @@ export function Members() {
     }
 
     if (!isSelf && member.hasLoggedIn && !isDeactivated) {
-      items.push({ kind: 'action', label: 'Resend login link', disabled: demoLocked, onClick: () => { close(); resendLogin(member.email) } })
+      items.push({ kind: 'action', label: 'Resend login link', disabled: demoLocked, onClick: () => { close(); resendLogin(member) } })
     }
 
     if (isDeactivated) {
