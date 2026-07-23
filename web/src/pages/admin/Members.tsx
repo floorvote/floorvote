@@ -135,6 +135,15 @@ export function Members() {
   const isOwner = user?.role === 'owner'
   // The members card is the clamp boundary for the actions-menu hover bubbles.
   const cardRef = useRef<HTMLDivElement>(null)
+  // Trigger buttons for each row's "Add role" / "···" popups, keyed by member
+  // id — used to return focus to the trigger when its popup closes via
+  // Escape (mirrors Picker.tsx's focusTrigger()).
+  const roleTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const actionsTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  // The two popups themselves, so the focus-on-open effects below can find
+  // their first menu item without querying the whole document.
+  const roleDropdownPanelRef = useRef<HTMLDivElement>(null)
+  const actionsMenuPanelRef = useRef<HTMLDivElement>(null)
 
   // Invite form state
   const [inviteText, setInviteText] = useState('')
@@ -200,6 +209,19 @@ export function Members() {
       .catch(() => setListError('Failed to load members.'))
       .finally(() => setListLoading(false))
   }, [])
+
+  // Move focus to the first item as soon as a popup opens, regardless of
+  // whether it was opened by mouse or keyboard — mirrors Picker.tsx's
+  // focus-on-open effect so arrow keys work immediately.
+  useEffect(() => {
+    if (!openRoleDropdown) return
+    roleDropdownPanelRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+  }, [openRoleDropdown])
+
+  useEffect(() => {
+    if (!openActionsMenu) return
+    actionsMenuPanelRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus()
+  }, [openActionsMenu])
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -586,8 +608,9 @@ export function Members() {
         <div style={CARD_TITLE}>Invite new members</div>
         <form onSubmit={demoLocked ? (e) => e.preventDefault() : handleInvite}>
           <div style={{ marginBottom: 16 }}>
-            <label style={FORM_LABEL}>Invitees</label>
+            <label htmlFor="invite-text" style={FORM_LABEL}>Invitees</label>
             <textarea
+              id="invite-text"
               value={inviteText}
               onChange={(e) => { setInviteText(e.target.value); setInviteResult(null) }}
               placeholder={'Jane Doe, jane@example.com'}
@@ -599,8 +622,9 @@ export function Members() {
             </div>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={FORM_LABEL}>Role</label>
+            <label htmlFor="invite-role" style={FORM_LABEL}>Role</label>
             <select
+              id="invite-role"
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as 'member' | 'admin')}
               style={{ ...inputStyle, width: 200 }}
@@ -647,6 +671,7 @@ export function Members() {
             <span key={role.id} style={ROLE_CHIP}>
               {editingRoleId === role.id ? (
                 <input
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into rename mode, out of scope for this task's focus-management redesign
                   autoFocus
                   value={editingRoleName}
                   onChange={e => setEditingRoleName(e.target.value.replace(/@/g, ''))}
@@ -661,19 +686,43 @@ export function Members() {
                   }}
                 />
               ) : (
-                <span
+                <button
+                  type="button"
+                  disabled={demoLocked}
+                  aria-label={`Rename role ${role.name}`}
                   onClick={demoLocked ? undefined : () => { setEditingRoleId(role.id); setEditingRoleName(role.name) }}
                   title={demoLocked ? undefined : 'Click to rename'}
-                  style={{ cursor: demoLocked ? 'default' : 'text' }}
+                  style={{
+                    margin: 0,
+                    padding: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    color: 'inherit',
+                    cursor: demoLocked ? 'default' : 'text',
+                  }}
                 >
                   {role.name}
-                </span>
+                </button>
               )}
-              <span
-                style={demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X}
+              <button
+                type="button"
+                disabled={demoLocked}
+                aria-label={`Delete role ${role.name}`}
                 onClick={demoLocked ? undefined : () => handleDeleteRole(role.id)}
                 title={demoLocked ? undefined : `Delete role "${role.name}"`}
-              >✕</span>
+                style={{
+                  ...(demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X),
+                  padding: 0,
+                  margin: 0,
+                  marginLeft: 1,
+                  background: 'none',
+                  border: 'none',
+                  font: 'inherit',
+                  fontSize: fontSize.sm,
+                  lineHeight: '1',
+                }}
+              >✕</button>
             </span>
           ))}
           {orgRoles.length === 0 && (
@@ -817,6 +866,8 @@ export function Members() {
                         style={{ fontSize: fontSize.sm, color: color.textMuted, textDecoration: 'none' }}
                         onMouseOver={e => (e.currentTarget.style.textDecoration = 'underline')}
                         onMouseOut={e => (e.currentTarget.style.textDecoration = 'none')}
+                        onFocus={e => (e.currentTarget.style.textDecoration = 'underline')}
+                        onBlur={e => (e.currentTarget.style.textDecoration = 'none')}
                       >
                         {member.email}
                       </a>
@@ -831,15 +882,37 @@ export function Members() {
                         {sortRoles(member.roles).map(role => (
                           <span key={role.id} style={ROLE_CHIP}>
                             {role.name}
-                            <span
-                              style={demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X}
+                            <button
+                              type="button"
+                              disabled={demoLocked}
+                              aria-label={`Remove ${role.name}`}
                               onClick={demoLocked ? undefined : () => handleSetMemberRoles(member.id, member.roles.filter(r => r.id !== role.id).map(r => r.id))}
                               title={demoLocked ? undefined : `Remove ${role.name}`}
-                            >✕</span>
+                              style={{
+                                ...(demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X),
+                                padding: 0,
+                                margin: 0,
+                                marginLeft: 1,
+                                background: 'none',
+                                border: 'none',
+                                font: 'inherit',
+                                fontSize: fontSize.sm,
+                                lineHeight: '1',
+                              }}
+                            >✕</button>
                           </span>
                         ))}
-                        <span
-                          style={demoLocked ? { ...chipAddRole, opacity: 0.4, cursor: 'not-allowed' } : chipAddRole}
+                        <button
+                          type="button"
+                          ref={(el) => { roleTriggerRefs.current[member.id] = el }}
+                          disabled={demoLocked}
+                          aria-haspopup="menu"
+                          aria-expanded={openRoleDropdown === member.id}
+                          style={{
+                            ...(demoLocked ? { ...chipAddRole, opacity: 0.4, cursor: 'not-allowed' } : chipAddRole),
+                            margin: 0,
+                            fontFamily: 'inherit',
+                          }}
                           onClick={demoLocked ? undefined : (e) => {
                             if (openRoleDropdown === member.id) {
                               setOpenRoleDropdown(null)
@@ -855,7 +928,7 @@ export function Members() {
                           }}
                         >
                           Add role
-                        </span>
+                        </button>
                       </div>
                     </td>
                     <td data-label="Invited by" style={{ padding: '10px 12px', color: color.textSecondary }}>
@@ -938,6 +1011,9 @@ export function Members() {
                         )}
                         {hasAnyAction ? (
                           <button
+                            ref={(el) => { actionsTriggerRefs.current[member.id] = el }}
+                            aria-haspopup="menu"
+                            aria-expanded={openActionsMenu === member.id}
                             onClick={(e) => {
                               if (openActionsMenu === member.id) {
                                 setOpenActionsMenu(null)
@@ -1039,35 +1115,72 @@ export function Members() {
         if (!member) return null
         const items = buildMenuItems(member)
         const closeMenu = () => { setOpenActionsMenu(null); setActionsAnchor(null) }
+        const closeMenuAndRestoreFocus = () => { closeMenu(); actionsTriggerRefs.current[member.id]?.focus() }
+
+        // Arrow-key nav + Escape, mirroring Picker.tsx's handleMenuKeyDown —
+        // Escape also returns focus to the trigger button (Picker's focusTrigger()).
+        function handleMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            closeMenuAndRestoreFocus()
+            return
+          }
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+          e.preventDefault()
+          const menuItems = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)'))
+          if (menuItems.length === 0) return
+          const activeIndex = menuItems.indexOf(document.activeElement as HTMLElement)
+          const nextIndex = e.key === 'ArrowDown'
+            ? (activeIndex < 0 ? 0 : (activeIndex + 1) % menuItems.length)
+            : (activeIndex < 0 ? menuItems.length - 1 : (activeIndex - 1 + menuItems.length) % menuItems.length)
+          menuItems[nextIndex].focus()
+        }
 
         return (
           <>
-            <div onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
-            <div style={{
-              position: 'fixed',
-              top: actionsAnchor.openUp ? 'auto' : actionsAnchor.top + 4,
-              bottom: actionsAnchor.openUp ? window.innerHeight - actionsAnchor.top + 4 : 'auto',
-              left: actionsAnchor.left,
-              transform: 'translateX(-100%)',
-              background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
-              boxShadow: shadow.md, zIndex: 101,
-              minWidth: 200, padding: '4px 0',
-            }}>
+            <div role="presentation" onClick={closeMenu} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div
+              role="menu"
+              aria-label={`Actions for ${displayName(member)}`}
+              tabIndex={-1}
+              onKeyDown={handleMenuKeyDown}
+              ref={actionsMenuPanelRef}
+              style={{
+                position: 'fixed',
+                top: actionsAnchor.openUp ? 'auto' : actionsAnchor.top + 4,
+                bottom: actionsAnchor.openUp ? window.innerHeight - actionsAnchor.top + 4 : 'auto',
+                left: actionsAnchor.left,
+                transform: 'translateX(-100%)',
+                background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                boxShadow: shadow.md, zIndex: 101,
+                minWidth: 200, padding: '4px 0',
+              }}>
               {items.map((item, i) => {
                 const itemColor = item.disabled ? color.borderStrong : item.danger ? color.textErrorRed : color.textSlate
                 const row = (
-                  <div
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={item.disabled}
                     onClick={item.disabled ? undefined : item.onClick}
                     style={{
-                      padding: '7px 14px', fontSize: fontSize.sm,
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      margin: 0,
+                      padding: '7px 14px', font: 'inherit', fontSize: fontSize.sm,
                       cursor: item.disabled ? 'not-allowed' : 'pointer',
                       color: itemColor,
                     }}
                     onMouseOver={item.disabled ? undefined : e => (e.currentTarget.style.background = item.danger ? color.bgDangerSoft : color.surfaceSubtle)}
                     onMouseOut={item.disabled ? undefined : e => (e.currentTarget.style.background = 'transparent')}
+                    onFocus={item.disabled ? undefined : e => (e.currentTarget.style.background = item.danger ? color.bgDangerSoft : color.surfaceSubtle)}
+                    onBlur={item.disabled ? undefined : e => (e.currentTarget.style.background = 'transparent')}
                   >
                     {item.label}
-                  </div>
+                  </button>
                 )
                 // The dropdown is position: fixed and overflow-clipped, so the
                 // bubble portals to body. `block` makes the whole row the hover
@@ -1094,6 +1207,7 @@ export function Members() {
       {activityMember && (
         <>
           <div
+            role="presentation"
             onClick={() => { setActivityMember(null); setActivityData(null) }}
             style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.25)' }}
           />
@@ -1197,7 +1311,7 @@ export function Members() {
       )}
       {unknownOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setUnknownOpen(false)} />
+          <div role="presentation" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} onClick={() => setUnknownOpen(false)} />
           <div style={{ position: 'relative', background: color.white, borderRadius: radius.lg, boxShadow: shadow.lg, width: 560, maxHeight: '80vh', overflow: 'auto', padding: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h2 style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, margin: 0 }}>Unknown login attempts</h2>
@@ -1254,32 +1368,72 @@ export function Members() {
         const member = members.find(m => m.id === openRoleDropdown)
         if (!member) return null
         const available = orgRoles.filter(r => !member.roles.some(mr => mr.id === r.id))
+        const closeDropdown = () => { setOpenRoleDropdown(null); setDropdownAnchor(null) }
+        const closeDropdownAndRestoreFocus = () => { closeDropdown(); roleTriggerRefs.current[member.id]?.focus() }
+
+        // Arrow-key nav + Escape, mirroring Picker.tsx's handleMenuKeyDown —
+        // Escape also returns focus to the trigger button (Picker's focusTrigger()).
+        function handleMenuKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            closeDropdownAndRestoreFocus()
+            return
+          }
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+          e.preventDefault()
+          const menuItems = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+          if (menuItems.length === 0) return
+          const activeIndex = menuItems.indexOf(document.activeElement as HTMLElement)
+          const nextIndex = e.key === 'ArrowDown'
+            ? (activeIndex < 0 ? 0 : (activeIndex + 1) % menuItems.length)
+            : (activeIndex < 0 ? menuItems.length - 1 : (activeIndex - 1 + menuItems.length) % menuItems.length)
+          menuItems[nextIndex].focus()
+        }
+
         return (
           <>
-            <div onClick={() => { setOpenRoleDropdown(null); setDropdownAnchor(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
-            <div style={{
-              position: 'fixed',
-              top: dropdownAnchor.openUp ? 'auto' : dropdownAnchor.top + 4,
-              bottom: dropdownAnchor.openUp ? window.innerHeight - dropdownAnchor.top + 4 : 'auto',
-              left: dropdownAnchor.left,
-              background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
-              boxShadow: shadow.md, zIndex: 101,
-              minWidth: 160, padding: '4px 0',
-            }}>
+            <div role="presentation" onClick={closeDropdown} style={{ position: 'fixed', inset: 0, zIndex: 100 }} />
+            <div
+              role="menu"
+              aria-label={`Add role to ${displayName(member)}`}
+              tabIndex={-1}
+              onKeyDown={handleMenuKeyDown}
+              ref={roleDropdownPanelRef}
+              style={{
+                position: 'fixed',
+                top: dropdownAnchor.openUp ? 'auto' : dropdownAnchor.top + 4,
+                bottom: dropdownAnchor.openUp ? window.innerHeight - dropdownAnchor.top + 4 : 'auto',
+                left: dropdownAnchor.left,
+                background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                boxShadow: shadow.md, zIndex: 101,
+                minWidth: 160, padding: '4px 0',
+              }}>
               {available.map(role => (
-                <div
+                <button
                   key={role.id}
+                  type="button"
+                  role="menuitem"
                   onClick={() => {
                     handleSetMemberRoles(member.id, [...member.roles.map(r => r.id), role.id])
-                    setOpenRoleDropdown(null)
-                    setDropdownAnchor(null)
+                    closeDropdown()
                   }}
-                  style={{ padding: '6px 12px', fontSize: fontSize.sm, cursor: 'pointer', color: color.textSlate }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    margin: 0,
+                    padding: '6px 12px', font: 'inherit', fontSize: fontSize.sm,
+                    cursor: 'pointer', color: color.textSlate,
+                  }}
                   onMouseOver={e => (e.currentTarget.style.background = color.surfaceSubtle)}
                   onMouseOut={e => (e.currentTarget.style.background = 'transparent')}
+                  onFocus={e => (e.currentTarget.style.background = color.surfaceSubtle)}
+                  onBlur={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   {role.name}
-                </div>
+                </button>
               ))}
               {available.length === 0 && (
                 <div style={{ padding: '6px 12px', fontSize: fontSize.sm, color: color.textMuted }}>All roles assigned</div>

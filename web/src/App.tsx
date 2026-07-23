@@ -27,7 +27,8 @@ import { NavProgressBar } from './components/NavProgressBar'
 import { useNavPendingCursor } from './hooks/useNavPendingCursor'
 import { UnsavedTextProvider } from './lib/unsavedText'
 import { legalDocs, hasTerms, hasPrivacy } from './lib/legalDocs'
-import { useState, lazy, Suspense } from 'react'
+import { useFocusTrap } from './lib/useFocusTrap'
+import { useState, useRef, lazy, Suspense } from 'react'
 
 function DemoBanner() {
   const { demoMode } = useDemo()
@@ -67,7 +68,28 @@ function DemoBanner() {
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const mainRef = useRef<HTMLElement>(null)
+  // Covers everything above the inner flex row (skip-link, nav progress bar,
+  // mobile hamburger, demo banner) — see the wrapping div below.
+  const topRef = useRef<HTMLDivElement>(null)
   useNavPendingCursor()
+  // Trap focus in the mobile drawer while it's open (sidebarOpen is only ever
+  // toggled true on mobile — the desktop sidebar is always visible, so this is
+  // a no-op there and the desktop sidebar stays fully tabbable). The drawer
+  // renders in-tree inside #root (unlike Dialog/PopPanel, which portal to
+  // document.body), so inerting the default #root would inert the drawer
+  // itself; inertTarget instead inerts the content around it — both the
+  // column-top region (topRef) and <main> (mainRef) — which are siblings of
+  // the drawer, not ancestors, so inerting them leaves the drawer (and its
+  // dismiss overlay) interactive.
+  useFocusTrap({
+    active: sidebarOpen,
+    containerRef: sidebarRef,
+    onEscape: () => setSidebarOpen(false),
+    initialFocus: 'first',
+    inertTarget: [topRef, mainRef],
+  })
   return (
     <UnsavedTextProvider>
       <ConfigProvider>
@@ -80,24 +102,31 @@ function AppLayout() {
                   the dynamic URL bar) and the document itself never scrolls —
                   keeping the top bar pinned and every page starting at the top. */}
               <div className="app-layout" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', background: color.surfaceMuted }}>
-                <NavProgressBar />
-                {/* MobileTopBar lives in the column flow (hidden on desktop via
-                    `.mobile-topbar { display:none }`) so it sits above the demo
-                    banner rather than overlaying it as a fixed/absolute element. */}
-                <MobileTopBar onHamburgerClick={() => setSidebarOpen(true)} />
-                <DemoBanner />
+                {/* display:'contents' adds no layout box of its own — the
+                    children remain direct flex items of .app-layout, so this
+                    wrapper is a zero-visual-impact hook for the drawer's focus
+                    trap to inert this whole region at once. */}
+                <div style={{ display: 'contents' }} ref={topRef} data-testid="app-top-region">
+                  <a className="skip-link" href="#main-content">Skip to main content</a>
+                  <NavProgressBar />
+                  {/* MobileTopBar lives in the column flow (hidden on desktop via
+                      `.mobile-topbar { display:none }`) so it sits above the demo
+                      banner rather than overlaying it as a fixed/absolute element. */}
+                  <MobileTopBar onHamburgerClick={() => setSidebarOpen(true)} />
+                  <DemoBanner />
+                </div>
                 <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                   {sidebarOpen && (
-                    <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+                    <div className="sidebar-overlay" role="presentation" onClick={() => setSidebarOpen(false)} />
                   )}
-                  <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+                  <Sidebar containerRef={sidebarRef} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
                   {/* overflowX: 'hidden' — the scroll container is never meant to
                       pan horizontally. Decorative full-bleed elements (e.g. the
                       agenda/feed DateDivider shadow, which intentionally extends
                       ±20px past the content column) would otherwise spill past the
                       viewport and create unwanted left-right scroll once the column
                       nears the viewport width (narrow desktop and mobile). */}
-                  <main className="app-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}><Outlet /></main>
+                  <main ref={mainRef} id="main-content" className="app-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}><Outlet /></main>
                 </div>
               </div>
             </FeedUnreadProvider>

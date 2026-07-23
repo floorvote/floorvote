@@ -22,6 +22,10 @@ describe('tokens', () => {
       }
     }
   })
+
+  it('exposes a focusRing color token (navy, for the focus-visible ring)', () => {
+    expect(color.focusRing).toBe('#1e3a5f')
+  })
 })
 
 // --- WCAG AA contrast guard -------------------------------------------------

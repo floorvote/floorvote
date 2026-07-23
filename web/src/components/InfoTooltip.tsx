@@ -21,14 +21,27 @@ interface InfoTooltipProps {
    * room on both sides, 'left' for icons near a left edge.
    */
   align?: Align
+  /**
+   * Accessible name for the ⓘ button. The "info" glyph is a font ligature with
+   * no text name of its own, so this is what a screen reader announces (along
+   * with the tooltip text via aria-describedby). Default covers the common case;
+   * override when a screen reader user needs more context than "More information".
+   */
+  label?: string
 }
 
-// A ⓘ trigger wrapping the shared HoverTooltip primitive. `align` maps onto the
-// primitive's `placement` vocabulary (all variants render above the icon).
-export function InfoTooltip({ text, maxWidth, align = 'right' }: InfoTooltipProps) {
+// A ⓘ toggletip trigger wrapping the shared HoverTooltip primitive: reachable
+// by touch (tap) and keyboard (focus + Enter/Space to toggle, Escape to
+// dismiss), not just mouse hover. `align` maps onto the primitive's
+// `placement` vocabulary (all variants render above the icon).
+export function InfoTooltip({ text, maxWidth, align = 'right', label = 'More information' }: InfoTooltipProps) {
   return (
-    <HoverTooltip text={text} maxWidth={maxWidth} placement={ALIGN_TO_PLACEMENT[align]}>
-      <span className="material-symbols-outlined" style={{ fontSize: fontSize.base, color: color.textMuted, userSelect: 'none', lineHeight: 1 }}>info</span>
+    <HoverTooltip toggletip ariaLabel={label} text={text} maxWidth={maxWidth} placement={ALIGN_TO_PLACEMENT[align]}>
+      <span
+        aria-hidden="true"
+        className="material-symbols-outlined"
+        style={{ fontSize: fontSize.base, color: color.textMuted, userSelect: 'none', lineHeight: 1 }}
+      >info</span>
     </HoverTooltip>
   )
 }

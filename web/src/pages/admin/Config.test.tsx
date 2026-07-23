@@ -214,3 +214,48 @@ describe('Config — demo gating', () => {
     expect(saveButton).toBeDisabled()
   })
 })
+
+describe('Config — data export control accessibility', () => {
+  it('does not announce as disabled when export is available', async () => {
+    render(<Config />)
+    const exportBtn = await screen.findByRole('button', { name: /download all data/i })
+    expect(exportBtn).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('announces aria-disabled="true" while an export is in flight', async () => {
+    const { exportAllData } = await import('../../lib/exportData')
+    let resolveExport: () => void
+    vi.mocked(exportAllData).mockImplementation(() => new Promise((r) => { resolveExport = () => r(undefined) }))
+
+    render(<Config />)
+    const exportBtn = await screen.findByRole('button', { name: /download all data/i })
+    act(() => { exportBtn.click() })
+
+    await waitFor(() => expect(exportBtn).toHaveAttribute('aria-disabled', 'true'))
+
+    act(() => { resolveExport() })
+  })
+
+  it('announces aria-disabled="true" in demo mode (demoLocked)', async () => {
+    demo.demoLocked = true
+    render(<Config />)
+    const exportBtn = await screen.findByRole('button', { name: /download all data/i })
+    expect(exportBtn).toHaveAttribute('aria-disabled', 'true')
+  })
+})
+
+describe('Config heading structure', () => {
+  it('exposes exactly one top-level (visually-hidden) heading naming the page', () => {
+    render(<Config />)
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Settings')
+  })
+
+  it('exposes each section title as a level-2 heading', () => {
+    render(<Config />)
+    for (const name of ['Bill keywords', 'AI instructions', 'New matches', 'Custom fields', 'Labels', 'Additional operations']) {
+      expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument()
+    }
+  })
+})

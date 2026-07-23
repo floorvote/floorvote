@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties, ReactNode, Ref, RefObject } from 'react'
 import { color, radius, shadow } from '../../styles/tokens'
 import { usePrefersReducedMotion } from '../../lib/usePrefersReducedMotion'
+import { useFocusTrap } from '../../lib/useFocusTrap'
 import type { Box } from '../calendar/expandTarget'
 
 export interface PopPanelHandle { close: () => void }
@@ -67,6 +68,8 @@ export function PopPanel(
   onCloseRef.current = onClose
   const closingRef = useRef(false)
   const doneRef = useRef(false)
+
+  useFocusTrap({ active: true, containerRef: panelRef, initialFocus: 'first' })
 
   const reduce = usePrefersReducedMotion()
   const expand = !!(expandFrom && computeTarget)
@@ -184,6 +187,7 @@ export function PopPanel(
       ref={panelRef}
       role="dialog"
       aria-label={ariaLabel}
+      tabIndex={-1}
       onTransitionEnd={(e) => { if (e.target === panelRef.current && e.propertyName === 'transform' && closingRef.current) finish() }}
       style={{
         background,

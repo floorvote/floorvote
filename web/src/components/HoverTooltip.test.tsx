@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { HoverTooltip } from './HoverTooltip'
 
 describe('HoverTooltip', () => {
@@ -45,5 +46,131 @@ describe('HoverTooltip', () => {
     // Centered-below: a horizontal-centering transform, and no upward (-100%) shift.
     expect(bubble.style.transform).toContain('translateX(-50%)')
     expect(bubble.style.transform).not.toContain('-100%')
+  })
+
+  describe('default mode (toggletip=false) — interactive-element tooltip', () => {
+    it('keeps the wrapper a plain span, not a button — structure unchanged for existing consumers', () => {
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      const trigger = screen.getByRole('button', { name: 'trigger' })
+      // Exactly one button in the tree: the child. The wrapper is not a second button.
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+      expect(trigger.parentElement?.tagName.toLowerCase()).toBe('span')
+    })
+
+    it('reveals the bubble when the focusable child receives focus, and hides it on blur', async () => {
+      const user = userEvent.setup()
+      render(
+        <>
+          <HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>
+          <button>next</button>
+        </>,
+      )
+      expect(screen.queryByText('Tip text')).toBeNull()
+      await user.tab() // focus "trigger"
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+      await user.tab() // focus "next" — blurs "trigger"
+      expect(screen.queryByText('Tip text')).toBeNull()
+    })
+
+    it('marks the bubble aria-hidden — the child carries its own accessible name', () => {
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      const bubble = screen.getByText('Tip text')
+      expect(bubble.getAttribute('aria-hidden')).toBe('true')
+      expect(bubble.getAttribute('role')).toBeNull()
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('reveals on focus for a non-button interactive child (e.g. a link) too', async () => {
+      const user = userEvent.setup()
+      render(
+        <HoverTooltip text="5 new bills awaiting a priority decision">
+          <a href="/bills?newMatches=1" aria-label="5 new bills awaiting a priority decision">5 new</a>
+        </HoverTooltip>,
+      )
+      expect(screen.queryByRole('button')).toBeNull() // the link stays the only control
+      await user.tab()
+      expect(screen.getByRole('link')).toHaveFocus()
+      expect(screen.getByText(/awaiting a priority decision/)).toBeInTheDocument()
+    })
+  })
+
+  describe('toggletip mode (toggletip=true) — standalone toggletip for non-interactive triggers', () => {
+    it('renders the trigger as a button and toggles the bubble on click, wiring aria-describedby', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+      expect(screen.queryByRole('tooltip')).toBeNull()
+
+      await user.click(trigger)
+      const tip = screen.getByRole('tooltip')
+      expect(trigger.getAttribute('aria-describedby')).toBe(tip.id)
+
+      await user.click(trigger)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('hides the bubble on Escape', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      await user.click(screen.getByRole('button'))
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('reveals on keyboard focus and hides on blur', async () => {
+      const user = userEvent.setup()
+      render(
+        <>
+          <HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>
+          <button>next</button>
+        </>,
+      )
+      await user.tab() // focus the toggletip button
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+      await user.tab() // focus "next" — blurs the toggletip button
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('still reveals on mouse hover, and a plain (unpinned) hover still closes on leave', () => {
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+      fireEvent.pointerLeave(trigger)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('a click-pinned bubble survives the mouse leaving, and still closes on Escape', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+
+      await user.click(trigger) // pins the bubble open
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      fireEvent.pointerLeave(trigger) // the toggletip hide contract is Escape/blur/second-click only
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('a click-pinned bubble survives the mouse leaving, and still closes on a second click', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip text="Scored 1–10 by AI">i</HoverTooltip>)
+      const trigger = screen.getByRole('button')
+
+      await user.click(trigger) // pins the bubble open
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      fireEvent.pointerLeave(trigger)
+      expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+      await user.click(trigger) // second click un-pins and closes
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
   })
 })

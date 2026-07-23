@@ -20,4 +20,13 @@ describe('DraftBills page', () => {
     expect(await screen.findByText('No draft bills yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /add draft bill/i })).toBeInTheDocument()
   })
+
+  it('exposes exactly one top-level heading, for the "Draft bills" title', async () => {
+    mockDrafts([])
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    await screen.findByText('No draft bills yet.')
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Draft bills')
+  })
 })

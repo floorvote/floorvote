@@ -459,6 +459,7 @@ export function BulkActionBar({
           options={realOptions}
           emptyOption={emptyOpt ? { label: emptyOpt.label } : undefined}
           onChange={(next) => onSelect(next)}
+          ariaLabel={label}
           placement="top"
           panelMinWidth={160}
           trigger={({ open, toggle }) => (
@@ -751,6 +752,7 @@ export function BulkActionBar({
                   indeterminate={effectiveIndeterminate}
                   options={options.map(o => ({ value: o, label: o }))}
                   onChange={onPickerChange}
+                  ariaLabel={field.name}
                   placement="top"
                   trigger={({ toggle, open }) => (
                     <button

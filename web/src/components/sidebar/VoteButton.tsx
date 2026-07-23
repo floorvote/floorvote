@@ -29,6 +29,7 @@ export function VoteButton({ label, pos, current, onClick }: {
         onClick={onClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setTooltip(null)}
+        aria-label={tooltipText}
         style={{
           width: '100%', fontSize: fontSize.sm, padding: '3px 4px',
           ...voteButtonStyle(pos, isActive, !!tooltip),

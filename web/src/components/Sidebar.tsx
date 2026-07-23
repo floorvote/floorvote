@@ -1,8 +1,9 @@
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom'
-import { billsChipSelection } from '../pages/BillList/billsQuery'
+import { billsChipSelection, prioritizedChipSelection } from '../pages/BillList/billsQuery'
 import { useAuth } from '../hooks/useAuth'
 import { apiFetch } from '../lib/api'
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { usePolling } from '../hooks/usePolling'
 import { useRegisterSidebarRefresh } from '../context/SidebarRefreshContext'
 import { Wordmark } from './Wordmark'
@@ -25,6 +26,7 @@ import type { PopPanelHandle } from './ui/PopPanel'
 import { PinnedShadow } from './ui/PinnedShadow'
 import { useScrolledUnder } from '../hooks/useScrolledUnder'
 import { color, radius, fontSize, fontWeight, shadow, BRAND_FONT } from '../styles/tokens'
+import { SR_ONLY } from '../lib/textStyles'
 import { CustomizeSidebar } from './sidebar/CustomizeSidebar'
 import { BillBadge } from './BillBadge'
 import { PriorityChip } from './sidebar/PriorityChip'
@@ -43,7 +45,7 @@ const DEFAULT_WIDTH = 230
 const MIN_WIDTH = 230
 const MAX_WIDTH = 400
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   const { user } = useAuth()
   const { hasUnread, visitHadUnread } = useFeedUnread()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -53,6 +55,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [config, setConfig] = useState<Config | null>(null)
   const [sidebarData, setSidebarData] = useState<SidebarData | null>(null)
   const [showFeedback, setShowFeedback] = useState(false)
+  // Status text for the polite live region below — announces optimistic
+  // vote/priority saves (and rollbacks) to screen-reader users, who otherwise
+  // get no feedback from a purely visual optimistic UI update.
+  const [liveMessage, setLiveMessage] = useState('')
   const [members, setMembers] = useState<Member[] | null>(null)
   const { unreadCount } = useNotifications()
   const [showNotifications, setShowNotifications] = useState(false)
@@ -71,6 +77,10 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   // `priorityHeaderHover` so the two highlights are mutually exclusive.
   const [priorityHeaderHover, setPriorityHeaderHover] = useState(false)
   const [unvotedChipHover, setUnvotedChipHover] = useState(false)
+  // Own hover state for the prioritized-bills widget's leftmost count chip —
+  // mirrors billsChipHover/newChipHover below, giving the chip its own orange
+  // highlight independent of the header row's melt-on-hover behavior.
+  const [priorityChipHover, setPriorityChipHover] = useState(false)
   const [newChipHover, setNewChipHover] = useState(false)
   const [billsChipHover, setBillsChipHover] = useState(false)
   const [hearingsHeaderHover, setHearingsHeaderHover] = useState(false)
@@ -83,6 +93,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   // current view is exactly that chip's canonical destination (all bills vs.
   // new matches). See billsChipSelection.
   const billsChips = billsChipSelection(location.pathname, location.search)
+  // Same persistent-highlight idea, for the prioritized-bills widget's own
+  // count chip and "N unvoted" chip. See prioritizedChipSelection.
+  const prioritizedChips = prioritizedChipSelection(location.pathname, location.search)
   const membersButtonRef = useRef<HTMLDivElement>(null)
   // Each widget's list is independently resizable. The whole widget area
   // scrolls (see the scroll region in the JSX), so there's no shared budget to
@@ -209,6 +222,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     if (!bill) return
     const prevVote = bill.myVote
     const isToggle = prevVote === pos
+    const billNumber = bill.billNumber
 
     // Optimistic update
     setSidebarData(prev => {
@@ -227,6 +241,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       } else {
         await apiFetch(`/bills/${billId}/votes`, { method: 'POST', body: JSON.stringify({ position: pos }) })
       }
+      setLiveMessage(isToggle ? `Removed your vote on ${billNumber}` : `Voted ${pos} on ${billNumber}`)
     } catch {
       // Revert on failure
       setSidebarData(prev => {
@@ -237,10 +252,15 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         const unvotedDelta = isToggle ? -1 : prevVote ? 0 : 1
         return { ...prev, priorityBills: revertedBills, unvotedPriorityCount: prev.unvotedPriorityCount + unvotedDelta }
       })
+      setLiveMessage(`Couldn't save your vote on ${billNumber}`)
     }
   }
 
   function handleSidebarPriorityChange(billId: string, newPriority: 'high' | 'medium' | 'low' | null) {
+    // CompactPrioritySelect only calls onChange after its own PATCH request has
+    // already resolved (see its onChange handler), so there's no failure path
+    // to announce here — just the successful new state.
+    setLiveMessage(newPriority ? `Priority set to ${newPriority}` : 'Priority removed')
     setSidebarData(prev => {
       if (!prev) return prev
       if (newPriority === null) {
@@ -288,6 +308,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   return (
     <aside
+      ref={containerRef}
       className={`sidebar${isOpen ? ' drawer-open' : ''}`}
       style={{
         position: 'relative',
@@ -301,6 +322,23 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         flexShrink: 0,
       }}
     >
+      {/* Screen-reader-only status region announcing optimistic vote/priority
+          saves (and rollbacks on failure). Rendered unconditionally — not
+          mounted only while a save is in flight — so assistive tech has
+          already registered the node before its text changes, which is what
+          makes aria-live announcements fire reliably.
+          Portaled to document.body — a sibling of #root, same as PopPanel —
+          rather than left in-tree under this <aside>. Priority changes are
+          made through a Picker/PopPanel, and useFocusTrap sets
+          inert + aria-hidden="true" on #root for as long as that overlay is
+          open; a live region living inside #root would have its updates
+          swallowed by assistive tech during that window. Portaling keeps it
+          reachable regardless of what's open. */}
+      {createPortal(
+        <div aria-live="polite" style={SR_ONLY}>{liveMessage}</div>,
+        document.body,
+      )}
+
       {/* Drag-to-resize handle */}
       <div
         onPointerDown={startResize}
@@ -318,7 +356,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Pinned top: brand + nav (does not scroll) */}
       <div style={{ flexShrink: 0 }}>
-      <div style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
+      <div className="sidebar-brand" style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <Wordmark dark size={fontSize.xl} />
@@ -443,41 +481,53 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             <>
               <span style={{ fontFamily: BRAND_FONT }}>Bills</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                {stats?.billCount != null && (
-                  <HoverTooltip text={`${stats.billCount.toLocaleString()} bills available`} maxWidth={220}>
-                    {/* Orange (melts into the active row) when you're on the unfiltered
-                        /bills view; gray clickable pill otherwise. Click clears all filters. */}
-                    <span
-                      role="link"
-                      tabIndex={0}
-                      onClick={(e) => { if (maybeOpenInNewTab(e, '/bills')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') }}
-                      onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills') }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
-                      onMouseEnter={() => setBillsChipHover(true)}
-                      onMouseLeave={() => setBillsChipHover(false)}
-                      style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgAmberPriority), cursor: 'pointer' }}
-                    >
-                      {stats.billCount.toLocaleString()} bills
-                    </span>
-                  </HoverTooltip>
-                )}
-                {isAdmin && (stats?.newMatchesCount ?? 0) > 0 && (
-                  <HoverTooltip text={`${stats!.newMatchesCount} new bill${stats!.newMatchesCount === 1 ? '' : 's'} awaiting a priority decision`} maxWidth={220}>
-                    <span
-                      role="link"
-                      tabIndex={0}
-                      onClick={(e) => { if (maybeOpenInNewTab(e, '/bills?newMatches=1')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') }}
-                      onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills?newMatches=1') }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') } }}
-                      onMouseEnter={() => setNewChipHover(true)}
-                      onMouseLeave={() => setNewChipHover(false)}
-                      // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
-                      style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgAmberPriority), cursor: 'pointer' }}
-                    >
-                      {stats!.newMatchesCount} new
-                    </span>
-                  </HoverTooltip>
-                )}
+                {stats?.billCount != null && (() => {
+                  // The HoverTooltip bubble is aria-hidden (a purely visual affordance) —
+                  // this span is the interactive element itself, so its own aria-label
+                  // must carry the same meaning for screen-reader/touch users who never
+                  // trigger hover.
+                  const billsMeaning = `${stats.billCount.toLocaleString()} bills available`
+                  return (
+                    <HoverTooltip text={billsMeaning} maxWidth={220}>
+                      {/* Orange (melts into the active row) when you're on the unfiltered
+                          /bills view; gray clickable pill otherwise. Click clears all filters. */}
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        aria-label={billsMeaning}
+                        onClick={(e) => { if (maybeOpenInNewTab(e, '/bills')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') }}
+                        onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills') }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
+                        onMouseEnter={() => setBillsChipHover(true)}
+                        onMouseLeave={() => setBillsChipHover(false)}
+                        style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgAmberPriority), cursor: 'pointer' }}
+                      >
+                        {stats.billCount.toLocaleString()} bills
+                      </span>
+                    </HoverTooltip>
+                  )
+                })()}
+                {isAdmin && (stats?.newMatchesCount ?? 0) > 0 && (() => {
+                  const newMeaning = `${stats!.newMatchesCount} new bill${stats!.newMatchesCount === 1 ? '' : 's'} awaiting a priority decision`
+                  return (
+                    <HoverTooltip text={newMeaning} maxWidth={220}>
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        aria-label={newMeaning}
+                        onClick={(e) => { if (maybeOpenInNewTab(e, '/bills?newMatches=1')) return; e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') }}
+                        onAuxClick={(e) => { maybeOpenInNewTab(e, '/bills?newMatches=1') }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills?newMatches=1') } }}
+                        onMouseEnter={() => setNewChipHover(true)}
+                        onMouseLeave={() => setNewChipHover(false)}
+                        // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
+                        style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgAmberPriority), cursor: 'pointer' }}
+                      >
+                        {stats!.newMatchesCount} new
+                      </span>
+                    </HoverTooltip>
+                  )
+                })()}
               </span>
             </>
           )}
@@ -535,18 +585,32 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
           {/* Header row — the whole bar links to the prioritized-bills filter.
               Hovering the bar highlights it and the count chip; the unvoted chip
-              is its own link and highlights only when hovered directly. */}
+              is its own link and highlights only when hovered directly.
+              The row itself is NOT interactive (no role/onClick) — only the
+              title text is (role="link"). Its ::after (.sidebar-widget-header-link
+              in mobile.css) is absolutely positioned over the whole row (the
+              row is .sidebar-widget-header, position:relative) so the bar
+              still navigates edge-to-edge on click, without nesting an
+              interactive element inside another: the chips below sit on top
+              of that overlay as independent siblings (position:relative +
+              zIndex so they paint above it), not descendants of the title link. */}
           {(() => {
             const priorityFilter = '/bills?priority=high&priority=medium&priority=low'
             const headerActive = priorityHeaderHover && !unvotedChipHover
             const goToPriority = () => { onClose(); navigate(priorityFilter) }
+            // The leftmost count chip sits above the title link's stretched
+            // overlay so its own HoverTooltip can still receive hover — which
+            // otherwise leaves a direct click on it doing nothing (the overlay
+            // can't capture a click that lands on an element painted above
+            // it). Rather than re-nesting it inside the header's role="link"
+            // (invalid ARIA — the whole point of the un-nesting above), it's
+            // its own real <button> with the same aria-label/onClick as the
+            // header, reaching the same destination independently.
+            const priorityMeaning = `${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`
+            const unvotedMeaning = `${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`
             return (
               <div
-                role="link"
-                tabIndex={0}
-                onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
-                onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPriority() } }}
+                className="sidebar-widget-header"
                 onMouseEnter={() => setPriorityHeaderHover(true)}
                 onMouseLeave={() => setPriorityHeaderHover(false)}
                 style={{
@@ -560,25 +624,58 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   borderBottom: sidebarData.priorityBills.length > 0 ? `1px solid ${color.borderDefault}` : 'none',
                 }}
               >
-                <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy }}>
+                <span
+                  role="link"
+                  tabIndex={0}
+                  aria-label={priorityMeaning}
+                  className="sidebar-widget-header-link"
+                  onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
+                  onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goToPriority() } }}
+                  style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, cursor: 'pointer' }}
+                >
                   Prioritized bills
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {/* Leftmost chip melts into the orange header on header hover. */}
-                  <HoverTooltip text={`${sidebarData.priorityBillCount} prioritized bill${sidebarData.priorityBillCount === 1 ? '' : 's'}`} maxWidth={220}>
-                    <span style={countBadge(headerActive)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative', zIndex: 1 }}>
+                  {/* Leftmost chip: its own orange highlight on hover, and
+                      persistently when the current view is exactly the
+                      prioritized filter — same treatment as the nav "N
+                      bills"/"N new" chips (see prioritizedChipSelection).
+                      A real <button> (not a plain span) so it stays clickable
+                      on its own — see the priorityMeaning comment above.
+                      portal: this tooltip lives inside the sidebar's scrollable
+                      widget region (overflow), which can clip a non-portaled
+                      bubble; portal escapes that ancestor entirely. */}
+                  <HoverTooltip text={priorityMeaning} maxWidth={220} portal>
+                    <button
+                      type="button"
+                      aria-label={priorityMeaning}
+                      onClick={(e) => { if (maybeOpenInNewTab(e, priorityFilter)) return; goToPriority() }}
+                      onAuxClick={(e) => { maybeOpenInNewTab(e, priorityFilter) }}
+                      onMouseEnter={() => setPriorityChipHover(true)}
+                      onMouseLeave={() => setPriorityChipHover(false)}
+                      // Orange when the current view is exactly the prioritized
+                      // filter (persistent), or the chip itself is hovered —
+                      // same treatment as the nav "N bills"/"N new" chips.
+                      style={{ ...countBadge(prioritizedChips.priority || priorityChipHover, color.bgAmberPriority), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                    >
                       {sidebarData.priorityBillCount}
-                    </span>
+                    </button>
                   </HoverTooltip>
                   {user?.canVote && sidebarData.unvotedPriorityCount > 0 && (
-                    <HoverTooltip text={`${sidebarData.unvotedPriorityCount} prioritized bill${sidebarData.unvotedPriorityCount === 1 ? '' : 's'} waiting on your vote`} maxWidth={220}>
+                    // portal: same overflow-clipping concern as the chip above —
+                    // this one was the reported regression (bubble clipped by
+                    // the sidebar's right edge, being the rightmost chip).
+                    <HoverTooltip text={unvotedMeaning} maxWidth={220} portal>
                       <Link
                         to={`${priorityFilter}&unvoted=1`}
-                        onClick={(e) => { e.stopPropagation(); onClose() }}
+                        aria-label={unvotedMeaning}
+                        onClick={() => onClose()}
                         onMouseEnter={() => setUnvotedChipHover(true)}
                         onMouseLeave={() => setUnvotedChipHover(false)}
-                        // Hovered on its own → the chip itself takes the header's orange.
-                        style={{ ...countBadge(unvotedChipHover, color.bgAmberPriority), textDecoration: 'none' }}
+                        // Orange when the current view is exactly the prioritized+unvoted
+                        // filter (persistent), or hovered on its own.
+                        style={{ ...countBadge(prioritizedChips.unvoted || unvotedChipHover, color.bgAmberPriority), textDecoration: 'none' }}
                       >
                         {sidebarData.unvotedPriorityCount} unvoted
                       </Link>
@@ -652,17 +749,22 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Upcoming hearings widget */}
       {sidebarData !== null && sidebarData.upcomingHearings.length > 0 && isModuleEnabled(config?.modules, 'upcoming-hearings') && (() => {
         const totalHearings = sidebarData.upcomingHearings.length
+        // The count chip here has no HoverTooltip of its own, but the row's
+        // detail ("...in the next 30 days") previously lived only in a `title`
+        // attribute — a native tooltip that doesn't reveal on keyboard focus.
+        // aria-label carries the same detail as the row's own accessible name;
+        // the header's own `title` was dropped as a redundant name+description.
+        const hearingsMeaning = `${totalHearings} upcoming hearing${totalHearings === 1 ? '' : 's'} for prioritized bills in the next 30 days`
         return (
           <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
             {/* Header row — the whole bar links to the calendar; hovering
-                highlights the bar and the count chip. */}
+                highlights the bar and the count chip. Same structure as the
+                prioritized-bills header above: the row itself isn't
+                interactive, only the title (role="link") is, and its
+                stretched ::after overlay (mobile.css) keeps the whole bar
+                clickable without nesting the count chip inside the link. */}
             <div
-              role="link"
-              tabIndex={0}
-              title="Upcoming hearings for prioritized bills in the next 30 days"
-              onClick={(e) => { if (maybeOpenInNewTab(e, '/calendar')) return; onClose(); navigate('/calendar') }}
-              onAuxClick={(e) => { maybeOpenInNewTab(e, '/calendar') }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); navigate('/calendar') } }}
+              className="sidebar-widget-header"
               onMouseEnter={() => setHearingsHeaderHover(true)}
               onMouseLeave={() => setHearingsHeaderHover(false)}
               style={{
@@ -676,10 +778,25 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                 borderBottom: `1px solid ${color.borderDefault}`,
               }}
             >
-              <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy }}>
+              <span
+                role="link"
+                tabIndex={0}
+                aria-label={hearingsMeaning}
+                className="sidebar-widget-header-link"
+                onClick={(e) => { if (maybeOpenInNewTab(e, '/calendar')) return; onClose(); navigate('/calendar') }}
+                onAuxClick={(e) => { maybeOpenInNewTab(e, '/calendar') }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); navigate('/calendar') } }}
+                style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, cursor: 'pointer' }}
+              >
                 Upcoming hearings
               </span>
-              {/* Only chip — melts into the orange header on hover. */}
+              {/* Only chip — melts into the orange header on hover. Unlike the
+                  prioritized-bills chip above, this one has no HoverTooltip of
+                  its own to protect, so it's deliberately left UNDER the
+                  title link's stretched overlay (no position/zIndex override)
+                  — clicking it still navigates to /calendar via the overlay,
+                  same as the rest of the row, instead of becoming a needless
+                  dead zone. */}
               <span style={countBadge(hearingsHeaderHover)}>
                 {totalHearings}
               </span>

@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from 'react'
+import { useId, useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -16,6 +16,22 @@ export type Placement = 'top' | 'top-start' | 'top-end' | 'bottom' | 'bottom-sta
 //    bubble's left/right edge to the anchor (InfoTooltip's old left/right align);
 //    'bottom' centers below; 'bottom-start' sits left-aligned below; 'right' sits
 //    beside, falling back to below when the viewport is too narrow (FilterTooltip).
+//
+// Two archetypes, selected by `toggletip`:
+//  - Default (toggletip=false) — interactive-element tooltip. `children` is
+//    already an interactive element (button, link, etc.) with its own
+//    aria-label; the wrapper stays a plain span/div, exactly as before, so
+//    every existing consumer is visually and structurally unchanged. The only
+//    addition is onFocus/onBlur on the wrapper — React focus events bubble, so
+//    they fire when the focusable child receives/loses focus — which reveals
+//    the bubble for keyboard users the same way hover reveals it for mouse
+//    users. The bubble here is a purely visual affordance (aria-hidden): the
+//    child's own aria-label already carries the accessible name.
+//  - toggletip=true — standalone toggletip, for non-interactive triggers (ⓘ
+//    icons, static chips with no action of their own). `children` is rendered
+//    inside a real <button type="button">. Reveals on hover (mouse) + focus +
+//    click-toggle; hides on Escape/blur/second-click. The bubble gets an id +
+//    role="tooltip" and the button gets a matching aria-describedby.
 interface HoverTooltipProps {
   text: ReactNode
   children: ReactNode
@@ -30,11 +46,29 @@ interface HoverTooltipProps {
   // right edge (not just the viewport), so a wide bubble centered on a control
   // near a card's edge can't spill past that card.
   boundaryRef?: RefObject<HTMLElement | null>
+  // Opt-in standalone toggletip archetype — see file header. Default false
+  // keeps today's exact wrapper/behavior so untouched consumers are unaffected.
+  toggletip?: boolean
+  // toggletip mode only: accessible name for the button. Required whenever
+  // `children` is a bare icon glyph with no text name of its own — combined
+  // with the bubble's aria-describedby, a screen reader announces "<ariaLabel>,
+  // button" followed by the tooltip text on reveal.
+  ariaLabel?: string
 }
 
-export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef }: HoverTooltipProps) {
+export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef, toggletip = false, ariaLabel }: HoverTooltipProps) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const ref = useRef<HTMLElement | null>(null)
+  // toggletip mode only: click's own open/closed parity, independent of the
+  // hover/focus-driven anchor. A real mouse click is always preceded by the
+  // pointer hovering onto the button (that's how a mouse click works), which
+  // already reveals the bubble via handlePointerEnter — so toggling based on
+  // "is the bubble currently visible" would immediately re-hide what hover just
+  // showed. Tracking click's own parity here (and only mutating it, and
+  // reading it, from the click handler) keeps the click toggle correct
+  // regardless of what hover/focus are doing concurrently.
+  const pinnedRef = useRef(false)
+  const bubbleId = useId()
 
   const position = (r: DOMRect) => {
     if (placement === 'right') {
@@ -69,32 +103,96 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
 
   const bubble = anchor
     ? (
-      <span style={{
-        ...position(anchor),
-        ...TOOLTIP_STYLE,
-        ...(maxWidth
-          ? { whiteSpace: 'normal' as const, maxWidth, width: 'max-content', textAlign: 'left' as const, lineHeight: 1.4, fontWeight: 'normal' as const }
-          : {}),
-      }}>{text}</span>
+      <span
+        id={toggletip ? bubbleId : undefined}
+        role={toggletip ? 'tooltip' : undefined}
+        aria-hidden={toggletip ? undefined : true}
+        style={{
+          ...position(anchor),
+          ...TOOLTIP_STYLE,
+          ...(maxWidth
+            ? { whiteSpace: 'normal' as const, maxWidth, width: 'max-content', textAlign: 'left' as const, lineHeight: 1.4, fontWeight: 'normal' as const }
+            : {}),
+        }}
+      >{text}</span>
     )
     : null
 
   const setRef = (el: HTMLElement | null) => { ref.current = el }
+  const show = () => { if (ref.current) setAnchor(ref.current.getBoundingClientRect()) }
+  // Hiding always resets pinnedRef too, so a later Escape/blur (or an
+  // unpinned pointerleave) can't leave click's toggle parity stale — the next
+  // click still correctly reads as "currently closed" and reopens rather than
+  // no-op-closing again.
+  const hide = () => { pinnedRef.current = false; setAnchor(null) }
+
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
-    if (ref.current) setAnchor(ref.current.getBoundingClientRect())
+    show()
   }
-  const handlePointerLeave = () => setAnchor(null)
+  // Gated on pinnedRef so a click-pinned toggletip survives the mouse moving
+  // away — the toggletip hide-trigger contract is Escape/blur/second-click
+  // only, not a plain pointerleave. Default mode never sets pinnedRef, so its
+  // hover-leave behavior is unaffected; toggletip's plain hover (no click)
+  // still closes on leave, since pinnedRef stays false until a click sets it.
+  const handlePointerLeave = () => { if (!pinnedRef.current) hide() }
+  const handleFocus = () => show()
+  const handleBlur = () => hide()
+
   const inner = <>{children}{portal && bubble ? createPortal(bubble, document.body) : bubble}</>
+
+  if (toggletip) {
+    const handleClick = () => {
+      if (pinnedRef.current) {
+        pinnedRef.current = false
+        hide()
+      } else {
+        pinnedRef.current = true
+        show()
+      }
+    }
+    const handleKeyDown = (e: ReactKeyboardEvent) => {
+      if (e.key === 'Escape') hide()
+    }
+    return (
+      <button
+        type="button"
+        ref={setRef}
+        aria-label={ariaLabel}
+        style={{
+          display: block ? 'block' : 'inline-flex',
+          width: block ? '100%' : undefined,
+          alignItems: 'center',
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          margin: 0,
+          font: 'inherit',
+          color: 'inherit',
+          textAlign: 'inherit',
+          cursor: 'pointer',
+        }}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        aria-describedby={anchor ? bubbleId : undefined}
+      >
+        {inner}
+      </button>
+    )
+  }
 
   return block
     ? (
-      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
         {inner}
       </div>
     )
     : (
-      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave}>
+      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
         {inner}
       </span>
     )

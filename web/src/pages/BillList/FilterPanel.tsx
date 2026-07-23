@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { COUNT_BADGE } from '../../lib/chipStyles'
 import type { SortColumn, SortDir } from './types'
@@ -109,6 +109,8 @@ export function FilterDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -118,6 +120,56 @@ export function FilterDropdown({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  // Move focus into the menu as soon as it opens, regardless of how it was
+  // opened. A mouse click on the trigger leaves focus on the trigger button,
+  // so arrow keys never reach handleMenuKeyDown below and instead scroll the
+  // surrounding bills table (R4 follow-up bug report — the earlier fix mistakenly
+  // targeted Picker.tsx instead of this component). Focusing the checked option
+  // (or the first option when nothing is selected) as soon as the menu mounts
+  // means arrow-key navigation works immediately no matter how it was opened.
+  // Mirrors the same pattern in components/Picker.tsx.
+  useEffect(() => {
+    if (!open) return
+    const menu = menuRef.current
+    if (!menu) return
+    const items = Array.from(menu.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+    if (items.length === 0) return
+    const checked = items.find(el => el.checked)
+    ;(checked ?? items[0]).focus()
+  }, [open])
+
+  // Moves focus back to the trigger button after Escape closes the menu.
+  function focusTrigger() {
+    triggerRef.current?.focus()
+  }
+
+  function getOptionEls(): HTMLInputElement[] {
+    const menu = menuRef.current
+    if (!menu) return []
+    return Array.from(menu.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]'))
+  }
+
+  function handleMenuKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      focusTrigger()
+      return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return
+    const items = getOptionEls()
+    if (items.length === 0) return
+    const activeIndex = items.indexOf(document.activeElement as HTMLInputElement)
+    e.preventDefault()
+    let nextIndex: number
+    if (e.key === 'Home') nextIndex = 0
+    else if (e.key === 'End') nextIndex = items.length - 1
+    // Wrap around at the ends, matching Picker's radiogroup/menu convention.
+    else if (e.key === 'ArrowDown') nextIndex = activeIndex < 0 ? 0 : (activeIndex + 1) % items.length
+    else nextIndex = activeIndex < 0 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length
+    items[nextIndex].focus()
+  }
 
   const anyActive = selected.includes(FILTER_ANY)
   const buttonLabel = selected.length === 0
@@ -149,6 +201,7 @@ export function FilterDropdown({
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
+        ref={triggerRef}
         onClick={() => setOpen(o => !o)}
         style={{
           fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
@@ -165,12 +218,18 @@ export function FilterDropdown({
         </svg>
       </button>
       {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
-          background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
-          padding: '4px 0', minWidth: 180, maxHeight: 300, overflowY: 'auto',
-          boxShadow: shadow.md,
-        }}>
+        <div
+          ref={menuRef}
+          role={multi ? 'group' : 'radiogroup'}
+          aria-label={placeholder}
+          onKeyDown={handleMenuKeyDown}
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+            background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
+            padding: '4px 0', minWidth: 180, maxHeight: 300, overflowY: 'auto',
+            boxShadow: shadow.md,
+          }}
+        >
           {anyIsFilter && (
             <label style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',

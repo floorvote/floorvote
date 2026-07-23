@@ -6,7 +6,7 @@ import { normalizeOrgNoun, MAX_ORG_NOUN_LENGTH } from '../../lib/orgNoun'
 import { exportAllData } from '../../lib/exportData'
 import { SettingsNav } from '../../components/SettingsNav'
 import { CARD } from '../../lib/cardStyle'
-import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../../lib/textStyles'
+import { CARD_TITLE, FORM_LABEL, HELPER_TEXT, SR_ONLY } from '../../lib/textStyles'
 import { TOOLTIP_STYLE, tooltipPosition } from '../../lib/chipStyles'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useAuth } from '../../hooks/useAuth'
@@ -540,6 +540,10 @@ export function Config() {
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
       <SettingsNav />
+      {/* No single visible title represents this page as a whole (the sections below —
+          Bill keywords, AI instructions, etc. — are co-equal, not a page title), so name
+          it for screen readers with a visually-hidden <h1> instead. */}
+      <h1 style={SR_ONLY}>Settings</h1>
 
       {demoLocked && (
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, padding: '8px 12px', background: color.surfaceSubtle, borderRadius: radius.md, border: `1px solid ${color.borderDefault}` }}>
@@ -596,7 +600,7 @@ export function Config() {
 
       {/* Bill keywords */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>Bill keywords</div>
+        <h2 style={sectionTitle}>Bill keywords</h2>
         <div style={sectionIntro}>
           All bills from particular legislative sessions are <em>monitored</em>: title, status, and the most recent action are refreshed multiple times daily from LegiScan. Bills that match the below keywords are <em>fully analyzed</em>, which adds full bill text, sponsors, complete action history, hearings, amendments, and supplementary documents — processed through AI for a summary, tags, and relevance score. (Admins can also manually select bills to be fully analyzed, even if those bills don't match keywords.)
         </div>
@@ -613,7 +617,7 @@ export function Config() {
 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }}>Keywords</label>
+                <label htmlFor="config-keywords" style={{ ...labelStyle, marginBottom: 0 }}>Keywords</label>
                 {(keywords.trim() || activePreset) && (
                   <button type='button' onClick={() => resetToPreset('keywords')} disabled={demoLocked} style={resetBtnStyle}>
                     {activePreset ? 'Reset to preset' : 'Clear'}
@@ -621,6 +625,7 @@ export function Config() {
                 )}
               </div>
               <ResizableTextarea
+                id="config-keywords"
                 value={keywords}
                 onChange={(e) => setKeywords(e.target.value)}
                 initialHeight={160}
@@ -657,7 +662,7 @@ export function Config() {
 
       {/* AI instructions */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>AI instructions</div>
+        <h2 style={sectionTitle}>AI instructions</h2>
         <div style={sectionIntro}>
           When a bill is fully analyzed, the AI reads its full text and produces a summary, a relevance score, and a set of tags. The instructions below control how it does that.
         </div>
@@ -669,7 +674,7 @@ export function Config() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>Bill summary</label>
+                  <label htmlFor="config-ai-context" style={{ ...labelStyle, marginBottom: 0 }}>Bill summary</label>
                   {(aiContext.trim() || activePreset) && (
                     <button type='button' onClick={() => resetToPreset('aiContext')} disabled={demoLocked} style={resetBtnStyle}>
                       {activePreset ? 'Reset to preset' : 'Reset to default'}
@@ -677,6 +682,7 @@ export function Config() {
                   )}
                 </div>
                 <ResizableTextarea
+                  id="config-ai-context"
                   value={aiContext}
                   onChange={(e) => setAiContext(e.target.value)}
                   initialHeight={160}
@@ -689,7 +695,7 @@ export function Config() {
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>Relevance score</label>
+                  <label htmlFor="config-relevance-question" style={{ ...labelStyle, marginBottom: 0 }}>Relevance score</label>
                   {(relevanceQuestion.trim() || activePreset) && (
                     <button type='button' onClick={() => resetToPreset('relevanceQuestion')} disabled={demoLocked} style={resetBtnStyle}>
                       {activePreset ? 'Reset to preset' : 'Reset to default'}
@@ -697,6 +703,7 @@ export function Config() {
                   )}
                 </div>
                 <input
+                  id="config-relevance-question"
                   value={relevanceQuestion}
                   onChange={(e) => setRelevanceQuestion(e.target.value)}
                   style={inputStyle}
@@ -707,7 +714,7 @@ export function Config() {
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <label style={{ ...labelStyle, marginBottom: 0 }}>Tags</label>
+                  <label htmlFor="config-tag-taxonomy" style={{ ...labelStyle, marginBottom: 0 }}>Tags</label>
                   {(tagTaxonomy.trim() || activePreset) && (
                     <button type='button' onClick={() => resetToPreset('tagTaxonomy')} disabled={demoLocked} style={resetBtnStyle}>
                       {activePreset ? 'Reset to preset' : 'Reset to default'}
@@ -715,6 +722,7 @@ export function Config() {
                   )}
                 </div>
                 <ResizableTextarea
+                  id="config-tag-taxonomy"
                   value={tagTaxonomy}
                   onChange={(e) => setTagTaxonomy(e.target.value)}
                   initialHeight={200}
@@ -747,7 +755,7 @@ export function Config() {
 
       {/* New matches */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>New matches</div>
+        <h2 style={sectionTitle}>New matches</h2>
         <div style={sectionIntro}>
           Newly keyword-matched bills appear in the “New matches” list on the Bills page, awaiting a priority decision. Raise the minimum relevance score to hide low-relevance matches from that list.
         </div>
@@ -803,7 +811,7 @@ export function Config() {
 
       {/* Custom fields */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>Custom fields</div>
+        <h2 style={sectionTitle}>Custom fields</h2>
         <div style={sectionIntro}>
           Define fields that appear on every bill detail page. Admins and owners can set values per bill.
           Fields are hidden from members until at least one value is set. Drag to reorder.
@@ -1073,7 +1081,7 @@ export function Config() {
 
       {/* Labels */}
       <div style={sectionCard}>
-        <div style={sectionTitle}>Labels</div>
+        <h2 style={sectionTitle}>Labels</h2>
         <div style={sectionIntro}>
           Display labels shown throughout the app. These are cosmetic — changing them doesn't affect any bill data.
         </div>
@@ -1083,13 +1091,14 @@ export function Config() {
           <>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
-                <label style={labelStyle}>Group name</label>
-                <input value={associationName} onChange={(e) => setAssociationName(e.target.value)} style={inputStyle} placeholder="e.g. Prairie Policy Alliance" />
+                <label htmlFor="config-association-name" style={labelStyle}>Group name</label>
+                <input id="config-association-name" value={associationName} onChange={(e) => setAssociationName(e.target.value)} style={inputStyle} placeholder="e.g. Prairie Policy Alliance" />
                 <div style={hintStyle}>Shown in the top-left of the sidebar.</div>
               </div>
               <div>
-                <label style={labelStyle}>What you call your group</label>
+                <label htmlFor="config-noun-choice" style={labelStyle}>What you call your group</label>
                 <select
+                  id="config-noun-choice"
                   value={nounChoice}
                   onChange={(e) => {
                     const v = e.target.value
@@ -1139,12 +1148,21 @@ export function Config() {
 
       {/* Additional operations */}
       <div style={{ ...sectionCard, marginBottom: 0 }}>
-        <div style={sectionTitle}>Additional operations</div>
+        <h2 style={sectionTitle}>Additional operations</h2>
 
         <div style={actionRowStyleFirst}>
           <div
             role="button"
+            tabIndex={0}
+            aria-disabled={exporting || demoLocked}
             onClick={exporting || demoLocked ? undefined : handleExport}
+            onKeyDown={(e) => {
+              if (exporting || demoLocked) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleExport()
+              }
+            }}
             style={{
               width: 224, flexShrink: 0, borderRadius: radius.md, padding: '8px 14px',
               background: demoLocked ? color.borderDefault : exporting ? color.accentBlueMuted : color.accentBlue,
@@ -1161,6 +1179,7 @@ export function Config() {
                 <select
                   value={exportFormat}
                   onClick={e => e.stopPropagation()}
+                  onKeyDown={e => e.stopPropagation()}
                   onChange={e => { e.stopPropagation(); setExportFormat(e.target.value as 'csv' | 'json') }}
                   style={{
                     background: 'transparent', color: color.white, border: 'none',

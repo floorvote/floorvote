@@ -1,8 +1,12 @@
+import type { RefObject } from 'react'
+
 export type User = { name?: string; email?: string; subtitle?: string } | null
 
 export interface SidebarProps {
   isOpen: boolean
   onClose: () => void
+  /** Forwarded to the root `<aside>` — lets AppLayout focus-trap the mobile drawer. */
+  containerRef?: RefObject<HTMLElement | null>
 }
 
 export interface PriorityBill {

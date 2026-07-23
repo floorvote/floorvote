@@ -8,12 +8,18 @@ import { useEffect } from 'react'
 const hoisted = vi.hoisted(() => ({ sidebarMounts: 0 }))
 
 vi.mock('./components/Sidebar', () => ({
-  Sidebar: function MockSidebar() {
+  Sidebar: function MockSidebar({ containerRef }: { containerRef: { current: HTMLElement | null } }) {
     useEffect(() => { hoisted.sidebarMounts += 1 }, [])
-    return <nav data-testid="sidebar" />
+    return <nav data-testid="sidebar" ref={containerRef} />
   },
 }))
-vi.mock('./components/MobileTopBar', () => ({ MobileTopBar: () => null }))
+// Renders a real hamburger button (rather than null) so the drawer-focus-trap
+// tests below can open the mobile drawer the same way a user would.
+vi.mock('./components/MobileTopBar', () => ({
+  MobileTopBar: ({ onHamburgerClick }: { onHamburgerClick: () => void }) => (
+    <button aria-label="Open menu" onClick={onHamburgerClick}>menu</button>
+  ),
+}))
 
 // Light page stubs so the test exercises routing, not page internals.
 vi.mock('./pages/Feed', () => ({ Feed: () => <div>feed page</div>, feedLoader: () => null }))
@@ -45,6 +51,17 @@ import { AuthProvider } from './context/AuthContext'
 
 beforeEach(() => { hoisted.sidebarMounts = 0 })
 
+describe('AppLayout skip link', () => {
+  it('renders a skip-to-content link targeting #main-content, and <main> has that id', async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
+    render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
+    await screen.findByText('bills page')
+    const link = screen.getByRole('link', { name: /skip to (main )?content/i })
+    expect(link.getAttribute('href')).toBe('#main-content')
+    expect(document.getElementById('main-content')?.tagName).toBe('MAIN')
+  })
+})
+
 describe('shared layout route (data router)', () => {
   it('keeps the sidebar mounted when crossing the admin boundary', async () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
@@ -70,5 +87,33 @@ describe('shared layout route (data router)', () => {
     const router = createMemoryRouter(routes, { initialEntries: ['/bills/42'] })
     render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
     expect(await screen.findByText('detail page')).toBeInTheDocument()
+  })
+})
+
+describe('AppLayout mobile drawer focus trap', () => {
+  it('inerts the top region (skip-link/progress-bar/hamburger/demo-banner) and <main> while the drawer is open, but leaves the Sidebar drawer interactive', async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ['/bills'] })
+    render(<AuthProvider><RouterProvider router={router} /></AuthProvider>)
+    await screen.findByText('bills page')
+
+    const topRegion = screen.getByTestId('app-top-region')
+    const main = document.getElementById('main-content') as HTMLElement
+    const sidebar = screen.getByTestId('sidebar')
+
+    // Closed: nothing is inerted.
+    expect(topRegion.hasAttribute('inert')).toBe(false)
+    expect(main.hasAttribute('inert')).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /open menu/i }))
+
+    expect(topRegion.hasAttribute('inert')).toBe(true)
+    expect(topRegion.getAttribute('aria-hidden')).toBe('true')
+    expect(main.hasAttribute('inert')).toBe(true)
+    expect(main.getAttribute('aria-hidden')).toBe('true')
+    // The drawer itself (and its dismiss overlay) must stay interactive.
+    expect(sidebar.hasAttribute('inert')).toBe(false)
+    expect(sidebar.hasAttribute('aria-hidden')).toBe(false)
+    expect(document.querySelector('.sidebar-overlay')).not.toBeNull()
+    expect(document.querySelector('.sidebar-overlay')?.hasAttribute('inert')).toBe(false)
   })
 })

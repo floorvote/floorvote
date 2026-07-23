@@ -143,7 +143,7 @@ export function Notifications() {
       )}
 
       <div style={{ ...CARD, padding: 24 }}>
-        <div style={CARD_TITLE}>Email notifications</div>
+        <h1 style={CARD_TITLE}>Email notifications</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
           These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.partyDemBlue }}>Account page</Link>.
         </div>
@@ -178,8 +178,9 @@ export function Notifications() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Frequency</label>
+                  <label htmlFor="notif-digest-frequency" style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Frequency</label>
                   <select
+                    id="notif-digest-frequency"
                     value={frequency}
                     disabled={!digestEnabled || demoLocked}
                     onChange={(e) => updateDigest({ frequency: e.target.value })}
@@ -191,8 +192,9 @@ export function Notifications() {
                 </div>
                 {frequency === 'weekly' && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <label style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Day of week</label>
+                    <label htmlFor="notif-digest-weekday" style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Day of week</label>
                     <select
+                      id="notif-digest-weekday"
                       value={weeklyDay}
                       disabled={!digestEnabled || demoLocked}
                       onChange={(e) => updateDigest({ weeklyDay: e.target.value })}
@@ -225,8 +227,9 @@ export function Notifications() {
               </div>
               <div style={{ marginTop: 12, paddingLeft: 4, opacity: weekAheadEnabled ? 1 : 0.5 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <label style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Day of week</label>
+                  <label htmlFor="notif-weekahead-weekday" style={{ fontSize: fontSize.sm, color: color.textSlate500, minWidth: 120 }}>Day of week</label>
                   <select
+                    id="notif-weekahead-weekday"
                     value={weekAheadDay}
                     disabled={!weekAheadEnabled || demoLocked}
                     onChange={(e) => updateWeekAhead({ weeklyDay: e.target.value })}

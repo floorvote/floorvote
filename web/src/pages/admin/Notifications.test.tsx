@@ -54,4 +54,13 @@ describe('Notifications page', () => {
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT' })))
     expect(confirmSpy).not.toHaveBeenCalled()
   })
+
+  it('exposes exactly one top-level heading, for the "Email notifications" title', async () => {
+    mockConfig()
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    await screen.findByText(/digest of recent bill activity/i)
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Email notifications')
+  })
 })

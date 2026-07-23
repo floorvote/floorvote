@@ -58,3 +58,22 @@ describe('Profile notification settings', () => {
     expect(screen.queryByText('Turned off by your coalition.')).not.toBeInTheDocument()
   })
 })
+
+describe('Profile heading structure', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('exposes exactly one top-level heading, for the Profile section', () => {
+    mockConfig({})
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Profile')
+  })
+
+  it('exposes the Preferences and Account section titles as level-2 headings', () => {
+    mockConfig({})
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    expect(screen.getByRole('heading', { level: 2, name: 'Preferences' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument()
+  })
+})

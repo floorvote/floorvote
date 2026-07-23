@@ -991,6 +991,7 @@ export function BillDetail() {
               <input
                 name="draftTitle"
                 defaultValue={bill.title ?? ''}
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                 autoFocus
                 onKeyDown={e => { if (e.key === 'Escape') setEditingDraftField(null) }}
                 style={{
@@ -1011,20 +1012,34 @@ export function BillDetail() {
             </form>
           </div>
         ) : bill.isDraft && isAdmin ? (
-          <div
-            onClick={() => setEditingDraftField('title')}
-            onMouseEnter={() => setHoveredDraftField('title')}
-            onMouseLeave={() => setHoveredDraftField(null)}
-            style={{ ...editableFieldBox(hoveredDraftField === 'title'), padding: '4px 8px', marginBottom: 4 }}
+          <h1
+            style={{
+              fontSize: fontSize.xxxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: '0 0 4px', fontFamily: "'Source Serif 4', serif",
+            }}
           >
-            <h1
+            <button
+              type="button"
+              aria-label="Edit title"
+              onClick={() => setEditingDraftField('title')}
+              onMouseEnter={() => setHoveredDraftField('title')}
+              onMouseLeave={() => setHoveredDraftField(null)}
               style={{
-                fontSize: fontSize.xxxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0, fontFamily: "'Source Serif 4', serif",
+                display: 'block',
+                width: '100%',
+                margin: 0,
+                background: 'none',
+                border: 'none',
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'inherit',
+                cursor: 'text',
+                ...editableFieldBox(hoveredDraftField === 'title'),
+                padding: '4px 8px',
               }}
             >
               {bill.title || bill.abstract}
-            </h1>
-          </div>
+            </button>
+          </h1>
         ) : (
           <h1
             style={{
@@ -1203,6 +1218,7 @@ export function BillDetail() {
                 <input
                   name="draftSponsor"
                   defaultValue={bill.sponsor ?? ''}
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                   autoFocus
                   placeholder="e.g. Rep. Jane Smith"
                   onKeyDown={e => { if (e.key === 'Escape') setEditingDraftField(null) }}
@@ -1215,18 +1231,26 @@ export function BillDetail() {
                 <button type="button" onClick={() => setEditingDraftField(null)} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
               </form>
             ) : (
-              <span
+              <button
+                type="button"
+                aria-label="Edit sponsor"
                 onClick={() => setEditingDraftField('sponsor')}
                 onMouseEnter={() => setHoveredDraftField('sponsor')}
                 onMouseLeave={() => setHoveredDraftField(null)}
                 style={{
                   display: 'inline-block',
+                  margin: 0,
+                  background: 'none',
+                  border: 'none',
+                  font: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'text',
                   ...editableFieldBox(hoveredDraftField === 'sponsor'),
                   padding: '1px 6px',
                 }}
               >
                 {bill.sponsor ?? <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span>}
-              </span>
+              </button>
             )}
           </div>
         )}
@@ -1375,6 +1399,7 @@ export function BillDetail() {
                         allowEmpty
                         initialContent={entry.value}
                         submitLabel="Save"
+                        // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                         onSubmit={async (html) => {
                           const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
@@ -1398,21 +1423,34 @@ export function BillDetail() {
                       />
                     ) : (
                       <>
-                        <div
-                          onClick={isAdmin ? () => setEditingPinnedFieldId(field.id) : undefined}
-                          onMouseEnter={isAdmin ? () => setHoveredPinnedFieldId(field.id) : undefined}
-                          onMouseLeave={isAdmin ? () => setHoveredPinnedFieldId(null) : undefined}
-                          style={isAdmin ? {
-                            cursor: 'text',
-                            border: `1px solid ${hoveredPinnedFieldId === field.id ? color.borderStrong : color.borderDefault}`,
-                            borderRadius: radius.md,
-                            padding: '6px 8px',
-                            background: hoveredPinnedFieldId === field.id ? color.surfaceMuted : color.white,
-                            transition: 'border-color 0.15s, background 0.15s',
-                          } : undefined}
-                        >
-                          <CommentContent content={entry.value} fontSize={14} />
-                        </div>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            aria-label={`Edit ${field.name}`}
+                            onClick={() => setEditingPinnedFieldId(field.id)}
+                            onMouseEnter={() => setHoveredPinnedFieldId(field.id)}
+                            onMouseLeave={() => setHoveredPinnedFieldId(null)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              margin: 0,
+                              font: 'inherit',
+                              textAlign: 'left',
+                              cursor: 'text',
+                              border: `1px solid ${hoveredPinnedFieldId === field.id ? color.borderStrong : color.borderDefault}`,
+                              borderRadius: radius.md,
+                              padding: '6px 8px',
+                              background: hoveredPinnedFieldId === field.id ? color.surfaceMuted : color.white,
+                              transition: 'border-color 0.15s, background 0.15s',
+                            }}
+                          >
+                            <CommentContent content={entry.value} fontSize={14} />
+                          </button>
+                        ) : (
+                          <div>
+                            <CommentContent content={entry.value} fontSize={14} />
+                          </div>
+                        )}
                         <div
                           title={absoluteTime(entry.updatedAt)}
                           style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, cursor: 'default' }}
@@ -1548,6 +1586,7 @@ export function BillDetail() {
                   allowEmpty
                   initialContent={bill.tenantSummary ?? ''}
                   submitLabel="Save"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                   autoFocus
                   onSubmit={async (html) => {
                     const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
@@ -1557,20 +1596,37 @@ export function BillDetail() {
                   }}
                   onCancel={() => setEditingDraftField(null)}
                 />
-              ) : (
-                <div
-                  onClick={isAdmin ? () => setEditingDraftField('summary') : undefined}
-                  onMouseEnter={isAdmin ? () => setHoveredDraftField('summary') : undefined}
-                  onMouseLeave={isAdmin ? () => setHoveredDraftField(null) : undefined}
-                  style={isAdmin ? {
+              ) : isAdmin ? (
+                <button
+                  type="button"
+                  aria-label="Edit summary"
+                  onClick={() => setEditingDraftField('summary')}
+                  onMouseEnter={() => setHoveredDraftField('summary')}
+                  onMouseLeave={() => setHoveredDraftField(null)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    margin: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    textAlign: 'left',
+                    cursor: 'text',
                     ...editableFieldBox(hoveredDraftField === 'summary'),
                     padding: '6px 8px',
                     minHeight: 40,
-                  } : undefined}
+                  }}
                 >
                   {bill.tenantSummary
                     ? <CommentContent content={bill.tenantSummary} fontSize={14} />
-                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>{isAdmin ? 'No summary — click to add' : 'No summary.'}</span>
+                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>No summary — click to add</span>
+                  }
+                </button>
+              ) : (
+                <div>
+                  {bill.tenantSummary
+                    ? <CommentContent content={bill.tenantSummary} fontSize={14} />
+                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>No summary.</span>
                   }
                 </div>
               )}
@@ -1587,6 +1643,7 @@ export function BillDetail() {
                   allowEmpty
                   initialContent={bill.draftText ?? ''}
                   submitLabel="Save"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                   autoFocus
                   onSubmit={async (html) => {
                     const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
@@ -1596,20 +1653,37 @@ export function BillDetail() {
                   }}
                   onCancel={() => setEditingDraftField(null)}
                 />
-              ) : (
-                <div
-                  onClick={isAdmin ? () => setEditingDraftField('text') : undefined}
-                  onMouseEnter={isAdmin ? () => setHoveredDraftField('text') : undefined}
-                  onMouseLeave={isAdmin ? () => setHoveredDraftField(null) : undefined}
-                  style={isAdmin ? {
+              ) : isAdmin ? (
+                <button
+                  type="button"
+                  aria-label="Edit bill text"
+                  onClick={() => setEditingDraftField('text')}
+                  onMouseEnter={() => setHoveredDraftField('text')}
+                  onMouseLeave={() => setHoveredDraftField(null)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    margin: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    textAlign: 'left',
+                    cursor: 'text',
                     ...editableFieldBox(hoveredDraftField === 'text'),
                     padding: '6px 8px',
                     minHeight: 40,
-                  } : undefined}
+                  }}
                 >
                   {bill.draftText
                     ? <CommentContent content={bill.draftText} fontSize={14} />
-                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>{isAdmin ? 'No bill text — click to add' : 'No bill text.'}</span>
+                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>No bill text — click to add</span>
+                  }
+                </button>
+              ) : (
+                <div>
+                  {bill.draftText
+                    ? <CommentContent content={bill.draftText} fontSize={14} />
+                    : <span style={{ color: color.textMuted, fontStyle: 'italic', fontSize: fontSize.base }}>No bill text.</span>
                   }
                 </div>
               )}
@@ -1867,6 +1941,7 @@ export function BillDetail() {
                         onCancel={() => setEditingCommentId(null)}
                         submitLabel="Save"
                         placeholder="Edit comment…"
+                        // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                       />
                     </div>
