@@ -314,6 +314,75 @@ describe('Admin Members API', () => {
     })
   })
 
+  // POST /admin/members/:id/resend-login
+  describe('POST /admin/members/:id/resend-login', () => {
+    it('returns 403 for a member user', async () => {
+      const res = await app.request(
+        `/api/admin/members/${memberId}/resend-login`,
+        { method: 'POST', headers: { Cookie: memberCookie } },
+        env,
+      )
+      expect(res.status).toBe(403)
+    })
+
+    it('returns 404 for a nonexistent user', async () => {
+      const res = await app.request(
+        '/api/admin/members/nonexistent-id/resend-login',
+        { method: 'POST', headers: { Cookie: adminCookie } },
+        env,
+      )
+      expect(res.status).toBe(404)
+      const body = await res.json() as { error: string }
+      expect(body.error).toBe('User not found')
+    })
+
+    it('returns 400 for a deactivated user', async () => {
+      const db = getDb(env.DB)
+      await db.update(users).set({ deactivatedAt: new Date().toISOString() }).where(eq(users.id, memberId))
+
+      const res = await app.request(
+        `/api/admin/members/${memberId}/resend-login`,
+        { method: 'POST', headers: { Cookie: adminCookie } },
+        env,
+      )
+      expect(res.status).toBe(400)
+      const body = await res.json() as { error: string }
+      expect(body.error).toBe('Cannot resend a login link to a deactivated user')
+    })
+
+    it('creates a short-lived (login TTL) magic link and returns 200', async () => {
+      const db = getDb(env.DB)
+      const res = await app.request(
+        `/api/admin/members/${memberId}/resend-login`,
+        { method: 'POST', headers: { Cookie: adminCookie } },
+        env,
+      )
+      expect(res.status).toBe(200)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
+
+      const links = await db.select().from(magicLinks).where(eq(magicLinks.userId, memberId)).all()
+      expect(links.length).toBeGreaterThanOrEqual(1)
+      const newest = links.sort((a, b) => b.expiresAt.localeCompare(a.expiresAt))[0]
+      const ttlMs = new Date(newest.expiresAt).getTime() - Date.now()
+      // Login link, not an invite: minutes-long TTL, nowhere near the 7-day invite window.
+      expect(ttlMs).toBeGreaterThan(30 * 60 * 1000)
+      expect(ttlMs).toBeLessThan(6 * 24 * 60 * 60 * 1000)
+    })
+
+    it('does not require a Turnstile token (unlike the public /auth/magic-link)', async () => {
+      // Regression: the admin action used to POST the public, Turnstile-gated
+      // /auth/magic-link with no token, yielding 403 "Verification required."
+      // on tenants with TURNSTILE_SECRET_KEY set.
+      const res = await app.request(
+        `/api/admin/members/${memberId}/resend-login`,
+        { method: 'POST', headers: { Cookie: adminCookie } },
+        { ...env, TURNSTILE_SECRET_KEY: 'test-secret' },
+      )
+      expect(res.status).toBe(200)
+    })
+  })
+
   // PATCH /admin/members/:id
   describe('PATCH /admin/members/:id', () => {
     it('returns 403 for a member user', async () => {
@@ -810,6 +879,22 @@ describe('auth event logging — admin invite', () => {
     expect(res.status).toBe(200)
     const rows = await db.select().from(authEvents).all()
     expect(rows.some(r => r.event === 'link_requested' && r.linkType === 'invite' && r.email === 'target@b.com')).toBe(true)
+  })
+
+  it('records link_requested (login) when resending a login link', async () => {
+    const db = getDb(env.DB)
+    const targetId = await seedUser({ role: 'member', email: 'login-target@b.com', name: 'Login Target' })
+    const res = await app.request(
+      `/api/admin/members/${targetId}/resend-login`,
+      {
+        method: 'POST',
+        headers: { Cookie: adminCookie },
+      },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const rows = await db.select().from(authEvents).all()
+    expect(rows.some(r => r.event === 'link_requested' && r.linkType === 'login' && r.email === 'login-target@b.com')).toBe(true)
   })
 })
 

@@ -321,6 +321,50 @@ adminApiRouter.post('/members/:id/resend-invite', async (c) => {
   return c.json({ ok: true })
 })
 
+// POST /admin/members/:id/resend-login
+// Admin-initiated sign-in link for an existing member (e.g. one who can't
+// receive/find their own). This is the authenticated sibling of the public
+// POST /auth/magic-link: because the admin is already authenticated, it does NOT
+// go through the Turnstile gate — the public endpoint's tokenless request would
+// 403 ("Verification required.") wherever TURNSTILE_SECRET_KEY is set.
+adminApiRouter.post('/members/:id/resend-login', async (c) => {
+  const targetId = c.req.param('id')
+  const db = getDb(c.env.DB)
+
+  const target = await db
+    .select({ id: users.id, email: users.email, deactivatedAt: users.deactivatedAt })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .get()
+
+  if (!target) return c.json({ error: 'User not found' }, 404)
+  if (target.deactivatedAt) return c.json({ error: 'Cannot resend a login link to a deactivated user' }, 400)
+
+  // Match the public login link's TTL (a wider window for slow mail gateways),
+  // not the 7-day invite window — this is a login link, not an invitation.
+  const LOGIN_LINK_DURATION_MS = 60 * 60 * 1000
+  const rawToken = await generateToken()
+  const tokenHash = await hashToken(rawToken)
+  const expiresAt = new Date(Date.now() + LOGIN_LINK_DURATION_MS).toISOString()
+
+  await db.insert(magicLinks).values({
+    id: crypto.randomUUID(),
+    userId: target.id,
+    tokenHash,
+    expiresAt,
+  })
+
+  const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
+  await recordAuthEvent(db, { event: 'link_requested', email: target.email, userId: target.id, linkType: 'login', ...authReqContext(c) })
+  try {
+    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, 'login', db, target.id).catch(console.error))
+  } catch {
+    sendMagicLink(target.email, url, c.env, 'login', db, target.id).catch(console.error)
+  }
+
+  return c.json({ ok: true })
+})
+
 // PATCH /admin/members/:id
 adminApiRouter.patch('/members/:id', async (c) => {
   const targetId = c.req.param('id')
