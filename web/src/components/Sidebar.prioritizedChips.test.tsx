@@ -81,7 +81,7 @@ describe('prioritized-bills widget chips: orange highlight on hover and active v
     renderSidebar('/')
     const chip = await screen.findByRole('button', { name: /3 prioritized bills/i })
     fireEvent.mouseEnter(chip)
-    expect(chip).toHaveStyle({ background: color.bgAmberPriority })
+    expect(chip).toHaveStyle({ background: color.bgHoneySelector })
     fireEvent.mouseLeave(chip)
     expect(chip).toHaveStyle({ background: color.countChipBg })
   })
@@ -89,7 +89,7 @@ describe('prioritized-bills widget chips: orange highlight on hover and active v
   it('the priority count chip stays orange when the current view is exactly the priority filter', async () => {
     renderSidebar(PRIORITY_FILTER)
     const chip = await screen.findByRole('button', { name: /3 prioritized bills/i })
-    expect(chip).toHaveStyle({ background: color.bgAmberPriority })
+    expect(chip).toHaveStyle({ background: color.bgHoneySelector })
   })
 
   it('the priority count chip is NOT orange when priority is joined by another filter', async () => {
@@ -108,7 +108,7 @@ describe('prioritized-bills widget chips: orange highlight on hover and active v
     renderSidebar('/')
     const chip = await screen.findByRole('link', { name: /waiting on your vote/i })
     fireEvent.mouseEnter(chip)
-    expect(chip).toHaveStyle({ background: color.bgAmberPriority })
+    expect(chip).toHaveStyle({ background: color.bgHoneySelector })
     fireEvent.mouseLeave(chip)
     expect(chip).toHaveStyle({ background: color.countChipBg })
   })
@@ -116,7 +116,7 @@ describe('prioritized-bills widget chips: orange highlight on hover and active v
   it('the unvoted chip stays orange when the current view is exactly the priority+unvoted filter', async () => {
     renderSidebar(`${PRIORITY_FILTER}&unvoted=1`)
     const chip = await screen.findByRole('link', { name: /waiting on your vote/i })
-    expect(chip).toHaveStyle({ background: color.bgAmberPriority })
+    expect(chip).toHaveStyle({ background: color.bgHoneySelector })
   })
 
   it('the unvoted chip is NOT orange when only the priority filter (without unvoted) is active', async () => {

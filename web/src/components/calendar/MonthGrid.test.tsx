@@ -15,7 +15,7 @@ vi.mock('../../lib/calendarGrid', async (importOriginal) => {
 const NAVY_RGB = 'rgb(30, 58, 95)'   // color.billBadgeNavy #1e3a5f
 const BLUE_RGB = 'rgb(59, 130, 246)' // color.accentBlue   #3b82f6
 
-const AMBER_RGB = 'rgb(245, 158, 11)'        // color.accentAmber
+const AMBER_RGB = 'rgb(232, 163, 61)'        // color.accentAmber
 const AMBER_FILL_RGB = 'rgb(254, 243, 199)'  // color.bgAmberPriority
 const BORDER_RGB = 'rgb(226, 232, 240)'      // color.borderDefault
 

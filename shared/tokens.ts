@@ -45,7 +45,7 @@ export const color = {
   accentBlue:        '#3b82f6',
   accentBlueMuted:   '#93c5fd', // muted blue outline (hover state)
   brandViolet:       '#7c3aed',
-  accentAmber:       '#f59e0b', // relevance slider accent
+  accentAmber:       '#e8a33d', // Honey — brand accent: wordmark "Vote", relevance slider, settings-nav active line
   voteSupport:       '#22c55e', // support vote bar / cast-pill fill
   partyDemBlue:      '#1d4ed8', // Democrat party badge
   billBadgeNavy:     '#1e3a5f', // bill number badge background
@@ -84,6 +84,7 @@ export const color = {
   bgRedDisabled:     '#fca5a5', // disabled red button background
   bgAmberPriority:   '#fef3c7', // absorbs #fef9c3 — amber / amend background
   bgWarnSoft:        '#fffbeb', // amber warning background
+  bgHoneySelector:   '#f7dfbb', // Honey at 85% lightness — sidebar active-nav selector (navy text clears AA at 8.9:1)
 
   // --- Border ---
   borderDefault:     '#e2e8f0', // absorbs #e8edf2, #e8ecf1
