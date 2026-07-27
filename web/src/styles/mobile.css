@@ -109,7 +109,7 @@ body.nav-pending * { cursor: wait !important; }
   right: 0;
   bottom: 0;
   left: -23px;
-  background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #f1f5f9 8px, #f1f5f9 16px);
+  background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #f5f8fc 8px, #f5f8fc 16px);
   pointer-events: none;
 }
 
@@ -496,7 +496,7 @@ body.nav-pending * { cursor: wait !important; }
   .members-table td[data-label]::before {
     content: attr(data-label);
     font-weight: 600;
-    color: #64748b;
+    color: #5e697d;
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -505,6 +505,6 @@ body.nav-pending * { cursor: wait !important; }
     display: block !important;
     padding: 0 0 8px !important;
     margin-bottom: 6px;
-    border-bottom: 1px solid #f1f5f9 !important;
+    border-bottom: 1px solid #f5f8fc !important;
   }
 }
