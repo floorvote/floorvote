@@ -211,7 +211,7 @@ export const BillRow = memo(function BillRow({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <BillBadge billNumber={bill.billNumber} state={bill.state} />
             {bill.isDraft && (
-              <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.surfaceSubtle, color: color.textSecondary, border: `1px solid ${color.borderDefault}` }}>
+              <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
                 Draft
               </span>
             )}
@@ -237,7 +237,7 @@ export const BillRow = memo(function BillRow({
           <span className="bill-col-lastaction" style={{
             display: 'inline-flex', alignItems: 'center',
             fontSize: fontSize.sm, fontWeight: fontWeight.semibold, padding: '3px 10px', borderRadius: radius.sm,
-            border: `1px solid ${color.borderDefault}`, background: color.surfaceSubtle, color: color.textSecondary,
+            border: '1px solid transparent', background: color.countChipBg, color: color.textSecondary,
           }}>
             {bill.lastActionDate ?? '—'}
           </span>
@@ -251,7 +251,7 @@ export const BillRow = memo(function BillRow({
         <div className="bill-row-mobile-meta">
           <BillBadge billNumber={bill.billNumber} state={bill.state} />
           {bill.isDraft && (
-            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.surfaceSubtle, color: color.textSecondary, border: `1px solid ${color.borderDefault}` }}>
+            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
               Draft
             </span>
           )}

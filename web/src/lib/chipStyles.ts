@@ -13,8 +13,10 @@ export const CHIP_BASE = {
   fontWeight: fontWeight.semibold,
   padding: '3px 10px',
   borderRadius: radius.sm,
-  border: `1px solid ${color.borderDefault}`,
-  background: color.surfaceSubtle,
+  // Quieter: no resting border. chipOutline() supplies the ring on hover/selected.
+  // Fill bumped from surfaceSubtle → countChipBg so the chip keeps a shape without a border.
+  border: '1px solid transparent',
+  background: color.countChipBg,
   color: color.textSecondary,
 }
 
@@ -89,8 +91,10 @@ export function countBadge(active = false, activeBg = 'transparent'): React.CSSP
 export const ROLE_CHIP: React.CSSProperties = {
   fontSize: fontSize.xs,
   fontWeight: fontWeight.medium,
-  color: color.roleChipBlue,
-  background: color.bgBlueChip,
+  // "Light" separation from topic tags: a step up the blue ramp + the pill shape,
+  // so a role/user chip never reads as a bill tag (which stays a pale rectangle).
+  color: color.tagTextBlue,
+  background: color.bgRoleChip,
   borderRadius: radius.pill,
   padding: '3px 9px',
   display: 'inline-flex',

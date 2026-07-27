@@ -7,7 +7,8 @@ export const TAG_CHIP = {
   color: color.tagTextBlue,
   padding: '1px 6px',
   borderRadius: radius.sm,
-  border: `1px solid ${color.tagBorderBlue}`,
+  // Quieter: no resting border. TAG_CHIP_HOVERED / TAG_CHIP_ACTIVE add the ring on interaction.
+  border: '1px solid transparent',
   cursor: 'pointer',
 } as const
 

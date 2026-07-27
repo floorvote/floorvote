@@ -72,6 +72,7 @@ export const color = {
   bgInfo:            '#eff6ff', // absorbs #ebf3ff, #eef2ff — selection / unread / info
   bgDropdownActive:  '#f0f6ff', // dropdown selected/hover row
   bgBlueChip:        '#e0f2fe', // absorbs #dbeafe — blue chip background
+  bgRoleChip:        '#dbeafe', // role/user chip fill — one blue-ramp step up from topic tags, to separate the two
   bgSuccess:         '#f0fdf4', // green surface
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)
