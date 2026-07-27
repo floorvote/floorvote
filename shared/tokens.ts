@@ -27,7 +27,6 @@ export const color = {
   textErrorRed:      '#dc2626', // error text; oppose cast-pill base
   textDangerDark:    '#991b1b', // dark red chip text
   textDeleteRed:     '#ef4444', // delete button; oppose bar fill
-  textRedDark:       '#7f1d1d', // darkest red (priority-high text)
   priorityHigh:      '#850028',
   priorityMedium:    '#be2342',
   priorityLow:       '#c27a83',
@@ -94,7 +93,6 @@ export const color = {
   borderGreenFaint:  '#d6f5e1', // vote button resting border (support)
   borderNeutralFaint:'#edf1f5', // vote button resting border (neutral)
   borderRedChip:     '#fecaca',
-  borderRedStrong:   '#f87171',
   borderRedFaint:    '#fde2e2', // vote button resting border (oppose)
   borderVioletSoft:  '#c4b5fd',
   borderPurpleChip:  '#e9d5ff',
