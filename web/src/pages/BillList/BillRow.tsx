@@ -186,8 +186,14 @@ export const BillRow = memo(function BillRow({
         gridTemplateColumns: `12px ${OUTER_GRID}`,
         gap: 8,
         alignItems: 'start',
-        background: isSelected ? color.bgBlueChip : hovered ? color.bgDropdownActive : index % 2 === 0 ? color.white : color.white,
-        borderBottom: `1px solid ${color.borderDefault}`,
+        // Hover = elevation, not a tint: the row stays white and lifts with a
+        // shadow, so borderless chips never melt into a hover fill. Selected
+        // still tints (bgBlueChip).
+        background: isSelected ? color.bgBlueChip : color.white,
+        borderBottom: `1px solid ${hovered && !isSelected ? 'transparent' : color.borderDefault}`,
+        boxShadow: hovered && !isSelected ? '0 3px 12px rgba(15,23,42,0.13)' : 'none',
+        position: 'relative',
+        zIndex: hovered && !isSelected ? 2 : 1,
         padding: '12px 16px 12px 8px',
         cursor: 'pointer',
         color: 'inherit',
