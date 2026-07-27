@@ -11,7 +11,7 @@
 // (scripts/gen-email-icons.ts) and the drift test both read this list.
 
 import { color } from './tokens'
-import { POSITION_COLORS } from './billChipColors'
+import { POSITION_FEED_ICON } from './billChipColors'
 import { CHANGE_ICONS, USER_EVENT_ICONS } from './billCardModel'
 import { EVENT_SOURCE_DESCRIPTORS } from './eventLineModel'
 
@@ -62,7 +62,7 @@ export const EMAIL_ICON_NEEDS: EmailIconNeed[] = dedupe([
     .flatMap(([type, cfg]) => {
       const fill = (cfg.fill ?? 0) === 1
       if (type === 'position_set') {
-        return Object.values(POSITION_COLORS).map(pc => ({ icon: cfg.name, hex: pc.color, fill }))
+        return Object.values(POSITION_FEED_ICON).map(hex => ({ icon: cfg.name, hex, fill }))
       }
       return [{ icon: cfg.name, hex: cfg.color, fill }]
     }),

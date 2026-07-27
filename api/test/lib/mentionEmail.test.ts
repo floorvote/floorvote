@@ -21,7 +21,7 @@ describe('renderMentionEmail', () => {
   })
   it('renders the comment row: purple icon, author name + subtitle, absolute date', () => {
     const html = renderMentionEmail(base)
-    expect(html).toContain('/email-icons/chat__8b5cf6.png')
+    expect(html).toContain('/email-icons/chat__7c3aed.png')
     expect(html).toContain('Sam Ortiz')
     expect(html).toContain('Town Clerk, Cranston')
     expect(html).toContain('June 10, 2026')

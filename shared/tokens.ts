@@ -55,8 +55,7 @@ export const color = {
   countChipBg:       '#ecf0f6', // count-pill fill; midpoint of surfaceMuted and borderDefault
   bgLoginPage:       '#f0f4f8', // login full-bleed background
   bgInfo:            '#eff6ff', // absorbs #ebf3ff, #eef2ff — selection / unread / info
-  bgBlueChip:        '#e0f2fe', // absorbs #dbeafe — blue chip background
-  bgRoleChip:        '#dbeafe', // role/user chip fill — one blue-ramp step up from topic tags, to separate the two
+  bgBlueChip:        '#dbeafe', // H214 blue chip fill (tags, mentions, party 'D', analysis) — absorbs the old #e0f2fe (H204 cyan-lean) so every blue chip shares one hue
   bgSuccess:         '#f0fdf4', // green surface
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)
@@ -83,7 +82,7 @@ export const color = {
   borderPurpleChip:  '#e9d5ff',
   borderAmber:       '#fde68a',
   borderYellow:      '#fde047',
-  borderBlueDash:    '#bae6fd', // dashed blue border / disabled role-chip dismiss
+  borderBlueDash:    '#bad7fd', // H214 dashed blue border / disabled role-chip dismiss (retinted from #bae6fd, H201)
   tagBorderBlue:     '#bfdbfe', // tag chip border
 } as const
 

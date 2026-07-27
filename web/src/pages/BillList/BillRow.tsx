@@ -188,10 +188,12 @@ export const BillRow = memo(function BillRow({
         alignItems: 'start',
         // Hover = elevation, not a tint: the row stays white and lifts with a
         // shadow, so borderless chips never melt into a hover fill. Selected
-        // still tints (bgBlueChip).
+        // still tints (bgBlueChip). The divider stays put on hover (keeping the
+        // borderBottom) so the row lifts without the list "opening a gap"; a
+        // paired top+bottom shadow reads as a lift from both edges.
         background: isSelected ? color.bgBlueChip : color.white,
-        borderBottom: `1px solid ${hovered && !isSelected ? 'transparent' : color.borderDefault}`,
-        boxShadow: hovered && !isSelected ? '0 3px 12px rgba(15,23,42,0.13)' : 'none',
+        borderBottom: `1px solid ${color.borderDefault}`,
+        boxShadow: hovered && !isSelected ? '0 7px 16px -3px rgba(15,23,42,0.20), 0 -3px 9px -3px rgba(15,23,42,0.15)' : 'none',
         position: 'relative',
         zIndex: hovered && !isSelected ? 2 : 1,
         padding: '12px 16px 12px 8px',

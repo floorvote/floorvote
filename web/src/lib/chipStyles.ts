@@ -86,15 +86,17 @@ export function countBadge(active = false, activeBg = 'transparent'): React.CSSP
   }
 }
 
-// Light-blue pill for team role labels — used everywhere a role name is shown.
+// Solid-blue "identity" pill for team role labels — used everywhere a role name
+// is shown. White on linkBlue reads as a distinct signal from the light-tint
+// topic tag (a pale rectangle), so a role/user chip is never confused with a bill
+// tag. Keep this in lockstep with the role/everyone mention CSS in
+// CommentContent.tsx and RichTextEditor.tsx (the composing + posted twins).
 // The X button style is separate and only used in admin contexts.
 export const ROLE_CHIP: React.CSSProperties = {
   fontSize: fontSize.xs,
   fontWeight: fontWeight.medium,
-  // "Light" separation from topic tags: a step up the blue ramp + the pill shape,
-  // so a role/user chip never reads as a bill tag (which stays a pale rectangle).
-  color: color.tagTextBlue,
-  background: color.bgRoleChip,
+  color: color.white,
+  background: color.linkBlue,
   borderRadius: radius.pill,
   padding: '3px 9px',
   display: 'inline-flex',
@@ -104,8 +106,8 @@ export const ROLE_CHIP: React.CSSProperties = {
 }
 
 export const ROLE_CHIP_X: React.CSSProperties = {
-  // Was roleChipXBlue (light sky) — too faint on the deeper bgRoleChip fill; use the chip's own text blue.
-  color: color.tagTextBlue,
+  // White X on the solid-blue role chip.
+  color: color.white,
   cursor: 'pointer',
   fontSize: fontSize.sm,
   lineHeight: '1',

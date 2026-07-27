@@ -93,7 +93,7 @@ describe('WCAG AA contrast', () => {
     ['violet chip', color.textVioletChip, color.bgVioletChip],
     ['teal chip', color.textTealSenate, color.bgTeal],
     ['tag chip', color.tagTextBlue, color.bgBlueChip],
-    ['role chip', color.tagTextBlue, color.bgBlueChip],
+    ['role chip', color.white, color.linkBlue],
     ['neutral fallback chip', color.textSlate500, color.surfaceMuted],
     ['count chip', color.countChipText, color.countChipBg],
   ]

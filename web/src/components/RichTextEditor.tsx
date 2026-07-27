@@ -494,21 +494,19 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
         .comment-editor-wrapper .tiptap.ProseMirror .mention {
           font-weight: 500;
         }
-        .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="role:"] {
-          background: #e0f2fe;
-          color: #0369a1;
-          border-radius: 99px;
-          padding: 2px 8px;
-        }
+        /* Role/everyone mention = the solid-blue ROLE_CHIP identity. Keep these
+           three rules in lockstep with ROLE_CHIP (chipStyles.ts) and the .mention
+           rules in CommentContent.tsx (the posted twin). */
+        .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="role:"],
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="everyone:"] {
-          background: #e0f2fe;
-          color: #0369a1;
+          background: ${color.linkBlue};
+          color: ${color.white};
           border-radius: 99px;
           padding: 2px 8px;
         }
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="user:"] {
-          background: #f1f5f9;
-          color: #475569;
+          background: ${color.surfaceMuted};
+          color: ${color.textSlate500};
           border-radius: 4px;
           padding: 1px 6px;
         }

@@ -46,6 +46,9 @@ interface Props {
 export function CommentContent({ content, users = [], roles = [], fontSize: fontSizeValue = fontSize.base }: Props) {
   const [tooltip, setTooltip] = useState<MentionTooltipData | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // The mention the pointer is currently over, so we recompute the tooltip only
+  // when it changes (not on every mouseover event within the same chip).
+  const hoveredMentionRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -82,13 +85,23 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
 
   const html = sanitize(content)
 
+  // Drive the tooltip off mouseover + closest() rather than a per-element
+  // mouseout: a tiptap mention can wrap a nested child, so mouseout fires with
+  // the child as target and never matches the mention — leaving the tooltip
+  // stranded. Here every move re-reads the mention under the pointer; moving off
+  // a mention (onto surrounding text, or out of the container) clears it.
   function handleMouseOver(e: React.MouseEvent) {
-    const target = e.target as HTMLElement
-    if (target.dataset.type !== 'mention') return
+    const mention = (e.target as HTMLElement).closest<HTMLElement>('[data-type="mention"]')
+    if (mention === hoveredMentionRef.current) return
+    hoveredMentionRef.current = mention
+    if (!mention) {
+      setTooltip(null)
+      return
+    }
 
-    const dataId = target.dataset.id || ''
+    const dataId = mention.dataset.id || ''
     const [type, id] = dataId.split(':')
-    const anchorRect = target.getBoundingClientRect()
+    const anchorRect = mention.getBoundingClientRect()
 
     if (type === 'role') {
       const role = roles.find(r => r.id === id)
@@ -99,16 +112,14 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
       if (user) {
         setTooltip({ anchorRect, type: 'user', userName: displayName(user), userSubtitle: user.subtitle, userRoles: user.roles ?? [] })
       } else {
-        setTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userSubtitle: null, userRoles: [] })
+        setTooltip({ anchorRect, type: 'user', userName: mention.dataset.label || id, userSubtitle: null, userRoles: [] })
       }
     }
   }
 
-  function handleMouseOut(e: React.MouseEvent) {
-    const target = e.target as HTMLElement
-    if (target.dataset.type === 'mention') {
-      setTooltip(null)
-    }
+  function handleMouseLeave() {
+    hoveredMentionRef.current = null
+    setTooltip(null)
   }
 
   const containerRect = containerRef.current?.closest('[class*="CARD"], [style]')?.getBoundingClientRect()
@@ -118,7 +129,7 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
     <div
       ref={containerRef}
       onMouseOver={handleMouseOver}
-      onMouseOut={handleMouseOut}
+      onMouseLeave={handleMouseLeave}
       style={{ position: 'relative' }}
     >
       <style>{`
@@ -138,21 +149,19 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
           font-weight: 500;
           cursor: default;
         }
-        .comment-html span[data-type="mention"][data-id^="role:"] {
-          background: #e0f2fe;
-          color: #0369a1;
-          border-radius: 99px;
-          padding: 2px 8px;
-        }
+        /* Role/everyone mention = the solid-blue ROLE_CHIP identity. Keep these
+           three rules in lockstep with ROLE_CHIP (chipStyles.ts) and the .mention
+           rules in RichTextEditor.tsx (the composing twin). */
+        .comment-html span[data-type="mention"][data-id^="role:"],
         .comment-html span[data-type="mention"][data-id^="everyone:"] {
-          background: #e0f2fe;
-          color: #0369a1;
+          background: ${color.linkBlue};
+          color: ${color.white};
           border-radius: 99px;
           padding: 2px 8px;
         }
         .comment-html span[data-type="mention"][data-id^="user:"] {
-          background: #f1f5f9;
-          color: #475569;
+          background: ${color.surfaceMuted};
+          color: ${color.textSlate500};
           border-radius: 4px;
           padding: 1px 6px;
         }
