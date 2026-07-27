@@ -155,15 +155,20 @@ export function NotificationsSlideOver(
           .notif-comment li { margin: 1px 0; }
           .notif-comment a { color: #2563eb; }
           .notif-comment span[data-type="mention"] { font-weight: 500; cursor: default; }
-          .notif-comment span[data-type="mention"][data-id^="role:"] {
-            background: #e0f2fe;
-            color: #0369a1;
+          /* Role/everyone mention = the solid-blue ROLE_CHIP identity. Keep the
+             colors in lockstep with ROLE_CHIP (chipStyles.ts) and the mention CSS
+             in CommentContent.tsx / RichTextEditor.tsx; padding stays compact for
+             the notifications list. */
+          .notif-comment span[data-type="mention"][data-id^="role:"],
+          .notif-comment span[data-type="mention"][data-id^="everyone:"] {
+            background: ${color.linkBlue};
+            color: ${color.white};
             border-radius: 99px;
             padding: 1px 7px;
           }
           .notif-comment span[data-type="mention"][data-id^="user:"] {
-            background: #f1f5f9;
-            color: #475569;
+            background: ${color.surfaceMuted};
+            color: ${color.textSlate500};
             border-radius: 4px;
             padding: 1px 5px;
           }
