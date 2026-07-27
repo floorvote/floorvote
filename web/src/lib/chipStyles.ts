@@ -104,7 +104,8 @@ export const ROLE_CHIP: React.CSSProperties = {
 }
 
 export const ROLE_CHIP_X: React.CSSProperties = {
-  color: color.roleChipXBlue,
+  // Was roleChipXBlue (light sky) — too faint on the deeper bgRoleChip fill; use the chip's own text blue.
+  color: color.tagTextBlue,
   cursor: 'pointer',
   fontSize: fontSize.sm,
   lineHeight: '1',

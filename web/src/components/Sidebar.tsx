@@ -440,7 +440,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             fontSize: fontSize.base,
             fontWeight: fontWeight.medium,
             color: isActive ? color.billBadgeNavy : color.textSlate,
-            background: isActive || navHover === 'feed' ? color.bgHoneySelector : 'transparent',
+            background: isActive || navHover === 'feed' ? color.bgAmberPriority : 'transparent',
             textDecoration: 'none',
             borderRadius: radius.md,
             margin: '1px 10px',
@@ -471,7 +471,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             fontSize: fontSize.base,
             fontWeight: fontWeight.medium,
             color: isActive ? color.billBadgeNavy : color.textSlate,
-            background: isActive || navHover === 'bills' ? color.bgHoneySelector : 'transparent',
+            background: isActive || navHover === 'bills' ? color.bgAmberPriority : 'transparent',
             textDecoration: 'none',
             borderRadius: radius.md,
             margin: '1px 10px',
@@ -500,7 +500,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
                         onMouseEnter={() => setBillsChipHover(true)}
                         onMouseLeave={() => setBillsChipHover(false)}
-                        style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgHoneySelector), cursor: 'pointer' }}
+                        style={{ ...countBadge(billsChips.allBills || billsChipHover, color.bgAmberPriority), cursor: 'pointer' }}
                       >
                         {stats.billCount.toLocaleString()} bills
                       </span>
@@ -521,7 +521,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         onMouseEnter={() => setNewChipHover(true)}
                         onMouseLeave={() => setNewChipHover(false)}
                         // Orange when newMatches=1 is the only active filter; gray clickable pill otherwise.
-                        style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgHoneySelector), cursor: 'pointer' }}
+                        style={{ ...countBadge(billsChips.newMatches || newChipHover, color.bgAmberPriority), cursor: 'pointer' }}
                       >
                         {stats!.newMatchesCount} new
                       </span>
@@ -546,7 +546,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             fontSize: fontSize.base,
             fontWeight: fontWeight.medium,
             color: isActive ? color.billBadgeNavy : color.textSlate,
-            background: isActive || navHover === 'calendar' ? color.bgHoneySelector : 'transparent',
+            background: isActive || navHover === 'calendar' ? color.bgAmberPriority : 'transparent',
             textDecoration: 'none',
             borderRadius: radius.md,
             margin: '1px 10px',
@@ -620,7 +620,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   gap: 6,
                   padding: '8px 10px',
                   cursor: 'pointer',
-                  background: headerActive ? color.bgHoneySelector : color.white,
+                  background: headerActive ? color.bgAmberPriority : color.white,
                   borderBottom: sidebarData.priorityBills.length > 0 ? `1px solid ${color.borderDefault}` : 'none',
                 }}
               >
@@ -657,7 +657,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                       // Orange when the current view is exactly the prioritized
                       // filter (persistent), or the chip itself is hovered —
                       // same treatment as the nav "N bills"/"N new" chips.
-                      style={{ ...countBadge(prioritizedChips.priority || priorityChipHover, color.bgHoneySelector), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                      style={{ ...countBadge(prioritizedChips.priority || priorityChipHover, color.bgAmberPriority), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
                       {sidebarData.priorityBillCount}
                     </button>
@@ -675,7 +675,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         onMouseLeave={() => setUnvotedChipHover(false)}
                         // Orange when the current view is exactly the prioritized+unvoted
                         // filter (persistent), or hovered on its own.
-                        style={{ ...countBadge(prioritizedChips.unvoted || unvotedChipHover, color.bgHoneySelector), textDecoration: 'none' }}
+                        style={{ ...countBadge(prioritizedChips.unvoted || unvotedChipHover, color.bgAmberPriority), textDecoration: 'none' }}
                       >
                         {sidebarData.unvotedPriorityCount} unvoted
                       </Link>
@@ -774,7 +774,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                 gap: 6,
                 padding: '8px 10px',
                 cursor: 'pointer',
-                background: hearingsHeaderHover ? color.bgHoneySelector : color.white,
+                background: hearingsHeaderHover ? color.bgAmberPriority : color.white,
                 borderBottom: `1px solid ${color.borderDefault}`,
               }}
             >

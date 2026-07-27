@@ -85,7 +85,6 @@ export const color = {
   bgRedDisabled:     '#fca5a5', // disabled red button background
   bgAmberPriority:   '#fef3c7', // absorbs #fef9c3 — amber / amend background
   bgWarnSoft:        '#fffbeb', // amber warning background
-  bgHoneySelector:   '#f7dfbb', // Honey at 85% lightness — sidebar active-nav selector (navy text clears AA at 8.9:1)
 
   // --- Border ---
   borderDefault:     '#e2e8f0', // absorbs #e8edf2, #e8ecf1

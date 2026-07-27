@@ -59,6 +59,21 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
     })
   }, [content, roles])
 
+  // Dismiss the mention tooltip on scroll/resize. It's position:fixed at the
+  // anchor's coords captured on hover, so a scroll would otherwise strand it in
+  // place — and because the pointer never leaves the mention during a scroll, no
+  // mouseout fires to clear it. Capture:true catches scrolls in nested containers.
+  useEffect(() => {
+    if (!tooltip) return
+    const dismiss = () => setTooltip(null)
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [tooltip])
+
   const isHtml = /<[a-z][\s\S]*>/i.test(content)
 
   if (!isHtml) {
