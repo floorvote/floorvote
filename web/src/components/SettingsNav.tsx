@@ -17,7 +17,7 @@ const ADMIN_TABS = [
 
 function Tab({ to, label, variant }: { to: string; label: string; variant: 'member' | 'admin' }) {
   const [hovered, setHovered] = useState(false)
-  const activeColor = variant === 'admin' ? color.textVioletAdmin : color.billBadgeNavy
+  const activeColor = variant === 'admin' ? color.brandViolet : color.billBadgeNavy
   const activeLine = variant === 'admin' ? color.brandViolet : color.accentAmber
 
   return (

@@ -376,7 +376,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   position: 'absolute',
                   top: -3,
                   right: -3,
-                  background: color.textDeleteRed,
+                  background: color.textErrorRed,
                   color: color.white,
                   fontSize: fontSize.xs,
                   fontWeight: fontWeight.bold,

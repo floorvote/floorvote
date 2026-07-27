@@ -478,7 +478,7 @@ export function BillList() {
             alignItems: 'center',
             gap: 6,
             background: f.totalActiveFilters > 0 ? color.bgInfo : color.white,
-            color: f.totalActiveFilters > 0 ? color.partyDemBlue : color.textSlate,
+            color: f.totalActiveFilters > 0 ? color.linkBlue : color.textSlate,
             borderColor: f.totalActiveFilters > 0 ? color.tagBorderBlue : color.borderDefault,
             fontWeight: f.totalActiveFilters > 0 ? fontWeight.medium : fontWeight.normal,
           }}
@@ -486,7 +486,7 @@ export function BillList() {
           Filters
           {f.totalActiveFilters > 0 && (
             <span style={{
-              background: color.filterBadgeNavy, color: color.white,
+              background: color.linkBlue, color: color.white,
               borderRadius: radius.lg, padding: '0 6px', fontSize: fontSize.xs, fontWeight: fontWeight.bold,
             }}>
               {f.totalActiveFilters}
@@ -516,7 +516,7 @@ export function BillList() {
                 borderRadius: radius.md,
                 border: `1px solid ${f.myBills ? color.tagBorderBlue : color.borderDefault}`,
                 background: f.myBills ? color.bgInfo : color.white,
-                color: f.myBills ? color.partyDemBlue : color.textSlate,
+                color: f.myBills ? color.linkBlue : color.textSlate,
                 fontWeight: f.myBills ? fontWeight.medium : fontWeight.normal,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -536,7 +536,7 @@ export function BillList() {
                   borderRadius: radius.md,
                   border: `1px solid ${f.newMatches ? color.tagBorderBlue : color.borderDefault}`,
                   background: f.newMatches ? color.bgInfo : color.white,
-                  color: f.newMatches ? color.partyDemBlue : color.textSlate,
+                  color: f.newMatches ? color.linkBlue : color.textSlate,
                   fontWeight: f.newMatches ? fontWeight.medium : fontWeight.normal,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
@@ -591,7 +591,7 @@ export function BillList() {
                 border: `1px solid ${relevanceDraft > 0 ? color.tagBorderBlue : color.borderDefault}`,
                 borderRadius: radius.md, padding: '6px 10px',
               }}>
-                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.partyDemBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
+                <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: relevanceDraft > 0 ? color.linkBlue : color.textSlate, fontWeight: relevanceDraft > 0 ? fontWeight.medium : fontWeight.normal }}>
                   Relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{relevanceDraft === 0 ? 'All' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}</span>
                 </label>
                 <input
@@ -663,7 +663,7 @@ export function BillList() {
                       fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
                       whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4,
                       background: isActive ? color.bgInfo : color.white,
-                      color: isActive ? color.partyDemBlue : color.textSlate,
+                      color: isActive ? color.linkBlue : color.textSlate,
                       border: `1px solid ${isActive ? color.tagBorderBlue : color.borderDefault}`,
                       fontWeight: isActive ? fontWeight.medium : fontWeight.normal,
                     }}

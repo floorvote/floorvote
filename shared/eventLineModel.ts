@@ -55,8 +55,8 @@ export interface EventSourceDescriptor {
 // for custom/editable events. Replaces the old navy/blue left-edge color.
 export function eventSourceIcon(event: EventEdgeSource): EventSourceDescriptor {
   return event.source === 'custom'
-    ? { icon: 'calendar_today', color: color.accentBlue,    tint: color.surfaceTintBlue, label: 'Custom event' }
-    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.surfaceTintNavy, label: 'Hearing' }
+    ? { icon: 'calendar_today', color: color.accentBlue,    tint: color.bgInfo, label: 'Custom event' }
+    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
 }
 
 // The tinted source-icon tile dimensions, shared by the web EventSourceIcon and

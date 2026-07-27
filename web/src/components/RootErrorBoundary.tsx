@@ -21,7 +21,7 @@ export function RootErrorBoundary() {
             onClick={() => window.location.reload()}
             style={{
               padding: '8px 20px',
-              background: color.filterBadgeNavy,
+              background: color.linkBlue,
               color: color.white,
               border: 'none',
               borderRadius: radius.md,
@@ -37,7 +37,7 @@ export function RootErrorBoundary() {
             style={{
               padding: '8px 20px',
               background: color.white,
-              color: color.filterBadgeNavy,
+              color: color.linkBlue,
               border: `1px solid ${color.borderDefault}`,
               borderRadius: radius.md,
               fontSize: fontSize.sm,

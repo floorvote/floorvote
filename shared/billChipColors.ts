@@ -12,12 +12,12 @@ export const PRIORITY_COLORS: Record<string, { fill: string; text: string; dot: 
 }
 
 export const POSITION_COLORS: Record<string, { bg: string; color: string; border: string }> = {
-  Support:       { bg: color.bgSuccessChip,   color: color.textVoteSupport,  border: color.borderGreenStrong },
+  Support:       { bg: color.bgSuccessChip,   color: color.textSuccessDark,  border: color.borderGreenStrong },
   Oppose:        { bg: color.bgRedPriority,   color: color.textDanger,       border: color.bgRedDisabled },
   Neutral:       { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
   // Amend deepened (borderAmber fill + textAmberWarning) so it no longer reads as the
   // relevance-score amber (#fef3c7 / textAmberDark) — ΔE ~25 apart, no new hue.
   Amend:         { bg: color.borderAmber,     color: color.textAmberWarning, border: color.borderAmber },
-  Monitor:       { bg: color.bgVioletChip,    color: color.textVioletAdmin,  border: color.borderVioletSoft },
+  Monitor:       { bg: color.bgVioletChip,    color: color.brandViolet,  border: color.borderVioletSoft },
   'No Position': { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
 }

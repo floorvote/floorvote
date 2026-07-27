@@ -52,7 +52,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
       </div>
 
       {status === 'success' ? (
-        <p role="alert" style={{ fontSize: fontSize.base, color: color.textVoteSupport, margin: 0 }}>Feedback sent — thanks!</p>
+        <p role="alert" style={{ fontSize: fontSize.base, color: color.textSuccessDark, margin: 0 }}>Feedback sent — thanks!</p>
       ) : (
         <>
           <label htmlFor="feedback-message" style={SR_ONLY}>

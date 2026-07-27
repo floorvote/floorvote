@@ -24,9 +24,9 @@ export function BillTextChip({ type, date, selected = false, onClick, title }: P
         borderRadius: radius.xl,
         border: '1px solid',
         cursor: onClick ? 'pointer' : 'default',
-        background: selected ? color.filterBadgeNavy : color.white,
+        background: selected ? color.linkBlue : color.white,
         color: selected ? color.white : color.textSlate,
-        borderColor: selected ? color.filterBadgeNavy : color.borderStrong,
+        borderColor: selected ? color.linkBlue : color.borderStrong,
         fontFamily: 'inherit',
       }}
     >

@@ -471,7 +471,7 @@ export function BulkActionBar({
                 display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
                 cursor: 'pointer',
                 background: isStaged ? color.bgInfo : color.white,
-                color: isStaged ? color.partyDemBlue : color.textSlate,
+                color: isStaged ? color.linkBlue : color.textSlate,
                 border: `1px solid ${isStaged ? color.tagBorderBlue : color.borderDefault}`,
                 fontWeight: isStaged ? fontWeight.medium : fontWeight.normal,
               }}
@@ -762,7 +762,7 @@ export function BulkActionBar({
                         display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
                         cursor: 'pointer',
                         background: isStaged ? color.bgInfo : color.white,
-                        color: isStaged ? color.partyDemBlue : color.textSlate,
+                        color: isStaged ? color.linkBlue : color.textSlate,
                         border: `1px solid ${isStaged ? color.tagBorderBlue : color.borderDefault}`,
                         fontWeight: isStaged ? fontWeight.medium : fontWeight.normal,
                         maxWidth: 260,
@@ -814,7 +814,7 @@ export function BulkActionBar({
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
                   fontSize: fontSize.sm, cursor: 'pointer', flexShrink: 0,
-                  color: isStaged ? color.partyDemBlue : color.textSlate,
+                  color: isStaged ? color.linkBlue : color.textSlate,
                   fontWeight: isStaged ? fontWeight.medium : fontWeight.normal,
                   userSelect: 'none',
                 }}

@@ -131,7 +131,7 @@ function RoleFilterDropdown({
               fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md, cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
               background: hasSelection ? color.bgInfo : color.white,
-              color: hasSelection ? color.partyDemBlue : color.textSlate,
+              color: hasSelection ? color.linkBlue : color.textSlate,
               border: `1px solid ${hasSelection ? color.tagBorderBlue : color.borderDefault}`,
               fontWeight: hasSelection ? fontWeight.medium : fontWeight.normal,
             }}
@@ -151,8 +151,8 @@ function RoleFilterDropdown({
               <label style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
                 cursor: 'pointer', fontSize: fontSize.sm,
-                color: !hasSelection ? color.partyDemBlue : color.textSlate,
-                background: !hasSelection ? color.bgDropdownActive : 'transparent',
+                color: !hasSelection ? color.linkBlue : color.textSlate,
+                background: !hasSelection ? color.bgInfo : 'transparent',
               }}>
                 <input
                   type="checkbox"
@@ -169,8 +169,8 @@ function RoleFilterDropdown({
                   <label key={id} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
                     cursor: 'pointer', fontSize: fontSize.sm,
-                    color: checked ? color.partyDemBlue : color.textSlate,
-                    background: checked ? color.bgDropdownActive : 'transparent',
+                    color: checked ? color.linkBlue : color.textSlate,
+                    background: checked ? color.bgInfo : 'transparent',
                   }}>
                     <input
                       type="checkbox"
@@ -227,7 +227,7 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
       </div>
       <Bar count={support} total={total} color={color.voteSupport} label="Support" voteKey="support" myVote={myVote} onVote={onVote} />
       <Bar count={neutral} total={total} color={color.textMuted} label="Neutral" voteKey="neutral" myVote={myVote} onVote={onVote} />
-      <Bar count={oppose} total={total} color={color.textDeleteRed} label="Oppose" voteKey="oppose" myVote={myVote} onVote={onVote} />
+      <Bar count={oppose} total={total} color={color.textErrorRed} label="Oppose" voteKey="oppose" myVote={myVote} onVote={onVote} />
       {isAdmin && memberVotes && memberVotes.length > 0 && (() => {
         const allRoles = new Map<string, string>()
         for (const v of memberVotes) {
@@ -286,7 +286,7 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
                       </span>
                       <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
                         <span title={absoluteTime(v.votedAt)} style={CHROME_TEXT}>{relativeTime(v.votedAt)}</span>
-                        <span style={{ color: v.position === 'support' ? color.textVoteSupport : v.position === 'oppose' ? color.textDanger : color.textSecondary, fontWeight: fontWeight.medium, textTransform: 'capitalize' }}>{v.position}</span>
+                        <span style={{ color: v.position === 'support' ? color.textSuccessDark : v.position === 'oppose' ? color.textDanger : color.textSecondary, fontWeight: fontWeight.medium, textTransform: 'capitalize' }}>{v.position}</span>
                       </span>
                     </div>
                   ))}

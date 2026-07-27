@@ -62,7 +62,7 @@ export function ScopeSelect<V extends string = string>({
             whiteSpace: 'nowrap',
             maxWidth: '100%',
             background: highlighted ? color.bgInfo : color.white,
-            color: highlighted ? color.partyDemBlue : color.textSlate,
+            color: highlighted ? color.linkBlue : color.textSlate,
             border: `1px solid ${highlighted ? color.tagBorderBlue : color.borderDefault}`,
             fontWeight: highlighted ? fontWeight.medium : fontWeight.normal,
             fontFamily: 'inherit',

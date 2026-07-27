@@ -207,7 +207,7 @@ export function FilterDropdown({
           fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
           background: hasSelection ? color.bgInfo : color.white,
-          color: hasSelection ? color.partyDemBlue : color.textSlate,
+          color: hasSelection ? color.linkBlue : color.textSlate,
           border: `1px solid ${hasSelection ? color.tagBorderBlue : color.borderDefault}`,
           fontWeight: hasSelection ? fontWeight.medium : fontWeight.normal,
         }}
@@ -234,8 +234,8 @@ export function FilterDropdown({
             <label style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
               cursor: 'pointer', fontSize: fontSize.sm,
-              color: anyActive ? color.partyDemBlue : color.textSlate,
-              background: anyActive ? color.bgDropdownActive : 'transparent',
+              color: anyActive ? color.linkBlue : color.textSlate,
+              background: anyActive ? color.bgInfo : 'transparent',
             }}>
               <input
                 type={multi ? 'checkbox' : 'radio'}
@@ -253,8 +253,8 @@ export function FilterDropdown({
               <label key={opt.value} style={{
                 display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
                 cursor: 'pointer', fontSize: fontSize.sm,
-                color: checked ? color.partyDemBlue : color.textSlate,
-                background: checked ? color.bgDropdownActive : 'transparent',
+                color: checked ? color.linkBlue : color.textSlate,
+                background: checked ? color.bgInfo : 'transparent',
               }}>
                 <input
                   type={multi ? 'checkbox' : 'radio'}
@@ -281,7 +281,7 @@ export function ActiveChip({ label, onRemove, color: chipColor }: { label: strin
     blue:   { bg: color.bgInfo, text: color.tagTextBlue, border: color.tagBorderBlue },
     red:    { bg: color.bgRedPriority, text: color.textDanger, border: color.borderRedChip },
     green:  { bg: color.bgSuccessChip, text: color.textSuccessDark, border: color.borderGreenChip },
-    purple: { bg: color.bgVioletChip, text: color.textPurpleChip, border: color.borderPurpleChip },
+    purple: { bg: color.bgVioletChip, text: color.textVioletChip, border: color.borderPurpleChip },
   }
   const s = styles[chipColor]
   return (

@@ -226,7 +226,7 @@ export function NotificationsSlideOver(
                     style={{
                       display: 'inline-block',
                       background: color.bgBlueChip,
-                      color: color.roleChipBlue,
+                      color: color.tagTextBlue,
                       borderRadius: radius.pill,
                       padding: '0 7px',
                       fontSize: fontSize.sm,

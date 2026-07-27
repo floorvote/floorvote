@@ -87,13 +87,13 @@ describe('WCAG AA contrast', () => {
   // Colored chip text must clear AA on its own fill.
   const CHIP_PAIRS: [string, string, string][] = [
     ['success chip', color.textSuccessDark, color.bgSuccessChip],
-    ['danger chip', color.textDangerDark, color.bgRedPriority],
+    ['danger chip', color.textDanger, color.bgRedPriority],
     ['amber chip', color.textAmberDark, color.bgAmberPriority],
-    ['purple chip', color.textPurpleChip, color.bgVioletChip],
+    ['purple chip', color.textVioletChip, color.bgVioletChip],
     ['violet chip', color.textVioletChip, color.bgVioletChip],
     ['teal chip', color.textTealSenate, color.bgTeal],
     ['tag chip', color.tagTextBlue, color.bgBlueChip],
-    ['role chip', color.roleChipBlue, color.bgBlueChip],
+    ['role chip', color.tagTextBlue, color.bgBlueChip],
     ['neutral fallback chip', color.textSlate500, color.surfaceMuted],
     ['count chip', color.countChipText, color.countChipBg],
   ]

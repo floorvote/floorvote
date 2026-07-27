@@ -18,9 +18,9 @@ export const CHANGE_ICONS: Record<string, string> = {
 export const USER_EVENT_ICONS: Record<string, { name: string; color: string; fill?: 0 | 1 }> = {
   bill_added:     { name: 'playlist_add',   color: color.accentBlue },
   priority_set:   { name: 'flag',           color: color.textDanger, fill: 1 },
-  position_set:   { name: 'thumbs_up_down', color: color.textVoteSupport, fill: 1 },
-  comment_added:  { name: 'chat',           color: color.iconCommentPurple },
-  vote_milestone: { name: 'how_to_vote',    color: color.iconVoteCyan },
+  position_set:   { name: 'thumbs_up_down', color: color.textSuccessDark, fill: 1 },
+  comment_added:  { name: 'chat',           color: color.brandViolet },
+  vote_milestone: { name: 'how_to_vote',    color: color.textTealSenate },
 }
 const HEARING_TYPES = new Set(['hearing_added', 'hearing_changed', 'hearing_cancelled'])
 

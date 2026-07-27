@@ -159,7 +159,7 @@ export function renderMentionEmail(input: MentionEmailInput): string {
       : `${strong(authorName)} mentioned you in a comment`
 
   const roleNote = (via === 'role' && roleName)
-    ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because your account has the <span style="font-size:${fontSize.xs}px;font-weight:${fontWeight.medium};color:${color.roleChipBlue};background:${color.bgBlueChip};border-radius:${radius.pill}px;padding:3px 9px;display:inline-block;white-space:nowrap;">${escHtml(roleName)}</span> role.</p>`
+    ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because your account has the <span style="font-size:${fontSize.xs}px;font-weight:${fontWeight.medium};color:${color.tagTextBlue};background:${color.bgBlueChip};border-radius:${radius.pill}px;padding:3px 9px;display:inline-block;white-space:nowrap;">${escHtml(roleName)}</span> role.</p>`
     : ''
   const everyoneNote = via === 'everyone'
     ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because an admin notified everyone.</p>`

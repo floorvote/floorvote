@@ -65,7 +65,7 @@ export const BILL_CARD_CLOSE = `
 // drift. Each span sets its size explicitly — without it the subtitle and the
 // tiptap <p> body would inherit the email's 16px default and look oversized.
 export function renderCommentRow({ appUrl, name, subtitle, dateText, bodyHtml }: { appUrl: string; name: string; subtitle: string | null; dateText: string; bodyHtml: string }): string {
-  const icon = `${appUrl}/email-icons/${emailIconSrc('chat', color.iconCommentPurple)}`
+  const icon = `${appUrl}/email-icons/${emailIconSrc('chat', color.brandViolet)}`
   const rowBorder = `border-top:1px solid ${CARD_STYLE.rowBorder};`
   const subtitleHtml = subtitle
     ? `<span style="font-size:${COMMENT_STYLE.subtitleSize}px;font-weight:${COMMENT_STYLE.subtitleWeight};color:${COMMENT_STYLE.subtitleColor};margin-left:4px;">${escHtml(subtitle)}</span>`

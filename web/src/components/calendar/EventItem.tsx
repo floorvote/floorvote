@@ -96,7 +96,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
                       </button>
                     </HoverTooltip>
                     <HoverTooltip text="Delete event" portal>
-                      <button type="button" style={{ ...iconBtn, color: color.textDeleteRed }} aria-label="Delete event" onClick={() => onDelete(event)}>
+                      <button type="button" style={{ ...iconBtn, color: color.textErrorRed }} aria-label="Delete event" onClick={() => onDelete(event)}>
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>delete</span>
                       </button>
                     </HoverTooltip>

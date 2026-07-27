@@ -354,7 +354,7 @@ export const BillRow = memo(function BillRow({
           <span style={{ ...SECTION_LABEL, display: 'block', marginBottom: 4 }}>Member votes</span>
           <MiniBar count={support} total={totalVotes} barColor={color.voteSupport} label="Support" isActive={bill.myVote === 'support'} onVote={onVote ? () => onVote(bill.id, 'support') : undefined} />
           <MiniBar count={neutral} total={totalVotes} barColor={color.textMuted} label="Neutral" isActive={bill.myVote === 'neutral'} onVote={onVote ? () => onVote(bill.id, 'neutral') : undefined} />
-          <MiniBar count={oppose} total={totalVotes} barColor={color.textDeleteRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} />
+          <MiniBar count={oppose} total={totalVotes} barColor={color.textErrorRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} />
         </div>
         {(bill.commentCount > 0 || bill.hasNote) && (
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>

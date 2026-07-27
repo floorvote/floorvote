@@ -139,7 +139,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
                   {item.kind === 'vote' && (
                     <span style={{
                       fontSize: fontSize.xs, fontWeight: fontWeight.bold,
-                      color: item.passed ? color.textVoteSupport : color.textDanger,
+                      color: item.passed ? color.textSuccessDark : color.textDanger,
                       background: item.passed ? color.bgSuccessChip : color.bgRedPriority,
                       padding: '1px 5px', borderRadius: radius.sm, whiteSpace: 'nowrap',
                       alignSelf: 'flex-start',
