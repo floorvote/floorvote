@@ -1786,7 +1786,9 @@ export function BillDetail() {
                   ? { color: color.brandViolet, background: color.bgVioletSoft }
                   : isHouse
                   ? { color: color.roleChipBlue, background: color.bgBlueChip }
-                  : { color: color.roleChipBlue, background: color.bgBlueChip }
+                  // Generic hearing: match the calendar's automatic-hearing identity (navy),
+                  // so a hearing reads the same in the bill timeline and on the calendar.
+                  : { color: color.billBadgeNavy, background: color.surfaceTintNavy }
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}
@@ -1800,7 +1802,7 @@ export function BillDetail() {
                     }
                     chip={
                       <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, padding: '1px 5px', borderRadius: radius.sm, whiteSpace: 'nowrap', ...chipColor }}>
-                        {entry.type.toUpperCase()}
+                        {entry.type.replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     }
                     content={
