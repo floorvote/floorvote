@@ -33,7 +33,11 @@ export function RelevanceChip({ score, showLabel, label = 'topic relevance', onC
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex' }}
+        // justifySelf:start keeps the button content-sized in the bill-row grid's
+        // trailing `auto` track — without it the blockified grid item stretches
+        // across the empty cell, so hovering whitespace to the chip's right lit
+        // the outline. (Ignored outside a grid.)
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', justifySelf: 'start' }}
       >
         {chip}
       </button>

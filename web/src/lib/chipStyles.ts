@@ -54,7 +54,8 @@ export const BILL_BADGE_MINI = {
 export function chipOutline(isActive: boolean, hovered: boolean, clickable: boolean) {
   return {
     outline: isActive ? `2px solid ${color.accentBlue}` : (hovered && clickable) ? `2px solid ${color.accentBlueMuted}` : 'none',
-    outlineOffset: 2,
+    // Hug the chip: no offset gap between the outline and the chip's edge.
+    outlineOffset: 0,
   }
 }
 

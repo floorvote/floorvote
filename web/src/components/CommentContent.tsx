@@ -62,18 +62,37 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
     })
   }, [content, roles])
 
-  // Dismiss the mention tooltip on scroll/resize. It's position:fixed at the
+  // Dismiss the mention tooltip on scroll/resize, and whenever the pointer
+  // leaves the mention in ANY direction. The tooltip is position:fixed at the
   // anchor's coords captured on hover, so a scroll would otherwise strand it in
-  // place — and because the pointer never leaves the mention during a scroll, no
-  // mouseout fires to clear it. Capture:true catches scrolls in nested containers.
+  // place (the pointer never leaves the mention during a scroll, so no mouseout
+  // fires). Capture:true catches scrolls in nested containers.
+  //
+  // The pointer-leave check is a document-level rect test rather than the
+  // container's mouseout/mouseleave: the tooltip is a pointer-events:none portal
+  // sitting just below the mention, so moving straight down onto it fires no
+  // container mouseout at all (and up/down within a comment can land on
+  // sibling text that never crossed the mention edge cleanly). A plain rect
+  // test against the anchored mention clears reliably in every direction.
   useEffect(() => {
     if (!tooltip) return
     const dismiss = () => setTooltip(null)
+    const onMove = (e: MouseEvent) => {
+      const el = hoveredMentionRef.current
+      if (!el) { setTooltip(null); return }
+      const r = el.getBoundingClientRect()
+      if (e.clientX < r.left - 2 || e.clientX > r.right + 2 || e.clientY < r.top - 2 || e.clientY > r.bottom + 2) {
+        hoveredMentionRef.current = null
+        setTooltip(null)
+      }
+    }
     window.addEventListener('scroll', dismiss, true)
     window.addEventListener('resize', dismiss)
+    document.addEventListener('mousemove', onMove)
     return () => {
       window.removeEventListener('scroll', dismiss, true)
       window.removeEventListener('resize', dismiss)
+      document.removeEventListener('mousemove', onMove)
     }
   }, [tooltip])
 

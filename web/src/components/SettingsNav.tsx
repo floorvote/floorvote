@@ -35,7 +35,10 @@ function Tab({ to, label, variant }: { to: string; label: string; variant: 'memb
         whiteSpace: 'nowrap',
         flexShrink: 0,
         borderRadius: radius.md,
-        fontWeight: isActive ? fontWeight.semibold : fontWeight.normal,
+        // Weight stays constant across states: the active tab is signalled by
+        // color + the bottom border, not boldness. Bolding on select changed the
+        // glyph width and nudged the neighbouring tabs.
+        fontWeight: fontWeight.normal,
         color: isActive ? activeColor : hovered ? color.tooltipBg : color.textSecondary,
         background: hovered && !isActive ? color.borderDefault : 'transparent',
         borderBottom: isActive ? `2px solid ${activeLine}` : '2px solid transparent',

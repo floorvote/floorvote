@@ -1802,7 +1802,7 @@ export function BillDetail() {
                     }
                     chip={
                       <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, padding: '1px 5px', borderRadius: radius.sm, whiteSpace: 'nowrap', ...chipColor }}>
-                        {entry.type.replace(/\b\w/g, (c) => c.toUpperCase())}
+                        {entry.type.toUpperCase()}
                       </span>
                     }
                     content={

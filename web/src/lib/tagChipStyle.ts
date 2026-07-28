@@ -19,11 +19,11 @@ export const TAG_CHIP = {
 export const TAG_CHIP_HOVERED = {
   ...TAG_CHIP,
   outline: `2px solid ${color.accentBlueMuted}`,
-  outlineOffset: 2,
+  outlineOffset: 0,
 } as const
 
 export const TAG_CHIP_ACTIVE = {
   ...TAG_CHIP,
   outline: `2px solid ${color.accentBlue}`,
-  outlineOffset: 2,
+  outlineOffset: 0,
 } as const
