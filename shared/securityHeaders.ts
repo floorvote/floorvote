@@ -20,19 +20,21 @@
 // -> HSTS), where it can be applied to the apex/subdomains consistently and
 // preloaded. Setting it in-app as well risks a duplicate/conflicting header.
 //
-// ROLLOUT: the CSP ships in REPORT-ONLY mode first. In that mode the browser
-// reports what it *would* block but blocks nothing, so it is safe to deploy to
-// real users. Deploy to staging, read the violation reports, then a follow-up
-// flips `Content-Security-Policy-Report-Only` to `Content-Security-Policy`.
+// ROLLOUT: the CSP shipped in REPORT-ONLY mode first (browser reports what it
+// *would* block but blocks nothing); this change flips it to ENFORCING. The flip
+// is gated on a real-browser DevTools sweep of the authenticated surfaces
+// (login/Turnstile, feed AI-HTML, bill detail, admin) confirming no unexpected
+// blocked origins. To revert, change `Content-Security-Policy` back to
+// `Content-Security-Policy-Report-Only` here AND in both `_headers` files (the
+// drift test pins the header name, so all three move together).
 //
-// KNOWN follow-ups before enforcing (surfaced by Report-Only, noted here so the
-// enforce PR is mechanical):
-//   - web/index.html has one INLINE <script> (the stale-deploy asset-reload
-//     guard). Enforcing `script-src 'self' ...` will block it unless we add its
-//     'sha256-...' hash (the browser's Report-Only violation prints the exact
-//     hash) or move it to an external file under /.
-//   - img-src is 'self' data: for now. If the app later renders images from an
-//     external host (e.g. legislator headshots), add that origin here.
+// Two blockers were resolved before enforcing (both surfaced under Report-Only):
+//   - web/index.html's one INLINE <script> (the stale-deploy asset-reload guard)
+//     was externalized to web/public/reload-guard.js and loaded as a classic
+//     `<script src>`, so `script-src 'self'` covers it with no hash to maintain.
+//   - The Cloudflare Web Analytics RUM beacon is an external script from
+//     static.cloudflareinsights.com (edge-injected), added to `script-src`; its
+//     data POST is same-origin (/cdn-cgi/rum), already covered by connect-src.
 
 // CSP directives. `style-src 'unsafe-inline'` is required because the app styles
 // via inline `style={{}}` attributes and an inline <style> block; inline STYLE
@@ -40,11 +42,18 @@
 // (no 'unsafe-inline' in script-src).
 const CSP_DIRECTIVES: Record<string, string[]> = {
   'default-src': ["'self'"],
-  'script-src': ["'self'", 'https://challenges.cloudflare.com'], // app bundle + Turnstile
+  // app bundle + reload-guard.js ('self') + Turnstile + Cloudflare Web Analytics
+  // (RUM beacon, injected at the edge). No 'unsafe-inline': the one classic
+  // inline script (the asset-reload guard) is externalized to /reload-guard.js.
+  'script-src': ["'self'", 'https://challenges.cloudflare.com', 'https://static.cloudflareinsights.com'],
   'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // inline styles + Google Fonts CSS
-  'img-src': ["'self'", 'data:'],
+  // 'self' + data: URIs, plus any https: image. AI summaries are stored raw and
+  // may reference external images (AGENTS.md rule 17); allowing https: images
+  // avoids enforcing breaking a summary. script-src stays strict, so inline
+  // scripts inside AI content are still blocked — the XSS protection that matters.
+  'img-src': ["'self'", 'data:', 'https:'],
   'font-src': ["'self'", 'https://fonts.gstatic.com'],
-  'connect-src': ["'self'"], // SPA talks only to its own /api
+  'connect-src': ["'self'"], // SPA talks only to its own /api (RUM POSTs same-origin /cdn-cgi/rum)
   'frame-src': ['https://challenges.cloudflare.com'], // Turnstile widget iframe
   'frame-ancestors': ["'none'"], // CSP-native clickjacking guard (pairs with X-Frame-Options)
   'base-uri': ["'self'"],
@@ -66,6 +75,6 @@ export const CONTENT_SECURITY_POLICY: string = Object.entries(CSP_DIRECTIVES)
 export function setSecurityHeaders(headers: Headers): void {
   headers.set('X-Frame-Options', 'DENY')
   headers.set('X-Content-Type-Options', 'nosniff')
-  // Report-Only during rollout — see ROLLOUT note above.
-  headers.set('Content-Security-Policy-Report-Only', CONTENT_SECURITY_POLICY)
+  // Enforcing — see ROLLOUT note above (shipped Report-Only first, then flipped).
+  headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY)
 }

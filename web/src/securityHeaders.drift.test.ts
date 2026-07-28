@@ -22,8 +22,12 @@ describe('static _headers CSP stays in sync with shared/securityHeaders.ts', () 
     describe(name, () => {
       const text = readFileSync(path, 'utf8')
 
-      it('delivers the exact report-only CSP', () => {
-        expect(text).toContain(`Content-Security-Policy-Report-Only: ${CONTENT_SECURITY_POLICY}`)
+      it('delivers the exact enforcing CSP', () => {
+        expect(text).toContain(`Content-Security-Policy: ${CONTENT_SECURITY_POLICY}`)
+      })
+
+      it('no longer ships a report-only CSP', () => {
+        expect(text).not.toContain('Content-Security-Policy-Report-Only')
       })
 
       it('denies framing and MIME-sniffing', () => {

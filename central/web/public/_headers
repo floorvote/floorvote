@@ -6,8 +6,9 @@
 # central Worker's security-headers middleware never runs for the HTML document.
 # The CSP must be delivered here to land on the page. Keep this policy in sync
 # with CONTENT_SECURITY_POLICY in shared/securityHeaders.ts (a test enforces it).
-# CSP is report-only during rollout; flip to Content-Security-Policy to enforce.
+# CSP is enforcing — it shipped report-only first; the flip is gated on a
+# real-browser sweep (see that file).
 /*
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
-  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'

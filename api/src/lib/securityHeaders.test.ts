@@ -18,11 +18,11 @@ describe('setSecurityHeaders', () => {
     expect(applied().get('X-Content-Type-Options')).toBe('nosniff')
   })
 
-  it('ships the CSP in report-only mode (never enforcing yet)', () => {
+  it('ships the CSP in enforcing mode', () => {
     const h = applied()
-    expect(h.get('Content-Security-Policy-Report-Only')).toBe(CONTENT_SECURITY_POLICY)
-    // Must NOT set the enforcing header — the enforce flip is a deliberate follow-up.
-    expect(h.get('Content-Security-Policy')).toBeNull()
+    expect(h.get('Content-Security-Policy')).toBe(CONTENT_SECURITY_POLICY)
+    // Report-only was the rollout mode; enforcing must not also emit it.
+    expect(h.get('Content-Security-Policy-Report-Only')).toBeNull()
   })
 
   it('does not set HSTS (owned by the TLS-terminating edge, not the app)', () => {
@@ -35,13 +35,22 @@ describe('CONTENT_SECURITY_POLICY', () => {
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'self'")
   })
 
-  it('allows the app bundle and Turnstile script, but never unsafe-inline scripts', () => {
+  it('allows the app bundle, Turnstile, and the CF Analytics beacon, but never unsafe-inline scripts', () => {
     const scriptSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('script-src '))
     expect(scriptSrc).toBeDefined()
     expect(scriptSrc).toContain("'self'")
     expect(scriptSrc).toContain('https://challenges.cloudflare.com')
+    expect(scriptSrc).toContain('https://static.cloudflareinsights.com')
     // The whole point of a script CSP: inline scripts stay disallowed.
     expect(scriptSrc).not.toContain("'unsafe-inline'")
+  })
+
+  it('allows external https images (AI summaries render raw HTML) but not http', () => {
+    const imgSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('img-src '))
+    expect(imgSrc).toBeDefined()
+    expect(imgSrc).toContain("'self'")
+    expect(imgSrc).toContain('data:')
+    expect(imgSrc).toContain('https:')
   })
 
   it('allows Google Fonts and inline styles', () => {
