@@ -13,6 +13,7 @@ import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRes
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
+import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTenant'
 
 const REPROCESS_LIMIT = 1000
 
@@ -25,7 +26,7 @@ tenantsLsRoutes.use('*', async (c, next) => {
   return next()
 })
 
-tenantsLsRoutes.post('/register', async (c) => {
+tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
   const body = await c.req.json<{
     tenantId: string
     name: string
@@ -394,7 +395,7 @@ tenantsLsRoutes.post('/redownload-texts/:tenantId', async (c) => {
 // POST /tenants/promote-bill/:tenantId/:billId — promote a stub bill to full tracking
 // Sets bill_tenants.match_type='manual' (insert-or-update) and queues the ingestor
 // with forceAI:true so the tenant re-runs the full AI pipeline on next process.
-tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', async (c) => {
+tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
   const billIdStr = c.req.param('billId')
@@ -425,7 +426,7 @@ tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', async (c) => {
 // the per-request count is capped at REPROCESS_LIMIT. (H4 quota guard: the
 // deny-by-default TenantApi forwarder still lets a tenant reach this allowlisted
 // route, so the cap, not the forwarder, is what bounds quota burn here.)
-tenantsLsRoutes.post('/promote-bills/:tenantId', async (c) => {
+tenantsLsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
   const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
@@ -451,7 +452,7 @@ tenantsLsRoutes.post('/promote-bills/:tenantId', async (c) => {
   return c.json({ ok: true, tenantId, promoted: billIds.length })
 })
 
-tenantsLsRoutes.get('/:tenantId/upcoming-hearings', async (c) => {
+tenantsLsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const daysRaw = Number(c.req.query('days') ?? '30')
   const days = Math.max(1, Math.min(365, Number.isFinite(daysRaw) ? daysRaw : 30))
@@ -503,7 +504,7 @@ tenantsLsRoutes.get('/:tenantId/upcoming-hearings', async (c) => {
   return c.json(rows.results ?? [])
 })
 
-tenantsLsRoutes.post('/reprocess/:tenantId', async (c) => {
+tenantsLsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 

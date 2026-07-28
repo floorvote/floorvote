@@ -21,6 +21,7 @@ import { errorHandler } from './lib/errorHandler'
 import { checkEmailSuppression } from './lib/emailSuppression'
 import { getEmailDeliveryStatus } from './lib/emailDelivery'
 import { isTenantSurfaceAllowed } from './lib/tenantSurface'
+import { CALLER_TENANT_HEADER } from './lib/callerTenant'
 import { setSecurityHeaders } from '../../shared/securityHeaders'
 
 export const app = new Hono<{ Bindings: LsEnv }>()
@@ -95,8 +96,17 @@ export default {
  * the cross-tenant operator fan-out, superadmin mint, …) are intentionally NOT
  * on the allowlist — they remain reachable only over central's public HTTP
  * `/api/*` gated by `x-admin-secret` (operator CLI/dashboard).
+ *
+ * OBJECT-LEVEL AUTHZ: the allowlist bounds WHICH operations, not WHICH tenant's
+ * objects — the allowlisted routes take `:tenantId`/`body.tenantId`. We identify
+ * the CALLING tenant from `ctx.props.tenantId` — a per-binding prop set at deploy
+ * time that Cloudflare guarantees is authentic/unforgeable — and surface it as
+ * the `x-caller-tenant` header so the route guards (`./lib/callerTenant`) can
+ * reject cross-tenant access. Any client-supplied `x-caller-tenant` is stripped
+ * first so a tenant cannot assert another's identity; a tenant without the prop
+ * yet (rollout window) simply carries no header and is treated leniently.
  */
-export class TenantApi extends WorkerEntrypoint<LsEnv> {
+export class TenantApi extends WorkerEntrypoint<LsEnv, { tenantId?: string }> {
   fetch(req: Request): Response | Promise<Response> {
     const { pathname } = new URL(req.url)
     if (!isTenantSurfaceAllowed(req.method, pathname)) {
@@ -106,6 +116,12 @@ export class TenantApi extends WorkerEntrypoint<LsEnv> {
       })
     }
     const headers = new Headers(req.headers)
+    // Strip any client-supplied caller id (anti-spoof), then set it from the
+    // unforgeable per-binding prop. A tenant not yet redeployed with the prop
+    // carries no header → the route guards treat it leniently (see callerTenant).
+    headers.delete(CALLER_TENANT_HEADER)
+    const callerTenant = this.ctx.props?.tenantId
+    if (callerTenant) headers.set(CALLER_TENANT_HEADER, callerTenant)
     headers.set('x-admin-secret', this.env.ADMIN_SECRET)
     return app.fetch(new Request(req, { headers }), this.env, this.ctx)
   }

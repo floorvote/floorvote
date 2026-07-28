@@ -16,6 +16,7 @@ import type { LsEnv, LsIngestorMessage, LsNotificationMessage } from '../types-l
 import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
+import { guardCallerTenantParam } from '../lib/callerTenant'
 
 // Per-tenant cooldown for sync-keywords. Module-scoped Map is intentional —
 // Worker instances are isolated, so this is effectively a per-instance cooldown.
@@ -204,7 +205,7 @@ adminLsRoutes.post('/backfill-match-types', async (c) => {
 // text fetched and full-text AI run on the tenant side.
 //
 // Rate-limited per tenant (60s cooldown) and capped at 1000 newly-matched bills per call.
-adminLsRoutes.post('/sync-keywords/:tenantId', async (c) => {
+adminLsRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -538,7 +539,7 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
 // POST /admin/update-bill-match-types/:tenantId
 // Batch-update bill_tenants.match_type for a tenant. Accepts only 'manual' or null —
 // 'keyword' promotion is handled by sync-keywords. Never downgrades 'manual' rows.
-adminLsRoutes.post('/update-bill-match-types/:tenantId', async (c) => {
+adminLsRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
