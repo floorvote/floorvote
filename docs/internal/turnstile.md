@@ -66,17 +66,19 @@ for e in my-org demo; do wrangler secret put TURNSTILE_SECRET_KEY --env "$e"; do
 wrangler secret put TURNSTILE_SECRET_KEY --env legiscan
 ```
 
-### C. Close the frontend gap (REQUIRED before the secret takes effect safely)
+### C. The frontend widget — already implemented
 
-The login forms must render the Turnstile widget with the **site key** and POST
-the resulting token as **`turnstileToken`** in the JSON body:
+The login forms already render the Turnstile widget (when a **site key** is
+configured) and POST the resulting token as **`turnstileToken`** in the JSON
+body. No frontend work is needed here — it ships in the codebase:
 
-- Tenant login page (`web/`) → `POST /api/auth/magic-link` body
-  `{ email, turnstileToken }`.
-- Central dashboard login (`central/web/`) → `POST /admin/dash/auth/login` body
-  `{ email, turnstileToken }`.
+- Tenant login page → `POST /api/auth/magic-link` body `{ email, turnstileToken }`
+  (see `web/src/components/Turnstile.tsx` + `web/src/pages/Login.tsx`).
+- Central dashboard login → `POST /admin/dash/auth/login` body
+  `{ email, turnstileToken }` (`central/web/`).
 
-The site key is public and can be baked into the build or served via `/config`.
+The only operator step is the public **site key**: set `TURNSTILE_SITE_KEY` (a
+var, not a secret) on each worker. The widget renders only when it is present.
 The server reads `body.turnstileToken` and the client IP (`CF-Connecting-IP`) and
 calls siteverify.
 
