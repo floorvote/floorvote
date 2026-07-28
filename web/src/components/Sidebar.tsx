@@ -749,12 +749,13 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       {/* Upcoming hearings widget */}
       {sidebarData !== null && sidebarData.upcomingHearings.length > 0 && isModuleEnabled(config?.modules, 'upcoming-hearings') && (() => {
         const totalHearings = sidebarData.upcomingHearings.length
+        const hearingsDays = sidebarData.upcomingHearingsDays ?? 30
         // The count chip here has no HoverTooltip of its own, but the row's
-        // detail ("...in the next 30 days") previously lived only in a `title`
+        // detail ("...in the next N days") previously lived only in a `title`
         // attribute — a native tooltip that doesn't reveal on keyboard focus.
         // aria-label carries the same detail as the row's own accessible name;
         // the header's own `title` was dropped as a redundant name+description.
-        const hearingsMeaning = `${totalHearings} upcoming hearing${totalHearings === 1 ? '' : 's'} for prioritized bills in the next 30 days`
+        const hearingsMeaning = `${totalHearings} upcoming hearing${totalHearings === 1 ? '' : 's'} for prioritized bills in the next ${hearingsDays} day${hearingsDays === 1 ? '' : 's'}`
         return (
           <div style={{ margin: '10px 10px 0', border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
             {/* Header row — the whole bar links to the calendar; hovering

@@ -102,6 +102,43 @@ describe('GET /tenants/:tenantId/upcoming-hearings', () => {
     expect(body[0].eventHash).toBe('eh-today')
   })
 
+  it('scopes to the billIds param when provided (prioritized-bills path)', async () => {
+    await seed()
+    const db = drizzle(env.DB, { schema })
+    // A second bill linked to t1 with a future hearing. Without billIds it
+    // would be returned; with billIds=1 it must be filtered out server-side.
+    await db.insert(schema.bills).values({
+      billId: 2, changeHash: 'h', sessionId: 100, state: 'RI', stateId: 39,
+      billNumber: 'H2', title: 'Second bill', status: 1,
+    })
+    await db.insert(schema.billTenants).values({ billId: 2, tenantId: 't1', matchType: 'keyword' })
+    const future = new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10)
+    await db.insert(schema.billCalendar).values({
+      id: 'e', billId: 2, eventHash: 'eh-second', type: 'Hearing', date: future, time: null,
+    })
+
+    const res = await app.request(
+      '/api/tenants/t1/upcoming-hearings?billIds=1',
+      { headers: { 'x-admin-secret': 'test-secret' } },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as any[]
+    expect(body.every(h => h.billId === 1)).toBe(true)
+    expect(body.find(h => h.eventHash === 'eh-second')).toBeUndefined()
+  })
+
+  it('returns nothing when billIds is present but empty (no prioritized bills)', async () => {
+    await seed()
+    const res = await app.request(
+      '/api/tenants/t1/upcoming-hearings?billIds=',
+      { headers: { 'x-admin-secret': 'test-secret' } },
+      env,
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+
   it('excludes hearings from bills not linked to the tenant', async () => {
     await seed()
     const db = drizzle(env.DB, { schema })

@@ -105,12 +105,13 @@ statsRouter.get('/sidebar', async (c) => {
   const priorityBillCount = priorityBillRows?.count ?? 0
   const unvotedPriorityCount = unvotedRows?.count ?? 0
 
-  const upcomingHearings = await fetchUpcomingHearings(c, db)
+  const { hearings: upcomingHearings, lookaheadDays: upcomingHearingsDays } = await fetchUpcomingHearings(c, db)
 
   return c.json({
     priorityBillCount,
     unvotedPriorityCount,
     upcomingHearings,
+    upcomingHearingsDays,
     priorityBills: priorityBillList.map(b => ({ ...b, sessionSlug: sessionToSlug(b.session) })),
   })
 })
@@ -142,9 +143,14 @@ interface HearingGroup {
 async function fetchUpcomingHearings(
   c: Context<AppEnv>,
   db: ReturnType<typeof getDb>,
-): Promise<HearingGroup[]> {
+): Promise<{ hearings: HearingGroup[]; lookaheadDays: number }> {
+  // Every tenant currently resolves to a 30-day window. `lookaheadDays` is
+  // honored from the module settings when present and plumbed back to the
+  // client so the value can be shown (and made UI-configurable) later.
+  const DEFAULT_LOOKAHEAD_DAYS = 30
+
   const provider = (c.env as { PROVIDER?: string }).PROVIDER ?? 'openstates'
-  if (provider !== 'legiscan') return []
+  if (provider !== 'legiscan') return { hearings: [], lookaheadDays: DEFAULT_LOOKAHEAD_DAYS }
 
   // Load modules config
   const modulesRow = await db
@@ -163,12 +169,17 @@ async function fetchUpcomingHearings(
   }
   const m = modules['upcoming-hearings']
   const enabled = m === true || (typeof m === 'object' && m !== null && (m as { enabled?: unknown }).enabled === true)
-  if (!enabled) return []
 
-  // The widget is no longer configurable: it always shows hearings for
-  // prioritized bills in the next 30 days. (Matches the hint text in the
-  // sidebar customize panel and the header tooltip.)
-  const lookaheadDays = 30
+  // Honor settings.lookaheadDays when set (clamped); otherwise default. Not
+  // user-editable in the UI yet — the value is plumbed through for display.
+  const rawLookahead = (typeof m === 'object' && m !== null)
+    ? (m as { settings?: { lookaheadDays?: unknown } }).settings?.lookaheadDays
+    : undefined
+  const lookaheadDays = Number.isFinite(Number(rawLookahead))
+    ? Math.max(1, Math.min(365, Math.floor(Number(rawLookahead))))
+    : DEFAULT_LOOKAHEAD_DAYS
+
+  if (!enabled) return { hearings: [], lookaheadDays }
 
   const tenantId = c.env.TENANT_ID
   const userId = c.get('user').id
@@ -192,20 +203,40 @@ async function fetchUpcomingHearings(
     // and matches the Calendar section and bill detail page. No central call.
     centralResults = await loadUpcomingDemoHearings(db, lookaheadDays)
   } else {
+    // Scope to the tenant's prioritized bills only (the widget shows hearings
+    // for prioritized bills). Send their LegiScan ids so central filters
+    // server-side rather than scanning hearings for every linked bill — the
+    // fix for the central-bills-ls rows-read incident. No prioritized bills →
+    // no central call at all.
+    const priorityRows = await db
+      .select({ externalId: bills.externalId })
+      .from(bills)
+      .where(isNotNull(bills.priority))
+      .all()
+    const priorityBillIds = priorityRows
+      .map(r => r.externalId)
+      .filter((e): e is string => !!e && e.startsWith('legiscan:'))
+      .map(e => Number(e.slice('legiscan:'.length)))
+      .filter(n => Number.isInteger(n) && n > 0)
+    if (priorityBillIds.length === 0) return { hearings: [], lookaheadDays }
+
     try {
-      const res = await centralFetch(c.env, `/tenants/${encodeURIComponent(tenantId)}/upcoming-hearings?days=${lookaheadDays}`)
+      const res = await centralFetch(
+        c.env,
+        `/tenants/${encodeURIComponent(tenantId)}/upcoming-hearings?days=${lookaheadDays}&billIds=${priorityBillIds.join(',')}`,
+      )
       if (!res.ok) {
         console.warn(`[hearings] central returned ${res.status}`)
-        return []
+        return { hearings: [], lookaheadDays }
       }
       centralResults = await res.json()
     } catch (err) {
       console.error('[hearings] central call failed', err)
-      return []
+      return { hearings: [], lookaheadDays }
     }
   }
 
-  if (centralResults.length === 0) return []
+  if (centralResults.length === 0) return { hearings: [], lookaheadDays }
 
   // Tenant bills store the LegiScan id as externalId = 'legiscan:<n>'.
   // Look up tenant rows, including summary/priority for the chip tooltip.
@@ -227,7 +258,7 @@ async function fetchUpcomingHearings(
     .where(and(inArray(bills.externalId, billExternalIds), isNotNull(bills.priority)))
     .all()
 
-  if (billRows.length === 0) return []
+  if (billRows.length === 0) return { hearings: [], lookaheadDays }
 
   // Member votes for current user, restricted to this set of bills
   const billInternalIds = billRows.map(b => b.id)
@@ -281,12 +312,13 @@ async function fetchUpcomingHearings(
   }
 
   // Order: by date asc, time asc nulls-last
-  return [...groups.values()].sort((a, b) => {
+  const sorted = [...groups.values()].sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? -1 : 1
     const at = a.time ?? '99:99:99'
     const bt = b.time ?? '99:99:99'
     return at < bt ? -1 : at > bt ? 1 : 0
   })
+  return { hearings: sorted, lookaheadDays }
 }
 
 export { statsRouter }
