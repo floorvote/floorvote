@@ -111,6 +111,14 @@ max_batch_timeout = 30
 binding = "CENTRAL"
 service = "floorvote-central"       # or your central worker name
 entrypoint = "TenantApi"
+# Object-level authorization (defense-in-depth). Central's TenantApi reads this
+# as `ctx.props.tenantId` — a per-binding value Cloudflare sets at deploy time
+# and guarantees is authentic/unforgeable — and rejects any tenant-scoped call
+# (e.g. /api/tenants/reprocess/:id, /api/tenants/register) that targets a
+# DIFFERENT tenant. It MUST equal this environment's TENANT_ID var above. Omit it
+# and central falls back to lenient mode for this tenant (the allowlist still
+# applies); set it to close the cross-tenant gap.
+props = { tenantId = "example" }    # MUST match [env.example.vars] TENANT_ID
 
 [[env.example.send_email]]
 name = "EMAIL"
