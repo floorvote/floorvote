@@ -9,3 +9,15 @@
 # hashes; that freshness is what makes caching the assets immutably safe.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Security headers for every asset response — most importantly the SPA HTML
+# shell. Static assets are served directly by Workers Assets, BYPASSING the
+# Worker (no `run_worker_first`), so the Worker's security-headers middleware
+# never runs for the HTML document. The CSP must be delivered here to land on
+# the page. Keep this policy in sync with CONTENT_SECURITY_POLICY in
+# shared/securityHeaders.ts (a test enforces it). CSP is report-only during
+# rollout; flip to Content-Security-Policy to enforce.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'

@@ -21,12 +21,21 @@ import { errorHandler } from './lib/errorHandler'
 import { checkEmailSuppression } from './lib/emailSuppression'
 import { getEmailDeliveryStatus } from './lib/emailDelivery'
 import { isTenantSurfaceAllowed } from './lib/tenantSurface'
+import { setSecurityHeaders } from '../../shared/securityHeaders'
 
 export const app = new Hono<{ Bindings: LsEnv }>()
 
 // Safety net for uncaught errors: structured 500, no detail leak (HTTPExceptions
 // pass through). Route-level error responses still win.
 app.onError(errorHandler)
+
+// Security response headers (CSP report-only, X-Frame-Options, nosniff). Set
+// BEFORE next() so they merge onto the final response, including immutable
+// Workers-Assets responses. See shared/securityHeaders.ts.
+app.use('*', async (c, next) => {
+  setSecurityHeaders(c.res.headers)
+  await next()
+})
 
 // Dashboard SPA API (cookie-authenticated, served to the browser).
 app.route('/admin/dash/auth', dashAuthRoutes)

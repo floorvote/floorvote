@@ -22,6 +22,7 @@ import { hashToken, secretsMatch } from './lib/crypto'
 import { isAllowedOrigin } from './lib/cors'
 import { parseAppDomains } from './lib/appDomains'
 import { errorHandler } from './lib/errorHandler'
+import { setSecurityHeaders } from '../../shared/securityHeaders'
 import { centralFetch } from './lib/centralFetch'
 import { processQueue } from './queue/processor'
 import { processInviteEmails } from './queue/inviteEmails'
@@ -42,6 +43,14 @@ app.onError(errorHandler)
 
 app.use('*', async (c, next) => {
   c.res.headers.set('X-Robots-Tag', 'noindex, nofollow')
+  await next()
+})
+
+// Security response headers (CSP report-only, X-Frame-Options, nosniff). Set
+// BEFORE next() so they merge onto the final response, including immutable
+// Workers-Assets responses. See shared/securityHeaders.ts.
+app.use('*', async (c, next) => {
+  setSecurityHeaders(c.res.headers)
   await next()
 })
 

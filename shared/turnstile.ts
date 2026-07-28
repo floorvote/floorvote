@@ -1,14 +1,15 @@
 // Cloudflare Turnstile server-side verification (siteverify).
 //
-// STUB STATUS: this gate is wired but inert until
-// the operator creates a Turnstile widget and sets `TURNSTILE_SECRET_KEY`.
-//   - secret UNSET  → fail-OPEN (returns true): local dev and the period before
-//                     the operator wires it up. Login is unaffected.
+// Behavior is governed by whether Turnstile is configured:
+//   - secret UNSET  → fail-OPEN (returns true): local dev and self-hosters who
+//                     have not configured Turnstile. Login is unaffected.
 //   - secret SET    → fail-CLOSED: a missing/invalid token, or a siteverify
 //                     error/outage, denies the request.
-// FRONTEND GAP (operator to close): when the secret is set, the login form must
-// render the Turnstile widget (with the matching SITE KEY) and POST its token as
-// `turnstileToken`, or login will fail closed. See docs/internal/turnstile.md.
+//
+// The frontend is wired: when `TURNSTILE_SITE_KEY` is set, the login form
+// renders the widget and POSTs its token as `turnstileToken` (see the web
+// Turnstile component + Login page; the central dashboard mirrors this).
+// See docs/internal/turnstile.md.
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
