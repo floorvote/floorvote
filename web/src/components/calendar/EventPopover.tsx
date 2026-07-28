@@ -87,7 +87,7 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
             )}
             {event.status !== 'cancelled' && (
               <HoverTooltip text="Delete event" portal>
-                <button type="button" onClick={() => onDelete(event)} style={{ ...iconBtn, color: color.textDeleteRed }} aria-label="Delete event">
+                <button type="button" onClick={() => onDelete(event)} style={{ ...iconBtn, color: color.textErrorRed }} aria-label="Delete event">
                   <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>delete</span>
                 </button>
               </HoverTooltip>
@@ -121,7 +121,7 @@ export function EventPopover({ event, isAdmin, onEdit, onDelete, onRestore, onCl
   ref?: Ref<PopPanelHandle>
 }) {
   const expanded = !!(expandFrom && computeTarget)
-  const tint = event.source === 'custom' ? color.surfaceTintBlue : color.surfaceTintNavy
+  const tint = event.source === 'custom' ? color.bgInfo : color.bgInfo
   return (
     <PopPanel
       ref={ref}

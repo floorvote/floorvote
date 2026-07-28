@@ -145,7 +145,7 @@ export function Notifications() {
       <div style={{ ...CARD, padding: 24 }}>
         <h1 style={CARD_TITLE}>Email notifications</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
-          These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.partyDemBlue }}>Account page</Link>.
+          These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
         </div>
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>

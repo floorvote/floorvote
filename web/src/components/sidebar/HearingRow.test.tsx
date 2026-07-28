@@ -49,7 +49,7 @@ describe('HearingRow date/time format', () => {
     const todayIso = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local
     renderRow({ ...hearing, date: todayIso })
     const el = screen.getByText(/TODAY,/) // formatTodayHeader → "TODAY, JUN N"
-    // accentAmber #f59e0b → rgb(245, 158, 11) once jsdom serializes the inline color.
-    expect(getComputedStyle(el).color).toBe('rgb(245, 158, 11)')
+    // accentAmber #e8a33d → rgb(232, 163, 61) once jsdom serializes the inline color.
+    expect(getComputedStyle(el).color).toBe('rgb(232, 163, 61)')
   })
 })

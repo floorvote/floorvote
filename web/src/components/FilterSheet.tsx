@@ -44,9 +44,9 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
         borderRadius: radius.xl,
         border: '1px solid',
         cursor: 'pointer',
-        background: active ? color.filterBadgeNavy : color.white,
+        background: active ? color.linkBlue : color.white,
         color: active ? color.white : color.textSlate,
-        borderColor: active ? color.filterBadgeNavy : color.borderDefault,
+        borderColor: active ? color.linkBlue : color.borderDefault,
         fontWeight: active ? fontWeight.semibold : fontWeight.normal,
         display: 'inline-flex',
         alignItems: 'center',
@@ -204,7 +204,7 @@ export function FilterSheet({
               <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Min. Relevance
               </div>
-              <span style={{ fontSize: fontSize.sm, fontWeight: relevanceDraft > 0 ? fontWeight.semibold : fontWeight.normal, color: relevanceDraft > 0 ? color.partyDemBlue : color.textMuted }}>
+              <span style={{ fontSize: fontSize.sm, fontWeight: relevanceDraft > 0 ? fontWeight.semibold : fontWeight.normal, color: relevanceDraft > 0 ? color.linkBlue : color.textMuted }}>
                 {relevanceDraft === 0 ? 'Any' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}
               </span>
             </div>

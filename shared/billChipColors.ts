@@ -12,10 +12,27 @@ export const PRIORITY_COLORS: Record<string, { fill: string; text: string; dot: 
 }
 
 export const POSITION_COLORS: Record<string, { bg: string; color: string; border: string }> = {
-  Support:       { bg: color.bgSuccessChip,   color: color.textVoteSupport,  border: color.borderGreenStrong },
+  Support:       { bg: color.bgSuccessChip,   color: color.textSuccessDark,  border: color.borderGreenStrong },
   Oppose:        { bg: color.bgRedPriority,   color: color.textDanger,       border: color.bgRedDisabled },
-  Neutral:       { bg: color.surfaceMuted,    color: color.textSlate500,     border: color.borderDefault },
-  Amend:         { bg: color.bgAmberPriority, color: color.textAmberDark,    border: color.borderAmber },
-  Monitor:       { bg: color.bgVioletChip,    color: color.textVioletAdmin,  border: color.borderVioletSoft },
-  'No Position': { bg: color.surfaceMuted,    color: color.textSlate500,     border: color.borderDefault },
+  Neutral:       { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
+  // Amend deepened (borderAmber fill + textAmberWarning) so it no longer reads as the
+  // relevance-score amber (#fef3c7 / textAmberDark) — ΔE ~25 apart, no new hue.
+  Amend:         { bg: color.borderAmber,     color: color.textAmberWarning, border: color.borderAmber },
+  Monitor:       { bg: color.bgVioletChip,    color: color.brandViolet,  border: color.borderVioletSoft },
+  'No Position': { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
+}
+
+// Feed-row position icon tints (also mirrored into the digest emails). One step
+// brighter than each POSITION_COLORS[*].color — those are tuned dark for AA text
+// on their chip fills, which reads as near-black at icon size on the white feed
+// row. These are icon-glyph colors, not text-on-fill, so they don't carry the
+// same contrast requirement. buildBillCardModel (feed) and emailIcons (digest
+// PNGs) both read this, so the two can't drift.
+export const POSITION_FEED_ICON: Record<string, string> = {
+  Support:       color.textSuccess,      // #16a34a
+  Oppose:        color.textErrorRed,     // #dc2626
+  Monitor:       color.brandViolet,      // #7c3aed
+  Amend:         color.textAmberHearing, // #b45309
+  Neutral:       color.textSlate500,     // #475569
+  'No Position': color.textSlate500,
 }

@@ -55,7 +55,7 @@ export function MembersPopup({ members, currentUserId, onClose }: { members: Mem
             {m.roles.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 5 }}>
                 {sortRoles(m.roles).map(r => (
-                  <span key={r.id} style={{ fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.roleChipBlue, background: color.bgBlueChip, borderRadius: radius.pill, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                  <span key={r.id} style={{ fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.tagTextBlue, background: color.bgBlueChip, borderRadius: radius.pill, padding: '2px 7px', whiteSpace: 'nowrap' }}>
                     {r.name}
                   </span>
                 ))}

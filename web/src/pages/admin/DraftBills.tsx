@@ -170,7 +170,7 @@ export function DraftBills() {
                             alert(err instanceof Error ? err.message : 'Failed to delete draft.')
                           }
                         }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: color.textDeleteRed, display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: color.textErrorRed, display: 'flex', alignItems: 'center', flexShrink: 0 }}
                         title="Delete draft"
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>

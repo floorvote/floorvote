@@ -267,8 +267,8 @@ function Row({
         padding: '7px 12px',
         cursor: 'pointer',
         fontSize: fontSize.sm,
-        color: checked || indeterminate ? color.partyDemBlue : color.textSlate,
-        background: checked ? color.bgDropdownActive : 'transparent',
+        color: checked || indeterminate ? color.linkBlue : color.textSlate,
+        background: checked ? color.bgInfo : 'transparent',
       }}
     >
       <input

@@ -589,7 +589,7 @@ export function Members() {
     color: color.textSlate,
   }
   const chipAddRole: React.CSSProperties = {
-    fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.roleChipBlue,
+    fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.tagTextBlue,
     background: 'transparent', border: `1.5px dashed ${color.borderBlueDash}`,
     borderRadius: radius.pill, padding: '2px 9px',
     display: 'inline-flex', alignItems: 'center',
@@ -856,7 +856,7 @@ export function Members() {
                         <span style={{ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, color: color.textPrimary }}>{member.name}</span>
                         {isSelf && (
                           <span style={{
-                            fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.textIndigoMe,
+                            fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.brandViolet,
                             background: color.bgInfo, borderRadius: radius.sm, padding: '1px 5px',
                             letterSpacing: '0.05em', flexShrink: 0,
                           }}>ME</span>

@@ -186,8 +186,16 @@ export const BillRow = memo(function BillRow({
         gridTemplateColumns: `12px ${OUTER_GRID}`,
         gap: 8,
         alignItems: 'start',
-        background: isSelected ? color.bgBlueChip : hovered ? color.bgDropdownActive : index % 2 === 0 ? color.white : color.white,
+        // Hover = elevation, not a tint: the row stays white and lifts with a
+        // shadow, so borderless chips never melt into a hover fill. Selected
+        // still tints (bgBlueChip). The divider stays put on hover (keeping the
+        // borderBottom) so the row lifts without the list "opening a gap"; a
+        // paired top+bottom shadow reads as a lift from both edges.
+        background: isSelected ? color.bgBlueChip : color.white,
         borderBottom: `1px solid ${color.borderDefault}`,
+        boxShadow: hovered && !isSelected ? '0 7px 16px -3px rgba(15,23,42,0.20), 0 -3px 9px -3px rgba(15,23,42,0.15)' : 'none',
+        position: 'relative',
+        zIndex: hovered && !isSelected ? 2 : 1,
         padding: '12px 16px 12px 8px',
         cursor: 'pointer',
         color: 'inherit',
@@ -211,7 +219,7 @@ export const BillRow = memo(function BillRow({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <BillBadge billNumber={bill.billNumber} state={bill.state} />
             {bill.isDraft && (
-              <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.surfaceSubtle, color: color.textSecondary, border: `1px solid ${color.borderDefault}` }}>
+              <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
                 Draft
               </span>
             )}
@@ -237,7 +245,7 @@ export const BillRow = memo(function BillRow({
           <span className="bill-col-lastaction" style={{
             display: 'inline-flex', alignItems: 'center',
             fontSize: fontSize.sm, fontWeight: fontWeight.semibold, padding: '3px 10px', borderRadius: radius.sm,
-            border: `1px solid ${color.borderDefault}`, background: color.surfaceSubtle, color: color.textSecondary,
+            border: '1px solid transparent', background: color.countChipBg, color: color.textSecondary,
           }}>
             {bill.lastActionDate ?? '—'}
           </span>
@@ -251,7 +259,7 @@ export const BillRow = memo(function BillRow({
         <div className="bill-row-mobile-meta">
           <BillBadge billNumber={bill.billNumber} state={bill.state} />
           {bill.isDraft && (
-            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.surfaceSubtle, color: color.textSecondary, border: `1px solid ${color.borderDefault}` }}>
+            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
               Draft
             </span>
           )}
@@ -348,7 +356,7 @@ export const BillRow = memo(function BillRow({
           <span style={{ ...SECTION_LABEL, display: 'block', marginBottom: 4 }}>Member votes</span>
           <MiniBar count={support} total={totalVotes} barColor={color.voteSupport} label="Support" isActive={bill.myVote === 'support'} onVote={onVote ? () => onVote(bill.id, 'support') : undefined} />
           <MiniBar count={neutral} total={totalVotes} barColor={color.textMuted} label="Neutral" isActive={bill.myVote === 'neutral'} onVote={onVote ? () => onVote(bill.id, 'neutral') : undefined} />
-          <MiniBar count={oppose} total={totalVotes} barColor={color.textDeleteRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} />
+          <MiniBar count={oppose} total={totalVotes} barColor={color.textErrorRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} />
         </div>
         {(bill.commentCount > 0 || bill.hasNote) && (
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>

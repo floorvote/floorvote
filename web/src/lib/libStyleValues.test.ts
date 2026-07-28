@@ -12,7 +12,7 @@ describe('lib helper resolved values', () => {
   it('CHIP_BASE', () => {
     expect(CHIP_BASE).toMatchObject({
       fontSize: 12, fontWeight: 600, padding: '3px 10px',
-      borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#5e697d', // textSecondary darkened for WCAG AA (2026-06-24)
+      borderRadius: 4, border: '1px solid transparent', background: '#ecf0f6', color: '#5e697d', // textSecondary darkened for WCAG AA (2026-06-24)
     })
   })
   it('CHIP_MINI', () => {

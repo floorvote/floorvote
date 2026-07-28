@@ -53,13 +53,13 @@ function DemoBanner() {
       alignItems: 'center',
       justifyContent: 'space-between',
       fontSize: fontSize.sm,
-      color: color.filterBadgeNavy,
+      color: color.linkBlue,
       flexShrink: 0,
     }}>
       <span>You're exploring a demo instance — data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.</span>
       <button
         onClick={dismiss}
-        style={{ background: 'none', border: 'none', color: color.filterBadgeNavy, cursor: 'pointer', padding: '0 4px', fontSize: fontSize.lg, lineHeight: 1 }}
+        style={{ background: 'none', border: 'none', color: color.linkBlue, cursor: 'pointer', padding: '0 4px', fontSize: fontSize.lg, lineHeight: 1 }}
         aria-label="Dismiss"
       >×</button>
     </div>

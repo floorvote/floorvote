@@ -26,7 +26,7 @@ export function PositionBadge({ position, tooltip }: PositionBadgeProps) {
     >
       <span style={{
         display: 'inline-flex', alignItems: 'center',
-        background: c.bg, color: c.color, border: `1px solid ${c.border}`,
+        background: c.bg, color: c.color, border: '1px solid transparent',
         fontWeight: fontWeight.semibold, fontSize: fontSize.sm, padding: '3px 10px', borderRadius: radius.sm,
       }}>
         {position}

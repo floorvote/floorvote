@@ -42,7 +42,7 @@ function pickerTriggerStyle(active: boolean): React.CSSProperties {
     padding: '4px 8px',
     borderRadius: radius.sm,
     background: active ? color.bgInfo : color.white,
-    color: active ? color.partyDemBlue : color.textSlate,
+    color: active ? color.linkBlue : color.textSlate,
     border: `1px solid ${active ? color.tagBorderBlue : color.borderDefault}`,
     display: 'inline-flex',
     alignItems: 'center',

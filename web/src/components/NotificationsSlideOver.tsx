@@ -9,6 +9,7 @@ import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { PopPanel, type PopPanelHandle } from './ui/PopPanel'
 
 const PURIFY_CONFIG = {
@@ -155,15 +156,19 @@ export function NotificationsSlideOver(
           .notif-comment li { margin: 1px 0; }
           .notif-comment a { color: #2563eb; }
           .notif-comment span[data-type="mention"] { font-weight: 500; cursor: default; }
-          .notif-comment span[data-type="mention"][data-id^="role:"] {
-            background: #e0f2fe;
-            color: #0369a1;
+          /* Mention pills from the shared MENTION_STYLE (role = indigo, user =
+             gray) — in lockstep with ROLE_CHIP, CommentContent.tsx,
+             RichTextEditor.tsx, and the emails; padding stays compact here. */
+          .notif-comment span[data-type="mention"][data-id^="role:"],
+          .notif-comment span[data-type="mention"][data-id^="everyone:"] {
+            background: ${MENTION_STYLE.role.bg};
+            color: ${MENTION_STYLE.role.text};
             border-radius: 99px;
             padding: 1px 7px;
           }
           .notif-comment span[data-type="mention"][data-id^="user:"] {
-            background: #f1f5f9;
-            color: #475569;
+            background: ${MENTION_STYLE.user.bg};
+            color: ${MENTION_STYLE.user.text};
             border-radius: 4px;
             padding: 1px 5px;
           }
@@ -225,8 +230,8 @@ export function NotificationsSlideOver(
                       : undefined}
                     style={{
                       display: 'inline-block',
-                      background: color.bgBlueChip,
-                      color: color.roleChipBlue,
+                      background: MENTION_STYLE.role.bg,
+                      color: MENTION_STYLE.role.text,
                       borderRadius: radius.pill,
                       padding: '0 7px',
                       fontSize: fontSize.sm,

@@ -43,7 +43,7 @@ describe('renderBillCardOpen', () => {
 describe('renderCommentRow', () => {
   const base = { appUrl: 'https://x.test', name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston', dateText: 'June 10, 2026, 4:45 PM', bodyHtml: '<p>hello</p>' }
   it('uses the shared purple chat icon PNG', () => {
-    expect(renderCommentRow(base)).toContain('/email-icons/chat__8b5cf6.png')
+    expect(renderCommentRow(base)).toContain('/email-icons/chat__7c3aed.png')
   })
   it('renders name, subtitle, date, and the body html', () => {
     const html = renderCommentRow(base)

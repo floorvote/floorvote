@@ -10,9 +10,9 @@ const VOTE_SCHEMES: Record<VoteKey, {
   restBg: string; restBorder: string; hoverBg: string; hoverBorder: string
   text: string; castBg: string; castHoverBg: string
 }> = {
-  support: { restBg: color.bgSuccessFaint, restBorder: color.borderGreenFaint,   hoverBg: color.bgSuccess,    hoverBorder: color.borderGreenChip, text: color.textVoteSupport, castBg: color.voteSupport,   castHoverBg: color.textSuccess },
+  support: { restBg: color.bgSuccessFaint, restBorder: color.borderGreenFaint,   hoverBg: color.bgSuccess,    hoverBorder: color.borderGreenChip, text: color.textSuccessDark, castBg: color.voteSupport,   castHoverBg: color.textSuccess },
   neutral: { restBg: color.surfaceSubtle,  restBorder: color.borderNeutralFaint, hoverBg: color.surfaceMuted, hoverBorder: color.borderDefault,   text: color.textSecondary,   castBg: color.textMuted,     castHoverBg: color.textSecondary },
-  oppose:  { restBg: color.bgDangerFaint,  restBorder: color.borderRedFaint,     hoverBg: color.bgDangerSoft, hoverBorder: color.borderRedChip,   text: color.textDanger,      castBg: color.textDeleteRed, castHoverBg: color.textErrorRed },
+  oppose:  { restBg: color.bgDangerFaint,  restBorder: color.borderRedFaint,     hoverBg: color.bgDangerSoft, hoverBorder: color.borderRedChip,   text: color.textDanger,      castBg: color.textErrorRed, castHoverBg: color.textErrorRed },
 }
 
 // State-dependent styles for a member-vote pill button. Spread into the button's

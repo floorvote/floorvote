@@ -17,7 +17,7 @@ const ADMIN_TABS = [
 
 function Tab({ to, label, variant }: { to: string; label: string; variant: 'member' | 'admin' }) {
   const [hovered, setHovered] = useState(false)
-  const activeColor = variant === 'admin' ? color.textVioletAdmin : color.billBadgeNavy
+  const activeColor = variant === 'admin' ? color.brandViolet : color.billBadgeNavy
   const activeLine = variant === 'admin' ? color.brandViolet : color.accentAmber
 
   return (
@@ -35,7 +35,10 @@ function Tab({ to, label, variant }: { to: string; label: string; variant: 'memb
         whiteSpace: 'nowrap',
         flexShrink: 0,
         borderRadius: radius.md,
-        fontWeight: isActive ? fontWeight.semibold : fontWeight.normal,
+        // Weight stays constant across states: the active tab is signalled by
+        // color + the bottom border, not boldness. Bolding on select changed the
+        // glyph width and nudged the neighbouring tabs.
+        fontWeight: fontWeight.normal,
         color: isActive ? activeColor : hovered ? color.tooltipBg : color.textSecondary,
         background: hovered && !isActive ? color.borderDefault : 'transparent',
         borderBottom: isActive ? `2px solid ${activeLine}` : '2px solid transparent',

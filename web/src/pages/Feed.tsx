@@ -297,7 +297,7 @@ export function Feed() {
               width: '100%',
               marginBottom: 12,
               padding: '10px 0',
-              background: color.filterBadgeNavy,
+              background: color.linkBlue,
               color: color.white,
               border: 'none',
               borderRadius: radius.lg,

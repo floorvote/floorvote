@@ -1,5 +1,5 @@
 import { color, fontSize, fontWeight } from './tokens'
-import { PRIORITY_COLORS, POSITION_COLORS } from './billChipColors'
+import { PRIORITY_COLORS, POSITION_FEED_ICON } from './billChipColors'
 import { formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBillEvents } from './feedUtils'
 import { formatHearingTime } from './hearingTime'
 import { stripMarkdown } from './markdown'
@@ -18,9 +18,9 @@ export const CHANGE_ICONS: Record<string, string> = {
 export const USER_EVENT_ICONS: Record<string, { name: string; color: string; fill?: 0 | 1 }> = {
   bill_added:     { name: 'playlist_add',   color: color.accentBlue },
   priority_set:   { name: 'flag',           color: color.textDanger, fill: 1 },
-  position_set:   { name: 'thumbs_up_down', color: color.textVoteSupport, fill: 1 },
-  comment_added:  { name: 'chat',           color: color.iconCommentPurple },
-  vote_milestone: { name: 'how_to_vote',    color: color.iconVoteCyan },
+  position_set:   { name: 'thumbs_up_down', color: color.textSuccess, fill: 1 },
+  comment_added:  { name: 'chat',           color: color.brandViolet },
+  vote_milestone: { name: 'how_to_vote',    color: color.textTealSenate },
 }
 const HEARING_TYPES = new Set(['hearing_added', 'hearing_changed', 'hearing_cancelled'])
 
@@ -111,7 +111,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
       })
     } else if (HEARING_TYPES.has(event.type)) {
       rows.push({
-        key: event.id, iconName: 'gavel', iconColor: color.textAmberHearing, iconFill: 0,
+        key: event.id, iconName: 'gavel', iconColor: color.billBadgeNavy, iconFill: 0,
         text: hearingLine(event), bg: SUMMARY_BG, hash: '#section-hearings',
         createdAt: event.createdAt, showTime: true, userId: event.userId,
       })
@@ -129,7 +129,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
       let iconColor = cfg.color
       const isPriority = event.type === 'priority_set'
       if (isPriority) iconColor = PRIORITY_COLORS[String((event.metadata as Record<string, unknown>)?.priority ?? '')]?.fill ?? iconColor
-      else if (event.type === 'position_set') iconColor = POSITION_COLORS[String((event.metadata as Record<string, unknown>)?.position ?? '')]?.color ?? iconColor
+      else if (event.type === 'position_set') iconColor = POSITION_FEED_ICON[String((event.metadata as Record<string, unknown>)?.position ?? '')] ?? iconColor
       rows.push({
         key: event.id, iconName: cfg.name, iconColor, iconFill: cfg.fill ?? 0,
         text: userDetailLine(event), bg: color.white, hash: userEventHash(event),

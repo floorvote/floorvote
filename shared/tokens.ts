@@ -22,43 +22,31 @@ export const color = {
   countChipText:     '#616e82', // count-pill text; tuned to ~4.5:1 (AA floor) on countChipBg
   textSuccess:       '#16a34a', // success green (confirmations; support vote fill)
   textSuccessDark:   '#166534', // green chip text
-  textVoteSupport:   '#15803d', // support vote label / cast-pill base
   textDanger:        '#b91c1c', // medium-dark red
   textErrorRed:      '#dc2626', // error text; oppose cast-pill base
-  textDangerDark:    '#991b1b', // dark red chip text
-  textDeleteRed:     '#ef4444', // delete button; oppose bar fill
-  textRedDark:       '#7f1d1d', // darkest red (priority-high text)
   priorityHigh:      '#850028',
   priorityMedium:    '#be2342',
   priorityLow:       '#c27a83',
   textAmberDark:     '#92400e', // amber chip text
-  textAmberHearing:  '#b45309', // hearing date label
+  textAmberHearing:  '#b45309', // amber — Amend feed icon (formerly the hearing date label; hearings are navy now)
   textAmberWarning:  '#854d0e', // warning banner text
-  textPurpleChip:    '#7e22ce', // purple chip text
   textVioletChip:    '#5b21b6', // violet chip text
-  textVioletAdmin:   '#6d28d9', // admin tab active
   textTealSenate:    '#0f766e', // Senate chamber chip text
-  textIndigoMe:      '#6366f1', // "ME" self-badge text
+  roleMentionText:   '#4338ca', // role / @everyone mention pill text (indigo — the "people" identity, distinct from topic-tag blue)
 
   // --- Brand, link & accent (fills / named chrome colors) ---
   linkBlue:          '#2563eb',
   accentBlue:        '#3b82f6',
   accentBlueMuted:   '#93c5fd', // muted blue outline (hover state)
   brandViolet:       '#7c3aed',
-  accentAmber:       '#f59e0b', // relevance slider accent
+  accentAmber:       '#e8a33d', // Honey — brand accent: wordmark "Vote", relevance slider, settings-nav active line
   voteSupport:       '#22c55e', // support vote bar / cast-pill fill
-  partyDemBlue:      '#1d4ed8', // Democrat party badge
   billBadgeNavy:     '#1e3a5f', // bill number badge background
   // Keyboard focus ring. Navy on light surfaces; the sidebar overrides
   // --fv-focus-ring to white. Distinct from accentBlue (chip "selected") and
   // accentBlueMuted (chip hover) so a focused chip never reads as selected.
   focusRing:         '#1e3a5f',
-  filterBadgeNavy:   '#1e40af', // active-filter count badge background
-  roleChipBlue:      '#0369a1', // role chip text
-  roleChipXBlue:     '#7dd3fc', // role chip dismiss button
   tagTextBlue:       '#1e4d8c', // tag chip text
-  iconCommentPurple: '#8b5cf6', // comment feed event icon
-  iconVoteCyan:      '#06b6d4', // vote-milestone feed event icon
   tooltipBg:         '#1e293b', // dark tooltip / popover background
 
   // --- Surface & background ---
@@ -66,12 +54,10 @@ export const color = {
   surfaceSubtle:     '#f8fafc', // neutral hover / surface
   surfaceMuted:      '#f5f8fc', // lightened from #f1f5f9 (absorbs #eef2f7, #f8f8f7) — raises AA floor for text
   countChipBg:       '#ecf0f6', // count-pill fill; midpoint of surfaceMuted and borderDefault
-  surfaceTintBlue:   '#f5f9ff', // faint blue tint behind an expanded custom event
-  surfaceTintNavy:   '#f4f7fb', // faint navy tint behind an expanded hearing event
   bgLoginPage:       '#f0f4f8', // login full-bleed background
   bgInfo:            '#eff6ff', // absorbs #ebf3ff, #eef2ff — selection / unread / info
-  bgDropdownActive:  '#f0f6ff', // dropdown selected/hover row
-  bgBlueChip:        '#e0f2fe', // absorbs #dbeafe — blue chip background
+  bgBlueChip:        '#dbeafe', // H214 blue chip fill (topic tags, party 'D', analysis) — absorbs the old #e0f2fe (H204 cyan-lean)
+  roleMentionBg:     '#e4e6fb', // role / @everyone mention pill fill (indigo) — a distinct hue from topic-tag blue
   bgSuccess:         '#f0fdf4', // green surface
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)
@@ -93,13 +79,12 @@ export const color = {
   borderGreenFaint:  '#d6f5e1', // vote button resting border (support)
   borderNeutralFaint:'#edf1f5', // vote button resting border (neutral)
   borderRedChip:     '#fecaca',
-  borderRedStrong:   '#f87171',
   borderRedFaint:    '#fde2e2', // vote button resting border (oppose)
   borderVioletSoft:  '#c4b5fd',
   borderPurpleChip:  '#e9d5ff',
   borderAmber:       '#fde68a',
   borderYellow:      '#fde047',
-  borderBlueDash:    '#bae6fd', // dashed blue border / disabled role-chip dismiss
+  borderBlueDash:    '#bad7fd', // H214 dashed blue border / disabled role-chip dismiss (retinted from #bae6fd, H201)
   tagBorderBlue:     '#bfdbfe', // tag chip border
 } as const
 

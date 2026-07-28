@@ -6,6 +6,7 @@ import { PRODUCT_NAME } from '../../../shared/brand'
 import { sendBatch, resolveAssocName } from './email'
 import { color, fontSize, fontWeight, radius } from '../../../shared/tokens'
 import { buildBillCardModel } from '../../../shared/billCardModel'
+import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateTime } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sanitizeCommentHtml } from './sanitizeHtml'
@@ -97,13 +98,14 @@ export function tiptapToEmailHtml(rawHtml: string): string {
     .replace(
       /<span[^>]+data-type="mention"[^>]+>([^<]+)<\/span>/g,
       (match, label) => {
-        // label is already HTML-encoded by TipTap — use as-is, no double-escaping
+        // label is already HTML-encoded by TipTap — use as-is, no double-escaping.
+        // Colours come from the shared MENTION_STYLE so the email can't drift from
+        // the app (role = indigo, user = gray). See shared/mentionStyle.ts.
         const isGroup = match.includes('data-id="role:') || match.includes('data-id="everyone:')
-        const bg = isGroup ? '#e0f2fe' : '#f1f5f9'
-        const color = isGroup ? '#0369a1' : '#475569'
-        const radius = isGroup ? '99px' : '4px'
-        const padding = isGroup ? '2px 8px' : '1px 6px'
-        return `<span style="background:${bg};color:${color};padding:${padding};border-radius:${radius};font-weight:500;">${label}</span>`
+        const pill = isGroup ? MENTION_STYLE.role : MENTION_STYLE.user
+        const rad = isGroup ? '99px' : '4px'
+        const pad = isGroup ? '2px 8px' : '1px 6px'
+        return `<span style="background:${pill.bg};color:${pill.text};padding:${pad};border-radius:${rad};font-weight:500;">${label}</span>`
       },
     )
 }
@@ -159,7 +161,7 @@ export function renderMentionEmail(input: MentionEmailInput): string {
       : `${strong(authorName)} mentioned you in a comment`
 
   const roleNote = (via === 'role' && roleName)
-    ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because your account has the <span style="font-size:${fontSize.xs}px;font-weight:${fontWeight.medium};color:${color.roleChipBlue};background:${color.bgBlueChip};border-radius:${radius.pill}px;padding:3px 9px;display:inline-block;white-space:nowrap;">${escHtml(roleName)}</span> role.</p>`
+    ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because your account has the <span style="font-size:${fontSize.xs}px;font-weight:${fontWeight.medium};color:${MENTION_STYLE.role.text};background:${MENTION_STYLE.role.bg};border-radius:${radius.pill}px;padding:3px 9px;display:inline-block;white-space:nowrap;">${escHtml(roleName)}</span> role.</p>`
     : ''
   const everyoneNote = via === 'everyone'
     ? `<p style="margin:0 0 20px;font-size:${fontSize.sm}px;color:${color.textSecondary};">You're receiving this because an admin notified everyone.</p>`

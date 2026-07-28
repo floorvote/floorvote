@@ -52,7 +52,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
-  const partyColor = party === 'D' ? color.partyDemBlue : party === 'R' ? color.textDanger : color.textSlate500
+  const partyColor = party === 'D' ? color.linkBlue : party === 'R' ? color.textDanger : color.textSlate500
   // display:inline-block prevents text-decoration from the parent <a> punching through the chip background
   return <span style={{ marginLeft: 3, fontSize: fontSize.xs, padding: '1px 4px', borderRadius: radius.sm, background: bg, color: partyColor, fontWeight: fontWeight.bold, display: 'inline-block', textDecoration: 'none' }}>{party}</span>
 }
@@ -1779,14 +1779,11 @@ export function BillDetail() {
             >
               {[...bill.calendar].sort((a, b) => b.date.localeCompare(a.date)).map((entry, i) => {
                 const isPast = entry.date < today
-                const typeUpper = entry.type.toUpperCase()
-                const isSenate = typeUpper.includes('SENATE') || typeUpper.includes('UPPER')
-                const isHouse = typeUpper.includes('HOUSE') || typeUpper.includes('ASSEMBLY') || typeUpper.includes('LOWER')
-                const chipColor = isSenate
-                  ? { color: color.brandViolet, background: color.bgVioletSoft }
-                  : isHouse
-                  ? { color: color.roleChipBlue, background: color.bgBlueChip }
-                  : { color: color.roleChipBlue, background: color.bgBlueChip }
+                // All hearings share the navy identity — the same navy as the
+                // bill-number badge and the calendar/feed gavel — so a hearing
+                // reads the same everywhere. Chamber (Senate / House) is carried
+                // by the label text, not colour.
+                const chipColor = { color: color.billBadgeNavy, background: color.bgInfo }
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}
@@ -1821,11 +1818,11 @@ export function BillDetail() {
           const suppChipStyle = (typeId: number): React.CSSProperties => {
             switch (typeId) {
               case 1: case 3: return { color: color.textSuccessDark, background: color.bgSuccessChip }  // Fiscal Note
-              case 2: return { color: color.roleChipBlue, background: color.bgBlueChip }                 // Analysis
+              case 2: return { color: color.tagTextBlue, background: color.bgBlueChip }                 // Analysis
               case 4: return { color: color.brandViolet, background: color.bgVioletSoft }                // Vote Image
               case 5: return { color: color.textAmberDark, background: color.bgAmberPriority }           // Local Mandate
-              case 6: return { color: color.textDangerDark, background: color.bgRedPriority }            // Corrections Impact
-              case 8: return { color: color.textDangerDark, background: color.bgRedPriority }            // Veto Letter
+              case 6: return { color: color.textDanger, background: color.bgRedPriority }            // Corrections Impact
+              case 8: return { color: color.textDanger, background: color.bgRedPriority }            // Veto Letter
               default: return { color: color.textSlate500, background: color.surfaceMuted }              // Misc
             }
           }
@@ -1924,7 +1921,7 @@ export function BillDetail() {
                         )}
                         {(!demoLocked || comment.userId === user?.id) && (
                           <button onClick={() => handleDeleteComment(comment.id)}
-                            style={{ fontSize: fontSize.sm, color: color.textDeleteRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                            style={{ fontSize: fontSize.sm, color: color.textErrorRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                             Delete
                           </button>
                         )}

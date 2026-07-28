@@ -783,7 +783,7 @@ export function Config() {
               border: `1px solid ${newMatchMinRelevance > 0 ? color.tagBorderBlue : color.borderDefault}`,
               borderRadius: radius.md, padding: '6px 10px',
             }}>
-              <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: newMatchMinRelevance > 0 ? color.partyDemBlue : color.textSlate, fontWeight: newMatchMinRelevance > 0 ? fontWeight.medium : fontWeight.normal }}>
+              <label style={{ fontSize: fontSize.sm, whiteSpace: 'nowrap', color: newMatchMinRelevance > 0 ? color.linkBlue : color.textSlate, fontWeight: newMatchMinRelevance > 0 ? fontWeight.medium : fontWeight.normal }}>
                 Minimum relevance: <span style={{ display: 'inline-block', width: 26, textAlign: 'left' }}>{newMatchMinRelevance === 0 ? 'All' : newMatchMinRelevance < 10 ? `${newMatchMinRelevance}+` : '10'}</span>
               </label>
               <input
@@ -947,7 +947,7 @@ export function Config() {
                           fontSize: fontSize.sm, padding: '2px 8px', borderRadius: radius.lg, fontWeight: fontWeight.medium,
                           display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'default',
                           ...(field.type === 'binary' ? { background: color.bgAmberPriority, color: color.textAmberDark }
-                            : field.type === 'dropdown' ? { background: color.bgBlueChip, color: color.filterBadgeNavy }
+                            : field.type === 'dropdown' ? { background: color.bgBlueChip, color: color.linkBlue }
                             : field.type === 'text' ? { background: color.surfaceMuted, color: color.textSlate500 }
                             : { background: color.bgVioletChip, color: color.textVioletChip })
                         }}
@@ -963,7 +963,7 @@ export function Config() {
                       <button
                         onClick={demoLocked ? undefined : () => handleDeleteCustomField(field.id)}
                         disabled={demoLocked}
-                        style={{ background: 'none', border: 'none', color: demoLocked ? color.borderDefault : color.textDeleteRed, cursor: demoLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
+                        style={{ background: 'none', border: 'none', color: demoLocked ? color.borderDefault : color.textErrorRed, cursor: demoLocked ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
                         title={demoLocked ? undefined : `Delete "${field.name}"`}
                       ><span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span></button>
                       {cfTooltip && cfTooltip.key.startsWith(field.id) && (() => {
