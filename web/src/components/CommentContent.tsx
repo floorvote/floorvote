@@ -4,6 +4,7 @@ import { MarkdownSummary } from './MarkdownSummary'
 import { sanitizeHtml } from '../lib/sanitizeHtml'
 import { TOOLTIP_STYLE, ROLE_CHIP, tooltipPositionBelow, displayName, sortRoles } from '../lib/chipStyles'
 import { color, fontSize, fontWeight } from '../styles/tokens'
+import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 const ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'blockquote', 'ul', 'ol', 'li', 'span', 'br', 's']
 const ALLOWED_ATTR = ['href', 'target', 'rel', 'data-type', 'data-id', 'data-label']
@@ -168,19 +169,19 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
           font-weight: 500;
           cursor: default;
         }
-        /* Role/everyone mention = the solid-blue ROLE_CHIP identity. Keep these
-           three rules in lockstep with ROLE_CHIP (chipStyles.ts) and the .mention
-           rules in RichTextEditor.tsx (the composing twin). */
+        /* Mention pills come from the shared MENTION_STYLE (role = indigo,
+           user = gray) so posted comments, the composer (RichTextEditor.tsx),
+           the notifications panel, and the emails can't drift. */
         .comment-html span[data-type="mention"][data-id^="role:"],
         .comment-html span[data-type="mention"][data-id^="everyone:"] {
-          background: ${color.linkBlue};
-          color: ${color.white};
+          background: ${MENTION_STYLE.role.bg};
+          color: ${MENTION_STYLE.role.text};
           border-radius: 99px;
           padding: 2px 8px;
         }
         .comment-html span[data-type="mention"][data-id^="user:"] {
-          background: ${color.surfaceMuted};
-          color: ${color.textSlate500};
+          background: ${MENTION_STYLE.user.bg};
+          color: ${MENTION_STYLE.user.text};
           border-radius: 4px;
           padding: 1px 6px;
         }

@@ -42,7 +42,7 @@ function dedupe(needs: EmailIconNeed[]): EmailIconNeed[] {
 // coloring exactly:
 //  - calendar source markers (week-ahead email)
 //  - bill_updated change rows — all in textSecondary, outline
-//  - hearing rows — gavel in the amber hearing color
+//  - hearing rows — gavel in the navy hearing color (billBadgeNavy)
 //  - user-event rows — each USER_EVENT_ICONS entry in its color/fill, except
 //    priority_set (rendered as the priority square, not an icon); position_set
 //    is emitted once per position color (the model overrides its color per
@@ -56,7 +56,7 @@ export const EMAIL_ICON_NEEDS: EmailIconNeed[] = dedupe([
   // even if a new type lands upstream without a CHANGE_ICONS/USER_EVENT_ICONS entry.
   { icon: 'change_history', hex: color.textSecondary, fill: false },
   { icon: 'circle', hex: color.textMuted, fill: false },
-  { icon: 'gavel', hex: color.textAmberHearing, fill: false },
+  { icon: 'gavel', hex: color.billBadgeNavy, fill: false },
   ...Object.entries(USER_EVENT_ICONS)
     .filter(([type]) => type !== 'priority_set')
     .flatMap(([type, cfg]) => {

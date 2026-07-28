@@ -1779,16 +1779,11 @@ export function BillDetail() {
             >
               {[...bill.calendar].sort((a, b) => b.date.localeCompare(a.date)).map((entry, i) => {
                 const isPast = entry.date < today
-                const typeUpper = entry.type.toUpperCase()
-                const isSenate = typeUpper.includes('SENATE') || typeUpper.includes('UPPER')
-                const isHouse = typeUpper.includes('HOUSE') || typeUpper.includes('ASSEMBLY') || typeUpper.includes('LOWER')
-                const chipColor = isSenate
-                  ? { color: color.brandViolet, background: color.bgVioletSoft }
-                  : isHouse
-                  ? { color: color.tagTextBlue, background: color.bgBlueChip }
-                  // Generic hearing: match the calendar's automatic-hearing identity (navy),
-                  // so a hearing reads the same in the bill timeline and on the calendar.
-                  : { color: color.billBadgeNavy, background: color.bgInfo }
+                // All hearings share the navy identity — the same navy as the
+                // bill-number badge and the calendar/feed gavel — so a hearing
+                // reads the same everywhere. Chamber (Senate / House) is carried
+                // by the label text, not colour.
+                const chipColor = { color: color.billBadgeNavy, background: color.bgInfo }
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}

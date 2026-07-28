@@ -295,7 +295,7 @@ exports[`email conformance — every sample type shares the shell contract > men
       <td style="width:100%;padding:10px 8px 0 6px;vertical-align:top;border-top:1px solid #e2e8f0;"><span style="font-size:12px;font-weight:600;color:#0f172a;">Sam Ortiz</span><span style="font-size:12px;font-weight:400;color:#667386;margin-left:4px;">Town Clerk, Cranston</span></td>
       <td align="right" style="padding:11px 14px 0 0;vertical-align:top;white-space:nowrap;border-top:1px solid #e2e8f0;"><span style="font-size:12px;color:#667386;">June 10, 2026 at 4:45 PM</span></td>
     </tr>
-    <tr style="background:#fff;"><td colspan="3" style="padding:4px 14px 14px 34px;font-size:14px;color:#374151;line-height:1.5;"><p style="margin:0 0 12px;line-height:1.6;color:#334155;">Hey <span style="background:#f1f5f9;color:#475569;padding:1px 6px;border-radius:4px;font-weight:500;">@Dana Reed</span> — we should testify against this at Thursday's hearing. Can you pull the talking points?</p></td></tr>
+    <tr style="background:#fff;"><td colspan="3" style="padding:4px 14px 14px 34px;font-size:14px;color:#374151;line-height:1.5;"><p style="margin:0 0 12px;line-height:1.6;color:#334155;">Hey <span style="background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:4px;font-weight:500;">@Dana Reed</span> — we should testify against this at Thursday's hearing. Can you pull the talking points?</p></td></tr>
   </tbody>
 </table>
             <div style="margin-top:18px;"><a href="https://sample.test/RI/2026/HB 1234#comment-sample-comment" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View comment</a></div>

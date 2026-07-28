@@ -2,6 +2,7 @@ import type React from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 export { PRIORITY_COLORS, POSITION_COLORS } from '../../../shared/billChipColors'
 import { CHIP_MINI_DIMS } from '../../../shared/billChipColors'
+import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 // Canonical chip styles — all chip-like components import from here.
 // One change here propagates everywhere.
@@ -87,17 +88,17 @@ export function countBadge(active = false, activeBg = 'transparent'): React.CSSP
   }
 }
 
-// Solid-blue "identity" pill for team role labels — used everywhere a role name
-// is shown. White on linkBlue reads as a distinct signal from the light-tint
-// topic tag (a pale rectangle), so a role/user chip is never confused with a bill
-// tag. Keep this in lockstep with the role/everyone mention CSS in
-// CommentContent.tsx and RichTextEditor.tsx (the composing + posted twins).
-// The X button style is separate and only used in admin contexts.
+// Indigo "identity" pill for team role labels — used everywhere a role name is
+// shown. The indigo hue reads as a distinct "people" signal, separate from the
+// light-blue topic tag and calmer than a solid fill. Colours come from the shared
+// MENTION_STYLE so this stays in lockstep with the role/everyone mention CSS in
+// CommentContent.tsx, RichTextEditor.tsx, NotificationsSlideOver.tsx, and the
+// emails (api/src/lib/mentions.ts). The X button style is admin-only.
 export const ROLE_CHIP: React.CSSProperties = {
   fontSize: fontSize.xs,
   fontWeight: fontWeight.medium,
-  color: color.white,
-  background: color.linkBlue,
+  color: MENTION_STYLE.role.text,
+  background: MENTION_STYLE.role.bg,
   borderRadius: radius.pill,
   padding: '3px 9px',
   display: 'inline-flex',
@@ -107,8 +108,8 @@ export const ROLE_CHIP: React.CSSProperties = {
 }
 
 export const ROLE_CHIP_X: React.CSSProperties = {
-  // White X on the solid-blue role chip.
-  color: color.white,
+  // The indigo mention text, on the light indigo role fill.
+  color: MENTION_STYLE.role.text,
   cursor: 'pointer',
   fontSize: fontSize.sm,
   lineHeight: '1',

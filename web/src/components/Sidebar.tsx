@@ -500,7 +500,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClose(); navigate('/bills') } }}
                         onMouseEnter={() => setBillsChipHover(true)}
                         onMouseLeave={() => setBillsChipHover(false)}
-                        style={{ ...countBadge(billsChips.allBills || billsChipHover || navHover === 'bills', color.bgAmberPriority), cursor: 'pointer' }}
+                        style={{ ...countBadge(billsChipHover || ((billsChips.allBills || navHover === 'bills') && !newChipHover), color.bgAmberPriority), cursor: 'pointer' }}
                       >
                         {stats.billCount.toLocaleString()} bills
                       </span>
@@ -657,7 +657,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                       // Orange when the current view is exactly the prioritized
                       // filter (persistent), or the chip itself is hovered —
                       // same treatment as the nav "N bills"/"N new" chips.
-                      style={{ ...countBadge(prioritizedChips.priority || priorityChipHover || headerActive, color.bgAmberPriority), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                      style={{ ...countBadge(priorityChipHover || headerActive || (prioritizedChips.priority && !unvotedChipHover), color.bgAmberPriority), border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                     >
                       {sidebarData.priorityBillCount}
                     </button>

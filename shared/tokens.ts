@@ -28,10 +28,11 @@ export const color = {
   priorityMedium:    '#be2342',
   priorityLow:       '#c27a83',
   textAmberDark:     '#92400e', // amber chip text
-  textAmberHearing:  '#b45309', // hearing date label
+  textAmberHearing:  '#b45309', // amber — Amend feed icon (formerly the hearing date label; hearings are navy now)
   textAmberWarning:  '#854d0e', // warning banner text
   textVioletChip:    '#5b21b6', // violet chip text
   textTealSenate:    '#0f766e', // Senate chamber chip text
+  roleMentionText:   '#4338ca', // role / @everyone mention pill text (indigo — the "people" identity, distinct from topic-tag blue)
 
   // --- Brand, link & accent (fills / named chrome colors) ---
   linkBlue:          '#2563eb',
@@ -55,7 +56,8 @@ export const color = {
   countChipBg:       '#ecf0f6', // count-pill fill; midpoint of surfaceMuted and borderDefault
   bgLoginPage:       '#f0f4f8', // login full-bleed background
   bgInfo:            '#eff6ff', // absorbs #ebf3ff, #eef2ff — selection / unread / info
-  bgBlueChip:        '#dbeafe', // H214 blue chip fill (tags, mentions, party 'D', analysis) — absorbs the old #e0f2fe (H204 cyan-lean) so every blue chip shares one hue
+  bgBlueChip:        '#dbeafe', // H214 blue chip fill (topic tags, party 'D', analysis) — absorbs the old #e0f2fe (H204 cyan-lean)
+  roleMentionBg:     '#e4e6fb', // role / @everyone mention pill fill (indigo) — a distinct hue from topic-tag blue
   bgSuccess:         '#f0fdf4', // green surface
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)

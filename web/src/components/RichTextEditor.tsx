@@ -11,6 +11,7 @@ import { MentionSuggestions, type MentionSuggestionsRef } from './MentionSuggest
 import { apiFetch } from '../lib/api'
 import { isMac } from '../lib/tiptap-utils'
 import { TOOLTIP_STYLE, ROLE_CHIP, tooltipPositionBelow, displayName, sortRoles } from '../lib/chipStyles'
+import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { useUnsavedRegistration } from '../lib/unsavedText'
 import { useAuth } from '../hooks/useAuth'
 
@@ -494,19 +495,19 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
         .comment-editor-wrapper .tiptap.ProseMirror .mention {
           font-weight: 500;
         }
-        /* Role/everyone mention = the solid-blue ROLE_CHIP identity. Keep these
-           three rules in lockstep with ROLE_CHIP (chipStyles.ts) and the .mention
-           rules in CommentContent.tsx (the posted twin). */
+        /* Mention pills come from the shared MENTION_STYLE (role = indigo,
+           user = gray) — in lockstep with CommentContent.tsx, ROLE_CHIP, and
+           the emails. */
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="role:"],
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="everyone:"] {
-          background: ${color.linkBlue};
-          color: ${color.white};
+          background: ${MENTION_STYLE.role.bg};
+          color: ${MENTION_STYLE.role.text};
           border-radius: 99px;
           padding: 2px 8px;
         }
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="user:"] {
-          background: ${color.surfaceMuted};
-          color: ${color.textSlate500};
+          background: ${MENTION_STYLE.user.bg};
+          color: ${MENTION_STYLE.user.text};
           border-radius: 4px;
           padding: 1px 6px;
         }

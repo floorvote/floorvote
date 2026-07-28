@@ -111,7 +111,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
       })
     } else if (HEARING_TYPES.has(event.type)) {
       rows.push({
-        key: event.id, iconName: 'gavel', iconColor: color.textAmberHearing, iconFill: 0,
+        key: event.id, iconName: 'gavel', iconColor: color.billBadgeNavy, iconFill: 0,
         text: hearingLine(event), bg: SUMMARY_BG, hash: '#section-hearings',
         createdAt: event.createdAt, showTime: true, userId: event.userId,
       })
