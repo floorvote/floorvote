@@ -208,7 +208,10 @@ export const billCalendar = sqliteTable('bill_calendar', {
   time:        text('time'),
   location:    text('location'),
   description: text('description'),
-}, (t) => [index('idx_bill_calendar_bill').on(t.billId)])
+}, (t) => [
+  index('idx_bill_calendar_bill').on(t.billId),
+  index('idx_bill_calendar_date').on(t.date),
+])
 
 export const rollCalls = sqliteTable('roll_calls', {
   rollCallId:  integer('roll_call_id').primaryKey(),

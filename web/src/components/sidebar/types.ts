@@ -47,6 +47,8 @@ export interface SidebarData {
   priorityBillCount: number
   unvotedPriorityCount: number
   upcomingHearings: HearingGroup[]
+  /** Lookahead window (days) the hearings list covers; drives the widget's hint text. */
+  upcomingHearingsDays: number
   priorityBills: PriorityBill[]
 }
 

@@ -456,6 +456,26 @@ tenantsLsRoutes.get('/:tenantId/upcoming-hearings', async (c) => {
   const daysRaw = Number(c.req.query('days') ?? '30')
   const days = Math.max(1, Math.min(365, Number.isFinite(daysRaw) ? daysRaw : 30))
 
+  // Optional scope: restrict to specific LegiScan bill_ids (the tenant's
+  // prioritized bills). This is the query's cost control — without it a
+  // monitor-all tenant makes central read hearings for *every* linked bill
+  // (the July 2026 central-bills-ls rows-read incident). The bill_tenants
+  // join below still enforces tenant ownership, so ids the tenant doesn't
+  // actually own can't leak another tenant's hearings.
+  const MAX_BILL_IDS = 1000
+  const scopeRaw = c.req.query('billIds')
+  const billIds = (scopeRaw ?? '')
+    .split(',')
+    .map(s => Number(s.trim()))
+    .filter(n => Number.isInteger(n) && n > 0)
+    .slice(0, MAX_BILL_IDS)
+  // An explicit `billIds` param that resolves to nothing means "no prioritized
+  // bills" → return nothing, rather than silently widening to all linked bills.
+  if (scopeRaw !== undefined && billIds.length === 0) return c.json([])
+  const scopeClause = billIds.length > 0
+    ? ` AND bc.bill_id IN (${billIds.map(() => '?').join(',')})`
+    : ''
+
   const today = new Date().toISOString().slice(0, 10)
   const end = new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10)
 
@@ -476,9 +496,9 @@ tenantsLsRoutes.get('/:tenantId/upcoming-hearings', async (c) => {
     INNER JOIN bill_tenants bt ON bt.bill_id = bc.bill_id AND bt.tenant_id = ?
     INNER JOIN bills b ON b.bill_id = bc.bill_id
     LEFT JOIN sessions s ON s.session_id = b.session_id
-    WHERE bc.date >= ? AND bc.date <= ?
+    WHERE bc.date >= ? AND bc.date <= ?${scopeClause}
     ORDER BY bc.date ASC, COALESCE(bc.time, '99:99:99') ASC
-  `).bind(tenantId, today, end).all()
+  `).bind(tenantId, today, end, ...billIds).all()
 
   return c.json(rows.results ?? [])
 })
