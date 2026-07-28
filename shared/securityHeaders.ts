@@ -1,8 +1,16 @@
-// Shared security response headers for both Workers (tenant API + SPA, central
-// dashboard + SPA). Applied as a Hono middleware in each Worker's entrypoint.
+// Shared security response headers for both apps (tenant + central).
 //
-// SCOPE: this sets the headers that belong in the application layer and are
-// portable across any host —
+// DELIVERY IS TWO-LAYER, because the SPA HTML is served directly by Workers
+// Assets, which BYPASSES the Worker (no `run_worker_first`):
+//   - Static assets, incl. the HTML document → each app's `web/public/_headers`
+//     file carries the CSP + X-Frame-Options + nosniff. That is where the CSP
+//     actually lands on the page. A test (web/src/securityHeaders.drift.test.ts)
+//     asserts those files stay in sync with CONTENT_SECURITY_POLICY below.
+//   - Worker-served responses (`/api/*`) → `setSecurityHeaders()` below, wired
+//     as Hono middleware in each Worker entrypoint.
+//
+// SCOPE: the headers that belong in the application layer and are portable
+// across any host —
 //   - Content-Security-Policy      (app-specific allowlist; see below)
 //   - X-Frame-Options              (clickjacking: this app is never framed)
 //   - X-Content-Type-Options       (MIME-sniffing)
