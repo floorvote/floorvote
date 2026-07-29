@@ -8,7 +8,7 @@ import { apiFetch } from '../lib/api'
 
 const noFilters = {
   status: [], priority: [], position: [], year: [], state: [], tag: [],
-  q: '', minRelevance: 0, myBills: false, unvoted: false, cf: {},
+  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, cf: {},
 }
 
 function Harness({
@@ -26,6 +26,7 @@ function Harness({
       positionVocabulary={['Support', 'Oppose']}
       customFieldDefs={[]}
       currentFilters={noFilters}
+      filterNewMatchCount={0}
       selectedBills={selectedBills}
       onClearSelection={vi.fn()}
       onApplied={onApplied}
@@ -116,5 +117,36 @@ describe('BulkActionBar — dismiss new matches', () => {
     fireEvent.click(dismissBtn()!)
     await waitFor(() => expect(onApplied).toHaveBeenCalled())
     expect(onApplied).toHaveBeenCalledWith(['a'], expect.objectContaining({ triagedAt: expect.any(String) }))
+  })
+})
+
+describe('BulkActionBar new-match dismiss (filter mode)', () => {
+  it('shows the injected filter count and sends newMatches on dismiss', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const selection: Selection = { mode: 'filter' }
+    render(
+      <BulkActionBar
+        selection={selection}
+        total={682}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[]}
+        currentFilters={{ ...noFilters, newMatches: true }}
+        filterNewMatchCount={682}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+    const dismissBtn = await screen.findByRole('button', { name: /Dismiss new matches \(682\)/i })
+    fireEvent.click(dismissBtn)
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/bills/bulk-dismiss',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"newMatches":"1"'),
+        }),
+      )
+    })
   })
 })
