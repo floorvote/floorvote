@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
-import { eq, and, or, like, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-orm'
+import { eq, and, or, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, billCustomFieldValues, customFieldDefinitions,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { sessionToSlug } from '../../lib/sessionSlug'
-import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize } from './query'
+import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -295,8 +295,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       const realTags = tagFilters.filter(t => t !== FILTER_ANY)
       const parts: SQL[] = []
       if (hasAnyTag) parts.push(sql`json_array_length(${bills.tags}) > 0`)
-      if (realTags.length === 1) parts.push(like(bills.tags, `%"${realTags[0]}"%`))
-      else if (realTags.length > 1) parts.push(or(...realTags.map(tag => like(bills.tags, `%"${tag}"%`)))!)
+      if (realTags.length > 0) parts.push(tagMembership(realTags))
       if (parts.length > 0) tagFilter = parts.length === 1 ? parts[0] : or(...parts)!
     }
 
