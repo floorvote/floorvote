@@ -702,11 +702,13 @@ export function Config() {
                     </button>
                   )}
                 </div>
-                <input
+                <ResizableTextarea
                   id="config-relevance-question"
                   value={relevanceQuestion}
                   onChange={(e) => setRelevanceQuestion(e.target.value)}
-                  style={inputStyle}
+                  initialHeight={100}
+                  minHeight={60}
+                  style={{ fontSize: fontSize.sm }}
                   placeholder={DEFAULT_RELEVANCE_QUESTION}
                 />
                 <div style={hintStyle}>Prompt sent to guide the AI in scoring each bill's relevance from 1–10.</div>
