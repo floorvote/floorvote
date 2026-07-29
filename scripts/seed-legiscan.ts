@@ -512,6 +512,11 @@ async function main() {
     console.log(`   Keyword-matching bills: queued to ingestor (downloads text → R2, then AI via tenant)`)
     console.log(`   Non-keyword bills: land as stubs in ${argTenant} (metadata only, no AI)`)
   }
+
+  // Release the readline handle opened at module load so the process exits.
+  // The --from-dir path never prompts, so nothing else closes it, and the open
+  // stdin handle would otherwise keep the event loop alive after we're done.
+  rl.close()
 }
 
 main().catch(err => {
