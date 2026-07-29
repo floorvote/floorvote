@@ -104,14 +104,11 @@ describe('POST /bills/bulk-dismiss', () => {
     expect((await db.select().from(bills).where(eq(bills.id, manual)).get())!.triagedAt).toBeNull()
   })
 
-  it('does not 400 when the tracked population exceeds 1,000 (clears the whole new-match subset)', async () => {
-    // 1,050 tracked non-new bills (already triaged) + 30 fresh new matches.
-    for (let i = 0; i < 1050; i++) {
-      await seedBill({ billNumber: `BULK ${i}`, matchType: 'keyword', newMatchAt: MATCH, triagedAt: MATCH, relevanceScore: 50 })
-    }
-    const fresh: string[] = []
-    for (let i = 0; i < 30; i++) {
-      fresh.push(await seedBill({ billNumber: `FRESH ${i}`, matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 50 }))
+  it('filter-mode dismiss clears a new-match queue larger than 1,000', async () => {
+    // Seed 1,000 fresh qualifying new matches; with nm1 + nm2 from beforeEach the
+    // qualifying queue is 1,002 — larger than the old 1,000-row dismiss guard.
+    for (let i = 0; i < 1000; i++) {
+      await seedBill({ billNumber: `BIGQ ${i}`, matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 50 })
     }
     const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
@@ -119,7 +116,6 @@ describe('POST /bills/bulk-dismiss', () => {
       body: JSON.stringify({ filter: { newMatches: '1' } }),
     })
     expect(res.status).toBe(200)
-    // nm1 + nm2 (from beforeEach) + the 30 fresh = 32.
-    expect(await res.json()).toEqual({ dismissed: 32 })
+    expect(await res.json()).toEqual({ dismissed: 1002 })
   })
 })
