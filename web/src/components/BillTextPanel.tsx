@@ -290,7 +290,13 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                 ) : (
                   <>
                     {!loadFailed && <a href={`/api/bills/${billId}/text/${selectedDocId}`} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
-                    {!loadFailed && selectedVersion?.altStateLink && <span style={{ color: color.borderStrong }}>·</span>}
+                    {!loadFailed && selectedVersion?.stateLink && <span style={{ color: color.borderStrong }}>·</span>}
+                    {selectedVersion?.stateLink && (
+                      <a href={selectedVersion.stateLink} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>
+                        View on legislature <ExternalLinkIcon size={14} />
+                      </a>
+                    )}
+                    {(!loadFailed || selectedVersion?.stateLink) && selectedVersion?.altStateLink && <span style={{ color: color.borderStrong }}>·</span>}
                     {selectedVersion?.altStateLink && (
                       <a
                         href={selectedVersion.altStateLink}

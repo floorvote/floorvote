@@ -55,6 +55,19 @@ Copy the `CF_ACCOUNT_ID`, `CF_AIG_GATEWAY`, `CENTRAL_API_URL`, and `SUPERADMIN_J
 > - `CF_AIG_GATEWAY` — the AI Gateway slug you created under [Cloudflare credentials](#cloudflare-credentials) above.
 > - `SUPERADMIN_JWT_PUBLIC_KEY` — the public key from the superadmin key-generation step in the central setup.
 
+> [!IMPORTANT]
+> The shared, top-level `[assets]` block (inherited by every tenant env) must include `run_worker_first = ["/api/*"]`:
+>
+> ```toml
+> [assets]
+> directory = "../web/dist"
+> binding = "ASSETS"
+> not_found_handling = "single-page-application"
+> run_worker_first = ["/api/*"]
+> ```
+>
+> Without it, a compatibility date of 2025-04-01 or later makes browser navigations to any `/api/*` URL serve the SPA shell instead of hitting the Worker — so opening a bill text with "Open in new tab" lands on the app feed. Client-side `fetch()` still reaches the Worker, so the in-page bill-text viewer works either way, which makes the difference easy to miss. This is set once in the top-level block, not per tenant.
+
 ```toml
 [env.[slug]]
 name = "floorvote-[slug]"
