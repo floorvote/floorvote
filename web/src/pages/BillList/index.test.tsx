@@ -259,3 +259,26 @@ describe('BillList page', () => {
     })
   })
 })
+
+describe('BillList search-term hint', () => {
+  it('warns when a search term is too long, and clears it otherwise', async () => {
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')   // fixture list loaded
+    const search = screen.getByPlaceholderText('Search…')
+
+    fireEvent.change(search, { target: { value: 'a'.repeat(60) } })
+    expect(screen.getByText(/shortened/i)).toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: 'voting' } })
+    expect(screen.queryByText(/shortened/i)).not.toBeInTheDocument()
+  })
+
+  it('warns when there are too many search terms', async () => {
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')
+    const search = screen.getByPlaceholderText('Search…')
+
+    fireEvent.change(search, { target: { value: Array.from({ length: 16 }, (_, i) => `w${i}`).join(' ') } })
+    expect(screen.getByText(/first 15 terms/i)).toBeInTheDocument()
+  })
+})

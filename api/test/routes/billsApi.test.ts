@@ -288,6 +288,46 @@ describe('GET /bills — comma multi-search', () => {
   })
 })
 
+describe('GET /bills — long search terms (D1 LIKE 50-byte limit)', () => {
+  let token: string
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const uid = await seedUser()
+    token = await seedSession(uid)
+    await seedBill({ billNumber: 'HB 1', title: 'Election administration and voter registration procedures act', tenantSummary: 'A bill about elections' })
+    await seedBill({ billNumber: 'SB 2', title: 'Unrelated transportation act' })
+  })
+  const get = (q: string) =>
+    SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
+
+  it('does not 500 on a single over-long token', async () => {
+    expect((await get('a'.repeat(60))).status).toBe(200)
+  })
+  it('does not 500 on a long quoted phrase', async () => {
+    expect((await get('"an act relating to election administration and voter registration"')).status).toBe(200)
+  })
+  it('does not 500 on a long multi-word query and still matches by token', async () => {
+    const res = await get('election administration and voter registration procedures act')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: Array<{ billNumber: string }> }
+    expect(body.bills.map(b => b.billNumber)).toContain('HB 1')
+  })
+  it('matches on the truncated prefix of an over-long token', async () => {
+    await seedBill({ billNumber: 'HB 3', title: 'zz electionadministrationandvoterregistrationproceduresandmore zz' })
+    const res = await get('electionadministrationandvoterregistrationproceduresandmore') // 59 chars, no spaces
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: Array<{ billNumber: string }> }
+    expect(body.bills.map(b => b.billNumber)).toContain('HB 3')
+  })
+  it('does not 500 on a many-word unquoted query (D1 100-bound-param limit)', async () => {
+    // Each token emits ~3 LIKE bound params; ~34+ tokens would blow D1's 100-var
+    // cap ("too many SQL variables"). A long pasted phrase is one segment, many tokens.
+    const q = Array.from({ length: 40 }, (_, i) => `term${i}`).join(' ')
+    expect((await get(q)).status).toBe(200)
+  })
+})
+
 describe('GET /bills — monitoring-only bills are visible to all roles', () => {
   let memberToken: string
   let adminToken: string
