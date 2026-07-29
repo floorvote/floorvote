@@ -149,4 +149,27 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
       )
     })
   })
+
+  it('still dismisses when the queue exceeds the 1,000 edit cap (overLimit)', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const selection: Selection = { mode: 'filter' }
+    render(
+      <BulkActionBar
+        selection={selection}
+        total={1500}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[]}
+        currentFilters={{ ...noFilters, newMatches: true }}
+        filterNewMatchCount={1500}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+    const dismissBtn = await screen.findByRole('button', { name: /Dismiss new matches \(1,500\)/i })
+    fireEvent.click(dismissBtn)
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-dismiss', expect.objectContaining({ method: 'POST' }))
+    })
+  })
 })

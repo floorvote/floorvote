@@ -118,4 +118,19 @@ describe('POST /bills/bulk-dismiss', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ dismissed: 1002 })
   })
+
+  it('filter-mode dismiss with the newMatches chip OFF still touches only new matches', async () => {
+    // Empty filter = "all bills"; the resolve must still narrow to the new-match queue.
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: {} }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ dismissed: 2 }) // nm1 + nm2 only
+
+    const db = getDb(env.DB)
+    expect((await db.select().from(bills).where(eq(bills.id, manual)).get())!.triagedAt).toBeNull()
+    expect((await db.select().from(bills).where(eq(bills.id, prioritized)).get())!.triagedAt).toBe(MATCH)
+  })
 })

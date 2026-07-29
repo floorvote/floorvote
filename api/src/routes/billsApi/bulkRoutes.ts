@@ -340,6 +340,11 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const hasFilter = body.filter != null
     if (hasIds === hasFilter) return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
 
+    // Computed up front — the filter-mode resolve below intersects with newMatchWhere(min)
+    // so it never loads more than the new-match queue, even when the "New matches" chip
+    // (f.newMatches) is off but the dismiss action is still available.
+    const min = await getNewMatchMinRelevance(db)
+
     let billIds: string[]
     if (hasIds) {
       billIds = body.ids!
@@ -351,16 +356,15 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
-        newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? await getNewMatchMinRelevance(db) : 0,
+        newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? min : 0,
         cfParamMap: f.cf ?? {}, userId: currentUser.id,
       })
-      const rows = await db.select({ id: bills.id }).from(bills).where(where).all()
+      const rows = await db.select({ id: bills.id }).from(bills).where(and(where, newMatchWhere(min))).all()
       billIds = rows.map(r => r.id)
     }
 
     if (billIds.length === 0) return c.json({ dismissed: 0 })
 
-    const min = await getNewMatchMinRelevance(db)
     const now = nowDb()
 
     // Both statements below add a few params on top of the inArray list (SELECT:
