@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Provision a new tenant instance end-to-end (LegiScan path).
 #
-# Mirrors docs/spinning-up-instances.md — keep the two in sync. For the
-# OpenStates self-hosting path, see docs/self-hosting.md (not this script).
+# Mirrors docs/content/self-hosting/tenants.md — keep the two in sync. For the
+# OpenStates self-hosting path, see docs/content/self-hosting/index.md (not this script).
 #
 # Prerequisites:
 #   - wrangler authenticated: CLOUDFLARE_API_TOKEN exported (see ~/.zshrc), or `npx wrangler login`
