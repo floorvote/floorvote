@@ -24,4 +24,9 @@ describe('Wordmark', () => {
     render(<Wordmark dark />)
     expect(screen.getByText('Floor')).toHaveStyle({ color: color.white })
   })
+
+  it('renders the hemicycle mark to the left of the text', () => {
+    render(<Wordmark />)
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toBeInTheDocument()
+  })
 })
