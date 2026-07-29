@@ -6,6 +6,6 @@
   white-space: nowrap;
 }
 .fv-wordmark__floor { color: #1e3a5f; }
-.fv-wordmark__vote { color: #f59e0b; }
+.fv-wordmark__vote { color: #e8a33d; }
 /* Dark mode: lighten the navy so "Floor" stays legible on the dark nav. */
 .dark .fv-wordmark__floor { color: #93c5fd; }

@@ -166,7 +166,7 @@ export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'e
 
 export const WORDMARK = `
   <div style="margin-bottom:4px;font-size:18px;font-weight:800;letter-spacing:-0.02em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <span style="color:#1e3a5f;">${PRODUCT_NAME_WORDMARK.primary}</span><span style="color:#f59e0b;">${PRODUCT_NAME_WORDMARK.accent}</span>
+    <span style="color:#1e3a5f;">${PRODUCT_NAME_WORDMARK.primary}</span><span style="color:${color.accentAmber};">${PRODUCT_NAME_WORDMARK.accent}</span>
   </div>
 `
 
