@@ -28,6 +28,13 @@ describe('parseInvitees', () => {
     expect(parseInvitees('jane@example.com\tJane Doe')[0]).toMatchObject({ name: 'Jane Doe', email: 'jane@example.com' })
   })
 
+  it('parses a space-separated "Name email" line (no comma or tab)', () => {
+    expect(parseInvitees('Jane Doe jane@example.com')[0]).toMatchObject({
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+    })
+  })
+
   it('splits multiple lines and ignores blank lines and surrounding whitespace', () => {
     const out = parseInvitees('  jane@example.com  \n\n bob@example.com \n')
     expect(out.map(o => o.email)).toEqual(['jane@example.com', 'bob@example.com'])

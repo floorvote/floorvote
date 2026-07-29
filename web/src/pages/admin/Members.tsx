@@ -622,7 +622,7 @@ export function Members() {
               style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.5 }}
             />
             <div style={{ ...HELPER_TEXT, marginTop: 6 }}>
-              <HintText text={'One invitee per line. Lines can be:\n`jane@example.com`\n`Jane Doe, jane@example.com`\n`Jane Doe <jane@example.com>`\nYou can also copy and paste names and emails from a two-column spreadsheet.'} />
+              <HintText text={'One invitee per line. Lines can be:\n`jane@example.com`\n`Jane Doe jane@example.com`\n`Jane Doe, jane@example.com`\n`Jane Doe <jane@example.com>`\nYou can also copy and paste names and emails from a two-column spreadsheet.'} />
             </div>
           </div>
           <div style={{ marginBottom: 16 }}>
