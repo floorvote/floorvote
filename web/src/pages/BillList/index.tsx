@@ -24,6 +24,7 @@ import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
 import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
+import { searchWarnings } from '../../../../shared/searchLimits'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -100,6 +101,7 @@ export function BillList() {
     searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary,
     sortCol, sortDir, setSortCol, setSortDir,
   })
+  const searchWarn = searchWarnings(f.search)
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -442,6 +444,13 @@ export function BillList() {
         <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Bills</h1>
       </div>
 
+      {/* Search warnings — above the box so they don't collide with the filter
+          chips/dropdowns below. Composed from searchWarnings() (0, 1, or 2 lines). */}
+      {searchWarn.length > 0 && (
+        <div style={{ fontSize: fontSize.xs, color: color.textAmberWarning, marginBottom: 6 }}>
+          {searchWarn.join(' ')}
+        </div>
+      )}
       {/* Filter bar — order matches table columns: Status, Relevance, Positions, Priority, Tags */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6, alignItems: 'center' }}>
         <HoverTooltip

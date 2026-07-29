@@ -4,6 +4,9 @@ import {
   bills, memberVotes, officialPositions, comments, notes,
   customFieldDefinitions, billCustomFieldValues,
 } from '../../db/schema'
+import {
+  MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
+} from '../../../../shared/searchLimits'
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -47,57 +50,25 @@ export function multiFilter(column: Parameters<typeof eq>[0], values: string[]):
 // multi-state instances). OR-of-ANDs is logically complete for AND/OR queries.
 // See docs/superpowers/specs/2026-06-10-multi-bill-search-design.md.
 
-// Split on commas that fall outside double quotes.
-function splitSegments(q: string): string[] {
-  const segments: string[] = []
-  let current = ''
-  let inQuotes = false
-  for (const ch of q) {
-    if (ch === '"') {
-      inQuotes = !inQuotes
-      current += ch
-    } else if (ch === ',' && !inQuotes) {
-      segments.push(current)
-      current = ''
-    } else {
-      current += ch
-    }
-  }
-  segments.push(current)
-  return segments.map(s => s.trim()).filter(Boolean)
-}
-
-// Quoted spans become single phrase tokens; stray quote chars are stripped so
-// an unbalanced quote degrades to a best-effort token search.
-function tokenizeSegment(segment: string): string[] {
-  const tokens: string[] = []
-  const re = /"([^"]*)"|(\S+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(segment)) !== null) {
-    if (m[1] !== undefined) {
-      const text = m[1].trim()
-      if (text) tokens.push(text)
-    } else {
-      const text = m[2].replace(/"/g, '')
-      if (text) tokens.push(text)
-    }
-  }
-  return tokens
-}
-
 // One segment → one condition. Every segment also gets an OR'd despaced
 // bill-number match — "H 7358" despaces to "H7358" and hits the stored
 // "H 7358"; text segments despace to something no bill number contains, so
 // the clause is inert. No bill-number detection heuristic, by design.
-function buildSegmentCondition(segment: string): SQL | undefined {
-  const tokens = tokenizeSegment(segment)
+// `tokens` are already truncated (length guard) and budgeted (count guard) by
+// the caller — see buildSearchCondition.
+function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefined {
   if (tokens.length === 0) return undefined
 
+  // Despaced whole-segment bill-number match. Concatenating the segment can blow
+  // the 50-byte pattern limit; a despaced string past the budget can't match a
+  // real (short) bill number anyway, so drop the clause rather than truncate a
+  // meaningless space-stripped blob. Title/summary matching still runs in full.
   const despaced = segment.replace(/["\s]+/g, '')
-  const despacedCond = sql`replace(${bills.billNumber}, ' ', '') LIKE ${'%' + despaced + '%'}`
+  const despacedCond = byteLength(despaced) <= MAX_SEARCH_TERM_BYTES
+    ? sql`replace(${bills.billNumber}, ' ', '') LIKE ${'%' + despaced + '%'}`
+    : undefined
 
-  // Single token (word or phrase): same field set as the historical
-  // single-token and whole-quoted branches — title + bill number, no summary.
+  // Single token (word or phrase): title + bill number, no summary.
   if (tokens.length === 1) {
     return or(
       like(bills.title, `%${tokens[0]}%`),
@@ -106,15 +77,14 @@ function buildSegmentCondition(segment: string): SQL | undefined {
     )!
   }
 
-  // Multi-token: AND over tokens (title/summary/number, matching the
-  // historical multi-token branch), OR the whole-segment bill-number match.
+  // Multi-token: AND over tokens (title/summary/number), OR the despaced match.
   return or(
     and(...tokens.map(t =>
       or(
         like(bills.title, `%${t}%`),
         like(bills.tenantSummary, `%${t}%`),
         like(bills.billNumber, `%${t}%`),
-      )!
+      )!,
     ))!,
     despacedCond,
   )!
@@ -125,10 +95,25 @@ function buildSegmentCondition(segment: string): SQL | undefined {
 // are AND'd; quoted spans match as exact substrings. Returns undefined when
 // the query has no usable tokens (callers treat that as "no search filter").
 export function buildSearchCondition(q: string): SQL | undefined {
-  const conds = splitSegments(q)
-    .slice(0, 25) // D1 caps bound params at 100/query; ~3 per token. Searching the first 25 segments beats a 500.
-    .map(buildSegmentCondition)
-    .filter((c): c is SQL => c !== undefined)
+  // Two D1 limits to respect, both surfaced as 500s:
+  //  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
+  //    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
+  //  • bound params — >100 params per statement ("too many SQL variables"), and
+  //    each token emits up to 3 LIKE params. Guarded by MAX_SEARCH_TOKENS across
+  //    the whole query (a segment cap alone doesn't bound tokens within one
+  //    segment, e.g. a long pasted phrase). Segments are still capped first so a
+  //    comma-bomb can't consume the whole token budget on segment one.
+  let budget = MAX_SEARCH_TOKENS
+  const conds: SQL[] = []
+  for (const segment of splitSegments(q).slice(0, 25)) {
+    if (budget <= 0) break
+    const tokens = tokenizeSegment(segment)
+      .slice(0, budget)
+      .map(t => truncateToBytes(t, MAX_SEARCH_TERM_BYTES))
+    budget -= tokens.length
+    const cond = buildSegmentCondition(segment, tokens)
+    if (cond) conds.push(cond)
+  }
   if (conds.length === 0) return undefined
   return conds.length === 1 ? conds[0] : or(...conds)!
 }
