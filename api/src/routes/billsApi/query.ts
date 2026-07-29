@@ -22,6 +22,18 @@ export function newMatchWhere(minRelevance: number): SQL {
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
 export const FILTER_ANY = '__any__'
 
+// Membership test: the bill's JSON `tags` array contains any of `tagValues`.
+// Uses json_each rather than `tags LIKE '%"tag"%'` because D1 caps LIKE patterns
+// at 50 bytes — a tag name ≥47 chars pushed the old pattern over that limit and
+// 500'd the whole query ("LIKE or GLOB pattern too complex: SQLITE_ERROR").
+// json_each also matches array elements exactly, avoiding accidental substring
+// hits. Shared by the list filter (buildBillsWhere) and the facets WHERE so the
+// two can't drift. Caller must pass a non-empty array.
+export function tagMembership(tagValues: string[]): SQL {
+  const list = sql.join(tagValues.map(t => sql`${t}`), sql`, `)
+  return sql`EXISTS (SELECT 1 FROM json_each(${bills.tags}) je WHERE je.value IN (${list}))`
+}
+
 // Helper: single-value eq or multi-value inArray
 export function multiFilter(column: Parameters<typeof eq>[0], values: string[]): SQL | undefined {
   if (values.length === 0) return undefined
@@ -334,8 +346,7 @@ export async function buildBillsWhere(
     const realTags = p.tagFilters.filter(t => t !== FILTER_ANY)
     const parts: SQL[] = []
     if (hasAny) parts.push(sql`json_array_length(${bills.tags}) > 0`) // "Any" = has any tag
-    if (realTags.length === 1) parts.push(like(bills.tags, `%"${realTags[0]}"%`))
-    else if (realTags.length > 1) parts.push(or(...realTags.map(tag => like(bills.tags, `%"${tag}"%`)))!)
+    if (realTags.length > 0) parts.push(tagMembership(realTags))
     if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
   }
 

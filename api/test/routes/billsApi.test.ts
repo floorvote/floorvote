@@ -1284,6 +1284,42 @@ describe('GET /bills — multi-value filters', () => {
   })
 })
 
+describe('GET /bills — tag filter with long tag names', () => {
+  let token: string
+  // Regression: the TX tenant surfaced a tag whose name is long enough that the
+  // old `tags LIKE '%"<tag>"%'` filter produced a pattern over D1's 50-byte
+  // LIKE-pattern limit, 500ing both the list and facets. A tag ≥47 chars trips it.
+  const LONG_TAG = 'County Election Officials & Voter Registrars Duties' // 51 chars → 55-byte LIKE pattern
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const userId = await seedUser()
+    token = await seedSession(userId)
+    await seedBill({ billNumber: 'HB 1', tags: [LONG_TAG, 'Short'] })
+    await seedBill({ billNumber: 'SB 2', tags: ['Short'] })
+  })
+
+  it('filters the list by a tag longer than D1 50-byte LIKE limit', async () => {
+    const res = await SELF.fetch(`http://localhost/api/bills?tag=${encodeURIComponent(LONG_TAG)}`, {
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: Array<{ billNumber: string }> }
+    expect(body.bills.map(b => b.billNumber)).toEqual(['HB 1'])
+  })
+
+  it('computes facets when a long tag filter is active', async () => {
+    const res = await SELF.fetch(`http://localhost/api/bills/facets?tag=${encodeURIComponent(LONG_TAG)}`, {
+      headers: { Cookie: `session=${token}` },
+    })
+    expect(res.status).toBe(200)
+    // The tag facet excludes its own filter, so the long tag still reports its count.
+    const body = await res.json() as { tags: Record<string, number> }
+    expect(body.tags[LONG_TAG]).toBe(1)
+  })
+})
+
 describe('GET /bills/facets', () => {
   let token: string
   let adminId: string
