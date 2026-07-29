@@ -30,7 +30,7 @@ export const app = new Hono<{ Bindings: LsEnv }>()
 // pass through). Route-level error responses still win.
 app.onError(errorHandler)
 
-// Security response headers (CSP report-only, X-Frame-Options, nosniff). Set
+// Security response headers (CSP enforcing, X-Frame-Options, nosniff). Set
 // BEFORE next() so they merge onto the final response, including immutable
 // Workers-Assets responses. See shared/securityHeaders.ts.
 app.use('*', async (c, next) => {

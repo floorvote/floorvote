@@ -46,7 +46,7 @@ app.use('*', async (c, next) => {
   await next()
 })
 
-// Security response headers (CSP report-only, X-Frame-Options, nosniff). Set
+// Security response headers (CSP enforcing, X-Frame-Options, nosniff). Set
 // BEFORE next() so they merge onto the final response, including immutable
 // Workers-Assets responses. See shared/securityHeaders.ts.
 app.use('*', async (c, next) => {

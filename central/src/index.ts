@@ -59,9 +59,17 @@ export default {
 }
 
 /**
- * Named entrypoint reachable ONLY via same-account service bindings. Mirrors the
- * LegiScan env's TenantApi so self-hosters get the same auth model. See
- * central/src/index-legiscan.ts for the rationale.
+ * Named entrypoint reachable ONLY via same-account service bindings.
+ *
+ * NOTE: unlike the LegiScan env's TenantApi (central/src/index-legiscan.ts),
+ * this OpenStates entrypoint does NOT apply the tenant-surface allowlist
+ * (lib/tenantSurface) or the per-binding object-level authz (ctx.props.tenantId
+ * → x-caller-tenant guard in lib/callerTenant). It injects the admin secret and
+ * forwards every route, so any bound tenant can reach central's full surface —
+ * including other tenants' objects — with central's privileges. OpenStates is
+ * the experimental provider and not at feature parity; port the LegiScan
+ * entrypoint's allowlist + caller-tenant guard here before relying on this in a
+ * multi-tenant deployment.
  */
 export class TenantApi extends WorkerEntrypoint<Env> {
   fetch(req: Request): Response | Promise<Response> {
