@@ -29,6 +29,22 @@ export interface SeedCentralDbOptions {
 
 let _tmpFiles: string[] = []
 
+/**
+ * Classify a wrangler/D1 error message as a transient (retryable) blip.
+ *
+ * The original filter only matched `timed out`/`timeout`/`503`. That was too
+ * narrow: a `fetch failed` / `Network connection lost` / `429` / other 5xx blip
+ * fell through to the non-transient branch, threw, and — because the bills loop
+ * wrapped `flush()` in its per-bill try/catch — was silently swallowed, dropping
+ * a whole buffered batch. (That is exactly how 58 TX bills went missing from a
+ * "successful" seed.) Be liberal here: a false positive just costs a couple of
+ * retries before the error is (now loudly) re-thrown, whereas a false negative
+ * loses data.
+ */
+export function isTransientD1Error(msg: string): boolean {
+  return /timed out|timeout|\b(408|409|425|429|500|502|503|504)\b|fetch failed|network connection lost|econnreset|epipe|socket hang up|too many requests|internal error|service unavailable|could not reach|connection (refused|reset|closed)/i.test(msg)
+}
+
 export function runSql(
   statements: string[],
   opts: SeedCentralDbOptions,
@@ -48,7 +64,7 @@ export function runSql(
     } catch (err: unknown) {
       lastErr = err
       const msg = ((err as any).stderr?.toString() ?? '') + ((err as any).stdout?.toString() ?? '')
-      const transient = msg.includes('timed out') || msg.includes('timeout') || msg.includes('503')
+      const transient = isTransientD1Error(msg)
       if (transient && attempt < retries) {
         const delaySec = attempt * attempt * 10  // 10s, 40s, 90s — give CF time to recover
         console.error(`  [retry ${attempt}/${retries} — waiting ${delaySec}s] ${msg.split('\n')[0]}`)
@@ -143,30 +159,35 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
   let billCount = 0
   let errorCount = 0
   let pending: string[] = []
-  // Clear pending BEFORE executing so a failed flush doesn't accumulate with
-  // the next batch and cascade into ever-growing (and ever-more-likely-to-fail)
-  // wrangler calls.
+  // Clear `pending` only AFTER the SQL succeeds. runInChunks throws on a
+  // non-transient wrangler/D1 failure; keeping the buffer on throw means the
+  // batch is never silently lost, and the throw propagates to abort the seed.
   const flush = () => {
     if (pending.length === 0) return
-    const toFlush = pending
+    runInChunks(pending, opts, 50)
     pending = []
-    runInChunks(toFlush, opts, 50)
   }
 
   for (const name of billFiles) {
+    // The try guards ONLY per-bill parse / statement-building: a single malformed
+    // bill is skipped and counted, then we move on. flush() is deliberately OUTSIDE
+    // it — a wrangler/D1 failure must never be mistaken for a one-bill error and
+    // swallowed (that silently dropped whole batches; see the 58-bill TX gap). Let
+    // it throw and abort; seeding is idempotent (INSERT OR REPLACE), so a re-run
+    // recovers cleanly.
     try {
       const b = JSON.parse(decoder.decode(files[name])).bill
       if (!b) continue
-
       pending.push(...buildBillStatements(b, state, sessionId))
       billCount++
-      if (billCount % FLUSH_EVERY === 0) {
-        flush()
-        process.stdout.write(`\r  Bills: ${billCount}/${billFiles.length}`)
-      }
     } catch (err) {
       errorCount++
-      console.error(`\n  Error processing bill: ${err}`)
+      console.error(`\n  Error building statements for ${name}: ${err}`)
+      continue
+    }
+    if (billCount % FLUSH_EVERY === 0) {
+      flush()
+      process.stdout.write(`\r  Bills: ${billCount}/${billFiles.length}`)
     }
   }
   flush()
@@ -187,9 +208,8 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
   let votePending: string[] = []
   const flushVotes = () => {
     if (votePending.length === 0) return
-    const toFlush = votePending
+    runInChunks(votePending, opts, 50)
     votePending = []
-    runInChunks(toFlush, opts, 50)
   }
 
   const includeIndividual = opts.includeIndividualVotes ?? false
@@ -211,11 +231,12 @@ VALUES (${esc(`${rc.roll_call_id}-${v.people_id}`)}, ${num(rc.roll_call_id)}, ${
         }
       }
       voteCount++
-      if (voteCount % VOTE_FLUSH_EVERY === 0) {
-        flushVotes()
-        process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length}`)
-      }
-    } catch { /* skip malformed */ }
+    } catch { continue /* skip malformed vote file */ }
+    // flush OUTSIDE the try — a D1 failure here must abort, not be swallowed as "malformed".
+    if (voteCount % VOTE_FLUSH_EVERY === 0) {
+      flushVotes()
+      process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length}`)
+    }
   }
   flushVotes()
   console.log(`\r  ✓ ${voteCount} vote files seeded (roll_calls${includeIndividual ? ' + roll_call_votes' : ' only'})`)
@@ -262,11 +283,11 @@ VALUES (${esc(`${rc.roll_call_id}-${v.people_id}`)}, ${num(rc.roll_call_id)}, ${
         rowCount++
       }
       voteCount++
-      if (voteCount % FLUSH_EVERY === 0) {
-        flush()
-        process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length} (${rowCount} individual rows)`)
-      }
-    } catch { /* skip malformed */ }
+    } catch { continue /* skip malformed vote file */ }
+    if (voteCount % FLUSH_EVERY === 0) {
+      flush()
+      process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length} (${rowCount} individual rows)`)
+    }
   }
   flush()
   console.log(`\r  ✓ ${voteCount} vote files → ${rowCount} roll_call_votes rows`)
