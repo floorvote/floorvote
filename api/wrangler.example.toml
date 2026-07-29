@@ -25,6 +25,13 @@ BUILD_SHA = "'dev'"
 directory = "../web/dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
+# With not_found_handling = "single-page-application" and a compatibility_date of
+# 2025-04-01 or later, browser *navigations* to a path with no matching asset are
+# served index.html (the SPA) BEFORE the Worker runs — so opening an /api/* URL in
+# a new tab renders the app shell instead of hitting the API (client-side fetch()
+# still reaches the Worker). run_worker_first forces the Worker to run first for
+# API paths, so direct navigations (e.g. bill-text "Open in new tab") work.
+run_worker_first = ["/api/*"]
 
 # ── Local dev env ────────────────────────────────────────────────────────────
 [env.dev]
