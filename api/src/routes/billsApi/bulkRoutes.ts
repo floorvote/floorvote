@@ -359,9 +359,6 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     }
 
     if (billIds.length === 0) return c.json({ dismissed: 0 })
-    if (billIds.length > 1000) {
-      return c.json({ error: `Too many bills (${billIds.length}). Apply more filters to narrow down to 1,000 or fewer.` }, 400)
-    }
 
     const min = await getNewMatchMinRelevance(db)
     const now = nowDb()

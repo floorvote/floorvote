@@ -88,4 +88,38 @@ describe('POST /bills/bulk-dismiss', () => {
     }
     expect(triaged).toBe(120)
   })
+
+  it('filter-mode dismiss scopes to new matches and ignores other bills', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { newMatches: '1' } }),
+    })
+    expect(res.status).toBe(200)
+    // Only nm1 + nm2 qualify (prioritized is already triaged; manual is matchType manual).
+    expect(await res.json()).toEqual({ dismissed: 2 })
+
+    const db = getDb(env.DB)
+    expect((await db.select().from(bills).where(eq(bills.id, nm1)).get())!.triagedAt).not.toBeNull()
+    expect((await db.select().from(bills).where(eq(bills.id, manual)).get())!.triagedAt).toBeNull()
+  })
+
+  it('does not 400 when the tracked population exceeds 1,000 (clears the whole new-match subset)', async () => {
+    // 1,050 tracked non-new bills (already triaged) + 30 fresh new matches.
+    for (let i = 0; i < 1050; i++) {
+      await seedBill({ billNumber: `BULK ${i}`, matchType: 'keyword', newMatchAt: MATCH, triagedAt: MATCH, relevanceScore: 50 })
+    }
+    const fresh: string[] = []
+    for (let i = 0; i < 30; i++) {
+      fresh.push(await seedBill({ billNumber: `FRESH ${i}`, matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 50 }))
+    }
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { newMatches: '1' } }),
+    })
+    expect(res.status).toBe(200)
+    // nm1 + nm2 (from beforeEach) + the 30 fresh = 32.
+    expect(await res.json()).toEqual({ dismissed: 32 })
+  })
 })
