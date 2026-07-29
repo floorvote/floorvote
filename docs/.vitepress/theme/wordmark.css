@@ -1,11 +1,15 @@
 .fv-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.29em;
   font-family: 'Archivo', var(--vp-font-family-base);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.02em;
-  font-size: 18px;
+  font-size: 22px;
   white-space: nowrap;
 }
+.fv-wordmark__mark { height: 0.83em; width: auto; flex: 0 0 auto; transform: translateY(-2.5%); }
 .fv-wordmark__floor { color: #1e3a5f; }
-.fv-wordmark__vote { color: #f59e0b; }
+.fv-wordmark__vote { color: #e8a33d; }
 /* Dark mode: lighten the navy so "Floor" stays legible on the dark nav. */
 .dark .fv-wordmark__floor { color: #93c5fd; }

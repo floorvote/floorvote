@@ -359,7 +359,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       <div className="sidebar-brand" style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Wordmark dark size={fontSize.xl} />
+            <Wordmark dark size={fontSize.xxxl} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button

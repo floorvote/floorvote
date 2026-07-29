@@ -129,6 +129,7 @@ ${day.events.map(e => renderEventCard(e, appUrl)).join('')}`).join('')
 
   return renderEmailShell({
     instanceName: assocName,
+    appUrl,
     signalHtml: `${totalEvents} ${totalEvents === 1 ? 'event' : 'events'} in the week ahead`,
     dateLabel: range,
     bodyHtml: dayBlocks,
