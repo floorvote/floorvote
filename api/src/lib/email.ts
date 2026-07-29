@@ -164,11 +164,17 @@ export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'e
 }
 
 
-export const WORDMARK = `
-  <div style="margin-bottom:4px;font-size:18px;font-weight:800;letter-spacing:-0.02em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+export function wordmarkHtml(appUrl: string): string {
+  // The mark is a hosted PNG — email clients can't render inline SVG reliably.
+  // Inline <img> + text (not flexbox) for Outlook/Gmail safety. Weight 600 and
+  // the Honey accent match the app (the brand source of truth).
+  return `
+  <div style="margin-bottom:4px;font-size:18px;font-weight:600;letter-spacing:-0.02em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <img src="${appUrl}/email-icons/wordmark-mark.png" width="21" height="15" alt="" style="vertical-align:-2px;margin-right:5px;border:0;">
     <span style="color:#1e3a5f;">${PRODUCT_NAME_WORDMARK.primary}</span><span style="color:${color.accentAmber};">${PRODUCT_NAME_WORDMARK.accent}</span>
   </div>
 `
+}
 
 // Resolve the org's display name: config row → env.ASSOCIATION_NAME → undefined.
 // Mirrors the fallback order in routes/configApi.ts and weekAhead.ts.
@@ -279,6 +285,7 @@ export function renderMagicLinkEmail(input: {
   const buttonLabel = isInvite ? 'Accept your invitation' : `Sign in to ${PRODUCT_NAME}`
   const html = renderEmailShell({
     instanceName: input.instanceName,
+    appUrl: input.appUrl,
     signalHtml: isInvite ? 'You\'ve been invited' : `Sign in to ${PRODUCT_NAME}`,
     bodyHtml: `<p style="margin:0;font-size:${fontSize.base}px;line-height:1.6;color:${color.textSlate};">${bodyText}</p>`,
     ctaHtml: emailButton(input.magicLinkUrl, buttonLabel),
@@ -291,11 +298,12 @@ export async function sendFeedback(
   from: { email: string },
   message: string,
   pageUrl: string | undefined,
-  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'OPERATOR_CONTACT_EMAILS' | 'ASSOCIATION_NAME'>,
+  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'DEMO_MODE' | 'OPERATOR_CONTACT_EMAILS' | 'ASSOCIATION_NAME' | 'APP_URL'>,
   db?: AppDb,
 ): Promise<void> {
   const html = renderEmailShell({
     instanceName: (await resolveAssocName(env, db)) ?? '',
+    appUrl: env.APP_URL,
     signalHtml: 'New feedback',
     bodyHtml: `
         <p style="margin:0 0 8px;font-size:${fontSize.sm}px;color:${color.textMuted};">From: ${escHtml(from.email)}</p>

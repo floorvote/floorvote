@@ -151,6 +151,7 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
 
   return renderEmailShell({
     instanceName: input.assocName,
+    appUrl: input.appUrl,
     signalHtml: escHtml(signal),
     dateLabel: range,
     bodyHtml: `${newMatchSection}\n${cards}`,

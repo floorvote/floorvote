@@ -1,5 +1,5 @@
 import { color, fontSize, fontWeight, radius } from '../../../shared/tokens'
-import { WORDMARK } from './email'
+import { wordmarkHtml } from './email'
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -20,6 +20,8 @@ export interface EmailShellInput {
   ctaHtml?: string
   /** Footer inner HTML (links). Rendered centered with a top border. */
   footerHtml: string
+  /** Absolute app URL (e.g. https://e.floor.vote) — sources the masthead mark image. Required. */
+  appUrl: string
 }
 
 /**
@@ -45,7 +47,7 @@ export function renderEmailShell(input: EmailShellInput): string {
       <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
         <tbody>
           <tr><td style="padding:0 20px 18px;">
-            ${WORDMARK}
+            ${wordmarkHtml(input.appUrl)}
             ${instanceLine}
             <p style="margin:18px 0 0;font-size:${fontSize.xl}px;font-weight:${fontWeight.bold};color:${color.textPrimary};line-height:1.35;">${input.signalHtml}</p>
             ${dateLine}

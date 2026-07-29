@@ -169,6 +169,7 @@ export function renderMentionEmail(input: MentionEmailInput): string {
 
   return renderEmailShell({
     instanceName,
+    appUrl,
     signalHtml: intro,
     dateLabel: formatEmailDateTime(comment.createdAt),
     bodyHtml: `${card}${roleNote}${everyoneNote}`,
