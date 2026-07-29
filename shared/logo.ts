@@ -28,7 +28,7 @@ export const LOGO_MARK = {
 export const LOGO_LOCKUP = {
   markHeightEm: 0.83, // ~115% of Archivo cap-height
   gapEm: 0.29,
-  translateYEm: 0, // align-items:center is enough; no nudge
+  markShiftY: '-2.5%', // nudge the mark up 2.5% of its own height for optical balance
   letterSpacing: '-0.02em',
   weight: fontWeight.heavy, // 600 — the app is the brand source of truth
 } as const

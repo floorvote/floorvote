@@ -15,7 +15,7 @@ interface WordmarkProps {
  * + "Vote" (Honey). Mark geometry and lockup metrics come from the single source
  * `shared/logo.ts`; the two text parts from `shared/brand.ts`.
  */
-export function Wordmark({ dark = false, size = fontSize.xl }: WordmarkProps) {
+export function Wordmark({ dark = false, size = fontSize.xxxl }: WordmarkProps) {
   return (
     <span
       style={{
@@ -29,7 +29,7 @@ export function Wordmark({ dark = false, size = fontSize.xl }: WordmarkProps) {
         lineHeight: 1,
       }}
     >
-      <LogoMark style={{ height: `${LOGO_LOCKUP.markHeightEm}em`, width: 'auto', flex: '0 0 auto' }} />
+      <LogoMark style={{ height: `${LOGO_LOCKUP.markHeightEm}em`, width: 'auto', flex: '0 0 auto', transform: `translateY(${LOGO_LOCKUP.markShiftY})` }} />
       <span>
         <span style={{ color: dark ? color.white : color.billBadgeNavy }}>{PRODUCT_NAME_WORDMARK.primary}</span>
         <span style={{ color: color.accentAmber }}>{PRODUCT_NAME_WORDMARK.accent}</span>

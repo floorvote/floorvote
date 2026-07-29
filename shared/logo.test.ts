@@ -13,7 +13,7 @@ describe('LOGO_LOCKUP', () => {
   it('carries the locked metrics and weight 600', () => {
     expect(LOGO_LOCKUP.markHeightEm).toBe(0.83)
     expect(LOGO_LOCKUP.gapEm).toBe(0.29)
-    expect(LOGO_LOCKUP.translateYEm).toBe(0)
+    expect(LOGO_LOCKUP.markShiftY).toBe('-2.5%')
     expect(LOGO_LOCKUP.weight).toBe(600)
   })
 })
