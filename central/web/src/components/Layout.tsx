@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { Wordmark } from '../../../../shared/Wordmark'
 
 const NAV = [
   { to: '/', label: 'Overview' },
@@ -26,8 +27,11 @@ export default function Layout() {
         display: 'flex',
         flexDirection: 'column',
       }}>
-        <div style={{ fontWeight: 800, fontSize: 16, padding: '0 12px 16px', color: 'var(--accent)' }}>
-          Central Admin
+        <div style={{ padding: '0 12px 16px' }}>
+          <Wordmark size={20} />
+          <div style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted)', marginTop: 4 }}>
+            Central Admin
+          </div>
         </div>
         <nav style={{ flex: 1, overflowY: 'auto' }}>
           {NAV.map(n => (

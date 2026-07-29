@@ -946,6 +946,7 @@ export function BillList() {
           positionVocabulary={positionVocabulary}
           customFieldDefs={customFieldDefs.filter((fld): fld is typeof fld & { type: 'binary' | 'dropdown' } => fld.type === 'binary' || fld.type === 'dropdown')}
           currentFilters={f.currentFilters}
+          filterNewMatchCount={filterCounts.newMatchesCount}
           selectedBills={selectedBills}
           onClearSelection={handleClearSelection}
           onApplied={handleBulkApplied}

@@ -88,4 +88,49 @@ describe('POST /bills/bulk-dismiss', () => {
     }
     expect(triaged).toBe(120)
   })
+
+  it('filter-mode dismiss scopes to new matches and ignores other bills', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { newMatches: '1' } }),
+    })
+    expect(res.status).toBe(200)
+    // Only nm1 + nm2 qualify (prioritized is already triaged; manual is matchType manual).
+    expect(await res.json()).toEqual({ dismissed: 2 })
+
+    const db = getDb(env.DB)
+    expect((await db.select().from(bills).where(eq(bills.id, nm1)).get())!.triagedAt).not.toBeNull()
+    expect((await db.select().from(bills).where(eq(bills.id, manual)).get())!.triagedAt).toBeNull()
+  })
+
+  it('filter-mode dismiss clears a new-match queue larger than 1,000', async () => {
+    // Seed 1,000 fresh qualifying new matches; with nm1 + nm2 from beforeEach the
+    // qualifying queue is 1,002 — larger than the old 1,000-row dismiss guard.
+    for (let i = 0; i < 1000; i++) {
+      await seedBill({ billNumber: `BIGQ ${i}`, matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 50 })
+    }
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { newMatches: '1' } }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ dismissed: 1002 })
+  })
+
+  it('filter-mode dismiss with the newMatches chip OFF still touches only new matches', async () => {
+    // Empty filter = "all bills"; the resolve must still narrow to the new-match queue.
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: {} }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ dismissed: 2 }) // nm1 + nm2 only
+
+    const db = getDb(env.DB)
+    expect((await db.select().from(bills).where(eq(bills.id, manual)).get())!.triagedAt).toBeNull()
+    expect((await db.select().from(bills).where(eq(bills.id, prioritized)).get())!.triagedAt).toBe(MATCH)
+  })
 })

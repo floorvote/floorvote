@@ -42,6 +42,7 @@ type FilterState = {
   minRelevance: number
   myBills: boolean
   unvoted: boolean
+  newMatches: boolean
   cf: Record<string, string[]>
 }
 
@@ -59,6 +60,7 @@ function buildFilterBody(f: FilterState): Record<string, unknown> {
     ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
     ...(f.myBills && { myBills: '1' }),
     ...(f.unvoted && { unvoted: '1' }),
+    ...(f.newMatches && { newMatches: '1' }),
     ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
   }
 }
@@ -87,6 +89,9 @@ interface BulkActionBarProps {
   positionVocabulary: string[]
   customFieldDefs: CustomFieldDef[]
   currentFilters: FilterState
+  /** Accurate new-match queue size for the current filters (from /bills/facets). Used for the
+      filter-mode Dismiss count so it is correct and visible at any queue size. */
+  filterNewMatchCount: number
   selectedBills: Array<{
     id: string
     priority: string | null
@@ -189,7 +194,7 @@ function useSidebarWidth() {
 }
 
 export function BulkActionBar({
-  selection, total, positionVocabulary, customFieldDefs, currentFilters,
+  selection, total, positionVocabulary, customFieldDefs, currentFilters, filterNewMatchCount,
   selectedBills, onClearSelection, onApplied,
 }: BulkActionBarProps) {
   const sidebarWidth = useSidebarWidth()
@@ -201,7 +206,6 @@ export function BulkActionBar({
   const [error, setError] = useState<string | null>(null)
   const [visible, setVisible] = useState(false)
   const [nullMatchCount, setNullMatchCount] = useState<number | null>(null)
-  const [apiNewMatchCount, setApiNewMatchCount] = useState<number | null>(null)
   const prevModeRef = useRef(selection.mode)
 
   const count = selection.mode === 'ids' ? selection.ids.size
@@ -227,7 +231,7 @@ export function BulkActionBar({
   // Pre-populate from API (filter mode, count ≤ 1000)
   useEffect(() => {
     if (selection.mode !== 'filter') return
-    if (total > 1000) { setInitialValues(null); setNullMatchCount(null); setApiNewMatchCount(null); return }
+    if (total > 1000) { setInitialValues(null); setNullMatchCount(null); return }
 
     const params = new URLSearchParams()
     currentFilters.status.forEach(s => params.append('status', s))
@@ -240,17 +244,17 @@ export function BulkActionBar({
     if (currentFilters.minRelevance > 0) params.set('minRelevance', String(currentFilters.minRelevance))
     if (currentFilters.myBills) params.set('myBills', '1')
     if (currentFilters.unvoted) params.set('unvoted', '1')
+    if (currentFilters.newMatches) params.set('newMatches', '1')
     for (const [fieldId, values] of Object.entries(currentFilters.cf)) {
       values.forEach(v => params.append(`cf_${fieldId}`, v))
     }
 
-    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; nullMatchCount: number; newMatchCount: number }>(
+    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
       `/bills/bulk-values?${params}`
     ).then(data => {
       setInitialValues(computeInitialFromDistribution(data, data.count, customFieldDefs))
       setNullMatchCount(data.nullMatchCount)
-      setApiNewMatchCount(data.newMatchCount)
-    }).catch(() => { setInitialValues(null); setNullMatchCount(null); setApiNewMatchCount(null) })
+    }).catch(() => { setInitialValues(null); setNullMatchCount(null) })
   }, [selection.mode, total, currentFilters, customFieldDefs])
 
   // Reset staged values when selection changes mode
@@ -399,11 +403,11 @@ export function BulkActionBar({
   }
 
   const newMatchCount = selection.mode === 'filter'
-    ? (apiNewMatchCount ?? 0)
+    ? filterNewMatchCount
     : selectedBills.filter(b => b.matchType === 'keyword' && b.newMatchAt && !b.triagedAt).length
 
   async function handleDismissNewMatches() {
-    if (newMatchCount === 0 || applying || overLimit) return
+    if (newMatchCount === 0 || applying) return
     if (!window.confirm(`Dismiss ${newMatchCount.toLocaleString()} new match${newMatchCount !== 1 ? 'es' : ''} (mark reviewed, no priority)? They leave the New-matches queue but stay tracked.`)) return
     setApplying(true)
     setError(null)
