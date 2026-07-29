@@ -493,7 +493,7 @@ async function main() {
   }
 
   console.log('\n── Seeding central DB...')
-  const { billCount } = seedCentralDb(files, state, sessionId, seedOpts)
+  const { billCount, errorCount } = seedCentralDb(files, state, sessionId, seedOpts)
 
   // ── Optional: link to tenant ─────────────────────────────────────────────
   if (argTenant) {
@@ -517,6 +517,15 @@ async function main() {
   // The --from-dir path never prompts, so nothing else closes it, and the open
   // stdin handle would otherwise keep the event loop alive after we're done.
   rl.close()
+
+  // A batch-level D1 failure now aborts mid-run (via the throw in seedCentralDb),
+  // so reaching here means every batch committed. errorCount only counts per-bill
+  // build failures (malformed JSON) — still an incomplete seed, so exit non-zero
+  // instead of letting "✅ Done" imply a full seed.
+  if (errorCount > 0) {
+    console.error(`\n⚠️  ${errorCount} bill file(s) failed to build and were skipped — seed is INCOMPLETE. Re-run to retry (idempotent).`)
+    process.exit(1)
+  }
 }
 
 main().catch(err => {
