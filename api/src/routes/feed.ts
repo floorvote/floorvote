@@ -27,7 +27,17 @@ feedRouter.get('/', async (c) => {
   // users.deactivatedAt NULL, and isNull(NULL) is true — so those are unaffected.
   const baseWhere = scope === 'analyzed'
     ? and(ne(feedEvents.suppressed, true), isNotNull(bills.matchType), activeUser)
-    : and(ne(feedEvents.suppressed, true), activeUser)
+    : and(
+        ne(feedEvents.suppressed, true),
+        activeUser,
+        // Default feed hides passive provider updates on non-prioritized bills
+        // (mirrors filterPriorityEvents in shared/feedUtils). Filtering here — not
+        // only client-side — keeps pagination honest: a page of `limit` events no
+        // longer collapses to empty when a burst of passive events (a bulk seed's
+        // bill_matched flood, a mass status-change sweep) tops the feed. This is the
+        // same predicate the latestEventAt nav-dot query below already uses.
+        or(isNotNull(bills.priority), notInArray(feedEvents.type, [...PASSIVE_EVENT_TYPES])),
+      )
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
