@@ -873,7 +873,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             onClick={handleMembersClick}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: fontSize.sm, color: color.textSecondary, padding: 0 }}
           >
-            {stats?.memberCount ?? '—'} member{stats?.memberCount !== 1 ? 's' : ''}
+            {stats?.memberCount ?? '—'} Member{stats?.memberCount !== 1 ? 's' : ''}
           </button>
           {showMembersPopup && members !== null && (
             <MembersPopup members={members} currentUserId={user?.id} onClose={() => setShowMembersPopup(false)} />

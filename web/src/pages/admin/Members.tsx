@@ -206,7 +206,7 @@ export function Members() {
         setRolesLabel(`${titleCase(noun)} roles`)
         setAccountDeletionEnabled(configData.accountDeletionEnabled ?? false)
       })
-      .catch(() => setListError('Failed to load members.'))
+      .catch(() => setListError('Failed to load Members.'))
       .finally(() => setListLoading(false))
   }, [])
 
@@ -293,7 +293,7 @@ export function Members() {
     const isSelf = member.id === user?.id
     const deactivated = !member.deactivatedAt
     if (isSelf && deactivated) {
-      if (!window.confirm('Deactivate your own account?\n\nYou will be logged out immediately. An admin can reactivate your account later.')) return
+      if (!window.confirm('Deactivate your own account?\n\nYou will be logged out immediately. An Admin can reactivate your account later.')) return
     }
     try {
       await apiFetch(`/admin/members/${member.id}`, {
@@ -349,7 +349,7 @@ export function Members() {
       await apiFetch(`/admin/members/${member.id}`, { method: 'DELETE' })
       setMembers((prev) => prev.filter((m) => m.id !== member.id))
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Failed to delete member.')
+      alert(err instanceof ApiError ? err.message : 'Failed to delete Member.')
     }
   }
 
@@ -417,7 +417,7 @@ export function Members() {
   }
 
   async function handleDeleteRole(roleId: string) {
-    if (!window.confirm('Delete this role? It will be removed from all members.')) return
+    if (!window.confirm('Delete this role? It will be removed from all Members.')) return
     try {
       await apiFetch(`/admin/roles/${roleId}`, { method: 'DELETE' })
       setOrgRoles(prev => prev.filter(r => r.id !== roleId))
@@ -489,7 +489,7 @@ export function Members() {
     return displayName(m).toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
   }
 
-  type MenuItem = { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void; tooltip?: string }
+  type MenuItem = { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void; tooltip?: string; warn?: boolean }
 
   function buildMenuItems(member: Member): MenuItem[] {
     const isSelf = member.id === user?.id
@@ -506,6 +506,7 @@ export function Members() {
     items.push({
       kind: 'action',
       label: 'Login activity',
+      warn: member.loginTrouble,
       onClick: () => { close(); openActivity(member) },
     })
 
@@ -541,7 +542,7 @@ export function Members() {
           danger: true,
           disabled: demoLocked,
           onClick: () => { close(); handleDeactivateToggle(member) },
-          tooltip: 'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An admin can reactivate it later.',
+          tooltip: 'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An Admin can reactivate it later.',
         })
       }
     }
@@ -595,8 +596,9 @@ export function Members() {
     display: 'inline-flex', alignItems: 'center',
     whiteSpace: 'nowrap', cursor: 'pointer',
   }
-  const chipSystem = (isAdmin: boolean): React.CSSProperties => isAdmin
-    ? ADMIN_BADGE
+  const chipSystem = (role: string): React.CSSProperties =>
+    role === 'owner' ? { ...ADMIN_BADGE, border: `1px solid ${color.brandViolet}` }
+    : role === 'admin' ? ADMIN_BADGE
     : { ...ADMIN_BADGE, color: color.textSlate500, background: color.surfaceMuted }
 
   return (
@@ -609,7 +611,7 @@ export function Members() {
       )}
       {/* Invite form card */}
       <div style={{ ...CARD, padding: 24, marginBottom: 24 }}>
-        <div style={CARD_TITLE}>Invite new members</div>
+        <div style={CARD_TITLE}>Invite new Members</div>
         <form onSubmit={demoLocked ? (e) => e.preventDefault() : handleInvite}>
           <div style={{ marginBottom: 16 }}>
             <label htmlFor="invite-text" style={FORM_LABEL}>Invitees</label>
@@ -648,7 +650,7 @@ export function Members() {
               <div style={{ color: color.textSecondary }}>
                 {[
                   `${inviteResult.summary.invited} invited`,
-                  inviteResult.summary.exists ? `${inviteResult.summary.exists} already members` : null,
+                  inviteResult.summary.exists ? `${inviteResult.summary.exists} already Members` : null,
                   inviteResult.summary.duplicate ? `${inviteResult.summary.duplicate} duplicates` : null,
                   inviteResult.summary.invalid ? `${inviteResult.summary.invalid} invalid` : null,
                 ].filter(Boolean).join(' · ')}
@@ -668,7 +670,7 @@ export function Members() {
       <div style={{ ...CARD, padding: 24, marginBottom: 24 }}>
         <div style={CARD_TITLE}>{rolesLabel}</div>
         <div style={{ ...HELPER_TEXT, marginTop: 4, marginBottom: 14 }}>
-          Assign roles to members (e.g., by committee, office, or region). In comments, any user can @-mention a role to notify everyone with that particular role. Role labels also appear as badges when you hover a commenter's name.
+          Assign roles to Members (e.g., by committee, office, or region). In comments, any user can @-mention a role to notify everyone with that particular role. Role labels also appear as badges when you hover a commenter's name.
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {orgRoles.map(role => (
@@ -754,7 +756,7 @@ export function Members() {
       {/* Members table card */}
       <div ref={cardRef} style={{ ...CARD, padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={CARD_TITLE}>All members</div>
+          <div style={CARD_TITLE}>All Members</div>
           <button
             onClick={() => { setUnknownOpen(true); loadUnknownAttempts() }}
             style={{
@@ -769,45 +771,48 @@ export function Members() {
             Unknown login attempts
           </button>
         </div>
-        <input
-          type="text"
-          value={memberSearch}
-          onChange={(e) => setMemberSearch(e.target.value)}
-          placeholder="Search members by name or email…"
-          style={{ ...inputStyle, maxWidth: 320, marginTop: 12 }}
-        />
-        {!listLoading && !listError && members.some(m => m.loginTrouble) && (() => {
-          const loginTroubleCount = members.filter(m => m.loginTrouble).length
-          return (
-            <button
-              onClick={() => setTroubleFilter(v => !v)}
-              aria-pressed={troubleFilter}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                marginTop: 12,
-                padding: '6px 12px',
-                borderRadius: radius.md,
-                border: `1px solid ${color.textAmberDark}`,
-                background: troubleFilter ? color.textAmberDark : color.bgWarnSoft,
-                color: troubleFilter ? color.white : color.textAmberDark,
-                fontSize: fontSize.sm,
-                fontWeight: fontWeight.semibold,
-                cursor: 'pointer',
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
-              {loginTroubleCount} {loginTroubleCount === 1 ? 'member' : 'members'} with login trouble
-            </button>
-          )
-        })()}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+          <input
+            type="text"
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            placeholder="Search Members by name or email…"
+            style={{ ...inputStyle, maxWidth: 320 }}
+          />
+          {!listLoading && !listError && members.some(m => m.loginTrouble) && (() => {
+            const loginTroubleCount = members.filter(m => m.loginTrouble).length
+            return (
+              <button
+                onClick={() => setTroubleFilter(v => !v)}
+                aria-pressed={troubleFilter}
+                title="These Members have requested several login links without a recent successful sign-in. The warning clears on its own once they sign in."
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  flexShrink: 0,
+                  padding: '6px 12px',
+                  borderRadius: radius.md,
+                  border: `1px solid ${color.textAmberDark}`,
+                  background: troubleFilter ? color.textAmberDark : color.bgWarnSoft,
+                  color: troubleFilter ? color.white : color.textAmberDark,
+                  fontSize: fontSize.sm,
+                  fontWeight: fontWeight.semibold,
+                  cursor: 'pointer',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
+                {loginTroubleCount} {loginTroubleCount === 1 ? 'Member' : 'Members'} with login trouble
+              </button>
+            )
+          })()}
+        </div>
         {!listLoading && !listError && (
           <div style={{ ...HELPER_TEXT, marginTop: 14, marginBottom: 8 }}>
             {(() => {
               const shown = members.filter(memberMatchesFilters).length
               const filtering = memberSearch.trim() !== '' || troubleFilter
-              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`
+              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'Member' : 'Members'}`
             })()}
           </div>
         )}
@@ -825,7 +830,7 @@ export function Members() {
                     <InfoTooltip
                       align="center"
                       maxWidth={320}
-                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other owners and delete all user interactions.</>}
+                      text={<>All Members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, see how each Member voted, manage custom fields, manage Members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other Owners and delete all user interactions.</>}
                     />
                   </span>
                 </th>
@@ -856,8 +861,8 @@ export function Members() {
                         <span style={{ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, color: color.textPrimary }}>{member.name}</span>
                         {isSelf && (
                           <span style={{
-                            fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.brandViolet,
-                            background: color.bgInfo, borderRadius: radius.sm, padding: '1px 5px',
+                            fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.countChipText,
+                            background: color.countChipBg, borderRadius: radius.sm, padding: '1px 5px',
                             letterSpacing: '0.05em', flexShrink: 0,
                           }}>ME</span>
                         )}
@@ -877,7 +882,7 @@ export function Members() {
                       </a>
                     </td>
                     <td data-label="Role" style={{ padding: '10px 12px', color: color.textSlate500 }}>
-                      <span style={chipSystem(member.role === 'admin' || member.role === 'owner')}>
+                      <span style={chipSystem(member.role)}>
                         {member.role === 'owner' ? 'Owner' : member.role === 'admin' ? 'Admin' : 'Member'}
                       </span>
                     </td>
@@ -994,25 +999,6 @@ export function Members() {
                     </td>
                     <td data-label="Actions" style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        {member.loginTrouble && (
-                          <button
-                            onClick={() => openActivity(member)}
-                            title="Login trouble — multiple login-link requests with no recent sign-in. Click to view login activity."
-                            aria-label="Login trouble — click to view login activity"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              background: 'none',
-                              border: 'none',
-                              padding: 4,
-                              margin: 0,
-                              cursor: 'pointer',
-                              color: color.textAmberDark,
-                            }}
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
-                          </button>
-                        )}
                         {hasAnyAction ? (
                           <button
                             ref={(el) => { actionsTriggerRefs.current[member.id] = el }}
@@ -1034,6 +1020,25 @@ export function Members() {
                           >···</button>
                         ) : (
                           <span style={{ fontWeight: fontWeight.semibold, letterSpacing: '0.1em', padding: '4px 8px', color: color.borderStrong, fontSize: fontSize.sm }}>···</span>
+                        )}
+                        {member.loginTrouble && (
+                          <button
+                            onClick={() => openActivity(member)}
+                            title="Login trouble — several login-link requests with no recent successful sign-in. Clears on its own once they sign in. Click to view login activity."
+                            aria-label="Login trouble — click to view login activity"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              background: 'none',
+                              border: 'none',
+                              padding: 4,
+                              margin: 0,
+                              cursor: 'pointer',
+                              color: color.textAmberDark,
+                            }}
+                          >
+                            <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
+                          </button>
                         )}
                       </div>
                     </td>
@@ -1064,7 +1069,7 @@ export function Members() {
                   Allow accounts to be permanently deleted.
                 </div>
                 <div>
-                  When on, owners and admins can delete accounts and members can delete their own accounts — permanently removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless the account is reactivated. <strong>Only owners can adjust this setting.</strong>
+                  When on, Owners and Admins can delete accounts and Members can delete their own accounts — permanently removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless the account is reactivated. <strong>Only Owners can adjust this setting.</strong>
                 </div>
               </div>
               <label
@@ -1168,7 +1173,10 @@ export function Members() {
                     disabled={item.disabled}
                     onClick={item.disabled ? undefined : item.onClick}
                     style={{
-                      display: 'block',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
                       width: '100%',
                       textAlign: 'left',
                       background: 'none',
@@ -1183,7 +1191,15 @@ export function Members() {
                     onFocus={item.disabled ? undefined : e => (e.currentTarget.style.background = item.danger ? color.bgDangerSoft : color.surfaceSubtle)}
                     onBlur={item.disabled ? undefined : e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {item.warn && (
+                      <span
+                        className="material-symbols-outlined"
+                        aria-hidden="true"
+                        title="Login trouble — several login-link requests with no recent successful sign-in. Clears on its own once they sign in."
+                        style={{ fontSize: fontSize.base, color: color.textAmberDark, flexShrink: 0 }}
+                      >warning</span>
+                    )}
                   </button>
                 )
                 // The dropdown is position: fixed and overflow-clipped, so the

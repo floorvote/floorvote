@@ -85,22 +85,20 @@ describe('Members "···" actions menu', () => {
     const actionsButton = await screen.findByRole('button', { name: '···' })
     fireEvent.click(actionsButton)
 
-    const deactivateItem = await screen.findByText('Deactivate')
+    const deactivateItem = (await screen.findByText('Deactivate')).closest('button')!
     expect(deactivateItem).toHaveStyle({ color: color.textErrorRed })
 
     // "Permanently delete" also renders (accountDeletionEnabled is true), confirming the
     // separator that used to sit between Deactivate and Delete is gone: every child of the
     // menu panel is a labeled item, never an empty divider.
-    const deleteItem = await screen.findByText('Permanently delete')
+    const deleteItem = (await screen.findByText('Permanently delete')).closest('button')!
     expect(deleteItem).toHaveStyle({ color: color.textErrorRed })
 
-    // Derive the panel via "Login activity" rather than deactivateItem: Deactivate
-    // and Permanently delete now wrap their label in a HoverTooltip (Task 10), which
-    // nests an extra element between the item and the panel, so their own
-    // parentElement is the tooltip wrapper, not the panel. "Login activity" has no
-    // tooltip and remains a direct child of the panel.
+    // The menu panel is the role="menu" container; climb to it from any item.
+    // (Item labels are wrapped in a <span>, and Deactivate/Permanently delete
+    // additionally wrap in a HoverTooltip, so a direct parentElement is unreliable.)
     const loginActivityItem = await screen.findByText('Login activity')
-    const menuPanel = loginActivityItem.parentElement!
+    const menuPanel = loginActivityItem.closest('[role="menu"]')!
     const children = Array.from(menuPanel.children) as HTMLElement[]
     expect(children.length).toBeGreaterThan(1)
     expect(children.every(c => (c.textContent ?? '').trim().length > 0)).toBe(true)
@@ -153,7 +151,7 @@ describe('Members "···" actions menu', () => {
     fireEvent.pointerEnter(deactivateItem, { pointerType: 'mouse' })
 
     expect(await screen.findByText(
-      'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An admin can reactivate it later.',
+      'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An Admin can reactivate it later.',
     )).toBeInTheDocument()
   })
 

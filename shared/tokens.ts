@@ -32,7 +32,7 @@ export const color = {
   textAmberWarning:  '#854d0e', // warning banner text
   textVioletChip:    '#5b21b6', // violet chip text
   textTealSenate:    '#0f766e', // Senate chamber chip text
-  roleMentionText:   '#4338ca', // role / @everyone mention pill text (indigo — the "people" identity, distinct from topic-tag blue)
+  roleMentionText:   '#3a54cb', // role / @everyone mention pill text (indigo-blue ~229°, moved off the violet account-role badge; still clear of the topic-tag blue)
 
   // --- Brand, link & accent (fills / named chrome colors) ---
   linkBlue:          '#2563eb',
@@ -57,7 +57,7 @@ export const color = {
   bgLoginPage:       '#f0f4f8', // login full-bleed background
   bgInfo:            '#eff6ff', // absorbs #ebf3ff, #eef2ff — selection / unread / info
   bgBlueChip:        '#dbeafe', // H214 blue chip fill (topic tags, party 'D', analysis) — absorbs the old #e0f2fe (H204 cyan-lean)
-  roleMentionBg:     '#e4e6fb', // role / @everyone mention pill fill (indigo) — a distinct hue from topic-tag blue
+  roleMentionBg:     '#e3e8fc', // role / @everyone mention pill fill (~229° to match roleMentionText; still distinct from the topic-tag blue fill)
   bgSuccess:         '#f0fdf4', // green surface
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)

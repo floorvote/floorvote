@@ -221,8 +221,8 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
           {hasFilter && <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.normal, letterSpacing: 0, textTransform: 'none', marginLeft: 4, fontStyle: 'italic' }}>filtered</span>}
         </div>
         <InfoTooltip text={canVote === false
-          ? "All members see aggregate counts; admins see individual votes. Your account is set to non-voting."
-          : "All members see aggregate counts; admins see individual votes."
+          ? "All Members see aggregate counts; Admins see individual votes. Your account is set to non-voting."
+          : "All Members see aggregate counts; Admins see individual votes."
         } />
       </div>
       <Bar count={support} total={total} color={color.voteSupport} label="Support" voteKey="support" myVote={myVote} onVote={onVote} />
@@ -272,7 +272,7 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
                 })()}
                 {filteredVotes.length === 0 && activeRoleIds.length > 0 ? (
                   <div style={{ fontSize: fontSize.sm, color: color.textMuted, padding: '8px 0', textAlign: 'center' }}>
-                    No votes from members with selected role{activeRoleIds.length > 1 ? 's' : ''}
+                    No votes from Members with selected role{activeRoleIds.length > 1 ? 's' : ''}
                   </div>
                 ) : (
                   <div style={{ maxHeight: 320, overflowY: 'auto' }}>

@@ -151,7 +151,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
               }}
             >
               <span style={{ fontWeight: fontWeight.medium }}>everyone</span>
-              <span style={{ color: color.textMuted, marginLeft: 6 }}>Notify all members</span>
+              <span style={{ color: color.textMuted, marginLeft: 6 }}>Notify all Members</span>
               <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
                 {everyone.memberCount} {everyone.memberCount === 1 ? 'user' : 'users'}
               </span>

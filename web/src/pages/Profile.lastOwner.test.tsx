@@ -24,7 +24,7 @@ vi.mock('../context/AuthContext', () => ({
   }),
 }))
 
-const LAST_OWNER_BLOCK = "You're the only owner. Make another member an owner before you can demote, deactivate, or delete your account."
+const LAST_OWNER_BLOCK = "You're the only Owner. Make another Member an Owner before you can demote, deactivate, or delete your account."
 
 function renderProfile() {
   const value = { config: { orgNoun: 'coalition', accountDeletionEnabled: true } as AppConfig, multiState: false, loading: false }
@@ -61,7 +61,7 @@ describe('Profile last-owner gating', () => {
     expect(blockingTexts).toHaveLength(3)
 
     // Normal descriptions are replaced, not merely supplemented.
-    expect(screen.queryByText(/An admin can reactivate your account/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/An Admin can reactivate your account/)).not.toBeInTheDocument()
     expect(screen.queryByText(/This cannot be undone\./)).not.toBeInTheDocument()
   })
 
@@ -78,7 +78,7 @@ describe('Profile last-owner gating', () => {
     expect(del).not.toBeDisabled()
 
     expect(screen.queryByText(LAST_OWNER_BLOCK)).not.toBeInTheDocument()
-    expect(screen.getByText(/An admin can reactivate your account/)).toBeInTheDocument()
+    expect(screen.getByText(/An Admin can reactivate your account/)).toBeInTheDocument()
     expect(screen.getByText(/This cannot be undone\./)).toBeInTheDocument()
   })
 })

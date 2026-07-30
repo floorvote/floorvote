@@ -269,7 +269,7 @@ export default function Adoption() {
       </div>
       {excludeInternal && (
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 24 }}>
-          Membership and member-engagement charts exclude activity from {excludeDomains.length > 0 ? excludeDomains.join(', ') : '(no domains set)'}. Applies to data collected after the domains were saved; earlier points show full totals. Other metric groups are unaffected.
+          Membership and Member-engagement charts exclude activity from {excludeDomains.length > 0 ? excludeDomains.join(', ') : '(no domains set)'}. Applies to data collected after the domains were saved; earlier points show full totals. Other metric groups are unaffected.
         </div>
       )}
 

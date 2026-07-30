@@ -100,7 +100,10 @@ describe('Members login-trouble indicator', () => {
     )
 
     const row = (await screen.findByText('Trouble Member')).closest('tr')!
-    const caution = within(row).getByTitle(/login trouble/i)
+    // Two caution affordances now render on a trouble row: the informational icon
+    // on the Last-active cell and the clickable button in the Actions cell. Target
+    // the clickable one (a button) that opens login activity.
+    const caution = within(row).getByRole('button', { name: /login trouble/i })
     expect(caution).toBeInTheDocument()
 
     // Clean member's row must NOT have a caution control.
