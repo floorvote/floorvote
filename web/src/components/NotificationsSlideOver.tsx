@@ -351,7 +351,7 @@ export function NotificationsSlideOver(
           zIndex: 9000,
         }}>
           <div style={{ fontSize: fontSize.sm, color: color.textMuted, fontWeight: fontWeight.semibold, textTransform: 'uppercase', marginBottom: 4 }}>
-            Users with this role
+            Members with this role
           </div>
           {roleTooltip.members.map((mb, i) => (
             <div key={i}>

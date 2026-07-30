@@ -226,7 +226,7 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
                 <>
                   {tooltip.roleMembers && tooltip.roleMembers.length > 0 ? (
                     <>
-                      <div style={{ fontSize: fontSize.sm, color: color.textMuted, fontWeight: fontWeight.semibold, textTransform: 'uppercase', marginBottom: 4 }}>Users with this role</div>
+                      <div style={{ fontSize: fontSize.sm, color: color.textMuted, fontWeight: fontWeight.semibold, textTransform: 'uppercase', marginBottom: 4 }}>Members with this role</div>
                       {tooltip.roleMembers.map((m, i) => (
                         <div key={i}>
                           <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{m.name}</span>
@@ -237,7 +237,7 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
                       ))}
                     </>
                   ) : (
-                    <div style={{ color: color.textMuted, fontStyle: 'italic' }}>No users with this role</div>
+                    <div style={{ color: color.textMuted, fontStyle: 'italic' }}>No members with this role</div>
                   )}
                 </>
               )}

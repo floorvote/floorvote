@@ -116,12 +116,17 @@ export const ROLE_CHIP_X: React.CSSProperties = {
   marginLeft: 1,
 }
 
-// Purple pill for admin/owner-only indicators
+// Violet pill for the account-role badge (Owner / Admin). Owner additionally gets
+// a solid violet ring (see chipSystem in Members.tsx) so it reads a step above
+// Admin; the base border is transparent so Admin and Member keep an identical box
+// size. Custom "Team roles" chips use the bluer indigo ROLE_CHIP palette — a
+// distinct hue — so the two never read as the same thing in the adjacent column.
 export const ADMIN_BADGE = {
   fontSize: fontSize.xs,
   fontWeight: fontWeight.semibold,
   color: color.brandViolet,
   background: color.bgVioletChip,
+  border: '1px solid transparent',
   borderRadius: radius.pill,
   padding: '3px 9px',
   display: 'inline-block' as const,

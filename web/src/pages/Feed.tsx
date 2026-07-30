@@ -41,7 +41,7 @@ export function feedLoader(): Promise<FeedResponse> {
 type ScopeMode = 'default' | 'analyzed'
 
 const SCOPE_OPTIONS: ScopeSelectOption<ScopeMode>[] = [
-  { value: 'default',  label: 'Default feed',            description: 'Prioritized bills and other bills with user activity' },
+  { value: 'default',  label: 'Default feed',            description: 'Prioritized bills and other bills with member activity' },
   { value: 'analyzed', label: 'All fully analyzed bills', description: 'All bills that match your keywords or have been manually added' },
 ]
 

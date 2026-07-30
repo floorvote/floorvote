@@ -568,8 +568,8 @@ export function Profile() {
               {gated
                 ? lastOwnerBlock
                 : demoteTarget === 'admin'
-                  ? 'Immediately lose your Owner permissions. An Owner can restore your role later.'
-                  : 'Immediately lose your Admin permissions. An Owner or Admin can restore your role later.'}
+                  ? 'Immediately lose your owner permissions. An owner can restore your role later.'
+                  : 'Immediately lose your admin permissions. An owner or admin can restore your role later.'}
             </span>
           </div>
         )}

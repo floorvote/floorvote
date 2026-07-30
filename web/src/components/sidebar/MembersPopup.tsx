@@ -44,6 +44,7 @@ export function MembersPopup({ members, currentUserId, onClose }: { members: Mem
                 fontSize: fontSize.xs, fontWeight: fontWeight.semibold,
                 color: m.role === 'admin' || m.role === 'owner' ? color.brandViolet : color.textSlate500,
                 background: m.role === 'admin' || m.role === 'owner' ? color.bgVioletChip : color.surfaceMuted,
+                border: m.role === 'owner' ? `1px solid ${color.brandViolet}` : '1px solid transparent',
                 borderRadius: radius.pill, padding: '2px 8px',
                 whiteSpace: 'nowrap', lineHeight: 1.4,
               }}>
@@ -55,7 +56,7 @@ export function MembersPopup({ members, currentUserId, onClose }: { members: Mem
             {m.roles.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 5 }}>
                 {sortRoles(m.roles).map(r => (
-                  <span key={r.id} style={{ fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.tagTextBlue, background: color.bgBlueChip, borderRadius: radius.pill, padding: '2px 7px', whiteSpace: 'nowrap' }}>
+                  <span key={r.id} style={{ fontSize: fontSize.xs, fontWeight: fontWeight.medium, color: color.roleMentionText, background: color.roleMentionBg, borderRadius: radius.pill, padding: '2px 7px', whiteSpace: 'nowrap' }}>
                     {r.name}
                   </span>
                 ))}

@@ -1227,10 +1227,10 @@ export function Config() {
         {(user?.role === 'admin' || user?.role === 'owner') && (
           <div style={actionRowStyle}>
             <button onClick={handleClearInteractions} disabled={clearingInteractions || demoLocked || user?.role !== 'owner'} style={actionBtnRed(clearingInteractions || demoLocked || user?.role !== 'owner')}>
-              {clearingInteractions ? 'Clearing…' : 'Clear all user interactions'}
+              {clearingInteractions ? 'Clearing…' : 'Clear all member interactions'}
             </button>
             <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Users, bills, and AI summaries are kept. <strong>Only Owners can do this. It cannot be undone.</strong>
+              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Members, bills, and AI summaries are kept. <strong>Only owners can do this. It cannot be undone.</strong>
             </span>
             {clearResult && <span style={{ fontSize: fontSize.sm, color: clearResult === 'Cleared.' ? color.textSuccess : color.textErrorRed, flexShrink: 0 }}>{clearResult}</span>}
           </div>

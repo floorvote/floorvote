@@ -154,7 +154,7 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send a digest of recent bill activity to users</div>
+                  <div style={boxTitle}>Send a digest of recent bill activity to members</div>
                   <div style={boxDesc}>
                     Email members a daily or weekly summary of recent activity on priority bills. Admins and owners also get a list of new bills matching your keywords awaiting a priority decision. Members can opt out individually on their Account page.
                   </div>
@@ -212,7 +212,7 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send a digest of upcoming hearings and events to users</div>
+                  <div style={boxTitle}>Send a digest of upcoming hearings and events to members</div>
                   <div style={boxDesc}>
                     Email members a weekly preview of upcoming hearings and events. Members can opt out individually on their Account page.
                   </div>
@@ -246,7 +246,7 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send @-mention emails to users</div>
+                  <div style={boxTitle}>Send @-mention emails to members</div>
                   <div style={boxDesc}>
                     Email members when they (or a role they are assigned) are @-mentioned in a comment.
                   </div>

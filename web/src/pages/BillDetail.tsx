@@ -1166,7 +1166,7 @@ export function BillDetail() {
           const regularCoSponsors = bill.coSponsors.filter(s => !s.primary)
           const totalCoSponsors = regularCoSponsors.length
           return (
-            <div id="section-sponsors" style={{ fontSize: fontSize.sm, color: color.textSecondary, display: 'flex', alignItems: 'baseline', flexWrap: 'nowrap', overflow: 'hidden', minWidth: 0, marginBottom: 0, boxShadow: flashedSectionId === 'section-sponsors' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease', borderRadius: radius.sm }}>
+            <div id="section-sponsors" style={{ fontSize: fontSize.sm, color: color.textSecondary, display: 'flex', alignItems: 'baseline', flexWrap: showAllCoSponsors ? 'wrap' : 'nowrap', overflow: showAllCoSponsors ? 'visible' : 'hidden', minWidth: 0, marginBottom: 0, boxShadow: flashedSectionId === 'section-sponsors' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease', borderRadius: radius.sm }}>
               <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <span style={{ color: color.textMuted, marginRight: 4 }}>{(primaryCoSponsors.length > 0 || totalCoSponsors > 0) ? 'Sponsors:' : 'Sponsor:'}</span>
                 {bill.sponsor && <SponsorLink name={bill.sponsor} url={bill.sponsorUrl ?? null} party={bill.sponsorParty ?? null} />}
@@ -1180,7 +1180,7 @@ export function BillDetail() {
               {totalCoSponsors > 0 && (
                 <>
                   <span style={{ color: color.textMuted, whiteSpace: 'nowrap', flexShrink: 0, margin: '0 4px 0 16px' }}>Co-sponsors:</span>
-                  <span style={{ overflow: 'hidden', textOverflow: showAllCoSponsors ? undefined : 'ellipsis', whiteSpace: showAllCoSponsors ? 'normal' : 'nowrap', flex: 1, minWidth: 0 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: showAllCoSponsors ? undefined : 'ellipsis', whiteSpace: showAllCoSponsors ? 'normal' : 'nowrap', flex: showAllCoSponsors ? '1 1 100%' : '1 1 0%', minWidth: 0 }}>
                     {(showAllCoSponsors ? regularCoSponsors : regularCoSponsors.slice(0, 5)).map((s, i) => (
                       <span key={i}>
                         {i > 0 && <span>, </span>}
