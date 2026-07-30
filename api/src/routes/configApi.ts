@@ -118,6 +118,13 @@ configRouter.get('/', async (c) => {
     }
   }
 
+  // Whether the UI should show per-bill state labels. Coverage-driven, with "*"
+  // (wildcard / monitor-all) treated as multi. A STATE-scoped instance is always
+  // single-state; a STATE="" instance with no coverage row is wildcard by default,
+  // matching registerWithCentral (api/src/cron/sync.ts). The `states` field above
+  // is retained for back-compat but is no longer the multi-state signal.
+  const multiState = !c.env.STATE && (!coverageRow || states.includes('*') || states.length > 1)
+
   const orgNoun = resolveOrgNoun(
     orgNounRow?.value ? JSON.parse(orgNounRow.value) as string : null,
     posLabelRow?.value ? JSON.parse(posLabelRow.value) as string : null,
@@ -157,7 +164,7 @@ configRouter.get('/', async (c) => {
     contactEmails: parseEmailList(c.env.OPERATOR_CONTACT_EMAILS),
   }
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central
