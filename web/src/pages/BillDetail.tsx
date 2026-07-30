@@ -49,6 +49,7 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
+import { useMultiState } from '../context/ConfigContext'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -294,7 +295,8 @@ export function BillDetail() {
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
-  const [config, setConfig] = useState<{ positionVocabulary: string[]; states: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
+  const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
+  const multiState = useMultiState()
   const [promoting, setPromoting] = useState(false)
   const [promoteError, setPromoteError] = useState<string | null>(null)
   const [pendingPromote, setPendingPromote] = useState(false)
@@ -488,8 +490,8 @@ export function BillDetail() {
     applyBillData(prefetchedBill)
     const today = todayIso()
     if ((prefetchedBill.calendar ?? []).some(e => e.date >= today)) setShowHearings(true)
-    apiFetch<{ associationName: string; positionVocabulary: string[]; states: string[]; instanceDomains: Record<string, string>; orgNoun: string }>('/config')
-      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, states: cfg.states ?? [], instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun }))
+    apiFetch<{ associationName: string; positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string }>('/config')
+      .then(cfg => setConfig({ positionVocabulary: cfg.positionVocabulary, instanceDomains: cfg.instanceDomains ?? {}, orgNoun: cfg.orgNoun }))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billKey])
@@ -814,7 +816,7 @@ export function BillDetail() {
             billNumber={bill.billNumber}
             state={bill.state}
             stateUrl={(() => {
-              if (!config || config.states.length <= 1) return undefined
+              if (!config || !multiState) return undefined
               const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
               const instanceDomain = config.instanceDomains[bill.state]
               if (!isHub || !instanceDomain) return undefined

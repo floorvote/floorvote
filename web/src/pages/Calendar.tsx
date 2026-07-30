@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import { useSearchParams, useLoaderData } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
+import { useMultiState } from '../context/ConfigContext'
 import { useAuth } from '../hooks/useAuth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -57,8 +58,7 @@ export function Calendar() {
     next.delete('focusEvent')
     setSearchParams(next, { replace: true })
   }
-  const [states, setStates] = useState<string[]>([])
-  const multiState = states.length > 1
+  const multiState = useMultiState()
   const [billOptions, setBillOptions] = useState<BillOption[]>([])
   const [popover, setPopover] = useState<{
     event: CalendarEvent
@@ -97,10 +97,6 @@ export function Calendar() {
   useEffect(() => {
     if (skipFirstLoad.current) { skipFirstLoad.current = false; return }
     loadEvents().catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    apiFetch<{ states: string[] }>('/config').then(d => setStates(d.states ?? [])).catch(() => {})
   }, [])
 
   useEffect(() => {

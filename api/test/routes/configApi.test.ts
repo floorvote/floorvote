@@ -4,6 +4,28 @@ import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { env } from 'cloudflare:test'
 import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
+import { computeMultiState } from '../../src/routes/configApi'
+
+describe('computeMultiState', () => {
+  it('STATE-scoped instance is single-state', () => {
+    expect(computeMultiState('RI', JSON.stringify(['RI', 'NJ']))).toBe(false)
+  })
+  it('no coverage row ⇒ wildcard', () => {
+    expect(computeMultiState('', undefined)).toBe(true)
+  })
+  it('unparseable coverage ⇒ wildcard', () => {
+    expect(computeMultiState('', 'not-json')).toBe(true)
+  })
+  it('wildcard list ⇒ multi', () => {
+    expect(computeMultiState('', JSON.stringify(['*']))).toBe(true)
+  })
+  it('bounded multi list ⇒ multi', () => {
+    expect(computeMultiState('', JSON.stringify(['WA', 'US']))).toBe(true)
+  })
+  it('single-state list ⇒ single', () => {
+    expect(computeMultiState('', JSON.stringify(['RI']))).toBe(false)
+  })
+})
 
 describe('GET /config', () => {
   let cookie: string
@@ -37,6 +59,36 @@ describe('GET /config', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as { states: string[] }
     expect(body.states).toEqual(['NJ', 'RI', 'WY', 'WI'])
+  })
+
+  it('multiState is true when no STATE env and no state_coverage row (wildcard default)', async () => {
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { multiState: boolean }
+    expect(body.multiState).toBe(true)
+  })
+
+  it('multiState is true for wildcard ["*"] coverage', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'state_coverage', value: JSON.stringify(['*']) })
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { multiState: boolean }
+    expect(body.multiState).toBe(true)
+  })
+
+  it('multiState is true for a bounded multi-state list', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'state_coverage', value: JSON.stringify(['WA', 'US']) })
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { multiState: boolean }
+    expect(body.multiState).toBe(true)
+  })
+
+  it('multiState is false for a single-state coverage list', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'state_coverage', value: JSON.stringify(['RI']) })
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: cookie } })
+    const body = await res.json() as { multiState: boolean }
+    expect(body.multiState).toBe(false)
   })
 
   it('returns modules as an empty object when no modules row exists', async () => {

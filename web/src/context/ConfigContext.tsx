@@ -10,6 +10,7 @@ export interface OperatorConfig {
 export interface AppConfig {
   associationName?: string
   states: string[]
+  multiState?: boolean
   modules?: Record<string, boolean>
   orgNoun?: string
   positionVocabulary?: string[]
@@ -36,7 +37,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
-  const multiState = (config?.states?.length ?? 0) > 1
+  const multiState = config?.multiState ?? false
   return <ConfigContext value={{ config, multiState, loading }}>{children}</ConfigContext>
 }
 
