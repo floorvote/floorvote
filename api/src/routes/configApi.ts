@@ -19,6 +19,22 @@ function safeJsonParse(raw: string | null): string[] | null {
   try { return JSON.parse(raw) } catch { return null }
 }
 
+// Whether the UI should show per-bill state labels, derived from coverage intent.
+// STATE-scoped instance ⇒ always single-state. A STATE="" instance with no coverage
+// row — or an unparseable one — is treated as wildcard ("*"), matching
+// registerWithCentral (api/src/cron/sync.ts), which defaults missing coverage to ['*'].
+export function computeMultiState(state: string | undefined, coverageRaw: string | undefined): boolean {
+  if (state) return false
+  if (coverageRaw == null) return true
+  let coverage: string[]
+  try {
+    coverage = JSON.parse(coverageRaw) as string[]
+  } catch {
+    return true // unparseable coverage ⇒ same "unknown" default as a missing row
+  }
+  return coverage.includes('*') || coverage.length > 1
+}
+
 configRouter.use('*', requireAuth)
 
 const DEFAULT_ASSOCIATION_NAME = PRODUCT_NAME
@@ -118,12 +134,7 @@ configRouter.get('/', async (c) => {
     }
   }
 
-  // Whether the UI should show per-bill state labels. Coverage-driven, with "*"
-  // (wildcard / monitor-all) treated as multi. A STATE-scoped instance is always
-  // single-state; a STATE="" instance with no coverage row is wildcard by default,
-  // matching registerWithCentral (api/src/cron/sync.ts). The `states` field above
-  // is retained for back-compat but is no longer the multi-state signal.
-  const multiState = !c.env.STATE && (!coverageRow || states.includes('*') || states.length > 1)
+  const multiState = computeMultiState(c.env.STATE, coverageRow?.value)
 
   const orgNoun = resolveOrgNoun(
     orgNounRow?.value ? JSON.parse(orgNounRow.value) as string : null,

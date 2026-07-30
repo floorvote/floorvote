@@ -4,6 +4,28 @@ import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { env } from 'cloudflare:test'
 import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
+import { computeMultiState } from '../../src/routes/configApi'
+
+describe('computeMultiState', () => {
+  it('STATE-scoped instance is single-state', () => {
+    expect(computeMultiState('RI', JSON.stringify(['RI', 'NJ']))).toBe(false)
+  })
+  it('no coverage row ⇒ wildcard', () => {
+    expect(computeMultiState('', undefined)).toBe(true)
+  })
+  it('unparseable coverage ⇒ wildcard', () => {
+    expect(computeMultiState('', 'not-json')).toBe(true)
+  })
+  it('wildcard list ⇒ multi', () => {
+    expect(computeMultiState('', JSON.stringify(['*']))).toBe(true)
+  })
+  it('bounded multi list ⇒ multi', () => {
+    expect(computeMultiState('', JSON.stringify(['WA', 'US']))).toBe(true)
+  })
+  it('single-state list ⇒ single', () => {
+    expect(computeMultiState('', JSON.stringify(['RI']))).toBe(false)
+  })
+})
 
 describe('GET /config', () => {
   let cookie: string
