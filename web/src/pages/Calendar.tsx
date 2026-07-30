@@ -99,7 +99,6 @@ export function Calendar() {
     loadEvents().catch(() => {})
   }, [])
 
-
   useEffect(() => {
     if (isAdmin) {
       apiFetch<BillOption[]>('/calendar/bill-options')
