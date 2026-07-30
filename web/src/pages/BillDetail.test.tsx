@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { BillDetail } from './BillDetail'
+import { BillDetail, countClippedSponsors } from './BillDetail'
 import * as api from '../lib/api'
 
 // ── Route params (mutable so individual tests can vary route + nav state) ──────
@@ -500,5 +500,37 @@ describe('BillDetail deferred-nav entry (prefetchedBill without billPaths)', () 
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     expect(await screen.findByText('Test Bill')).toBeInTheDocument()
     expect(screen.getByText('Association position')).toBeInTheDocument()
+  })
+})
+
+// ── Sponsors row: overflow-driven co-sponsor reveal ───────────────────────────
+// The collapsed row shows sponsors on one line and reveals a "+N more" toggle
+// only when the line actually overflows. Because that decision is layout-driven
+// (and jsdom has no layout), the clip math lives in a pure helper we test directly.
+describe('countClippedSponsors', () => {
+  it('counts items whose right edge falls past the boundary', () => {
+    expect(countClippedSponsors([40, 120, 260, 400], 200)).toBe(2)
+  })
+
+  it('returns 0 when every item fits within the boundary', () => {
+    expect(countClippedSponsors([40, 120, 195], 200)).toBe(0)
+  })
+
+  it('tolerates sub-pixel overhang at the boundary', () => {
+    expect(countClippedSponsors([200.4], 200)).toBe(0)
+  })
+})
+
+describe('BillDetail sponsors row', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('renders every co-sponsor in the DOM, not just the first five', async () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      name: `Cosponsor ${i + 1}`, party: 'D', url: null, primary: false,
+    }))
+    makeMockApiFetch({ sponsor: 'Prime Sponsor', coSponsors: many })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    expect(await screen.findByText('Prime Sponsor')).toBeInTheDocument()
+    expect(screen.getByText('Cosponsor 9')).toBeInTheDocument()
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
@@ -71,6 +71,107 @@ function SponsorLink({ name, url, party, bold }: { name: string; url: string | n
     <span style={{ whiteSpace: 'nowrap', fontWeight: bold ? 600 : undefined }}>
       {name}{party && <PartyBadge party={party} />}
     </span>
+  )
+}
+
+// How many sponsor "chips" are clipped off the collapsed single line — i.e. those
+// whose right edge falls past the row's right edge. Drives the "+N more" count.
+// Pure and layout-agnostic (the caller supplies rects measured from the DOM) so it
+// is unit-testable; sub-pixel overhang at the boundary is tolerated.
+export function countClippedSponsors(itemRights: number[], boundaryRight: number): number {
+  return itemRights.filter(right => right > boundaryRight + 0.5).length
+}
+
+// The bill-detail sponsors row. Collapsed, it clamps sponsors + co-sponsors to a
+// single line and offers a "+N more" toggle *only when that line actually
+// overflows* (measured, not gated on a co-sponsor count — so primary-heavy bills
+// get one too). Expanded, the whole run wraps in place as one continuous inline
+// flow: each name stays whole, and a label never dangles or splits at its hyphen.
+function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }: {
+  sponsor: string | null
+  sponsorUrl: string | null
+  sponsorParty: string | null
+  coSponsors: CoSponsor[]
+  flashed: boolean
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const [hiddenCount, setHiddenCount] = useState(0)
+  const flowRef = useRef<HTMLSpanElement>(null)
+
+  const primaryCoSponsors = coSponsors.filter(s => s.primary)
+  const regularCoSponsors = coSponsors.filter(s => !s.primary)
+  const label = (primaryCoSponsors.length > 0 || regularCoSponsors.length > 0) ? 'Sponsors:' : 'Sponsor:'
+
+  // While collapsed, keep the "+N more" count in sync with how many chips are
+  // clipped, re-measuring as the column resizes. jsdom has neither layout nor a
+  // ResizeObserver, so the guarded initial measure simply yields 0 there.
+  useLayoutEffect(() => {
+    if (showAll) return
+    const flow = flowRef.current
+    if (!flow) return
+    const measure = () => {
+      const boundary = flow.getBoundingClientRect().right
+      const rights = Array.from(flow.querySelectorAll<HTMLElement>('[data-sponsor-item]'))
+        .map(el => el.getBoundingClientRect().right)
+      setHiddenCount(countClippedSponsors(rights, boundary))
+    }
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    ro?.observe(flow)
+    return () => ro?.disconnect()
+  }, [showAll, sponsor, coSponsors])
+
+  const labelStyle = { color: color.textMuted, whiteSpace: 'nowrap' as const }
+
+  return (
+    <div
+      id="section-sponsors"
+      style={{
+        fontSize: fontSize.sm, color: color.textSecondary,
+        display: showAll ? 'block' : 'flex', alignItems: 'baseline',
+        minWidth: 0, marginBottom: 0,
+        boxShadow: flashed ? '0 0 0 3px #fde68a' : 'none',
+        transition: 'box-shadow 0.6s ease', borderRadius: radius.sm,
+      }}
+    >
+      <span
+        ref={flowRef}
+        style={showAll
+          ? { display: 'inline', whiteSpace: 'normal' }
+          : { display: 'block', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+      >
+        {/* Primary group. The inter-group gap rides on its right edge so the
+            "Co-sponsors:" label sits flush left whenever it wraps to a new line. */}
+        <span style={regularCoSponsors.length > 0 ? { marginRight: 16 } : undefined}>
+          <span style={labelStyle}>{label}&nbsp;</span>
+          {sponsor && (
+            <span data-sponsor-item>
+              <SponsorLink name={sponsor} url={sponsorUrl} party={sponsorParty} />
+            </span>
+          )}
+          {primaryCoSponsors.map((s, i) => (
+            <span key={`p-${i}`}>, <span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+          ))}
+        </span>
+        {regularCoSponsors.length > 0 && (
+          <>
+            {' '}
+            <span style={labelStyle}>Co-sponsors:&nbsp;</span>
+            {regularCoSponsors.map((s, i) => (
+              <span key={`r-${i}`}>{i > 0 ? ', ' : ''}<span data-sponsor-item><SponsorLink name={s.name} url={s.url} party={s.party ?? null} /></span></span>
+            ))}
+          </>
+        )}
+      </span>
+      {(showAll || hiddenCount > 0) && (
+        <button
+          onClick={() => setShowAll(v => !v)}
+          style={{ marginLeft: 6, fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}
+        >
+          {showAll ? 'show less' : `+${hiddenCount} more`}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -303,7 +404,6 @@ export function BillDetail() {
   const [promoteTimeoutMsg, setPromoteTimeoutMsg] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
   const [regenerateError, setRegenerateError] = useState<string | null>(null)
-  const [showAllCoSponsors, setShowAllCoSponsors] = useState(false)
   const [showAmendments, setShowAmendments] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
   const [showActions, setShowActions] = useState(false)
@@ -1161,46 +1261,15 @@ export function BillDetail() {
         )}
 
         {/* Meta row 3: sponsors */}
-        {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (() => {
-          const primaryCoSponsors = bill.coSponsors.filter(s => s.primary)
-          const regularCoSponsors = bill.coSponsors.filter(s => !s.primary)
-          const totalCoSponsors = regularCoSponsors.length
-          return (
-            <div id="section-sponsors" style={{ fontSize: fontSize.sm, color: color.textSecondary, display: 'flex', alignItems: 'baseline', flexWrap: showAllCoSponsors ? 'wrap' : 'nowrap', overflow: showAllCoSponsors ? 'visible' : 'hidden', minWidth: 0, marginBottom: 0, boxShadow: flashedSectionId === 'section-sponsors' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease', borderRadius: radius.sm }}>
-              <span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>{(primaryCoSponsors.length > 0 || totalCoSponsors > 0) ? 'Sponsors:' : 'Sponsor:'}</span>
-                {bill.sponsor && <SponsorLink name={bill.sponsor} url={bill.sponsorUrl ?? null} party={bill.sponsorParty ?? null} />}
-                {primaryCoSponsors.map((s, i) => (
-                  <span key={i}>
-                    <span>, </span>
-                    <SponsorLink name={s.name} url={s.url} party={s.party ?? null} />
-                  </span>
-                ))}
-              </span>
-              {totalCoSponsors > 0 && (
-                <>
-                  <span style={{ color: color.textMuted, whiteSpace: 'nowrap', flexShrink: 0, margin: '0 4px 0 16px' }}>Co-sponsors:</span>
-                  <span style={{ overflow: 'hidden', textOverflow: showAllCoSponsors ? undefined : 'ellipsis', whiteSpace: showAllCoSponsors ? 'normal' : 'nowrap', flex: showAllCoSponsors ? '1 1 100%' : '1 1 0%', minWidth: 0 }}>
-                    {(showAllCoSponsors ? regularCoSponsors : regularCoSponsors.slice(0, 5)).map((s, i) => (
-                      <span key={i}>
-                        {i > 0 && <span>, </span>}
-                        <SponsorLink name={s.name} url={s.url} party={s.party ?? null} />
-                      </span>
-                    ))}
-                  </span>
-                  {totalCoSponsors > 5 && (
-                    <button
-                      onClick={() => setShowAllCoSponsors(v => !v)}
-                      style={{ marginLeft: 6, fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}
-                    >
-                      {showAllCoSponsors ? 'show less' : `+${totalCoSponsors - 5} more`}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )
-        })()}
+        {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (
+          <SponsorsRow
+            sponsor={bill.sponsor}
+            sponsorUrl={bill.sponsorUrl ?? null}
+            sponsorParty={bill.sponsorParty ?? null}
+            coSponsors={bill.coSponsors}
+            flashed={flashedSectionId === 'section-sponsors'}
+          />
+        )}
 
         {/* Draft: sponsor inline row for admins (shown even when bill.sponsor is null) */}
         {bill.isDraft && isAdmin && (
