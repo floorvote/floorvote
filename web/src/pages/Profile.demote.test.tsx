@@ -60,7 +60,7 @@ describe('Profile self role-change (demote)', () => {
     mockApi()
     render(<MemoryRouter><Profile /></MemoryRouter>)
     expect(await screen.findByRole('button', { name: 'Demote my account from Owner to Admin' })).toBeInTheDocument()
-    expect(screen.getByText('Immediately lose your Owner permissions. An Owner can restore your role later.')).toBeInTheDocument()
+    expect(screen.getByText('Immediately lose your owner permissions. An owner can restore your role later.')).toBeInTheDocument()
   })
 
   it('shows the admin→member demote button and description for an admin', async () => {
@@ -68,7 +68,7 @@ describe('Profile self role-change (demote)', () => {
     mockApi()
     render(<MemoryRouter><Profile /></MemoryRouter>)
     expect(await screen.findByRole('button', { name: 'Demote my account from Admin to Member' })).toBeInTheDocument()
-    expect(screen.getByText('Immediately lose your Admin permissions. An Owner or Admin can restore your role later.')).toBeInTheDocument()
+    expect(screen.getByText('Immediately lose your admin permissions. An owner or admin can restore your role later.')).toBeInTheDocument()
   })
 
   it('shows no demote button for a member', async () => {

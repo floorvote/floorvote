@@ -40,7 +40,7 @@ export function Notifications() {
   // matching the rest of the app). Turning ON is benign — members can still opt out
   // individually — so it applies immediately.
   const confirmOff = (label: string) =>
-    window.confirm(`Turn off ${label} for everyone? This stops it for all Members, not just you. Members can also opt out individually on their Account page.`)
+    window.confirm(`Turn off ${label} for everyone? This stops it for all members, not just you. Members can also opt out individually on their Account page.`)
 
   useEffect(() => {
     apiFetch<AdminConfigResponse>('/admin/config')
@@ -145,7 +145,7 @@ export function Notifications() {
       <div style={{ ...CARD, padding: 24 }}>
         <h1 style={CARD_TITLE}>Email notifications</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
-          These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all Members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
+          These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
         </div>
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
@@ -154,9 +154,9 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send a digest of recent bill activity to users</div>
+                  <div style={boxTitle}>Send a digest of recent bill activity to members</div>
                   <div style={boxDesc}>
-                    Email Members a daily or weekly summary of recent activity on priority bills. Admins and Owners also get a list of new bills matching your keywords awaiting a priority decision. Members can opt out individually on their Account page.
+                    Email members a daily or weekly summary of recent activity on priority bills. Admins and owners also get a list of new bills matching your keywords awaiting a priority decision. Members can opt out individually on their Account page.
                   </div>
                 </div>
                 <IosToggle
@@ -212,9 +212,9 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send a digest of upcoming hearings and events to users</div>
+                  <div style={boxTitle}>Send a digest of upcoming hearings and events to members</div>
                   <div style={boxDesc}>
-                    Email Members a weekly preview of upcoming hearings and events. Members can opt out individually on their Account page.
+                    Email members a weekly preview of upcoming hearings and events. Members can opt out individually on their Account page.
                   </div>
                 </div>
                 <IosToggle
@@ -246,9 +246,9 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send @-mention emails to users</div>
+                  <div style={boxTitle}>Send @-mention emails to members</div>
                   <div style={boxDesc}>
-                    Email Members when they (or a role they are assigned) are @-mentioned in a comment.
+                    Email members when they (or a role they are assigned) are @-mentioned in a comment.
                   </div>
                 </div>
                 <IosToggle

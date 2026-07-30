@@ -92,9 +92,9 @@ export default function Overview() {
       {engagement && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
           <SummaryCard
-            label="Active Members (7d)"
+            label="Active members (7d)"
             value={engagement.totals.active_members_7d.toLocaleString()}
-            footnote={`${engagement.totals.total_members.toLocaleString()} total Members`}
+            footnote={`${engagement.totals.total_members.toLocaleString()} total members`}
           />
           <SummaryCard
             label="Votes cast (all-time)"

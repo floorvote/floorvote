@@ -216,13 +216,13 @@ export function Profile() {
   // A sole owner can't demote, deactivate, or delete — doing so would leave
   // the account ownerless. Server-computed; only ever true for role === 'owner'.
   const gated = !!user?.isLastOwner
-  const lastOwnerBlock = "You're the only Owner. Make another Member an Owner before you can demote, deactivate, or delete your account."
+  const lastOwnerBlock = "You're the only owner. Make another member an owner before you can demote, deactivate, or delete your account."
 
   const [deactivating, setDeactivating] = useState(false)
 
   async function handleDeactivate() {
     if (demoLocked || deactivating || gated) return
-    if (!window.confirm("Deactivate your account?\n\nYou'll be logged out immediately. An Admin can reactivate it later.")) return
+    if (!window.confirm("Deactivate your account?\n\nYou'll be logged out immediately. An admin can reactivate it later.")) return
     setDeactivating(true)
     try {
       await apiFetch('/users/me/deactivate', { method: 'POST' })
@@ -568,8 +568,8 @@ export function Profile() {
               {gated
                 ? lastOwnerBlock
                 : demoteTarget === 'admin'
-                  ? 'Immediately lose your Owner permissions. An Owner can restore your role later.'
-                  : 'Immediately lose your Admin permissions. An Owner or Admin can restore your role later.'}
+                  ? 'Immediately lose your owner permissions. An owner can restore your role later.'
+                  : 'Immediately lose your admin permissions. An owner or admin can restore your role later.'}
             </span>
           </div>
         )}
@@ -586,7 +586,7 @@ export function Profile() {
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
             {gated
               ? lastOwnerBlock
-              : "You'll be logged out immediately and your activity (votes, comments, and notes) will be hidden. An Admin can reactivate your account and activity later."}
+              : "You'll be logged out immediately and your activity (votes, comments, and notes) will be hidden. An admin can reactivate your account and activity later."}
           </span>
         </div>
 

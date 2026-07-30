@@ -110,7 +110,7 @@ describe('Members owner-only deletion-policy switch', () => {
     const sw = await screen.findByRole('switch', { name: /account deletion/i })
     expect(sw).toBeInTheDocument()
     expect(sw).toBeDisabled()
-    expect(screen.getByText('Only Owners can adjust this setting.')).toBeInTheDocument()
+    expect(screen.getByText('Only owners can adjust this setting.')).toBeInTheDocument()
   })
 
   it('renders the toggle inside the All-members card, after the table, with a red label', async () => {

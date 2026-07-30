@@ -194,7 +194,7 @@ describe('Config — owner-only Clear interactions button', () => {
   it('shows the button to a non-owner Admin but disabled', async () => {
     // useAuth is mocked as an Admin (not owner) at module scope.
     render(<Config />)
-    const btn = await screen.findByRole('button', { name: 'Clear all user interactions' })
+    const btn = await screen.findByRole('button', { name: 'Clear all member interactions' })
     expect(btn).toBeInTheDocument()
     expect(btn).toBeDisabled()
   })

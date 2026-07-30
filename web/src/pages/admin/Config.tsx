@@ -815,8 +815,8 @@ export function Config() {
       <div style={sectionCard}>
         <h2 style={sectionTitle}>Custom fields</h2>
         <div style={sectionIntro}>
-          Define fields that appear on every bill detail page. Admins and Owners can set values per bill.
-          Fields are hidden from Members until at least one value is set. Drag to reorder.
+          Define fields that appear on every bill detail page. Admins and owners can set values per bill.
+          Fields are hidden from members until at least one value is set. Drag to reorder.
         </div>
 
         {/* Field list */}
@@ -1197,7 +1197,7 @@ export function Config() {
             )}
           </div>
           <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-            Downloads a zip of every bill you track, have analyzed with AI, have prioritized, or that has any engagement — votes, positions, comments, or notes. The zip also contains data on Members, votes, positions, comments, personal notes, custom fields, calendar events, and bill amendments, supplements, and roll-call votes. Bills that have not been analyzed and have no priority or engagement are excluded. Full bill text is also excluded; access that text via the state legislature links in the export.
+            Downloads a zip of every bill you track, have analyzed with AI, have prioritized, or that has any engagement — votes, positions, comments, or notes. The zip also contains data on members, votes, positions, comments, personal notes, custom fields, calendar events, and bill amendments, supplements, and roll-call votes. Bills that have not been analyzed and have no priority or engagement are excluded. Full bill text is also excluded; access that text via the state legislature links in the export.
           </span>
           {exportError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, flexShrink: 0 }}>{exportError}</span>}
         </div>
@@ -1227,10 +1227,10 @@ export function Config() {
         {(user?.role === 'admin' || user?.role === 'owner') && (
           <div style={actionRowStyle}>
             <button onClick={handleClearInteractions} disabled={clearingInteractions || demoLocked || user?.role !== 'owner'} style={actionBtnRed(clearingInteractions || demoLocked || user?.role !== 'owner')}>
-              {clearingInteractions ? 'Clearing…' : 'Clear all user interactions'}
+              {clearingInteractions ? 'Clearing…' : 'Clear all member interactions'}
             </button>
             <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 1 }}>
-              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Users, bills, and AI summaries are kept. <strong>Only Owners can do this. It cannot be undone.</strong>
+              Permanently deletes all votes, comments, notes, official positions, bill priorities, and feed history. Members, bills, and AI summaries are kept. <strong>Only owners can do this. It cannot be undone.</strong>
             </span>
             {clearResult && <span style={{ fontSize: fontSize.sm, color: clearResult === 'Cleared.' ? color.textSuccess : color.textErrorRed, flexShrink: 0 }}>{clearResult}</span>}
           </div>

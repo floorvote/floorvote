@@ -151,9 +151,9 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
               }}
             >
               <span style={{ fontWeight: fontWeight.medium }}>everyone</span>
-              <span style={{ color: color.textMuted, marginLeft: 6 }}>Notify all Members</span>
+              <span style={{ color: color.textMuted, marginLeft: 6 }}>Notify all members</span>
               <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
-                {everyone.memberCount} {everyone.memberCount === 1 ? 'user' : 'users'}
+                {everyone.memberCount} {everyone.memberCount === 1 ? 'member' : 'members'}
               </span>
             </button>
           );
@@ -250,7 +250,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
                 >
                   <span>{role.name}</span>
                   <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
-                    {role.memberCount} {role.memberCount === 1 ? 'user' : 'users'}
+                    {role.memberCount} {role.memberCount === 1 ? 'member' : 'members'}
                   </span>
                 </button>
               );

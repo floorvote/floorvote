@@ -151,7 +151,7 @@ describe('Members "···" actions menu', () => {
     fireEvent.pointerEnter(deactivateItem, { pointerType: 'mouse' })
 
     expect(await screen.findByText(
-      'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An Admin can reactivate it later.',
+      'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An admin can reactivate it later.',
     )).toBeInTheDocument()
   })
 

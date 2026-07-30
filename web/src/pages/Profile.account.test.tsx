@@ -93,7 +93,7 @@ describe('Profile Account section', () => {
     renderProfile(false)
     expect(await screen.findByRole('button', { name: 'Deactivate my account' })).toBeInTheDocument()
     expect(screen.getByText(
-      "You'll be logged out immediately and your activity (votes, comments, and notes) will be hidden. An Admin can reactivate your account and activity later.",
+      "You'll be logged out immediately and your activity (votes, comments, and notes) will be hidden. An admin can reactivate your account and activity later.",
     )).toBeInTheDocument()
   })
 

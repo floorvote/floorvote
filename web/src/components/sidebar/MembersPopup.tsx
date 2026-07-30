@@ -34,7 +34,7 @@ export function MembersPopup({ members, currentUserId, onClose }: { members: Mem
         overflowY: 'auto',
       }}>
         {sorted.length === 0 && (
-          <div style={{ padding: '12px 14px', fontSize: fontSize.sm, color: color.textMuted }}>No Members found.</div>
+          <div style={{ padding: '12px 14px', fontSize: fontSize.sm, color: color.textMuted }}>No members found.</div>
         )}
         {sorted.map(m => (
           <div key={m.id} style={{ padding: '10px 14px', borderBottom: `1px solid ${color.surfaceMuted}` }}>

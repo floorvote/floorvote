@@ -206,7 +206,7 @@ export function Members() {
         setRolesLabel(`${titleCase(noun)} roles`)
         setAccountDeletionEnabled(configData.accountDeletionEnabled ?? false)
       })
-      .catch(() => setListError('Failed to load Members.'))
+      .catch(() => setListError('Failed to load members.'))
       .finally(() => setListLoading(false))
   }, [])
 
@@ -293,7 +293,7 @@ export function Members() {
     const isSelf = member.id === user?.id
     const deactivated = !member.deactivatedAt
     if (isSelf && deactivated) {
-      if (!window.confirm('Deactivate your own account?\n\nYou will be logged out immediately. An Admin can reactivate your account later.')) return
+      if (!window.confirm('Deactivate your own account?\n\nYou will be logged out immediately. An admin can reactivate your account later.')) return
     }
     try {
       await apiFetch(`/admin/members/${member.id}`, {
@@ -349,7 +349,7 @@ export function Members() {
       await apiFetch(`/admin/members/${member.id}`, { method: 'DELETE' })
       setMembers((prev) => prev.filter((m) => m.id !== member.id))
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Failed to delete Member.')
+      alert(err instanceof ApiError ? err.message : 'Failed to delete member.')
     }
   }
 
@@ -417,7 +417,7 @@ export function Members() {
   }
 
   async function handleDeleteRole(roleId: string) {
-    if (!window.confirm('Delete this role? It will be removed from all Members.')) return
+    if (!window.confirm('Delete this role? It will be removed from all members.')) return
     try {
       await apiFetch(`/admin/roles/${roleId}`, { method: 'DELETE' })
       setOrgRoles(prev => prev.filter(r => r.id !== roleId))
@@ -542,7 +542,7 @@ export function Members() {
           danger: true,
           disabled: demoLocked,
           onClick: () => { close(); handleDeactivateToggle(member) },
-          tooltip: 'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An Admin can reactivate it later.',
+          tooltip: 'The account is logged out immediately and its activity (votes, comments, and notes) is hidden. An admin can reactivate it later.',
         })
       }
     }
@@ -611,7 +611,7 @@ export function Members() {
       )}
       {/* Invite form card */}
       <div style={{ ...CARD, padding: 24, marginBottom: 24 }}>
-        <div style={CARD_TITLE}>Invite new Members</div>
+        <div style={CARD_TITLE}>Invite new members</div>
         <form onSubmit={demoLocked ? (e) => e.preventDefault() : handleInvite}>
           <div style={{ marginBottom: 16 }}>
             <label htmlFor="invite-text" style={FORM_LABEL}>Invitees</label>
@@ -650,7 +650,7 @@ export function Members() {
               <div style={{ color: color.textSecondary }}>
                 {[
                   `${inviteResult.summary.invited} invited`,
-                  inviteResult.summary.exists ? `${inviteResult.summary.exists} already Members` : null,
+                  inviteResult.summary.exists ? `${inviteResult.summary.exists} already members` : null,
                   inviteResult.summary.duplicate ? `${inviteResult.summary.duplicate} duplicates` : null,
                   inviteResult.summary.invalid ? `${inviteResult.summary.invalid} invalid` : null,
                 ].filter(Boolean).join(' · ')}
@@ -670,7 +670,7 @@ export function Members() {
       <div style={{ ...CARD, padding: 24, marginBottom: 24 }}>
         <div style={CARD_TITLE}>{rolesLabel}</div>
         <div style={{ ...HELPER_TEXT, marginTop: 4, marginBottom: 14 }}>
-          Assign roles to Members (e.g., by committee, office, or region). In comments, any user can @-mention a role to notify everyone with that particular role. Role labels also appear as badges when you hover a commenter's name.
+          Assign roles to members (e.g., by committee, office, or region). In comments, any member can @-mention a role to notify everyone with that particular role. Role labels also appear as badges when you hover a commenter's name.
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {orgRoles.map(role => (
@@ -756,7 +756,7 @@ export function Members() {
       {/* Members table card */}
       <div ref={cardRef} style={{ ...CARD, padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={CARD_TITLE}>All Members</div>
+          <div style={CARD_TITLE}>All members</div>
           <button
             onClick={() => { setUnknownOpen(true); loadUnknownAttempts() }}
             style={{
@@ -776,7 +776,7 @@ export function Members() {
             type="text"
             value={memberSearch}
             onChange={(e) => setMemberSearch(e.target.value)}
-            placeholder="Search Members by name or email…"
+            placeholder="Search members by name or email…"
             style={{ ...inputStyle, maxWidth: 320 }}
           />
           {!listLoading && !listError && members.some(m => m.loginTrouble) && (() => {
@@ -785,7 +785,7 @@ export function Members() {
               <button
                 onClick={() => setTroubleFilter(v => !v)}
                 aria-pressed={troubleFilter}
-                title="These Members have requested several login links without a recent successful sign-in. The warning clears on its own once they sign in."
+                title="These members have requested several login links without a recent successful sign-in. The warning clears on its own once they sign in."
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -802,7 +802,7 @@ export function Members() {
                 }}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>warning</span>
-                {loginTroubleCount} {loginTroubleCount === 1 ? 'Member' : 'Members'} with login trouble
+                {loginTroubleCount} {loginTroubleCount === 1 ? 'member' : 'members'} with login trouble
               </button>
             )
           })()}
@@ -812,7 +812,7 @@ export function Members() {
             {(() => {
               const shown = members.filter(memberMatchesFilters).length
               const filtering = memberSearch.trim() !== '' || troubleFilter
-              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'Member' : 'Members'}`
+              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`
             })()}
           </div>
         )}
@@ -830,7 +830,7 @@ export function Members() {
                     <InfoTooltip
                       align="center"
                       maxWidth={320}
-                      text={<>All Members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, see how each Member voted, manage custom fields, manage Members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other Owners and delete all user interactions.</>}
+                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, see how each member voted, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other owners and delete all member interactions.</>}
                     />
                   </span>
                 </th>
@@ -1069,7 +1069,7 @@ export function Members() {
                   Allow accounts to be permanently deleted.
                 </div>
                 <div>
-                  When on, Owners and Admins can delete accounts and Members can delete their own accounts — permanently removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless the account is reactivated. <strong>Only Owners can adjust this setting.</strong>
+                  When on, owners and admins can delete accounts and members can delete their own accounts — permanently removing the account and all its activity (votes, comments, and notes). When off, an account can only be deactivated — hiding its activity unless the account is reactivated. <strong>Only owners can adjust this setting.</strong>
                 </div>
               </div>
               <label
