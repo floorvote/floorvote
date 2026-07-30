@@ -116,10 +116,12 @@ describe('GET /feed', () => {
 
   it('includes bill_updated events from system user', async () => {
     const db = getDb(env.DB)
+    // Priority bill so this passive provider update is visible in the default feed.
+    const priorityBill = await seedBill({ billNumber: 'A 900', title: 'Tracked', priority: 'high' })
     await db.insert(feedEvents).values({
       id: crypto.randomUUID(),
       type: 'bill_updated',
-      billId,
+      billId: priorityBill,
       userId: 'system',
       metadata: JSON.stringify({ changes: ['status'], newStatus: '2', oldStatus: '1' }),
       createdAt: '2026-01-01T11:00:00Z',
@@ -165,12 +167,13 @@ describe('GET /feed', () => {
     const db = getDb(env.DB)
     // The bill seeded in beforeEach has matchType 'keyword' by default.
     // Seed a second bill with matchType null to test both values appear.
-    const keywordBillId = await seedBill({ billNumber: 'SB 99', title: 'Voter ID Act', matchType: null })
+    const nullMatchBillId = await seedBill({ billNumber: 'SB 99', title: 'Voter ID Act', matchType: null })
+    // Non-passive event so it's visible in the default feed regardless of priority.
     await db.insert(feedEvents).values({
       id: crypto.randomUUID(),
-      type: 'bill_updated',
-      billId: keywordBillId,
-      userId: 'system',
+      type: 'bill_added',
+      billId: nullMatchBillId,
+      userId: memberId,
       metadata: '{}',
       createdAt: '2026-01-01T12:00:00Z',
     })
@@ -186,6 +189,38 @@ describe('GET /feed', () => {
     const defaultEvent = body.events.find((e) => e.billNumber === 'HB 42')
     expect(defaultEvent).toBeDefined()
     expect(defaultEvent!.billMatchType).toBe('keyword')
+  })
+
+  it('excludes passive updates on non-priority bills from the default feed', async () => {
+    const db = getDb(env.DB)
+    const nonPriorityBill = await seedBill({ billNumber: 'A 100', title: 'Quiet bill', priority: null, matchType: 'keyword' })
+    await db.insert(feedEvents).values({
+      id: crypto.randomUUID(), type: 'bill_updated', billId: nonPriorityBill, userId: 'system',
+      metadata: '{}', createdAt: '2026-05-05T10:00:00Z',
+    })
+    const res = await SELF.fetch('http://localhost/api/feed', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    const body = await res.json() as { events: Array<{ billNumber: string }>; total: number }
+    // Only the two beforeEach engagement events (on HB 42) survive; the passive
+    // bill_updated on the non-priority bill is filtered server-side so it can't
+    // consume a page slot the client would just cull.
+    expect(body.events.find((e) => e.billNumber === 'A 100')).toBeUndefined()
+    expect(body.total).toBe(2)
+  })
+
+  it('includes passive updates on priority bills in the default feed', async () => {
+    const db = getDb(env.DB)
+    const priorityBill = await seedBill({ billNumber: 'A 300', title: 'Tracked bill', priority: 'high' })
+    await db.insert(feedEvents).values({
+      id: crypto.randomUUID(), type: 'bill_updated', billId: priorityBill, userId: 'system',
+      metadata: '{}', createdAt: '2026-05-05T10:00:00Z',
+    })
+    const res = await SELF.fetch('http://localhost/api/feed', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    const body = await res.json() as { events: Array<{ billNumber: string }> }
+    expect(body.events.find((e) => e.billNumber === 'A 300')).toBeDefined()
   })
 })
 
