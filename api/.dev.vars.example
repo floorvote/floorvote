@@ -19,15 +19,18 @@
 # `.dev.vars` is gitignored; this `.dev.vars.example` is committed. Never put a
 # real value in this example file.
 
-# --- AI summaries & tagging (optional) --------------------------------------
-# Direct Google Gemini key — used when AI_GATEWAY_ENABLED is not "true".
-# Get one at https://aistudio.google.com/apikey. Leave unset to skip AI locally.
-# GEMINI_API_KEY=
-
-# Cloudflare AI Gateway auth token — used instead of GEMINI_API_KEY when
-# AI_GATEWAY_ENABLED=true (which also needs CF_ACCOUNT_ID and CF_AIG_GATEWAY as
-# vars in wrangler.toml). Account-level token with the "AI Gateway Run" scope.
+# --- AI summaries & tagging -------------------------------------------------
+# Cloudflare AI Gateway token — the primary path. Routes bill summaries and tags
+# through Cloudflare AI Gateway, so AI billing, caching, and analytics run through
+# your Cloudflare account. Used when AI_GATEWAY_ENABLED=true (which also needs
+# CF_ACCOUNT_ID and CF_AIG_GATEWAY as vars in wrangler.toml). Account-level token
+# with the "AI Gateway Run" scope.
 # CF_AIG_TOKEN=
+
+# Direct Google Gemini key — the fallback, for when you don't want to run AI
+# billing through Cloudflare. Used when AI_GATEWAY_ENABLED is not "true"; calls
+# Google directly. https://aistudio.google.com/apikey
+# GEMINI_API_KEY=
 
 # --- Login bot-check (optional) ---------------------------------------------
 # Cloudflare Turnstile keys for the real magic-link login flow. Demo mode skips

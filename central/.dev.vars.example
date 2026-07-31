@@ -15,10 +15,10 @@
 
 # --- Bill data provider -----------------------------------------------------
 # Central fetches bills from one provider, chosen by BILL_PROVIDER in
-# wrangler.toml (default "openstates"). Set the key for whichever you use; the
+# wrangler.toml (default "legiscan"). Set the key for whichever you use; the
 # other can stay unset. Needed only when you actually ingest bills locally.
-# OPENSTATES_API_KEY=       # https://open.pluralpolicy.com/accounts/profile/
-# LEGISCAN_API_KEY=         # https://legiscan.com/legiscan
+# LEGISCAN_API_KEY=         # https://legiscan.com/legiscan  — primary, maintained path
+# OPENSTATES_API_KEY=       # https://open.pluralpolicy.com/accounts/profile/  — alternative, not actively maintained
 
 # --- Admin / operator endpoints (optional) ----------------------------------
 # Bearer secret protecting /admin/* and /tenants/* routes. Set it to call those
@@ -30,8 +30,3 @@
 # Cloudflare API token (Account Analytics: Read + Zone Analytics: Read) for the
 # D1 anomaly watch and email-delivery lookups. Unset disables those features.
 # CF_ANALYTICS_TOKEN=
-
-# --- Additional production secrets (rarely needed locally) ------------------
-# The full list — SUPERADMIN_JWT_PRIVATE_KEY, SUPERADMIN_EMAILS, RESEND_API_KEY,
-# CF_EMAIL_TOKEN, CF_QUEUES_TOKEN — is documented in central/wrangler.example.toml.
-# Add here only if you are exercising that specific path in local dev.
