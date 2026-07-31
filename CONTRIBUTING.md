@@ -9,6 +9,10 @@ Prerequisites: Node.js 22+, npm.
 npm install
 cd central && npm install
 
+# Local secrets — copy the annotated example (every key is optional for demo dev)
+cp api/.dev.vars.example api/.dev.vars
+cp central/.dev.vars.example central/.dev.vars   # only if you work on central
+
 # One-command seeded local dev — fresh D1, auto-login, api(8787) + web(5173)
 npm run dev:local
 
