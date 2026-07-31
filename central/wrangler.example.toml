@@ -2,11 +2,13 @@
 # Copy to central/wrangler.toml and fill in your resource IDs.
 #
 # The central worker supports two legislative data providers:
-#   - OpenStates (default env) — open data, good for self-hosting
-#   - LegiScan  ([env.legiscan]) — commercial API, richer data
-# Deploy one or both depending on your needs.
+#   - LegiScan ([env.legiscan], `npm run deploy:legiscan`) — the recommended,
+#     actively-maintained path with the fuller feature set (BILL_PROVIDER = "legiscan").
+#   - OpenStates (top-level env, `npm run deploy`) — an alternative that is not
+#     actively maintained and lacks features present in the LegiScan path.
+# Deploy whichever you need.
 
-# ── OpenStates central (default env) ─────────────────────────────────────────
+# ── OpenStates central (top-level env) — alternative, not actively maintained ─
 name = "floorvote-central"
 main = "src/index.ts"
 compatibility_date = "2026-06-18"
@@ -59,8 +61,9 @@ name = "EMAIL"
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)
 
-# ── LegiScan central (alternative provider) ──────────────────────────────────
-# Uncomment and fill in to use LegiScan instead of (or alongside) OpenStates.
+# ── LegiScan central (recommended, actively-maintained provider) ─────────────
+# Uncomment and fill in to run the recommended LegiScan path (deployed with
+# `--env legiscan` / `npm run deploy:legiscan`).
 #
 # [env.legiscan]
 # main = "src/index-legiscan.ts"
