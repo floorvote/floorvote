@@ -9,7 +9,7 @@ export type { BillProvider } from './types'
 export { deriveStatus } from './openstates'
 
 export function getProvider(env: Env, db: CentralDb): BillProvider {
-  const providerName = env.BILL_PROVIDER ?? 'openstates'
+  const providerName = env.BILL_PROVIDER ?? 'legiscan'
 
   const trackCall = () => {
     const date = new Date().toISOString().split('T')[0] // ts-write-ok: date-only (YYYY-MM-DD) key, format-agnostic
