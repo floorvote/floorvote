@@ -9,12 +9,18 @@
 //   apple-touch-icon.png (180) + icon-{192,512}.png       — navy full-bleed square
 //     (rx=0; iOS masks its own corners), mark centered ~68% width. Maskable-safe.
 //   email-icons/wordmark-mark.png                          — transparent Honey mark
-//     at its natural (tight) aspect, for the email masthead <img>.
+//     at its natural (tight) aspect. Kept for already-delivered emails that point
+//     at its hosted URL; new emails use the full lockup below.
+//   email-icons/wordmark.png                               — the full lockup (mark
+//     + "FloorVote" in Archivo), rasterized from the outlined brand SVG
+//     .github/assets/floorvote-wordmark.svg. The text is already vectorized to
+//     paths there, so no font is needed. This is the email masthead wordmark: the
+//     name ships as an image because email clients can't load the brand face.
 //
-// All geometry derives from LOGO_MARK — never hand-drawn. Run whenever the mark
-// or its colors change.
+// Mark geometry derives from LOGO_MARK — never hand-drawn. Run whenever the mark,
+// its colors, or the brand wordmark SVG change.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Resvg } from '@resvg/resvg-js'
@@ -24,6 +30,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PUBLIC = join(ROOT, 'web/public')
 const HONEY = '#e8a33d'
 const NAVY = '#1e3a5f'
+// Retina width for the email masthead lockup PNG (~3.2× its ~150px display box).
+const WORDMARK_WIDTH = 480
+// The outlined brand wordmark — Archivo already vectorized to paths, so Resvg
+// needs no font. Same asset the README renders.
+const WORDMARK_SVG = '.github/assets/floorvote-wordmark.svg'
 
 // The mark's bounding box (baked coords) centers on (50, 46.6). Frame it in a
 // square for the tab icon: side 66 → ~87% width fill, comfortable margin.
@@ -78,6 +89,7 @@ export interface BrandAsset { name: string; data: Buffer }
 export function buildBrandAssets(): BrandAsset[] {
   const square = markSquareSvg()
   const navy = navySquareSvg()
+  const wordmark = readFileSync(join(ROOT, WORDMARK_SVG), 'utf8')
   const f16 = png(square, 16)
   const f32 = png(square, 32)
   const f48 = png(square, 48)
@@ -91,6 +103,7 @@ export function buildBrandAssets(): BrandAsset[] {
     { name: 'icon-192.png', data: png(navy, 192) },
     { name: 'icon-512.png', data: png(navy, 512) },
     { name: 'email-icons/wordmark-mark.png', data: png(logoMarkSvg(HONEY), 96) },
+    { name: 'email-icons/wordmark.png', data: png(wordmark, WORDMARK_WIDTH) },
   ]
 }
 

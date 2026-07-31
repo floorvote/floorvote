@@ -22,9 +22,8 @@ describe('email conformance — every sample type shares the shell contract', ()
       })
 
       it('carries the FloorVote wordmark and the instance name', () => {
-        expect(html).toContain('#1e3a5f') // wordmark navy "Floor"
-        expect(html).toContain(color.accentAmber) // wordmark honey "Vote"
-        expect(html).toContain('/email-icons/wordmark-mark.png') // wordmark mark image
+        expect(html).toContain('/email-icons/wordmark.png') // wordmark lockup image
+        expect(html).toContain('alt="FloorVote"') // product name for a11y / images-off
         expect(html).toContain(SAMPLE_ASSOC_NAME)
       })
 
