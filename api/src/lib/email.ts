@@ -5,7 +5,7 @@ import { recordResendUsage, recordResendThrottle } from './resendUsage'
 import { recordAuthEvent } from './authEvents'
 import { htmlToText } from '../../../shared/htmlToText'
 import { resolveOrgNoun as _resolveOrgNoun } from '../../../shared/orgNoun'
-import { PRODUCT_NAME, PRODUCT_NAME_WORDMARK } from '../../../shared/brand'
+import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
 import { color, fontSize } from '../../../shared/tokens'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
@@ -165,13 +165,15 @@ export async function sendBatch(env: SendEnv, messages: EmailMessage[], tag = 'e
 
 
 export function wordmarkHtml(appUrl: string): string {
-  // The mark is a hosted PNG — email clients can't render inline SVG reliably.
-  // Inline <img> + text (not flexbox) for Outlook/Gmail safety. Weight 600 and
-  // the Honey accent match the app (the brand source of truth).
+  // The full lockup (mark + "FloorVote" in Archivo) ships as a hosted PNG. Email
+  // clients can't load the brand font, so the name is an image, not live text —
+  // that was the whole point. alt carries the name for screen readers and for
+  // images-off clients (Outlook blocks images by default). The PNG is rendered
+  // from the outlined brand SVG by scripts/gen-brand-assets.ts (npm run
+  // gen:brand-assets); display 150×24 with height:auto to hold the ~6.3:1 ratio.
   return `
-  <div style="margin-bottom:4px;font-size:18px;font-weight:600;letter-spacing:-0.02em;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <img src="${appUrl}/email-icons/wordmark-mark.png" width="21" height="15" alt="" style="vertical-align:-2px;margin-right:5px;border:0;">
-    <span style="color:#1e3a5f;">${PRODUCT_NAME_WORDMARK.primary}</span><span style="color:${color.accentAmber};">${PRODUCT_NAME_WORDMARK.accent}</span>
+  <div style="margin-bottom:4px;">
+    <img src="${appUrl}/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
   </div>
 `
 }

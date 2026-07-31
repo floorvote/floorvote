@@ -15,8 +15,8 @@ const ev = (over: any = {}) => ({
 describe('renderDigestEmail', () => {
   it('renders the wordmark, bill number, and change label', () => {
     const html = renderDigestEmail({ events: [ev()], assocName: 'RI Clerks', appUrl: 'https://staging.example.com' })
-    expect(html).toContain('>Floor</span>')
-    expect(html).toContain('>Vote</span>')
+    expect(html).toContain('/email-icons/wordmark.png')  // wordmark lockup image (was live-text spans)
+    expect(html).toContain('alt="FloorVote"')
     expect(html).toContain('H 5174')
     expect(html).toContain('Status:')                  // formatBillUpdateDetail output
     expect(html).toContain('Manage email settings')
