@@ -1,6 +1,21 @@
-# FloorVote
+<p align="center">
+  <a href="https://floorvote.org">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/floorvote-wordmark-dark.svg">
+      <img alt="FloorVote" src=".github/assets/floorvote-wordmark.svg" width="360">
+    </picture>
+  </a>
+</p>
 
-Issue-based legislative tracking, for teams.
+<p align="center">
+  <strong>Issue-based legislative tracking, for teams.</strong>
+</p>
+
+<p align="center">
+  <a href="https://floorvote.org">floorvote.org</a>
+</p>
+
+---
 
 FloorVote monitors state and federal legislation and surfaces the bills that matter to your team — filtered by configurable keywords, summarized by AI, and organized for collective review. Built initially for state associations of local election officials, it's designed to work for any team tracking any legislative issue.
 
@@ -160,3 +175,11 @@ scripts/        Utility scripts (seeders, dev tooling)
 legiscan/       LegiScan API reference and sample data
 docs/           Architecture docs, self-hosting guide, conventions
 ```
+
+---
+
+## Acknowledgments
+
+Architecture and security have been reviewed and strengthened through a volunteer engagement with [U.S. Digital Response](https://www.usdigitalresponse.org/) (volunteer: [Larry Hitchon](https://github.com/lhitchon)).
+
+FloorVote is supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
