@@ -44,6 +44,26 @@ Update `state_coverage` in the tenant's `association_config`, then load that sta
 
 Each new organization or topic focus is another tenant. Follow [Adding tenants](/self-hosting/tenants) again — you reuse the same account-level Cloudflare credentials every time, so the per-tenant work is small.
 
+## Deploying with GitHub Actions (optional)
+
+The repo ships a manual deploy workflow at `.github/workflows/deploy.yml` (`workflow_dispatch` — it never fires on push). It wraps the same `npm run deploy:*` scripts this guide uses locally, so deploys run in CI instead of from your machine: auditable, and independent of any one laptop. Local `wrangler` still works and stays the fallback.
+
+**One-time setup:**
+
+1. Create a Cloudflare API token scoped to your account with **Workers Scripts: Edit**, **D1: Edit**, and **Queues: Edit** (add **Workers Routes: Edit** only if your deploys change routes). Add it as the repository secret `CLOUDFLARE_API_TOKEN` (repo → Settings → Secrets and variables → Actions).
+2. Create a GitHub **Environment** named `production` (repo → Settings → Environments) and scope the token to it. Restrict its deployment branches to your default branch; on GitHub Team or Pro you can also require reviewer approval.
+
+**Deploying:**
+
+```bash
+# From your default branch — deploy one tenant, or central:
+gh workflow run deploy.yml --ref main -f target=tenant -f tenant=<slug>
+gh workflow run deploy.yml --ref main -f target=central
+gh run watch
+```
+
+Triggering with `gh` (or the Actions tab → "Deploy (manual)" → Run workflow) starts the run with your GitHub token; the Cloudflare token stays inside the Actions runner and never touches your laptop.
+
 ## Upgrading
 
 Pull the latest code and redeploy. Always use the deploy scripts so migrations and the frontend build run:
