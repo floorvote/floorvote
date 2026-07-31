@@ -1,0 +1,51 @@
+# api/.dev.vars.example — local development secrets for the tenant Worker.
+#
+# `wrangler dev` (used by `npm run dev` and `npm run dev:local`) auto-loads a
+# file named `.dev.vars` from this directory into `env`. Get started with:
+#
+#   cp api/.dev.vars.example api/.dev.vars
+#
+# NONE of the values below are required for `npm run dev:local` — that command
+# runs in demo mode (auto-login, seeded data) and short-circuits email and AI.
+# It only needs the `.dev.vars` file to exist. Uncomment a key here to exercise
+# that one integration against a real service.
+#
+# This file holds LOCAL secrets only. Non-secret per-env config (APP_URL,
+# TENANT_ID, STATE, PROVIDER, …) lives in wrangler.toml — see
+# api/wrangler.example.toml. Production secrets are set with
+# `wrangler secret put`, never here (see the "Secrets" note at the bottom of
+# api/wrangler.example.toml).
+#
+# `.dev.vars` is gitignored; this `.dev.vars.example` is committed. Never put a
+# real value in this example file.
+
+# --- AI summaries & tagging -------------------------------------------------
+# Cloudflare AI Gateway token — the primary path. Routes bill summaries and tags
+# through Cloudflare AI Gateway, so AI billing, caching, and analytics run through
+# your Cloudflare account. Used when AI_GATEWAY_ENABLED=true (which also needs
+# CF_ACCOUNT_ID and CF_AIG_GATEWAY as vars in wrangler.toml). Account-level token
+# with the "AI Gateway Run" scope.
+# CF_AIG_TOKEN=
+
+# Direct Google Gemini key — the fallback, for when you don't want to run AI
+# billing through Cloudflare. Used when AI_GATEWAY_ENABLED is not "true"; calls
+# Google directly. https://aistudio.google.com/apikey
+# GEMINI_API_KEY=
+
+# --- Login bot-check (optional) ---------------------------------------------
+# Cloudflare Turnstile keys for the real magic-link login flow. Demo mode skips
+# login entirely, so these matter only when testing real login locally. The
+# site key is public; the secret key is not. Cloudflare publishes always-pass
+# test keys: https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+# TURNSTILE_SITE_KEY=
+# TURNSTILE_SECRET_KEY=
+
+# --- Transactional email (optional) -----------------------------------------
+# Only used when EMAIL_PROVIDER=resend (set in wrangler.toml). Demo mode and the
+# default Cloudflare email provider do not use it. https://resend.com/api-keys
+# RESEND_API_KEY=
+
+# --- Local mode override (optional) -----------------------------------------
+# Force demo auto-login under a plain `npm run dev`. `npm run dev:local` sets
+# this for you, so you rarely need it here.
+# DEMO_MODE=true

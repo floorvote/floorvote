@@ -1,0 +1,32 @@
+# central/.dev.vars.example — local development secrets for the central Worker.
+#
+# `wrangler dev` auto-loads a file named `.dev.vars` from this directory into
+# `env`. Get started with:
+#
+#   cp central/.dev.vars.example central/.dev.vars
+#
+# Add a key only when you need that feature locally. Non-secret config
+# (BILL_PROVIDER, EMAIL_PROVIDER, …) lives in wrangler.toml — see
+# central/wrangler.example.toml. Production secrets are set with
+# `wrangler secret put` (see the "Secrets" note in central/wrangler.example.toml).
+#
+# `.dev.vars` is gitignored; this `.dev.vars.example` is committed. Never put a
+# real value in this example file.
+
+# --- Bill data provider -----------------------------------------------------
+# Central fetches bills from one provider, chosen by BILL_PROVIDER in
+# wrangler.toml (default "legiscan"). Set the key for whichever you use; the
+# other can stay unset. Needed only when you actually ingest bills locally.
+# LEGISCAN_API_KEY=         # https://legiscan.com/legiscan  — primary, maintained path
+# OPENSTATES_API_KEY=       # https://open.pluralpolicy.com/accounts/profile/  — alternative, not actively maintained
+
+# --- Admin / operator endpoints (optional) ----------------------------------
+# Bearer secret protecting /admin/* and /tenants/* routes. Set it to call those
+# routes locally (pass it as the x-admin-secret header); unset leaves them
+# closed. Any non-empty string works for local dev.
+# ADMIN_SECRET=
+
+# --- Analytics & delivery status (optional) ---------------------------------
+# Cloudflare API token (Account Analytics: Read + Zone Analytics: Read) for the
+# D1 anomaly watch and email-delivery lookups. Unset disables those features.
+# CF_ANALYTICS_TOKEN=

@@ -35,7 +35,7 @@ if [ ! -f "$DEV_VARS" ]; then
     cp "$SRC" "$DEV_VARS"
   else
     echo "ERROR: api/.dev.vars not found here or in main checkout ($SRC)." >&2
-    echo "       Create api/.dev.vars (see CLAUDE.md 'Required secrets')." >&2
+    echo "       Run: cp api/.dev.vars.example api/.dev.vars (every key is optional for demo dev)." >&2
     exit 1
   fi
 fi

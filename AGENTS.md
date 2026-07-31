@@ -122,7 +122,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `SUPERADMIN_JWT_PUBLIC_KEY` | ES256 public JWK (same value as on tenants) |
 | `TURNSTILE_SITE_KEY` | Public Turnstile sitekey for dashboard login (optional) |
 
-For local dev: create `api/.dev.vars` with tenant secrets plus `APP_URL=http://localhost:5173`.
+For local dev: `cp api/.dev.vars.example api/.dev.vars` (and `central/.dev.vars.example` if working on central). Both are fully annotated and every key is optional for `npm run dev:local` — the file just needs to exist. Uncomment a key only to exercise that integration locally.
 
 ### Database
 
