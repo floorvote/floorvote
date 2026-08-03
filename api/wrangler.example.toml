@@ -37,9 +37,9 @@ run_worker_first = ["/api/*"]
 [env.dev]
 name = "floorvote-dev"
 
-# [define] is non-inheritable: a top-level [define] is NOT applied to named
-# environments, so env.dev needs its own copy or wrangler warns on every
-# command. BUILD_SHA is overridden at deploy time via --define.
+# [define] is non-inheritable: wrangler does NOT apply the top-level [define]
+# to named environments, so each env needs its own or wrangler warns on every
+# command. BUILD_SHA is overridden at deploy via --define; "'dev'" is a placeholder.
 [env.dev.define]
 BUILD_SHA = "'dev'"
 
@@ -85,6 +85,12 @@ namespace_id = "2099"
 [env.example]
 name = "floorvote-example"
 routes = [{ pattern = "app.example.com", custom_domain = true }]
+
+# [define] is non-inheritable: wrangler does NOT apply the top-level [define]
+# to named environments, so each env needs its own or wrangler warns on every
+# command. BUILD_SHA is overridden at deploy via --define; "'dev'" is a placeholder.
+[env.example.define]
+BUILD_SHA = "'dev'"
 
 [env.example.vars]
 APP_URL = "https://app.example.com"
