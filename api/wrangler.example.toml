@@ -37,6 +37,12 @@ run_worker_first = ["/api/*"]
 [env.dev]
 name = "floorvote-dev"
 
+# [define] is non-inheritable: a top-level [define] is NOT applied to named
+# environments, so env.dev needs its own copy or wrangler warns on every
+# command. BUILD_SHA is overridden at deploy time via --define.
+[env.dev.define]
+BUILD_SHA = "'dev'"
+
 [env.dev.vars]
 APP_URL = "http://localhost:5173"
 ASSOCIATION_NAME = "Dev Association"
