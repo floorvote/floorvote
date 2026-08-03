@@ -30,54 +30,71 @@ describe('setSecurityHeaders', () => {
   })
 })
 
-describe('CONTENT_SECURITY_POLICY', () => {
-  it('locks the default to self', () => {
-    expect(CONTENT_SECURITY_POLICY).toContain("default-src 'self'")
+// --- CSP resource-dependency contract ---------------------------------------
+// The tests above check the CSP is *well-formed*. This block checks it is
+// *sufficient*: every resource the app actually loads at runtime is pinned to
+// the directive that must permit it, with a pointer to the code that needs it.
+// This is the guard the PDF-viewer regression should have tripped — tightening
+// a directive (or the Report-Only → enforce flip) that would break one of these
+// fails here BY NAME, instead of silently in a browser after deploy.
+//
+// COVERAGE LIMIT: this is a *declared* contract, not a live browser check — it
+// cannot see a brand-new resource type nobody added here. When you add a
+// feature that loads a resource (an <iframe>, a Worker, <video>/<audio>, an
+// external fetch, or a web font), add its row below AND, if needed, the
+// directive it requires. Two directives are deliberately UNSET today, so they
+// inherit `default-src 'self'`:
+//   - media-src  — the app renders no <video>/<audio>. Cross-origin or blob:
+//                  media would need media-src added here.
+//   - worker-src — the app spawns no Web/Service Worker or PWA. Some libraries
+//                  mint workers from blob: URLs; that would need worker-src blob:.
+// (Audited 2026-08-03: no media/worker/external-fetch usage exists in the client.)
+
+/** Source list for a directive, e.g. directive('frame-src') → ["https://…", "blob:"]. */
+function directive(name: string): string[] {
+  const entry = CONTENT_SECURITY_POLICY.split('; ').find((d) => d === name || d.startsWith(`${name} `))
+  return entry ? entry.split(' ').slice(1) : []
+}
+
+// feature → the directive + source(s) it depends on → the code that needs it.
+const RESOURCE_CONTRACT: { feature: string; directive: string; needs: string[]; code: string }[] = [
+  { feature: 'Bill-text PDF viewer frames a same-origin URL.createObjectURL() blob', directive: 'frame-src', needs: ['blob:'], code: 'web/src/components/BillTextPanel.tsx' },
+  { feature: 'Turnstile widget iframe', directive: 'frame-src', needs: ['https://challenges.cloudflare.com'], code: 'web/src/components/Turnstile.tsx' },
+  { feature: 'App bundle + externalized reload-guard (classic <script src>)', directive: 'script-src', needs: ["'self'"], code: 'web/index.html, web/public/reload-guard.js' },
+  { feature: 'Turnstile challenge script', directive: 'script-src', needs: ['https://challenges.cloudflare.com'], code: 'web/src/components/Turnstile.tsx' },
+  { feature: 'Cloudflare Web Analytics RUM beacon (edge-injected)', directive: 'script-src', needs: ['https://static.cloudflareinsights.com'], code: 'shared/securityHeaders.ts (edge-injected)' },
+  { feature: 'Inline style={{}} attributes + inline <style>', directive: 'style-src', needs: ["'unsafe-inline'"], code: 'web/src (pervasive inline styles)' },
+  { feature: 'Google Fonts stylesheet', directive: 'style-src', needs: ['https://fonts.googleapis.com'], code: 'web/index.html, central/web/index.html' },
+  { feature: 'Google Fonts font files', directive: 'font-src', needs: ['https://fonts.gstatic.com'], code: 'web/index.html, central/web/index.html' },
+  { feature: 'App images/favicons, data: URIs, and external https images in sanitized content', directive: 'img-src', needs: ["'self'", 'data:', 'https:'], code: 'web/index.html, web/src/lib/sanitizeHtml.ts' },
+]
+
+describe('CSP resource-dependency contract', () => {
+  for (const { feature, directive: name, needs, code } of RESOURCE_CONTRACT) {
+    it(`${name} permits — ${feature} (${code})`, () => {
+      const allowed = directive(name)
+      for (const src of needs) expect(allowed).toContain(src)
+    })
+  }
+
+  it("default-src is locked to 'self'", () => {
+    expect(directive('default-src')).toEqual(["'self'"])
   })
 
-  it('allows the app bundle, Turnstile, and the CF Analytics beacon, but never unsafe-inline scripts', () => {
-    const scriptSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('script-src '))
-    expect(scriptSrc).toBeDefined()
-    expect(scriptSrc).toContain("'self'")
-    expect(scriptSrc).toContain('https://challenges.cloudflare.com')
-    expect(scriptSrc).toContain('https://static.cloudflareinsights.com')
-    // The whole point of a script CSP: inline scripts stay disallowed.
-    expect(scriptSrc).not.toContain("'unsafe-inline'")
+  it('connect-src stays same-origin only — the client makes no external network calls', () => {
+    // Audited: no fetch/XHR/WebSocket/EventSource/sendBeacon to a non-self
+    // origin (the RUM beacon POSTs same-origin /cdn-cgi/rum). If a feature ever
+    // calls an external API from the browser, add its origin here.
+    expect(directive('connect-src')).toEqual(["'self'"])
   })
 
-  it('allows external https images (AI summaries render raw HTML) but not http', () => {
-    const imgSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('img-src '))
-    expect(imgSrc).toBeDefined()
-    expect(imgSrc).toContain("'self'")
-    expect(imgSrc).toContain('data:')
-    expect(imgSrc).toContain('https:')
+  it("script-src never allows inline scripts (the XSS invariant that must not regress)", () => {
+    expect(directive('script-src')).not.toContain("'unsafe-inline'")
+    expect(directive('script-src')).not.toContain("'unsafe-eval'")
   })
 
-  it('allows Google Fonts and inline styles', () => {
-    const styleSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('style-src '))
-    expect(styleSrc).toContain("'unsafe-inline'")
-    expect(styleSrc).toContain('https://fonts.googleapis.com')
-    expect(CONTENT_SECURITY_POLICY).toContain('font-src')
-    expect(CONTENT_SECURITY_POLICY).toContain('https://fonts.gstatic.com')
-  })
-
-  it('allows the Turnstile iframe', () => {
-    const frameSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('frame-src '))
-    expect(frameSrc).toContain('https://challenges.cloudflare.com')
-  })
-
-  it('allows blob: frames (bill-text PDF viewer frames a same-origin blob URL)', () => {
-    // BillTextPanel fetches the PDF (credentialed, same-origin) and frames the
-    // resulting URL.createObjectURL() blob. Blob-URL frames are governed by
-    // frame-src; without blob: the browser blocks the PDF as "content blocked".
-    // Safe: blob URLs can only be minted by same-origin script, and script-src
-    // is 'self' with no 'unsafe-inline', so no injected script can forge one.
-    const frameSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('frame-src '))
-    expect(frameSrc).toContain('blob:')
-  })
-
-  it('blocks clickjacking and plugin/object embedding at the CSP layer too', () => {
-    expect(CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'")
-    expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'")
+  it('locks down clickjacking and plugin/object embedding at the CSP layer', () => {
+    expect(directive('frame-ancestors')).toEqual(["'none'"])
+    expect(directive('object-src')).toEqual(["'none'"])
   })
 })
