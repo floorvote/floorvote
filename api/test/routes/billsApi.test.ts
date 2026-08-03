@@ -2020,3 +2020,57 @@ describe('GET /bills — broadened search fields', () => {
     expect(await search('zoning desalination')).toEqual(['H 400'])
   })
 })
+
+describe('GET /bills — bill-number ranking', () => {
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+  })
+
+  // Order-PRESERVING search helper (the comma-search helper sorts; this keeps rank order).
+  async function searchOrdered(q: string, extra = ''): Promise<string[]> {
+    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}${extra}`, {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: { billNumber: string }[] }
+    return body.bills.map(b => b.billNumber)
+  }
+
+  it('floats the exact bill-number match above an abstract number-noise match', async () => {
+    // H 100 would sort first by default (higher relevance) but only matches in its abstract.
+    await seedBill({ billNumber: 'H 100', title: 'Budget Act',
+      abstract: 'Amends section SB 977 of the code.', relevanceScore: 10 })
+    await seedBill({ billNumber: 'SB 977', title: 'Unrelated Act', relevanceScore: 1 })
+    expect(await searchOrdered('SB 977')).toEqual(['SB 977', 'H 100'])
+  })
+
+  it('leaves topic-search order unchanged (boost inert)', async () => {
+    await seedBill({ billNumber: 'H 1', title: 'Election Reform', relevanceScore: 1 })
+    await seedBill({ billNumber: 'H 2', title: 'Election Funding', relevanceScore: 9 })
+    // Default sort ranks by relevance desc; no bill_number contains "election".
+    expect(await searchOrdered('election')).toEqual(['H 2', 'H 1'])
+  })
+
+  it('floats the exact match even under an explicit non-default sort', async () => {
+    // sort=bill asc would order H 100 before SB 977 by prefix; the boost overrides.
+    await seedBill({ billNumber: 'H 100', title: 'Zeta', abstract: 'refers to SB 977' })
+    await seedBill({ billNumber: 'SB 977', title: 'Alpha' })
+    expect(await searchOrdered('SB 977', '&sort=bill&dir=asc')).toEqual(['SB 977', 'H 100'])
+  })
+
+  it('floats both bills in a comma multi-lookup above a higher-tier non-match', async () => {
+    await seedBill({ billNumber: 'HB 100', title: 'Alpha', relevanceScore: 1 })
+    await seedBill({ billNumber: 'SB 200', title: 'Beta', relevanceScore: 1 })
+    await seedBill({ billNumber: 'HB 999', title: 'Election Omnibus', relevanceScore: 10 })
+    // Matches HB 100 and SB 200 by number and HB 999 by title; HB 999 has the highest
+    // relevance but the two exact number matches float above it.
+    const order = await searchOrdered('HB 100, SB 200, election')
+    expect(order.slice(0, 2).sort()).toEqual(['HB 100', 'SB 200'])
+    expect(order[2]).toBe('HB 999')
+  })
+})

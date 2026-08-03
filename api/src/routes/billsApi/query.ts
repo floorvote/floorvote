@@ -85,28 +85,41 @@ function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefin
   return or(and(...tokens.map(matchAllFields))!, despacedCond)!
 }
 
+// The comma-separated segments actually honored under the shared token budget —
+// the single source of truth for "which segments a search considers", so the WHERE
+// clause (buildSearchCondition) and the ORDER BY boost (buildBillNumberBoost) can't
+// diverge on which segments count. Each returned segment has >=1 budgeted token, so
+// the number of segments is <= MAX_SEARCH_TOKENS, which bounds both param footprints.
+//
+// Two D1 limits to respect, both surfaced as 500s:
+//  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
+//    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
+//  • bound params — >100 params per statement ("too many SQL variables"), and
+//    each token emits up to 3 LIKE params. Guarded by MAX_SEARCH_TOKENS across
+//    the whole query (a segment cap alone doesn't bound tokens within one
+//    segment, e.g. a long pasted phrase). Segments are still capped first so a
+//    comma-bomb can't consume the whole token budget on segment one.
+export function budgetedSegments(q: string): { segment: string; tokens: string[] }[] {
+  let budget = MAX_SEARCH_TOKENS
+  const out: { segment: string; tokens: string[] }[] = []
+  for (const segment of splitSegments(q).slice(0, 25)) {
+    if (budget <= 0) break
+    const tokens = tokenizeSegment(segment).slice(0, budget).map(t => truncateToBytes(t, MAX_SEARCH_TERM_BYTES))
+    if (tokens.length === 0) continue
+    budget -= tokens.length
+    out.push({ segment, tokens })
+  }
+  return out
+}
+
 // Build a search condition for a query string against bill title, summary,
 // abstract, and bill number. Comma-separated segments are OR'd; tokens within
 // a segment are AND'd; quoted spans match as exact substrings. Returns
 // undefined when the query has no usable tokens (callers treat that as "no
 // search filter").
 export function buildSearchCondition(q: string): SQL | undefined {
-  // Two D1 limits to respect, both surfaced as 500s:
-  //  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
-  //    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
-  //  • bound params — >100 params per statement ("too many SQL variables"), and
-  //    each token emits up to 3 LIKE params. Guarded by MAX_SEARCH_TOKENS across
-  //    the whole query (a segment cap alone doesn't bound tokens within one
-  //    segment, e.g. a long pasted phrase). Segments are still capped first so a
-  //    comma-bomb can't consume the whole token budget on segment one.
-  let budget = MAX_SEARCH_TOKENS
   const conds: SQL[] = []
-  for (const segment of splitSegments(q).slice(0, 25)) {
-    if (budget <= 0) break
-    const tokens = tokenizeSegment(segment)
-      .slice(0, budget)
-      .map(t => truncateToBytes(t, MAX_SEARCH_TERM_BYTES))
-    budget -= tokens.length
+  for (const { segment, tokens } of budgetedSegments(q)) {
     const cond = buildSegmentCondition(segment, tokens)
     if (cond) conds.push(cond)
   }
@@ -190,10 +203,32 @@ const SORT_HIERARCHY: Array<{
   },
 ]
 
-export function buildOrderBy(col: string, d: 'asc' | 'desc'): SQL[] {
+// Primary sort tier: float rows whose despaced bill_number matches any segment's
+// despaced query pattern ahead of everything else. Reuses despacedPattern, so it
+// fires under exactly the same conditions as the WHERE despaced clause. For a
+// topic query ("election") the CASE evaluates to 1 for every row — self-inert, no
+// reordering. Returns undefined only when no segment yields a usable pattern.
+// Derives its segments from budgetedSegments — the exact set the WHERE clause
+// searches — so it can never boost a segment the search dropped, and its param
+// count is bounded to <= MAX_SEARCH_TOKENS.
+export function buildBillNumberBoost(q: string | undefined): SQL | undefined {
+  if (!q) return undefined
+  const pats = budgetedSegments(q)
+    .map(s => despacedPattern(s.segment))
+    .filter((p): p is string => p !== null)
+  if (pats.length === 0) return undefined
+  const matches = pats.map(p => sql`replace(${bills.billNumber}, ' ', '') LIKE ${p}`)
+  const anyMatch = matches.length === 1 ? matches[0] : or(...matches)!
+  return sql`CASE WHEN ${anyMatch} THEN 0 ELSE 1 END`
+}
+
+export function buildOrderBy(col: string, d: 'asc' | 'desc', q?: string): SQL[] {
+  // When searching, float exact bill-number matches to the very top, above the
+  // active sort (which still orders within each group and governs the rest).
+  const boost = buildBillNumberBoost(q)
   // Append bills.id so the total order is fully deterministic — without a unique final key,
   // rows tied on every tier can shuffle across paginated requests (drop/repeat on scroll).
-  return [...orderByTiers(col, d), asc(bills.id)]
+  return [...(boost ? [boost] : []), ...orderByTiers(col, d), asc(bills.id)]
 }
 
 export function canOptimize(sort: string, dir: 'asc' | 'desc'): boolean {

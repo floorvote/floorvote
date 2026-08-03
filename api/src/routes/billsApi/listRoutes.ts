@@ -66,7 +66,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     })
 
     // Sort
-    const orderByClauses = buildOrderBy(sort ?? 'default', sortDir)
+    const orderByClauses = buildOrderBy(sort ?? 'default', sortDir, q)
 
     // ── Default-list query cache ──────────────────────────────────────────
     // The count+ordered-page query is the expensive, SHARED part (full scan +
