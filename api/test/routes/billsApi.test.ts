@@ -1969,3 +1969,54 @@ describe('stored timestamps are space-format', () => {
     for (const p of ps) { expect(p.createdAt).toMatch(SPACE); expect(p.updatedAt).toMatch(SPACE) }
   })
 })
+
+describe('GET /bills — broadened search fields', () => {
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+    // Term lives ONLY in tenant_summary:
+    await seedBill({ billNumber: 'H 100', title: 'Consumer Protection Act',
+      tenantSummary: 'Caps the resale price on a secondary ticket platform.' })
+    // Term lives ONLY in abstract:
+    await seedBill({ billNumber: 'H 200', title: 'General Revenue Act',
+      abstract: 'Establishes a geothermal energy pilot program.' })
+    // Control bill with the term in none of the fields:
+    await seedBill({ billNumber: 'H 300', title: 'Unrelated Act' })
+    // Cross-field match: one token only in title, the other only in abstract.
+    await seedBill({ billNumber: 'H 400', title: 'Coastal Zoning Reform',
+      abstract: 'Includes a desalination feasibility study.' })
+  })
+
+  async function search(q: string): Promise<string[]> {
+    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: { billNumber: string }[] }
+    return body.bills.map(b => b.billNumber).sort()
+  }
+
+  it('a quoted phrase matches the summary (the reported bug)', async () => {
+    expect(await search('"resale price on a secondary ticket"')).toEqual(['H 100'])
+  })
+
+  it('a single bare word matches the summary', async () => {
+    expect(await search('resale')).toEqual(['H 100'])
+  })
+
+  it('a search matches the abstract', async () => {
+    expect(await search('geothermal')).toEqual(['H 200'])
+  })
+
+  it('a multi-word query matches across summary tokens', async () => {
+    expect(await search('resale secondary')).toEqual(['H 100'])
+  })
+
+  it('a multi-word query matches tokens across different fields (title + abstract)', async () => {
+    expect(await search('zoning desalination')).toEqual(['H 400'])
+  })
+})
