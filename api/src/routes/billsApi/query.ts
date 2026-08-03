@@ -95,8 +95,9 @@ function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefin
 //  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
 //    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
 //  • bound params — >100 params per statement ("too many SQL variables"), and
-//    each token emits up to 3 LIKE params. Guarded by MAX_SEARCH_TOKENS across
-//    the whole query (a segment cap alone doesn't bound tokens within one
+//    each token emits up to ~6 params (4 field LIKEs + 1 despaced WHERE match,
+//    plus 1 more for the despaced ORDER BY boost). Guarded by MAX_SEARCH_TOKENS
+//    across the whole query (a segment cap alone doesn't bound tokens within one
 //    segment, e.g. a long pasted phrase). Segments are still capped first so a
 //    comma-bomb can't consume the whole token budget on segment one.
 export function budgetedSegments(q: string): { segment: string; tokens: string[] }[] {

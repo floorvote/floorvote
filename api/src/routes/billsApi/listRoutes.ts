@@ -94,7 +94,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       billRows = cached.billRows as unknown as BillRow[]
     } else {
       const sortCol = sort ?? 'default'
-      const optimize = canOptimize(sortCol, sortDir)
+      // When a search is active, the bill-number boost (buildOrderBy) can float an
+      // UNTRACKED exact match to the top — but the optimize fast path scans only
+      // tracked bills, so it would silently drop that match and cause drop/duplicate
+      // at the fast/normal pagination seam. Search is a leading-wildcard full scan
+      // regardless, so the fast path buys little here; bypass it whenever q is set.
+      const optimize = canOptimize(sortCol, sortDir) && !q
 
       // Phase 1: counts — always get total; get trackedCount when optimizing
       const totalPromise = db.select({ total: sql<number>`count(*)` }).from(bills).where(finalWhere).all()

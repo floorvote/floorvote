@@ -2073,4 +2073,16 @@ describe('GET /bills — bill-number ranking', () => {
     expect(order.slice(0, 2).sort()).toEqual(['HB 100', 'SB 200'])
     expect(order[2]).toBe('HB 999')
   })
+
+  it('floats an untracked exact match even when the optimize fast path would trigger', async () => {
+    // Two TRACKED noise bills (abstract mentions the number) + one UNTRACKED exact match.
+    // With pageSize=1 and 2 tracked bills, the old fast path (tracked-only) would return a
+    // noise bill and never surface the untracked SB 977. Bypassing the fast path for searches
+    // fixes it.
+    await seedBill({ billNumber: 'HB 100', title: 'Budget Act', abstract: 'mentions SB 977', matchType: 'keyword', relevanceScore: 10 })
+    await seedBill({ billNumber: 'HB 200', title: 'Finance Act', abstract: 'also SB 977', matchType: 'keyword', relevanceScore: 9 })
+    await seedBill({ billNumber: 'SB 977', title: 'Ticket Resale Act', matchType: null, relevanceScore: 1 })
+    const order = await searchOrdered('SB 977', '&pageSize=1')
+    expect(order[0]).toBe('SB 977')
+  })
 })
