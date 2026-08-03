@@ -13,9 +13,9 @@
     "deploy:tenant": "bash deploy.sh"
   },
   "dependencies": {
-    "@google/genai": "^2.13.0",
+    "@google/genai": "^2.15.0",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.32"
+    "hono": "^4.12.33"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.20",
@@ -23,6 +23,6 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9",
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.118.0"
   }
 }
