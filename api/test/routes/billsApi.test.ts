@@ -1969,3 +1969,120 @@ describe('stored timestamps are space-format', () => {
     for (const p of ps) { expect(p.createdAt).toMatch(SPACE); expect(p.updatedAt).toMatch(SPACE) }
   })
 })
+
+describe('GET /bills — broadened search fields', () => {
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+    // Term lives ONLY in tenant_summary:
+    await seedBill({ billNumber: 'H 100', title: 'Consumer Protection Act',
+      tenantSummary: 'Caps the resale price on a secondary ticket platform.' })
+    // Term lives ONLY in abstract:
+    await seedBill({ billNumber: 'H 200', title: 'General Revenue Act',
+      abstract: 'Establishes a geothermal energy pilot program.' })
+    // Control bill with the term in none of the fields:
+    await seedBill({ billNumber: 'H 300', title: 'Unrelated Act' })
+    // Cross-field match: one token only in title, the other only in abstract.
+    await seedBill({ billNumber: 'H 400', title: 'Coastal Zoning Reform',
+      abstract: 'Includes a desalination feasibility study.' })
+  })
+
+  async function search(q: string): Promise<string[]> {
+    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: { billNumber: string }[] }
+    return body.bills.map(b => b.billNumber).sort()
+  }
+
+  it('a quoted phrase matches the summary (the reported bug)', async () => {
+    expect(await search('"resale price on a secondary ticket"')).toEqual(['H 100'])
+  })
+
+  it('a single bare word matches the summary', async () => {
+    expect(await search('resale')).toEqual(['H 100'])
+  })
+
+  it('a search matches the abstract', async () => {
+    expect(await search('geothermal')).toEqual(['H 200'])
+  })
+
+  it('a multi-word query matches across summary tokens', async () => {
+    expect(await search('resale secondary')).toEqual(['H 100'])
+  })
+
+  it('a multi-word query matches tokens across different fields (title + abstract)', async () => {
+    expect(await search('zoning desalination')).toEqual(['H 400'])
+  })
+})
+
+describe('GET /bills — bill-number ranking', () => {
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+  })
+
+  // Order-PRESERVING search helper (the comma-search helper sorts; this keeps rank order).
+  async function searchOrdered(q: string, extra = ''): Promise<string[]> {
+    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}${extra}`, {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { bills: { billNumber: string }[] }
+    return body.bills.map(b => b.billNumber)
+  }
+
+  it('floats the exact bill-number match above an abstract number-noise match', async () => {
+    // H 100 would sort first by default (higher relevance) but only matches in its abstract.
+    await seedBill({ billNumber: 'H 100', title: 'Budget Act',
+      abstract: 'Amends section SB 977 of the code.', relevanceScore: 10 })
+    await seedBill({ billNumber: 'SB 977', title: 'Unrelated Act', relevanceScore: 1 })
+    expect(await searchOrdered('SB 977')).toEqual(['SB 977', 'H 100'])
+  })
+
+  it('leaves topic-search order unchanged (boost inert)', async () => {
+    await seedBill({ billNumber: 'H 1', title: 'Election Reform', relevanceScore: 1 })
+    await seedBill({ billNumber: 'H 2', title: 'Election Funding', relevanceScore: 9 })
+    // Default sort ranks by relevance desc; no bill_number contains "election".
+    expect(await searchOrdered('election')).toEqual(['H 2', 'H 1'])
+  })
+
+  it('floats the exact match even under an explicit non-default sort', async () => {
+    // sort=bill asc would order H 100 before SB 977 by prefix; the boost overrides.
+    await seedBill({ billNumber: 'H 100', title: 'Zeta', abstract: 'refers to SB 977' })
+    await seedBill({ billNumber: 'SB 977', title: 'Alpha' })
+    expect(await searchOrdered('SB 977', '&sort=bill&dir=asc')).toEqual(['SB 977', 'H 100'])
+  })
+
+  it('floats both bills in a comma multi-lookup above a higher-tier non-match', async () => {
+    await seedBill({ billNumber: 'HB 100', title: 'Alpha', relevanceScore: 1 })
+    await seedBill({ billNumber: 'SB 200', title: 'Beta', relevanceScore: 1 })
+    await seedBill({ billNumber: 'HB 999', title: 'Election Omnibus', relevanceScore: 10 })
+    // Matches HB 100 and SB 200 by number and HB 999 by title; HB 999 has the highest
+    // relevance but the two exact number matches float above it.
+    const order = await searchOrdered('HB 100, SB 200, election')
+    expect(order.slice(0, 2).sort()).toEqual(['HB 100', 'SB 200'])
+    expect(order[2]).toBe('HB 999')
+  })
+
+  it('floats an untracked exact match even when the optimize fast path would trigger', async () => {
+    // Two TRACKED noise bills (abstract mentions the number) + one UNTRACKED exact match.
+    // With pageSize=1 and 2 tracked bills, the old fast path (tracked-only) would return a
+    // noise bill and never surface the untracked SB 977. Bypassing the fast path for searches
+    // fixes it.
+    await seedBill({ billNumber: 'HB 100', title: 'Budget Act', abstract: 'mentions SB 977', matchType: 'keyword', relevanceScore: 10 })
+    await seedBill({ billNumber: 'HB 200', title: 'Finance Act', abstract: 'also SB 977', matchType: 'keyword', relevanceScore: 9 })
+    await seedBill({ billNumber: 'SB 977', title: 'Ticket Resale Act', matchType: null, relevanceScore: 1 })
+    const order = await searchOrdered('SB 977', '&pageSize=1')
+    expect(order[0]).toBe('SB 977')
+  })
+})

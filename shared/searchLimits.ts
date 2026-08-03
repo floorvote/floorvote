@@ -4,12 +4,12 @@
 export const MAX_SEARCH_TERM_BYTES = 48
 
 // Max tokens honored across a whole search query. D1 rejects a statement with
-// more than 100 bound parameters ("too many SQL variables"), and each search
-// token emits up to 3 LIKE params, so an unbounded token count (e.g. a long
-// pasted phrase — one segment, many words) overflows the cap. 15 keeps search's
-// own params well under 100 with headroom for the other active filters sharing
-// the statement; real searches are far shorter.
-export const MAX_SEARCH_TOKENS = 15
+// more than 100 bound parameters ("too many SQL variables"). Each token emits up
+// to 4 field-LIKE params, each segment adds 1 despaced param, and the bill-number
+// ORDER BY boost adds 1 param per segment — a worst case of ~6 params per token.
+// 12 keeps search's own params ≤72, leaving headroom for the other active filters
+// sharing the statement; real searches are far shorter.
+export const MAX_SEARCH_TOKENS = 12
 
 // UTF-8 byte length (D1 counts bytes, not characters).
 export function byteLength(s: string): number {

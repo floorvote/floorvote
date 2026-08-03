@@ -50,67 +50,77 @@ export function multiFilter(column: Parameters<typeof eq>[0], values: string[]):
 // multi-state instances). OR-of-ANDs is logically complete for AND/OR queries.
 // See docs/superpowers/specs/2026-06-10-multi-bill-search-design.md.
 
-// One segment → one condition. Every segment also gets an OR'd despaced
-// bill-number match — "H 7358" despaces to "H7358" and hits the stored
-// "H 7358"; text segments despace to something no bill number contains, so
-// the clause is inert. No bill-number detection heuristic, by design.
-// `tokens` are already truncated (length guard) and budgeted (count guard) by
-// the caller — see buildSearchCondition.
-function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefined {
-  if (tokens.length === 0) return undefined
-
-  // Despaced whole-segment bill-number match. Concatenating the segment can blow
-  // the 50-byte pattern limit; a despaced string past the budget can't match a
-  // real (short) bill number anyway, so drop the clause rather than truncate a
-  // meaningless space-stripped blob. Title/summary matching still runs in full.
+// Despaced whole-segment bill-number pattern, shared by the WHERE clause and the
+// ORDER BY boost so the two can't drift. Returns the '%…%' LIKE pattern, or null
+// when the segment is empty or exceeds the byte guard (D1's 50-byte LIKE limit).
+export function despacedPattern(segment: string): string | null {
   const despaced = segment.replace(/["\s]+/g, '')
-  const despacedCond = byteLength(despaced) <= MAX_SEARCH_TERM_BYTES
-    ? sql`replace(${bills.billNumber}, ' ', '') LIKE ${'%' + despaced + '%'}`
-    : undefined
+  if (!despaced || byteLength(despaced) > MAX_SEARCH_TERM_BYTES) return null
+  return '%' + despaced + '%'
+}
 
-  // Single token (word or phrase): title + bill number, no summary.
-  if (tokens.length === 1) {
-    return or(
-      like(bills.title, `%${tokens[0]}%`),
-      like(bills.billNumber, `%${tokens[0]}%`),
-      despacedCond,
-    )!
-  }
-
-  // Multi-token: AND over tokens (title/summary/number), OR the despaced match.
+// One token matched across all four searchable fields. Bill-number matches are
+// additionally floated to the top by buildBillNumberBoost (ORDER BY), so a numeric
+// token's summary/abstract hits land below the exact bill-number match.
+function matchAllFields(token: string): SQL {
+  const pat = `%${token}%`
   return or(
-    and(...tokens.map(t =>
-      or(
-        like(bills.title, `%${t}%`),
-        like(bills.tenantSummary, `%${t}%`),
-        like(bills.billNumber, `%${t}%`),
-      )!,
-    ))!,
-    despacedCond,
+    like(bills.title, pat),
+    like(bills.tenantSummary, pat),
+    like(bills.billNumber, pat),
+    like(bills.abstract, pat),
   )!
 }
 
-// Build a search condition for a query string against bill title, summary,
-// and bill number. Comma-separated segments are OR'd; tokens within a segment
-// are AND'd; quoted spans match as exact substrings. Returns undefined when
-// the query has no usable tokens (callers treat that as "no search filter").
-export function buildSearchCondition(q: string): SQL | undefined {
-  // Two D1 limits to respect, both surfaced as 500s:
-  //  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
-  //    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
-  //  • bound params — >100 params per statement ("too many SQL variables"), and
-  //    each token emits up to 3 LIKE params. Guarded by MAX_SEARCH_TOKENS across
-  //    the whole query (a segment cap alone doesn't bound tokens within one
-  //    segment, e.g. a long pasted phrase). Segments are still capped first so a
-  //    comma-bomb can't consume the whole token budget on segment one.
+// One segment → one condition. Every token matches the four fields; the segment
+// also gets an OR'd despaced bill-number match (see despacedPattern). `tokens` are
+// already truncated and budgeted by the caller (buildSearchCondition).
+function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefined {
+  if (tokens.length === 0) return undefined
+  const pat = despacedPattern(segment)
+  const despacedCond = pat ? sql`replace(${bills.billNumber}, ' ', '') LIKE ${pat}` : undefined
+  if (tokens.length === 1) {
+    return or(matchAllFields(tokens[0]), despacedCond)!
+  }
+  return or(and(...tokens.map(matchAllFields))!, despacedCond)!
+}
+
+// The comma-separated segments actually honored under the shared token budget —
+// the single source of truth for "which segments a search considers", so the WHERE
+// clause (buildSearchCondition) and the ORDER BY boost (buildBillNumberBoost) can't
+// diverge on which segments count. Each returned segment has >=1 budgeted token, so
+// the number of segments is <= MAX_SEARCH_TOKENS, which bounds both param footprints.
+//
+// Two D1 limits to respect, both surfaced as 500s:
+//  • pattern length — a token >48 bytes makes a '%token%' pattern exceed 50
+//    bytes ("LIKE or GLOB pattern too complex"). Guarded by truncateToBytes.
+//  • bound params — >100 params per statement ("too many SQL variables"), and
+//    each token emits up to ~6 params (4 field LIKEs + 1 despaced WHERE match,
+//    plus 1 more for the despaced ORDER BY boost). Guarded by MAX_SEARCH_TOKENS
+//    across the whole query (a segment cap alone doesn't bound tokens within one
+//    segment, e.g. a long pasted phrase). Segments are still capped first so a
+//    comma-bomb can't consume the whole token budget on segment one.
+export function budgetedSegments(q: string): { segment: string; tokens: string[] }[] {
   let budget = MAX_SEARCH_TOKENS
-  const conds: SQL[] = []
+  const out: { segment: string; tokens: string[] }[] = []
   for (const segment of splitSegments(q).slice(0, 25)) {
     if (budget <= 0) break
-    const tokens = tokenizeSegment(segment)
-      .slice(0, budget)
-      .map(t => truncateToBytes(t, MAX_SEARCH_TERM_BYTES))
+    const tokens = tokenizeSegment(segment).slice(0, budget).map(t => truncateToBytes(t, MAX_SEARCH_TERM_BYTES))
+    if (tokens.length === 0) continue
     budget -= tokens.length
+    out.push({ segment, tokens })
+  }
+  return out
+}
+
+// Build a search condition for a query string against bill title, summary,
+// abstract, and bill number. Comma-separated segments are OR'd; tokens within
+// a segment are AND'd; quoted spans match as exact substrings. Returns
+// undefined when the query has no usable tokens (callers treat that as "no
+// search filter").
+export function buildSearchCondition(q: string): SQL | undefined {
+  const conds: SQL[] = []
+  for (const { segment, tokens } of budgetedSegments(q)) {
     const cond = buildSegmentCondition(segment, tokens)
     if (cond) conds.push(cond)
   }
@@ -194,10 +204,32 @@ const SORT_HIERARCHY: Array<{
   },
 ]
 
-export function buildOrderBy(col: string, d: 'asc' | 'desc'): SQL[] {
+// Primary sort tier: float rows whose despaced bill_number matches any segment's
+// despaced query pattern ahead of everything else. Reuses despacedPattern, so it
+// fires under exactly the same conditions as the WHERE despaced clause. For a
+// topic query ("election") the CASE evaluates to 1 for every row — self-inert, no
+// reordering. Returns undefined only when no segment yields a usable pattern.
+// Derives its segments from budgetedSegments — the exact set the WHERE clause
+// searches — so it can never boost a segment the search dropped, and its param
+// count is bounded to <= MAX_SEARCH_TOKENS.
+export function buildBillNumberBoost(q: string | undefined): SQL | undefined {
+  if (!q) return undefined
+  const pats = budgetedSegments(q)
+    .map(s => despacedPattern(s.segment))
+    .filter((p): p is string => p !== null)
+  if (pats.length === 0) return undefined
+  const matches = pats.map(p => sql`replace(${bills.billNumber}, ' ', '') LIKE ${p}`)
+  const anyMatch = matches.length === 1 ? matches[0] : or(...matches)!
+  return sql`CASE WHEN ${anyMatch} THEN 0 ELSE 1 END`
+}
+
+export function buildOrderBy(col: string, d: 'asc' | 'desc', q?: string): SQL[] {
+  // When searching, float exact bill-number matches to the very top, above the
+  // active sort (which still orders within each group and governs the rest).
+  const boost = buildBillNumberBoost(q)
   // Append bills.id so the total order is fully deterministic — without a unique final key,
   // rows tied on every tier can shuffle across paginated requests (drop/repeat on scroll).
-  return [...orderByTiers(col, d), asc(bills.id)]
+  return [...(boost ? [boost] : []), ...orderByTiers(col, d), asc(bills.id)]
 }
 
 export function canOptimize(sort: string, dir: 'asc' | 'desc'): boolean {
