@@ -66,6 +66,16 @@ describe('CONTENT_SECURITY_POLICY', () => {
     expect(frameSrc).toContain('https://challenges.cloudflare.com')
   })
 
+  it('allows blob: frames (bill-text PDF viewer frames a same-origin blob URL)', () => {
+    // BillTextPanel fetches the PDF (credentialed, same-origin) and frames the
+    // resulting URL.createObjectURL() blob. Blob-URL frames are governed by
+    // frame-src; without blob: the browser blocks the PDF as "content blocked".
+    // Safe: blob URLs can only be minted by same-origin script, and script-src
+    // is 'self' with no 'unsafe-inline', so no injected script can forge one.
+    const frameSrc = CONTENT_SECURITY_POLICY.split('; ').find((d) => d.startsWith('frame-src '))
+    expect(frameSrc).toContain('blob:')
+  })
+
   it('blocks clickjacking and plugin/object embedding at the CSP layer too', () => {
     expect(CONTENT_SECURITY_POLICY).toContain("frame-ancestors 'none'")
     expect(CONTENT_SECURITY_POLICY).toContain("object-src 'none'")

@@ -54,7 +54,11 @@ const CSP_DIRECTIVES: Record<string, string[]> = {
   'img-src': ["'self'", 'data:', 'https:'],
   'font-src': ["'self'", 'https://fonts.gstatic.com'],
   'connect-src': ["'self'"], // SPA talks only to its own /api (RUM POSTs same-origin /cdn-cgi/rum)
-  'frame-src': ['https://challenges.cloudflare.com'], // Turnstile widget iframe
+  // Turnstile widget iframe + blob: for the bill-text PDF viewer, which fetches
+  // the PDF same-origin and frames the URL.createObjectURL() blob. blob: is safe
+  // here: blob URLs can only be minted by same-origin script, and script-src is
+  // 'self' (no 'unsafe-inline'), so no injected script can forge one.
+  'frame-src': ['https://challenges.cloudflare.com', 'blob:'],
   'frame-ancestors': ["'none'"], // CSP-native clickjacking guard (pairs with X-Frame-Options)
   'base-uri': ["'self'"],
   'form-action': ["'self'"],
