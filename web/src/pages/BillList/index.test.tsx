@@ -279,6 +279,6 @@ describe('BillList search-term hint', () => {
     const search = screen.getByPlaceholderText('Search…')
 
     fireEvent.change(search, { target: { value: Array.from({ length: 16 }, (_, i) => `w${i}`).join(' ') } })
-    expect(screen.getByText(/first 15 terms/i)).toBeInTheDocument()
+    expect(screen.getByText(/first 12 terms/i)).toBeInTheDocument()
   })
 })
