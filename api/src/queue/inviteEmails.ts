@@ -1,5 +1,6 @@
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendMagicLink } from '../lib/email'
+import { recordAuthEvent } from '../lib/authEvents'
 import { magicLinks } from '../db/schema'
 import type { AppDb, Env, InviteEmailMessage } from '../types'
 
@@ -31,7 +32,12 @@ export async function processInviteEmails(
       await db.insert(magicLinks).values({ id: crypto.randomUUID(), userId, tokenHash, expiresAt })
 
       const url = `${env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
-      await sendMagicLink(email, url, env, 'invite', db)
+      // Record the invite the same way the single-invite path does (adminApi.ts),
+      // attributed to the member's id so it surfaces in their Login activity. The
+      // bulk path used to skip this and call sendMagicLink without the id, leaving
+      // the email_sent row with a null user_id — invisible in the per-member view.
+      await recordAuthEvent(db, { event: 'link_requested', email, userId, linkType: 'invite' })
+      await sendMagicLink(email, url, env, 'invite', db, userId)
       message.ack()
     } catch (err) {
       console.error('[invite-email] send failed for', email, err)

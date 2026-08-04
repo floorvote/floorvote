@@ -32,7 +32,7 @@ function accountEventLabel(e: AccountAuthEvent): string {
     case 'link_requested':
       return e.linkType === 'invite' ? 'Invite sent' : 'Login link requested'
     case 'email_sent':
-      return 'Email sent'
+      return e.linkType === 'invite' ? 'Invite email sent' : 'Email sent'
     case 'email_bounced':
       return 'Email bounced'
     case 'email_send_failed':
@@ -527,7 +527,7 @@ export function Profile() {
                 <div style={{ fontSize: fontSize.sm, color: color.textMuted, padding: '8px 0' }}>No login activity recorded.</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {authEvents.map((event) => (
+                  {authEvents.map((event, index) => (
                     <div
                       key={event.id}
                       style={{
@@ -536,7 +536,7 @@ export function Profile() {
                         justifyContent: 'space-between',
                         gap: 16,
                         padding: '8px 0',
-                        borderBottom: `1px solid ${color.surfaceMuted}`,
+                        borderBottom: index === authEvents.length - 1 ? 'none' : `1px solid ${color.surfaceMuted}`,
                       }}
                     >
                       <div style={{ fontSize: fontSize.sm, color: color.textSlate }}>{accountEventLabel(event)}</div>
@@ -550,6 +550,11 @@ export function Profile() {
                   ))}
                 </div>
               )
+            )}
+            {!activityLoading && !activityError && authEvents && authEvents.length >= 50 && (
+              <div style={{ fontSize: fontSize.xs, color: color.textMuted, paddingTop: 8 }}>
+                Showing the 50 most recent events.
+              </div>
             )}
           </div>
         )}
