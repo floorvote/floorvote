@@ -16,12 +16,13 @@ export function useBillFilters(opts: {
   facetCounts: FacetCounts
   customFieldDefs: CustomFieldDef[]
   positionVocabulary: string[]
+  tagTaxonomy: string[]
   sortCol: SortColumn
   sortDir: SortDir
   setSortCol: (c: SortColumn) => void
   setSortDir: (d: SortDir) => void
 }) {
-  const { searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary, sortCol, sortDir, setSortCol, setSortDir } = opts
+  const { searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary, tagTaxonomy, sortCol, sortDir, setSortCol, setSortDir } = opts
 
   const [search, setSearch] = useState('')
   const [filterStatuses, setFilterStatuses] = useState<string[]>(() => searchParams.getAll('status'))
@@ -213,12 +214,15 @@ export function useBillFilters(opts: {
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
     })
   }, [facetCounts.status])
-  // The facets API stuffs a FILTER_ANY ('__any__') key into tags to carry the
-  // "Any tag" count badge; it must never surface as a selectable tag option.
-  const allTags = useMemo(
-    () => [...new Set([...knownTagsCache, ...Object.keys(facetCounts.tags)])].filter(t => t !== FILTER_ANY).sort(),
-    [facetCounts.tags]
-  )
+  // Options come from the facets API + the session-sticky knownTagsCache, but a tag removed
+  // from the taxonomy must never be selectable. Intersect with the taxonomy; fail open (show all)
+  // while the taxonomy is still loading, so options never briefly vanish.
+  const allTags = useMemo(() => {
+    const taxonomySet = new Set(tagTaxonomy)
+    return [...new Set([...knownTagsCache, ...Object.keys(facetCounts.tags)])]
+      .filter(t => t !== FILTER_ANY && (taxonomySet.size === 0 || taxonomySet.has(t)))
+      .sort()
+  }, [facetCounts.tags, tagTaxonomy])
   const positionOptions = useMemo(
     () => [...positionVocabulary.map(p => ({ value: p })), { value: 'none', label: 'Not set' }],
     [positionVocabulary]
