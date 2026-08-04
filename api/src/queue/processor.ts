@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
-import { DEFAULT_TAXONOMY, parseTaxonomyItems } from '../lib/taxonomy'
+import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../lib/taxonomy'
 import { ensureInstancePreset } from '../lib/instancePreset'
 import { centralFetch } from '../lib/centralFetch'
 import { matchesKeywords } from '../lib/keywords'
@@ -428,6 +428,18 @@ export async function processCentralNotification(
           console.error(`AI processing failed for ${centralBill.number}:`, err)
         }
       }
+    }
+
+    // Write-time taxonomy validation: the model is told to pick only from the taxonomy but
+    // occasionally invents off-taxonomy tags. Hard-drop anything not in the tenant's taxonomy
+    // so hallucinated tags never reach storage (the tag filter, exports, or the D1 LIKE path).
+    if (aiResult) {
+      const allowed = new Set(taxonomy.map(t => t.name))
+      const dropped = aiResult.tags.filter(t => !allowed.has(t))
+      if (dropped.length > 0) {
+        console.warn(`[processor] dropped ${dropped.length} off-taxonomy tag(s) for ${centralBill.number}: ${JSON.stringify(dropped)}`)
+      }
+      aiResult.tags = filterTagsToTaxonomy(aiResult.tags, allowed)
     }
   } else if (shouldRunAi && !activePreset) {
     console.log(`[processor] Skipping AI for ${centralBill.number} — no instance preset configured`)
