@@ -4,19 +4,30 @@ import { fontWeight } from './tokens'
  * The FloorVote logo mark — a stylized legislative hemicycle (three concentric
  * rows of chamber seating). SINGLE SOURCE OF TRUTH for the mark geometry; every
  * surface (app SVG, docs SVG, generated favicon/app-icon/email rasters) derives
- * from this. Transform from the playground export is baked into the coordinates,
- * so no transform attribute is needed. Verified pixel-identical to the export.
+ * from this.
+ *
+ * v1.1: the sections are drawn as FILLED ring-segments whose aisle edges are cut
+ * along straight lines a fixed half-width from the centerline ray — constant-width
+ * channels, not angular wedges. (v1.0 was stroked open arcs; the mark is now
+ * `fill`, never `stroke`.) The playground export's scale transform is baked into
+ * the coordinates, so no transform attribute is needed.
  */
 export const LOGO_MARK = {
+  /** Framed box with clear-space margin — standalone mark, favicon, email PNG. */
   viewBox: '20 25.6 60 42',
-  strokeWidth: 4.8,
+  /**
+   * Tight crop to the visible artwork (arch apex → leg bottoms), for the inline
+   * lockup: `height` is then the visible height and `vertical-align: baseline`
+   * seats the legs on the text baseline. See DESIGN-PRINCIPLES in the brand kit.
+   */
+  inlineViewBox: '21.2 26.832 57.6 37.938',
   paths: [
-    // Row 1 — outer (r=26.4)
-    'M24.96 64.01A26.4 26.4 0 0 1 24.96 47.26M26.37 43.85A26.4 26.4 0 0 1 38.22 32.01M41.62 30.6A26.4 26.4 0 0 1 58.38 30.6M61.78 32.01A26.4 26.4 0 0 1 73.63 43.85M75.04 47.26A26.4 26.4 0 0 1 75.04 64.01',
-    // Row 2 — middle (r=19.2)
-    'M31.79 61.72A19.2 19.2 0 0 1 31.79 49.54M32.82 47.07A19.2 19.2 0 0 1 41.43 38.45M43.91 37.42A19.2 19.2 0 0 1 56.09 37.42M58.57 38.45A19.2 19.2 0 0 1 67.18 47.07M68.21 49.54A19.2 19.2 0 0 1 68.21 61.72',
-    // Row 3 — inner (r=12)
-    'M38.62 59.44A12 12 0 0 1 38.62 51.82M39.26 50.28A12 12 0 0 1 44.65 44.89M46.19 44.25A12 12 0 0 1 53.81 44.25M55.35 44.89A12 12 0 0 1 60.74 50.28M61.38 51.82A12 12 0 0 1 61.38 59.44',
+    // Row 1 — outer (r 28.8 → 24)
+    'M 22.69 64.77 A 28.8 28.8 0 0 1 22.92 45.83 L 27.36 47.67 A 24 24 0 0 0 27.24 63.25 Z M 23.93 43.39 A 28.8 28.8 0 0 1 37.78 29.56 L 39.61 34 A 24 24 0 0 0 28.37 45.23 Z M 40.22 28.55 A 28.8 28.8 0 0 1 59.78 28.55 L 57.95 32.99 A 24 24 0 0 0 42.05 32.99 Z M 62.22 29.56 A 28.8 28.8 0 0 1 76.07 43.39 L 71.63 45.23 A 24 24 0 0 0 60.39 34 Z M 77.08 45.83 A 28.8 28.8 0 0 1 77.31 64.77 L 72.76 63.25 A 24 24 0 0 0 72.64 47.67 Z',
+    // Row 2 — middle (r 21.6 → 16.8)
+    'M 29.52 62.49 A 21.6 21.6 0 0 1 29.58 48.59 L 34.03 50.43 A 16.8 16.8 0 0 0 34.07 60.96 Z M 30.59 46.15 A 21.6 21.6 0 0 1 40.53 36.22 L 42.37 40.66 A 16.8 16.8 0 0 0 35.04 48 Z M 42.97 35.21 A 21.6 21.6 0 0 1 57.03 35.21 L 55.19 39.65 A 16.8 16.8 0 0 0 44.81 39.65 Z M 59.47 36.22 A 21.6 21.6 0 0 1 69.41 46.15 L 64.96 48 A 16.8 16.8 0 0 0 57.63 40.66 Z M 70.42 48.59 A 21.6 21.6 0 0 1 70.48 62.49 L 65.93 60.96 A 16.8 16.8 0 0 0 65.97 50.43 Z',
+    // Row 3 — inner (r 14.4 → 9.6)
+    'M 36.34 60.2 A 14.4 14.4 0 0 1 36.25 51.36 L 40.71 53.21 A 9.6 9.6 0 0 0 40.9 58.68 Z M 37.26 48.92 A 14.4 14.4 0 0 1 43.3 42.89 L 45.14 47.35 A 9.6 9.6 0 0 0 41.72 50.77 Z M 45.73 41.88 A 14.4 14.4 0 0 1 54.27 41.88 L 52.42 46.34 A 9.6 9.6 0 0 0 47.58 46.34 Z M 56.7 42.89 A 14.4 14.4 0 0 1 62.74 48.92 L 58.28 50.77 A 9.6 9.6 0 0 0 54.86 47.35 Z M 63.75 51.36 A 14.4 14.4 0 0 1 63.66 60.2 L 59.1 58.68 A 9.6 9.6 0 0 0 59.29 53.21 Z',
   ],
 } as const
 
@@ -24,17 +35,20 @@ export const LOGO_MARK = {
  * The wordmark lockup metrics — how the mark sits left of the "FloorVote" text.
  * Expressed in em so one spec scales across every surface. Colors come from
  * tokens.ts (accentAmber / billBadgeNavy); never re-hardcode them.
+ *
+ * v1.1: the mark is sized to the caps (a peer of "F"/"V"), not to the tall "l".
+ * With the tight `inlineViewBox`, `markHeightEm` is the visible height and the
+ * legs seat on the baseline — no optical up-nudge needed.
  */
 export const LOGO_LOCKUP = {
-  markHeightEm: 0.83, // ~115% of Archivo cap-height
-  gapEm: 0.29,
-  markShiftY: '-2.5%', // nudge the mark up 2.5% of its own height for optical balance
+  markHeightEm: 0.698, // 1.02 × Archivo cap-height — round top reaches the O-overshoot line
+  gapEm: 0.343, // 0.5 × cap-height (≈ two word-spaces)
   letterSpacing: '-0.02em',
   weight: fontWeight.heavy, // 600 — the app is the brand source of truth
 } as const
 
-/** Standalone transparent mark as an SVG string. `stroke` defaults to Honey. */
-export function logoMarkSvg(stroke = '#e8a33d'): string {
+/** Standalone transparent mark as an SVG string. `fill` defaults to Honey. */
+export function logoMarkSvg(fill = '#e8a33d'): string {
   const paths = LOGO_MARK.paths.map((d) => `<path d="${d}"/>`).join('')
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOGO_MARK.viewBox}" fill="none" stroke="${stroke}" stroke-width="${LOGO_MARK.strokeWidth}">${paths}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOGO_MARK.viewBox}" fill="${fill}">${paths}</svg>`
 }

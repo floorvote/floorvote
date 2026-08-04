@@ -14,22 +14,28 @@ interface WordmarkProps {
  * The product lockup: the hemicycle mark + "Floor" (navy on light, white on dark)
  * + "Vote" (Honey). Mark geometry and lockup metrics come from the single source
  * `shared/logo.ts`; the two text parts from `shared/brand.ts`.
+ *
+ * v1.1 places the mark by the brand-kit recipe: the inline (tight) mark at
+ * `markHeightEm` (1.02 × cap), `vertical-align: baseline` seating its legs on the
+ * text baseline, and the mark→name gap as a right margin — no optical nudge.
  */
 export function Wordmark({ dark = false, size = fontSize.xxxl }: WordmarkProps) {
   return (
     <span
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: `${LOGO_LOCKUP.gapEm}em`,
+        display: 'inline-block',
         fontFamily: BRAND_FONT,
         fontWeight: LOGO_LOCKUP.weight,
         fontSize: size,
         letterSpacing: LOGO_LOCKUP.letterSpacing,
         lineHeight: 1,
+        whiteSpace: 'nowrap',
       }}
     >
-      <LogoMark style={{ height: `${LOGO_LOCKUP.markHeightEm}em`, width: 'auto', flex: '0 0 auto', transform: `translateY(${LOGO_LOCKUP.markShiftY})` }} />
+      <LogoMark
+        inline
+        style={{ height: `${LOGO_LOCKUP.markHeightEm}em`, width: 'auto', verticalAlign: 'baseline', marginRight: `${LOGO_LOCKUP.gapEm}em` }}
+      />
       <span>
         <span style={{ color: dark ? color.white : color.billBadgeNavy }}>{PRODUCT_NAME_WORDMARK.primary}</span>
         <span style={{ color: color.accentAmber }}>{PRODUCT_NAME_WORDMARK.accent}</span>

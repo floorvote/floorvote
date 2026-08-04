@@ -46,12 +46,12 @@ function markPaths(): string {
 
 /** Transparent Honey mark centered on a square canvas (for favicon.svg + PNGs). */
 function markSquareSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SQUARE_VB}" fill="none" stroke="${HONEY}" stroke-width="${LOGO_MARK.strokeWidth}">${markPaths()}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${SQUARE_VB}" fill="${HONEY}">${markPaths()}</svg>`
 }
 
 /** Navy full-bleed square, mark centered ~68% width. rx=0 — iOS/Android mask their own corners. */
 function navySquareSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${NAVY}"/><g transform="translate(50 50) scale(1.18) translate(-50 -46.6)" fill="none" stroke="${HONEY}" stroke-width="${LOGO_MARK.strokeWidth}">${markPaths()}</g></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="${NAVY}"/><g transform="translate(50 50) scale(1.18) translate(-50 -46.6)" fill="${HONEY}">${markPaths()}</g></svg>`
 }
 
 function png(svg: string, width: number): Buffer {
