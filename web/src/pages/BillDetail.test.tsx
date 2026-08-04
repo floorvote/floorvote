@@ -534,3 +534,66 @@ describe('BillDetail sponsors row', () => {
     expect(screen.getByText('Cosponsor 9')).toBeInTheDocument()
   })
 })
+
+describe('BillDetail reaction hover name list stays in sync with the count', () => {
+  beforeEach(() => { vi.restoreAllMocks(); authState.role = 'member' })
+
+  // The hover tooltip on an emoji pill lists the people who reacted (reactors).
+  // The optimistic update used to bump `count` but not `reactors`, so a user's
+  // own name was missing (on add) or lingering (on remove) from the tooltip
+  // until the 15s poll — usePolling is mocked off here, so the tooltip reflects
+  // the optimistic update alone. Current user (useAuth mock) is Alice.
+  const COMMENT = {
+    id: 'c1',
+    userId: 'u2',
+    userName: 'Carol',
+    userSubtitle: null,
+    content: 'Nice bill',
+    createdAt: '2025-01-02 00:00:00',
+  }
+  // The tooltip is always in the DOM (display:none), so its reactor names are
+  // queryable without simulating hover.
+  const tipFor = (pill: HTMLElement) => pill.parentElement!.querySelector('.reaction-tip')!
+
+  it('adds the current user to the hover name list immediately on reacting', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({
+      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Bob', subtitle: null }] }] }],
+      commentsTotal: 1,
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const pill = await screen.findByRole('button', { name: '👍 1' })
+    expect(tipFor(pill).textContent).toContain('Bob')
+    expect(tipFor(pill).textContent).not.toContain('Alice')
+
+    await user.click(pill)
+
+    await waitFor(() => {
+      const bumped = screen.getByRole('button', { name: '👍 2' })
+      expect(tipFor(bumped).textContent).toContain('Alice')
+    })
+  })
+
+  it('removes the current user from the hover name list immediately on un-reacting', async () => {
+    const user = userEvent.setup()
+    makeMockApiFetch({
+      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 2, userReacted: true, reactors: [{ name: 'Bob', subtitle: null }, { name: 'Alice', subtitle: null }] }] }],
+      commentsTotal: 1,
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const pill = await screen.findByRole('button', { name: '👍 2' })
+    expect(tipFor(pill).textContent).toContain('Alice')
+
+    await user.click(pill)
+
+    await waitFor(() => {
+      const dropped = screen.getByRole('button', { name: '👍 1' })
+      expect(tipFor(dropped).textContent).toContain('Bob')
+      expect(tipFor(dropped).textContent).not.toContain('Alice')
+    })
+  })
+})

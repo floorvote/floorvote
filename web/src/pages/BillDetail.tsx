@@ -721,12 +721,16 @@ export function BillDetail() {
     const comment = comments.find((c) => c.id === commentId)
     if (!comment) return
     const existing = comment.reactions.find((r) => r.emoji === emoji)
+    // The optimistic update must keep `reactors` (the hover name list) in step with
+    // `count`/`userReacted`, or the current user's name would be missing (on add) or
+    // linger (on remove) in the tooltip until the next poll. Match the server shape.
+    const me = { name: displayName(user!) || 'You', subtitle: user?.subtitle ?? null }
     if (existing?.userReacted) {
       try {
         await apiFetch(`/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' })
         setComments((prev) => prev.map((c) =>
           c.id === commentId
-            ? { ...c, reactions: c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count - 1, userReacted: false } : r).filter((r) => r.count > 0) }
+            ? { ...c, reactions: c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count - 1, userReacted: false, reactors: r.reactors.filter((x) => !(x.name === me.name && x.subtitle === me.subtitle)) } : r).filter((r) => r.count > 0) }
             : c,
         ))
       } catch (err) {
@@ -740,8 +744,8 @@ export function BillDetail() {
             ? {
               ...c,
               reactions: existing
-                ? c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count + 1, userReacted: true } : r)
-                : [...c.reactions, { emoji, count: 1, userReacted: true, reactors: [{ name: displayName(user!) || 'You', subtitle: user?.subtitle ?? null }] }],
+                ? c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count + 1, userReacted: true, reactors: [...r.reactors, me] } : r)
+                : [...c.reactions, { emoji, count: 1, userReacted: true, reactors: [me] }],
             }
             : c,
         ))
