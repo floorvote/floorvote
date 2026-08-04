@@ -457,7 +457,7 @@ describe('GET /bills/:id', () => {
     memberToken = await seedSession(memberId)
     adminId = await seedUser({ role: 'admin', name: 'Admin' })
     adminToken = await seedSession(adminId)
-    billId = await seedBill({ billNumber: 'HB 1', title: 'Election Act', tags: ['voting', 'security'] })
+    billId = await seedBill({ billNumber: 'HB 1', title: 'Election Act', tags: ['Elections & Voting', 'Criminal Justice & Public Safety'] })
     const db = getDb(env.DB)
     await db.insert(memberVotes).values({
       id: crypto.randomUUID(),
@@ -499,7 +499,7 @@ describe('GET /bills/:id', () => {
     const body = await res.json() as Record<string, unknown>
     expect(body.billNumber).toBe('HB 1')
     expect(Array.isArray(body.tags)).toBe(true)
-    expect((body.tags as string[])).toContain('voting')
+    expect((body.tags as string[])).toContain('Elections & Voting')
     expect(body.myVote).toBe('support')
     expect((body.position as Record<string, unknown>)?.position).toBe('Support')
     expect((body.voteCounts as Record<string, number>).support).toBe(1)

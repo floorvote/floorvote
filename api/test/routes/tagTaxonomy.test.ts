@@ -1,0 +1,35 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { SELF, env } from 'cloudflare:test'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { getDb } from '../../src/db/client'
+import { associationConfig } from '../../src/db/schema'
+
+async function seedTaxonomy(names: string[]) {
+  await getDb(env.DB).insert(associationConfig).values({
+    key: 'tag_taxonomy', value: JSON.stringify(names.map(name => ({ name }))),
+  })
+}
+
+describe('tag taxonomy filtering — chips', () => {
+  let token: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
+    token = await seedSession(adminId)
+    await seedTaxonomy(['Elections'])
+  })
+
+  it('GET /bills drops tags not in the current taxonomy from the chip list', async () => {
+    await seedBill({ billNumber: 'B1', tags: ['Elections', 'Land Records'] })
+    const res = await SELF.fetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
+    const body = await res.json() as { bills: { billNumber: string; tags: string[] }[] }
+    expect(body.bills.find(b => b.billNumber === 'B1')!.tags).toEqual(['Elections'])
+  })
+
+  it('GET /bills/:id drops tags not in the current taxonomy', async () => {
+    const id = await seedBill({ billNumber: 'B2', tags: ['Land Records', 'Elections'] })
+    const res = await SELF.fetch(`http://localhost/api/bills/${id}`, { headers: { Cookie: `session=${token}` } })
+    const body = await res.json() as { tags: string[] }
+    expect(body.tags).toEqual(['Elections'])
+  })
+})

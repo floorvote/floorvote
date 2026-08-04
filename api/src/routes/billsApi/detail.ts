@@ -9,6 +9,7 @@ import { centralFetch } from '../../lib/centralFetch'
 import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
+import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 
 type CentralBillRich = {
   billType?: string | null
@@ -44,6 +45,8 @@ export async function buildBillDetail(
 ): Promise<Record<string, unknown>> {
   const bill = await db.select().from(bills).where(eq(bills.id, billId)).get()
   if (!bill) throw new Error('Not found')
+
+  const tagSet = await loadTaxonomyTagNameSet(db)
 
   // Fetch rich supplemental data from central for LegiScan bills (calendar, supplements, votes, etc.)
   // Purely a read — no queue messages, no API calls, no AI.
@@ -200,7 +203,7 @@ export async function buildBillDetail(
     body: centralRich?.body ?? null,
     committee: bill.committee,
     tenantSummary: bill.tenantSummary,
-    tags: JSON.parse(bill.tags) as string[],
+    tags: filterTagsToTaxonomy(JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,
     priority: bill.priority,
     priorityMeta: priorityEventRow ? { setByName: priorityEventRow.setByName, updatedAt: priorityEventRow.createdAt } : null,

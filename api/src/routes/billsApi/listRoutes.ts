@@ -11,6 +11,7 @@ import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
+import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -189,6 +190,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const myNoteBillIds = new Set(myNoteRows.map(r => r.billId))
     const myCommentBillIds = new Set(myCommentRows.map(r => r.billId))
 
+    const tagSet = await loadTaxonomyTagNameSet(db)
+
     const result = billRows.map(b => ({
       id: b.id,
       billNumber: b.billNumber,
@@ -206,7 +209,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       lastAction: b.lastAction,
       lastActionDate: b.lastActionDate,
       tenantSummary: b.tenantSummary,
-      tags: JSON.parse(b.tags) as string[],
+      tags: filterTagsToTaxonomy(JSON.parse(b.tags) as string[], tagSet),
       priority: b.priority,
       sponsor: b.sponsor,
       sponsorParty: b.sponsorParty,
