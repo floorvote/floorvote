@@ -33,3 +33,27 @@ describe('tag taxonomy filtering — chips', () => {
     expect(body.tags).toEqual(['Elections'])
   })
 })
+
+describe('tag taxonomy filtering — facets', () => {
+  let token: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    const adminId = await seedUser({ role: 'admin', email: 'a@e.com' })
+    token = await seedSession(adminId)
+    await getDb(env.DB).insert(associationConfig).values({
+      key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Elections' }]),
+    })
+  })
+
+  it('facets omit removed tags and count "Any tag" over valid tags only', async () => {
+    await seedBill({ billNumber: 'F1', tags: ['Elections'] })
+    await seedBill({ billNumber: 'F2', tags: ['Land Records'] })
+    await seedBill({ billNumber: 'F3', tags: ['Elections', 'Land Records'] })
+
+    const res = await SELF.fetch('http://localhost/api/bills/facets', { headers: { Cookie: `session=${token}` } })
+    const body = await res.json() as { tags: Record<string, number> }
+    expect(body.tags['Elections']).toBe(2)          // F1 + F3
+    expect(body.tags['Land Records']).toBeUndefined() // removed tag never surfaces
+    expect(body.tags['__any__']).toBe(2)            // F1, F3 have a valid tag; F2 does not
+  })
+})

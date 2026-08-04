@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF, env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { officialPositions } from '../../src/db/schema'
+import { officialPositions, associationConfig } from '../../src/db/schema'
 
 describe('"Any" (has-value) filter — position + custom fields', () => {
   let token: string
@@ -43,6 +43,10 @@ describe('"Any" (has-value) filter — position + custom fields', () => {
   })
 
   it('tag __any__ filter + facet count', async () => {
+    // Facets filter tag counts to the current taxonomy; seed one covering this fixture's tags.
+    await getDb(env.DB).insert(associationConfig).values({
+      key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Elections' }, { name: 'Funding' }]),
+    })
     await seedBill({ billNumber: 'T1', tags: ['Elections'] })
     await seedBill({ billNumber: 'T2', tags: ['Elections', 'Funding'] })
     await seedBill({ billNumber: 'T3' }) // no tags
