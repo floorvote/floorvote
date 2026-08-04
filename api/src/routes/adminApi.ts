@@ -807,7 +807,7 @@ adminApiRouter.post('/keyword-resync', demoGuard, async (c) => {
 
   // ── Cleanup pass: demote or protect stale keyword matches ──
   const keywordBills = await db
-    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract })
+    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, priority: bills.priority })
     .from(bills)
     .where(and(eq(bills.matchType, 'keyword'), isNotNull(bills.externalId)))
     .all()
@@ -836,8 +836,8 @@ adminApiRouter.post('/keyword-resync', demoGuard, async (c) => {
       .all()
     const engagedIds = new Set(engagedRows.map(r => r.id))
 
-    const toManual = staleBills.filter(b => engagedIds.has(b.id))
-    const toDemote = staleBills.filter(b => !engagedIds.has(b.id))
+    const toManual = staleBills.filter(b => engagedIds.has(b.id) || b.priority != null)
+    const toDemote = staleBills.filter(b => !engagedIds.has(b.id) && b.priority == null)
 
     const updateStmts = [
       ...toManual.map(b => db.update(bills).set({ matchType: 'manual' }).where(eq(bills.id, b.id))),
@@ -896,7 +896,7 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
 
   // wouldDemote / wouldProtect: keyword bills that would no longer match
   const keywordBills = await db
-    .select({ id: bills.id, title: bills.title, abstract: bills.abstract })
+    .select({ id: bills.id, title: bills.title, abstract: bills.abstract, priority: bills.priority })
     .from(bills)
     .where(eq(bills.matchType, 'keyword'))
     .all()
@@ -922,8 +922,8 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
       ))
       .all()
     const engagedIds = new Set(engagedRows.map(r => r.id))
-    wouldDemote = staleBills.filter(b => !engagedIds.has(b.id)).length
-    wouldProtect = staleBills.filter(b => engagedIds.has(b.id)).length
+    wouldDemote = staleBills.filter(b => !engagedIds.has(b.id) && b.priority == null).length
+    wouldProtect = staleBills.filter(b => engagedIds.has(b.id) || b.priority != null).length
   }
 
   return c.json({ wouldAdd, wouldDemote, wouldProtect })

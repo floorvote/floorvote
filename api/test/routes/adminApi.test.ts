@@ -1813,6 +1813,53 @@ describe('POST /admin/keyword-resync', () => {
       const row = await db.select({ matchType: bills.matchType }).from(bills).where(eq(bills.id, billId)).get()
       expect(row?.matchType).toBe('manual')
     })
+
+    it('protects a keyword bill that has a priority (no other engagement) as manual', async () => {
+      const db = getDb(env.DB)
+      await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+      // Title does NOT contain 'election'; the only signal is the priority marking.
+      const billId = await seedBill({
+        externalId: 'legiscan:pri-1',
+        title: 'Voting Registration Bill',
+        billNumber: 'HB 90',
+        matchType: 'keyword',
+        priority: 'high',
+      })
+
+      const mockQueue = { sendBatch: vi.fn().mockResolvedValue(undefined) }
+      const res = await app.request('/api/admin/keyword-resync', {
+        method: 'POST', headers: { Cookie: adminCookie },
+      }, { ...env, BILL_QUEUE: mockQueue })
+
+      expect(res.status).toBe(200)
+      const row = await db.select({ matchType: bills.matchType }).from(bills).where(eq(bills.id, billId)).get()
+      expect(row?.matchType).toBe('manual') // protected, not demoted to null
+    })
+  })
+})
+
+describe('POST /admin/keyword-resync-preview — priority protection', () => {
+  let adminCookie: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    await getDb(env.DB).delete(associationConfig)
+    const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
+    adminCookie = `session=${await seedSession(adminId)}`
+  })
+
+  it('counts a priority-only stale bill under wouldProtect, not wouldDemote', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await seedBill({ externalId: 'legiscan:pv-1', title: 'Voting Registration Bill', billNumber: 'HB 91', matchType: 'keyword', priority: 'low' })
+
+    const res = await app.request('/api/admin/keyword-resync-preview', {
+      method: 'POST', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: ['election'] }),
+    }, env)
+    expect(res.status).toBe(200)
+    const body = await res.json() as { wouldDemote: number; wouldProtect: number }
+    expect(body.wouldProtect).toBe(1)
+    expect(body.wouldDemote).toBe(0)
   })
 })
 
