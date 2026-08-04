@@ -57,3 +57,17 @@ describe('tag taxonomy filtering — facets', () => {
     expect(body.tags['__any__']).toBe(2)            // F1, F3 have a valid tag; F2 does not
   })
 })
+
+describe('public /config exposes tagTaxonomy', () => {
+  it('returns the configured taxonomy tag names', async () => {
+    await resetDb(); await applyMigrations()
+    const uid = await seedUser({ role: 'member', email: 'm@e.com' })
+    const token = await seedSession(uid)
+    await getDb(env.DB).insert(associationConfig).values({
+      key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Elections' }, { name: 'Public Records' }]),
+    })
+    const res = await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })
+    const body = await res.json() as { tagTaxonomy: string[] }
+    expect(body.tagTaxonomy).toEqual(['Elections', 'Public Records'])
+  })
+})

@@ -5,6 +5,7 @@ import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
 import { ensureInstancePreset } from '../lib/instancePreset'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
+import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -46,7 +47,7 @@ configRouter.get('/', async (c) => {
   await ensureInstancePreset(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, taxonomyItems] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -54,6 +55,7 @@ configRouter.get('/', async (c) => {
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_vocabulary')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'org_noun')).get(),
+    loadEffectiveTaxonomy(db),
   ])
 
   let associationName: string
@@ -175,7 +177,9 @@ configRouter.get('/', async (c) => {
     contactEmails: parseEmailList(c.env.OPERATOR_CONTACT_EMAILS),
   }
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled })
+  const tagTaxonomy = taxonomyItems.map(t => t.name)
+
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled, tagTaxonomy })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central
