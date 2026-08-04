@@ -65,7 +65,7 @@ function authEventLabel(event: AuthEvent): string {
     case 'link_requested':
       return event.linkType === 'invite' ? 'Invite sent' : 'Login link requested'
     case 'email_sent':
-      return 'Email sent'
+      return event.linkType === 'invite' ? 'Invite email sent' : 'Email sent'
     case 'email_bounced':
       return 'Email bounced'
     case 'email_send_failed':
@@ -830,7 +830,7 @@ export function Members() {
                     <InfoTooltip
                       align="center"
                       maxWidth={320}
-                      text={<>All members can comment, leave personal notes, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, see how each member voted, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other owners and delete all member interactions.</>}
+                      text={<>All members can comment, leave personal notes, view and subscribe to the shared calendar, and vote (unless “Can vote” is unchecked below). <strong>Admins</strong> can also set bill positions, add bills manually, set priorities, see how each member voted, manage custom fields, manage members, manage the calendar, and download all data. <strong>Owners</strong> can also promote and demote other owners and delete all member interactions.</>}
                     />
                   </span>
                 </th>
@@ -1297,7 +1297,7 @@ export function Members() {
                     <div style={{ fontSize: fontSize.sm, color: color.textMuted }}>No login activity recorded.</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {activityData.events.map(event => {
+                      {activityData.events.map((event, index) => {
                         const deliveryEntry =
                           event.event === 'email_sent' && event.messageId
                             ? activityData.delivery[event.messageId]
@@ -1306,7 +1306,7 @@ export function Members() {
                           <div key={event.id} style={{
                             display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
                             padding: '8px 0',
-                            borderBottom: `1px solid ${color.surfaceMuted}`,
+                            borderBottom: index === activityData.events.length - 1 ? 'none' : `1px solid ${color.surfaceMuted}`,
                           }}>
                             <div style={{ fontSize: fontSize.sm, color: color.textSlate, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0 }}>
                               {authEventLabel(event)}
@@ -1321,6 +1321,11 @@ export function Members() {
                           </div>
                         )
                       })}
+                    </div>
+                  )}
+                  {activityData.events.length >= 50 && (
+                    <div style={{ fontSize: fontSize.xs, color: color.textMuted, paddingTop: 8 }}>
+                      Showing the 50 most recent events.
                     </div>
                   )}
                 </>
