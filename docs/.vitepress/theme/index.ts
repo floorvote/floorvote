@@ -16,10 +16,8 @@ export default {
             'svg',
             {
               class: 'fv-wordmark__mark',
-              viewBox: LOGO_MARK.viewBox,
-              fill: 'none',
-              stroke: '#e8a33d',
-              'stroke-width': LOGO_MARK.strokeWidth,
+              viewBox: LOGO_MARK.inlineViewBox,
+              fill: '#e8a33d',
               'aria-hidden': 'true',
             },
             LOGO_MARK.paths.map((d) => h('path', { d })),

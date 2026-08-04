@@ -13,13 +13,18 @@ describe('LogoMark', () => {
     expect(container.querySelectorAll('path')).toHaveLength(3)
   })
 
-  it('strokes in Honey by default', () => {
+  it('fills in Honey by default', () => {
     render(<LogoMark />)
-    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('stroke', color.accentAmber)
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('fill', color.accentAmber)
   })
 
-  it('accepts a custom stroke', () => {
-    render(<LogoMark stroke="#1e3a5f" />)
-    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('stroke', '#1e3a5f')
+  it('accepts a custom fill', () => {
+    render(<LogoMark fill="#1e3a5f" />)
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('fill', '#1e3a5f')
+  })
+
+  it('uses the tight inline viewBox when inline', () => {
+    render(<LogoMark inline />)
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('viewBox', LOGO_MARK.inlineViewBox)
   })
 })

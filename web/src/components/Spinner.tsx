@@ -14,7 +14,7 @@ import { color } from '../styles/tokens'
  * Not wired into any screen yet; drop it in wherever a load state lives:
  *   <Spinner />                       // 40px, Honey (brand amber)
  *   <Spinner size={24} />             // smaller / inline
- *   <Spinner stroke={color.accentBlue} aria-label="Searching" />
+ *   <Spinner fill={color.accentBlue} aria-label="Searching" />
  *
  * Honors `prefers-reduced-motion` by freezing on the aligned logo pose.
  */
@@ -32,14 +32,14 @@ const SPINNER_CSS = `
 
 export function Spinner({
   size = 40,
-  stroke = color.accentAmber,
+  fill = color.accentAmber,
   className,
   style,
   'aria-label': ariaLabel = 'Loading',
   ...rest
 }: {
   size?: number | string
-  stroke?: string
+  fill?: string
 } & Omit<SVGProps<SVGSVGElement>, 'width' | 'height'>) {
   return (
     <>
@@ -54,9 +54,7 @@ export function Spinner({
         // Square window on the mark; overflow:visible lets the rows sweep past
         // the box while spinning without clipping.
         viewBox="17 13.6 66 66"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={LOGO_MARK.strokeWidth}
+        fill={fill}
         role="img"
         aria-label={ariaLabel}
         style={{ overflow: 'visible', ...style }}
