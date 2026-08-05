@@ -14,6 +14,7 @@ export interface AppConfig {
   modules?: Record<string, boolean>
   orgNoun?: string
   positionVocabulary?: string[]
+  tagTaxonomy?: string[]
   instanceDomains?: Record<string, string>
   demoLocked?: boolean
   operator?: OperatorConfig

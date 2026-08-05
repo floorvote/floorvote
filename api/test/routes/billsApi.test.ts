@@ -4,7 +4,7 @@ import { SELF } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { memberVotes, officialPositions, comments, notes, calendarEvents } from '../../src/db/schema'
+import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
 
 describe('GET /bills', () => {
@@ -457,7 +457,7 @@ describe('GET /bills/:id', () => {
     memberToken = await seedSession(memberId)
     adminId = await seedUser({ role: 'admin', name: 'Admin' })
     adminToken = await seedSession(adminId)
-    billId = await seedBill({ billNumber: 'HB 1', title: 'Election Act', tags: ['voting', 'security'] })
+    billId = await seedBill({ billNumber: 'HB 1', title: 'Election Act', tags: ['Elections & Voting', 'Criminal Justice & Public Safety'] })
     const db = getDb(env.DB)
     await db.insert(memberVotes).values({
       id: crypto.randomUUID(),
@@ -499,7 +499,7 @@ describe('GET /bills/:id', () => {
     const body = await res.json() as Record<string, unknown>
     expect(body.billNumber).toBe('HB 1')
     expect(Array.isArray(body.tags)).toBe(true)
-    expect((body.tags as string[])).toContain('voting')
+    expect((body.tags as string[])).toContain('Elections & Voting')
     expect(body.myVote).toBe('support')
     expect((body.position as Record<string, unknown>)?.position).toBe('Support')
     expect((body.voteCounts as Record<string, number>).support).toBe(1)
@@ -1336,6 +1336,10 @@ describe('GET /bills — tag filter with long tag names', () => {
     await applyMigrations()
     const userId = await seedUser()
     token = await seedSession(userId)
+    // Facets filter tag counts to the current taxonomy; seed one covering this fixture's tags.
+    await getDb(env.DB).insert(associationConfig).values({
+      key: 'tag_taxonomy', value: JSON.stringify([{ name: LONG_TAG }, { name: 'Short' }]),
+    })
     await seedBill({ billNumber: 'HB 1', tags: [LONG_TAG, 'Short'] })
     await seedBill({ billNumber: 'SB 2', tags: ['Short'] })
   })
@@ -1369,6 +1373,10 @@ describe('GET /bills/facets', () => {
     await applyMigrations()
     adminId = await seedUser({ role: 'admin' })
     token = await seedSession(adminId)
+    // Facets filter tag counts to the current taxonomy; seed one covering this fixture's tags.
+    await getDb(env.DB).insert(associationConfig).values({
+      key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Voting' }, { name: 'Election Admin' }]),
+    })
     await seedBill({ billNumber: 'HB 1', status: 'In Committee', priority: 'high', session: '2025', tags: ['Voting', 'Election Admin'] })
     await seedBill({ billNumber: 'SB 2', status: 'Passed House', priority: 'low', session: '2024', tags: ['Voting'] })
     await seedBill({ billNumber: 'AB 3', status: 'In Committee', priority: 'medium', session: '2025', tags: [] })

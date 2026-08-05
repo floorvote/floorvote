@@ -11,6 +11,7 @@ import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
+import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -189,6 +190,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const myNoteBillIds = new Set(myNoteRows.map(r => r.billId))
     const myCommentBillIds = new Set(myCommentRows.map(r => r.billId))
 
+    const tagSet = await loadTaxonomyTagNameSet(db)
+
     const result = billRows.map(b => ({
       id: b.id,
       billNumber: b.billNumber,
@@ -206,7 +209,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       lastAction: b.lastAction,
       lastActionDate: b.lastActionDate,
       tenantSummary: b.tenantSummary,
-      tags: JSON.parse(b.tags) as string[],
+      tags: filterTagsToTaxonomy(JSON.parse(b.tags) as string[], tagSet),
       priority: b.priority,
       sponsor: b.sponsor,
       sponsorParty: b.sponsorParty,
@@ -392,7 +395,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const tagWhereClause = tagWhere ? sql`WHERE ${tagWhere}` : sql``
 
     // Run all dimensional facet queries in parallel
-    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, myInteractionRows, noPositionCountRows] = await Promise.all([
+    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, myInteractionRows, noPositionCountRows, tagSet] = await Promise.all([
       db.select({ value: bills.status, count: sql<number>`COUNT(*)` })
         .from(bills).where(statusWhere).groupBy(bills.status).all(),
       db.select({ value: bills.priority, count: sql<number>`COUNT(*)` })
@@ -420,6 +423,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
           ? and(positionWhere, sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
           : sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
         .all(),
+      loadTaxonomyTagNameSet(db),
     ])
 
     // CF facets — disjunctive: each field's counts exclude that field's own active filter.
@@ -494,9 +498,13 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     positionCounts['none'] = Number(noPositionCountRows[0].noPositionCount)
     // "Any position" = bills with any position set (one position per bill, so summing is safe).
     positionCounts[FILTER_ANY] = setPositionRows.reduce((a, r) => a + Number(r.count), 0)
-    const tagCounts: Record<string, number> = Object.fromEntries(tagRows.map(r => [r.tag, Number(r.cnt)]))
-    // "Any tag" = distinct bills with at least one tag (within the tag facet's scope).
-    const hasTagCond = sql`json_array_length(${bills.tags}) > 0`
+    const tagCounts: Record<string, number> = Object.fromEntries(
+      tagRows.filter(r => tagSet.has(r.tag)).map(r => [r.tag, Number(r.cnt)]),
+    )
+    // "Any tag" = distinct bills with at least one VALID (in-taxonomy) tag (within the tag facet's scope).
+    const hasTagCond = tagSet.size > 0
+      ? tagMembership([...tagSet])
+      : sql`json_array_length(${bills.tags}) > 0`
     const [anyTagRow] = await db.select({ cnt: sql<number>`count(*)` }).from(bills)
       .where(tagWhere ? and(tagWhere, hasTagCond) : hasTagCond).all()
     tagCounts[FILTER_ANY] = Number(anyTagRow?.cnt ?? 0)

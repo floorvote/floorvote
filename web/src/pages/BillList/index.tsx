@@ -81,6 +81,7 @@ export function BillList() {
   })
 
   const [positionVocabulary, setPositionVocabulary] = useState<string[]>(['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'])
+  const [tagTaxonomy, setTagTaxonomy] = useState<string[]>([])
   const [orgNoun, setOrgNoun] = useState<string>(DEFAULT_ORG_NOUN)
   const [loading, setLoading] = useState(true)   // initial mount only
   const [refreshing, setRefreshing] = useState(false) // subsequent fetches
@@ -98,7 +99,7 @@ export function BillList() {
 
   // --- filters + URL sync + derived lists (hook) ---
   const f = useBillFilters({
-    searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary,
+    searchParams, setSearchParams, location, facetCounts, customFieldDefs, positionVocabulary, tagTaxonomy,
     sortCol, sortDir, setSortCol, setSortDir,
   })
   const searchWarn = searchWarnings(f.search)
@@ -225,6 +226,7 @@ export function BillList() {
       apiFetch<{
         positionVocabulary: string[]
         orgNoun: string
+        tagTaxonomy?: string[]
         sessions?: NormalizedSession[]
       }>('/config'),
       apiFetch<{ id: string }[]>('/users/me/bills'),
@@ -232,6 +234,7 @@ export function BillList() {
     ])
       .then(([cfg, _myBillsData, cfDefs]) => {
         setPositionVocabulary(cfg.positionVocabulary)
+        setTagTaxonomy(cfg.tagTaxonomy ?? [])
         setOrgNoun(cfg.orgNoun ?? DEFAULT_ORG_NOUN)
         cachedCustomFieldDefs = cfDefs
         setCustomFieldDefs(cfDefs)

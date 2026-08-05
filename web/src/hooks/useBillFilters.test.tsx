@@ -11,12 +11,12 @@ function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills']}>{children}</MemoryRouter>
 }
 
-function useHarness(facetCounts: FacetCounts = emptyFacets) {
+function useHarness(facetCounts: FacetCounts = emptyFacets, tagTaxonomy: string[] = []) {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   return useBillFilters({
     searchParams, setSearchParams, location,
-    facetCounts, customFieldDefs: [], positionVocabulary: ['Support'],
+    facetCounts, customFieldDefs: [], positionVocabulary: ['Support'], tagTaxonomy,
     sortCol: 'default', sortDir: 'asc', setSortCol: () => {}, setSortDir: () => {},
   })
 }
@@ -42,5 +42,18 @@ describe('useBillFilters', () => {
     const { result } = renderHook(() => useHarness(facets), { wrapper })
     expect(result.current.allTags).toEqual(['elections', 'voting'])
     expect(result.current.allTags).not.toContain('__any__')
+  })
+
+  it('allTags excludes tags not in the taxonomy', () => {
+    const facets: FacetCounts = { ...emptyFacets, tags: { Elections: 3, 'Land Records': 1, __any__: 4 } }
+    const { result } = renderHook(() => useHarness(facets, ['Elections']), { wrapper })
+    expect(result.current.allTags).toEqual(['Elections'])
+    expect(result.current.allTags).not.toContain('Land Records')
+  })
+
+  it('allTags fails open when the taxonomy is empty (not yet loaded)', () => {
+    const facets: FacetCounts = { ...emptyFacets, tags: { Elections: 3, 'Land Records': 1 } }
+    const { result } = renderHook(() => useHarness(facets, []), { wrapper })
+    expect(result.current.allTags).toEqual(['Elections', 'Land Records'])
   })
 })
