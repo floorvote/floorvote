@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <strong>Issue-based legislative tracking, for teams.</strong>
+  <strong>Legislative tracking for teams.</strong>
 </p>
 
 <p align="center">
@@ -17,71 +17,30 @@
 
 ---
 
-FloorVote monitors state and federal legislation and surfaces the bills that matter to your team — filtered by configurable keywords, summarized by AI, and organized for collective review. Built initially for state associations of local election officials, it's designed to work for any team tracking any legislative issue.
+FloorVote is an open, self-hostable bill tracker for any team that tracks legislation—automatic bill summaries, member voting, email notifications, and hearing calendars, all for about $5-7/month in infrastructure.
 
-Each organization gets a private, isolated deployment with its own database, member roster, bill list, and activity feed.
+FloorVote monitors state and federal legislation and surfaces the bills that matter to your team—filtered by your keywords and summarized and tagged by AI according to your instructions. Your team can comment and vote on the bills, and your team can set an official position.
+
+FloorVote can be used by individuals or teams, but it's especially powerful for teams, whether big or small. Instead of everyone on a team monitoring bills on their own and comparing notes over email or in meetings, FloorVote gives the whole team one shared place to watch, discuss, and respond to the bills that matter to them.
+
+Each team gets a private, isolated deployment with its own database, member roster, bill list, activity feed, and calendar.
+
+**[See the demo site](https://demo.floor.vote)** · **[Docs](https://floorvote.org/docs/)**
 
 ---
 
 ## Features
 
-**Bill tracking**
-- Hourly sync from LegiScan across all configured states
-- Keyword-based filtering — only bills matching your issue area are ingested
-- AI-generated summaries, tags, and relevance scores, tuned to your organization's context
-- Full bill text stored and accessible (HTML and PDF)
-- Deduplication — bills are only reprocessed when the provider signals a change
+| | |
+|---|---|
+| **Bills** | Keyword filtering · AI summaries, tags, and relevance scores · full text, fiscal notes, and amendments · triage for new matches · search across title, summary, and abstract · filtering by tag and priority · custom fields |
+| **Team** | Support/oppose/neutral voting · comments with reactions and @-mentions · personal notes · priority flags · official team positions |
+| **Roles** | Owner, admin, and member · custom roles for committee assignments · per-member voting restrictions |
+| **Calendar** | Auto-added hearings · custom events · subscribe from any calendar app over ICS · spreadsheet import |
+| **Email** | Magic-link sign-in · daily or weekly digests · week-ahead hearing preview · new-match and mention alerts |
+| **Admin** | Configurable AI context, relevance question, and tag taxonomy · named presets · toggleable feature modules · bulk member invites · data export |
 
-**Member engagement**
-- Members vote support / oppose / neutral on individual bills
-- Voting is semi-private: members see aggregates, admins see individual votes
-- Comments with reactions
-- Per-member bill notes
-- Priority flags on bills
-- Admin-defined custom fields per bill (binary, dropdown, text, date)
-
-**Official positions**
-- Admins record the organization's formal stance, separate from member votes
-- The organization's self-noun (team, association, coalition, or custom) is configurable per deployment and drives the position-section and relevance labels
-
-**User roles**
-- Three system roles: owner, admin, member
-- Custom organizational roles (e.g. committees) assignable to members
-- Role-based vote filtering on bill detail pages
-- Voting can be restricted by `canVote` flag per member
-
-**Administration**
-- Magic link auth — no passwords
-- Invite members by email
-- Configurable AI context, relevance question, and tag taxonomy per org
-- Named presets bundle context + keywords for common issue areas (e.g. `election_officials`)
-- Custom field definitions managed in admin settings
-
-**Activity**
-- Feed of recent bill additions, comments, votes, and position changes
-
----
-
-## Architecture
-
-```
-Legislative API (LegiScan)
-     ↓ (hourly cron)
-Central Worker
-  - fetches masterlist for each tenant-covered state
-  - filters by per-state keyword union
-  - stores full bill text in R2
-  - fans out to per-tenant queues
-     ↓ (per-tenant queue)
-Tenant Worker (one per org)
-  - runs AI: summary + tags + relevance
-  - stores results in tenant D1
-  - serves React SPA via Workers Assets
-     ↕
-Browser (React frontend)
-```
-
-Central handles all legislative API calls and stores bill text. Tenants never call LegiScan directly. AI processing is tenant-side only, using each org's configured context and taxonomy.
+Each of these is explained in full on the docs site: **[What can FloorVote do?](https://floorvote.org/docs/overview/what-can-it-do.html)**
 
 ---
 
@@ -89,92 +48,65 @@ Central handles all legislative API calls and stores bill text. Tenants never ca
 
 | | |
 |---|---|
-| Backend | Hono on Cloudflare Workers — tenant API, central API |
-| Database | Cloudflare D1 (SQLite via Drizzle ORM) — separate DBs for central and each tenant |
-| Storage | Cloudflare R2 — bill text + masterlist cache stored centrally |
-| Queues | Cloudflare Queues — central ingestor + per-tenant bill delivery |
-| Frontend | React 19 + React Router 7 + Vite 8 — served via Workers Assets from each tenant Worker |
-| Email | Cloudflare Email Service (magic link auth) |
+| Backend | Hono on Cloudflare Workers—tenant API, central API |
+| Database | Cloudflare D1 (SQLite via Drizzle ORM)—separate databases for central and each tenant |
+| Storage | Cloudflare R2—bill text and masterlist cache, stored centrally |
+| Queues | Cloudflare Queues—central ingestor, per-tenant bill delivery |
+| Frontend | React 19 + React Router 7 + Vite 8, served via Workers Assets |
+| Email | Cloudflare Email Service, with Resend available as a fallback |
 | AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway |
 | Legislative data | LegiScan |
+| Testing | Vitest with `@cloudflare/vitest-pool-workers`; Vitest + jsdom for the frontend |
+
+**On the AI model.** Gemini 2.5 Flash was chosen for its affordability, accuracy, and ability to handle long PDFs (which is how many bills arrive). It's set in [`api/src/lib/llm.ts`](api/src/lib/llm.ts), so changing it is a code edit rather than configuration.
+
+**On OpenStates.** An OpenStates provider exists alongside the LegiScan one, but it is experimental and not at feature parity. Don't build on it.
 
 ---
 
-## Quick start
+## Architecture
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full local development guide.
-
-```bash
-npm install
-cd central && npm install
-
-# One-command seeded local dev — fresh D1, auto-login, api(8787) + web(5173)
-npm run dev:local
+```mermaid
+flowchart TB
+  API["LegiScan API"] -->|hourly cron| C
+  subgraph C ["Central service — one per operator"]
+    CW["Worker + D1 + R2 + Queues"]
+  end
+  C -->|per-tenant queue| TA["Tenant A<br/>Worker + D1 + Queue"]
+  C -->|per-tenant queue| TB["Tenant B<br/>Worker + D1 + Queue"]
 ```
 
-Open http://localhost:5173.
+**Central** — one per operator. It makes every legislative API call and stores all bill text, so you pay for one LegiScan key no matter how many teams you run. It does no AI processing.
+
+**Tenants** — one per team. Each runs the AI pass (summary, tags, relevance score) using its own configured context and taxonomy, keeps its own D1 database, serves the React app via Workers Assets, and never calls LegiScan directly. Because relevance is scored per team, the same bill can score very differently for two teams.
+
+Tenant and central talk to each other over Cloudflare service bindings in both directions, with no shared secret in transit.
 
 ---
 
-## Deployment
+## Get started
 
-Each tenant is a separate Cloudflare Worker deployment. See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) for the complete setup guide.
-
-```bash
-# Deploy a tenant (from api/)
-npm run deploy:tenant -- <env-name>
-
-# Deploy central (from central/)
-npm run deploy:legiscan     # LegiScan central (recommended)
-npm run deploy              # OpenStates central (experimental)
-```
-
-Configuration lives in `api/wrangler.toml` (per-tenant) and `central/wrangler.toml`. See the `*.example.toml` files for documented templates.
-
-Never run `wrangler deploy --env <tenant>` directly — it skips migrations and the web build.
+- **Deploy it for your team**—the [self-hosting guide](docs/content/self-hosting/index.md) walks through every step in order. Setup is a technical task: you'll provision Cloudflare resources and run deploy scripts.
+- **Try it first**—the [demo site](https://demo.floor.vote) needs no account.
+- **Work on the code**—[CONTRIBUTING.md](CONTRIBUTING.md) covers local development, tests, and conventions. `npm run dev:local` gives you a seeded local instance with auto-login.
 
 ---
 
-## Project structure
+## Security
 
-```
-api/            Tenant Cloudflare Worker (one deployment per org)
-  src/
-    routes/     Hono route handlers
-    lib/        LLM, email, keywords, taxonomy, presets
-    config/     Runtime configuration helpers
-    cron/       Tenant-side cron jobs
-    middleware/ Auth, CORS, request middleware
-    queue/      Bill processing (receives from per-tenant queue)
-    db/         Drizzle schema + client
-  migrations/   D1 migration SQL files
-  test/
+Every push runs typecheck, lint, and tests across `api/`, `central/`, and `web/`, plus a gitleaks scan for committed secrets.
 
-central/        Central Cloudflare Worker (shared ingestion layer)
-  src/
-    routes/     Bills API, tenant registration, admin endpoints
-    lib/        Keyword union, masterlist cache, auth
-    providers/  LegiScan + OpenStates API clients
-    cron/       Hourly sync for tenant-covered states
-    queue/      Ingestor (fetch + store + notify tenants)
-    db/         Drizzle schema + client
-  migrations/   D1 migration SQL files
-  test/
+The app ships with security headers, per-route rate limiting, Cloudflare Turnstile on public forms, HTML sanitization of bill text, magic-link auth with no stored passwords, and self-serve account deletion.
 
-web/            React frontend (built into tenant Worker via Workers Assets)
-  src/
-    pages/      Route-level components
-    components/ Shared UI
-    context/    React context providers (auth, config)
-    hooks/      Custom hooks (auth, polling, UI utilities)
-    lib/        Utility functions
-    styles/     Design tokens + global CSS
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-shared/         Shared utility modules consumed by both api/ and web/
-scripts/        Utility scripts (seeders, dev tooling)
-legiscan/       LegiScan API reference and sample data
-docs/           Architecture docs, self-hosting guide, conventions
-```
+---
+
+## License
+
+[AGPL-3.0](LICENSE). Copyright © 2026 William T. Adler.
+
+If you run a modified version as a network service, the AGPL requires you to offer your users the corresponding source.
 
 ---
 
@@ -182,4 +114,6 @@ docs/           Architecture docs, self-hosting guide, conventions
 
 Architecture and security have been reviewed and strengthened through a volunteer engagement with [U.S. Digital Response](https://www.usdigitalresponse.org/) (volunteer: [Larry Hitchon](https://github.com/lhitchon)).
 
-FloorVote is supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
+Development is supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
+
+FloorVote was developed with [Claude Code](https://claude.com/claude-code) and the [superpowers plugin](https://github.com/obra/superpowers), under human direction. Repository conventions that agents are expected to follow live in [AGENTS.md](AGENTS.md).

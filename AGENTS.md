@@ -32,7 +32,10 @@ web/        React 19 + Vite 8 + React Router 7 frontend
 shared/     Shared modules (bill model, feed utils, markdown, tokens)
 scripts/    Seeders and dev tooling
 docs/content/  Published docs site (VitePress); docs/internal/ holds maintainer docs
+graphify-out/  Generated knowledge graph (refreshed by CI; do not hand-edit)
 ```
+
+This is the canonical project layout — the README intentionally does not duplicate it.
 
 ## Stack
 
@@ -43,8 +46,8 @@ docs/content/  Published docs site (VitePress); docs/internal/ holds maintainer 
 | Storage | Cloudflare R2 (bill text + masterlist cache) |
 | Queues | Cloudflare Queues (ingestor + per-tenant delivery) |
 | Frontend | React 19 + React Router 7 + Vite 8 (Workers Assets) |
-| Email | Cloudflare Email Service (magic link auth) |
-| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway |
+| Email | Cloudflare Email Service (magic link auth); Resend available as a fallback via `EMAIL_PROVIDER` |
+| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. Model is hardcoded in `api/src/lib/llm.ts` — changing it is a code edit, not config |
 | Legislative data | LegiScan |
 | Testing | Vitest + @cloudflare/vitest-pool-workers; Vitest + jsdom |
 

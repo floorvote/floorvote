@@ -1,18 +1,24 @@
 # What can FloorVote do?
 
-FloorVote is a self-hosted bill tracker for monitoring state and federal legislation. It can be used by individuals or teams, but it's especially powerful for teams, whether big or small. Instead of everyone on a team monitoring bills on their own and comparing notes over email or in meetings, FloorVote gives the whole team one shared place to watch, discuss, and respond to the bills that matter to them.
+FloorVote is an open, self-hostable bill tracker for any team that tracks legislation—automatic bill summaries, member voting, email notifications, and hearing calendars, all for about $5-7/month in infrastructure.
+
+FloorVote monitors state and federal legislation and surfaces the bills that matter to your team—filtered by your keywords and summarized and tagged by AI according to your instructions. Your team can comment and vote on the bills, and your team can set an official position.
+
+FloorVote can be used by individuals or teams, but it's especially powerful for teams, whether big or small. Instead of everyone on a team monitoring bills on their own and comparing notes over email or in meetings, FloorVote gives the whole team one shared place to watch, discuss, and respond to the bills that matter to them.
+
+Each team gets a private, isolated deployment with its own database, member roster, bill list, activity feed, and calendar.
 
 ## Set keywords for the topics you care about
 
-Point FloorVote at the states you track — and Congress, if federal legislation matters to you — and you get access to every bill introduced there, not just a curated subset.
+Point FloorVote at the states you track—and Congress, if federal legislation matters to you—and you get access to every bill introduced there, not just a curated subset.
 
-From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title or description matches one of your keywords, FloorVote pulls it out for a closer look — analysis, tagging, and everything else below — so nobody on your team has to scan the whole legislative session by hand.
+From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title or description matches one of your keywords, FloorVote pulls it out for a closer look—analysis, tagging, and everything else below—so nobody on your team has to scan the whole legislative session by hand.
 
 ## Custom AI summaries, relevance scores, tags
 
-Once a bill matches, artificial intelligence reads it and produces a plain-language summary, a relevance score, and tags — so your team can tell at a glance what a bill does and whether it's worth their attention, without wading through legislative text themselves.
+Once a bill matches, artificial intelligence reads it and produces a plain-language summary, a relevance score, and tags—so your team can tell at a glance what a bill does and whether it's worth their attention, without wading through legislative text themselves.
 
-You control how that analysis works: write your own directions for what "relevant" means to your organization, and the AI scores bills and pulls tags from your own taxonomy accordingly. The same bill can score very differently for two different teams, because you're the one setting the bar. And you're never limited to the summary alone — the full bill text, fiscal notes, and amendments are all right there next to it.
+You control how that analysis works: write your own directions for what "relevant" means to your team, and the AI scores bills and pulls tags from your own taxonomy accordingly. The same bill can score very differently for two different teams, because you're the one setting the bar. And you're never limited to the summary alone—the full bill text, fiscal notes, and amendments are all right there next to it.
 
 ## Voting
 
@@ -26,15 +32,15 @@ Team members can discuss any bill directly on its page with comments and reactio
 
 ## Roles and permissions
 
-Not everyone on a team needs the same level of access. FloorVote has three built-in roles — owner, admin, and member — plus custom roles you define yourself, like committees, so you can group members however your organization actually works.
+Not everyone on a team needs the same level of access. FloorVote has three built-in roles—owner, admin, and member—plus custom roles you define yourself, like committees, so you can group members however your team actually works.
 
 Admins can also restrict voting on a per-member basis, for cases where someone should be able to follow and discuss bills without casting an official vote.
 
 ## Set priorities and positions
 
-Flag a bill's priority so it stands out to the rest of the team, and track whatever else matters to your organization with custom fields you define yourself — yes or no, a dropdown, free text, or a date.
+Flag a bill's priority so it stands out to the rest of the team, and track whatever else matters to your team with custom fields you define yourself—yes or no, a dropdown, free text, or a date.
 
-Once the team has talked a bill through, admins can also record the organization's official position, separate from and independent of individual member votes. That's the position you'd point to publicly or share with a coalition, distinct from how any one member happened to vote.
+Once the team has talked a bill through, admins can also record the team's official position, separate from and independent of individual member votes. That's the position you'd point to publicly or share with a coalition, distinct from how any one member happened to vote.
 
 ## Notifications
 
@@ -44,7 +50,7 @@ For anyone who'd rather not check FloorVote constantly, periodic email digests r
 
 ## Feed
 
-A single feed shows everything happening across your tracked bills and your team — new bills, comments, votes, and position changes — so anyone can catch up on what happened without having to ask around.
+A single feed shows everything happening across your tracked bills and your team—new bills, comments, votes, and position changes—so anyone can catch up on what happened without having to ask around.
 
 ## Bill search
 
@@ -58,7 +64,7 @@ When a bill newly matches your keywords, it needs a quick decision: assign it a 
 
 Hearings are added to your team's calendar automatically as they're scheduled, and you can add custom events of your own alongside them. Everyone on the team can subscribe to the calendar from their own calendar app, so hearing dates show up wherever they already look.
 
-You can also import a full spreadsheet of events at once — handy for loading an existing schedule when you're just getting started.
+You can also import a full spreadsheet of events at once—handy for loading an existing schedule when you're just getting started.
 
 ## Try it
 

@@ -54,12 +54,12 @@ export CLOUDFLARE_API_TOKEN="..."
 
 ```mermaid
 flowchart TB
-  API["LegiScan API"] --> C
+  API["LegiScan API"] -->|hourly cron| C
   subgraph C ["Central service — one per operator"]
     CW["Worker + D1 + R2 + Queues"]
   end
-  C --> TA["Tenant A<br/>(e.g. NJ)<br/>Worker + D1"]
-  C --> TB["Tenant B<br/>(e.g. national)<br/>Worker + D1"]
+  C -->|per-tenant queue| TA["Tenant A<br/>Worker + D1 + Queue"]
+  C -->|per-tenant queue| TB["Tenant B<br/>Worker + D1 + Queue"]
 ```
 
 - **Central service** — one per operator. It makes all the legislative API calls and stores all the bill data, so you pay for one API key no matter how many teams you run. You set this up on this page.
