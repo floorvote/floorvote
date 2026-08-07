@@ -6,8 +6,17 @@
   font-size: 22px;
   white-space: nowrap;
 }
-/* v1.1: mark at 1.02 × cap height, legs on the baseline, gap = 0.5 × cap. */
-.fv-wordmark__mark { height: 0.698em; width: auto; vertical-align: baseline; margin-right: 0.343em; }
+/* v1.1: mark at 1.02 × cap height, legs on the baseline, gap = 0.5 × cap.
+   `display: inline` is load-bearing: VitePress's theme resets svg to
+   display:block, which puts the mark on its own line above the name and makes
+   vertical-align meaningless. The lockup only holds in inline layout. */
+.fv-wordmark__mark {
+  display: inline;
+  height: 0.698em;
+  width: auto;
+  vertical-align: baseline;
+  margin-right: 0.343em;
+}
 .fv-wordmark__floor { color: #1e3a5f; }
 .fv-wordmark__vote { color: #e8a33d; }
 /* Dark mode: lighten the navy so "Floor" stays legible on the dark nav. */
