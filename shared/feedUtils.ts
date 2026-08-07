@@ -56,6 +56,17 @@ export function stripHtml(s: string): string {
   return s.replace(/<[^>]*>?/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+// Characters of a comment kept in a comment_added event's `preview` metadata.
+// The digest email and the Feed both render that stored string verbatim, so the
+// cap lives here rather than at the write site alone — billCardModel needs it to
+// spot legacy previews that were cut before truncateWithEllipsis existed.
+export const COMMENT_PREVIEW_MAX = 120
+
+/** Cut to `max` characters, marking the cut with an ellipsis. */
+export function truncateWithEllipsis(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max).trimEnd()}…` : s
+}
+
 
 export type ChangeRecord = {
   changeType: string

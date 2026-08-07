@@ -83,6 +83,11 @@ exports[`renderDigestEmail > renders the sample digest unchanged (extraction reg
       <td style="width:100%;padding:8px 8px 8px 6px;font-size:12px;color:#475569;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.4;border-top:1px solid #e2e8f0;"><a href="https://x.test/RI/2026/HB 1234" style="color:inherit;text-decoration:none;">Sam Ortiz: &quot;We should testify against this at the hearing.&quot;</a></td>
       <td align="right" style="padding:8px 14px 8px 0;font-size:12px;color:#667386;white-space:nowrap;vertical-align:top;border-top:1px solid #e2e8f0;">Jun 10</td>
     </tr>
+<tr style="background:#fff;">
+      <td width="30" style="padding:9px 0 8px 14px;vertical-align:top;border-top:1px solid #e2e8f0;"><img src="https://x.test/email-icons/chat__7c3aed.png" width="14" height="14" alt="" style="display:block;border:0;"></td>
+      <td style="width:100%;padding:8px 8px 8px 6px;font-size:12px;color:#475569;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.4;border-top:1px solid #e2e8f0;"><a href="https://x.test/RI/2026/HB 1234" style="color:inherit;text-decoration:none;">Marguerite Okonkwo: &quot;Free IDs sound simple, but our office would need a second workstation and staff coverage to issue them during peak weeks…&quot;</a></td>
+      <td align="right" style="padding:8px 14px 8px 0;font-size:12px;color:#667386;white-space:nowrap;vertical-align:top;border-top:1px solid #e2e8f0;">Jun 10</td>
+    </tr>
   </tbody>
 </table>
 

@@ -1,6 +1,6 @@
 import { color, fontSize, fontWeight } from './tokens'
 import { PRIORITY_COLORS, POSITION_FEED_ICON } from './billChipColors'
-import { formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBillEvents } from './feedUtils'
+import { COMMENT_PREVIEW_MAX, formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBillEvents } from './feedUtils'
 import { formatHearingTime } from './hearingTime'
 import { stripMarkdown } from './markdown'
 
@@ -81,8 +81,14 @@ export function userDetailLine(event: FeedEvent): string {
         ? `${userName} set position to ${String(metadata.position ?? '')} for ${Number(metadata.count)} bills`
         : `Position set to ${String(metadata.position ?? '')}${userName ? ` by ${userName}` : ''}`
     case 'comment_added': {
-      const preview = stripHtml(String(metadata.preview ?? ''))
-      return `${userName}: "${preview}"`
+      const stored = String(metadata.preview ?? '')
+      // Events written before the write site ellipsized (engagementRoutes.ts) sit
+      // in the DB hard-cut at exactly COMMENT_PREVIEW_MAX with no marker, so the
+      // comment reads as if it just stopped mid-word. Anything at the cap was
+      // almost certainly cut — mark it here so old digests read right too.
+      const preview = stripHtml(stored)
+      const cut = !preview.endsWith('…') && stored.length >= COMMENT_PREVIEW_MAX
+      return `${userName}: "${preview}${cut ? '…' : ''}"`
     }
     case 'vote_milestone': return String(metadata.message ?? '')
     default: return ''
