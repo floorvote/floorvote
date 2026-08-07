@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { renderDigestEmail } from '../../src/lib/digestEmail'
 import { PRIORITY_COLORS } from '../../../web/src/lib/chipStyles'
 import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
+import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
 import type { GroupedBillEvents, FeedEvent } from '../../../web/src/lib/feedUtils'
 import { SAMPLE_DIGEST_EVENTS, SAMPLE_NEW_MATCHES, SAMPLE_ASSOC_NAME } from '../../src/lib/sampleEmails'
 
@@ -65,6 +66,24 @@ describe('renderDigestEmail', () => {
     expect(html).toContain('Marked high priority by Will')
     expect(html).toContain('width:11px;height:11px;border-radius:')  // the priority square box
     expect(html).toContain('title="High priority"')                  // native hover tooltip
+  })
+  it('ends a cut comment row with an ellipsis (legacy previews, stored hard-cut at the cap)', () => {
+    // Made-up comment, cut mid-word the way the old write site cut real ones.
+    const cut = 'The county offices will need extra staffing before this takes effect, and the training schedule is the real constraint o'
+    expect(cut.length).toBe(COMMENT_PREVIEW_MAX)   // exactly what the old write site stored
+    const html = renderDigestEmail({ events: [ev({ type: 'comment_added', metadata: JSON.stringify({ preview: cut }) })], assocName: 'X', appUrl: 'https://x' })
+    expect(html).toContain(`Will: &quot;${cut}…&quot;`)
+  })
+  it('leaves a short comment row unmarked', () => {
+    const html = renderDigestEmail({ events: [ev({ type: 'comment_added', metadata: JSON.stringify({ preview: 'Short note.' }) })], assocName: 'X', appUrl: 'https://x' })
+    expect(html).toContain('Will: &quot;Short note.&quot;')
+    expect(html).not.toContain('…')
+  })
+  it('does not double up the ellipsis on previews written by the new write site', () => {
+    const preview = `${'x'.repeat(COMMENT_PREVIEW_MAX)}…`
+    const html = renderDigestEmail({ events: [ev({ type: 'comment_added', metadata: JSON.stringify({ preview }) })], assocName: 'X', appUrl: 'https://x' })
+    expect(html).toContain(`Will: &quot;${preview}&quot;`)
+    expect(html).not.toContain('……')
   })
   it('points the manage-settings footer link at the email-digest setting anchor', () => {
     const html = renderDigestEmail({ events: [ev()], assocName: 'X', appUrl: 'https://x' })

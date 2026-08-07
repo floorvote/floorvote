@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupEventsByBillAndDay, type FeedEvent } from './feedUtils'
+import { COMMENT_PREVIEW_MAX, groupEventsByBillAndDay, truncateWithEllipsis, type FeedEvent } from './feedUtils'
 
 function ev(id: string, billId: string, createdAt: string): FeedEvent {
   return {
@@ -19,5 +19,19 @@ describe('groupEventsByBillAndDay mixed-format ordering', () => {
     ]
     const groups = groupEventsByBillAndDay(events)
     expect(groups.map((g) => g.billId)).toEqual(['bill-space', 'bill-iso'])
+  })
+})
+
+describe('truncateWithEllipsis', () => {
+  it('leaves a string at or under the cap untouched', () => {
+    expect(truncateWithEllipsis('short', COMMENT_PREVIEW_MAX)).toBe('short')
+    expect(truncateWithEllipsis('x'.repeat(COMMENT_PREVIEW_MAX), COMMENT_PREVIEW_MAX)).toBe('x'.repeat(COMMENT_PREVIEW_MAX))
+  })
+  it('marks a cut string with an ellipsis', () => {
+    const out = truncateWithEllipsis('x'.repeat(COMMENT_PREVIEW_MAX + 5), COMMENT_PREVIEW_MAX)
+    expect(out).toBe(`${'x'.repeat(COMMENT_PREVIEW_MAX)}…`)
+  })
+  it('drops the trailing space so the ellipsis sits against the last word', () => {
+    expect(truncateWithEllipsis('ab cdef', 3)).toBe('ab…')
   })
 })

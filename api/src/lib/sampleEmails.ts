@@ -45,6 +45,10 @@ export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
   { type: 'priority_set', metadata: j({ priority: 'high' }), createdAt: '2026-06-09 14:02:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.', userName: 'Dana Reed' },
   { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] }), createdAt: '2026-06-10 09:30:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: null },
   { type: 'comment_added', metadata: j({ preview: 'We should testify against this at the hearing.' }), createdAt: '2026-06-10 16:45:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Sam Ortiz' },
+  // Long comment, stored cut at COMMENT_PREVIEW_MAX with no trailing marker —
+  // the legacy shape written before the ellipsis fix. Kept in the sample so the
+  // digest QA email and the snapshot both cover a truncated comment row.
+  { type: 'comment_added', metadata: j({ preview: 'Free IDs sound simple, but our office would need a second workstation and staff coverage to issue them during peak weeks' }), createdAt: '2026-06-10 17:20:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Marguerite Okonkwo' },
   { type: 'position_set', metadata: j({ position: 'Oppose' }), createdAt: '2026-06-10 11:15:00', billId: 'b2', billNumber: 'S 0456', billTitle: 'Mail Ballot Drop Boxes', billState: 'RI', billSession: '2026', priority: 'medium', summary: 'Authorizes secure 24-hour drop boxes in every municipality and sets chain-of-custody rules.', userName: 'Dana Reed' },
 ]
 

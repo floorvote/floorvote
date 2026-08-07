@@ -7,6 +7,7 @@ import {
   customFieldDefinitions, billCustomFieldValues,
 } from '../../db/schema'
 import { extractAndNotifyMentions, stripHtml } from '../../lib/mentions'
+import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../../shared/feedUtils'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
 import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
@@ -213,7 +214,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       billId: id,
       userId: currentUser.id,
       metadata: JSON.stringify({
-        preview: stripHtml(content).slice(0, 120),
+        preview: truncateWithEllipsis(stripHtml(content), COMMENT_PREVIEW_MAX),
         commentId,
         ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
       }),
