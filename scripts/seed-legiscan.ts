@@ -65,6 +65,7 @@ import { fileURLToPath } from 'url'
 import { execSync } from 'child_process'
 import * as readline from 'readline'
 import { seedCentralDb, seedIndividualVotesOnly, cleanupTmpFiles, runSql, type SeedCentralDbOptions } from './lib/seed-legiscan-db.js'
+import { progress, progressDone } from './lib/progress.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const REPO_ROOT = join(dirname(__filename), '..')
@@ -264,14 +265,14 @@ async function runSeedSession(tenantId: string, sessionId: number): Promise<void
 
     totalProcessed += body.processed
     totalKeyword += body.keywordMatches
-    process.stdout.write(`\r  Processed: ${totalProcessed} (${totalKeyword} keyword matches)`)
+    progress(`  Processed: ${totalProcessed} (${totalKeyword} keyword matches)`)
 
     if (body.done) break
     offset = body.nextOffset ?? offset + 500
     // Brief pause to avoid overwhelming the queue
     await new Promise(r => setTimeout(r, 200))
   }
-  console.log(`\n  ✓ Done — ${totalProcessed} bills linked, ${totalKeyword} keyword matches queued to ingestor`)
+  progressDone(`  ✓ Done — ${totalProcessed} bills linked, ${totalKeyword} keyword matches queued to ingestor`)
   if (totalKeyword > 0) {
     console.log(`    Ingestor will download text (state_link → R2) and notify tenant for AI processing`)
   }

@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { esc, num, buildBillStatements } from './build-bill-statements'
+import { progress, progressDone } from './progress'
 
 export { esc, num }
 
@@ -187,11 +188,11 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
     }
     if (billCount % FLUSH_EVERY === 0) {
       flush()
-      process.stdout.write(`\r  Bills: ${billCount}/${billFiles.length}`)
+      progress(`  Bills: ${billCount}/${billFiles.length}`)
     }
   }
   flush()
-  console.log(`\r  ✓ ${billCount} bills seeded${errorCount > 0 ? ` (${errorCount} errors)` : ''}`)
+  progressDone(`  ✓ ${billCount} bills seeded${errorCount > 0 ? ` (${errorCount} errors)` : ''}`)
 
   // ── Votes ─────────────────────────────────────────────────────────────────
   if (opts.skipVotes) {
@@ -235,11 +236,11 @@ VALUES (${esc(`${rc.roll_call_id}-${v.people_id}`)}, ${num(rc.roll_call_id)}, ${
     // flush OUTSIDE the try — a D1 failure here must abort, not be swallowed as "malformed".
     if (voteCount % VOTE_FLUSH_EVERY === 0) {
       flushVotes()
-      process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length}`)
+      progress(`  Votes: ${voteCount}/${voteFiles.length}`)
     }
   }
   flushVotes()
-  console.log(`\r  ✓ ${voteCount} vote files seeded (roll_calls${includeIndividual ? ' + roll_call_votes' : ' only'})`)
+  progressDone(`  ✓ ${voteCount} vote files seeded (roll_calls${includeIndividual ? ' + roll_call_votes' : ' only'})`)
 
   return { billCount, errorCount }
 }
@@ -286,10 +287,10 @@ VALUES (${esc(`${rc.roll_call_id}-${v.people_id}`)}, ${num(rc.roll_call_id)}, ${
     } catch { continue /* skip malformed vote file */ }
     if (voteCount % FLUSH_EVERY === 0) {
       flush()
-      process.stdout.write(`\r  Votes: ${voteCount}/${voteFiles.length} (${rowCount} individual rows)`)
+      progress(`  Votes: ${voteCount}/${voteFiles.length} (${rowCount} individual rows)`)
     }
   }
   flush()
-  console.log(`\r  ✓ ${voteCount} vote files → ${rowCount} roll_call_votes rows`)
+  progressDone(`  ✓ ${voteCount} vote files → ${rowCount} roll_call_votes rows`)
   return { voteCount, rowCount }
 }
