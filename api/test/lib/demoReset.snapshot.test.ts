@@ -1,3 +1,10 @@
+// GOLDEN SNAPSHOT — __snapshots__/demoReset.snapshot.test.ts.snap is a full dump
+// of every row runDemoReset writes. It guards the faithfulness of the seed
+// transcription: a mistyped bill id, a swapped persona, a dropped comment, or a
+// day offset off by one shows up as a one-line diff instead of shipping to the
+// demo. UPDATE RULE: regenerate (`vitest -u`) ONLY when you deliberately changed
+// seed data, and say which rows you expected to move. Never run -u to turn an
+// unexplained red green — an unexpected diff is the bug this file exists to catch.
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill } from '../helpers'

@@ -86,4 +86,21 @@ describe('DraftBills read-only demo', () => {
     const deleteBtn = await screen.findByRole('button', { name: 'delete' })
     expect(deleteBtn).toBeEnabled()
   })
+
+  it('explains why the delete-draft button is disabled instead of dropping its tooltip', async () => {
+    // A dead icon button with no title is less informative than the enabled one.
+    // Same copy as the house pattern in admin/Config.tsx.
+    demoState.demoLocked = true
+    mockDrafts([{ id: 'd1', billNumber: 'DRAFT-1', title: 'A draft bill', state: null }])
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const deleteBtn = await screen.findByRole('button', { name: 'delete' })
+    expect(deleteBtn).toHaveAttribute('title', 'Read-only in demo mode')
+  })
+
+  it('keeps the plain delete-draft tooltip when not demoLocked', async () => {
+    mockDrafts([{ id: 'd1', billNumber: 'DRAFT-1', title: 'A draft bill', state: null }])
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const deleteBtn = await screen.findByRole('button', { name: 'delete' })
+    expect(deleteBtn).toHaveAttribute('title', 'Delete draft')
+  })
 })

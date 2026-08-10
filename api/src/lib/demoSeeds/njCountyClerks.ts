@@ -24,7 +24,7 @@ const chg = (changeType: string, f: { oldValue?: string; newValue?: string; deta
 export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   slug: 'nj-county-clerks',
   associationName: NJ_COUNTY_CLERKS.name,
-  bannerText: "You're exploring a demo instance — data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.",
+  bannerText: "You're exploring a read-only demo — explore anything, but changes won't save. Data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.",
   orgNoun: 'association',
   aiContext: NJ_COUNTY_CLERKS.aiContext,
   relevanceQuestion: NJ_COUNTY_CLERKS.relevanceQuestion,

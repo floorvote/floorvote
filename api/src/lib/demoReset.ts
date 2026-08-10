@@ -1,10 +1,17 @@
 import type { DemoSeed } from './demoSeeds'
 
-/** N days ago in the SQLite space format that stored timestamps require. */
+/** N days ago in the SQLite space format that stored timestamps require.
+ *  Counts BACKWARD: positive n is the past, and n = 0 is now. This is the seed's
+ *  default convention (every `…DaysAgo` / `daysAgo` field). Note the opposite
+ *  sign to dateFromNow below. */
 const daysAgoDb = (n: number) =>
   new Date(Date.now() - n * 86400_000).toISOString().slice(0, 19).replace('T', ' ')
 
-/** A date-only (YYYY-MM-DD) offset from today, for calendar rows. */
+/** A date-only (YYYY-MM-DD) offset from today, for calendar rows.
+ *  Counts FORWARD: positive offsetDays is the future, negative is the past. The
+ *  seed's `offsetDays` is the sole field that inverts the "N days ago" convention,
+ *  because most calendar events are upcoming. Note the opposite sign to
+ *  daysAgoDb above. */
 const dateFromNow = (offsetDays: number) =>
   new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
@@ -82,6 +89,12 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // preset system is retired; the seed carries ai_context, relevance_question,
   // tag_taxonomy, and keywords directly.
   await batch([
+    // Delete rather than skip: a demo tenant deployed before presets were retired
+    // still carries the row, and while it exists ensureInstancePreset keeps
+    // reporting a preset slug. Deleting it makes every demo tenant — old and new —
+    // converge on "no preset". Safe because the four keys a preset would have
+    // supplied are written from the seed immediately below.
+    db.prepare(`DELETE FROM association_config WHERE key = 'instance_preset'`),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('association_name', ?)`).bind(JSON.stringify(`Demo — ${seed.associationName}`)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('ai_context', ?)`).bind(seed.aiContext),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('relevance_question', ?)`).bind(seed.relevanceQuestion),

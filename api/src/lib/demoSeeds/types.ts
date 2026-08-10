@@ -1,3 +1,5 @@
+import type { TaxonomyItem } from '../taxonomy'
+
 /**
  * The data half of a demo reset. Everything here is inert description — all
  * SQL, truncate ordering, and FK handling lives in demoReset.ts.
@@ -78,6 +80,29 @@ export type DemoSeedCalendarEvent = {
   description: string
 }
 
+/**
+ * One entry in a seed's `modules` map, keyed by module id ('calendar',
+ * 'email-digest', 'waiting-for-vote', 'upcoming-hearings'). A bare boolean is the
+ * legacy shape and still valid; the object shape carries per-module settings.
+ * Written verbatim to association_config.modules, which GET /config passes through
+ * opaquely because both shapes are live in the field.
+ */
+export type DemoSeedModule = boolean | { enabled: boolean; settings?: Record<string, unknown> }
+
+/**
+ * One legislative session, matching the shape GET /config caches under
+ * association_config.sessions (`NormalizedSession` in routes/configApi.ts). Dates
+ * are date-only `YYYY-MM-DD` and absolute, not offsets — a session's span is a
+ * fact about the legislature, not something that should slide with the reset date.
+ */
+export type DemoSeedSession = {
+  identifier: string
+  name: string
+  classification: string
+  startDate: string
+  endDate: string
+}
+
 export type DemoSeed = {
   slug: string
   /** Rendered with the `Demo — ` prefix applied by the machinery. */
@@ -87,11 +112,15 @@ export type DemoSeed = {
   orgNoun: string
   aiContext: string
   relevanceQuestion: string
-  tagTaxonomy: unknown
+  /** Feeds the AI tagging pipeline — the tag list the model must choose from. */
+  tagTaxonomy: TaxonomyItem[]
   keywords: string[]
   positionVocabulary: string[]
-  modules: Record<string, unknown>
-  sessions: { data: unknown[] }
+  /** Module id → enabled flag or `{ enabled, settings }`. See DemoSeedModule. */
+  modules: Record<string, DemoSeedModule>
+  /** Written to association_config.sessions; the machinery adds the `cachedAt`
+   *  that the cache format also carries. See DemoSeedSession. */
+  sessions: { data: DemoSeedSession[] }
   /** State coverage for a multi-state tenant; null for a STATE-scoped one. */
   stateCoverage: string[] | null
 
