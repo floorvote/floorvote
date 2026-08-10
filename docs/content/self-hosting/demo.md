@@ -13,7 +13,7 @@ To run one, deploy a tenant exactly as in [Adding tenants](/self-hosting/tenants
 
 ## Read-only
 
-A demo is a showcase, not a sandbox: visitors share one login, so anything one of them changed would be there for the next. So a `DEMO_MODE` tenant refuses every write. The server is the enforcement point — it rejects non-GET requests regardless of who is signed in, superadmins included — and the app disables the matching buttons, menus, and fields so a visitor sees the state rather than an error. Disabled controls carry a "Read-only in demo mode" tooltip, and the demo banner across the top says the same thing in prose.
+A demo is a showcase, not a sandbox: visitors share one login, so anything one of them changed would be there for the next. So a `DEMO_MODE` tenant refuses every write. The server is the enforcement point — it rejects non-GET requests regardless of who is signed in, superadmins included — and the app disables the matching buttons, menus, and fields so a visitor sees the state rather than an error. The demo banner across the top says so in prose, and the admin screens carry a "Read-only in demo mode" tooltip alongside an in-page notice. Member-facing controls are disabled without a per-control tooltip.
 
 Two deliberate exceptions:
 
