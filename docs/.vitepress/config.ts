@@ -57,6 +57,12 @@ export default withMermaid(
             { text: 'Contributing', link: '/contributing/' },
           ],
         },
+        {
+          text: 'Security',
+          items: [
+            { text: 'Security', link: '/security/' },
+          ],
+        },
       ],
       socialLinks: [
         { icon: 'github', link: 'https://github.com/floorvote/floorvote' },

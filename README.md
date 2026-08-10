@@ -25,7 +25,7 @@ FloorVote can be used by individuals or teams, but it's especially powerful for 
 
 Each team gets a private, isolated deployment with its own database, member roster, bill list, activity feed, and calendar.
 
-**[See the demo site](https://demo.floor.vote)** · **[Docs](https://floorvote.org/docs/)**
+**[See the demo site](https://demo.floor.vote)** · **[Docs](https://floorvote.org/docs/)** · **[Get started](https://floorvote.org/docs/self-hosting/)** · **[Security](https://floorvote.org/docs/security/)** · **[Contributing](https://floorvote.org/docs/contributing/)**
 
 ---
 
@@ -72,8 +72,8 @@ flowchart TB
   subgraph C ["Central service — one per operator"]
     CW["Worker + D1 + R2 + Queues"]
   end
-  C -->|per-tenant queue| TA["Tenant A<br/>Worker + D1 + Queue"]
-  C -->|per-tenant queue| TB["Tenant B<br/>Worker + D1 + Queue"]
+  C -->|per-tenant queue| TA["Tenant A — Worker + D1 + Queue"]
+  C -->|per-tenant queue| TB["Tenant B — Worker + D1 + Queue"]
 ```
 
 **Central** — one per operator. It makes every legislative API call and stores all bill text, so you pay for one LegiScan key no matter how many teams you run. It does no AI processing.
@@ -82,23 +82,7 @@ flowchart TB
 
 Tenant and central talk to each other over Cloudflare service bindings in both directions, with no shared secret in transit.
 
----
-
-## Get started
-
-- **Deploy it for your team**—the [self-hosting guide](docs/content/self-hosting/index.md) walks through every step in order. Setup is a technical task: you'll provision Cloudflare resources and run deploy scripts.
-- **Try it first**—the [demo site](https://demo.floor.vote) needs no account.
-- **Work on the code**—[CONTRIBUTING.md](CONTRIBUTING.md) covers local development, tests, and conventions. `npm run dev:local` gives you a seeded local instance with auto-login.
-
----
-
-## Security
-
-Every push runs typecheck, lint, and tests across `api/`, `central/`, and `web/`, plus a gitleaks scan for committed secrets.
-
-The app ships with security headers, per-route rate limiting, Cloudflare Turnstile on public forms, HTML sanitization of bill text, magic-link auth with no stored passwords, and self-serve account deletion.
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
+For the full data flow—cron passes, the ingestor, deduplication, and queue boundaries—see [Architecture](https://floorvote.org/docs/architecture/) on the docs site.
 
 ---
 
@@ -116,4 +100,4 @@ Architecture and security have been reviewed and strengthened through a voluntee
 
 Development is supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
 
-FloorVote was developed with [Claude Code](https://claude.com/claude-code) and the [superpowers plugin](https://github.com/obra/superpowers), under human direction. Repository conventions that agents are expected to follow live in [AGENTS.md](AGENTS.md).
+FloorVote was developed using [Claude Code](https://claude.com/claude-code) and the [superpowers plugin](https://github.com/obra/superpowers).

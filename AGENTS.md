@@ -151,7 +151,7 @@ cd central && npm run migrate:remote
 
 ## Developing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local dev setup and PR expectations.
+See the [Contributing page](https://floorvote.org/docs/contributing/) on the docs site for local dev setup and PR expectations.
 
 ```bash
 npm run dev:local    # seeded DB, auto-login, ports 8787 + 5173
@@ -190,7 +190,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 
 ### Conventions
 
-- **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [CONTRIBUTING.md](CONTRIBUTING.md#forking-and-operator-overlays).
+- **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [Forking and operator overlays](https://floorvote.org/docs/contributing/#forking-and-operator-overlays).
 
 ## graphify
 
