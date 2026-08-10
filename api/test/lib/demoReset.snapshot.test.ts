@@ -64,10 +64,26 @@ const SQL_CLOCK_COLUMNS = new Set([
 // this normalizer exists to remove, since they do not move with the clock.
 const RELATIVE_DATE_COLUMNS = new Set(['calendar_events.date'])
 
-const normalize = (table: string, col: string, v: unknown, baseMs: number): unknown => {
+// SQL_CLOCK_COLUMNS values carry no offset to pin (see comment above), but that
+// also means a future edit that *did* start writing a seed offset into one of
+// these columns would have the offset silently swallowed into the same
+// '<sql-now>' constant every real-clock run already produces — the collapse
+// would hide the bug instead of catching it. So verify the premise directly:
+// each of these must actually be near real wall-clock time. `realNowMs` is
+// `vi.getRealSystemTime()`, not `Date.now()` — the whole point of these columns
+// is that they track the real clock even while the JS clock is faked for the
+// RUN_DATES loop, so the reference point must be real too.
+const SQL_CLOCK_TOLERANCE_MS = 30_000
+
+const normalize = (table: string, col: string, v: unknown, baseMs: number, realNowMs: number): unknown => {
   if (typeof v !== 'string') return v
   const key = `${table}.${col}`
-  if (SQL_CLOCK_COLUMNS.has(key)) return '<sql-now>'
+  if (SQL_CLOCK_COLUMNS.has(key)) {
+    const drift = Math.abs(parseDbTs(v) - realNowMs)
+    expect(drift, `${key} = ${v} should be within ${SQL_CLOCK_TOLERANCE_MS}ms of real now, was off by ${drift}ms`)
+      .toBeLessThan(SQL_CLOCK_TOLERANCE_MS)
+    return '<sql-now>'
+  }
   if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(v)) return dayBucket(parseDbTs(v), baseMs)
   if (RELATIVE_DATE_COLUMNS.has(key) && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
     return dayBucket(Date.parse(v + 'T00:00:00Z'), utcMidnight(baseMs))
@@ -78,12 +94,18 @@ const normalize = (table: string, col: string, v: unknown, baseMs: number): unkn
     dayBucket(Date.parse(m.endsWith('Z') ? m : m + 'Z'), baseMs))
 }
 
-/** Stable, human-diffable dump of everything the reset produced. */
-export async function dumpResetState(): Promise<string> {
-  // Read the clock once so every bucket in one dump shares a baseline. This is
-  // the JS clock, i.e. the one the reset itself derives its offsets from — and
-  // the one `vi.setSystemTime` can move.
-  const baseMs = Date.now()
+/**
+ * Stable, human-diffable dump of everything the reset produced.
+ *
+ * `baseMs` must be read by the caller *before* calling `runDemoReset`, not
+ * after — reading it here (after the reset) leaves a window where a real-clock
+ * run that happens to straddle UTC midnight between the reset's writes and this
+ * read shifts every `calendar_events.date` bucket by one and fails. Requiring
+ * the caller to pass it in removes that window instead of narrowing it.
+ * `realNowMs` should be `vi.getRealSystemTime()` — the actual wall clock, used
+ * to verify SQL_CLOCK_COLUMNS (see normalize above).
+ */
+export async function dumpResetState(baseMs: number, realNowMs: number): Promise<string> {
   const out: string[] = []
   for (const t of TABLES) {
     const { results } = await env.DB.prepare(`SELECT * FROM ${t}`).all()
@@ -96,7 +118,7 @@ export async function dumpResetState(): Promise<string> {
       // demoReset.test.ts ('does not set instance_preset').
       .filter(r => !(t === 'association_config' && r.key === 'instance_preset'))
       .map(r => JSON.stringify(Object.fromEntries(
-        Object.entries(r).map(([k, v]) => [k, normalize(t, k, v, baseMs)]),
+        Object.entries(r).map(([k, v]) => [k, normalize(t, k, v, baseMs, realNowMs)]),
       )))
       .sort()
     out.push(`### ${t} (${rows.length})`, ...rows)
@@ -132,8 +154,11 @@ describe('demo reset golden snapshot', () => {
       if (runDate === null) vi.useRealTimers()
       else { vi.useFakeTimers(); vi.setSystemTime(new Date(runDate)) }
       await freshlyMigratedWithBills()
+      // Read before runDemoReset, not after — see dumpResetState's doc comment.
+      const baseMs = Date.now()
+      const realNowMs = vi.getRealSystemTime()
       await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
-      dumps.push(await dumpResetState())
+      dumps.push(await dumpResetState(baseMs, realNowMs))
     }
     vi.useRealTimers()
 
@@ -143,5 +168,29 @@ describe('demo reset golden snapshot', () => {
     expect(dumps[1]).toBe(dumps[0])
     expect(dumps[2]).toBe(dumps[0])
     expect(dumps[0]).toMatchSnapshot()
+  })
+
+  it('is immune to a UTC-midnight crossing between the reset and the dump', async () => {
+    // Regression for the flake this test used to carry: baseMs read *after*
+    // runDemoReset meant a real-clock run straddling UTC midnight between the
+    // reset's writes and the dump's read shifted every calendar_events.date
+    // bucket by one. Simulate exactly that straddle and confirm the dump is
+    // identical to a run with no midnight crossing at all.
+    vi.useFakeTimers()
+
+    vi.setSystemTime(new Date('2026-03-14T23:59:59.500Z'))
+    await freshlyMigratedWithBills()
+    const baseMsStraddled = Date.now() // captured before runDemoReset, per the fix
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    vi.setSystemTime(new Date('2026-03-15T00:00:00.500Z')) // dump happens just after midnight
+    const straddled = await dumpResetState(baseMsStraddled, vi.getRealSystemTime())
+
+    vi.setSystemTime(new Date('2026-03-14T23:59:59.500Z')) // no midnight crossing at all
+    await freshlyMigratedWithBills()
+    const baseMsClean = Date.now()
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    const clean = await dumpResetState(baseMsClean, vi.getRealSystemTime())
+
+    expect(straddled).toBe(clean)
   })
 })

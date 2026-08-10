@@ -182,6 +182,37 @@ describe('GET /config', () => {
   })
 })
 
+describe('PUT /admin/config', () => {
+  let cookie: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    // requireAdmin gates the whole /admin/* router, so this needs an
+    // admin-or-owner session — unlike the plain-member cookie GET /config uses.
+    const userId = await seedUser({ role: 'owner' })
+    const token = await seedSession(userId)
+    cookie = `session=${token}`
+  })
+
+  it('rejects a non-modules key for a superadmin request, same as any other request', async () => {
+    // Mirrors "reports demoLocked even for a superadmin request" above, but for
+    // the second exemption-removal site: PUT /admin/config self-limits to
+    // modules-only in demo mode, and a superadmin JWT must not bypass that
+    // either. association_name is a real ALLOWED_CONFIG_KEYS entry (a key not
+    // on that list would 400 on the unknown-key check before ever reaching the
+    // demo lock, which would pass this test for the wrong reason).
+    const jwtToken = await signSuperadminJwt('super@example.com', 'Super Admin', TEST_SUPERADMIN_PRIV)
+    const res = await app.request('/api/admin/config', {
+      method: 'PUT',
+      headers: { Cookie: `${cookie}; superadmin_jwt=${jwtToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ association_name: 'Hacked' }),
+    }, { ...env, DEMO_MODE: 'true' })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Configuration is locked in demo mode' })
+  })
+})
+
 describe('GET /config orgNoun', () => {
   let cookie: string
 

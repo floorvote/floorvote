@@ -30,7 +30,10 @@ import { legalDocs, hasTerms, hasPrivacy } from './lib/legalDocs'
 import { useFocusTrap } from './lib/useFocusTrap'
 import { useState, useRef, useContext, lazy, Suspense } from 'react'
 
-function DemoBanner() {
+// Exported for App.demoBanner.test.tsx, which pins the "render nothing until
+// config resolves" guard directly against DemoContext/ConfigContext rather
+// than through a full App/router mount.
+export function DemoBanner() {
   const { demoMode } = useDemo()
   const { config } = useContext(ConfigContext)
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('demo-banner-dismissed') === 'true')

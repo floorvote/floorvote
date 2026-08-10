@@ -9,6 +9,7 @@ import { EventSourceIcon } from './EventSourceIcon'
 import { eventSourceIcon } from '../../../../shared/eventLineModel'
 import { HoverTooltip } from '../HoverTooltip'
 import type { Box } from './expandTarget'
+import { useDemo } from '../../context/DemoContext'
 
 export interface EventPopoverPosition {
   positionStyle: CSSProperties
@@ -59,6 +60,7 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
   onDelete: (e: CalendarEvent) => void
   onRestore: (e: CalendarEvent) => void
 }) {
+  const { demoLocked } = useDemo()
   const canManage = isAdmin && event.source === 'custom'
   const iconBtn = {
     background: 'none', border: 'none', color: color.textMuted, cursor: 'pointer',
@@ -87,14 +89,26 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
             )}
             {event.status !== 'cancelled' && (
               <HoverTooltip text="Delete event" portal>
-                <button type="button" onClick={() => onDelete(event)} style={{ ...iconBtn, color: color.textErrorRed }} aria-label="Delete event">
+                <button
+                  type="button"
+                  disabled={demoLocked}
+                  onClick={() => onDelete(event)}
+                  style={{ ...iconBtn, color: demoLocked ? color.borderStrong : color.textErrorRed, ...(demoLocked ? { cursor: 'not-allowed' } : null) }}
+                  aria-label="Delete event"
+                >
                   <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>delete</span>
                 </button>
               </HoverTooltip>
             )}
             {event.status === 'cancelled' && (
               <HoverTooltip text="Restore event" portal>
-                <button type="button" onClick={() => onRestore(event)} style={iconBtn} aria-label="Restore event">
+                <button
+                  type="button"
+                  disabled={demoLocked}
+                  onClick={() => onRestore(event)}
+                  style={{ ...iconBtn, ...(demoLocked ? { color: color.borderStrong, cursor: 'not-allowed' } : null) }}
+                  aria-label="Restore event"
+                >
                   <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>restore_from_trash</span>
                 </button>
               </HoverTooltip>
