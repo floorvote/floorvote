@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
+import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
 
 // Every table runDemoReset writes. Ordered by primary key so the dump is
 // deterministic across runs and across the refactor.
@@ -73,7 +74,7 @@ describe('demo reset golden snapshot', () => {
   })
 
   it('matches the recorded snapshot', async () => {
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     expect(await dumpResetState()).toMatchSnapshot()
   })
 })
