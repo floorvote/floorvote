@@ -357,14 +357,13 @@ flowchart TD
   </tbody>
 </table>
 
-<h2>7. Known caveats and open audit items</h2>
-<p>Active items as of 2026-05-27:</p>
+<h2>7. Known limitations</h2>
+<p>Durable properties of the current design, not a work queue. Each is verified against the code, not a historical note.</p>
 <ul>
-  <li><strong>§A3 — change_log fidelity for top-level fields.</strong> Cron pre-writes <code>bills.title/status/description</code> before queuing, so the ingestor's snapshot reads the post-change value and <code>detectChanges</code> never emits <code>title_changed</code>/<code>status_change</code>/<code>description_changed</code> for cron-triggered messages. Child-collection diffs (history, votes, etc.) are still captured correctly.</li>
-  <li><strong>§B4 — roll_call_votes gap.</strong> <code>getBill</code> returns summaries only. Live ingest never populates per-legislator vote rows. Bulk-seeded bills have them.</li>
-  <li><strong>§C3 — change_hash sentinel.</strong> Raw pass inserts new bills with <code>change_hash = ''</code>. Cosmetic.</li>
-  <li><strong>§F1 — Monitoring-only latency (swallow bug fixed).</strong> Raw pass doesn't notify stub bills (no fresh metadata to deliver), so <code>match_type=null</code> bills update only on full pass (~8h); matched bills update on raw pass too (~1h). This relies on the full pass <em>seeing</em> the change — but the raw pass used to advance an unmatched bill's <code>change_hash</code> anyway, hiding the change from the next full pass and swallowing it permanently. <strong>Fixed:</strong> the raw pass now leaves unmatched hashes stale; <code>POST /admin/backfill-stub-actions/:tenantId</code> heals stubs swallowed before the fix.</li>
-  <li><strong>F7 audit (pending)</strong> — queue message flag surface, two-central divergence, residual data-gap verification.</li>
+  <li><strong>change_log fidelity for top-level fields.</strong> The cron pre-writes <code>bills.title/status/description</code> before queuing, so the ingestor's snapshot reads the post-change value and <code>detectChanges</code> never emits <code>title_changed</code>/<code>status_change</code>/<code>description_changed</code> for cron-triggered messages. Child-collection diffs (history, votes, etc.) are still captured correctly.</li>
+  <li><strong>roll_call_votes gap.</strong> <code>getBill</code> returns vote summaries only, so live ingest never populates per-legislator vote rows; per-legislator records would need <code>getRollCall</code> calls. Bulk-seeded bills have them.</li>
+  <li><strong>change_hash sentinel.</strong> The raw pass inserts new bills with <code>change_hash = ''</code>, which forces a full update the next time the ingestor or full pass sees the bill. Cosmetic.</li>
+  <li><strong>Monitoring-only latency.</strong> The raw pass doesn't notify stub bills, since there's no fresh metadata to deliver, so <code>match_type=null</code> bills update only on the full pass (~8h) while matched bills also update on the raw pass (~1h). That relies on the full pass <em>seeing</em> the change, which is why the raw pass deliberately leaves an unmatched bill's <code>change_hash</code> stale rather than advancing it. <code>POST /admin/backfill-stub-actions/:tenantId</code> exists to heal stubs affected before that behavior was in place.</li>
 </ul>
 
 <script>
