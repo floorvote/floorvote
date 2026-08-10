@@ -822,7 +822,7 @@ export function BillDetail() {
   }
 
   async function handleLinkDraft() {
-    if (!bill || !linkTarget) return
+    if (!bill || !linkTarget || demoLocked) return
     if (!window.confirm('Link this draft to the filed bill? The draft will be retired and all votes, positions, comments, and notes will be moved to the filed bill. This cannot be undone.')) return
     setLinking(true)
     try {
@@ -1037,12 +1037,13 @@ export function BillDetail() {
                   <button
                     type="button"
                     onClick={handleLinkDraft}
-                    disabled={!linkTarget || linking}
+                    disabled={!linkTarget || linking || demoLocked}
                     style={{
-                      background: (!linkTarget || linking) ? color.accentBlueMuted : color.accentBlue,
+                      background: (!linkTarget || linking || demoLocked) ? color.accentBlueMuted : color.accentBlue,
                       color: color.white, border: 'none', borderRadius: radius.md,
-                      padding: '8px 14px', cursor: (!linkTarget || linking) ? 'not-allowed' : 'pointer',
+                      padding: '8px 14px', cursor: (!linkTarget || linking || demoLocked) ? 'not-allowed' : 'pointer',
                       fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
+                      opacity: demoLocked ? 0.5 : 1,
                     }}
                   >
                     {linking ? 'Linking…' : 'Link & merge into filed bill'}
@@ -1085,6 +1086,7 @@ export function BillDetail() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
+                if (demoLocked) return
                 const form = e.currentTarget
                 const val = (form.elements.namedItem('draftTitle') as HTMLInputElement).value.trim()
                 if (!val) return
@@ -1126,9 +1128,10 @@ export function BillDetail() {
             <button
               type="button"
               aria-label="Edit title"
-              onClick={() => setEditingDraftField('title')}
+              onClick={() => { if (!demoLocked) setEditingDraftField('title') }}
               onMouseEnter={() => setHoveredDraftField('title')}
               onMouseLeave={() => setHoveredDraftField(null)}
+              disabled={demoLocked}
               style={{
                 display: 'block',
                 width: '100%',
@@ -1138,9 +1141,10 @@ export function BillDetail() {
                 font: 'inherit',
                 color: 'inherit',
                 textAlign: 'inherit',
-                cursor: 'text',
                 ...editableFieldBox(hoveredDraftField === 'title'),
                 padding: '4px 8px',
+                cursor: demoLocked ? 'not-allowed' : 'text',
+                opacity: demoLocked ? 0.5 : 1,
               }}
             >
               {bill.title || bill.abstract}
@@ -1283,6 +1287,7 @@ export function BillDetail() {
               <form
                 onSubmit={async (e) => {
                   e.preventDefault()
+                  if (demoLocked) return
                   const val = (e.currentTarget.elements.namedItem('draftSponsor') as HTMLInputElement).value.trim()
                   await apiFetch(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ sponsor: val || null }) })
                   setBill(prev => prev ? { ...prev, sponsor: val || null } : prev)
@@ -1309,9 +1314,10 @@ export function BillDetail() {
               <button
                 type="button"
                 aria-label="Edit sponsor"
-                onClick={() => setEditingDraftField('sponsor')}
+                onClick={() => { if (!demoLocked) setEditingDraftField('sponsor') }}
                 onMouseEnter={() => setHoveredDraftField('sponsor')}
                 onMouseLeave={() => setHoveredDraftField(null)}
+                disabled={demoLocked}
                 style={{
                   display: 'inline-block',
                   margin: 0,
@@ -1319,9 +1325,10 @@ export function BillDetail() {
                   border: 'none',
                   font: 'inherit',
                   textAlign: 'left',
-                  cursor: 'text',
                   ...editableFieldBox(hoveredDraftField === 'sponsor'),
                   padding: '1px 6px',
+                  cursor: demoLocked ? 'not-allowed' : 'text',
+                  opacity: demoLocked ? 0.5 : 1,
                 }}
               >
                 {bill.sponsor ?? <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span>}
@@ -1476,6 +1483,7 @@ export function BillDetail() {
                         submitLabel="Save"
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
+                        disabled={demoLocked}
                         onSubmit={async (html) => {
                           const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
                           await apiFetch(`/bills/${bill.id}/custom-fields`, {
@@ -1502,21 +1510,23 @@ export function BillDetail() {
                           <button
                             type="button"
                             aria-label={`Edit ${field.name}`}
-                            onClick={() => setEditingPinnedFieldId(field.id)}
+                            onClick={() => { if (!demoLocked) setEditingPinnedFieldId(field.id) }}
                             onMouseEnter={() => setHoveredPinnedFieldId(field.id)}
                             onMouseLeave={() => setHoveredPinnedFieldId(null)}
+                            disabled={demoLocked}
                             style={{
                               display: 'block',
                               width: '100%',
                               margin: 0,
                               font: 'inherit',
                               textAlign: 'left',
-                              cursor: 'text',
                               border: `1px solid ${hoveredPinnedFieldId === field.id ? color.borderStrong : color.borderDefault}`,
                               borderRadius: radius.md,
                               padding: '6px 8px',
                               background: hoveredPinnedFieldId === field.id ? color.surfaceMuted : color.white,
                               transition: 'border-color 0.15s, background 0.15s',
+                              cursor: demoLocked ? 'not-allowed' : 'text',
+                              opacity: demoLocked ? 0.5 : 1,
                             }}
                           >
                             <CommentContent content={entry.value} fontSize={14} />
@@ -1663,6 +1673,7 @@ export function BillDetail() {
                   submitLabel="Save"
                   // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                   autoFocus
+                  disabled={demoLocked}
                   onSubmit={async (html) => {
                     const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
                     await apiFetch(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ summary: value }) })
@@ -1675,9 +1686,10 @@ export function BillDetail() {
                 <button
                   type="button"
                   aria-label="Edit summary"
-                  onClick={() => setEditingDraftField('summary')}
+                  onClick={() => { if (!demoLocked) setEditingDraftField('summary') }}
                   onMouseEnter={() => setHoveredDraftField('summary')}
                   onMouseLeave={() => setHoveredDraftField(null)}
+                  disabled={demoLocked}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -1686,10 +1698,11 @@ export function BillDetail() {
                     border: 'none',
                     font: 'inherit',
                     textAlign: 'left',
-                    cursor: 'text',
                     ...editableFieldBox(hoveredDraftField === 'summary'),
                     padding: '6px 8px',
                     minHeight: 40,
+                    cursor: demoLocked ? 'not-allowed' : 'text',
+                    opacity: demoLocked ? 0.5 : 1,
                   }}
                 >
                   {bill.tenantSummary
@@ -1720,6 +1733,7 @@ export function BillDetail() {
                   submitLabel="Save"
                   // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                   autoFocus
+                  disabled={demoLocked}
                   onSubmit={async (html) => {
                     const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
                     await apiFetch(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ text: value }) })
@@ -1732,9 +1746,10 @@ export function BillDetail() {
                 <button
                   type="button"
                   aria-label="Edit bill text"
-                  onClick={() => setEditingDraftField('text')}
+                  onClick={() => { if (!demoLocked) setEditingDraftField('text') }}
                   onMouseEnter={() => setHoveredDraftField('text')}
                   onMouseLeave={() => setHoveredDraftField(null)}
+                  disabled={demoLocked}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -1743,10 +1758,11 @@ export function BillDetail() {
                     border: 'none',
                     font: 'inherit',
                     textAlign: 'left',
-                    cursor: 'text',
                     ...editableFieldBox(hoveredDraftField === 'text'),
                     padding: '6px 8px',
                     minHeight: 40,
+                    cursor: demoLocked ? 'not-allowed' : 'text',
+                    opacity: demoLocked ? 0.5 : 1,
                   }}
                 >
                   {bill.draftText
