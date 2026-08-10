@@ -43,3 +43,10 @@ docs/legal/*.md
 # Editor / tool workspaces under docs (local only)
 docs/.obsidian/
 docs/.claudian/
+
+# LegiScan bulk datasets, extracted from legiscan.com/gaits/datasets to seed a
+# new state (see docs/content/self-hosting/tenants.md, "Path B"). Hundreds of MB
+# of JSON per session — working input, never committed. Both spellings are
+# ignored because the docs and scripts have used each.
+bulkseed/
+bulkseeds/

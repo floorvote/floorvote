@@ -341,7 +341,17 @@ while true; do
 done
 ```
 
-This makes no LegiScan API calls, and takes a few minutes for a large state (~10,000 bills).
+This makes no LegiScan API calls, and takes a few minutes for a large state (~10,000 bills) — it only *links* bills central already holds. Don't carry that figure over to Path B, which has to load those bills into central first and is far slower; see the timing warning there.
+
+> [!NOTE]
+> **If the queue rate-limits you.** Linking a large session sends tens of thousands of queue messages, which can hit Cloudflare Queues limits. The endpoint then returns HTTP 429 and reports the `offset` it stopped at, so nothing is lost. Add `&skipQueue=true` to create the `bill_tenants` links without sending anything to a queue, page through the rest of the session that way, then queue the work in one pass once you have headroom:
+>
+> ```bash
+> curl -X POST "$CENTRAL/api/tenants/reprocess/[slug]" \
+>   -H "x-admin-secret: $ADMIN_SECRET"
+> ```
+>
+> `reprocess` sends straight to the team's queue and costs no LegiScan API calls.
 
 > [!NOTE]
 > **"Active" includes a session that has already adjourned.** Seed the most recent regular (and any special) session — a legislature that has gone `sine_die` for the cycle is still exactly what a new team wants to monitor. (That's the `sine_die = 1` row in the query above.)
@@ -360,9 +370,33 @@ npx tsx scripts/seed-legiscan.ts \
   --remote
 ```
 
-The `--session-id` is LegiScan's numeric session id. You download the zip from the [datasets page](https://legiscan.com/gaits/datasets), but the site doesn't show the id — the reliable way to find it is to open any bill JSON in the extracted dataset (e.g. `bill/HB1.json`) and read the `session_id` field near the top. (Or run the seeder with `--from-api` instead of `--from-dir`, which fetches the session list and prints each `session_name (id=…)` to pick from.)
+The `--session-id` is LegiScan's numeric session id. You download the zip from the [datasets page](https://legiscan.com/gaits/datasets), but the site doesn't show the id — the reliable way to find it is to open any bill JSON in the extracted dataset (e.g. `bill/HB0001.json`; the names are zero-padded and the exact width varies by state) and read the `session_id` field near the top. (Or run the seeder with `--from-api` instead of `--from-dir`, which fetches the session list and prints each `session_name (id=…)` to pick from.)
+
+An extracted session is hundreds of MB of JSON, so keep it out of version control — `bulkseed/` and `bulkseeds/` are both gitignored if you want it alongside the repo.
 
 The `--tenant` flag links the bills and updates the team's `state_coverage` — no separate `seed-session` call needed.
+
+> [!WARNING]
+> **Budget hours, not minutes.** The seeder writes to central's D1 in batches over HTTP, so throughput is bounded by round-trip latency, not by your machine — about **45 bills/min** (measured 43–50/min across two states). Roll calls add time at a similar rate.
+>
+> | Session size | Expect roughly |
+> |---|---|
+> | ~1,000 bills | 20 min |
+> | ~4,000 bills | 1.5 hr |
+> | ~12,000 bills | 4 hr |
+>
+> Start a big state somewhere it can run unattended — a terminal you can leave open, `tmux`, or a background run with output going to a log. Seeding is idempotent, so if a run dies partway, re-run the same command and it picks up rather than duplicating.
+
+> [!TIP]
+> **Watching a long seed.** The seeder prints a running count. On a terminal that's an in-place counter; when stdout isn't a terminal (backgrounded, or piped to `tee`) it switches to one line per batch so a log file shows real progress. To check from another shell, count the rows in central directly:
+>
+> ```bash
+> npx wrangler d1 execute <central-db> --remote --env legiscan \
+>   --command "SELECT COUNT(*) FROM bills WHERE session_id = [sessionId]"
+> ```
+
+> [!NOTE]
+> **Seeding several states at once?** Run one invocation per session, **sequentially**. Parallel runs compete for the same D1 write path and the same queue budget, and the win would be small anyway since latency — not local CPU — is the limit. A team whose coverage is the `["*"]` wildcard keeps it: the link step merges coverage additively and short-circuits on the wildcard, so seeding IL never narrows a wildcard team to `["IL"]`.
 
 > [!WARNING]
 > **`--tenant --remote` needs `CENTRAL_API_URL`.** The seeder writes bills straight to central's database, but the `--tenant` link step calls central's API over HTTP. Without `CENTRAL_API_URL` (and the admin secret) it silently falls back to `http://localhost:8787` and dies with `fetch failed` *after* seeding — the `$CENTRAL` and `$ADMIN_SECRET` you exported in Step 8 cover both.
