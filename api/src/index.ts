@@ -33,6 +33,7 @@ import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
 import { nowDb } from './lib/dbTime'
 import { ensureDemoSession, DEMO_SESSION_TOKEN } from './lib/demoSession'
+import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
 
 const app = new Hono<AppEnv>()
@@ -109,6 +110,10 @@ app.use('*', async (c, next) => {
   }
   c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers: h })
 })
+
+// Demo tenants are read-only. Mounted before every /api route so a write route
+// added later is locked by default rather than by remembering to guard it.
+app.use('/api/*', demoReadOnly)
 
 // Cap the body on the public, unauthenticated auth endpoints. Their
 // JSON payloads are tiny ({ email, turnstileToken }); 16 KB is generous. Fronts

@@ -112,3 +112,36 @@ export const demoGuard = createMiddleware<{
   if (await isSuperadminRequest(c)) return await next()
   return c.json({ error: 'Configuration is locked in demo mode' }, 403)
 })
+
+// Demo instances are read-only. Mounted globally on /api/* in index.ts rather
+// than applied per-route: there are ~60 write routes, and an opt-in guard
+// silently fails to cover the next one somebody adds. Deny-by-default mirrors
+// the posture central takes in central/src/lib/tenantSurface.ts.
+//
+// Superadmin gets NO exemption — nobody edits a demo through the GUI, and
+// POST /api/internal/demo-reset is the repair mechanism.
+const DEMO_WRITE_ALLOWLIST = new Set([
+  '/api/auth/demo-login',   // the auto-login path itself
+  '/api/admin/config',      // self-limits to modules-only (see adminApi.ts)
+])
+
+export const demoReadOnly = createMiddleware<{
+  Bindings: Env
+  Variables: AuthVariables
+}>(async (c, next) => {
+  if (c.env.DEMO_MODE !== 'true') return await next()
+
+  // HEAD and OPTIONS must pass — refusing OPTIONS breaks CORS preflight.
+  const method = c.req.method
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return await next()
+
+  const path = new URL(c.req.url).pathname
+  if (DEMO_WRITE_ALLOWLIST.has(path)) return await next()
+
+  // Operator surface, already gated by internalAuthFail's shared secret. Left
+  // open so the nightly reset cron and ops scripts keep working on a demo
+  // tenant; a 403 here would shadow that route's own 401.
+  if (path.startsWith('/api/internal/')) return await next()
+
+  return c.json({ error: 'This demo is read-only' }, 403)
+})
