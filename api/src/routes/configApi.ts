@@ -7,7 +7,6 @@ import { ensureInstancePreset } from '../lib/instancePreset'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
-import { isSuperadminRequest } from '../lib/superadminRequest'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
@@ -153,8 +152,9 @@ configRouter.get('/', async (c) => {
   }
 
   const demoMode = c.env.DEMO_MODE === 'true'
-  const currentUser = c.get('user')
-  const demoLocked = demoMode && !(await isSuperadminRequest(c))
+  // No superadmin exemption: nobody edits a demo through the GUI, and
+  // POST /api/internal/demo-reset is the repair mechanism.
+  const demoLocked = demoMode
 
   // Modules can be `Record<string, boolean>` (legacy) or
   // `Record<string, { enabled: boolean, settings?: Record<string, unknown> }>` (new).

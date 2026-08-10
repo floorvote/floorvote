@@ -9,7 +9,6 @@ import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords } from '../lib/keywords'
 import { centralFetch } from '../lib/centralFetch'
 import { PRESETS } from '../lib/presets'
-import { isSuperadminRequest } from '../lib/superadminRequest'
 import { applyPresetConfig, ensureInstancePreset } from '../lib/instancePreset'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -680,15 +679,13 @@ adminApiRouter.put('/config', async (c) => {
     return c.json({ error: `Unknown config keys: ${unknownKeys.join(', ')}` }, 400)
   }
 
-  // In demo mode, non-superadmins can ONLY toggle modules (so demo visitors
-  // can experience the module system). All other config keys stay locked.
+  // In demo mode only `modules` may be written, so a visitor can turn widgets on
+  // in Settings. Every other config key stays locked. This route is the one write
+  // path demoReadOnly allowlists, so this inner check is load-bearing.
   if (c.env.DEMO_MODE === 'true') {
-    const currentUser = c.get('user')
-    if (!(await isSuperadminRequest(c))) {
-      const nonModuleKeys = Object.keys(body).filter((k) => k !== 'modules')
-      if (nonModuleKeys.length > 0) {
-        return c.json({ error: 'Configuration is locked in demo mode' }, 403)
-      }
+    const nonModuleKeys = Object.keys(body).filter((k) => k !== 'modules')
+    if (nonModuleKeys.length > 0) {
+      return c.json({ error: 'Configuration is locked in demo mode' }, 403)
     }
   }
 

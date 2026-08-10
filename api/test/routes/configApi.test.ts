@@ -5,6 +5,13 @@ import { getDb } from '../../src/db/client'
 import { env } from 'cloudflare:test'
 import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
 import { computeMultiState } from '../../src/routes/configApi'
+import { app } from '../../src/index'
+import { signSuperadminJwt } from '../../../shared/superadminJwt'
+
+// Throwaway ES256 test keypair (no production value); its public half is set as
+// SUPERADMIN_JWT_PUBLIC_KEY in vitest.config.mts so signed tokens verify in tests.
+// Same keypair used in test/routes/auth.test.ts.
+const TEST_SUPERADMIN_PRIV = '{"key_ops":["sign"],"ext":true,"kty":"EC","x":"jMeKJ1Tf0sgE37Rzg02ARwUKvJ2hF6Zy2gI3mluSjpg","y":"vJ0-S0RvpYh3Z87ti61CrBjprBhpmiA4WujS6_Yb_lQ","crv":"P-256","d":"goMnWG7NT0ErjBM6BH8a_rf1hUjMvLB3o3h4f5sE-aY"}'
 
 describe('computeMultiState', () => {
   it('STATE-scoped instance is single-state', () => {
@@ -138,6 +145,32 @@ describe('GET /config', () => {
       url: 'https://operator.test',
       contactEmails: ['ops@example.test'],
     })
+  })
+
+  it('reports demoLocked even for a superadmin request', async () => {
+    // The behavior under change: the superadmin exemption is removed, so a
+    // superadmin no longer bypasses demo locks. This is the red case.
+    const jwtToken = await signSuperadminJwt('super@example.com', 'Super Admin', TEST_SUPERADMIN_PRIV)
+    const res = await app.request('/api/config',
+      { headers: { Cookie: `${cookie}; superadmin_jwt=${jwtToken}` } },
+      { ...env, DEMO_MODE: 'true' })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { demoLocked: boolean }
+    expect(body.demoLocked).toBe(true)
+  })
+
+  it('reports demoLocked for an ordinary request in demo mode', async () => {
+    const res = await app.request('/api/config', { headers: { Cookie: cookie } },
+      { ...env, DEMO_MODE: 'true' })
+    const body = await res.json() as { demoMode: boolean; demoLocked: boolean }
+    expect(body.demoMode).toBe(true)
+    expect(body.demoLocked).toBe(true)
+  })
+
+  it('reports demoLocked false when DEMO_MODE is unset', async () => {
+    const res = await app.request('/api/config', { headers: { Cookie: cookie } }, env)
+    const body = await res.json() as { demoLocked: boolean }
+    expect(body.demoLocked).toBe(false)
   })
 })
 

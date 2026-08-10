@@ -52,6 +52,19 @@ describe('demo read-only guard', () => {
     expect(res.status).not.toBe(403)
   })
 
+  it('rejects a non-modules key on the allowlisted config route', async () => {
+    // association_name (not the brief's camelCase associationName, which isn't
+    // a real ALLOWED_CONFIG_KEYS entry and would 400 on the unknown-key check
+    // before ever reaching the demo lock) is a real allowed key.
+    const res = await app.request('/api/admin/config', {
+      method: 'PUT',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ association_name: 'Hacked' }),
+    }, demoEnv)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Configuration is locked in demo mode' })
+  })
+
   it('allows the internal operator surface through to its own auth', async () => {
     // Internal routes are secret-gated by internalAuthFail; the guard must not
     // shadow that with a 403, or cron and ops scripts break on the demo tenant.
