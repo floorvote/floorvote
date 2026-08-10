@@ -5,5 +5,5 @@ Setting up FloorVote is a technical task. You'll be provisioning Cloudflare reso
 If it looks intimidating:
 
 - See if you have a teammate who's comfortable with the command line.
-- An artificial intelligence coding agent like Claude Code can help you do the setup.
+- Claude Code and similar coding agents can help you do the setup.
 - Still stuck? [Reach out to us](https://floorvote.org/#contact) and we might be able to help get you started.
