@@ -41,9 +41,20 @@ let _tmpFiles: string[] = []
  * "successful" seed.) Be liberal here: a false positive just costs a couple of
  * retries before the error is (now loudly) re-thrown, whereas a false negative
  * loses data.
+ *
+ * `not currently importing anything` is the same shape of false negative, from
+ * the other end. A `--file` execute is a D1 *import*: wrangler uploads the SQL,
+ * starts the import, then polls for completion. When that poll races the import
+ * finishing, the API answers "nothing is importing" and wrangler surfaces it as
+ * an error — after having already printed `Processed N queries`. The write
+ * landed; only the status check failed, and the tell is a missing `Executed N
+ * queries` summary. Retrying is safe regardless, because every statement the
+ * seeder emits is INSERT OR REPLACE / INSERT OR IGNORE, so a retry is a no-op
+ * re-apply. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
+ * first batch, both resumable the whole time.)
  */
 export function isTransientD1Error(msg: string): boolean {
-  return /timed out|timeout|\b(408|409|425|429|500|502|503|504)\b|fetch failed|network connection lost|econnreset|epipe|socket hang up|too many requests|internal error|service unavailable|could not reach|connection (refused|reset|closed)/i.test(msg)
+  return /timed out|timeout|\b(408|409|425|429|500|502|503|504)\b|fetch failed|network connection lost|econnreset|epipe|socket hang up|too many requests|internal error|service unavailable|could not reach|connection (refused|reset|closed)|not currently importing anything|no import in progress/i.test(msg)
 }
 
 export function runSql(

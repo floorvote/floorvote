@@ -19,6 +19,13 @@ describe('isTransientD1Error', () => {
     'socket hang up',
     'Execution timed out',
     'operation timeout',
+    // The D1 import status poll racing the import's completion. Verbatim from a
+    // failed MI seed, including the surrounding output wrangler emits — note the
+    // `Processed 50 queries` immediately before, i.e. the write had already
+    // landed and only the status check failed.
+    '🌀 Starting import...\n🌀 Processed 50 queries.\n✘ [ERROR] Not currently importing anything.',
+    'Not currently importing anything.',
+    'no import in progress',
   ])('treats %j as transient', (msg) => {
     expect(isTransientD1Error(msg)).toBe(true)
   })
