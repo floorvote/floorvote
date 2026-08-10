@@ -17,7 +17,7 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 2. Ingestor → fetch bill + text from LegiScan → store in R2 → notify tenants
 3. Tenant queue consumer → fetch from central → run AI → upsert to tenant D1
 
-For the full sync pipeline (cron passes, ingestor fast/full path, deduplication, tenant message flags), see [`docs/internal/sync-pipeline.md`](docs/internal/sync-pipeline.md). The visual at [`docs/internal/sync-flow.html`](docs/internal/sync-flow.html) is a companion.
+For the full sync pipeline (cron passes, ingestor fast/full path, deduplication, tenant message flags), see [`docs/internal/sync-pipeline.md`](docs/internal/sync-pipeline.md). The interactive companions are served from the docs site at [floorvote.org/docs/internal/sync-flow.html](https://floorvote.org/docs/internal/sync-flow.html) and [architecture.html](https://floorvote.org/docs/internal/architecture.html); their source lives in `docs/content/public/internal/`.
 
 **Providers:** LegiScan is the recommended and actively maintained provider (`legiscan` wrangler env). An OpenStates provider also exists but is experimental and not at feature parity — see the note at the bottom of [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md).
 

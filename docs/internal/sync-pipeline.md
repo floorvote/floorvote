@@ -1,6 +1,6 @@
 # Sync Architecture (LegiScan path)
 
-Canonical, code-grounded description of how legislative data flows from LegiScan into tenant DBs. Update this file whenever the pipeline changes. The visual companion is [`architecture.html`](architecture.html) — keep both in sync, but treat this file as the source of truth.
+Canonical, code-grounded description of how legislative data flows from LegiScan into tenant DBs. Update this file whenever the pipeline changes. The visual companion is [`architecture.html`](../content/public/internal/architecture.html), served at `floorvote.org/docs/internal/architecture.html` — keep both in sync, but treat this file as the source of truth.
 
 > **Scope:** the LegiScan central env (`floorvote-central-legiscan`). The OpenStates env is structurally similar but lighter; this doc describes the LegiScan path.
 

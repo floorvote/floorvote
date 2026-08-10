@@ -129,11 +129,11 @@
 <p class="subtitle">Visual companion to <code>sync-pipeline.md</code>. Last revised 2026-05-27.</p>
 
 <div class="companion">
-  <strong>Source of truth:</strong> <a href="sync-pipeline.md"><code>sync-pipeline.md</code></a>. If this diagram disagrees with the text doc, the text doc wins. The <a href="architecture-review.md">architecture review dossier</a> tracks known caveats and open audit items (§A1, §A3, §B5, etc.).
+  <strong>Source of truth:</strong> <a href="https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md"><code>sync-pipeline.md</code></a>. If this diagram disagrees with the text doc, the text doc wins.
 </div>
 
 <h2>1. Pipeline overview</h2>
-<p>One LegiScan API, one cron, one central, fan-out to per-tenant queues. <span class="stat">30k API calls / month</span> <span class="stat">3 tenants today</span></p>
+<p>One LegiScan API, one cron, one central, fan-out to per-tenant queues. <span class="stat">30k API calls / month</span></p>
 
 <div class="diagram">
 <pre class="mermaid">
@@ -275,7 +275,7 @@ flowchart TD
 </div>
 
 <div class="note">
-<strong>roll_call_votes note:</strong> <code>getBill</code> returns vote summaries (<code>LegiscanVoteSummary</code>), not per-legislator records. Live-ingested bills have summary <code>roll_calls</code> rows but no <code>roll_call_votes</code> rows. Bulk-seeded bills have both. See architecture-review §B4.
+<strong>roll_call_votes note:</strong> <code>getBill</code> returns vote summaries (<code>LegiscanVoteSummary</code>), not per-legislator records. Live-ingested bills have summary <code>roll_calls</code> rows but no <code>roll_call_votes</code> rows. Bulk-seeded bills have both.
 </div>
 
 <h2>4. Phase 3 — Tenant consumer</h2>
@@ -358,13 +358,13 @@ flowchart TD
 </table>
 
 <h2>7. Known caveats and open audit items</h2>
-<p>See <a href="architecture-review.md">architecture-review.md</a> for the full dossier. Active items as of 2026-05-27:</p>
+<p>Active items as of 2026-05-27:</p>
 <ul>
   <li><strong>§A3 — change_log fidelity for top-level fields.</strong> Cron pre-writes <code>bills.title/status/description</code> before queuing, so the ingestor's snapshot reads the post-change value and <code>detectChanges</code> never emits <code>title_changed</code>/<code>status_change</code>/<code>description_changed</code> for cron-triggered messages. Child-collection diffs (history, votes, etc.) are still captured correctly.</li>
   <li><strong>§B4 — roll_call_votes gap.</strong> <code>getBill</code> returns summaries only. Live ingest never populates per-legislator vote rows. Bulk-seeded bills have them.</li>
   <li><strong>§C3 — change_hash sentinel.</strong> Raw pass inserts new bills with <code>change_hash = ''</code>. Cosmetic.</li>
   <li><strong>§F1 — Monitoring-only latency (swallow bug fixed).</strong> Raw pass doesn't notify stub bills (no fresh metadata to deliver), so <code>match_type=null</code> bills update only on full pass (~8h); matched bills update on raw pass too (~1h). This relies on the full pass <em>seeing</em> the change — but the raw pass used to advance an unmatched bill's <code>change_hash</code> anyway, hiding the change from the next full pass and swallowing it permanently. <strong>Fixed:</strong> the raw pass now leaves unmatched hashes stale; <code>POST /admin/backfill-stub-actions/:tenantId</code> heals stubs swallowed before the fix.</li>
-  <li><strong>F7 audit (pending)</strong> — see <a href="superpowers/plans/2026-05-27-f7-pruning-audit.md">F7 handoff plan</a>: queue message flag surface, two-central divergence, residual data-gap verification.</li>
+  <li><strong>F7 audit (pending)</strong> — queue message flag surface, two-central divergence, residual data-gap verification.</li>
 </ul>
 
 <script>

@@ -81,3 +81,5 @@ git worktree remove ../floorvote-upstream
 ## Going deeper
 
 Maintainer-grade design documentation — the sync pipeline, the LegiScan API reference, email and calendar internals, and style and date conventions — lives in [`docs/internal/`](https://github.com/floorvote/floorvote/tree/main/docs/internal) in the repository, and is not published to this site.
+
+Two interactive diagrams are the exception, since GitHub renders `.html` as source rather than as a page: the [architecture dossier](/internal/architecture.html) and the [sync flow](/internal/sync-flow.html) are served here as standalone pages.

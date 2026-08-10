@@ -50,3 +50,12 @@ The central-and-tenant split isn't just a diagram — each piece answers a real 
 **Artificial intelligence runs tenant-side.** Summarization and relevance scoring happen inside each tenant, not centrally, because "relevant" means something different to every organization. Each tenant tunes its own keywords, context, and relevance question, so the same bill can be summarized and scored differently for two different teams.
 
 **Bills are deduplicated before any real work happens.** The central service tracks whether a bill has actually changed before fanning it out, so tenants only do work — downloading text, running AI, notifying members — when there's something genuinely new to react to, not on every routine poll of the legislative API.
+
+## Interactive diagrams
+
+Two standalone, explorable versions of the diagrams above, for when you want to trace a path rather than read prose:
+
+- [**Architecture dossier**](/internal/architecture.html) — the full component map, expandable section by section.
+- [**Sync flow**](/internal/sync-flow.html) — the LegiScan-to-tenant pipeline, step by step.
+
+These are maintainer-oriented companions to [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md), which is the code-grounded source of truth.

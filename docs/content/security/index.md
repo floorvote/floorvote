@@ -11,12 +11,6 @@ Please include:
 - The potential impact
 - Any suggested fix, if you have one
 
-You should get a response within 48 hours.
-
-## Review
-
-Architecture and security have been reviewed and strengthened through a volunteer engagement with [U.S. Digital Response](https://www.usdigitalresponse.org/) (volunteer: [Larry Hitchon](https://github.com/lhitchon)).
-
 ## What the app does for you
 
 Every FloorVote deployment ships with:
