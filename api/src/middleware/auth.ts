@@ -103,16 +103,6 @@ export const requireOwner = createMiddleware<{
   await next()
 })
 
-export const demoGuard = createMiddleware<{
-  Bindings: Env
-  Variables: AuthVariables
-}>(async (c, next) => {
-  if (c.env.DEMO_MODE !== 'true') return await next()
-  const user = c.get('user')
-  if (await isSuperadminRequest(c)) return await next()
-  return c.json({ error: 'Configuration is locked in demo mode' }, 403)
-})
-
 // Demo instances are read-only. Mounted globally on /api/* in index.ts rather
 // than applied per-route: there are ~60 write routes, and an opt-in guard
 // silently fails to cover the next one somebody adds. Deny-by-default mirrors

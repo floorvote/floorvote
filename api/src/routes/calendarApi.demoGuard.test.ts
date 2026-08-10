@@ -5,7 +5,7 @@ import { resetDb, applyMigrations, seedUser, seedSession } from '../../test/help
 import { getDb } from '../db/client'
 import { calendarEvents } from '../db/schema'
 
-describe('calendarApi demoGuard', () => {
+describe('calendarApi demo mode', () => {
   let adminCookie: string
 
   beforeEach(async () => {
@@ -17,7 +17,7 @@ describe('calendarApi demoGuard', () => {
 
   // ── DEMO MODE: mutations must be blocked ──────────────────────────────────
 
-  it('POST /api/calendar/backfill is blocked by demoGuard in demo mode', async () => {
+  it('POST /api/calendar/backfill is blocked by the demo read-only guard', async () => {
     const res = await app.request('/api/calendar/backfill', {
       method: 'POST',
       headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
@@ -27,7 +27,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('POST /api/calendar/events is blocked by demoGuard in demo mode', async () => {
+  it('POST /api/calendar/events is blocked by the demo read-only guard', async () => {
     const res = await app.request('/api/calendar/events', {
       method: 'POST',
       headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
@@ -38,7 +38,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('PUT /api/calendar/events/:id is blocked by demoGuard in demo mode', async () => {
+  it('PUT /api/calendar/events/:id is blocked by the demo read-only guard', async () => {
     // Seed a calendar event so the route can find it
     const db = getDb(env.DB)
     const eventId = crypto.randomUUID()
@@ -68,7 +68,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('DELETE /api/calendar/events/:id is blocked by demoGuard in demo mode', async () => {
+  it('DELETE /api/calendar/events/:id is blocked by the demo read-only guard', async () => {
     const db = getDb(env.DB)
     const eventId = crypto.randomUUID()
     await db.insert(calendarEvents).values({
@@ -96,7 +96,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('POST /api/calendar/events/:id/restore is blocked by demoGuard in demo mode', async () => {
+  it('POST /api/calendar/events/:id/restore is blocked by the demo read-only guard', async () => {
     const db = getDb(env.DB)
     const eventId = crypto.randomUUID()
     await db.insert(calendarEvents).values({
@@ -124,7 +124,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('POST /api/calendar/import is blocked by demoGuard in demo mode', async () => {
+  it('POST /api/calendar/import is blocked by the demo read-only guard', async () => {
     const res = await app.request('/api/calendar/import', {
       method: 'POST',
       headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
@@ -135,7 +135,7 @@ describe('calendarApi demoGuard', () => {
     expect(body.error).toMatch(/demo/i)
   })
 
-  it('POST /api/calendar/regenerate-slug is blocked by demoGuard in demo mode', async () => {
+  it('POST /api/calendar/regenerate-slug is blocked by the demo read-only guard', async () => {
     const res = await app.request('/api/calendar/regenerate-slug', {
       method: 'POST',
       headers: { Cookie: adminCookie },
