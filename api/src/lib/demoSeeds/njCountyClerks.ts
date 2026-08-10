@@ -246,6 +246,34 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
       content: '<p>Advanced to Appropriations on a 6-2 vote. The fiscal note request we submitted is referenced in the committee statement. If Appropriations funds the temporary staffing line for the final two weeks, our amendment ask is effectively satisfied.</p>' },
   ],
 
+  // Emoji reactions on comments, weighted toward the most recent
+  // committee-reaction comments (25-28) so the freshest feed cards show
+  // engagement. daysAgo is always at least 1 day after the comment's own
+  // daysAgo (a reaction can't precede the comment it's on).
+  reactions: [
+    // demo-comment-25 (A1715, daysAgo 2) — freshest comment
+    { id: 'demo-reaction-1', commentId: 'demo-comment-25', userId: 'demo-dep', emoji: '👍', daysAgo: 1 },
+    { id: 'demo-reaction-2', commentId: 'demo-comment-25', userId: 'demo-m5',  emoji: '✅', daysAgo: 1 },
+    { id: 'demo-reaction-3', commentId: 'demo-comment-25', userId: 'demo-m1',  emoji: '👀', daysAgo: 1 },
+    // demo-comment-26 (A1129, daysAgo 4)
+    { id: 'demo-reaction-4', commentId: 'demo-comment-26', userId: 'demo-dir', emoji: '👍', daysAgo: 3 },
+    { id: 'demo-reaction-5', commentId: 'demo-comment-26', userId: 'demo-m6',  emoji: '✅', daysAgo: 3 },
+    // demo-comment-27 (A1195, daysAgo 6)
+    { id: 'demo-reaction-6', commentId: 'demo-comment-27', userId: 'demo-dir', emoji: '👍', daysAgo: 5 },
+    { id: 'demo-reaction-7', commentId: 'demo-comment-27', userId: 'demo-m3',  emoji: '👀', daysAgo: 5 },
+    // demo-comment-28 (A1680, daysAgo 9)
+    { id: 'demo-reaction-8', commentId: 'demo-comment-28', userId: 'demo-m11', emoji: '👍', daysAgo: 8 },
+    { id: 'demo-reaction-9', commentId: 'demo-comment-28', userId: 'demo-dep', emoji: '✅', daysAgo: 8 },
+    // Older comments — lighter engagement, for realism.
+    { id: 'demo-reaction-10', commentId: 'demo-comment-1',  userId: 'demo-m1', emoji: '👍', daysAgo: 59 },
+    { id: 'demo-reaction-11', commentId: 'demo-comment-5',  userId: 'demo-dir', emoji: '👍', daysAgo: 29 },
+    { id: 'demo-reaction-12', commentId: 'demo-comment-11', userId: 'demo-m3', emoji: '✅', daysAgo: 29 },
+    { id: 'demo-reaction-13', commentId: 'demo-comment-14', userId: 'demo-m4', emoji: '👍', daysAgo: 20 },
+    { id: 'demo-reaction-14', commentId: 'demo-comment-18', userId: 'demo-m5', emoji: '👍', daysAgo: 59 },
+    { id: 'demo-reaction-15', commentId: 'demo-comment-18', userId: 'demo-m7', emoji: '✅', daysAgo: 59 },
+    { id: 'demo-reaction-16', commentId: 'demo-comment-24', userId: 'demo-dep', emoji: '👀', daysAgo: 6 },
+  ],
+
   // One row per (comment, notified user).
   //   demo-role-1 members: demo-dir, demo-m2, demo-m8
   //   demo-role-2 members: demo-dep, demo-m3, demo-m5

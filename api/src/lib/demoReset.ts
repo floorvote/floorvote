@@ -191,6 +191,18 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ).bind(m.id, m.userId, m.sourceType, m.sourceId, daysAgoDb(m.daysAgo), m.commentId),
   ))
 
+  // Reactions hang off comments, so they only land for comments that landed —
+  // which in turn only land for bills that exist in this tenant. deleted_at is
+  // left NULL; the unique index on (comment_id, user_id, emoji) makes the
+  // OR IGNORE meaningful on a repeat reset.
+  await batch(seed.reactions.map((r) =>
+    db.prepare(
+      `INSERT OR IGNORE INTO comment_reactions (id, comment_id, user_id, emoji, created_at)
+       SELECT ?, id, ?, ?, ?
+       FROM comments WHERE id = ? LIMIT 1`
+    ).bind(r.id, r.userId, r.emoji, daysAgoDb(r.daysAgo), r.commentId),
+  ))
+
   // Feed events
   await batch(seed.feedEvents.map((e) =>
     db.prepare(

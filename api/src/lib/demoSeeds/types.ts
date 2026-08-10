@@ -40,6 +40,15 @@ export type DemoSeedComment = {
   daysAgo: number
 }
 
+export type DemoSeedReaction = {
+  id: string
+  commentId: string
+  userId: string
+  /** Single emoji character, e.g. '👍'. */
+  emoji: string
+  daysAgo: number
+}
+
 export type DemoSeedMention = {
   id: string
   commentId: string
@@ -93,6 +102,7 @@ export type DemoSeed = {
   positions: Array<{ id: string; externalId: string; position: string; setBy: string; daysAgo: number }>
   votes: Array<{ id: string; externalId: string; userId: string; position: string; daysAgo: number }>
   comments: DemoSeedComment[]
+  reactions: DemoSeedReaction[]
   mentions: DemoSeedMention[]
   feedEvents: DemoSeedFeedEvent[]
   customFieldValues: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }>

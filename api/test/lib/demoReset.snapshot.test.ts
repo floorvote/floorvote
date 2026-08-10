@@ -9,7 +9,7 @@ import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
 const TABLES = [
   'users', 'roles', 'user_roles', 'custom_field_definitions', 'association_config',
   'sessions', 'magic_links', 'official_positions', 'member_votes', 'comments',
-  'comment_mentions', 'feed_events', 'bill_custom_field_values', 'notes',
+  'comment_mentions', 'comment_reactions', 'feed_events', 'bill_custom_field_values', 'notes',
   'calendar_events',
 ]
 

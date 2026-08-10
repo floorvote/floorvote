@@ -311,4 +311,12 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
     expect(userIds).toContain('demo-user')
     expect(userIds.length).toBe(16)
   })
+
+  it('restores comment reactions', async () => {
+    const first = seed.comments[0]
+    await seedBill({ externalId: first.externalId, billNumber: 'A1129', title: 'Drop boxes', state: 'NJ', priority: 'high' })
+    await runDemoReset(env.DB, seed)
+    expect(seed.reactions.length).toBeGreaterThan(0)
+    expect(await countRows('comment_reactions')).toBeGreaterThan(0)
+  })
 })
