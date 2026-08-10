@@ -172,6 +172,14 @@ describe('GET /config', () => {
     const body = await res.json() as { demoLocked: boolean }
     expect(body.demoLocked).toBe(false)
   })
+
+  it('returns demoBanner from config', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'demo_banner', value: JSON.stringify('Test banner') })
+    const res = await app.request('/api/config', { headers: { Cookie: cookie } }, { ...env, DEMO_MODE: 'true' })
+    const body = await res.json() as { demoBanner?: string }
+    expect(body.demoBanner).toBe('Test banner')
+  })
 })
 
 describe('GET /config orgNoun', () => {

@@ -82,6 +82,8 @@ export type DemoSeed = {
   slug: string
   /** Rendered with the `Demo — ` prefix applied by the machinery. */
   associationName: string
+  /** Rendered verbatim in the dismissible demo banner (App.tsx's DemoBanner). */
+  bannerText: string
   orgNoun: string
   aiContext: string
   relevanceQuestion: string

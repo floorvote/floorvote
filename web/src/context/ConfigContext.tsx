@@ -17,6 +17,7 @@ export interface AppConfig {
   tagTaxonomy?: string[]
   instanceDomains?: Record<string, string>
   demoLocked?: boolean
+  demoBanner?: string
   operator?: OperatorConfig
   accountDeletionEnabled?: boolean
 }

@@ -239,6 +239,14 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
     expect(JSON.parse(row!.value)).toContain('Demo — ')
   })
 
+  it('writes the seed banner copy into config', async () => {
+    await runDemoReset(env.DB, seed)
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'demo_banner'`
+    ).first<{ value: string }>()
+    expect(JSON.parse(row!.value)).toBe(seed.bannerText)
+  })
+
   it('does not set instance_preset', async () => {
     await runDemoReset(env.DB, seed)
     const row = await env.DB.prepare(

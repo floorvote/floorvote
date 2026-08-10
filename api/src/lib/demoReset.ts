@@ -89,6 +89,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('keywords', ?)`).bind(JSON.stringify(seed.keywords)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('position_vocabulary', ?)`).bind(JSON.stringify(seed.positionVocabulary)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('org_noun', ?)`).bind(JSON.stringify(seed.orgNoun)),
+    db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('demo_banner', ?)`).bind(JSON.stringify(seed.bannerText)),
     // Optional widgets start OFF so visitors can experience enabling them in
     // Settings → Modules (toggling modules is allowed in demo mode; all other
     // config stays locked). Nightly reset returns them to the seeded state.
