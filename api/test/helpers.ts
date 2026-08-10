@@ -212,6 +212,10 @@ export async function seedMagicLink(
 }
 
 export async function seedBill(overrides?: {
+  /** Explicit primary key. Pass this when a test dumps rows that carry bill_id
+   *  and needs the dump to be stable across runs (see demoReset.snapshot.test.ts);
+   *  otherwise a random UUID is used. */
+  id?: string
   billNumber?: string
   title?: string
   state?: string
@@ -245,7 +249,7 @@ export async function seedBill(overrides?: {
   triagedAt?: string | null
 }): Promise<string> {
   const db = getDb(env.DB)
-  const id = crypto.randomUUID()
+  const id = overrides?.id ?? crypto.randomUUID()
   await db.insert(bills).values({
     id,
     externalId: overrides?.externalId ?? null,
