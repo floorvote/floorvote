@@ -972,7 +972,7 @@ export function BillDetail() {
                       setPriorityMeta(p ? { setByName: user!.name, updatedAt: new Date().toISOString() } : null)
                       refreshSidebar()
                       if (result?.promoted) startAnalyzingPoll()
-                    }} placeholder="Priority not set" />
+                    }} placeholder="Priority not set" disabled={demoLocked} />
                   </HoverTooltip>
                     )}
                   {priorityMeta && (
@@ -1989,17 +1989,17 @@ export function BillDetail() {
                     {(comment.userId === user?.id || user?.role === 'admin' || user?.role === 'owner') && editingCommentId !== comment.id && (
                       <>
                         {comment.userId === user?.id && (
-                          <button onClick={() => { setEditingCommentId(comment.id) }}
-                            style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                          <button onClick={() => { if (!demoLocked) setEditingCommentId(comment.id) }}
+                            disabled={demoLocked}
+                            style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: demoLocked ? 'not-allowed' : 'pointer', opacity: demoLocked ? 0.5 : 1, padding: 0 }}>
                             Edit
                           </button>
                         )}
-                        {(!demoLocked || comment.userId === user?.id) && (
-                          <button onClick={() => handleDeleteComment(comment.id)}
-                            style={{ fontSize: fontSize.sm, color: color.textErrorRed, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                            Delete
-                          </button>
-                        )}
+                        <button onClick={() => handleDeleteComment(comment.id)}
+                          disabled={demoLocked}
+                          style={{ fontSize: fontSize.sm, color: color.textErrorRed, background: 'none', border: 'none', cursor: demoLocked ? 'not-allowed' : 'pointer', opacity: demoLocked ? 0.5 : 1, padding: 0 }}>
+                          Delete
+                        </button>
                       </>
                     )}
                   </span>
@@ -2013,6 +2013,7 @@ export function BillDetail() {
                         onCancel={() => setEditingCommentId(null)}
                         submitLabel="Save"
                         placeholder="Edit comment…"
+                        disabled={demoLocked}
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                       />
@@ -2035,11 +2036,13 @@ export function BillDetail() {
                     >
                       <button
                         onClick={() => handleReaction(comment.id, r.emoji)}
+                        disabled={demoLocked}
                         style={{
                           fontSize: fontSize.sm, padding: '2px 8px', borderRadius: radius.xl, border: '1px solid',
                           borderColor: r.userReacted ? color.accentBlueMuted : color.borderDefault,
                           background: r.userReacted ? color.bgInfo : color.white,
-                          cursor: 'pointer',
+                          cursor: demoLocked ? 'not-allowed' : 'pointer',
+                          opacity: demoLocked ? 0.5 : 1,
                         }}
                       >
                         {r.emoji} {r.count}
@@ -2078,7 +2081,9 @@ export function BillDetail() {
                     </span>
                   ))}
                   <button
+                    aria-label="Add reaction"
                     onClick={() => setOpenPickerFor(openPickerFor === comment.id ? null : comment.id)}
+                    disabled={demoLocked}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2087,7 +2092,8 @@ export function BillDetail() {
                       border: `1px solid ${color.borderDefault}`,
                       borderRadius: radius.xl,
                       padding: '2px 8px',
-                      cursor: 'pointer',
+                      cursor: demoLocked ? 'not-allowed' : 'pointer',
+                      opacity: demoLocked ? 0.5 : 1,
                       color: color.textMuted,
                       fontSize: fontSize.sm,
                     }}
@@ -2114,6 +2120,7 @@ export function BillDetail() {
                 onSubmit={handlePostComment}
                 placeholder="Add a comment…"
                 submitLabel="Post"
+                disabled={demoLocked}
               />
             </div>
           </div>
@@ -2124,6 +2131,7 @@ export function BillDetail() {
             billId={bill.id}
             values={bill.customFieldValues}
             isAdmin={isAdmin}
+            disabled={demoLocked}
             onUpdate={(fieldId, value, setBy) => {
               setBill(prev => {
                 if (!prev) return prev
@@ -2157,6 +2165,7 @@ export function BillDetail() {
                     current={position}
                     options={config?.positionVocabulary ?? ['Support', 'Oppose', 'Amend', 'Monitor', 'No Position']}
                     size="lg"
+                    disabled={demoLocked}
                     onChange={(p) => {
                       setPosition(p)
                       if (p) {
@@ -2188,10 +2197,10 @@ export function BillDetail() {
             }
           </div>
 
-          <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} />
+          <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} disabled={demoLocked} />
 
           <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
-            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} />
+            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} disabled={demoLocked} />
           </div>
         </div>
       </div>

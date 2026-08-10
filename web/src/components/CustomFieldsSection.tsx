@@ -25,6 +25,7 @@ interface CustomFieldsSectionProps {
   values: Record<string, { value: string; setBy: string | null; updatedAt: string }>
   isAdmin: boolean
   onUpdate: (fieldId: string, value: string | null, setBy: string) => void
+  disabled?: boolean
 }
 
 function parseMultiValue(raw: string | null): string[] {
@@ -36,7 +37,7 @@ function parseMultiValue(raw: string | null): string[] {
   return [raw]
 }
 
-function pickerTriggerStyle(active: boolean): React.CSSProperties {
+function pickerTriggerStyle(active: boolean, disabled?: boolean): React.CSSProperties {
   return {
     fontSize: fontSize.sm,
     padding: '4px 8px',
@@ -47,7 +48,8 @@ function pickerTriggerStyle(active: boolean): React.CSSProperties {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,
-    cursor: 'pointer',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
     fontWeight: active ? fontWeight.medium : fontWeight.normal,
     fontFamily: 'inherit',
     maxWidth: 220,
@@ -95,7 +97,7 @@ const inputStyle: React.CSSProperties = {
   width: 200,
 }
 
-export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate }: CustomFieldsSectionProps) {
+export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate, disabled }: CustomFieldsSectionProps) {
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null)
   const [hoveredFieldId, setHoveredFieldId] = useState<string | null>(null)
 
@@ -159,13 +161,13 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
           <div style={{ display: 'flex' }}>
             <label
               aria-label={field.name}
-              style={{ display: 'inline-flex', alignItems: 'center', cursor: isAdmin ? 'pointer' : 'default' }}
+              style={{ display: 'inline-flex', alignItems: 'center', cursor: (isAdmin && !disabled) ? 'pointer' : (isAdmin ? 'not-allowed' : 'default'), opacity: (isAdmin && disabled) ? 0.5 : 1 }}
             >
               <input
                 type="checkbox"
                 checked={checked}
-                disabled={!isAdmin}
-                onChange={e => isAdmin && save(field.id, e.target.checked ? '1' : null)}
+                disabled={!isAdmin || disabled}
+                onChange={e => isAdmin && !disabled && save(field.id, e.target.checked ? '1' : null)}
                 style={{ position: 'absolute', opacity: 0, width: 0, height: 0, margin: 0 }}
               />
               <span style={{
@@ -208,7 +210,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                   onChange={(next) => save(field.id, next)}
                   ariaLabel={field.name}
                   trigger={({ toggle, open }) => (
-                    <button type="button" onClick={toggle} style={pickerTriggerStyle(arrayValue.length > 0)}>
+                    <button type="button" onClick={toggle} disabled={disabled} style={pickerTriggerStyle(arrayValue.length > 0, disabled)}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{display}</span>
                       <PickerCaret open={open} />
                     </button>
@@ -241,7 +243,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                 onChange={(next) => save(field.id, next)}
                 ariaLabel={field.name}
                 trigger={({ toggle, open }) => (
-                  <button type="button" onClick={toggle} style={pickerTriggerStyle(singleValue !== null)}>
+                  <button type="button" onClick={toggle} disabled={disabled} style={pickerTriggerStyle(singleValue !== null, disabled)}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{display}</span>
                     <PickerCaret open={open} />
                   </button>
@@ -284,6 +286,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                 submitLabel="Save"
                 // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                 autoFocus
+                disabled={disabled}
                 onSubmit={html => save(field.id, html.replace(/<[^>]*>/g, '').trim() ? html : null)}
                 onCancel={() => setEditingFieldId(null)}
               />
@@ -291,6 +294,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
               <button
                 type="button"
                 aria-label={`Edit ${field.name}`}
+                disabled={disabled}
                 onClick={() => setEditingFieldId(field.id)}
                 onMouseEnter={() => setHoveredFieldId(field.id)}
                 onMouseLeave={() => setHoveredFieldId(null)}
@@ -300,7 +304,8 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
                   margin: 0,
                   font: 'inherit',
                   textAlign: 'left',
-                  cursor: 'text',
+                  cursor: disabled ? 'not-allowed' : 'text',
+                  opacity: disabled ? 0.5 : 1,
                   minHeight: 28,
                   border: `1px solid ${hoveredFieldId === field.id ? color.borderStrong : color.borderDefault}`,
                   borderRadius: radius.md,
@@ -327,7 +332,16 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate 
           <span style={labelStyle}>{field.name}</span>
           <div>
             {isAdmin
-              ? <input type="date" value={currentValue ?? ''} onChange={e => save(field.id, e.target.value || null)} style={inputStyle} />
+              ? (
+                <input
+                  type="date"
+                  aria-label={field.name}
+                  value={currentValue ?? ''}
+                  disabled={disabled}
+                  onChange={e => save(field.id, e.target.value || null)}
+                  style={{ ...inputStyle, cursor: disabled ? 'not-allowed' : 'text', opacity: disabled ? 0.5 : 1 }}
+                />
+              )
               : <span style={currentValue ? { fontSize: fontSize.sm, color: color.textSlate } : notSetStyle}>{currentValue ?? 'Not set'}</span>
             }
           </div>
