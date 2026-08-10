@@ -7,6 +7,7 @@ import { EventLines } from './EventLines'
 import { EventSourceIcon } from './EventSourceIcon'
 import { HoverTooltip } from '../HoverTooltip'
 import { EVENT_CARD_BASE, eventSourceIcon } from '../../../../shared/eventLineModel'
+import { useDemo } from '../../context/DemoContext'
 
 // ⚠️ Email twin: api/src/lib/weekAheadEmail.ts (renderEventCard) re-implements
 // this event card in email HTML. Shared bits flow through eventSourceIcon,
@@ -26,6 +27,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
   onDelete: (e: CalendarEvent) => void
   onRestore: (e: CalendarEvent) => void
 }) {
+  const { demoLocked } = useDemo()
   const cancelled = event.status === 'cancelled'
   const isCustom = event.source === 'custom'
   const cardStyle: CSSProperties = {
@@ -83,7 +85,13 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
               {cancelled
                 ? (
                   <HoverTooltip text="Restore event" portal>
-                    <button type="button" style={iconBtn} aria-label="Restore event" onClick={() => onRestore(event)}>
+                    <button
+                      type="button"
+                      disabled={demoLocked}
+                      style={{ ...iconBtn, ...(demoLocked ? { color: color.borderStrong, cursor: 'not-allowed' } : null) }}
+                      aria-label="Restore event"
+                      onClick={() => onRestore(event)}
+                    >
                       <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>restore_from_trash</span>
                     </button>
                   </HoverTooltip>
@@ -96,7 +104,13 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
                       </button>
                     </HoverTooltip>
                     <HoverTooltip text="Delete event" portal>
-                      <button type="button" style={{ ...iconBtn, color: color.textErrorRed }} aria-label="Delete event" onClick={() => onDelete(event)}>
+                      <button
+                        type="button"
+                        disabled={demoLocked}
+                        style={{ ...iconBtn, color: demoLocked ? color.borderStrong : color.textErrorRed, ...(demoLocked ? { cursor: 'not-allowed' } : null) }}
+                        aria-label="Delete event"
+                        onClick={() => onDelete(event)}
+                      >
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>delete</span>
                       </button>
                     </HoverTooltip>

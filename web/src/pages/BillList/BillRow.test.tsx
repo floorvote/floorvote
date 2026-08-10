@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillRow } from './BillRow'
 import type { Bill } from './types'
@@ -9,6 +9,13 @@ import type { Bill } from './types'
 vi.mock('../../context/ConfigContext', () => ({
   useConfig: () => ({ config: null, multiState: false, loading: false }),
   useMultiState: () => false,
+}))
+
+// Mutable flag so individual tests can opt into demoLocked without a
+// module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
+const demoState = vi.hoisted(() => ({ demoLocked: false }))
+vi.mock('../../context/DemoContext', () => ({
+  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
 }))
 
 function makeBill(over: Partial<Bill> = {}): Bill {
@@ -26,23 +33,23 @@ function makeBill(over: Partial<Bill> = {}): Bill {
   }
 }
 
-function renderRow(isAdmin: boolean) {
+function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'support' | 'neutral' | 'oppose') => void; bill?: Partial<Bill> } = {}) {
   return render(
     <MemoryRouter>
       <BillRow
-        bill={makeBill()}
+        bill={makeBill(opts.bill)}
         index={0}
         selectedTags={[]}
         onTagClick={vi.fn()}
         isAdmin={isAdmin}
-        positionVocabulary={[]}
+        positionVocabulary={['Support', 'Oppose']}
         onStatusClick={vi.fn()}
         onPriorityClick={vi.fn()}
         onPositionClick={vi.fn()}
         onRelevanceClick={vi.fn()}
         onPriorityChange={vi.fn()}
         onPositionChange={vi.fn()}
-        onVote={undefined}
+        onVote={opts.onVote}
         filterStatuses={[]}
         filterPriorities={[]}
         filterPositions={[]}
@@ -71,5 +78,54 @@ describe('BillRow hover selection checkbox', () => {
     const row = container.querySelector('.bill-row-grid') as HTMLElement
     fireEvent.mouseEnter(row)
     expect(container.querySelector('input[type="checkbox"]')).not.toBeNull()
+  })
+})
+
+describe('BillRow write controls when demoLocked', () => {
+  afterEach(() => { demoState.demoLocked = false })
+
+  it('disables the admin Position select', () => {
+    demoState.demoLocked = true
+    renderRow(true)
+    expect(screen.getByRole('combobox', { name: /position/i })).toBeDisabled()
+  })
+
+  it('disables the admin Priority select', () => {
+    demoState.demoLocked = true
+    renderRow(true)
+    // Priority renders twice — a desktop column and a mobile-meta duplicate,
+    // toggled between by CSS, both present in the DOM at once.
+    const selects = screen.getAllByRole('combobox', { name: /priority/i })
+    expect(selects.length).toBeGreaterThan(0)
+    for (const select of selects) expect(select).toBeDisabled()
+  })
+
+  it('disables the member-vote bars and does not call onVote when clicked', () => {
+    demoState.demoLocked = true
+    const onVote = vi.fn()
+    renderRow(false, { onVote })
+    const supportBtn = screen.getByRole('button', { name: 'Support' })
+    expect(supportBtn).toBeDisabled()
+    fireEvent.click(supportBtn)
+    expect(onVote).not.toHaveBeenCalled()
+  })
+})
+
+describe('BillRow write controls when not demoLocked', () => {
+  it('leaves the admin Position and Priority selects enabled', () => {
+    renderRow(true)
+    expect(screen.getByRole('combobox', { name: /position/i })).toBeEnabled()
+    for (const select of screen.getAllByRole('combobox', { name: /priority/i })) {
+      expect(select).toBeEnabled()
+    }
+  })
+
+  it('leaves the member-vote bars enabled', () => {
+    const onVote = vi.fn()
+    renderRow(false, { onVote })
+    const supportBtn = screen.getByRole('button', { name: 'Support' })
+    expect(supportBtn).toBeEnabled()
+    fireEvent.click(supportBtn)
+    expect(onVote).toHaveBeenCalled()
   })
 })

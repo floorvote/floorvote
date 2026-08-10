@@ -4,6 +4,7 @@ import { SECTION_LABEL } from '../lib/textStyles'
 import { Picker } from './Picker'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { promotableCount, bulkConfirmMessage } from './bulkConfirm'
+import { useDemo } from '../context/DemoContext'
 
 type Priority = 'high' | 'medium' | 'low'
 
@@ -197,6 +198,7 @@ export function BulkActionBar({
   selection, total, positionVocabulary, customFieldDefs, currentFilters, filterNewMatchCount,
   selectedBills, onClearSelection, onApplied,
 }: BulkActionBarProps) {
+  const { demoLocked } = useDemo()
   const sidebarWidth = useSidebarWidth()
   const [initialValues, setInitialValues] = useState<InitialValues | null>(null)
   const [staged, setStaged] = useState<StagedValues>({
@@ -332,7 +334,7 @@ export function BulkActionBar({
   }
 
   async function handleApply() {
-    if (!hasPending || applying || overLimit) return
+    if (!hasPending || applying || overLimit || demoLocked) return
     const lines = [
       staged.priority !== undefined
         ? `• Priority → ${fmtFieldVal(staged.priority, true)}`
@@ -407,7 +409,7 @@ export function BulkActionBar({
     : selectedBills.filter(b => b.matchType === 'keyword' && b.newMatchAt && !b.triagedAt).length
 
   async function handleDismissNewMatches() {
-    if (newMatchCount === 0 || applying) return
+    if (newMatchCount === 0 || applying || demoLocked) return
     if (!window.confirm(`Dismiss ${newMatchCount.toLocaleString()} new match${newMatchCount !== 1 ? 'es' : ''} (mark reviewed, no priority)? They leave the New-matches queue but stay tracked.`)) return
     setApplying(true)
     setError(null)
@@ -437,7 +439,7 @@ export function BulkActionBar({
     }
   }
 
-  const applyable = hasPending && !applying && !overLimit
+  const applyable = hasPending && !applying && !overLimit && !demoLocked
 
   // Renders a filter-bar-style pill button with a dropdown for a single field
   function renderPill(params: {
@@ -612,12 +614,13 @@ export function BulkActionBar({
             <button
               type="button"
               onClick={handleDismissNewMatches}
-              disabled={applying}
+              disabled={applying || demoLocked}
               title="Mark the new matches in this selection as reviewed — no priority"
               style={{
                 fontSize: fontSize.sm, padding: '4px 10px', borderRadius: radius.md,
                 border: `1px solid ${color.borderDefault}`, background: color.white,
-                color: color.textMuted, cursor: applying ? 'not-allowed' : 'pointer',
+                color: color.textMuted, cursor: (applying || demoLocked) ? 'not-allowed' : 'pointer',
+                opacity: demoLocked ? 0.5 : 1,
                 textAlign: 'left', whiteSpace: 'nowrap',
               }}
             >

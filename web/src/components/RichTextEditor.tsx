@@ -88,6 +88,7 @@ interface RichTextEditorProps {
   autoFocus?: boolean
   enableMentions?: boolean
   allowEmpty?: boolean
+  disabled?: boolean
 }
 
 interface MentionTooltipData {
@@ -99,7 +100,7 @@ interface MentionTooltipData {
   roleMembers?: Array<{ name: string; subtitle: string | null }>
 }
 
-export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false }: RichTextEditorProps) {
+export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false, disabled = false }: RichTextEditorProps) {
   const [hasContent, setHasContent] = useState(false)
   const initialTextRef = useRef('')
   const [editorTooltip, setEditorTooltip] = useState<MentionTooltipData | null>(null)
@@ -215,6 +216,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
       })] : []),
     ],
     content: initialContent || '',
+    editable: !disabled,
     autofocus: autoFocus ? 'end' : false,
     onUpdate: ({ editor: e }) => {
       setHasContent(!!e.getText().trim())
@@ -238,6 +240,13 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
     if (editor) initialTextRef.current = editor.getText().trim()
   }, [editor])
 
+  // `editable` above only applies to the initial useEditor() call — later
+  // disabled changes (e.g. demoLocked flipping) need this to keep the editor
+  // and the read-only surface in sync.
+  useEffect(() => {
+    editor?.setEditable(!disabled)
+  }, [editor, disabled])
+
   useUnsavedRegistration({
     isDirty: () => !!editor && editor.getText().trim() !== initialTextRef.current,
     reset: () => {
@@ -248,13 +257,13 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   })
 
   const handleSubmit = useCallback(() => {
-    if (!editor || !onSubmit) return
+    if (!editor || !onSubmit || disabled) return
     const text = editor.getText().trim()
     if (!text && !allowEmpty) return
     onSubmit(trimEdgeParagraphs(editor.getHTML()))
     editor.commands.clearContent()
     setHasContent(false)
-  }, [editor, onSubmit, allowEmpty])
+  }, [editor, onSubmit, allowEmpty, disabled])
 
   function handleEditorMouseOver(e: React.MouseEvent) {
     const target = e.target as HTMLElement
@@ -364,7 +373,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!hasContent && !allowEmpty}
+            disabled={(!hasContent && !allowEmpty) || disabled}
             style={{
               fontSize: fontSize.sm,
               padding: '6px 18px',
@@ -372,8 +381,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               color: color.white,
               border: 'none',
               borderRadius: radius.md,
-              cursor: (hasContent || allowEmpty) ? 'pointer' : 'not-allowed',
-              opacity: (hasContent || allowEmpty) ? 1 : 0.5,
+              cursor: ((hasContent || allowEmpty) && !disabled) ? 'pointer' : 'not-allowed',
+              opacity: ((hasContent || allowEmpty) && !disabled) ? 1 : 0.5,
               fontWeight: fontWeight.medium,
             }}
           >

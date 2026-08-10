@@ -15,6 +15,7 @@ import { configRouter } from './routes/configApi'
 import { calendarRouter } from './routes/calendarApi'
 import { registerWithCentral } from './cron/sync'
 import { runDemoReset } from './lib/demoReset'
+import { resolveDemoSeed } from './lib/demoSeeds'
 import { runDigest } from './lib/digest'
 import { runWeekAhead } from './lib/weekAhead'
 import { sendSampleEmail, isSampleEmailType } from './lib/sampleEmails'
@@ -33,6 +34,7 @@ import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
 import { nowDb } from './lib/dbTime'
 import { ensureDemoSession, DEMO_SESSION_TOKEN } from './lib/demoSession'
+import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
 
 const app = new Hono<AppEnv>()
@@ -109,6 +111,10 @@ app.use('*', async (c, next) => {
   }
   c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers: h })
 })
+
+// Demo tenants are read-only. Mounted before every /api route so a write route
+// added later is locked by default rather than by remembering to guard it.
+app.use('/api/*', demoReadOnly)
 
 // Cap the body on the public, unauthenticated auth endpoints. Their
 // JSON payloads are tiny ({ email, turnstileToken }); 16 KB is generous. Fronts
@@ -229,7 +235,7 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     const db = getDb(env.DB)
     if (env.DEMO_MODE === 'true') {
-      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB)))   // demo: 06:00 reset only; no digests
+      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))))   // demo: 06:00 reset only; no digests
       return
     }
     if (event.cron === '0 11 * * *') {

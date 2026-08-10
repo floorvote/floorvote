@@ -5,6 +5,7 @@ import type { Ref, RefObject } from 'react'
 import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
 import { useNotifications } from '../context/NotificationsContext'
+import { useDemo } from '../context/DemoContext'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -66,6 +67,7 @@ export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
   const { refresh } = useNotifications()
+  const { demoLocked } = useDemo()
   const [mentions, setMentions] = useState<Mention[]>([])
   const [roles, setRoles] = useState<RoleData[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,6 +99,10 @@ export function NotificationsSlideOver(
       setLoading(false)
     }
     async function markAllRead() {
+      // The server refuses this write on a demo tenant, and there's nothing to
+      // roll back client-side if it 403s — skip the call entirely rather than
+      // let a demo visitor's every open of this panel hit a rejected request.
+      if (demoLocked) return
       try {
         await apiFetch('/notifications/mark-read', { method: 'POST' })
         await refresh()
@@ -104,7 +110,7 @@ export function NotificationsSlideOver(
     }
     void load()
     void markAllRead()
-  }, [refresh])
+  }, [refresh, demoLocked])
 
   // Shared by mouse hover (onMouseOver/onMouseOut) and keyboard focus
   // (onFocus/onBlur, added below to satisfy jsx-a11y/mouse-events-have-key-events)

@@ -111,7 +111,7 @@ describe('POST /admin/members/bulk-invite', () => {
     expect(row).toBeUndefined()
   })
 
-  it('is blocked by demoGuard in demo mode', async () => {
+  it('is blocked by the demo read-only guard', async () => {
     const res = await app.request('/api/admin/members/bulk-invite', {
       method: 'POST',
       headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
