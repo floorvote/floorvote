@@ -1,10 +1,17 @@
 import { useState } from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BulkActionBar, type Selection } from './BulkActionBar'
 
 vi.mock('../lib/api', () => ({ apiFetch: vi.fn(() => Promise.resolve({ dismissed: 1 })) }))
 import { apiFetch } from '../lib/api'
+
+// Mutable flag so individual tests can opt into demoLocked without a
+// module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
+const demoState = vi.hoisted(() => ({ demoLocked: false }))
+vi.mock('../context/DemoContext', () => ({
+  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
+}))
 
 const noFilters = {
   status: [], priority: [], position: [], year: [], state: [], tag: [],
@@ -171,5 +178,37 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
     await waitFor(() => {
       expect(apiFetch).toHaveBeenCalledWith('/bills/bulk-dismiss', expect.objectContaining({ method: 'POST' }))
     })
+  })
+})
+
+describe('BulkActionBar read-only demo', () => {
+  afterEach(() => { demoState.demoLocked = false })
+
+  it('disables Apply even with a staged change, and does not POST on click', () => {
+    demoState.demoLocked = true
+    render(<Harness />)
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('High'))
+    const applyBtn = screen.getByRole('button', { name: /Apply to 1 bill/i })
+    expect(applyBtn).toBeDisabled()
+    fireEvent.click(applyBtn)
+    expect(apiFetch).not.toHaveBeenCalledWith('/bills/bulk', expect.anything())
+  })
+
+  it('disables "Dismiss new matches" and does not POST on click', () => {
+    demoState.demoLocked = true
+    vi.mocked(apiFetch).mockClear()
+    render(<Harness selectedBills={[{ id: 'a', priority: null, position: null, matchType: 'keyword', newMatchAt: '2026-06-20', triagedAt: null }]} />)
+    const btn = screen.getByRole('button', { name: /Dismiss new matches/i })
+    expect(btn).toBeDisabled()
+    fireEvent.click(btn)
+    expect(apiFetch).not.toHaveBeenCalledWith('/bills/bulk-dismiss', expect.anything())
+  })
+
+  it('leaves Apply enabled (given a staged change) when not demo-locked', () => {
+    render(<Harness />)
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('High'))
+    expect(screen.getByRole('button', { name: /Apply to 1 bill/i })).toBeEnabled()
   })
 })

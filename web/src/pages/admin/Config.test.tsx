@@ -213,6 +213,17 @@ describe('Config — demo gating', () => {
     const saveButton = within(section).getByRole('button', { name: /^save$/i })
     expect(saveButton).toBeDisabled()
   })
+
+  it('in demo: disables "Save AI instructions" (covers the Tags/tag-taxonomy editor)', async () => {
+    demo.demoLocked = true
+    render(<Config />)
+    expect(await screen.findByRole('button', { name: /save ai instructions/i })).toBeDisabled()
+  })
+
+  it('when not in demo: leaves "Save AI instructions" enabled', async () => {
+    render(<Config />)
+    expect(await screen.findByRole('button', { name: /save ai instructions/i })).toBeEnabled()
+  })
 })
 
 describe('Config — data export control accessibility', () => {
