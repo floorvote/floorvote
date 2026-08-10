@@ -52,7 +52,7 @@ The full rules live in the [`Developing` section of `AGENTS.md`](https://github.
 
 ## Forking and operator overlays
 
-FloorVote is deployed per-team, and each instance is tied to a specific Cloudflare account, tenant domains, and secrets. Because of that, most forks accumulate an **operator overlay**: files like `wrangler.toml`, deploy scripts, and an internal ops runbook that are meaningful only to that operator's deployment and should never appear in the public repository. If you're forking to run your own instance, expect to build up the same kind of overlay. The guidance below is for sending a change from a fork like that back upstream.
+FloorVote is deployed per-team, and each instance is tied to a specific Cloudflare account, tenant domains, and secrets. Because of that, a fork that runs its own instance will tend to accumulate an **operator overlay**: files like `wrangler.toml`, deploy scripts, and an internal ops runbook that are meaningful only to that operator's deployment and should never appear in the public repository. If you fork to run your own instance, expect to build up the same kind of overlay. The guidance below is for sending a change from a fork like that back upstream.
 
 **Decide the base before writing any code, not after.** If a change is general product code, it belongs upstream — branch from `upstream/main` for it, not your fork's `main`, from the start. Deciding this up front means the eventual PR is just a push and `gh pr create`; deciding only after building the feature on your fork's `main` means untangling the operator overlay from the change afterward.
 

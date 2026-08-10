@@ -45,24 +45,11 @@ export default withMermaid(
             },
           ],
         },
-        {
-          text: 'Architecture',
-          items: [
-            { text: 'Overview', link: '/architecture/' },
-          ],
-        },
-        {
-          text: 'Contributing',
-          items: [
-            { text: 'Contributing', link: '/contributing/' },
-          ],
-        },
-        {
-          text: 'Security',
-          items: [
-            { text: 'Security', link: '/security/' },
-          ],
-        },
+        // Flat top-level links — each of these is a single page, so a section
+        // wrapper would add a heading with one child under it.
+        { text: 'Architecture', link: '/architecture/' },
+        { text: 'Contributing', link: '/contributing/' },
+        { text: 'Security', link: '/security/' },
       ],
       socialLinks: [
         { icon: 'github', link: 'https://github.com/floorvote/floorvote' },

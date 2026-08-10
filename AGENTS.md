@@ -105,7 +105,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 |---|---|
 | `LEGISCAN_API_KEY` | LegiScan bill data |
 | `ADMIN_SECRET` | Protects `/api/admin/*` and `/api/tenants/*` routes |
-| `RESEND_API_KEY` | Admin dashboard magic-link email (required for the dashboard) |
+| `RESEND_API_KEY` | Optional fallback for admin dashboard magic-link email (used unless `EMAIL_PROVIDER=cloudflare` and the `EMAIL` binding is set) |
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |

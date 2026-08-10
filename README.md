@@ -54,13 +54,9 @@ Each of these is explained in full on the docs site: **[What can FloorVote do?](
 | Queues | Cloudflare Queues—central ingestor, per-tenant bill delivery |
 | Frontend | React 19 + React Router 7 + Vite 8, served via Workers Assets |
 | Email | Cloudflare Email Service, with Resend available as a fallback |
-| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway |
-| Legislative data | LegiScan |
+| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. *Chosen for its affordability, accuracy, and ability to handle long PDFs, which is how many bills arrive. Set in [`api/src/lib/llm.ts`](api/src/lib/llm.ts), so changing it is a code edit rather than configuration.* |
+| Legislative data | LegiScan. *An OpenStates provider exists alongside it, but is experimental and not at feature parity.* |
 | Testing | Vitest with `@cloudflare/vitest-pool-workers`; Vitest + jsdom for the frontend |
-
-**On the AI model.** Gemini 2.5 Flash was chosen for its affordability, accuracy, and ability to handle long PDFs (which is how many bills arrive). It's set in [`api/src/lib/llm.ts`](api/src/lib/llm.ts), so changing it is a code edit rather than configuration.
-
-**On OpenStates.** An OpenStates provider exists alongside the LegiScan one, but it is experimental and not at feature parity. Don't build on it.
 
 ---
 
@@ -86,18 +82,10 @@ For the full data flow—cron passes, the ingestor, deduplication, and queue bou
 
 ---
 
-## License
+Development supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
 
-[AGPL-3.0](LICENSE). Copyright © 2026 William T. Adler.
-
-If you run a modified version as a network service, the AGPL requires you to offer your users the corresponding source.
-
----
-
-## Acknowledgments
+FloorVote was developed using [Claude Code](https://claude.com/claude-code) and the [superpowers plugin](https://github.com/obra/superpowers).
 
 Architecture and security have been reviewed and strengthened through a volunteer engagement with [U.S. Digital Response](https://www.usdigitalresponse.org/) (volunteer: [Larry Hitchon](https://github.com/lhitchon)).
 
-Development is supported by the [Bipartisan Policy Center](https://bipartisanpolicy.org).
-
-FloorVote was developed using [Claude Code](https://claude.com/claude-code) and the [superpowers plugin](https://github.com/obra/superpowers).
+FloorVote is open source under [AGPL-3.0](LICENSE). © 2026 William T. Adler. If you run a modified version as a network service, the AGPL requires you to offer your users the corresponding source.

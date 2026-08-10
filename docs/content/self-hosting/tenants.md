@@ -309,7 +309,7 @@ Seeding loads a whole legislative session into the team at once — bills matchi
 
 There are two paths, depending on whether central already has the state's bills.
 
-### Path A: central already has the session (most teams)
+### Path A: central already has the session
 
 If another team already tracks the state, central has its bills. First, find the session's numeric id in central's `sessions` table — from `central/` (the database name is the `database_name` in `central/wrangler.toml`):
 
