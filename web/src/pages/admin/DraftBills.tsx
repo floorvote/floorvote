@@ -177,7 +177,7 @@ export function DraftBills() {
                           color: demoLocked ? color.borderStrong : color.textErrorRed,
                           cursor: demoLocked ? 'not-allowed' : 'pointer',
                         }}
-                        title={demoLocked ? 'Read-only in demo mode' : 'Delete draft'}
+                        title={demoLocked ? 'Locked in demo mode' : 'Delete draft'}
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>
                       </button>

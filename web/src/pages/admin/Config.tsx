@@ -975,7 +975,7 @@ export function Config() {
                             ? 'Unpin this field. Pinned fields, when they are filled out, appear above the AI summary on bill detail pages.'
                             : 'Pin this field. Pinned fields, when they are filled out, appear above the AI summary on bill detail pages.')
                           : el === 'edit'
-                            ? (demoLocked ? 'Read-only in demo mode' : 'Edit')
+                            ? (demoLocked ? 'Locked in demo mode' : 'Edit')
                             : (field.type === 'binary' ? 'Yes/no toggle'
                               : field.type === 'dropdown' ? 'Pick from a predefined list'
                               : field.type === 'text' ? 'Free-form text with markdown; URLs auto-linked'

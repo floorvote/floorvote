@@ -112,8 +112,10 @@ app.use('*', async (c, next) => {
   c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers: h })
 })
 
-// Demo tenants are read-only. Mounted before every /api route so a write route
-// added later is locked by default rather than by remembering to guard it.
+// Demo tenants allow the additive member actions and refuse every other non-GET
+// request (see DEMO_WRITE_ALLOWLIST in middleware/auth.ts). Mounted before every
+// /api route so a write route added later is locked by default rather than by
+// remembering to guard it.
 app.use('/api/*', demoReadOnly)
 
 // Cap the body on the public, unauthenticated auth endpoints. Their

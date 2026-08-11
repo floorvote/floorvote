@@ -100,7 +100,7 @@ describe('Members admin write controls when demoLocked', () => {
 
   it('disables the "Can vote" checkbox on every member row', async () => {
     renderMembers({ demoLocked: true })
-    const checkboxes = await screen.findAllByTitle('Read-only in demo mode')
+    const checkboxes = await screen.findAllByTitle('Locked in demo mode')
     expect(checkboxes.length).toBeGreaterThan(0)
     for (const checkbox of checkboxes) expect(checkbox).toBeDisabled()
   })
