@@ -8,7 +8,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
-import { runDemoReset } from '../../src/lib/demoReset'
+import { runDemoReset, dateFromNow } from '../../src/lib/demoReset'
 import { DEMO_SEEDS } from '../../src/lib/demoSeeds'
 
 // Every table runDemoReset writes. Ordered by primary key so the dump is
@@ -69,7 +69,20 @@ const SQL_CLOCK_COLUMNS = new Set([
 // Deadline custom-field values, '2026-09-01' / '2026-11-01' / '2028-01-01' — and
 // must stay literal. Bucketing those would reintroduce the run-date dependence
 // this normalizer exists to remove, since they do not move with the clock.
-const RELATIVE_DATE_COLUMNS = new Set(['calendar_events.date'])
+// `calendar_events.date` USED to live here, bucketed as a relative day offset.
+// It can't be: demoReset's dateFromNow now snaps calendar dates off the weekend,
+// so the delta between the reset date and the stored date is
+// weekday-dependent — k, k+1, or k+2 for the same seed offset — and therefore
+// NOT stable across the run dates this file deliberately varies. Bucketing it
+// would make the snapshot fail on five days out of seven.
+//
+// Collapsing it to a constant would lose the offset pinning, so it is pinned
+// outside the snapshot instead, by the 'calendar dates' describe block below:
+// that recomputes each expected date from the seed's own offsetDays for the
+// current run date, which checks strictly more than a bucket did — the seed's
+// declared offset AND the machinery's snapping arithmetic.
+const SNAPPED_DATE_COLUMNS = new Set(['calendar_events.date'])
+const RELATIVE_DATE_COLUMNS = new Set<string>()
 
 // SQL_CLOCK_COLUMNS values carry no offset to pin (see comment above), but that
 // also means a future edit that *did* start writing a seed offset into one of
@@ -92,6 +105,7 @@ const normalize = (table: string, col: string, v: unknown, baseMs: number, realN
     return '<sql-now>'
   }
   if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(v)) return dayBucket(parseDbTs(v), baseMs)
+  if (SNAPPED_DATE_COLUMNS.has(key) && /^\d{4}-\d{2}-\d{2}$/.test(v)) return '<snapped-date>'
   if (RELATIVE_DATE_COLUMNS.has(key) && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
     return dayBucket(Date.parse(v + 'T00:00:00Z'), utcMidnight(baseMs))
   }
@@ -199,5 +213,58 @@ describe('demo reset golden snapshot', () => {
     const clean = await dumpResetState(baseMsClean, vi.getRealSystemTime())
 
     expect(straddled).toBe(clean)
+  })
+})
+
+// What the snapshot gave up when calendar_events.date stopped being bucketed.
+//
+// This is strictly stronger than the bucket was: it recomputes the expected date
+// from the seed's own offsetDays for whatever date the run happens to fall on, so
+// it pins the seed's declared offset AND demoReset's snapping arithmetic, and it
+// is stable across run dates because it recomputes rather than remembering.
+describe('demo reset calendar dates', () => {
+  const seed = DEMO_SEEDS['nj-county-clerks']
+
+  it('writes the date the seed asks for, snapped off the weekend', async () => {
+    await freshlyMigratedWithBills()
+    const nowMs = Date.now()
+    await runDemoReset(env.DB, seed)
+
+    const { results } = await env.DB.prepare('SELECT id, date, source FROM calendar_events').all()
+    const rows = results as Array<{ id: string; date: string; source: string }>
+    expect(rows.length).toBe(seed.calendarEvents.length)
+
+    const bySeedId = new Map(seed.calendarEvents.map(e => [e.id, e]))
+    for (const r of rows) {
+      const e = bySeedId.get(r.id)
+      expect(e, `no seed row for calendar_events.id ${r.id}`).toBeDefined()
+      // Allow a one-day slack against a UTC-midnight straddle between the nowMs
+      // read above and the reset's own Date.now(): recompute for both.
+      const expected = new Set([
+        dateFromNow(e!.offsetDays, nowMs),
+        dateFromNow(e!.offsetDays, nowMs + 86400_000),
+      ])
+      expect([...expected], `${r.id} (offsetDays ${e!.offsetDays})`).toContain(r.date)
+    }
+  })
+
+  it('never schedules anything at the weekend', async () => {
+    await freshlyMigratedWithBills()
+    await runDemoReset(env.DB, seed)
+    const { results } = await env.DB.prepare('SELECT id, date FROM calendar_events').all()
+    for (const r of results as Array<{ id: string; date: string }>) {
+      const day = new Date(r.date + 'T00:00:00Z').getUTCDay()
+      expect(day, `${r.id} on ${r.date} is a weekend day`).not.toBe(0)
+      expect(day, `${r.id} on ${r.date} is a weekend day`).not.toBe(6)
+    }
+  })
+
+  it('keeps a past event in the past and an upcoming one upcoming', async () => {
+    const todayUtc = new Date().toISOString().slice(0, 10)
+    for (const e of seed.calendarEvents) {
+      const d = dateFromNow(e.offsetDays)
+      if (e.offsetDays < 0) expect(d < todayUtc, `${e.id} should stay past`).toBe(true)
+      if (e.offsetDays > 2) expect(d > todayUtc, `${e.id} should stay upcoming`).toBe(true)
+    }
   })
 })
