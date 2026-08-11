@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt } from 'drizzle-orm'
-import { requireAuth, requireAdmin, requireOwner, demoGuard } from '../middleware/auth'
+import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
@@ -9,7 +9,6 @@ import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords } from '../lib/keywords'
 import { centralFetch } from '../lib/centralFetch'
 import { PRESETS } from '../lib/presets'
-import { isSuperadminRequest } from '../lib/superadminRequest'
 import { applyPresetConfig, ensureInstancePreset } from '../lib/instancePreset'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -138,7 +137,7 @@ const USER_INSERT_CHUNK = 10      // 5 bound params/row (id,email,name,role,invi
 const QUEUE_SEND_CHUNK = 100      // Cloudflare Queues sendBatch max per call
 
 // POST /admin/members/bulk-invite
-adminApiRouter.post('/members/bulk-invite', demoGuard, async (c) => {
+adminApiRouter.post('/members/bulk-invite', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
 
   const body = await c.req
@@ -321,10 +320,6 @@ adminApiRouter.patch('/members/:id', async (c) => {
     .json<{ role?: string; deactivated?: boolean; canVote?: boolean }>()
     .catch(() => ({} as { role?: string; deactivated?: boolean; canVote?: boolean }))
 
-  if (body.role !== undefined && c.env.DEMO_MODE === 'true' && !(await isSuperadminRequest(c))) {
-    return c.json({ error: 'Configuration is locked in demo mode' }, 403)
-  }
-
   const updates: Partial<typeof users.$inferInsert> = {}
 
   if (body.role === 'admin' || body.role === 'member' || body.role === 'owner') {
@@ -375,7 +370,7 @@ adminApiRouter.patch('/members/:id', async (c) => {
 })
 
 // DELETE /admin/members/:id
-adminApiRouter.delete('/members/:id', demoGuard, async (c) => {
+adminApiRouter.delete('/members/:id', async (c) => {
   const targetId = c.req.param('id')
   const currentUser = c.get('user')
 
@@ -684,15 +679,13 @@ adminApiRouter.put('/config', async (c) => {
     return c.json({ error: `Unknown config keys: ${unknownKeys.join(', ')}` }, 400)
   }
 
-  // In demo mode, non-superadmins can ONLY toggle modules (so demo visitors
-  // can experience the module system). All other config keys stay locked.
+  // In demo mode only `modules` may be written, so a visitor can turn widgets on
+  // in Settings. Every other config key stays locked. This route is the one write
+  // path demoReadOnly allowlists, so this inner check is load-bearing.
   if (c.env.DEMO_MODE === 'true') {
-    const currentUser = c.get('user')
-    if (!(await isSuperadminRequest(c))) {
-      const nonModuleKeys = Object.keys(body).filter((k) => k !== 'modules')
-      if (nonModuleKeys.length > 0) {
-        return c.json({ error: 'Configuration is locked in demo mode' }, 403)
-      }
+    const nonModuleKeys = Object.keys(body).filter((k) => k !== 'modules')
+    if (nonModuleKeys.length > 0) {
+      return c.json({ error: 'Configuration is locked in demo mode' }, 403)
     }
   }
 
@@ -754,7 +747,7 @@ adminApiRouter.put('/config', async (c) => {
 // Operates only on non-stub bills (those that have full text in central). Stubs that match
 // new keywords are caught by the cron's next full pass, which routes through the ingestor to
 // fetch text before running AI.
-adminApiRouter.post('/keyword-resync', demoGuard, async (c) => {
+adminApiRouter.post('/keyword-resync', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const db = getDb(c.env.DB)
 
@@ -930,7 +923,7 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
 })
 
 // POST /admin/reprocess-bill/:externalId — reprocess a single bill, forcing AI re-run
-adminApiRouter.post('/reprocess-bill/:externalId', demoGuard, async (c) => {
+adminApiRouter.post('/reprocess-bill/:externalId', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const externalId = decodeURIComponent(c.req.param('externalId'))
   await c.env.BILL_QUEUE.send({ tenantId: c.env.TENANT_ID, billId: externalId, forceAI: true, interactive: true })
@@ -938,7 +931,7 @@ adminApiRouter.post('/reprocess-bill/:externalId', demoGuard, async (c) => {
 })
 
 // POST /admin/refresh-metadata — refresh every bill's metadata from central without re-running AI
-adminApiRouter.post('/refresh-metadata', demoGuard, async (c) => {
+adminApiRouter.post('/refresh-metadata', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const db = getDb(c.env.DB)
   const rows = await db.select({ externalId: bills.externalId }).from(bills).where(isNotNull(bills.externalId)).all()
@@ -955,7 +948,7 @@ adminApiRouter.post('/refresh-metadata', demoGuard, async (c) => {
 
 // POST /admin/reprocess-llm-all?scope=all|prioritized — re-run AI on matched bills.
 // scope=prioritized additionally restricts to bills with a priority set (high/medium/low).
-adminApiRouter.post('/reprocess-llm-all', demoGuard, async (c) => {
+adminApiRouter.post('/reprocess-llm-all', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const scope = c.req.query('scope') === 'prioritized' ? 'prioritized' : 'all'
   const db = getDb(c.env.DB)
@@ -983,7 +976,7 @@ adminApiRouter.post('/reprocess-llm-all', demoGuard, async (c) => {
 // POST /admin/promote-bill/:billId — promote a stub bill to full tracking.
 // Looks up the bill's externalId (e.g. 'legiscan:12345'), strips the prefix,
 // and proxies to central /tenants/promote-bill/:tenantId/:billId.
-adminApiRouter.post('/promote-bill/:billId', demoGuard, async (c) => {
+adminApiRouter.post('/promote-bill/:billId', async (c) => {
   const billId = c.req.param('billId')
   const db = getDb(c.env.DB)
 
@@ -1028,7 +1021,7 @@ adminApiRouter.get('/presets', async (c) => {
 })
 
 // POST /admin/apply-preset/:slug
-adminApiRouter.post('/apply-preset/:slug', demoGuard, async (c) => {
+adminApiRouter.post('/apply-preset/:slug', async (c) => {
   const slug = c.req.param('slug')
   if (!PRESETS[slug]) return c.json({ error: 'Unknown preset' }, 404)
 

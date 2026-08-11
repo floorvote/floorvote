@@ -31,7 +31,7 @@ export function DraftBills() {
 
   async function handleCreateDraft() {
     const title = draftTitle.trim()
-    if (!title) return
+    if (!title || demoLocked) return
     setCreatingDraft(true)
     setCreateDraftError(null)
     try {
@@ -135,8 +135,8 @@ export function DraftBills() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={handleCreateDraft}
-                disabled={!draftTitle.trim() || creatingDraft}
-                style={actionBtnBlue(!draftTitle.trim() || creatingDraft)}
+                disabled={!draftTitle.trim() || creatingDraft || demoLocked}
+                style={actionBtnBlue(!draftTitle.trim() || creatingDraft || demoLocked)}
               >
                 {creatingDraft ? 'Creating…' : 'Create draft'}
               </button>
@@ -162,6 +162,7 @@ export function DraftBills() {
                       <button
                         onClick={async (e) => {
                           e.stopPropagation()
+                          if (demoLocked) return
                           if (!window.confirm('Delete this draft bill? This permanently removes it and its votes, positions, comments, and notes.')) return
                           try {
                             await apiFetch('/bills/' + d.id, { method: 'DELETE' })
@@ -170,8 +171,13 @@ export function DraftBills() {
                             alert(err instanceof Error ? err.message : 'Failed to delete draft.')
                           }
                         }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: color.textErrorRed, display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                        title="Delete draft"
+                        disabled={demoLocked}
+                        style={{
+                          background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', flexShrink: 0,
+                          color: demoLocked ? color.borderStrong : color.textErrorRed,
+                          cursor: demoLocked ? 'not-allowed' : 'pointer',
+                        }}
+                        title={demoLocked ? 'Read-only in demo mode' : 'Delete draft'}
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>
                       </button>

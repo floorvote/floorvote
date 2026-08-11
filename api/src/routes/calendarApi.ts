@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, and, isNotNull, gte, lte, or, asc, inArray } from 'drizzle-orm'
-import { requireAuth, requireAdmin, demoGuard } from '../middleware/auth'
+import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
 import { buildVCalendar, tzidForState, type IcalEvent } from '../lib/ical'
@@ -46,7 +46,7 @@ async function getOrCreateSlug(db: ReturnType<typeof getDb>): Promise<string> {
   return after?.value ?? slug
 }
 
-calendarRouter.post('/backfill', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.post('/backfill', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const ids = await collectPriorityLegiscanIds(db)
   c.executionCtx.waitUntil(backfillCalendar(c.env, ids))
@@ -205,7 +205,7 @@ calendarRouter.get('/bill-options', requireAuth, async (c) => {
   return c.json(rows)
 })
 
-calendarRouter.post('/events', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.post('/events', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const body = await c.req.json().catch(() => ({})) as {
     description?: string; date?: string; time?: string | null; location?: string | null; billIds?: string[]; timezone?: string | null
@@ -236,7 +236,7 @@ calendarRouter.post('/events', requireAuth, requireAdmin, demoGuard, async (c) =
   }, 201)
 })
 
-calendarRouter.put('/events/:id', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.put('/events/:id', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
@@ -269,7 +269,7 @@ calendarRouter.put('/events/:id', requireAuth, requireAdmin, demoGuard, async (c
   })
 })
 
-calendarRouter.delete('/events/:id', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.delete('/events/:id', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
@@ -281,7 +281,7 @@ calendarRouter.delete('/events/:id', requireAuth, requireAdmin, demoGuard, async
   return c.json({ id, status: 'cancelled' })
 })
 
-calendarRouter.post('/events/:id/restore', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.post('/events/:id/restore', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
@@ -293,7 +293,7 @@ calendarRouter.post('/events/:id/restore', requireAuth, requireAdmin, demoGuard,
   return c.json({ id, status: 'confirmed' })
 })
 
-calendarRouter.post('/import', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.post('/import', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const body = await c.req.json().catch(() => ({})) as { rows?: ImportRow[] }
   const rows = Array.isArray(body.rows) ? body.rows : []
@@ -345,7 +345,7 @@ function constantTimeEqual(a: string, b: string): boolean {
   return result === 0
 }
 
-calendarRouter.post('/regenerate-slug', requireAuth, requireAdmin, demoGuard, async (c) => {
+calendarRouter.post('/regenerate-slug', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const slug = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => (b % 36).toString(36)).join('')
   await db.insert(associationConfig).values({ key: 'calendar_feed_slug', value: slug })

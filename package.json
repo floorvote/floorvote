@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w api\" \"npm run dev -w web\"",
     "dev:local": "bash scripts/dev-local.sh",
+    "test": "vitest run",
+    "test:scripts": "vitest run --project scripts",
     "gen:email-icons": "tsx scripts/gen-email-icons.ts",
     "gen:brand-assets": "tsx scripts/gen-brand-assets.ts",
     "docs:dev": "vitepress dev docs",
@@ -21,9 +23,9 @@
     "@resvg/resvg-js": "^2.6.2",
     "concurrently": "^10.0.4",
     "fflate": "^0.8.3",
-    "mermaid": "^11.16.0",
-    "tsx": "^4.23.1",
-    "vite": "^8.2.0",
+    "mermaid": "^11.16.1",
+    "tsx": "^4.23.11",
+    "vite": "^8.2.1",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
     "wrangler": "^4"

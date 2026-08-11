@@ -1,8 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NotificationsSlideOver } from './NotificationsSlideOver'
 import { NotificationsProvider } from '../context/NotificationsContext'
+
+// Mutable flag so individual tests can opt into demoLocked without a
+// module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
+const demoState = vi.hoisted(() => ({ demoLocked: false }))
+vi.mock('../context/DemoContext', () => ({
+  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
+}))
 
 // The @role-mention attribution chip ("mentioned @Board") previously showed
 // its member list only in a hover-triggered tooltip (onMouseEnter/onMouseLeave)
@@ -72,5 +79,29 @@ describe('NotificationsSlideOver role-mention chip', () => {
     const chip = await screen.findByText('@Board')
     expect(chip.getAttribute('title')).toMatch(/Alice Member/)
     expect(chip.getAttribute('title')).toMatch(/Bob Member/)
+  })
+})
+
+describe('NotificationsSlideOver read-only demo', () => {
+  afterEach(() => { demoState.demoLocked = false })
+
+  it('does not POST /notifications/mark-read when the demo is locked', async () => {
+    demoState.demoLocked = true
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await screen.findByText('@Board')
+    // Give the (skipped) mark-read call a chance to have fired if the guard
+    // were missing.
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications'))
+    expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
+  })
+
+  it('still POSTs /notifications/mark-read when not demo-locked', async () => {
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await screen.findByText('@Board')
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
   })
 })

@@ -139,6 +139,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
   }
 
   async function handleConfirm() {
+    if (demoLocked) return
     const okRows = rows.filter(r => r.status === 'ok')
     if (!okRows.length) return
     setSubmitting(true)
@@ -351,12 +352,12 @@ export function ImportEvents({ onClose, onImported }: Props) {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={okCount === 0 || submitting}
+                disabled={okCount === 0 || submitting || demoLocked}
                 style={{
-                  background: okCount === 0 ? color.bgRedDisabled : color.accentBlue,
+                  background: (okCount === 0 || demoLocked) ? color.bgRedDisabled : color.accentBlue,
                   color: color.white, border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
-                  cursor: okCount === 0 || submitting ? 'not-allowed' : 'pointer',
+                  cursor: okCount === 0 || submitting || demoLocked ? 'not-allowed' : 'pointer',
                   opacity: submitting ? 0.7 : 1,
                 }}
               >

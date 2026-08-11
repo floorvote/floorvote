@@ -53,10 +53,6 @@ commentsApiRouter.delete('/:id', async (c) => {
   if (comment.userId !== currentUser.id && currentUser.role !== 'admin' && currentUser.role !== 'owner') {
     return c.json({ error: 'forbidden' }, 403)
   }
-  if (c.env.DEMO_MODE === 'true' && comment.userId !== currentUser.id) {
-    return c.json({ error: 'Cannot delete other users\' comments in demo mode' }, 403)
-  }
-
   const now = nowDb()
   await db.update(comments).set({ deletedAt: now, deletedBy: currentUser.id }).where(eq(comments.id, id))
   await db.update(commentReactions).set({ deletedAt: now }).where(eq(commentReactions.commentId, id))

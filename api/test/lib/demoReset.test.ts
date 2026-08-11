@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { calendarEvents, calendarEventBills, associationConfig, users, sessions, magicLinks, feedEvents } from '../../src/db/schema'
+import { calendarEvents, calendarEventBills, associationConfig, users, sessions, magicLinks, feedEvents, roles, customFieldDefinitions } from '../../src/db/schema'
 import { runDemoReset } from '../../src/lib/demoReset'
+import { DEMO_SEEDS, resolveDemoSeed, type DemoSeed } from '../../src/lib/demoSeeds'
 import { eq, count, exists, and, isNull, isNotNull } from 'drizzle-orm'
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -19,7 +20,7 @@ describe('runDemoReset — calendar seeding', () => {
   })
 
   it('seeds hearing and custom events, with at least one of each in the next 30 days', async () => {
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
     const rows = await db.select().from(calendarEvents).all()
 
@@ -47,7 +48,7 @@ describe('runDemoReset — calendar seeding', () => {
     })
     await db.insert(calendarEventBills).values({ eventId: 'linked-evt', billId: 'legiscan:2099974' })
 
-    await expect(runDemoReset(env.DB)).resolves.toBeUndefined()
+    await expect(runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])).resolves.toBeUndefined()
 
     // The join row referencing the wiped event must be gone too.
     const joins = await db.select().from(calendarEventBills).all()
@@ -55,7 +56,7 @@ describe('runDemoReset — calendar seeding', () => {
   })
 
   it('enables the calendar module in association config', async () => {
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
     const row = await db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get()
     expect(row).toBeDefined()
@@ -65,7 +66,7 @@ describe('runDemoReset — calendar seeding', () => {
   })
 
   it('seeds an accepted invite + session for every persona so the member count matches the roster', async () => {
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
 
     // Full roster (matches GET /users and engagement total_members).
@@ -105,7 +106,7 @@ describe('runDemoReset — calendar seeding', () => {
     // The reset re-creates demo-user (INSERT OR REPLACE) and seeds feed events with
     // past timestamps. Without a seen baseline, last_seen_feed is null, which lights
     // the nav dot for the first visitor after every nightly reset. Seed it to now.
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
     const demoUser = await db.select().from(users).where(eq(users.id, 'demo-user')).get()
     expect(demoUser).toBeDefined()
@@ -119,7 +120,7 @@ describe('runDemoReset — calendar seeding', () => {
     // legislative bill activity. Seed bill_updated events (status changes, actions,
     // votes, amendments) spread across the recent window, the way calendar
     // hearings are seeded relative to now.
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
 
     const updates = await db
@@ -153,7 +154,7 @@ describe('runDemoReset — calendar seeding', () => {
     // comment (beforeEach only seeds two).
     await seedBill({ externalId: 'legiscan:2098113', billNumber: 'A1715', title: 'John R. Lewis Act', state: 'NJ' })
     await seedBill({ externalId: 'legiscan:2098535', billNumber: 'A1680', title: 'Voter registration', state: 'NJ' })
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
 
     const rows = await db
@@ -188,8 +189,160 @@ describe('runDemoReset — calendar seeding', () => {
       id: 'stray', uid: 'stray@test', billId: null, source: 'custom', sequence: 0,
       date: dateFromNow(2), time: null, location: null, description: 'stray', status: 'confirmed', eventHash: null,
     })
-    await runDemoReset(env.DB)
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const stray = await db.select().from(calendarEvents).where(eq(calendarEvents.id, 'stray')).get()
     expect(stray).toBeUndefined()
+  })
+})
+
+const countRows = async (table: string): Promise<number> => {
+  const row = await env.DB.prepare(`SELECT count(*) AS n FROM ${table}`).first<{ n: number }>()
+  return row?.n ?? 0
+}
+
+describe('runDemoReset with the nj-county-clerks seed', () => {
+  const seed = DEMO_SEEDS['nj-county-clerks']
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('is registered', () => {
+    expect(seed).toBeDefined()
+    expect(seed.slug).toBe('nj-county-clerks')
+  })
+
+  it('defaults to nj-county-clerks when DEMO_SEED is unset', () => {
+    // Demo tenants deployed before DEMO_SEED existed must keep working.
+    expect(resolveDemoSeed(undefined)).toBe(seed)
+    expect(resolveDemoSeed('nj-county-clerks')).toBe(seed)
+    expect(() => resolveDemoSeed('no-such-seed')).toThrow(/Unknown DEMO_SEED/)
+  })
+
+  it('restores the canonical roster and static data', async () => {
+    await runDemoReset(env.DB, seed)
+    expect(await countRows('users')).toBe(15)
+    expect(await countRows('roles')).toBe(5)
+    expect(await countRows('custom_field_definitions')).toBe(5)
+    // Every persona needs a session row and a used magic link or the sidebar
+    // member count reads 0 despite a full Members page.
+    expect(await countRows('sessions')).toBe(15)
+    expect(await countRows('magic_links')).toBe(15)
+  })
+
+  it('writes the association config the UI reads', async () => {
+    await runDemoReset(env.DB, seed)
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'association_name'`
+    ).first<{ value: string }>()
+    expect(JSON.parse(row!.value)).toContain('Demo — ')
+  })
+
+  it('writes the seed banner copy into config', async () => {
+    await runDemoReset(env.DB, seed)
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'demo_banner'`
+    ).first<{ value: string }>()
+    expect(JSON.parse(row!.value)).toBe(seed.bannerText)
+  })
+
+  it('does not set instance_preset', async () => {
+    await runDemoReset(env.DB, seed)
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'instance_preset'`
+    ).first()
+    expect(row).toBeNull()
+  })
+
+  it('deletes a pre-existing instance_preset row', async () => {
+    // Not merely "does not write one": a demo tenant deployed before the presets
+    // were retired (or one that briefly ran with INSTANCE_PRESET set) still has
+    // the row. Leaving it behind keeps ensureInstancePreset returning a preset
+    // slug forever, so the tenant never converges on "no preset". The reset must
+    // delete it so demo tenants old and new end up in the same state.
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO association_config (key, value) VALUES ('instance_preset', ?)`
+    ).bind(JSON.stringify('election_officials')).run()
+
+    await runDemoReset(env.DB, seed)
+
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'instance_preset'`
+    ).first()
+    expect(row).toBeNull()
+  })
+
+  it('omits state_coverage for a single-state seed', async () => {
+    // nj-county-clerks is a STATE = "NJ" tenant, so it carries no coverage list.
+    expect(seed.stateCoverage).toBeNull()
+    await runDemoReset(env.DB, seed)
+    const row = await env.DB.prepare(
+      `SELECT value FROM association_config WHERE key = 'state_coverage'`
+    ).first()
+    expect(row).toBeNull()
+  })
+
+  it('attaches engagement only to bills that exist', async () => {
+    // Bill-linked inserts are INSERT ... SELECT guarded on the bill existing,
+    // so with no bills seeded they must all no-op rather than throw.
+    await runDemoReset(env.DB, seed)
+    expect(await countRows('comments')).toBe(0)
+    expect(await countRows('feed_events')).toBe(0)
+
+    const first = seed.comments[0].externalId
+    await seedBill({ externalId: first, billNumber: 'A1129', title: 'Drop boxes', state: 'NJ', priority: 'high' })
+    await runDemoReset(env.DB, seed)
+    expect(await countRows('comments')).toBeGreaterThan(0)
+    expect(await countRows('feed_events')).toBeGreaterThan(0)
+  })
+
+  it('is idempotent', async () => {
+    await runDemoReset(env.DB, seed)
+    await runDemoReset(env.DB, seed)
+    expect(await countRows('users')).toBe(15)
+    expect(await countRows('roles')).toBe(5)
+  })
+
+  it('derives its keep-lists from the seed, not a hardcoded id list', async () => {
+    // The "delete non-seed rows" steps used to hardcode the NJ ids, which would
+    // make a second seed delete its own roster on every reset. Run a variant seed
+    // whose roster, roles, and custom fields differ and check both directions.
+    const variant: DemoSeed = {
+      ...seed,
+      users: [...seed.users, {
+        id: 'other-user', email: 'other@demo.example', name: 'Other Persona',
+        role: 'member', subtitle: 'Clerk · Elsewhere', createdDaysAgo: 5,
+        canVote: true, lastActiveDaysAgo: 1,
+      }],
+      roles: [{ id: 'other-role', name: 'Other Role' }],
+      userRoles: [{ userId: 'other-user', roleId: 'other-role' }],
+      customFields: [{
+        id: 'other-cf', name: 'Other Field', slug: 'other-field',
+        type: 'text', options: null, displayOrder: 1,
+      }],
+      customFieldValues: [],
+    }
+    await runDemoReset(env.DB, variant)
+    const db = getDb(env.DB)
+
+    const roleIds = (await db.select().from(roles).all()).map((r) => r.id)
+    expect(roleIds).toEqual(['other-role'])
+
+    const fieldIds = (await db.select().from(customFieldDefinitions).all()).map((f) => f.id)
+    expect(fieldIds).toEqual(['other-cf'])
+
+    const userIds = (await db.select().from(users).all()).map((u) => u.id)
+    expect(userIds).toContain('other-user')
+    expect(userIds).toContain('demo-user')
+    expect(userIds.length).toBe(16)
+  })
+
+  it('restores comment reactions', async () => {
+    const first = seed.comments[0]
+    await seedBill({ externalId: first.externalId, billNumber: 'A1129', title: 'Drop boxes', state: 'NJ', priority: 'high' })
+    await runDemoReset(env.DB, seed)
+    expect(seed.reactions.length).toBeGreaterThan(0)
+    expect(await countRows('comment_reactions')).toBeGreaterThan(0)
   })
 })

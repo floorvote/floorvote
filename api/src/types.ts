@@ -42,6 +42,7 @@ export type Env = {
   INSTANCE_DOMAINS?: string
   CALENDAR_DEFAULT_TZ?: string
   DEMO_MODE?: string
+  DEMO_SEED?: string  // demoSeeds registry key; defaults to nj-county-clerks
   LIST_CACHE_TTL?: string  // GET /bills page-query cache TTL (seconds); default 0 (off), set per-tenant to enable
   EMAIL_PROVIDER?: string
   EMAIL?: import('./lib/email').CloudflareEmailBinding

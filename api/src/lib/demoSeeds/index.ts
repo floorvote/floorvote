@@ -1,0 +1,17 @@
+import type { DemoSeed } from './types'
+import { NJ_COUNTY_CLERKS_SEED } from './njCountyClerks'
+
+export type { DemoSeed } from './types'
+
+export const DEMO_SEEDS: Record<string, DemoSeed> = {
+  'nj-county-clerks': NJ_COUNTY_CLERKS_SEED,
+}
+
+/** Tenants deployed before DEMO_SEED existed keep working. */
+export const DEFAULT_DEMO_SEED = 'nj-county-clerks'
+
+export function resolveDemoSeed(slug: string | undefined): DemoSeed {
+  const seed = DEMO_SEEDS[slug ?? DEFAULT_DEMO_SEED]
+  if (!seed) throw new Error(`Unknown DEMO_SEED "${slug}"`)
+  return seed
+}

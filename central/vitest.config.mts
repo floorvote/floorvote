@@ -28,5 +28,13 @@ export default defineConfig({
   test: {
     pool: cloudflarePool(),
     exclude: ['web/**', 'node_modules/**'],
+    // Vitest's 5s default is too tight for this suite. Several tests seed
+    // hundreds of D1 rows to exercise chunking and pagination boundaries
+    // ("batches sends in chunks of 100" inserts 250 bills), which runs in well
+    // under a second locally but has blown 5s on a contended CI runner — a
+    // timeout failure that reads as a broken test rather than a slow machine.
+    // Raised rather than retried: these failures are duration, not flake, so a
+    // real hang still fails, just later.
+    testTimeout: 20_000,
   },
 })

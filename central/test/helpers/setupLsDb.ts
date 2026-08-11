@@ -13,6 +13,10 @@ import migration0011 from '../../migrations-legiscan/0011_resend_usage_daily.sql
 import migration0012 from '../../migrations-legiscan/0012_tenant_stats_probe.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
 import migration0014 from '../../migrations-legiscan/0014_tenant_stats_excluded.sql?raw'
+// 0015 is an index-only migration and is intentionally skipped here. 0016 is
+// required: it adds bill_texts.fetch_error, which the drizzle schema now writes
+// on every insert, so omitting it breaks any test that touches bill_texts.
+import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -40,5 +44,6 @@ export async function setupLsDb(): Promise<void> {
     parseMigration(migration0012, '0012_tenant_stats_probe'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
     parseMigration(migration0014, '0014_tenant_stats_excluded'),
+    parseMigration(migration0016, '0016_bill_texts_fetch_error'),
   ])
 }

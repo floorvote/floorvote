@@ -28,7 +28,26 @@ export async function applyPresetConfig(db: AppDb, slug: string): Promise<boolea
   return true
 }
 
+/**
+ * Returned by `ensureInstancePreset` for a DEMO_MODE tenant. Deliberately not a
+ * key in PRESETS: a demo tenant's AI config comes from its seed, not a preset,
+ * but it *is* configured, so callers that gate on "config in place" (the AI gate
+ * in queue/processor.ts) must still see a truthy value.
+ */
+export const DEMO_SEED_PRESET = 'demo-seed'
+
 export async function ensureInstancePreset(env: Env, db: AppDb): Promise<string | null> {
+  // A DEMO_MODE tenant owns ai_context, relevance_question, tag_taxonomy, and
+  // keywords through its seed (api/src/lib/demoSeeds/), and runDemoReset writes
+  // no instance_preset row — so on a fresh demo tenant the bootstrap branch below
+  // would fire on the very first GET /config and overwrite all four with preset
+  // values. That is a live hazard, not a theoretical one: tenants.md recommends
+  // setting INSTANCE_PRESET on every tenant and demo.md says to deploy a demo
+  // "exactly as in Adding tenants". The damage self-heals at the next 06:00 reset
+  // with no error logged anywhere, so a new demo would spend its first day on the
+  // wrong taxonomy. Write nothing here; the seed is the only writer.
+  if (env.DEMO_MODE === 'true') return DEMO_SEED_PRESET
+
   const row = await db
     .select()
     .from(associationConfig)

@@ -22,19 +22,27 @@ import { Calendar, calendarLoader } from './pages/Calendar'
 import { useAuth } from './hooks/useAuth'
 import { SidebarRefreshProvider } from './context/SidebarRefreshContext'
 import { FeedUnreadProvider } from './context/FeedUnreadContext'
-import { ConfigProvider } from './context/ConfigContext'
+import { ConfigProvider, ConfigContext } from './context/ConfigContext'
 import { NavProgressBar } from './components/NavProgressBar'
 import { useNavPendingCursor } from './hooks/useNavPendingCursor'
 import { UnsavedTextProvider } from './lib/unsavedText'
 import { legalDocs, hasTerms, hasPrivacy } from './lib/legalDocs'
 import { useFocusTrap } from './lib/useFocusTrap'
-import { useState, useRef, lazy, Suspense } from 'react'
+import { useState, useRef, useContext, lazy, Suspense } from 'react'
 
-function DemoBanner() {
+// Exported for App.demoBanner.test.tsx, which pins the "render nothing until
+// config resolves" guard directly against DemoContext/ConfigContext rather
+// than through a full App/router mount.
+export function DemoBanner() {
   const { demoMode } = useDemo()
+  const { config } = useContext(ConfigContext)
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('demo-banner-dismissed') === 'true')
 
-  if (!demoMode || dismissed) return null
+  const text = config?.demoBanner
+  // Render nothing (not fallback copy) until config resolves — otherwise a
+  // non-NJ tenant would flash New Jersey's banner text while GET /config is
+  // still in flight.
+  if (!demoMode || dismissed || !text) return null
 
   function dismiss() {
     sessionStorage.setItem('demo-banner-dismissed', 'true')
@@ -56,7 +64,7 @@ function DemoBanner() {
       color: color.linkBlue,
       flexShrink: 0,
     }}>
-      <span>You're exploring a demo instance — data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.</span>
+      <span>{text}</span>
       <button
         onClick={dismiss}
         style={{ background: 'none', border: 'none', color: color.linkBlue, cursor: 'pointer', padding: '0 4px', fontSize: fontSize.lg, lineHeight: 1 }}

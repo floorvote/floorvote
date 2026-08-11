@@ -3,6 +3,7 @@ import { bills } from '../db/schema'
 import { getDb } from '../db/client'
 import { centralFetch } from './centralFetch'
 import { runDemoReset } from './demoReset'
+import { resolveDemoSeed } from './demoSeeds'
 import type { Env } from '../types'
 
 export async function demoResetAndSeed(env: Env): Promise<{ ok: boolean; billsSeeded: boolean }> {
@@ -33,6 +34,6 @@ export async function demoResetAndSeed(env: Env): Promise<{ ok: boolean; billsSe
       billsSeeded = res.ok
     }
   }
-  await runDemoReset(env.DB)
+  await runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))
   return { ok: true, billsSeeded }
 }

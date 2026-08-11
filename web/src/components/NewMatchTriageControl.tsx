@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react'
 import { apiFetch } from '../lib/api'
 import { CompactPrioritySelect } from './CompactPrioritySelect'
 import { color, radius, fontSize } from '../styles/tokens'
+import { useDemo } from '../context/DemoContext'
 
 interface NewMatchTriageControlProps {
   billId: string
@@ -18,9 +19,12 @@ interface NewMatchTriageControlProps {
  * to the plain CompactPrioritySelect shown everywhere else.
  */
 export function NewMatchTriageControl({ billId, current, onChange, onDismiss }: NewMatchTriageControlProps) {
+  const { demoLocked } = useDemo()
+
   function handleDismiss(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
+    if (demoLocked) return
     apiFetch(`/bills/${billId}/triage-dismiss`, { method: 'PATCH' }).then(() => onDismiss())
   }
 
@@ -29,19 +33,22 @@ export function NewMatchTriageControl({ billId, current, onChange, onDismiss }: 
       display: 'inline-flex', flexDirection: 'column', minWidth: 116,
       border: `1px solid ${color.borderDefault}`, borderRadius: radius.sm, overflow: 'hidden', background: color.white,
     }}>
-      <CompactPrioritySelect billId={billId} current={current} onChange={onChange} seamless />
+      <CompactPrioritySelect billId={billId} current={current} onChange={onChange} seamless disabled={demoLocked} />
       <span style={{ height: 1, background: color.borderDefault }} />
       <button
         type="button"
         onClick={handleDismiss}
         onMouseDown={(e) => e.stopPropagation()}
         title="Reviewed — no priority"
+        disabled={demoLocked}
         style={{
-          border: 'none', background: color.white, cursor: 'pointer', textAlign: 'left',
+          border: 'none', background: color.white, textAlign: 'left',
           padding: '4px 10px', whiteSpace: 'nowrap', color: color.textMuted, fontSize: fontSize.sm,
+          cursor: demoLocked ? 'not-allowed' : 'pointer',
+          opacity: demoLocked ? 0.5 : 1,
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = color.surfaceSubtle; e.currentTarget.style.color = color.textSecondary }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = color.white; e.currentTarget.style.color = color.textMuted }}
+        onMouseEnter={(e) => { if (demoLocked) return; e.currentTarget.style.background = color.surfaceSubtle; e.currentTarget.style.color = color.textSecondary }}
+        onMouseLeave={(e) => { if (demoLocked) return; e.currentTarget.style.background = color.white; e.currentTarget.style.color = color.textMuted }}
       >
         ✕ Dismiss
       </button>

@@ -263,6 +263,32 @@ describe('processCentralNotification', () => {
     expect(row!.lastAiTextHash).toBe('hash-abc123')
   })
 
+  // Regression: an unreadable stored document used to leave BOTH ai_processed_at
+  // and ai_skip_reason null, which is the same state as "never attempted". 40
+  // Indiana bills sat in that state looking untouched while every one of them had
+  // actually failed — the state site had served an HTML shell under a .pdf URL.
+  it('records ai_skip_reason when Gemini cannot parse the document at all', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    const { processBill } = await import('../../src/lib/llm')
+    // Verbatim shape of the error observed from the tenant worker.
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(
+        new Error('{"error":{"code":400,"message":"The document has no pages.","status":"INVALID_ARGUMENT"}}'),
+        { status: 400 },
+      )
+    )
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.aiSkipReason).toBe('unreadable_document')
+    expect(row!.aiProcessedAt).toBeNull()
+    expect(row!.tenantSummary).toBeNull()
+  })
+
   it('transient (non-permanent) AI errors throw AiShedError so processQueue can retry delivery', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

@@ -3,6 +3,7 @@ import { useSearchParams, useLoaderData } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
 import { useMultiState } from '../context/ConfigContext'
+import { useDemo } from '../context/DemoContext'
 import { useAuth } from '../hooks/useAuth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -29,6 +30,7 @@ export function calendarLoader(): Promise<CalendarEvent[]> {
 export function Calendar() {
   usePageTitle('Calendar')
   const { user } = useAuth()
+  const { demoLocked } = useDemo()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const isMobile = useIsBreakpoint('max', 768)
 
@@ -220,6 +222,7 @@ export function Calendar() {
   }
 
   async function deleteEvent(e: CalendarEvent) {
+    if (demoLocked) return
     await apiFetch(`/calendar/events/${e.id}`, { method: 'DELETE' })
     setPopover(null)
     setDayPopover(null)
@@ -227,6 +230,7 @@ export function Calendar() {
   }
 
   async function restoreEvent(e: CalendarEvent) {
+    if (demoLocked) return
     await apiFetch(`/calendar/events/${e.id}/restore`, { method: 'POST' })
     setPopover(null)
     setDayPopover(null)

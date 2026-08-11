@@ -23,6 +23,7 @@ import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './typ
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
+import { useDemo } from '../../context/DemoContext'
 import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 
@@ -68,6 +69,7 @@ export function updateKnownStates(counts: FacetCounts) {
 
 export function BillList() {
   usePageTitle('Bills')
+  const { demoLocked } = useDemo()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [allBills, setAllBills] = useState<Bill[]>([])
@@ -302,6 +304,7 @@ export function BillList() {
   }, [refreshSidebar])
 
   const handleVote = useCallback(async (billId: string, pos: 'support' | 'neutral' | 'oppose') => {
+    if (demoLocked) return
     const bill = allBillsRef.current.find(b => b.id === billId)
     if (!bill) return
     const prevVote = bill.myVote
@@ -329,7 +332,7 @@ export function BillList() {
       return
     }
     refreshSidebar()
-  }, [refreshSidebar])
+  }, [refreshSidebar, demoLocked])
 
   const handlePositionChange = useCallback((billId: string, position: string | null) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, position } : b))

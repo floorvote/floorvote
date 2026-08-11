@@ -7,7 +7,6 @@ import { ensureInstancePreset } from '../lib/instancePreset'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
-import { isSuperadminRequest } from '../lib/superadminRequest'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
@@ -47,7 +46,7 @@ configRouter.get('/', async (c) => {
   await ensureInstancePreset(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, taxonomyItems] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, taxonomyItems] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -55,6 +54,7 @@ configRouter.get('/', async (c) => {
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_vocabulary')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'org_noun')).get(),
+    db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_banner')).get(),
     loadEffectiveTaxonomy(db),
   ])
 
@@ -153,8 +153,9 @@ configRouter.get('/', async (c) => {
   }
 
   const demoMode = c.env.DEMO_MODE === 'true'
-  const currentUser = c.get('user')
-  const demoLocked = demoMode && !(await isSuperadminRequest(c))
+  // No superadmin exemption: nobody edits a demo through the GUI, and
+  // POST /api/internal/demo-reset is the repair mechanism.
+  const demoLocked = demoMode
 
   // Modules can be `Record<string, boolean>` (legacy) or
   // `Record<string, { enabled: boolean, settings?: Record<string, unknown> }>` (new).
@@ -179,7 +180,16 @@ configRouter.get('/', async (c) => {
 
   const tagTaxonomy = taxonomyItems.map(t => t.name)
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled, tagTaxonomy })
+  let demoBanner: string | undefined
+  if (demoBannerRow) {
+    try {
+      demoBanner = JSON.parse(demoBannerRow.value) as string
+    } catch {
+      demoBanner = demoBannerRow.value
+    }
+  }
+
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled, tagTaxonomy, demoBanner })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central

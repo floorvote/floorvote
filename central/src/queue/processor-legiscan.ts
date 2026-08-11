@@ -1,5 +1,5 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getBill } from '../lib/legiscan'
+import { getBill, getBillText } from '../lib/legiscan'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
@@ -44,6 +44,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
       docId: billTexts.docId,
       stateLink: billTexts.stateLink,
       mime: billTexts.mime,
+      textSize: billTexts.textSize,
     })
       .from(billTexts)
       .where(and(eq(billTexts.billId, msg.billId), isNull(billTexts.r2Key)))
@@ -51,7 +52,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
 
     for (const t of textsToDownload) {
       if (t.stateLink) {
-        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db)
+        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db, t.textSize)
       }
     }
 
@@ -325,7 +326,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
     if (!stored?.r2Key && t.state_link) {
-      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db)
+      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db, t.text_size ?? null)
     }
   }
 
@@ -445,6 +446,56 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
   await notifyLsTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
 }
 
+/**
+ * A browser-like User-Agent for state-site document fetches.
+ *
+ * Several legislature sites content-negotiate on User-Agent and answer
+ * non-browser clients with their JavaScript app shell — HTTP 200, and
+ * `content-type: text/html` even for a URL ending in `.pdf`. Indiana's
+ * iga.in.gov does exactly this: a bare fetch of a bill PDF returns 691 bytes of
+ * "You need to enable JavaScript to run this app", while the same URL with a
+ * plausible browser UA returns the real 180KB PDF. The UA has to look real —
+ * a truncated `Mozilla/5.0 Chrome/140.0` still gets the shell.
+ */
+const TEXT_FETCH_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+
+/**
+ * Decide whether a fetched payload is plausibly the document we asked for.
+ * Returns null when it looks fine, or a short human-readable reason when it
+ * does not.
+ *
+ * This exists because "HTTP 200" is not evidence of success. The bot-wall case
+ * above returned 200 with a tiny HTML body under a `.pdf` URL, we stored it, and
+ * the tenant then handed it to Gemini as a PDF — which failed with "The document
+ * has no pages" for every Indiana bill. Storing an r2_key for that payload is
+ * worse than storing nothing, because the download path only retries texts
+ * `WHERE r2_key IS NULL`, so the bad object is sticky.
+ */
+export function validateTextPayload(
+  body: ArrayBuffer,
+  mime: string,
+  declaredSize: number | null,
+): string | null {
+  const bytes = new Uint8Array(body)
+  if (bytes.byteLength === 0) return 'empty response body'
+
+  const head = new TextDecoder('latin1').decode(bytes.slice(0, 5))
+  if (mime.includes('pdf') && head !== '%PDF-') {
+    const peek = new TextDecoder('latin1').decode(bytes.slice(0, 60)).replace(/\s+/g, ' ')
+    return `expected a PDF, got ${JSON.stringify(peek)}`
+  }
+
+  // A body far smaller than LegiScan's declared size is the generic shape of an
+  // error/interstitial page standing in for the document. Only applied when the
+  // declared size is big enough for the ratio to mean something.
+  if (declaredSize && declaredSize > 4096 && bytes.byteLength * 4 < declaredSize) {
+    return `body far smaller than declared size (${bytes.byteLength} vs ${declaredSize} bytes)`
+  }
+
+  return null
+}
+
 async function downloadTextToR2(
   billId: number,
   docId: number,
@@ -452,30 +503,87 @@ async function downloadTextToR2(
   mime: string,
   env: LsEnv,
   db: LsDb,
+  declaredSize: number | null = null,
 ): Promise<void> {
   const ext = mime.includes('pdf') ? 'pdf' : 'html'
   const r2Key = `bills/legiscan-${billId}/texts/${docId}.${ext}`
+  const attemptedAt = nowDb()
+
+  // Attempt 1: the state's own link, with a browser UA.
+  let body: ArrayBuffer | null = null
+  let contentType = ext === 'pdf' ? 'application/pdf' : 'text/html'
+  let failure: string | null = null
+
   try {
-    const res = await safeFetch(stateLink)
+    const res = await safeFetch(stateLink, { headers: { 'user-agent': TEXT_FETCH_UA } })
     if (!res.ok) {
-      console.warn(`[processor-ls] text fetch failed for doc ${docId}: ${res.status}`)
-      return
+      failure = `state_link HTTP ${res.status}`
+    } else {
+      const candidate = await res.arrayBuffer()
+      const invalid = validateTextPayload(candidate, mime, declaredSize)
+      if (invalid) {
+        failure = `state_link returned ${invalid}`
+      } else {
+        body = candidate
+        contentType = res.headers.get('content-type') ?? contentType
+      }
     }
-    const body = await res.arrayBuffer()
-    let contentType = res.headers.get('content-type') ?? (ext === 'pdf' ? 'application/pdf' : 'text/html')
-    // Server often omits charset; sniff from HTML meta tag so browsers decode correctly
-    if (ext === 'html' && !contentType.includes('charset')) {
-      const peek = new TextDecoder('latin1').decode(body.slice(0, 2048))
-      const m = peek.match(/charset=["']?([^"'\s;>]+)/i)
-      if (m) contentType = `text/html; charset=${m[1]}`
-    }
-    await env.BILLS_BUCKET.put(r2Key, body, {
-      httpMetadata: { contentType },
-    })
-    await db.update(billTexts).set({ r2Key }).where(eq(billTexts.docId, docId))
   } catch (err) {
-    console.error(`[processor-ls] failed to download text for doc ${docId}:`, err)
+    failure = `state_link fetch threw: ${err instanceof Error ? err.message : String(err)}`
   }
+
+  // Attempt 2: LegiScan's getBillText (base64). Costs one API call per document,
+  // so it only runs when the direct fetch produced nothing usable.
+  if (!body) {
+    console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to getBillText`)
+    try {
+      trackLsCall(db, 'getBillText', { docId })
+      const text = await getBillText(docId, env.LEGISCAN_API_KEY)
+      const decoded = base64ToBytes(text.doc)
+      const invalid = validateTextPayload(decoded.buffer as ArrayBuffer, text.mime || mime, text.text_size ?? declaredSize)
+      if (invalid) {
+        failure = `${failure}; getBillText also returned ${invalid}`
+      } else {
+        body = decoded.buffer as ArrayBuffer
+        contentType = text.mime || contentType
+        failure = null
+      }
+    } catch (err) {
+      failure = `${failure}; getBillText threw: ${err instanceof Error ? err.message : String(err)}`
+    }
+  }
+
+  if (!body) {
+    // Record the failure instead of leaving the row indistinguishable from
+    // "not downloaded yet" — that ambiguity is what let 40 unreadable Indiana
+    // bills look like they had simply never been processed.
+    console.error(`[processor-ls] giving up on doc ${docId}: ${failure}`)
+    await db.update(billTexts)
+      .set({ fetchError: failure, fetchAttemptedAt: attemptedAt })
+      .where(eq(billTexts.docId, docId))
+    return
+  }
+
+  // Server often omits charset; sniff from HTML meta tag so browsers decode correctly
+  if (ext === 'html' && !contentType.includes('charset')) {
+    const peek = new TextDecoder('latin1').decode(body.slice(0, 2048))
+    const m = peek.match(/charset=["']?([^"'\s;>]+)/i)
+    if (m) contentType = `text/html; charset=${m[1]}`
+  }
+  await env.BILLS_BUCKET.put(r2Key, body, {
+    httpMetadata: { contentType },
+  })
+  await db.update(billTexts)
+    .set({ r2Key, fetchError: null, fetchAttemptedAt: attemptedAt })
+    .where(eq(billTexts.docId, docId))
+}
+
+/** Decode base64 (as LegiScan returns document bytes) without Node Buffer. */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
 }
 
 async function notifyLsTenants(
