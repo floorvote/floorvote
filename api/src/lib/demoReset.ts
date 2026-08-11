@@ -182,9 +182,17 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // idiom so a seed row whose bill has not been ingested yet no-ops instead of
   // failing the batch.
 
-  // Bill priorities
+  // Bill priorities. Also clear the triage latch: PATCH /bills/:id/triage-dismiss
+  // is an allowed demo write, and it is the only allowed write that is otherwise
+  // irreversible — bills.triaged_at is what takes a bill OUT of the "New matches"
+  // worklist (newMatchWhere in billsApi/query.ts is `triaged_at IS NULL`), and
+  // demoResetAndSeed only re-seeds bills when the table is empty. Without this,
+  // one visitor dismissing each new match removes the triage experience from the
+  // demo permanently. NULL is the right baseline: no seed writes triagedAt, so a
+  // freshly ingested demo tenant has it NULL on every row.
   const priorityExtIds = seed.priorities.map((p) => p.externalId)
   await batch([
+    db.prepare(`UPDATE bills SET triaged_at = NULL, triaged_by = NULL`),
     ...seed.priorities.map((p) =>
       db.prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`).bind(p.priority, p.externalId),
     ),
