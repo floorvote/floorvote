@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
+import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 
 describe('lake-michigan seed registration', () => {
   it('is registered under its slug', () => {
@@ -117,6 +118,78 @@ describe('lake-michigan roster', () => {
     for (const f of s.customFields) {
       if (f.type === 'dropdown') expect(Array.isArray(f.options)).toBe(true)
       else expect(f.options).toBeNull()
+    }
+  })
+})
+
+describe('lake-michigan bills', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+  const extIds = () => s.priorities.map(p => p.externalId)
+
+  it('tracks 20 bills, every one with a priority', () => {
+    expect(s.priorities).toHaveLength(20)
+    for (const p of s.priorities) {
+      expect(['high', 'medium', 'low']).toContain(p.priority)
+      expect(p.externalId).toMatch(/^legiscan:\d+$/)
+    }
+    expect(new Set(extIds()).size).toBe(20)
+  })
+
+  it('spans all five jurisdictions', () => {
+    const byJur = new Map<string, number>()
+    for (const b of LM_BILLS) byJur.set(b.jurisdiction, (byJur.get(b.jurisdiction) ?? 0) + 1)
+    expect([...byJur.keys()].sort()).toEqual(['IL', 'IN', 'MI', 'US', 'WI'])
+    expect(byJur.get('MI')).toBe(5)
+    expect(byJur.get('WI')).toBe(4)
+    expect(byJur.get('IL')).toBe(4)
+    expect(byJur.get('IN')).toBe(3)
+    expect(byJur.get('US')).toBe(4)
+  })
+
+  it('schedules hearings only on bills that are still live', () => {
+    const live = new Set(LM_BILLS.filter(b => b.live).map(b => b.externalId))
+    const hearings = s.calendarEvents.filter(e => e.source === 'hearing')
+    expect(hearings.length).toBeGreaterThanOrEqual(6)
+    for (const h of hearings) {
+      expect(h.externalId, `hearing ${h.id} must be on a live bill`).not.toBeNull()
+      expect(live.has(h.externalId!), `hearing ${h.id} on ${h.externalId}`).toBe(true)
+      expect(h.offsetDays, `hearing ${h.id} must be upcoming`).toBeGreaterThan(0)
+    }
+  })
+
+  it('references only known bills and users from bill-linked rows', () => {
+    const known = new Set(extIds())
+    const uids = new Set(s.users.map(u => u.id))
+    for (const p of s.positions) {
+      expect(known.has(p.externalId), `position ${p.id}`).toBe(true)
+      expect(uids.has(p.setBy), `position setBy ${p.setBy}`).toBe(true)
+    }
+    for (const v of s.customFieldValues) {
+      expect(known.has(v.externalId), `cfv ${v.externalId}`).toBe(true)
+      expect(uids.has(v.setBy), `cfv setBy ${v.setBy}`).toBe(true)
+    }
+    for (const e of s.calendarEvents) {
+      if (e.externalId !== null) expect(known.has(e.externalId), `event ${e.id}`).toBe(true)
+    }
+  })
+
+  it('uses only defined custom field ids and valid dropdown options', () => {
+    const byId = new Map(s.customFields.map(f => [f.id, f]))
+    for (const v of s.customFieldValues) {
+      const f = byId.get(v.fieldId)
+      expect(f, `field ${v.fieldId}`).toBeDefined()
+      if (f!.type === 'dropdown') expect(f!.options).toContain(v.value)
+      if (f!.type === 'binary') expect(v.value).toBe('1')
+    }
+  })
+
+  it('gives every bill_updated event a system author and real change records', () => {
+    const upd = s.feedEvents.filter(e => e.type === 'bill_updated')
+    expect(upd.length).toBeGreaterThanOrEqual(20)
+    for (const e of upd) {
+      expect(e.userId).toBe('system')
+      const changes = (e.metadata as { changes?: unknown[] }).changes
+      expect(Array.isArray(changes) && changes!.length > 0, `event ${e.id}`).toBe(true)
     }
   })
 })
