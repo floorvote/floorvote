@@ -1,7 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
-import { stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX } from '../../../shared/feedUtils'
+import {
+  stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
+} from '../../../shared/feedUtils'
+import { LM_USER_ROLES } from '../../src/lib/demoSeeds/lakeMichigan/roster'
 
 describe('lake-michigan seed registration', () => {
   it('is registered under its slug', () => {
@@ -225,6 +231,28 @@ describe('lake-michigan derived feed events', () => {
     }
   })
 
+  it('carries three hearing notices, detailed straight from the calendar', () => {
+    const hearings = s.feedEvents.filter(e => e.type === 'hearing_added')
+    expect(hearings).toHaveLength(3)
+    for (const e of hearings) {
+      expect(e.userId).toBe('system')
+      const cal = s.calendarEvents.find(c => c.source === 'hearing' && c.externalId === e.externalId)
+      expect(cal, `hearing event ${e.id} needs a calendar entry`).toBeDefined()
+      expect(e.metadata).toEqual({ time: cal!.time, location: cal!.location, description: cal!.description })
+      // The point of the type change: no invented LegiScan action string rides along.
+      expect(e.metadata, `${e.id} must not carry bill_updated changes`).not.toHaveProperty('changes')
+    }
+  })
+
+  it('invents no action string anywhere in the bill_updated changes', () => {
+    for (const e of s.feedEvents.filter(x => x.type === 'bill_updated')) {
+      const changes = (e.metadata as { changes: Array<{ newValue: string | null }> }).changes
+      for (const ch of changes) {
+        expect(ch.newValue ?? '', `${e.id}`).not.toMatch(/Hearing notice issued/)
+      }
+    }
+  })
+
   it('gives every feed event a unique id and a known bill', () => {
     const ids = s.feedEvents.map(e => e.id)
     expect(new Set(ids).size).toBe(ids.length)
@@ -288,8 +316,96 @@ describe('lake-michigan discussion', () => {
     expect(seen.size).toBe(s.votes.length)
   })
 
-  it('uses only valid member vote positions', () => {
+  it('uses only valid member vote positions, and exercises all three', () => {
     for (const v of s.votes) expect(['support', 'oppose', 'neutral']).toContain(v.position)
+    // A demo that sells the voting feature has to show its third state somewhere.
+    for (const p of ['support', 'oppose', 'neutral']) {
+      expect(s.votes.some(v => v.position === p), `no ${p} vote anywhere`).toBe(true)
+    }
+  })
+
+  // A comment longer than the preview cap renders on its feed card cut off with a
+  // mid-sentence ellipsis. Nothing in this seed is long enough to need that.
+  it('keeps every comment inside the feed preview, so no card ends mid-sentence', () => {
+    for (const c of s.comments) {
+      const text = stripHtml(c.content)
+      expect(text.length, `${c.id} overflows the ${COMMENT_PREVIEW_MAX}-char preview: ${text}`)
+        .toBeLessThanOrEqual(COMMENT_PREVIEW_MAX)
+    }
+  })
+})
+
+/**
+ * These three checks are the ones with teeth. The derivation tests above recompute
+ * a derived value with the same helper that produced it, so they lock behaviour in
+ * but cannot catch bad hand-written data. Mentions ARE hand-written, and the three
+ * ways they can be wrong — self-notification, a half-finished role fan-out, and a
+ * row/markup mismatch — are all invisible on a casual read of the seed.
+ */
+describe('lake-michigan mention fan-out', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+  const commentsById = new Map(s.comments.map(c => [c.id, c]))
+  const roleMembers = (roleId: string) =>
+    new Set(LM_USER_ROLES.filter(ur => ur.roleId === roleId).map(ur => ur.userId))
+  /** Every `data-id="role:x"` / `data-id="user:x"` mention span in a comment. */
+  const spansIn = (html: string) =>
+    [...html.matchAll(/data-id="(user|role):([^"]+)"/g)].map(m => ({ sourceType: m[1], sourceId: m[2] }))
+  /** Who a mention on `comment` should reach: role membership (or the named user)
+   *  minus the comment's own author, exactly as api/src/lib/mentions.ts resolves it. */
+  const audience = (span: { sourceType: string; sourceId: string }, authorUserId: string) => {
+    const set = span.sourceType === 'role' ? roleMembers(span.sourceId) : new Set([span.sourceId])
+    set.delete(authorUserId)
+    return set
+  }
+
+  it('never notifies a comment author of their own comment', () => {
+    for (const m of s.mentions) {
+      const author = commentsById.get(m.commentId)!.userId
+      // api/src/lib/mentions.ts filters the author out (`rm.userId !== authorUserId`),
+      // so the app can never write such a row. A seeded one would show the demo
+      // visitor an unread "you were mentioned" pointing at their own comment,
+      // because notificationsApi.ts selects every comment_mentions row for them.
+      expect(m.userId, `mention ${m.id} on ${m.commentId} targets its own author`).not.toBe(author)
+    }
+  })
+
+  it('fans a role mention out to every member of that role except the author', () => {
+    const pairs = new Set(
+      s.mentions.filter(m => m.sourceType === 'role').map(m => `${m.commentId}|${m.sourceId}`),
+    )
+    expect(pairs.size).toBeGreaterThanOrEqual(8)
+    for (const pair of pairs) {
+      const [commentId, roleId] = pair.split('|')
+      const got = s.mentions
+        .filter(m => m.commentId === commentId && m.sourceType === 'role' && m.sourceId === roleId)
+        .map(m => m.userId)
+      // A partial fan-out looks fine in the UI but means some teammates silently
+      // never get notified, so the whole membership has to be present.
+      expect(new Set(got), `@${roleId} on ${commentId}`)
+        .toEqual(audience({ sourceType: 'role', sourceId: roleId }, commentsById.get(commentId)!.userId))
+      expect(got.length, `duplicate rows for @${roleId} on ${commentId}`).toBe(new Set(got).size)
+    }
+  })
+
+  it('has mention rows for every mention span, and a span for every mention row', () => {
+    for (const c of s.comments) {
+      const rows = s.mentions.filter(m => m.commentId === c.id)
+      const spans = spansIn(c.content)
+      // Span → rows: markup the app would resolve into notifications must have them.
+      for (const span of spans) {
+        const got = rows
+          .filter(m => m.sourceType === span.sourceType && m.sourceId === span.sourceId)
+          .map(m => m.userId)
+        expect(new Set(got), `${c.id} span ${span.sourceType}:${span.sourceId} has no matching rows`)
+          .toEqual(audience(span, c.userId))
+      }
+      // Rows → span: a row with no markup behind it is a notification the reader
+      // can't explain when they open the comment.
+      const spanKeys = new Set(spans.map(x => `${x.sourceType}:${x.sourceId}`))
+      for (const m of rows) {
+        expect(spanKeys.has(`${m.sourceType}:${m.sourceId}`), `mention ${m.id} has no span in ${c.id}`).toBe(true)
+      }
+    }
   })
 })
 
@@ -335,11 +451,49 @@ describe('lake-michigan feed density', () => {
 
   it('mixes legislative activity with discussion in the recent window', () => {
     const recent = s.feedEvents.filter(e => e.daysAgo <= 14)
-    expect(recent.some(e => e.type === 'bill_updated')).toBe(true)
+    // "Legislative activity" is any provider-sourced (passive) event, not
+    // bill_updated specifically — the three recent ones are hearing notices, and
+    // none of the 20 bills happens to have a real LegiScan action inside 14 days.
+    expect(recent.some(e => PASSIVE_EVENT_TYPES.has(e.type as FeedEvent['type']))).toBe(true)
     expect(recent.some(e => e.type === 'comment_added')).toBe(true)
   })
 
   it('mentions teams, not just people', () => {
     expect(s.mentions.filter(m => m.sourceType === 'role').length).toBeGreaterThanOrEqual(8)
+  })
+})
+
+// The one thing a pure data test cannot settle: whether D1 accepts the row. The
+// feed_events type CHECK constraint is rebuilt by migration (0043 added the hearing
+// types, 0053 last touched it), so `hearing_added` has to survive a real reset
+// against a real migrated schema, not just typecheck.
+describe('lake-michigan hearing notices through a real demo reset', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('writes every hearing_added row, with the calendar details intact', async () => {
+    const expected = s.feedEvents.filter(e => e.type === 'hearing_added')
+    expect(expected.length).toBeGreaterThan(0)
+    // The insert is guarded on the bill existing, so the bills have to be there.
+    for (const e of expected) {
+      await seedBill({ externalId: e.externalId, billNumber: e.externalId, title: e.externalId })
+    }
+
+    await runDemoReset(env.DB, s)
+
+    const rows = await env.DB.prepare(
+      `SELECT id, user_id, metadata FROM feed_events WHERE type = 'hearing_added' ORDER BY id`
+    ).all<{ id: string; user_id: string; metadata: string }>()
+    expect(rows.results.map(r => r.id)).toEqual(expected.map(e => e.id).sort())
+    for (const r of rows.results) {
+      expect(r.user_id).toBe('system')
+      const m = JSON.parse(r.metadata) as Record<string, unknown>
+      expect(Object.keys(m).sort()).toEqual(['description', 'location', 'time'])
+      expect(String(m.description)).toMatch(/hearing/i)
+    }
   })
 })

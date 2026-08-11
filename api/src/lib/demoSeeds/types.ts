@@ -62,7 +62,11 @@ export type DemoSeedMention = {
 
 export type DemoSeedFeedEvent = {
   id: string
-  type: 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated'
+  /** A subset of the feed_events CHECK constraint (migration 0053) — the types a
+   *  seed has reason to write. `hearing_added` carries `{ time, location,
+   *  description }`, matching what the calendar reconciler writes in
+   *  queue/processor.ts and what billCardModel's hearingLine() reads. */
+  type: 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added'
   externalId: string
   userId: string
   metadata: Record<string, unknown>

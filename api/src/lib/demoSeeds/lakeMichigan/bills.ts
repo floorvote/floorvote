@@ -5,6 +5,10 @@ import type { DemoSeedCalendarEvent, DemoSeedFeedEvent } from '../types'
 // string below is taken verbatim from the LegiScan bulk JSON recorded in
 // .superpowers/sdd/lm-bill-facts.md — do not paraphrase or invent facts here.
 //
+// The one exception is LM_CALENDAR_EVENTS, which is disclosed fiction: the demo
+// needs upcoming hearings, and LegiScan has none scheduled. Those entries name a
+// plausible committee and room; everything else here is verbatim.
+//
 // `daysAgo` values for bill_updated events are computed from the manifest's real
 // action dates relative to the reset date 2026-08-11 (see the task report for the
 // full date -> daysAgo table). Where the manifest's own "status ... as of DATE"
@@ -146,7 +150,11 @@ export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
   { id: 'lm-hearing-1', externalId: 'legiscan:2029026', source: 'hearing', offsetDays: 2,  time: '10:00:00', location: 'Michigan House Office Building, Anderson Committee Room, Lansing', description: 'House Local Government Committee — hearing' },
   { id: 'lm-hearing-2', externalId: 'legiscan:2055958', source: 'hearing', offsetDays: 5,  time: '10:00:00', location: 'Michigan House Office Building, Mackinac Committee Room, Lansing', description: 'House Natural Resources and Agriculture Committee — hearing' },
   { id: 'lm-hearing-3', externalId: 'legiscan:2095619', source: 'hearing', offsetDays: 9,  time: '10:00:00', location: 'Michigan State Capitol, Senate Appropriations Room, Lansing', description: 'Senate Committee of the Whole — hearing' },
-  { id: 'lm-hearing-4', externalId: 'legiscan:1906052', source: 'hearing', offsetDays: 13, time: '10:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Rules Committee — hearing' },
+  // Energy & Environment, not Rules: Rules is where this bill was re-referred to
+  // die (twice), so a hearing notice from Rules would be the least plausible thing
+  // in the seed. Energy & Environment is the substantive IL House committee that
+  // handles these — HB5268's own history shows Rules referring an amendment there.
+  { id: 'lm-hearing-4', externalId: 'legiscan:1906052', source: 'hearing', offsetDays: 13, time: '10:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Energy & Environment Committee — hearing' },
   { id: 'lm-hearing-5', externalId: 'legiscan:2061476', source: 'hearing', offsetDays: 18, time: '10:00:00', location: 'Indiana Statehouse, Room 156-B, Indianapolis', description: 'House Public Health Committee — hearing' },
   { id: 'lm-hearing-6', externalId: 'legiscan:2150744', source: 'hearing', offsetDays: 26, time: '10:00:00', location: 'Rayburn House Office Building, Washington DC', description: 'Subcommittee on Water, Wildlife and Fisheries — hearing' },
 
@@ -291,14 +299,6 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-u-il-hb1175-4', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 116, metadata: { changes: [
     chg('action_added', { newValue: 'Rule 19(a) / Re-referred to Rules Committee' }),
   ] } },
-  // Hearing-notice record, not a manifest action string — same synthesized
-  // convention as this bill's `lm-hearing-4` calendar entry (offsetDays: 13),
-  // which is itself invented scheduling rather than a literal LegiScan date.
-  // Keeps the top of the feed showing legislative movement on a live,
-  // high-priority bill rather than only Michigan's.
-  { id: 'lm-fe-u-il-hb1175-5', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 3, metadata: { changes: [
-    chg('action_added', { newValue: 'Hearing notice issued — House Rules Committee' }),
-  ] } },
 
   // IL HB2516 — PFAS & Contaminants, medium, enacted (Public Act 104-0231)
   { id: 'lm-fe-u-il-hb2516-1', type: 'bill_updated', externalId: 'legiscan:1952725', userId: 'system', daysAgo: 413, metadata: { changes: [
@@ -341,10 +341,6 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Authored by Representative Jackson C' }),
     chg('action_added', { newValue: 'Coauthored by Representative Aylesworth' }),
     chg('action_added', { newValue: 'First reading: referred to Committee on Public Health' }),
-  ] } },
-  // Hearing-notice record — see the note on lm-fe-u-il-hb1175-5.
-  { id: 'lm-fe-u-in-hb1124-2', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 3, metadata: { changes: [
-    chg('action_added', { newValue: 'Hearing notice issued — House Public Health Committee' }),
   ] } },
 
   // IN SB0006 — Septic & Wastewater, medium, enacted (Public Law 65)
@@ -413,10 +409,41 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-u-us-hb8876-3', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 21, metadata: { changes: [
     chg('action_added', { newValue: 'Subcommittee Hearings Held' }),
   ] } },
-  // Hearing-notice record — see the note on lm-fe-u-il-hb1175-5.
-  { id: 'lm-fe-u-us-hb8876-4', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 4, metadata: { changes: [
-    chg('action_added', { newValue: 'Hearing notice issued — Subcommittee on Water, Wildlife and Fisheries' }),
-  ] } },
+]
+
+/**
+ * Hearing notices for three of the six scheduled hearings, so the top of the feed
+ * shows movement on live Illinois, Indiana, and federal bills rather than only
+ * Michigan's.
+ *
+ * These are `hearing_added` rather than `bill_updated`, which is what the calendar
+ * reconciler emits for a real hearing (queue/processor.ts) — so nothing here
+ * fabricates a LegiScan action string. Every field is read out of the matching
+ * `LM_CALENDAR_EVENTS` entry, which makes the feed row and the calendar entry
+ * incapable of disagreeing.
+ *
+ * `date` is deliberately absent. The calendar row's date is computed at reset time
+ * from `offsetDays`; a date baked into this static metadata would be evaluated when
+ * the module loads and would drift from it. billCardModel's hearingLine() drops
+ * absent parts, so the row still reads "Hearing scheduled: 10:00 AM · <location> ·
+ * <committee> — hearing".
+ */
+const hearingNotice = (id: string, calendarId: string, daysAgo: number): DemoSeedFeedEvent => {
+  const h = LM_CALENDAR_EVENTS.find(e => e.id === calendarId)
+  if (!h || h.source !== 'hearing' || h.externalId === null) {
+    throw new Error(`hearingNotice: no bill-linked hearing calendar entry ${calendarId}`)
+  }
+  return {
+    id, type: 'hearing_added', externalId: h.externalId, userId: 'system',
+    metadata: { time: h.time, location: h.location, description: h.description },
+    daysAgo,
+  }
+}
+
+export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
+  hearingNotice('lm-fe-h-il-hb1175', 'lm-hearing-4', 3),
+  hearingNotice('lm-fe-h-in-hb1124', 'lm-hearing-5', 3),
+  hearingNotice('lm-fe-h-us-hb8876', 'lm-hearing-6', 4),
 ]
 
 // Hand-written priority_set and position_set events. Task 4 imports this name.

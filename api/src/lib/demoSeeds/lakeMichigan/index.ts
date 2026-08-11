@@ -7,6 +7,7 @@ import {
   LM_CALENDAR_EVENTS,
   LM_CUSTOM_FIELD_VALUES,
   LM_ENGAGEMENT_EVENTS,
+  LM_HEARING_EVENTS,
   LM_POSITIONS,
   LM_PRIORITIES,
 } from './bills'
@@ -20,7 +21,8 @@ import { LM_COMMENTS, LM_MENTIONS, LM_NOTES, LM_REACTIONS, LM_VOTES } from './di
 const commentEvents: DemoSeedFeedEvent[] = LM_COMMENTS.map((c) => {
   const mentioned = LM_MENTIONS.filter(m => m.commentId === c.id).map(m => m.userId)
   return {
-    id: `lm-fe-c-${c.id}`,
+    // `lm-c-12` → `lm-fe-c-12`, rather than the doubled `lm-fe-c-lm-c-12`.
+    id: `lm-fe-c-${c.id.replace(/^lm-c-/, '')}`,
     type: 'comment_added' as const,
     externalId: c.externalId,
     userId: c.userId,
@@ -59,7 +61,10 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   users: LM_USERS, roles: LM_ROLES, userRoles: LM_USER_ROLES, customFields: LM_CUSTOM_FIELDS,
   priorities: LM_PRIORITIES, positions: LM_POSITIONS, votes: LM_VOTES,
   comments: LM_COMMENTS, reactions: LM_REACTIONS, mentions: LM_MENTIONS,
-  feedEvents: [...LM_BILL_UPDATED_EVENTS, ...LM_ENGAGEMENT_EVENTS, ...commentEvents, ...voteMilestones],
+  feedEvents: [
+    ...LM_BILL_UPDATED_EVENTS, ...LM_HEARING_EVENTS, ...LM_ENGAGEMENT_EVENTS,
+    ...commentEvents, ...voteMilestones,
+  ],
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,
   calendarEvents: LM_CALENDAR_EVENTS,
 }
