@@ -50,3 +50,69 @@ describe('lake-michigan seed registration', () => {
     expect(m['calendar']).toBe(true)
   })
 })
+
+describe('lake-michigan roster', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+
+  it('has 15 staff, one of them the shared demo visitor account', () => {
+    expect(s.users).toHaveLength(15)
+    expect(s.users.filter(u => u.id === 'demo-user')).toHaveLength(1)
+  })
+
+  it('gives everyone a plain job title, not a Title · Org compound', () => {
+    for (const u of s.users) {
+      expect(u.subtitle.length).toBeGreaterThan(3)
+      expect(u.subtitle).not.toContain('·')
+    }
+  })
+
+  it('has three admins and the rest members', () => {
+    expect(s.users.filter(u => u.role === 'admin')).toHaveLength(3)
+  })
+
+  it('has five jurisdiction teams and three single-word working groups', () => {
+    const names = s.roles.map(r => r.name)
+    expect(s.roles).toHaveLength(8)
+    for (const t of ['Michigan Team', 'Wisconsin Team', 'Illinois Team', 'Indiana Team', 'Federal Team']) {
+      expect(names).toContain(t)
+    }
+    for (const g of ['Infrastructure', 'Contaminants', 'Habitat']) {
+      expect(names).toContain(g)
+      expect(g.split(' ')).toHaveLength(1)
+    }
+  })
+
+  it('puts every person on exactly one jurisdiction team', () => {
+    const jur = new Set(s.roles.filter(r => r.name.endsWith(' Team')).map(r => r.id))
+    for (const u of s.users) {
+      const mine = s.userRoles.filter(ur => ur.userId === u.id && jur.has(ur.roleId))
+      expect(mine, `${u.id} jurisdiction teams`).toHaveLength(1)
+    }
+  })
+
+  it('references only real user and role ids in userRoles', () => {
+    const uids = new Set(s.users.map(u => u.id))
+    const rids = new Set(s.roles.map(r => r.id))
+    for (const ur of s.userRoles) {
+      expect(uids.has(ur.userId), `user ${ur.userId}`).toBe(true)
+      expect(rids.has(ur.roleId), `role ${ur.roleId}`).toBe(true)
+    }
+  })
+
+  it('defines five custom fields with Policy Concerns pinned', () => {
+    expect(s.customFields).toHaveLength(5)
+    const pinned = s.customFields.filter(f => f.pinned)
+    expect(pinned).toHaveLength(1)
+    expect(pinned[0].name).toBe('Policy Concerns')
+    // Working Group options must match the three working-group roles exactly.
+    const wg = s.customFields.find(f => f.slug === 'working-group')!
+    expect(wg.options).toEqual(['Infrastructure', 'Contaminants', 'Habitat'])
+  })
+
+  it('gives dropdowns options and non-dropdowns none', () => {
+    for (const f of s.customFields) {
+      if (f.type === 'dropdown') expect(Array.isArray(f.options)).toBe(true)
+      else expect(f.options).toBeNull()
+    }
+  })
+})
