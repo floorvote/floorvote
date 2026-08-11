@@ -1,25 +1,21 @@
 import type { DemoSeed, DemoSeedComment, DemoSeedMention, DemoSeedReaction } from '../types'
 
 /**
- * Comments, reactions, mentions, votes, and notes for the Lake Michigan seed.
+ * Comments, reactions, mentions, votes, and notes for all 20 Lake Michigan bills.
  *
- * This task covers the nine Michigan and Wisconsin bills — Michigan's five are
- * all live and get near-term, working-the-bill chatter; Wisconsin's four have
- * all concluded (two enacted, two dead at the end-of-biennium deadline), so
- * their thread is about outcomes and what to reintroduce. Illinois, Indiana,
- * and federal bills are appended in Task 6.
+ * Each thread's register follows the bill's real posture. Live bills with a
+ * scheduled hearing (Michigan's HB4427, HB5308, and HB5674; Illinois HB1175;
+ * Indiana HB1124; federal HB8876) get near-term, working-the-bill chatter —
+ * testimony, who covers the room, what the ask is. Enacted bills get
+ * outcome-and-implementation threads. The two Wisconsin bills that died at the
+ * end-of-biennium deadline, and Indiana's withdrawn beach-parking bill, get short
+ * post-mortems about what to reintroduce. The federal bills are appropriations-
+ * and-programs bills, so their register is funding and timing, not statutory text.
  *
- * Comments stay short and plain — one idea, a sentence or three — because the
- * point of the demo is to show the feature surface (comments, reactions,
- * mentions, votes, notes), not to relitigate the bills in memo form.
- *
- * This task adds the eleven Illinois, Indiana, and federal bills. Illinois
- * and Indiana each get a live high-priority bill with fresh, near-term
- * chatter ahead of a real scheduled hearing; their enacted bills get
- * outcome-and-implementation threads; Indiana's withdrawn beach-parking bill
- * gets a short thread about why it was pulled. The federal bills are appropriations-and-
- * programs bills, so their register is funding and timing, not statutory
- * text.
+ * Comments stay short and plain — one idea, a sentence or three, under the
+ * 120-character feed preview cap — because the point of the demo is to show the
+ * feature surface (comments, reactions, mentions, votes, notes), not to
+ * relitigate the bills in memo form.
  */
 
 // ---------------------------------------------------------------------------
@@ -27,22 +23,33 @@ import type { DemoSeed, DemoSeedComment, DemoSeedMention, DemoSeedReaction } fro
 // ---------------------------------------------------------------------------
 const hb4427: DemoSeedComment[] = [
   { id: 'lm-c-1', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
-    content: "<p>Local Government hearing is later this week. I'll have written testimony ready the day before.</p>", daysAgo: 3 },
+    content: "<p>Senate Local Government has us on its agenda. I'll have written testimony ready the day before.</p>", daysAgo: 3 },
   { id: 'lm-c-2', externalId: 'legiscan:2029026', userId: 'lm-user-wq',
     content: '<p>Beach closures were up along our stretch last summer. This would tell people the same day, not two days later.</p>', daysAgo: 3 },
   { id: 'lm-c-3', externalId: 'legiscan:2029026', userId: 'lm-user-comms',
     content: '<p>If this passes the Senate, the brown alert name makes a clean, simple press release. People will get it immediately.</p>', daysAgo: 2 },
   { id: 'lm-c-4', externalId: 'legiscan:2029026', userId: 'lm-user-ed',
-    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> can someone cover the hearing in person? I am traveling that day.</p>', daysAgo: 2 },
+    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> can someone cover the hearing in person? I\'m traveling that day.</p>', daysAgo: 2 },
   { id: 'lm-c-5', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
     content: "<p>I've got it, I'll be there.</p>", daysAgo: 2 },
+  // The mention sits mid-sentence on purpose: stripHtml() replaces the span with a
+  // space, so a mention immediately before a period renders "…@Devon Clarke ." on
+  // the feed card.
   { id: 'lm-c-6', externalId: 'legiscan:2029026', userId: 'demo-user',
-    content: '<p>Testimony is submitted. Thanks for the fast turnaround, <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Clarke">@Devon Clarke</span>.</p>', daysAgo: 1 },
+    content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Clarke">@Devon Clarke</span> for the fast turnaround.</p>', daysAgo: 1 },
 ]
 
+// The two stacked pills the demo needs: four people on ✅ for lm-c-6 (the newest
+// card in the feed) and three on 👍 for lm-c-2, so the reaction row shows a real
+// count badge rather than a line of lone 1s.
 const hb4427Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-1', commentId: 'lm-c-2', userId: 'demo-user', emoji: '👍', daysAgo: 2 },
+  { id: 'lm-r-38', commentId: 'lm-c-2', userId: 'lm-user-la1', emoji: '👍', daysAgo: 2 },
+  { id: 'lm-r-39', commentId: 'lm-c-2', userId: 'lm-user-comms', emoji: '👍', daysAgo: 2 },
   { id: 'lm-r-2', commentId: 'lm-c-6', userId: 'lm-user-ed', emoji: '✅', daysAgo: 1 },
+  { id: 'lm-r-35', commentId: 'lm-c-6', userId: 'lm-user-comms', emoji: '✅', daysAgo: 1 },
+  { id: 'lm-r-36', commentId: 'lm-c-6', userId: 'lm-user-wq', emoji: '✅', daysAgo: 1 },
+  { id: 'lm-r-37', commentId: 'lm-c-6', userId: 'lm-user-dep', emoji: '✅', daysAgo: 1 },
 ]
 
 const hb4427Mentions: DemoSeedMention[] = [
@@ -69,7 +76,7 @@ const hb5308: DemoSeedComment[] = [
   { id: 'lm-c-7', externalId: 'legiscan:2055958', userId: 'demo-user',
     content: '<p>It cleared the House 105 to 1 back in April. That margin is our best argument in the Senate committee.</p>', daysAgo: 5 },
   { id: 'lm-c-8', externalId: 'legiscan:2055958', userId: 'lm-user-la1',
-    content: "<p>Testimony deadline is end of the week. I can have a draft to you a couple of days before that.</p>", daysAgo: 4 },
+    content: "<p>Testimony deadline is on the calendar now. I can have a draft to you two days ahead of it.</p>", daysAgo: 4 },
   { id: 'lm-c-9', externalId: 'legiscan:2055958', userId: 'lm-user-gov',
     content: '<p>Boaters associations are going to like this one—a decal fee that actually funds prevention work.</p>', daysAgo: 4 },
   { id: 'lm-c-10', externalId: 'legiscan:2055958', userId: 'lm-user-res',
@@ -77,7 +84,7 @@ const hb5308: DemoSeedComment[] = [
   { id: 'lm-c-11', externalId: 'legiscan:2055958', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-habitat" data-label="Habitat">@Habitat</span> should we flag this decal fee model to the other states we track?</p>', daysAgo: 3 },
   { id: 'lm-c-12', externalId: 'legiscan:2055958', userId: 'lm-user-res',
-    content: "<p>Good idea, I'll draft a quick comparison for the coalition call.</p>", daysAgo: 3 },
+    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Marcus Bell">@Marcus Bell</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
 ]
 
 const hb5308Reactions: DemoSeedReaction[] = [
@@ -89,6 +96,8 @@ const hb5308Mentions: DemoSeedMention[] = [
   { id: 'lm-m-5', commentId: 'lm-c-11', userId: 'lm-user-res', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
   { id: 'lm-m-6', commentId: 'lm-c-11', userId: 'lm-user-prog', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
   { id: 'lm-m-7', commentId: 'lm-c-11', userId: 'lm-user-data', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
+  // Person-to-person reply mention: Grace answering the demo visitor by name.
+  { id: 'lm-m-36', commentId: 'lm-c-12', userId: 'demo-user', sourceType: 'user', sourceId: 'demo-user', daysAgo: 3 },
 ]
 
 const hb5308Votes: DemoSeed['votes'] = [
@@ -110,13 +119,16 @@ const sb0771: DemoSeedComment[] = [
     content: '<p><span data-type="mention" data-id="role:lm-role-infra" data-label="Infrastructure">@Infrastructure</span> flagging for the tracker, this just moved to third reading.</p>', daysAgo: 50 },
   { id: 'lm-c-16', externalId: 'legiscan:2095619', userId: 'lm-user-gov',
     content: '<p>Added. The counties association is the group to watch here—they carry the evaluation cost objection.</p>', daysAgo: 49 },
-  // The oppose side of the split shown by sb0771Votes below.
+  // The oppose side of the split shown by sb0771Votes below — one reason per
+  // dissenter, so neither oppose vote sits there unexplained.
   { id: 'lm-c-89', externalId: 'legiscan:2095619', userId: 'lm-user-gov',
-    content: '<p>Voting no. My counties cannot absorb the evaluation cost, and the substitute leaves that to rulemaking.</p>', daysAgo: 44 },
+    content: "<p>I'm a no on this. My counties can't absorb the evaluation cost, and the substitute leaves it to rulemaking.</p>", daysAgo: 44 },
+  { id: 'lm-c-91', externalId: 'legiscan:2095619', userId: 'lm-user-la2',
+    content: '<p>No from me too. Wisconsin ran this assessment model and the county cost-share never materialized.</p>', daysAgo: 43 },
   // The bill has sat on third reading order since June 17, so the ask is about
   // the floor vote, not about reaching third reading.
   { id: 'lm-c-17', externalId: 'legiscan:2095619', userId: 'lm-user-grants',
-    content: "<p>Testimony's filed. It has been on third reading order since June, so a cost-share amendment is the ask now.</p>", daysAgo: 3 },
+    content: "<p>Testimony is in the record. It's been on third reading order since June, so a cost-share amendment is the ask.</p>", daysAgo: 3 },
   { id: 'lm-c-18', externalId: 'legiscan:2095619', userId: 'lm-user-wq',
     content: '<p>Third reading order is good news. This basin has needed septic oversight for years.</p>', daysAgo: 2 },
 ]
@@ -134,8 +146,10 @@ const sb0771Mentions: DemoSeedMention[] = [
 ]
 
 // A genuine internal split: the mandate is right on the merits, but the evaluation
-// cost lands on counties, and the two people who work that relationship voted no.
-// lm-c-89 and lm-c-16 carry the reason.
+// cost lands on counties. Denise (lm-user-gov) works that relationship directly and
+// says so in lm-c-16 and lm-c-89; Sofia (lm-user-la2) is on the Infrastructure
+// working group that owns this bill's theme and brings the Wisconsin precedent in
+// lm-c-91. Both oppose votes have a comment behind them.
 const sb0771Votes: DemoSeed['votes'] = [
   { id: 'lm-v-10', externalId: 'legiscan:2095619', userId: 'demo-user', position: 'support', daysAgo: 48 },
   { id: 'lm-v-11', externalId: 'legiscan:2095619', userId: 'lm-user-gc', position: 'neutral', daysAgo: 46 },
@@ -166,9 +180,9 @@ const hb5674Reactions: DemoSeedReaction[] = [
 // ---------------------------------------------------------------------------
 const hb4768: DemoSeedComment[] = [
   { id: 'lm-c-22', externalId: 'legiscan:2041788', userId: 'lm-user-la1',
-    content: '<p>Still sitting in Natural Resources and Tourism. No hearing scheduled yet.</p>', daysAgo: 200 },
+    content: "<p>Natural Resources and Tourism hasn't touched this since referral. No hearing scheduled yet.</p>", daysAgo: 200 },
   { id: 'lm-c-23', externalId: 'legiscan:2041788', userId: 'lm-user-res',
-    content: '<p>Worth checking back on this each session. Microplastics testing keeps getting introduced but rarely moves.</p>', daysAgo: 150 },
+    content: "<p>Microplastics testing keeps getting introduced and rarely moves. I'd check back each session.</p>", daysAgo: 150 },
   { id: 'lm-c-24', externalId: 'legiscan:2041788', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> should we keep pushing this one, or let it sit at low priority?</p>', daysAgo: 20 },
   { id: 'lm-c-25', externalId: 'legiscan:2041788', userId: 'lm-user-la1',
@@ -199,8 +213,13 @@ const sb56: DemoSeedComment[] = [
     content: "<p>Utilities can start applying for capitalization grant funds now. I'll flag this to our municipal partners.</p>", daysAgo: 400 },
 ]
 
+// 🎉 is reserved for the two enacted-bill announcements a colleague would actually
+// celebrate (here and lm-c-29), which is also where a second and third person pile
+// onto the same emoji.
 const sb56Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-10', commentId: 'lm-c-26', userId: 'demo-user', emoji: '✅', daysAgo: 405 },
+  { id: 'lm-r-42', commentId: 'lm-c-26', userId: 'lm-user-ed', emoji: '🎉', daysAgo: 405 },
+  { id: 'lm-r-43', commentId: 'lm-c-26', userId: 'lm-user-grants', emoji: '🎉', daysAgo: 404 },
   { id: 'lm-r-11', commentId: 'lm-c-27', userId: 'lm-user-dep', emoji: '✅', daysAgo: 404 },
   { id: 'lm-r-12', commentId: 'lm-c-27', userId: 'lm-user-wq', emoji: '👍', daysAgo: 403 },
 ]
@@ -221,7 +240,7 @@ const ab131: DemoSeedComment[] = [
   { id: 'lm-c-29', externalId: 'legiscan:2006749', userId: 'lm-user-wq',
     content: '<p>Signed into law as 2026 Wisconsin Act 201. Strongest PFAS framework we track at the state level.</p>', daysAgo: 127 },
   { id: 'lm-c-30', externalId: 'legiscan:2006749', userId: 'lm-user-gc',
-    content: "<p>Curious how much of this gets left to rulemaking. Worth watching the agency's implementation timeline.</p>", daysAgo: 127 },
+    content: "<p>Curious how much of this gets left to rulemaking. The agency's implementation timeline is the thing to watch.</p>", daysAgo: 127 },
   { id: 'lm-c-31', externalId: 'legiscan:2006749', userId: 'lm-user-data',
     content: '<p>Pulling together a one-pager on what the testing requirements actually cover for the newsletter.</p>', daysAgo: 120 },
   { id: 'lm-c-32', externalId: 'legiscan:2006749', userId: 'lm-user-comms',
@@ -232,6 +251,8 @@ const ab131: DemoSeedComment[] = [
 
 const ab131Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-13', commentId: 'lm-c-29', userId: 'demo-user', emoji: '✅', daysAgo: 127 },
+  { id: 'lm-r-44', commentId: 'lm-c-29', userId: 'lm-user-la2', emoji: '🎉', daysAgo: 127 },
+  { id: 'lm-r-45', commentId: 'lm-c-29', userId: 'lm-user-ed', emoji: '🎉', daysAgo: 126 },
   { id: 'lm-r-14', commentId: 'lm-c-32', userId: 'lm-user-wq', emoji: '👍', daysAgo: 117 },
 ]
 
@@ -263,8 +284,12 @@ const ab129: DemoSeedComment[] = [
     content: "<p>Frustrating, but not surprising given how late in session it landed. January's the right call.</p>", daysAgo: 135 },
 ]
 
+// 😕 is the seed's only negative reaction and appears only on the two bill deaths
+// (here and lm-c-38) — the emoji set has to cover a bad outcome, not just approval.
 const ab129Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '👀', daysAgo: 140 },
+  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '😕', daysAgo: 140 },
+  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '😕', daysAgo: 139 },
   { id: 'lm-r-16', commentId: 'lm-c-36', userId: 'lm-user-la2', emoji: '👍', daysAgo: 138 },
 ]
 
@@ -295,27 +320,33 @@ const sb628: DemoSeedComment[] = [
 
 const sb628Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '👀', daysAgo: 140 },
+  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '😕', daysAgo: 141 },
 ]
 
 // ---------------------------------------------------------------------------
 // IL HB1175 — legiscan:1906052 (Great Lakes coal-ash protection, live)
 // ---------------------------------------------------------------------------
 const ilHb1175: DemoSeedComment[] = [
+  // No countdown in the prose: the hearing's date and this comment's date both
+  // slide with the nightly reset, so any "in N weeks" phrasing is wrong every night.
   { id: 'lm-c-41', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
-    content: '<p>Energy and Environment hearing is in less than two weeks. Time to lock in our written testimony.</p>', daysAgo: 5 },
+    content: '<p>Energy and Environment hearing notice just landed. Time to lock in our written testimony.</p>', daysAgo: 5 },
   { id: 'lm-c-42', externalId: 'legiscan:1906052', userId: 'lm-user-gc',
     content: '<p>Checking whether the coal ash language tracks the federal rule or goes further. Should know in a day or two.</p>', daysAgo: 4 },
   { id: 'lm-c-43', externalId: 'legiscan:1906052', userId: 'lm-user-gov',
-    content: '<p>Utility lobbyists are already working the committee. We should not wait for the hearing to make our case.</p>', daysAgo: 3 },
+    content: "<p>Utility lobbyists are already working the committee. We shouldn't wait for the hearing to make our case.</p>", daysAgo: 3 },
   { id: 'lm-c-44', externalId: 'legiscan:1906052', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-il" data-label="Illinois Team">@Illinois Team</span> can we get a one-pager on the coal ash sites near the lake before the hearing?</p>', daysAgo: 3 },
   { id: 'lm-c-45', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
     content: "<p>Taking that. I'll start from our shoreline survey and add the discharge permits for each site.</p>", daysAgo: 2 },
 ]
 
+// The third stacked pill, on the newest Illinois card: three people on ✅.
 const ilHb1175Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-18', commentId: 'lm-c-43', userId: 'demo-user', emoji: '👍', daysAgo: 3 },
   { id: 'lm-r-19', commentId: 'lm-c-45', userId: 'lm-user-gov', emoji: '✅', daysAgo: 2 },
+  { id: 'lm-r-40', commentId: 'lm-c-45', userId: 'demo-user', emoji: '✅', daysAgo: 2 },
+  { id: 'lm-r-41', commentId: 'lm-c-45', userId: 'lm-user-gc', emoji: '✅', daysAgo: 1 },
 ]
 
 const ilHb1175Mentions: DemoSeedMention[] = [
@@ -341,13 +372,14 @@ const ilSb4025: DemoSeedComment[] = [
   { id: 'lm-c-47', externalId: 'legiscan:2111275', userId: 'lm-user-gc',
     content: '<p>Odd detail: the compliance timeline runs ahead of the federal lead pipe rule. Pulling the text to be sure.</p>', daysAgo: 30 },
   { id: 'lm-c-48', externalId: 'legiscan:2111275', userId: 'lm-user-grants',
-    content: '<p>Money is the easy part. Most of our municipal partners do not have crews to replace lines this fast.</p>', daysAgo: 20 },
+    content: "<p>Money is the easy part. Most of our municipal partners don't have crews to replace lines this fast.</p>", daysAgo: 20 },
   { id: 'lm-c-49', externalId: 'legiscan:2111275', userId: 'demo-user',
     content: '<p>Good template for other Great Lakes states still working on lead line funding. Worth sharing with Michigan and Indiana.</p>', daysAgo: 10 },
 ]
 
 const ilSb4025Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-20', commentId: 'lm-c-46', userId: 'demo-user', emoji: '✅', daysAgo: 30 },
+  { id: 'lm-r-46', commentId: 'lm-c-46', userId: 'lm-user-gov', emoji: '🎉', daysAgo: 30 },
   { id: 'lm-r-21', commentId: 'lm-c-47', userId: 'lm-user-dep', emoji: '👍', daysAgo: 29 },
 ]
 
@@ -371,7 +403,7 @@ const ilHb5268: DemoSeedComment[] = [
     content: "<p>No position needed yet—nothing in the amendment changes the interstate compact question we'd care about.</p>", daysAgo: 80 },
   // The reason behind the oppose votes below.
   { id: 'lm-c-90', externalId: 'legiscan:2109237', userId: 'lm-user-dep',
-    content: '<p>Voting no. Even a narrow sale sets a diversion precedent under the compact, which we cannot walk back.</p>', daysAgo: 87 },
+    content: "<p>Voting no. Even a narrow sale sets a diversion precedent under the compact, and we can't walk that back.</p>", daysAgo: 87 },
   { id: 'lm-c-53', externalId: 'legiscan:2109237', userId: 'demo-user',
     content: '<p>Still stuck in Rules. Checking back next month.</p>', daysAgo: 6 },
 ]
@@ -397,13 +429,13 @@ const ilHb2516: DemoSeedComment[] = [
   // Effective 2025-08-15; this comment is dated 45 days before the 2026-08-11
   // reset, so the act was ten months old when it was written, not a year.
   { id: 'lm-c-54', externalId: 'legiscan:1952725', userId: 'lm-user-dep',
-    content: '<p>Public Act 104-0231 has been in effect since last August. Worth checking compliance rates for the newsletter.</p>', daysAgo: 45 },
+    content: "<p>Public Act 104-0231 has been in effect since last August. Let's pull compliance rates for the newsletter.</p>", daysAgo: 45 },
   { id: 'lm-c-55', externalId: 'legiscan:1952725', userId: 'lm-user-gc',
     content: '<p>The product categories covered are broader than I remembered. Pulling the list for our PFAS working group.</p>', daysAgo: 45 },
   { id: 'lm-c-56', externalId: 'legiscan:1952725', userId: 'lm-user-comms',
     content: '<p><span data-type="mention" data-id="role:lm-role-contam" data-label="Contaminants">@Contaminants</span> can someone confirm which retailers have flagged compliance issues?</p>', daysAgo: 40 },
   { id: 'lm-c-57', externalId: 'legiscan:1952725', userId: 'lm-user-wq',
-    content: '<p>Two came up on our compliance calls. Let me confirm with the state before we name them in print.</p>', daysAgo: 38 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-comms" data-label="Renee Barron">@Renee Barron</span> two came up on our compliance calls. Let me confirm with the state first.</p>', daysAgo: 38 },
 ]
 
 const ilHb2516Reactions: DemoSeedReaction[] = [
@@ -414,6 +446,8 @@ const ilHb2516Mentions: DemoSeedMention[] = [
   { id: 'lm-m-24', commentId: 'lm-c-56', userId: 'lm-user-dep', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
   { id: 'lm-m-25', commentId: 'lm-c-56', userId: 'lm-user-la1', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
   { id: 'lm-m-26', commentId: 'lm-c-56', userId: 'lm-user-wq', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
+  // Trevor answering Renee's @Contaminants ask by name.
+  { id: 'lm-m-37', commentId: 'lm-c-57', userId: 'lm-user-comms', sourceType: 'user', sourceId: 'lm-user-comms', daysAgo: 38 },
 ]
 
 const ilHb2516Votes: DemoSeed['votes'] = [
@@ -430,13 +464,17 @@ const inHb1124: DemoSeedComment[] = [
   { id: 'lm-c-58', externalId: 'legiscan:2061476', userId: 'lm-user-res',
     content: '<p>Public Health Committee hearing is set. Good bill to push hard on early.</p>', daysAgo: 5 },
   { id: 'lm-c-59', externalId: 'legiscan:2061476', userId: 'lm-user-prog',
-    content: '<p>I can line up two district facilities managers to testify. Reaching out today.</p>', daysAgo: 4 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-res" data-label="Grace Lin">@Grace Lin</span> I can line up two district facilities managers to testify. Reaching out today.</p>', daysAgo: 4 },
   { id: 'lm-c-60', externalId: 'legiscan:2061476', userId: 'lm-user-out',
     content: '<p>PTA coalition is already asking about this one. Happy to get them a fact sheet before the hearing.</p>', daysAgo: 3 },
+  // Deliberately not the MI HB4427 beat again (lm-c-4/lm-c-5, "can someone cover
+  // the hearing in person?" → "I've got it"). Those two threads sit within one
+  // screen of each other, so this one is a calendar collision resolved by someone
+  // who happens to already be in the city.
   { id: 'lm-c-61', externalId: 'legiscan:2061476', userId: 'demo-user',
-    content: '<p><span data-type="mention" data-id="role:lm-role-in" data-label="Indiana Team">@Indiana Team</span> who is attending the hearing in person?</p>', daysAgo: 3 },
+    content: '<p><span data-type="mention" data-id="role:lm-role-in" data-label="Indiana Team">@Indiana Team</span> the hearing collides with our budget call. Who can be in Indianapolis?</p>', daysAgo: 3 },
   { id: 'lm-c-62', externalId: 'legiscan:2061476', userId: 'lm-user-res',
-    content: "<p>I'll be there. Testimony's nearly done.</p>", daysAgo: 2 },
+    content: "<p>I'm in the city that morning for a school district meeting, so I can take the room.</p>", daysAgo: 2 },
 ]
 
 const inHb1124Reactions: DemoSeedReaction[] = [
@@ -445,6 +483,8 @@ const inHb1124Reactions: DemoSeedReaction[] = [
 ]
 
 const inHb1124Mentions: DemoSeedMention[] = [
+  // Miguel looping Grace in by name before the role fan-out below.
+  { id: 'lm-m-38', commentId: 'lm-c-59', userId: 'lm-user-res', sourceType: 'user', sourceId: 'lm-user-res', daysAgo: 4 },
   { id: 'lm-m-27', commentId: 'lm-c-61', userId: 'lm-user-res', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
   { id: 'lm-m-28', commentId: 'lm-c-61', userId: 'lm-user-prog', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
   { id: 'lm-m-29', commentId: 'lm-c-61', userId: 'lm-user-out', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
@@ -495,7 +535,7 @@ const inSb0188: DemoSeedComment[] = [
   { id: 'lm-c-69', externalId: 'legiscan:2065860', userId: 'demo-user',
     content: '<p>Low priority, so no loss. Leaving it here in case it comes back.</p>', daysAgo: 210 },
   { id: 'lm-c-70', externalId: 'legiscan:2065860', userId: 'lm-user-prog',
-    content: '<p>Worth finding out why it was pulled. If it was the fee cap, this comes back with local consent language.</p>', daysAgo: 205 },
+    content: '<p>Somebody should find out why it was pulled. If the fee cap was the problem, it comes back next session.</p>', daysAgo: 205 },
 ]
 
 const inSb0188Reactions: DemoSeedReaction[] = [
@@ -511,7 +551,7 @@ const usHb284: DemoSeedComment[] = [
   { id: 'lm-c-72', externalId: 'legiscan:1910159', userId: 'lm-user-grants',
     content: '<p>Appropriations season is coming up fast. We should get letters in before the subcommittee marks up anything else.</p>', daysAgo: 7 },
   { id: 'lm-c-73', externalId: 'legiscan:1910159', userId: 'lm-user-ed',
-    content: '<p>Still sitting in the Water Resources and Environment Subcommittee. Been there since January 2025.</p>', daysAgo: 6 },
+    content: '<p>This has been parked in the Water Resources and Environment Subcommittee since January 2025.</p>', daysAgo: 6 },
   { id: 'lm-c-74', externalId: 'legiscan:1910159', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-us" data-label="Federal Team">@Federal Team</span> any read on when this moves, or are we just watching the appropriations bill instead?</p>', daysAgo: 6 },
   { id: 'lm-c-75', externalId: 'legiscan:1910159', userId: 'lm-user-fed',
@@ -541,17 +581,20 @@ const usHb284Votes: DemoSeed['votes'] = [
 // US HB8876 — legiscan:2150744 (Aquatic Invasive Species Control and
 // Prevention Act of 2026, live)
 // ---------------------------------------------------------------------------
+// Thread order tracks the hearing notice, which fires at daysAgo 5: lm-c-76 (day 6)
+// predates it and so cannot know about a next hearing, and lm-c-80 (day 4) is the
+// reaction to it.
 const usHb8876: DemoSeedComment[] = [
   { id: 'lm-c-76', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
-    content: "<p>Subcommittee hearing already happened last month. Next one's on the calendar for later this year.</p>", daysAgo: 6 },
+    content: '<p>Subcommittee held its first hearing on this last month. No word yet on whether they take it up again.</p>', daysAgo: 6 },
   { id: 'lm-c-77', externalId: 'legiscan:2150744', userId: 'lm-user-res',
     content: "<p>Invasive mussel data from Michigan would be useful testimony material here too. I'll pull the numbers.</p>", daysAgo: 5 },
   { id: 'lm-c-78', externalId: 'legiscan:2150744', userId: 'lm-user-ed',
     content: '<p>We filed an amend position on this one—good bill, but the enforcement funding needs to scale with the mandate.</p>', daysAgo: 4 },
+  { id: 'lm-c-80', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
+    content: '<p>Hearing notice for the next one just went out. Marking the calendar.</p>', daysAgo: 4 },
   { id: 'lm-c-79', externalId: 'legiscan:2150744', userId: 'demo-user',
     content: "<p>Good sign that this got a bipartisan sponsor pair. Walberg and Elfreth don't often co-sponsor the same bill.</p>", daysAgo: 3 },
-  { id: 'lm-c-80', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
-    content: '<p>Hearing notice for the next one just went out. Marking the calendar.</p>', daysAgo: 1 },
 ]
 
 const usHb8876Reactions: DemoSeedReaction[] = [
@@ -578,7 +621,7 @@ const usHb583: DemoSeedComment[] = [
   { id: 'lm-c-83', externalId: 'legiscan:1933798', userId: 'lm-user-wq',
     content: '<p>Same-day beach notification is the single biggest ask we hear from the public. Would love to see this move.</p>', daysAgo: 50 },
   { id: 'lm-c-84', externalId: 'legiscan:1933798', userId: 'demo-user',
-    content: '<p>Still sitting in subcommittee since January 2025. No movement since.</p>', daysAgo: 45 },
+    content: '<p>Nothing has moved on this since the January 2025 subcommittee referral.</p>', daysAgo: 45 },
 ]
 
 const usHb583Reactions: DemoSeedReaction[] = [

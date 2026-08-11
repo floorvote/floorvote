@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
-import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import { LM_BILLS, LM_HEARING_NOTICE_SOURCES } from '../../src/lib/demoSeeds/lakeMichigan/bills'
 import {
   stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX, PASSIVE_EVENT_TYPES, type FeedEvent,
 } from '../../../shared/feedUtils'
@@ -232,23 +232,49 @@ describe('lake-michigan derived feed events', () => {
   })
 
   it('carries three hearing notices, detailed straight from the calendar', () => {
+    // Keyed on the calendar row `hearingNotice()` actually read, not on a row found
+    // by bill: a bill carrying two hearings would let a bill-keyed lookup match the
+    // wrong one and pass while the feed row and the calendar disagreed.
+    const sourceOf = new Map(LM_HEARING_NOTICE_SOURCES.map(x => [x.eventId, x.calendarId]))
     const hearings = s.feedEvents.filter(e => e.type === 'hearing_added')
     expect(hearings).toHaveLength(3)
+    expect(hearings.map(e => e.id).sort()).toEqual([...sourceOf.keys()].sort())
     for (const e of hearings) {
       expect(e.userId).toBe('system')
-      const cal = s.calendarEvents.find(c => c.source === 'hearing' && c.externalId === e.externalId)
-      expect(cal, `hearing event ${e.id} needs a calendar entry`).toBeDefined()
+      const cal = s.calendarEvents.find(c => c.id === sourceOf.get(e.id))
+      expect(cal, `hearing event ${e.id} needs its source calendar entry`).toBeDefined()
+      expect(cal!.source).toBe('hearing')
+      expect(e.externalId).toBe(cal!.externalId)
       expect(e.metadata).toEqual({ time: cal!.time, location: cal!.location, description: cal!.description })
       // The point of the type change: no invented LegiScan action string rides along.
       expect(e.metadata, `${e.id} must not carry bill_updated changes`).not.toHaveProperty('changes')
     }
   })
 
-  it('invents no action string anywhere in the bill_updated changes', () => {
+  it('lands each hearing notice ahead of thread that reacts to it', () => {
+    // Read top-down, a notice that arrives after the staff are already planning for
+    // the hearing makes them look clairvoyant and the system look late. Whether a
+    // given sentence is "reacting" is not machine-readable, but the necessary
+    // condition is: some comment on that bill has to postdate the notice.
+    for (const e of s.feedEvents.filter(x => x.type === 'hearing_added')) {
+      const after = s.comments.filter(c => c.externalId === e.externalId && c.daysAgo < e.daysAgo)
+      expect(after.length, `nothing in ${e.externalId}'s thread postdates notice ${e.id}`)
+        .toBeGreaterThan(0)
+    }
+  })
+
+  it('uses only real change types and never fabricates a hearing notice as one', () => {
+    // Hearing details ride on hearing_added rows, which is what the calendar
+    // reconciler emits. A bill_updated change claiming a hearing notice would be a
+    // provider action string the provider never produced. The changeType check is
+    // the general form of the same property: nothing outside ChangeRecord's
+    // vocabulary gets invented either.
     for (const e of s.feedEvents.filter(x => x.type === 'bill_updated')) {
-      const changes = (e.metadata as { changes: Array<{ newValue: string | null }> }).changes
+      const changes = (e.metadata as { changes: Array<{ changeType: string; newValue: string | null }> }).changes
       for (const ch of changes) {
-        expect(ch.newValue ?? '', `${e.id}`).not.toMatch(/Hearing notice issued/)
+        expect(['status_change', 'action_added', 'vote_added', 'amendment_added'], `${e.id} changeType`)
+          .toContain(ch.changeType)
+        expect(ch.newValue ?? '', `${e.id}`).not.toMatch(/hearing notice/i)
       }
     }
   })
@@ -264,10 +290,10 @@ describe('lake-michigan derived feed events', () => {
 describe('lake-michigan discussion', () => {
   const s = DEMO_SEEDS['lake-michigan']
 
-  it('keeps comments short — the demo sells features, not policy analysis', () => {
+  // Length is guarded by the COMMENT_PREVIEW_MAX check further down, which is the
+  // stricter cap; this one is only about register.
+  it('writes comments as conversation, not formatted policy analysis', () => {
     for (const c of s.comments) {
-      const text = stripHtml(c.content)
-      expect(text.length, `${c.id} is ${text.length} chars: ${text.slice(0, 60)}`).toBeLessThanOrEqual(420)
       expect(c.content, `${c.id} must not use bulleted analysis`).not.toContain('<ul>')
       expect(c.content, `${c.id} must not use bold headers`).not.toContain('<strong>')
     }

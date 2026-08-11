@@ -137,19 +137,35 @@ export const LM_CUSTOM_FIELD_VALUES: Array<{ externalId: string; fieldId: string
   { externalId: 'legiscan:1952725', fieldId: 'lm-cf-4', value: '2025-08-15', setBy: 'lm-user-dep', daysAgo: 361 }, // IL HB2516 — effective 8-15-2025
   { externalId: 'legiscan:2111275', fieldId: 'lm-cf-4', value: '2026-07-10', setBy: 'lm-user-dep', daysAgo: 32 },  // IL SB4025 — effective 7-10-2026
 
-  // Testimony Submitted (lm-cf-5, binary) — 3 bills with hearings scheduled
+  // Testimony Submitted (lm-cf-5, binary) — 3 bills the team has filed on. Each
+  // date is pinned to the thread that says so, since the flag and the comment are
+  // the same claim rendered two ways: lm-c-6 ("Testimony is submitted", daysAgo 1),
+  // lm-c-17 ("Testimony is in the record", daysAgo 3), and IL HB1175 where the ask
+  // to lock in written testimony is lm-c-41 at daysAgo 5 and the drafting is still
+  // in progress at lm-c-45 (daysAgo 2), so the filing has to postdate both.
   { externalId: 'legiscan:2029026', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 1 }, // MI HB4427
-  { externalId: 'legiscan:2095619', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 1 }, // MI SB0771
-  { externalId: 'legiscan:1906052', fieldId: 'lm-cf-5', value: '1', setBy: 'lm-user-dep', daysAgo: 2 }, // IL HB1175
+  { externalId: 'legiscan:2095619', fieldId: 'lm-cf-5', value: '1', setBy: 'demo-user',   daysAgo: 3 }, // MI SB0771
+  { externalId: 'legiscan:1906052', fieldId: 'lm-cf-5', value: '1', setBy: 'lm-user-dep', daysAgo: 1 }, // IL HB1175
 ]
 
 // Six hearings, restricted to live bills only. No Wisconsin bill gets a hearing —
 // all four have concluded (two enacted, two dead), and a future hearing on a bill
 // that died in March would be incoherent.
+//
+// Chamber matters here. MI HB4427 and HB5308 each passed the House and were
+// transmitted, so the "Referred To Committee On ..." action that follows is the
+// SENATE committee of that name — hence a Senate committee in a Senate venue (the
+// Binsfeld Office Building houses the Michigan Senate), which is also what their
+// own threads assume ("If this passes the Senate", "our best argument in the
+// Senate committee"). MI SB0771 gets no hearing at all: Committee of the Whole
+// already reported it favorably and placed it on Order of Third Reading on
+// 2026-06-17, so its next step is a floor vote, not a hearing. That sixth slot
+// goes to MI HB5674 instead — introduced, still sitting in the House Government
+// Operations Committee, and a House bill in a House committee.
 export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
-  { id: 'lm-hearing-1', externalId: 'legiscan:2029026', source: 'hearing', offsetDays: 2,  time: '10:00:00', location: 'Michigan House Office Building, Anderson Committee Room, Lansing', description: 'House Local Government Committee — hearing' },
-  { id: 'lm-hearing-2', externalId: 'legiscan:2055958', source: 'hearing', offsetDays: 5,  time: '10:00:00', location: 'Michigan House Office Building, Mackinac Committee Room, Lansing', description: 'House Natural Resources and Agriculture Committee — hearing' },
-  { id: 'lm-hearing-3', externalId: 'legiscan:2095619', source: 'hearing', offsetDays: 9,  time: '10:00:00', location: 'Michigan State Capitol, Senate Appropriations Room, Lansing', description: 'Senate Committee of the Whole — hearing' },
+  { id: 'lm-hearing-1', externalId: 'legiscan:2029026', source: 'hearing', offsetDays: 2,  time: '10:00:00', location: 'Binsfeld Office Building, Room 1100, Lansing', description: 'Senate Local Government Committee — hearing' },
+  { id: 'lm-hearing-2', externalId: 'legiscan:2055958', source: 'hearing', offsetDays: 5,  time: '10:00:00', location: 'Binsfeld Office Building, Room 1200, Lansing', description: 'Senate Natural Resources and Agriculture Committee — hearing' },
+  { id: 'lm-hearing-3', externalId: 'legiscan:2129983', source: 'hearing', offsetDays: 9,  time: '10:00:00', location: 'Anderson House Office Building, Room 519, Lansing', description: 'House Government Operations Committee — hearing' },
   // Energy & Environment, not Rules: Rules is where this bill was re-referred to
   // die (twice), so a hearing notice from Rules would be the least plausible thing
   // in the seed. Energy & Environment is the substantive IL House committee that
@@ -210,7 +226,7 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Referred To Committee On Natural Resources And Agriculture' }),
   ] } },
 
-  // MI HB5674 — Drinking Water, medium, live
+  // MI HB5674 — Drinking Water, medium, live (hearing +9)
   { id: 'lm-fe-u-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 159, metadata: { changes: [
     chg('status_change', { newValue: 'Introduced' }),
     chg('action_added', { newValue: 'Introduced By Representative Rep. Jennifer Wortz' }),
@@ -221,9 +237,9 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Bill Electronically Reproduced 03/05/2026' }),
   ] } },
 
-  // MI SB0771 — Septic & Wastewater, high, live (hearing +9). Manifest's status
-  // stays "Introduced" through these Committee of the Whole actions, so no
-  // status_change is claimed.
+  // MI SB0771 — Septic & Wastewater, high, live, no hearing (already on Order of
+  // Third Reading). Manifest's status stays "Introduced" through these Committee
+  // of the Whole actions, so no status_change is claimed.
   { id: 'lm-fe-u-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 69, metadata: { changes: [
     chg('action_added', { newValue: 'Referred To Committee Of The Whole With Substitute (s-2)' }),
   ] } },
@@ -356,7 +372,8 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Public Law 65' }),
   ] } },
 
-  // IN SB0188 — Beaches & Shoreline, low, live (withdrawn — real action text)
+  // IN SB0188 — Beaches & Shoreline, low, NOT live: withdrawn 2026-01-12, six days
+  // after filing (real action text, and the reason LM_BILLS marks it live: false)
   { id: 'lm-fe-u-in-sb0188-1', type: 'bill_updated', externalId: 'legiscan:2065860', userId: 'system', daysAgo: 217, metadata: { changes: [
     chg('status_change', { newValue: 'Introduced' }),
     chg('action_added', { newValue: 'Authored by Senator Bohacek' }),
@@ -440,11 +457,29 @@ const hearingNotice = (id: string, calendarId: string, daysAgo: number): DemoSee
   }
 }
 
-export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] = [
-  hearingNotice('lm-fe-h-il-hb1175', 'lm-hearing-4', 3),
-  hearingNotice('lm-fe-h-in-hb1124', 'lm-hearing-5', 3),
-  hearingNotice('lm-fe-h-us-hb8876', 'lm-hearing-6', 4),
+/**
+ * A notice has to land before the first comment that reacts to it, or the feed
+ * reads top-down as staff planning for a hearing the system announces two days
+ * later. The reacting comments are lm-c-41 (IL, daysAgo 5), lm-c-58 (IN, daysAgo
+ * 5), and lm-c-80 (US, daysAgo 4 — "hearing notice just went out"), so each
+ * notice sits one day ahead of its own thread.
+ *
+ * Exported as a pair list rather than three inline calls so the test can key a
+ * hearing notice on the calendar row `hearingNotice()` actually read, instead of
+ * re-finding a row by bill and passing against the wrong one if a bill ever
+ * carries two hearings.
+ */
+const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: number }> = [
+  { eventId: 'lm-fe-h-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 6 },
+  { eventId: 'lm-fe-h-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 6 },
+  { eventId: 'lm-fe-h-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 5 },
 ]
+
+export const LM_HEARING_NOTICE_SOURCES: ReadonlyArray<{ eventId: string; calendarId: string }> =
+  LM_HEARING_NOTICES
+
+export const LM_HEARING_EVENTS: DemoSeedFeedEvent[] =
+  LM_HEARING_NOTICES.map(n => hearingNotice(n.eventId, n.calendarId, n.daysAgo))
 
 // Hand-written priority_set and position_set events. Task 4 imports this name.
 export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
