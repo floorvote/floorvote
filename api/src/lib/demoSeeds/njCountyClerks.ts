@@ -25,8 +25,8 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   slug: 'nj-county-clerks',
   associationName: NJ_COUNTY_CLERKS.name,
   bannerText:
-    'Demo instance. The bills are real New Jersey legislation — the association, its county ' +
-    'clerks, and the hearing dates are not. Anything you change resets every few hours.',
+    'Demo instance. The bills are real New Jersey legislation — the association, its county clerks, ' +
+    'and the hearing dates are fictional. Anything you change resets every few hours.',
   orgNoun: 'association',
   aiContext: NJ_COUNTY_CLERKS.aiContext,
   relevanceQuestion: NJ_COUNTY_CLERKS.relevanceQuestion,

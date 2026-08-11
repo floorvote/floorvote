@@ -36,8 +36,8 @@ describe('lake-michigan seed registration', () => {
   it('tells the visitor the org is fictional and that changes reset', () => {
     const b = DEMO_SEEDS['lake-michigan'].bannerText
     expect(b).not.toMatch(/read-only/i)
-    expect(b).toMatch(/not/i)
-    expect(b).toContain('the organization and its staff are not')
+    expect(b).toMatch(/fictional/i)
+    expect(b).toContain('the organization, its staff, and the hearing dates are fictional')
     expect(b).toMatch(/resets every few hours/i)
   })
 
@@ -45,8 +45,8 @@ describe('lake-michigan seed registration', () => {
     const b = DEMO_SEEDS['nj-county-clerks'].bannerText
     expect(b).not.toMatch(/read-only/i)
     expect(b).not.toMatch(/nightly/i)
-    expect(b).toMatch(/not/i)
-    expect(b).toContain('the association, its county clerks, and the hearing dates are not')
+    expect(b).toMatch(/fictional/i)
+    expect(b).toContain('the association, its county clerks, and the hearing dates are fictional')
     expect(b).toMatch(/resets every few hours/i)
   })
 
