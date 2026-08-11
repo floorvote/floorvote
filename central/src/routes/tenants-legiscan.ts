@@ -348,30 +348,33 @@ tenantsLsRoutes.post('/seed-session/:tenantId', async (c) => {
 // Uses skipFetch=true (zero LegiScan API calls). forceMetadata=false so
 // DEMO_MODE tenants drop the notification and don't re-run AI.
 // Only downloads text for keyword-matching bills — consistent with normal ingest.
+//
+// "Keyword-matching" means the STORED bill_tenants.match_type, not a fresh
+// keyword match. This used to re-derive the match from `title + bill_number`,
+// which silently disagreed with how the classification was made: seed-session
+// matches on `title + description + bill_number`. Any bill that qualified on its
+// description alone was therefore marked match_type='keyword' but was invisible
+// to this endpoint, so its text could never be re-downloaded — the endpoint just
+// reported `total: 0` and looked like it had nothing to do. (Indiana: 16 of 40
+// keyword bills, with titles like "Gaming matters." carrying the subject only in
+// the description.) match_type is the canonical classification; re-deriving it
+// anywhere is how the two drift apart. The tenant processor learned the same
+// lesson — see the match_type gate in api/src/queue/processor.ts.
 tenantsLsRoutes.post('/redownload-texts/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
-  const kwRows = await db.select({ keyword: schema.keywordRegistry.keyword })
-    .from(schema.keywordRegistry)
-    .where(eq(schema.keywordRegistry.tenantId, tenantId))
-    .all()
-  const keywords = kwRows.map(r => r.keyword.toLowerCase())
-
-  const rows = await db.selectDistinct({
+  const matching = await db.selectDistinct({
     billId: schema.billTexts.billId,
-    title: schema.bills.title,
-    billNumber: schema.bills.billNumber,
   })
     .from(schema.billTexts)
     .innerJoin(schema.billTenants, eq(schema.billTexts.billId, schema.billTenants.billId))
-    .innerJoin(schema.bills, eq(schema.billTexts.billId, schema.bills.billId))
-    .where(and(eq(schema.billTenants.tenantId, tenantId), isNull(schema.billTexts.r2Key)))
+    .where(and(
+      eq(schema.billTenants.tenantId, tenantId),
+      eq(schema.billTenants.matchType, 'keyword'),
+      isNull(schema.billTexts.r2Key),
+    ))
     .all()
-
-  const matching = keywords.length === 0
-    ? []
-    : rows.filter(r => matchesUnion(`${r.title ?? ''} ${r.billNumber}`, keywords).matched)
 
   let queued = 0
   for (let i = 0; i < matching.length; i += 100) {

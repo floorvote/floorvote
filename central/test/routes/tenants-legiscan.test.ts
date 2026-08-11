@@ -397,3 +397,82 @@ describe('state_coverage maintenance (register merges, seed-session adds state)'
     expect(JSON.parse(row!.sc)).toEqual(['NJ', 'PA'])
   })
 })
+
+describe('POST /tenants/redownload-texts/:tenantId', () => {
+  // Regression: this endpoint used to re-derive the keyword match from
+  // `title + bill_number`, while seed-session classifies on
+  // `title + description + bill_number`. A bill that qualified on its
+  // description alone was stored as match_type='keyword' but was invisible here,
+  // so its text could never be re-downloaded and the endpoint just reported
+  // `total: 0`. Indiana hit this on 16 of 40 bills.
+  async function seedTextsMissingR2() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      // Keyword is in the title — found by the old filter too.
+      { billId: 201, sessionId: 1, state: 'IN', stateId: 14, billNumber: 'HB1019',
+        title: 'Constitutional amendment ballot question.', changeHash: 'h', status: 1 },
+      // Keyword is ONLY in the description, like Indiana's "Gaming matters."
+      { billId: 202, sessionId: 1, state: 'IN', stateId: 14, billNumber: 'HB1038',
+        title: 'Gaming matters.', description: 'Concerns absentee voting procedures.',
+        changeHash: 'h', status: 1 },
+      // Not a keyword bill at all — must stay out regardless.
+      { billId: 203, sessionId: 1, state: 'IN', stateId: 14, billNumber: 'HB9999',
+        title: 'Bridge naming.', changeHash: 'h', status: 1 },
+      // Keyword bill whose text is already in R2 — nothing to re-download.
+      { billId: 204, sessionId: 1, state: 'IN', stateId: 14, billNumber: 'HB1050',
+        title: 'Ballot access.', changeHash: 'h', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 201, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 202, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 203, tenantId: 'ri', matchType: null },
+      { billId: 204, tenantId: 'ri', matchType: 'keyword' },
+    ])
+    await db.insert(schema.billTexts).values([
+      { docId: 9001, billId: 201, date: '2026-01-01', type: 'Introduced', mime: 'application/pdf', stateLink: 'https://x/1.pdf' },
+      { docId: 9002, billId: 202, date: '2026-01-01', type: 'Introduced', mime: 'application/pdf', stateLink: 'https://x/2.pdf' },
+      { docId: 9003, billId: 203, date: '2026-01-01', type: 'Introduced', mime: 'application/pdf', stateLink: 'https://x/3.pdf' },
+      { docId: 9004, billId: 204, date: '2026-01-01', type: 'Introduced', mime: 'application/pdf', stateLink: 'https://x/4.pdf', r2Key: 'bills/legiscan-204/texts/9004.pdf' },
+    ])
+    // Present specifically to prove the endpoint no longer consults them: bill
+    // 202's title matches none of these.
+    await db.insert(schema.keywordRegistry).values([
+      { tenantId: 'ri', keyword: 'ballot' },
+      { tenantId: 'ri', keyword: 'absentee' },
+    ])
+  }
+
+  function ingestorEnv() {
+    const sent: any[] = []
+    const env2: any = {
+      ...TEST_ENV,
+      INGESTOR_QUEUE: {
+        send: async (m: any) => sent.push(m),
+        sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)),
+      },
+    }
+    return { env2, sent }
+  }
+
+  it('queues every keyword bill missing an r2_key, including description-only matches', async () => {
+    await seedTextsMissingR2()
+    const { env2, sent } = ingestorEnv()
+
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/redownload-texts/ri', { method: 'POST', headers: AUTH }),
+      env2,
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, queued: 2, total: 2 })
+
+    const ids = sent.map((m: any) => m.billId).sort()
+    // 202 is the one the old title-only re-match dropped.
+    expect(ids).toEqual([201, 202])
+    // 203 is not a keyword bill; 204 already has its text.
+    expect(ids).not.toContain(203)
+    expect(ids).not.toContain(204)
+    // Zero LegiScan API calls: the ingestor must not re-fetch the bill.
+    expect(sent.every((m: any) => m.skipFetch === true)).toBe(true)
+  })
+})
