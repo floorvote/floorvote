@@ -17,6 +17,8 @@ A demo is a showcase, and a showcase nobody can touch reads like a screenshot. S
 
 The server is the enforcement point. `DEMO_WRITE_ALLOWLIST` in `api/src/middleware/auth.ts` names every permitted method-and-path, the guard refuses every other non-GET request under `/api/` regardless of who is signed in (superadmins included), and a test fails if any registered route is neither allowed nor explicitly denied. The app disables the matching controls so a visitor sees the state rather than an error; admin controls carry a "Locked in demo mode" tooltip alongside an in-page notice.
 
+Because auto-login hands every visitor a session with no interaction, those writes are anonymous by construction, so two limits sit behind them: allowed writes are rate-limited per client IP (the optional `DEMO_WRITE_RATE_LIMITER` binding — see `api/wrangler.example.toml`; without it the check fails open), and any one bill accepts at most 60 live comments. A visitor never meets either — the busiest seeded bill carries 8 comments — but together they keep a script from growing the tenant without limit between resets.
+
 Refused: deleting comments, inviting or removing members, creating or renaming roles, bill-list bulk actions, calendar event creation, edits, deletion, restore, import and subscribe, draft-bill editing and link-and-merge, account deactivation and deletion, and logout.
 
 Two deliberate exceptions to the pattern:

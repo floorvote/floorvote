@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { env } from 'cloudflare:test'
+import { env, createExecutionContext } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
+import { DEMO_BILL_COMMENT_CAP } from '../../src/routes/billsApi/engagementRoutes'
 
 describe('GET /bills', () => {
   let memberToken: string
@@ -1049,6 +1050,71 @@ describe('POST /bills/:id/comments', () => {
       body: JSON.stringify({ content: 'a'.repeat(10_241) }),
     })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('POST /bills/:id/comments — demo per-bill cap', () => {
+  let cookie: string
+  let billId: string
+  let userId: string
+  const demoEnv = { ...env, DEMO_MODE: 'true' }
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    userId = await seedUser()
+    cookie = `session=${await seedSession(userId)}`
+    billId = await seedBill()
+  })
+
+  // Bulk-insert in chunks — one statement for all 60 rows blows D1's SQL
+  // variable limit, and 60 single-row inserts is needless work.
+  async function seedComments(n: number, opts?: { deleted?: number }) {
+    const db = getDb(env.DB)
+    const deleted = opts?.deleted ?? 0
+    const rows = Array.from({ length: n }, (_, i) => ({
+      id: crypto.randomUUID(),
+      billId,
+      userId,
+      content: `<p>seeded ${i}</p>`,
+      createdAt: new Date().toISOString(),
+      deletedAt: i < deleted ? new Date().toISOString() : null,
+    }))
+    for (let i = 0; i < rows.length; i += 15) {
+      await db.insert(comments).values(rows.slice(i, i + 15))
+    }
+  }
+
+  const post = (testEnv: typeof env) =>
+    app.request(`/api/bills/${billId}/comments`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'one more' }),
+    }, testEnv, createExecutionContext())
+
+  it('accepts a comment below the cap', async () => {
+    await seedComments(DEMO_BILL_COMMENT_CAP - 1)
+    const res = await post(demoEnv)
+    expect(res.status).toBe(201)
+  })
+
+  it('refuses a comment once the bill is at the cap', async () => {
+    await seedComments(DEMO_BILL_COMMENT_CAP)
+    const res = await post(demoEnv)
+    expect(res.status).toBe(429)
+    expect((await res.json() as { error: string }).error).toMatch(/comment limit/i)
+  })
+
+  it('counts only live comments — deleted ones do not hold the cap shut', async () => {
+    await seedComments(DEMO_BILL_COMMENT_CAP, { deleted: 1 })
+    const res = await post(demoEnv)
+    expect(res.status).toBe(201)
+  })
+
+  it('does not apply the cap when DEMO_MODE is unset', async () => {
+    await seedComments(DEMO_BILL_COMMENT_CAP)
+    const res = await post(env)
+    expect(res.status).toBe(201)
   })
 })
 
