@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
@@ -260,9 +260,14 @@ describe('BillDetail write controls when demoLocked', () => {
   })
 
   it('allows entering edit mode on the personal note', async () => {
+    // Assert on the outcome, not on the absence of an attribute: a handler-only
+    // guard (`onClick={() => { if (!demoLocked) setIsEditing(true) }}`, the shape
+    // used elsewhere in this page) leaves no DOM trace, so an aria-disabled check
+    // would pass while the note stayed unopenable. Click it and require the
+    // editor.
     renderBillDetail({ demoLocked: true })
-    const note = await screen.findByRole('button', { name: /personal note/i })
-    expect(note).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(await screen.findByRole('button', { name: /personal note/i }))
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
   })
 
   it('leaves the pinned custom-field editor Edit trigger enabled', async () => {
@@ -279,6 +284,8 @@ describe('BillDetail write controls when demoLocked', () => {
   it('leaves the pinned custom-field RichTextEditor Save enabled', async () => {
     // Enter edit mode, then flip demoLocked mid-session: the Save stays live,
     // because custom field values are an allowed write.
+    // The mid-session flip is vestigial now that nothing passes `disabled` to this
+    // editor — it stands as a tripwire against re-adding `disabled={demoLocked}`.
     const { rerender } = renderBillDetail({ demoLocked: false })
     const [editBtn] = await screen.findAllByRole('button', { name: /edit pinned notes/i })
     editBtn.click()
@@ -306,17 +313,11 @@ describe('BillDetail write controls when demoLocked', () => {
   })
 })
 
+// Only the assertions that differ from the locked describe above live here: the
+// controls that are enabled either way are covered there, under the flag that
+// used to disable them. What is unique to an unlocked tenant is Delete being
+// enabled and the draft-bill editors working.
 describe('BillDetail write controls when not demoLocked', () => {
-  it('leaves the position select enabled', async () => {
-    renderBillDetail({ demoLocked: false })
-    expect(await screen.findByRole('combobox', { name: /position/i })).toBeEnabled()
-  })
-
-  it('leaves the priority select enabled', async () => {
-    renderBillDetail({ demoLocked: false })
-    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeEnabled()
-  })
-
   it('leaves comment edit/delete, reactions, composer, votes, and custom fields enabled', async () => {
     renderBillDetail({ demoLocked: false })
     await screen.findByText('My own comment')
@@ -329,19 +330,6 @@ describe('BillDetail write controls when not demoLocked', () => {
     expect(screen.getByRole('button', { name: /edit notes field/i })).toBeEnabled()
     expect(screen.getByRole('checkbox', { name: /flag field/i })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Option A' })).toBeEnabled()
-  })
-
-  it('leaves the pinned custom-field editor Edit trigger enabled', async () => {
-    renderBillDetail({ demoLocked: false })
-    const editors = await screen.findAllByRole('button', { name: /edit pinned notes/i })
-    expect(editors).toHaveLength(2)
-    for (const editor of editors) expect(editor).toBeEnabled()
-  })
-
-  it('leaves the priority select and Dismiss button enabled on an un-triaged keyword match (NewMatchTriageControl)', async () => {
-    renderBillDetail({ demoLocked: false, overrides: { newMatchAt: '2025-01-05 00:00:00' } })
-    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeEnabled()
-    expect(screen.getByRole('button', { name: /dismiss/i })).toBeEnabled()
   })
 
   it('leaves draft-bill Edit triggers for title, sponsor, summary, and bill text enabled', async () => {
