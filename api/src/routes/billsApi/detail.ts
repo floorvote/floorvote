@@ -83,7 +83,11 @@ export async function buildBillDetail(
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
       .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
-      .orderBy(comments.createdAt)
+      // daysAgoDb truncates to seconds, so seeded comments sharing a daysAgo —
+      // and a visitor's new comment landing the same second — collide on
+      // created_at. rowid follows insert order, which is the intended reading
+      // order for the seed's question/answer pairs.
+      .orderBy(comments.createdAt, sql`comments.rowid`)
       .limit(20)
       .all(),
     db.select({ count: sql<number>`count(*)` })
