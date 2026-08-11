@@ -21,7 +21,7 @@ Refused: deleting comments, inviting or removing members, creating or renaming r
 
 Two deliberate exceptions to the pattern:
 
-- **Module toggles still work.** Settings → Modules is live, so visitors can turn the optional widgets on and see what they do. The reset puts them back to the seeded state.
+- **Module toggles still work.** The sidebar's **Customize widgets** panel — the admin-only link pinned above the user section — is live, so visitors can turn the optional widgets on and see what they do. The reset puts them back to the seeded state.
 - **The Feedback link is hidden, not disabled.** It's the one control removed outright rather than greyed out — a shared demo login can't produce feedback anyone could act on.
 
 ## Choosing the demo content

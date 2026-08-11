@@ -35,11 +35,11 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   positionVocabulary: ['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'],
 
   // Start the demo with optional widgets OFF so visitors can experience enabling
-  // them in Settings → Modules (toggling modules is allowed in demo mode; all
-  // other config stays locked). The reset returns them to off. email-digest is
-  // shown ON but read-only (the toggle is disabled in demo and runDigest hard-stops
-  // before sending), so demo visitors see the configured state without any email
-  // actually going out.
+  // them from the sidebar's "Customize widgets" panel (toggling modules is
+  // allowed in demo mode; all other config stays locked). The reset returns them
+  // to off. email-digest is shown ON but read-only (the toggle is disabled in demo
+  // and runDigest hard-stops before sending), so demo visitors see the configured
+  // state without any email actually going out.
   modules: {
     'waiting-for-vote': false,
     'upcoming-hearings': false,

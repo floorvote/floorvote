@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
@@ -142,7 +142,12 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
       .where(and(eq(comments.billId, id), isNull(comments.deletedAt), activeUser))
-      .orderBy(comments.createdAt)
+      // Same tiebreaker as the bill-detail comment block (billsApi/detail.ts):
+      // created_at is truncated to seconds, so seeded comments sharing a daysAgo
+      // — and a visitor's comment landing the same second — collide, and rowid
+      // (insert order) is the intended reading order. This endpoint has no web
+      // caller today, but the two must not disagree about comment order.
+      .orderBy(comments.createdAt, sql`comments.rowid`)
       .all()
 
     const commentIds = commentRows.map((r) => r.c.id)
