@@ -47,9 +47,8 @@ const MODULES: Record<string, DemoSeedModule> = {
 export const LM_ORG = {
   associationName: 'Lake Michigan Alliance',
   bannerText:
-    "You're exploring a read-only demo — explore anything, but changes won't save. Data resets nightly. " +
-    'The bills are real legislation from Michigan, Wisconsin, Illinois, Indiana, and Congress, but the ' +
-    'organization, its staff, and the hearing dates are fictional.',
+    'Demo instance. The bills are real legislation from Michigan, Wisconsin, Illinois, Indiana, ' +
+    'and Congress — the organization and its staff are not. Anything you change resets every few hours.',
   orgNoun: 'organization',
   aiContext: `You are analyzing a bill for a regional organization working on water quality in the Lake Michigan basin. Their work covers: drinking water safety and testing (including lead service line replacement and lead testing in schools), PFAS and other persistent contaminants, beach water quality and closure notification, septic systems and wastewater treatment, aquatic invasive species prevention, water withdrawals and groundwater protection, and shoreline erosion and habitat. They advocate and testify; they hold no regulatory or permitting authority themselves.
 

@@ -33,10 +33,21 @@ describe('lake-michigan seed registration', () => {
     expect(ids).toEqual(['2176', '2183', '2197', '2199', '2234'])
   })
 
-  it('tells the visitor it is read-only and fictional', () => {
+  it('tells the visitor the org is fictional and that changes reset', () => {
     const b = DEMO_SEEDS['lake-michigan'].bannerText
-    expect(b).toMatch(/read-only/i)
-    expect(b).toMatch(/fictional/i)
+    expect(b).not.toMatch(/read-only/i)
+    expect(b).toMatch(/not/i)
+    expect(b).toContain('the organization and its staff are not')
+    expect(b).toMatch(/resets every few hours/i)
+  })
+
+  it('says the same of the New Jersey seed, which visitors can also write to', () => {
+    const b = DEMO_SEEDS['nj-county-clerks'].bannerText
+    expect(b).not.toMatch(/read-only/i)
+    expect(b).not.toMatch(/nightly/i)
+    expect(b).toMatch(/not/i)
+    expect(b).toContain('the association, its county clerks, and the hearing dates are not')
+    expect(b).toMatch(/resets every few hours/i)
   })
 
   it('ships no keyword that is empty or duplicated', () => {
