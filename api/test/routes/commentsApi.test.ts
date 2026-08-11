@@ -4,6 +4,8 @@ import { SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { comments, commentReactions, feedEvents } from '../../src/db/schema'
+import { app } from '../../src/index'
+import { DEMO_COMMENT_REACTION_CAP } from '../../src/routes/billsApi/engagementRoutes'
 
 async function postComment(billId: string, token: string, content = 'Test comment') {
   return SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
@@ -218,13 +220,121 @@ describe('POST /comments/:id/reactions', () => {
     expect(res.status).toBe(404)
   })
 
-  it('returns 400 when emoji UTF-8 encoding exceeds 16 bytes (SEC-C2)', async () => {
+  // Was "exceeds 16 bytes". The byte cap moved to 64 so a family ZWJ sequence
+  // (👨‍👩‍👧‍👦, 25 bytes) can be sent at all; 'a'.repeat(17) is now refused by the
+  // character rule rather than the length rule, so this asserts the length rule
+  // with something that is genuinely only emoji.
+  it('returns 400 when emoji UTF-8 encoding exceeds the byte cap (SEC-C2)', async () => {
     const res = await SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emoji: 'a'.repeat(17) }),
+      body: JSON.stringify({ emoji: '😀'.repeat(17) }),
     })
     expect(res.status).toBe(400)
+  })
+
+  // The emoji column is attacker-controlled and the unique index is
+  // (commentId, userId, emoji), so anything the checker lets through that
+  // onConflictDoNothing won't collapse becomes another chip rendered beside the
+  // comment. "Contains a pictograph" was not enough: "😀BUY-CRYPTO" is 15 bytes
+  // and passed, which is ~12 characters of arbitrary text on a public demo.
+  describe('emoji validation — emoji characters only, no smuggled text', () => {
+    const react = (emoji: string) =>
+      SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
+        method: 'POST',
+        headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emoji }),
+      })
+
+    // Multi-codepoint sequences must survive: rejecting them would break real
+    // reactions, which is how over-tight validation gets reverted.
+    it.each([
+      ['plain pictograph', '👍'],
+      ['variation selector', '❤️'],
+      ['skin-tone modifier', '👍🏽'],
+      ['regional indicators (flag)', '🇺🇸'],
+      ['ZWJ family sequence', '👨‍👩‍👧‍👦'],
+      ['ZWJ + skin tone', '👩🏽‍🚀'],
+      ['seeded reaction', '✅'],
+    ])('accepts %s', async (_label, emoji) => {
+      expect((await react(emoji)).status).toBe(200)
+    })
+
+    it.each([
+      ['text smuggled after a pictograph', '😀BUY-CRYPTO'],
+      ['a single trailing letter', '😀a'],
+      ['a trailing space', '😀 '],
+      ['a trailing newline', '😀\n'],
+      ['a combining accent', '😀́'],
+      ['plain text', 'abc'],
+      ['a lone ZWJ', '‍'],
+      ['a lone skin-tone modifier', '🏽'],
+    ])('rejects %s', async (_label, emoji) => {
+      expect((await react(emoji)).status).toBe(400)
+    })
+  })
+})
+
+describe('POST /comments/:id/reactions — demo distinct-emoji cap', () => {
+  let memberToken: string
+  let commentId: string
+  const demoEnv = { ...env, DEMO_MODE: 'true' }
+  // 12 distinct, all valid — one more than the picker offers (8).
+  const TWELVE = ['👍', '👎', '❤️', '😂', '😭', '💯', '🔥', '🤔', '✅', '👀', '🎉', '🚀']
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+    const billId = await seedBill()
+    const db = getDb(env.DB)
+    commentId = crypto.randomUUID()
+    await db.insert(comments).values({
+      id: commentId, billId, userId: memberId, content: 'Hello.', createdAt: new Date().toISOString(),
+    })
+  })
+
+  // Reactions from a DIFFERENT user, so the cap is proven to count distinct
+  // emojis on the comment rather than the caller's own rows.
+  async function fillTo(n: number) {
+    const db = getDb(env.DB)
+    const otherId = await seedUser()
+    await db.insert(commentReactions).values(
+      TWELVE.slice(0, n).map(emoji => ({
+        id: crypto.randomUUID(), commentId, userId: otherId, emoji, createdAt: new Date().toISOString(),
+      })),
+    )
+  }
+
+  const react = (emoji: string, testEnv: typeof env) =>
+    app.request(`/api/comments/${commentId}/reactions`, {
+      method: 'POST',
+      headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    }, testEnv)
+
+  it('accepts a new emoji below the cap', async () => {
+    await fillTo(DEMO_COMMENT_REACTION_CAP - 1)
+    expect((await react('🌊', demoEnv)).status).toBe(200)
+  })
+
+  it('refuses a NEW emoji at the cap, permanently — 403, not 429', async () => {
+    await fillTo(DEMO_COMMENT_REACTION_CAP)
+    const res = await react('🌊', demoEnv)
+    expect(res.status).toBe(403)
+    expect((await res.json() as { error: string }).error).toMatch(/reaction/i)
+  })
+
+  it('still lets an EXISTING emoji be toggled at the cap', async () => {
+    // Otherwise reacting normally breaks the moment a comment gets popular.
+    await fillTo(DEMO_COMMENT_REACTION_CAP)
+    expect((await react(TWELVE[0], demoEnv)).status).toBe(200)
+  })
+
+  it('does not apply the cap when DEMO_MODE is unset', async () => {
+    await fillTo(DEMO_COMMENT_REACTION_CAP)
+    expect((await react('🌊', env)).status).toBe(200)
   })
 })
 

@@ -1098,10 +1098,13 @@ describe('POST /bills/:id/comments — demo per-bill cap', () => {
     expect(res.status).toBe(201)
   })
 
-  it('refuses a comment once the bill is at the cap', async () => {
+  it('refuses a comment once the bill is at the cap — 403, not 429', async () => {
+    // 403, because waiting does not clear it: the bill stays full until the next
+    // reset. 429 would promise a retry that never comes. The per-IP limiter is
+    // the opposite case and stays 429.
     await seedComments(DEMO_BILL_COMMENT_CAP)
     const res = await post(demoEnv)
-    expect(res.status).toBe(429)
+    expect(res.status).toBe(403)
     expect((await res.json() as { error: string }).error).toMatch(/comment limit/i)
   })
 

@@ -21,6 +21,15 @@ import { activeUser } from '../../lib/accountDeletion'
 // payload returns only the first 20.
 export const DEMO_BILL_COMMENT_CAP = 60
 
+// Max DISTINCT emojis one comment may carry on a DEMO_MODE tenant. The comment
+// cap cannot reach this table: reactions attach to the *seeded* comments, which
+// always exist, so no cap on new comments bounds them. Each distinct emoji is
+// its own chip in the UI, so unbounded distinct emojis is unbounded content
+// rendered beside a comment. 12 is above the 8 the picker offers, so a visitor
+// reacting normally never meets it. Toggling an emoji already present stays
+// allowed at the cap — otherwise reacting breaks once a comment gets popular.
+export const DEMO_COMMENT_REACTION_CAP = 12
+
 export function registerEngagementRoutes(router: Hono<AppEnv>) {
   // POST /bills/:id/votes
   router.post('/:id/votes', async (c) => {
@@ -212,7 +221,10 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         .where(and(eq(comments.billId, id), isNull(comments.deletedAt)))
         .get()
       if ((live?.n ?? 0) >= DEMO_BILL_COMMENT_CAP) {
-        return c.json({ error: 'This bill has reached the demo comment limit — try another bill' }, 429)
+        // 403, not 429: waiting doesn't clear this. The bill stays full until
+        // the next reset, so "try again shortly" would be a false promise. The
+        // per-IP limiter in demoReadOnly is the genuinely temporary one.
+        return c.json({ error: 'This bill has reached the demo comment limit — try another bill' }, 403)
       }
     }
     // Sanitize on write to the same allowlist the on-screen renderer uses — the
