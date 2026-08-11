@@ -76,11 +76,18 @@ const SQL_CLOCK_COLUMNS = new Set([
 // NOT stable across the run dates this file deliberately varies. Bucketing it
 // would make the snapshot fail on five days out of seven.
 //
-// Collapsing it to a constant would lose the offset pinning, so it is pinned
-// outside the snapshot instead, by the 'calendar dates' describe block below:
-// that recomputes each expected date from the seed's own offsetDays for the
-// current run date, which checks strictly more than a bucket did — the seed's
-// declared offset AND the machinery's snapping arithmetic.
+// Collapsing it to a constant DOES lose the offset pinning, and the replacement
+// has to be chosen carefully. Recomputing the expected date from the seed's own
+// offsetDays — which is what the 'calendar dates' block below does — verifies the
+// seed→SQL binding but canNOT detect a change to the offset itself, because the
+// expectation moves with the seed. That was verified by perturbation: bumping
+// demo-hearing-1 from 2 to 3 left the recomputing assertion green.
+//
+// So the pin proper lives in test/lib/dateFromNow.test.ts, as an explicit literal
+// table of every calendar offset per seed, alongside property tests for the snap
+// arithmetic across 14 base dates. Between the three, coverage is at parity with
+// the old bucket or better — but none of them is individually sufficient, so do
+// not delete one thinking another covers it.
 const SNAPPED_DATE_COLUMNS = new Set(['calendar_events.date'])
 const RELATIVE_DATE_COLUMNS = new Set<string>()
 
@@ -227,8 +234,21 @@ describe('demo reset calendar dates', () => {
 
   it('writes the date the seed asks for, snapped off the weekend', async () => {
     await freshlyMigratedWithBills()
-    const nowMs = Date.now()
-    await runDemoReset(env.DB, seed)
+    // Freeze the clock rather than allowing slack for a UTC-midnight straddle.
+    // A +/-1 day tolerance here would be algebraically identical to shifting
+    // offsetDays by 1 (dateFromNow(k, t + DAY) === dateFromNow(k + 1, t), since the
+    // snap depends only on the summed timestamp) — so it would accept a wiring bug
+    // that passed e.offsetDays + 1 into the insert below. Freezing removes the
+    // straddle instead of tolerating it, which lets this assert exact equality and
+    // makes it the one check that covers the seed -> SQL binding.
+    const nowMs = Date.parse('2026-08-12T12:00:00Z') // a Wednesday, mid-day UTC
+    vi.useFakeTimers()
+    vi.setSystemTime(nowMs)
+    try {
+      await runDemoReset(env.DB, seed)
+    } finally {
+      vi.useRealTimers()
+    }
 
     const { results } = await env.DB.prepare('SELECT id, date, source FROM calendar_events').all()
     const rows = results as Array<{ id: string; date: string; source: string }>
@@ -238,13 +258,8 @@ describe('demo reset calendar dates', () => {
     for (const r of rows) {
       const e = bySeedId.get(r.id)
       expect(e, `no seed row for calendar_events.id ${r.id}`).toBeDefined()
-      // Allow a one-day slack against a UTC-midnight straddle between the nowMs
-      // read above and the reset's own Date.now(): recompute for both.
-      const expected = new Set([
-        dateFromNow(e!.offsetDays, nowMs),
-        dateFromNow(e!.offsetDays, nowMs + 86400_000),
-      ])
-      expect([...expected], `${r.id} (offsetDays ${e!.offsetDays})`).toContain(r.date)
+      expect(r.date, `${r.id} (offsetDays ${e!.offsetDays})`)
+        .toBe(dateFromNow(e!.offsetDays, nowMs))
     }
   })
 
