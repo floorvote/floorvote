@@ -1,9 +1,17 @@
 import type { DemoSeedCustomField, DemoSeedRole, DemoSeedUser } from '../types'
 
 // Fifteen staff of a fictional regional water-policy organization working the
-// Lake Michigan basin. Persona names were vetted against real Great Lakes
-// water-policy, conservation, and environmental-advocacy figures before being
-// assigned here — see the task report for the check and the date it was run.
+// Lake Michigan basin.
+//
+// Persona names were vetted on 2026-08-11 against real Great Lakes water-policy,
+// conservation, and environmental-advocacy figures. Eight of the fifteen — every
+// senior or publicly-visible title — were searched individually and returned no
+// topical collision. The remaining seven hold junior analyst and coordinator
+// titles, where a collision is both less likely and less consequential; they were
+// not searched one by one. Known real individuals in this space, never to be used:
+// Don Carr and Angela Larsen (Alliance for the Great Lakes), Celia Haven (Healing
+// Our Waters). Any ordinary name matches someone somewhere; the bar tested here is
+// a topical collision, not global uniqueness.
 //
 // lastActiveDaysAgo is staggered to give a realistic active curve: 11
 // personas active within 7 days, the rest within 30 — the sidebar member

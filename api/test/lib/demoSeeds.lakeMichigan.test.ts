@@ -104,9 +104,13 @@ describe('lake-michigan roster', () => {
     const pinned = s.customFields.filter(f => f.pinned)
     expect(pinned).toHaveLength(1)
     expect(pinned[0].name).toBe('Policy Concerns')
-    // Working Group options must match the three working-group roles exactly.
+    // The Working Group field and the working-group roles are meant to be ONE
+    // vocabulary, so derive the expectation from the roles rather than restating a
+    // literal — otherwise renaming a role leaves this passing while the two drift.
     const wg = s.customFields.find(f => f.slug === 'working-group')!
-    expect(wg.options).toEqual(['Infrastructure', 'Contaminants', 'Habitat'])
+    const workingGroupRoles = s.roles.filter(r => !r.name.endsWith(' Team')).map(r => r.name)
+    expect(workingGroupRoles).toHaveLength(3)
+    expect(wg.options).toEqual(workingGroupRoles)
   })
 
   it('gives dropdowns options and non-dropdowns none', () => {
