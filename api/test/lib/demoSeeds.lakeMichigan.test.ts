@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { DEMO_SEEDS, resolveDemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
+import { stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX } from '../../../shared/feedUtils'
 
 describe('lake-michigan seed registration', () => {
   it('is registered under its slug', () => {
@@ -191,5 +192,43 @@ describe('lake-michigan bills', () => {
       const changes = (e.metadata as { changes?: unknown[] }).changes
       expect(Array.isArray(changes) && changes!.length > 0, `event ${e.id}`).toBe(true)
     }
+  })
+})
+
+describe('lake-michigan derived feed events', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+
+  it('emits exactly one comment_added event per comment', () => {
+    const ev = s.feedEvents.filter(e => e.type === 'comment_added')
+    expect(ev).toHaveLength(s.comments.length)
+    const ids = ev.map(e => (e.metadata as { commentId: string }).commentId).sort()
+    expect(ids).toEqual(s.comments.map(c => c.id).sort())
+  })
+
+  it('derives each preview from its comment, so they cannot drift', () => {
+    const byId = new Map(s.comments.map(c => [c.id, c]))
+    for (const e of s.feedEvents.filter(x => x.type === 'comment_added')) {
+      const m = e.metadata as { commentId: string; preview: string }
+      const c = byId.get(m.commentId)!
+      expect(m.preview).toBe(truncateWithEllipsis(stripHtml(c.content), COMMENT_PREVIEW_MAX))
+      expect(e.userId).toBe(c.userId)
+      expect(e.externalId).toBe(c.externalId)
+      expect(e.daysAgo).toBe(c.daysAgo)
+    }
+  })
+
+  it('carries mentioned user ids on events whose comment mentions someone', () => {
+    for (const e of s.feedEvents.filter(x => x.type === 'comment_added')) {
+      const m = e.metadata as { commentId: string; mentionedUserIds?: string[] }
+      const expected = s.mentions.filter(x => x.commentId === m.commentId).map(x => x.userId).sort()
+      expect((m.mentionedUserIds ?? []).slice().sort()).toEqual(expected)
+    }
+  })
+
+  it('gives every feed event a unique id and a known bill', () => {
+    const ids = s.feedEvents.map(e => e.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    const known = new Set(s.priorities.map(p => p.externalId))
+    for (const e of s.feedEvents) expect(known.has(e.externalId), `event ${e.id}`).toBe(true)
   })
 })
