@@ -22,19 +22,17 @@ interface SentimentBarsProps {
   myVote?: 'support' | 'oppose' | 'neutral' | null
   onVote?: (pos: 'support' | 'oppose' | 'neutral') => void
   canVote?: boolean
-  disabled?: boolean
 }
 
 type VoteKey = 'support' | 'neutral' | 'oppose'
 
 function Bar({
-  count, total, color: barColor, label, voteKey, myVote, onVote, disabled,
+  count, total, color: barColor, label, voteKey, myVote, onVote,
 }: {
   count: number; total: number; color: string; label: string
   voteKey: VoteKey
   myVote?: 'support' | 'oppose' | 'neutral' | null
   onVote?: (pos: VoteKey) => void
-  disabled?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   const pct = total > 0 ? (count / total) * 100 : 0
@@ -47,15 +45,12 @@ function Bar({
     <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
         type="button"
-        disabled={disabled}
         onClick={() => onVote(voteKey)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
           width: 60, fontSize: fontSize.sm, padding: '3px 6px',
           ...voteButtonStyle(voteKey, isActive, hovered),
-          cursor: disabled ? 'not-allowed' : voteButtonStyle(voteKey, isActive, hovered).cursor,
-          opacity: disabled ? 0.5 : 1,
         }}
       >
         {label}
@@ -196,7 +191,7 @@ function RoleFilterDropdown({
   )
 }
 
-export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote, canVote, disabled }: SentimentBarsProps) {
+export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote, canVote }: SentimentBarsProps) {
   const [showBreakdown, setShowBreakdown] = useState(false)
 
   const [activeRoleIds, setActiveRoleIds] = useState<string[]>(getStoredRoleFilter)
@@ -230,9 +225,9 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
           : "All members see aggregate counts; admins see individual votes."
         } />
       </div>
-      <Bar count={support} total={total} color={color.voteSupport} label="Support" voteKey="support" myVote={myVote} onVote={onVote} disabled={disabled} />
-      <Bar count={neutral} total={total} color={color.textMuted} label="Neutral" voteKey="neutral" myVote={myVote} onVote={onVote} disabled={disabled} />
-      <Bar count={oppose} total={total} color={color.textErrorRed} label="Oppose" voteKey="oppose" myVote={myVote} onVote={onVote} disabled={disabled} />
+      <Bar count={support} total={total} color={color.voteSupport} label="Support" voteKey="support" myVote={myVote} onVote={onVote} />
+      <Bar count={neutral} total={total} color={color.textMuted} label="Neutral" voteKey="neutral" myVote={myVote} onVote={onVote} />
+      <Bar count={oppose} total={total} color={color.textErrorRed} label="Oppose" voteKey="oppose" myVote={myVote} onVote={onVote} />
       {isAdmin && memberVotes && memberVotes.length > 0 && (() => {
         const allRoles = new Map<string, string>()
         for (const v of memberVotes) {

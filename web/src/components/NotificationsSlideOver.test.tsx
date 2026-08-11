@@ -85,19 +85,10 @@ describe('NotificationsSlideOver role-mention chip', () => {
 describe('NotificationsSlideOver read-only demo', () => {
   afterEach(() => { demoState.demoLocked = false })
 
-  it('does not POST /notifications/mark-read when the demo is locked', async () => {
+  it('still POSTs /notifications/mark-read when the demo is locked', async () => {
+    // Per-user notification read state is allowlisted — a visitor's badge has to
+    // clear or the panel looks broken.
     demoState.demoLocked = true
-    const { apiFetch } = await import('../lib/api')
-    vi.mocked(apiFetch).mockClear()
-    renderPanel()
-    await screen.findByText('@Board')
-    // Give the (skipped) mark-read call a chance to have fired if the guard
-    // were missing.
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications'))
-    expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
-  })
-
-  it('still POSTs /notifications/mark-read when not demo-locked', async () => {
     const { apiFetch } = await import('../lib/api')
     vi.mocked(apiFetch).mockClear()
     renderPanel()

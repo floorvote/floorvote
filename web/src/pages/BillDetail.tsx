@@ -972,7 +972,7 @@ export function BillDetail() {
                       setPriorityMeta(p ? { setByName: user!.name, updatedAt: new Date().toISOString() } : null)
                       refreshSidebar()
                       if (result?.promoted) startAnalyzingPoll()
-                    }} placeholder="Priority not set" disabled={demoLocked} />
+                    }} placeholder="Priority not set" />
                   </HoverTooltip>
                     )}
                   {priorityMeta && (
@@ -1483,7 +1483,6 @@ export function BillDetail() {
                         submitLabel="Save"
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
-                        disabled={demoLocked}
                         onSubmit={async (html) => {
                           const value = html.replace(/<[^>]*>/g, '').trim() ? html : null
                           await apiFetch(`/bills/${bill.id}/custom-fields`, {
@@ -1510,10 +1509,9 @@ export function BillDetail() {
                           <button
                             type="button"
                             aria-label={`Edit ${field.name}`}
-                            onClick={() => { if (!demoLocked) setEditingPinnedFieldId(field.id) }}
+                            onClick={() => setEditingPinnedFieldId(field.id)}
                             onMouseEnter={() => setHoveredPinnedFieldId(field.id)}
                             onMouseLeave={() => setHoveredPinnedFieldId(null)}
-                            disabled={demoLocked}
                             style={{
                               display: 'block',
                               width: '100%',
@@ -1525,8 +1523,7 @@ export function BillDetail() {
                               padding: '6px 8px',
                               background: hoveredPinnedFieldId === field.id ? color.surfaceMuted : color.white,
                               transition: 'border-color 0.15s, background 0.15s',
-                              cursor: demoLocked ? 'not-allowed' : 'text',
-                              opacity: demoLocked ? 0.5 : 1,
+                              cursor: 'text',
                             }}
                           >
                             <CommentContent content={entry.value} fontSize={14} />
@@ -2005,9 +2002,8 @@ export function BillDetail() {
                     {(comment.userId === user?.id || user?.role === 'admin' || user?.role === 'owner') && editingCommentId !== comment.id && (
                       <>
                         {comment.userId === user?.id && (
-                          <button onClick={() => { if (!demoLocked) setEditingCommentId(comment.id) }}
-                            disabled={demoLocked}
-                            style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: demoLocked ? 'not-allowed' : 'pointer', opacity: demoLocked ? 0.5 : 1, padding: 0 }}>
+                          <button onClick={() => setEditingCommentId(comment.id)}
+                            style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                             Edit
                           </button>
                         )}
@@ -2029,7 +2025,6 @@ export function BillDetail() {
                         onCancel={() => setEditingCommentId(null)}
                         submitLabel="Save"
                         placeholder="Edit comment…"
-                        disabled={demoLocked}
                         // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into edit mode, out of scope for this task's focus-management redesign
                         autoFocus
                       />
@@ -2052,13 +2047,11 @@ export function BillDetail() {
                     >
                       <button
                         onClick={() => handleReaction(comment.id, r.emoji)}
-                        disabled={demoLocked}
                         style={{
                           fontSize: fontSize.sm, padding: '2px 8px', borderRadius: radius.xl, border: '1px solid',
                           borderColor: r.userReacted ? color.accentBlueMuted : color.borderDefault,
                           background: r.userReacted ? color.bgInfo : color.white,
-                          cursor: demoLocked ? 'not-allowed' : 'pointer',
-                          opacity: demoLocked ? 0.5 : 1,
+                          cursor: 'pointer',
                         }}
                       >
                         {r.emoji} {r.count}
@@ -2099,7 +2092,6 @@ export function BillDetail() {
                   <button
                     aria-label="Add reaction"
                     onClick={() => setOpenPickerFor(openPickerFor === comment.id ? null : comment.id)}
-                    disabled={demoLocked}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2108,8 +2100,7 @@ export function BillDetail() {
                       border: `1px solid ${color.borderDefault}`,
                       borderRadius: radius.xl,
                       padding: '2px 8px',
-                      cursor: demoLocked ? 'not-allowed' : 'pointer',
-                      opacity: demoLocked ? 0.5 : 1,
+                      cursor: 'pointer',
                       color: color.textMuted,
                       fontSize: fontSize.sm,
                     }}
@@ -2136,7 +2127,6 @@ export function BillDetail() {
                 onSubmit={handlePostComment}
                 placeholder="Add a comment…"
                 submitLabel="Post"
-                disabled={demoLocked}
               />
             </div>
           </div>
@@ -2147,7 +2137,6 @@ export function BillDetail() {
             billId={bill.id}
             values={bill.customFieldValues}
             isAdmin={isAdmin}
-            disabled={demoLocked}
             onUpdate={(fieldId, value, setBy) => {
               setBill(prev => {
                 if (!prev) return prev
@@ -2181,7 +2170,6 @@ export function BillDetail() {
                     current={position}
                     options={config?.positionVocabulary ?? ['Support', 'Oppose', 'Amend', 'Monitor', 'No Position']}
                     size="lg"
-                    disabled={demoLocked}
                     onChange={(p) => {
                       setPosition(p)
                       if (p) {
@@ -2213,10 +2201,10 @@ export function BillDetail() {
             }
           </div>
 
-          <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} disabled={demoLocked} />
+          <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} />
 
           <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
-            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} disabled={demoLocked} />
+            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} />
           </div>
         </div>
       </div>

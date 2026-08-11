@@ -2,12 +2,11 @@ import { useRef, useState } from 'react'
 import { color, radius, fontSize, shadow } from '../../styles/tokens'
 import { voteButtonStyle } from '../../lib/voteButtonStyle'
 
-export function VoteButton({ label, pos, current, onClick, disabled }: {
+export function VoteButton({ label, pos, current, onClick }: {
   label: string
   pos: 'support' | 'neutral' | 'oppose'
   current: string | null
   onClick: () => void
-  disabled?: boolean
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -28,14 +27,12 @@ export function VoteButton({ label, pos, current, onClick, disabled }: {
       <button
         ref={btnRef}
         onClick={onClick}
-        disabled={disabled}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setTooltip(null)}
         aria-label={tooltipText}
         style={{
           width: '100%', fontSize: fontSize.sm, padding: '3px 4px',
           ...voteButtonStyle(pos, isActive, !!tooltip),
-          ...(disabled ? { cursor: 'not-allowed', opacity: 0.5 } : null),
         }}
       >
         {label}

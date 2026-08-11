@@ -84,43 +84,24 @@ describe('BillRow hover selection checkbox', () => {
 describe('BillRow write controls when demoLocked', () => {
   afterEach(() => { demoState.demoLocked = false })
 
-  it('disables the admin Position select', () => {
+  it('leaves the admin Position select enabled — the server allows it', () => {
     demoState.demoLocked = true
     renderRow(true)
-    expect(screen.getByRole('combobox', { name: /position/i })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: /position/i })).toBeEnabled()
   })
 
-  it('disables the admin Priority select', () => {
+  it('leaves the admin Priority select enabled — the server allows it', () => {
     demoState.demoLocked = true
     renderRow(true)
     // Priority renders twice — a desktop column and a mobile-meta duplicate,
     // toggled between by CSS, both present in the DOM at once.
     const selects = screen.getAllByRole('combobox', { name: /priority/i })
     expect(selects.length).toBeGreaterThan(0)
-    for (const select of selects) expect(select).toBeDisabled()
+    for (const select of selects) expect(select).toBeEnabled()
   })
 
-  it('disables the member-vote bars and does not call onVote when clicked', () => {
+  it('leaves the member-vote bars enabled and calls onVote when clicked', () => {
     demoState.demoLocked = true
-    const onVote = vi.fn()
-    renderRow(false, { onVote })
-    const supportBtn = screen.getByRole('button', { name: 'Support' })
-    expect(supportBtn).toBeDisabled()
-    fireEvent.click(supportBtn)
-    expect(onVote).not.toHaveBeenCalled()
-  })
-})
-
-describe('BillRow write controls when not demoLocked', () => {
-  it('leaves the admin Position and Priority selects enabled', () => {
-    renderRow(true)
-    expect(screen.getByRole('combobox', { name: /position/i })).toBeEnabled()
-    for (const select of screen.getAllByRole('combobox', { name: /priority/i })) {
-      expect(select).toBeEnabled()
-    }
-  })
-
-  it('leaves the member-vote bars enabled', () => {
     const onVote = vi.fn()
     renderRow(false, { onVote })
     const supportBtn = screen.getByRole('button', { name: 'Support' })

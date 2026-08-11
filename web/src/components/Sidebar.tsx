@@ -48,7 +48,7 @@ const MAX_WIDTH = 400
 
 export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   const { user } = useAuth()
-  const { demoMode, demoLocked } = useDemo()
+  const { demoMode } = useDemo()
   const { hasUnread, visitHadUnread } = useFeedUnread()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const location = useLocation()
@@ -219,7 +219,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
   }
 
   async function handleSidebarVote(billId: string, pos: 'support' | 'neutral' | 'oppose') {
-    if (!sidebarData || demoLocked) return
+    if (!sidebarData) return
     const bill = sidebarData.priorityBills.find(b => b.id === billId)
     if (!bill) return
     const prevVote = bill.myVote
@@ -728,14 +728,14 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                         </Link>
                         <div style={{ position: 'absolute', top: 6, right: 10 }}>
                           {isAdmin
-                            ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini disabled={demoLocked} />
+                            ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini />
                             : <PriorityChip priority={bill.priority} mini />
                           }
                         </div>
                         {user?.canVote && <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
-                          <VoteButton label="Support" pos="support" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'support')} disabled={demoLocked} />
-                          <VoteButton label="Neutral" pos="neutral" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'neutral')} disabled={demoLocked} />
-                          <VoteButton label="Oppose" pos="oppose" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'oppose')} disabled={demoLocked} />
+                          <VoteButton label="Support" pos="support" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'support')} />
+                          <VoteButton label="Neutral" pos="neutral" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'neutral')} />
+                          <VoteButton label="Oppose" pos="oppose" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'oppose')} />
                         </div>}
                       </div>
                     )

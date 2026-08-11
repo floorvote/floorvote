@@ -205,86 +205,93 @@ beforeEach(() => {
 })
 
 describe('BillDetail write controls when demoLocked', () => {
-  it('disables the official position select', async () => {
+  it('leaves the official position select enabled — the server allows it', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('combobox', { name: /position/i })).toBeDisabled()
+    expect(await screen.findByRole('combobox', { name: /position/i })).toBeEnabled()
   })
 
-  it('disables the priority select', async () => {
+  it('leaves the priority select enabled — the server allows it', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeDisabled()
+    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeEnabled()
   })
 
-  it('disables comment edit and delete, even for the current user\'s own comment', async () => {
+  it('leaves Edit enabled on the current user\'s own comment', async () => {
+    // PATCH /api/comments/:id is allowlisted, and the route itself refuses a
+    // comment whose userId is not the caller's, so editing your own is safe.
     renderBillDetail({ demoLocked: true })
     await screen.findByText('My own comment')
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
+  })
+
+  it('still disables Delete on the current user\'s own comment', async () => {
+    // DELETE /api/comments/:id stays denied — one visitor deleting seeded
+    // discussion leaves the demo thinner for everyone until the reset.
+    renderBillDetail({ demoLocked: true })
+    await screen.findByText('My own comment')
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
   })
 
-  it('disables the reaction toggle and the add-reaction control', async () => {
+  it('leaves the reaction toggle and add-reaction control enabled', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('button', { name: '👍 1' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /add reaction/i })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: '👍 1' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /add reaction/i })).toBeEnabled()
   })
 
-  it('disables the comment composer submit', async () => {
+  it('leaves the comment composer enabled', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('button', { name: 'Post' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Post' })).toBeEnabled()
   })
 
-  it('disables the vote buttons', async () => {
+  it('leaves the vote buttons enabled', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('button', { name: 'Support' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Neutral' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Oppose' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Support' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Neutral' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Oppose' })).toBeEnabled()
   })
 
-  it('disables the custom-field editors (text, binary, dropdown, date)', async () => {
+  it('leaves the custom-field editors enabled', async () => {
     renderBillDetail({ demoLocked: true })
-    expect(await screen.findByRole('button', { name: /edit notes field/i })).toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: /flag field/i })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: /edit notes field/i })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: /flag field/i })).toBeEnabled()
     // The dropdown trigger's accessible name is its current display value
     // (the Picker's own aria-label lives on the option panel, not the trigger).
-    expect(screen.getByRole('button', { name: 'Option A' })).toBeDisabled()
-    expect(screen.getByLabelText(/date field/i)).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Option A' })).toBeEnabled()
+    expect(screen.getByLabelText(/date field/i)).toBeEnabled()
   })
 
-  it('disables entering edit mode on the personal note', async () => {
+  it('allows entering edit mode on the personal note', async () => {
     renderBillDetail({ demoLocked: true })
     const note = await screen.findByRole('button', { name: /personal note/i })
-    expect(note).toHaveAttribute('aria-disabled', 'true')
+    expect(note).not.toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('disables the pinned custom-field editor Edit trigger', async () => {
+  it('leaves the pinned custom-field editor Edit trigger enabled', async () => {
     renderBillDetail({ demoLocked: true })
     // A pinned text field surfaces in two places: BillDetail's own pinned-field
-    // block near the top of the page (Finding 1 — previously un-gated) and
-    // again inside CustomFieldsSection's plain field list further down (already
-    // gated). Both share the same accessible name, so assert on the whole set —
-    // document order puts BillDetail's own render first.
+    // block near the top of the page and again inside CustomFieldsSection's
+    // plain field list further down. Both share the same accessible name, so
+    // assert on the whole set — document order puts BillDetail's own render first.
     const editors = await screen.findAllByRole('button', { name: /edit pinned notes/i })
     expect(editors).toHaveLength(2)
-    for (const editor of editors) expect(editor).toBeDisabled()
+    for (const editor of editors) expect(editor).toBeEnabled()
   })
 
-  it('disables the pinned custom-field RichTextEditor Save once in edit mode', async () => {
-    // Render unlocked so the Edit trigger is clickable, enter edit mode, then
-    // flip demoLocked — mirroring the mid-session lock the RichTextEditor
-    // editable/setEditable sync is meant to catch.
+  it('leaves the pinned custom-field RichTextEditor Save enabled', async () => {
+    // Enter edit mode, then flip demoLocked mid-session: the Save stays live,
+    // because custom field values are an allowed write.
     const { rerender } = renderBillDetail({ demoLocked: false })
     const [editBtn] = await screen.findAllByRole('button', { name: /edit pinned notes/i })
     editBtn.click()
     expect(await screen.findByRole('button', { name: 'Save' })).toBeEnabled()
     demoState.demoLocked = true
     rerender(<MemoryRouter><BillDetail /></MemoryRouter>)
-    expect(await screen.findByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeEnabled()
   })
 
-  it('disables the priority select and Dismiss button on an un-triaged keyword match (NewMatchTriageControl)', async () => {
+  it('leaves the priority select and Dismiss button enabled on an un-triaged keyword match', async () => {
     renderBillDetail({ demoLocked: true, overrides: { newMatchAt: '2025-01-05 00:00:00' } })
-    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /dismiss/i })).toBeDisabled()
+    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /dismiss/i })).toBeEnabled()
   })
 
   it('disables draft-bill Edit triggers for title, sponsor, summary, and bill text', async () => {
