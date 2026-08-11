@@ -7,13 +7,37 @@ import type { DemoSeed } from './demoSeeds'
 const daysAgoDb = (n: number) =>
   new Date(Date.now() - n * 86400_000).toISOString().slice(0, 19).replace('T', ' ')
 
-/** A date-only (YYYY-MM-DD) offset from today, for calendar rows.
- *  Counts FORWARD: positive offsetDays is the future, negative is the past. The
- *  seed's `offsetDays` is the sole field that inverts the "N days ago" convention,
- *  because most calendar events are upcoming. Note the opposite sign to
- *  daysAgoDb above. */
-const dateFromNow = (offsetDays: number) =>
-  new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
+/**
+ * A date-only (YYYY-MM-DD) offset from today, for calendar rows, snapped off the
+ * weekend.
+ *
+ * Counts FORWARD: positive offsetDays is the future, negative is the past. The
+ * seed's `offsetDays` is the sole field that inverts the "N days ago" convention,
+ * because most calendar events are upcoming. Note the opposite sign to
+ * daysAgoDb above.
+ *
+ * Why the snap: `offsetDays` is relative to the reset, so a fixed offset lands on
+ * a different weekday every night — which put committee hearings on Saturdays and
+ * Sundays roughly two nights in seven. Legislatures don't sit at the weekend, and
+ * a demo advertising a Sunday hearing is the sort of detail a prospect notices.
+ *
+ * The snap preserves the offset's sense: a future event moves forward to Monday,
+ * a past event back to Friday. So a past event can never become upcoming, which
+ * would otherwise reorder the feed and calendar.
+ *
+ * Consequence for tests: the day-delta between the reset date and a calendar date
+ * is now weekday-dependent, so it is NOT stable across run dates. The golden
+ * snapshot therefore cannot bucket `calendar_events.date` as a relative offset —
+ * see the note in demoReset.snapshot.test.ts, which pins these dates by
+ * recomputing them instead.
+ */
+export const dateFromNow = (offsetDays: number, nowMs: number = Date.now()) => {
+  const d = new Date(nowMs + offsetDays * 86400_000)
+  const step = offsetDays < 0 ? -1 : 1
+  // 0 = Sunday, 6 = Saturday
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + step)
+  return d.toISOString().slice(0, 10)
+}
 
 const placeholdersFor = (ids: readonly unknown[]) => ids.map(() => '?').join(',')
 
