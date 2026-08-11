@@ -237,7 +237,7 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     const db = getDb(env.DB)
     if (env.DEMO_MODE === 'true') {
-      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))))   // demo: 06:00 reset only; no digests
+      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))))   // demo: reset only; no digests
       return
     }
     if (event.cron === '0 11 * * *') {

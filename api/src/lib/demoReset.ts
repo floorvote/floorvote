@@ -17,8 +17,8 @@ const daysAgoDb = (n: number) =>
  * daysAgoDb above.
  *
  * Why the snap: `offsetDays` is relative to the reset, so a fixed offset lands on
- * a different weekday every night — which put committee hearings on Saturdays and
- * Sundays roughly two nights in seven. Legislatures don't sit at the weekend, and
+ * a different weekday on every reset — which put committee hearings on Saturdays
+ * and Sundays roughly two days in seven. Legislatures don't sit at the weekend, and
  * a demo advertising a Sunday hearing is the sort of detail a prospect notices.
  *
  * The snap preserves the offset's sense: a future event moves forward to Monday,

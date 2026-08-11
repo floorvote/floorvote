@@ -43,7 +43,7 @@ export async function ensureInstancePreset(env: Env, db: AppDb): Promise<string 
   // would fire on the very first GET /config and overwrite all four with preset
   // values. That is a live hazard, not a theoretical one: tenants.md recommends
   // setting INSTANCE_PRESET on every tenant and demo.md says to deploy a demo
-  // "exactly as in Adding tenants". The damage self-heals at the next 06:00 reset
+  // "exactly as in Adding tenants". The damage self-heals at the next reset
   // with no error logged anywhere, so a new demo would spend its first day on the
   // wrong taxonomy. Write nothing here; the seed is the only writer.
   if (env.DEMO_MODE === 'true') return DEMO_SEED_PRESET

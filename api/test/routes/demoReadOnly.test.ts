@@ -4,7 +4,7 @@ import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { DEMO_WRITE_ALLOWLIST } from '../../src/middleware/auth'
 
-const READ_ONLY_BODY = { error: 'This demo is read-only' }
+const LOCKED_BODY = { error: 'This action is locked in the demo' }
 
 describe('demo read-only guard', () => {
   let cookie: string
@@ -24,7 +24,7 @@ describe('demo read-only guard', () => {
       body: JSON.stringify({ billIds: ['some-id'] }),
     }, demoEnv)
     expect(res.status).toBe(403)
-    expect(await res.json()).toEqual(READ_ONLY_BODY)
+    expect(await res.json()).toEqual(LOCKED_BODY)
   })
 
   it('lets a visitor post a comment — the demo working, not vandalism', async () => {
@@ -210,7 +210,7 @@ describe('demo write categorisation', () => {
         body: '{}',
       }, demoEnv)
       expect(res.status, `${key} should be 403`).toBe(403)
-      expect(await res.json(), `${key} should carry the read-only body`).toEqual(READ_ONLY_BODY)
+      expect(await res.json(), `${key} should carry the read-only body`).toEqual(LOCKED_BODY)
     }
   })
 
@@ -226,7 +226,7 @@ describe('demo write categorisation', () => {
       // its own reasons (canVote, ownership). What must never appear past the
       // guard is the guard's own message.
       const body = await res.json().catch(() => ({})) as { error?: string }
-      expect(body.error, `${key} must not be refused by the demo guard`).not.toBe(READ_ONLY_BODY.error)
+      expect(body.error, `${key} must not be refused by the demo guard`).not.toBe(LOCKED_BODY.error)
     }
   })
 })

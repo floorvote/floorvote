@@ -192,7 +192,7 @@ describe('GET /config', () => {
   // demo "exactly as in Adding tenants", a fresh demo tenant would otherwise hit
   // ensureInstancePreset's bootstrap branch on its very first GET /config and
   // have all four keys overwritten with preset values — silently, and only until
-  // the next 06:00 reset.
+  // the next reset.
 
   /** Write the four keys a seed owns, as runDemoReset would. */
   async function seedWrittenAiConfig(db: ReturnType<typeof getDb>) {

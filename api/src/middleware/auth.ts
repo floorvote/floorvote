@@ -177,5 +177,5 @@ export const demoReadOnly = createMiddleware<{
 
   if (ALLOW_MATCHERS.some(m => m.method === method && m.re.test(path))) return await next()
 
-  return c.json({ error: 'This demo is read-only' }, 403)
+  return c.json({ error: 'This action is locked in the demo' }, 403)
 })
