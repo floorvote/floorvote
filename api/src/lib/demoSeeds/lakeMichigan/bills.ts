@@ -34,7 +34,10 @@ export const LM_BILLS: Array<{
   { externalId: 'legiscan:2111275', jurisdiction: 'IL', billNumber: 'SB4025', live: false, theme: 'Lead Service Lines' },
   { externalId: 'legiscan:2061476', jurisdiction: 'IN', billNumber: 'HB1124', live: true , theme: 'Drinking Water' },
   { externalId: 'legiscan:2056216', jurisdiction: 'IN', billNumber: 'SB0006', live: false, theme: 'Septic & Wastewater' },
-  { externalId: 'legiscan:2065860', jurisdiction: 'IN', billNumber: 'SB0188', live: true , theme: 'Beaches & Shoreline' },
+  // Withdrawn 2026-01-12, six days after introduction. LegiScan's `status` field
+  // still reads Introduced, so liveness had to come from the action history — the
+  // one bill in the set where those two disagree.
+  { externalId: 'legiscan:2065860', jurisdiction: 'IN', billNumber: 'SB0188', live: false, theme: 'Beaches & Shoreline' },
   { externalId: 'legiscan:1910159', jurisdiction: 'US', billNumber: 'HB284', live: true , theme: 'Great Lakes' },
   { externalId: 'legiscan:1933798', jurisdiction: 'US', billNumber: 'HB583', live: true , theme: 'Beaches & Shoreline' },
   { externalId: 'legiscan:2058690', jurisdiction: 'US', billNumber: 'HB6668', live: true , theme: 'PFAS & Contaminants' },
