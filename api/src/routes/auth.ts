@@ -15,6 +15,7 @@ import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
+import { ensureDemoSession, demoSessionCookie } from '../lib/demoSession'
 import type { AppEnv } from '../types'
 
 export const authRoutes = new Hono<AppEnv>()
@@ -51,27 +52,21 @@ authRoutes.post('/demo-login', async (c) => {
   const user = await db.select().from(users).where(eq(users.id, 'demo-user')).get()
   if (!user) return c.json({ error: 'Demo user not seeded' }, 500)
 
-  const sessionToken = await generateToken()
-  const sessionHash = await hashToken(sessionToken)
-  // Store the DB expiry in SQLite space format (expiryDb), matching the other
-  // session writers; use a Date for the cookie's own expiry.
-  const expiresInstant = new Date(Date.now() + SESSION_DURATION_MS)
-  await db.insert(sessions).values({
-    id: crypto.randomUUID(),
-    userId: user.id,
-    tokenHash: sessionHash,
-    expiresAt: expiryDb(SESSION_DURATION_MS),
-  })
+  // Hand out the ONE shared demo session rather than minting a row per call.
+  // This endpoint is on the visitor entry path — web/src/pages/Login.tsx
+  // auto-posts it whenever demoMode is true and the visit isn't manual — so a
+  // fresh `sessions` row per request is the same unbounded growth from bot
+  // traffic that ensureDemoSession was written to stop (see demoSession.ts).
+  // Idempotent, and it now hands out the same session the HTML auto-login
+  // middleware does instead of a second, divergent one.
+  const sessionToken = await ensureDemoSession(c.env.DB)
 
-  setCookie(c, 'session', sessionToken, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'Lax',
-    path: '/',
-    expires: expiresInstant,
-  })
-
-  return c.json({ redirect: '/' })
+  // Same cookie the auto-login middleware sets, built by the same helper so the
+  // two can't drift. Appended raw because hono's setCookie rejects the
+  // far-future Expires the shared session uses.
+  const res = c.json({ redirect: '/' })
+  res.headers.append('Set-Cookie', demoSessionCookie(sessionToken))
+  return res
 })
 
 // POST /auth/magic-link

@@ -193,6 +193,15 @@ export const demoReadOnly = createMiddleware<{
     // keep winning over a 429 (a permanently locked route must never read as
     // "try again shortly"). Fails open when the binding is absent, exactly like
     // the magic-link limiter, so tenants that never declare it are unaffected.
+    //
+    // demo-login is exempt: it is the visitor's way IN (Login.tsx auto-posts it
+    // on entry), and it is idempotent — it reuses the one shared demo session
+    // and writes nothing per call, so it adds no growth to throttle. Limiting it
+    // would only lock entry for everyone behind one shared IP (a conference, an
+    // office) on exactly the link that is meant to spread. It stays in the
+    // allowlist — removing it there would make the guard 403 it outright.
+    if (path === '/api/auth/demo-login') return await next()
+
     const ip = c.req.header('CF-Connecting-IP') || 'unknown'
     if (!(await checkRateLimit(c.env.DEMO_WRITE_RATE_LIMITER, `demo-write:${ip}`))) {
       return c.json({ error: 'Too many changes from this connection — try again shortly' }, 429)

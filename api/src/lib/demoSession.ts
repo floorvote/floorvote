@@ -34,6 +34,20 @@ const DEMO_SESSION_EXPIRES_DB = '9999-12-31 23:59:59'
  * return its raw token to hand out as the `session` cookie. INSERT OR IGNORE
  * keeps the row count at one and recreates it after a reset wipes sessions.
  */
+/**
+ * The `Set-Cookie` value handing out the shared demo session. Built here, not at
+ * each call site, so the HTML auto-login middleware (api/src/index.ts) and
+ * POST /auth/demo-login (api/src/routes/auth.ts) cannot drift on attributes or
+ * expiry — they hand out the same session and must describe it identically.
+ *
+ * Appended as a raw header rather than passed to hono's `setCookie`, which
+ * throws on an Expires more than 400 days out.
+ */
+export function demoSessionCookie(token: string = DEMO_SESSION_TOKEN): string {
+  const expires = new Date('9999-12-31T23:59:59Z').toUTCString()
+  return `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Expires=${expires}`
+}
+
 export async function ensureDemoSession(db: D1Database): Promise<string> {
   const tokenHash = await hashToken(DEMO_SESSION_TOKEN)
   await db

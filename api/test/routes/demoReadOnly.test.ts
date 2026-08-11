@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { getDb } from '../../src/db/client'
+import { users } from '../../src/db/schema'
 import { DEMO_WRITE_ALLOWLIST } from '../../src/middleware/auth'
 import type { RateLimiter } from '../../../shared/rateLimit'
 
@@ -189,6 +191,28 @@ describe('demo write rate limit', () => {
   it('fails open with no binding — demo writes behave exactly as before', async () => {
     const res = await postComment(demoEnv)
     expect(res.status).not.toBe(429)
+  })
+
+  it('exempts demo-login — entry must survive a denying limiter, content writes must not', async () => {
+    // One test, both halves: the exemption has to be specific. demo-login is the
+    // visitor's way IN (Login.tsx auto-posts it) and is idempotent — it reuses
+    // the shared session and writes nothing per call — so throttling it would
+    // lock out everyone behind one NAT for no gain. A content write on the same
+    // denying limiter must still be refused, or the exemption is a hole.
+    await getDb(env.DB).insert(users).values({
+      id: 'demo-user',
+      email: 'demo@example.com',
+      name: 'Demo User',
+      role: 'member',
+      canVote: 1,
+      emailDigestEnabled: 1,
+    })
+
+    const login = await app.request('/api/auth/demo-login', { method: 'POST' }, denyEnv)
+    expect(login.status).toBe(200)
+
+    const write = await postComment(denyEnv)
+    expect(write.status).toBe(429)
   })
 
   it('leaves a real tenant unaffected even when the limiter would deny', async () => {

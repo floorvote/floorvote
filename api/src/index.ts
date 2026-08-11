@@ -33,7 +33,7 @@ import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
 import { nowDb } from './lib/dbTime'
-import { ensureDemoSession, DEMO_SESSION_TOKEN } from './lib/demoSession'
+import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
 
@@ -106,8 +106,7 @@ app.use('*', async (c, next) => {
   // which means the Worker never runs for cached requests and auto-login is skipped.
   h.set('Cache-Control', 'no-store, no-cache')
   if (setDemoCookie) {
-    const expires = new Date('9999-12-31T23:59:59Z').toUTCString()
-    h.append('Set-Cookie', `session=${DEMO_SESSION_TOKEN}; HttpOnly; Secure; SameSite=Lax; Path=/; Expires=${expires}`)
+    h.append('Set-Cookie', demoSessionCookie())
   }
   c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers: h })
 })
