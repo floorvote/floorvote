@@ -151,6 +151,17 @@ namespace_id = "3001"               # unique per env
   limit = 10
   period = 60
 
+# Only needed on a DEMO_MODE tenant. Demo auto-login gives any caller a session
+# without interaction, so the additive writes the demo allows are anonymous;
+# demoReadOnly caps them per client IP. The code fails open when this binding is
+# absent, so a normal (non-demo) tenant can leave the whole block out.
+# [[env.example.ratelimits]]
+# name = "DEMO_WRITE_RATE_LIMITER"
+# namespace_id = "3002"             # unique per env
+#   [env.example.ratelimits.simple]
+#   limit = 30
+#   period = 60
+
 # Secrets (set via `wrangler secret put --env example`):
 # RESEND_API_KEY           — magic-link email (if EMAIL_PROVIDER=resend)
 # GEMINI_API_KEY           — Google Gemini AI (fallback when AI_GATEWAY_ENABLED != true)

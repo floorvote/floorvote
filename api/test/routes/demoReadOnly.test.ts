@@ -3,8 +3,20 @@ import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { DEMO_WRITE_ALLOWLIST } from '../../src/middleware/auth'
+import type { RateLimiter } from '../../../shared/rateLimit'
 
 const LOCKED_BODY = { error: 'This action is locked in the demo' }
+const THROTTLED_BODY = { error: 'Too many changes from this connection — try again shortly' }
+
+// Same shape as api/src/lib/rateLimit.test.ts — never a real binding.
+function fakeLimiter(success: boolean, onKey?: (key: string) => void): RateLimiter {
+  return {
+    limit: async ({ key }) => {
+      onKey?.(key)
+      return { success }
+    },
+  }
+}
 
 describe('demo read-only guard', () => {
   let cookie: string
@@ -101,6 +113,88 @@ describe('demo read-only guard', () => {
     }, env)
     expect(res.status).toBe(401)
     expect(await res.json()).toEqual({ error: 'Not authenticated' })
+  })
+})
+
+// Demo auto-login hands any caller a valid session with no interaction, so every
+// allowed demo write is effectively anonymous. The guard is the single choke
+// point they all pass through, so the per-connection limit lives there.
+describe('demo write rate limit', () => {
+  let cookie: string
+  const demoEnv = { ...env, DEMO_MODE: 'true' }
+  const allowEnv = { ...demoEnv, DEMO_WRITE_RATE_LIMITER: fakeLimiter(true) }
+  const denyEnv = { ...demoEnv, DEMO_WRITE_RATE_LIMITER: fakeLimiter(false) }
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const userId = await seedUser({ role: 'owner' })
+    cookie = `session=${await seedSession(userId)}`
+  })
+
+  const postComment = (testEnv: unknown, headers: Record<string, string> = {}) =>
+    app.request('/api/bills/some-id/comments', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ content: '<p>hi</p>' }),
+    }, testEnv as typeof env)
+
+  it('passes an allowed demo write through when the limiter allows', async () => {
+    const res = await postComment(allowEnv)
+    expect(res.status).not.toBe(429)
+  })
+
+  it('refuses the same write with 429 when the limiter denies', async () => {
+    const res = await postComment(denyEnv)
+    expect(res.status).toBe(429)
+    expect(await res.json()).toEqual(THROTTLED_BODY)
+  })
+
+  it('carries a body distinct from the lock, so a visitor can tell them apart', async () => {
+    const res = await postComment(denyEnv)
+    expect((await res.json() as { error: string }).error).not.toBe(LOCKED_BODY.error)
+  })
+
+  it('keys per-IP: every visitor shares one demo-user identity, so IP is the only signal', async () => {
+    const keys: string[] = []
+    const spyEnv = { ...demoEnv, DEMO_WRITE_RATE_LIMITER: fakeLimiter(true, k => keys.push(k)) }
+    await postComment(spyEnv, { 'CF-Connecting-IP': '1.2.3.4' })
+    expect(keys).toEqual(['demo-write:1.2.3.4'])
+  })
+
+  it('never rate-limits a GET, even when the limiter would deny', async () => {
+    // Reads are not the abuse surface, and throttling them would break the
+    // shared link for everyone behind one NAT.
+    const res = await app.request('/api/config', { headers: { Cookie: cookie } }, denyEnv)
+    expect(res.status).toBe(200)
+  })
+
+  it('leaves HEAD/OPTIONS alone so CORS preflight survives a denying limiter', async () => {
+    const res = await app.request('/api/config', { method: 'OPTIONS' }, denyEnv)
+    expect(res.status).not.toBe(429)
+  })
+
+  it('keeps the lock ahead of the limiter: a denied route is 403, never 429', async () => {
+    // A limiter that denies must not turn a locked route into a 429 and tell a
+    // visitor to "try again shortly" for something that will never be allowed.
+    const res = await app.request('/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billIds: ['some-id'] }),
+    }, denyEnv)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual(LOCKED_BODY)
+  })
+
+  it('fails open with no binding — demo writes behave exactly as before', async () => {
+    const res = await postComment(demoEnv)
+    expect(res.status).not.toBe(429)
+  })
+
+  it('leaves a real tenant unaffected even when the limiter would deny', async () => {
+    const realEnv = { ...env, DEMO_WRITE_RATE_LIMITER: fakeLimiter(false) }
+    const res = await postComment(realEnv)
+    expect(res.status).not.toBe(429)
   })
 })
 

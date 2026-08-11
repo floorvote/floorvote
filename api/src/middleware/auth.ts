@@ -6,6 +6,7 @@ import { sessions, users } from '../db/schema'
 import { hashToken } from '../lib/crypto'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { dbTsToEpoch } from '../../../shared/time'
+import { checkRateLimit } from '../../../shared/rateLimit'
 import type { Env } from '../types'
 
 // Attach { user } to the Hono context for protected routes.
@@ -175,7 +176,29 @@ export const demoReadOnly = createMiddleware<{
   // here would shadow that route's own 401.
   if (path.startsWith('/api/internal/')) return await next()
 
-  if (ALLOW_MATCHERS.some(m => m.method === method && m.re.test(path))) return await next()
+  if (ALLOW_MATCHERS.some(m => m.method === method && m.re.test(path))) {
+    // Demo auto-login (index.ts) hands any caller a valid session with no
+    // interaction, so every allowed write here is anonymous and scriptable from
+    // a public host. Nothing leaks and the reset repairs it, but a script can
+    // add unbounded rows between resets — and the reset's own unqualified
+    // DELETEs get slower the more there are.
+    //
+    // Keyed by IP, not user: every visitor shares the one `demo-user` identity,
+    // so a per-user key would be a single global bucket and the first script
+    // would throttle everybody. IP is the only key with signal here.
+    //
+    // Checked HERE, after the allowlist has already decided the request is
+    // permitted, so GETs, HEAD/OPTIONS, non-demo tenants, and refused writes are
+    // all untouched — reads are not the abuse surface, and the lock's 403 must
+    // keep winning over a 429 (a permanently locked route must never read as
+    // "try again shortly"). Fails open when the binding is absent, exactly like
+    // the magic-link limiter, so tenants that never declare it are unaffected.
+    const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+    if (!(await checkRateLimit(c.env.DEMO_WRITE_RATE_LIMITER, `demo-write:${ip}`))) {
+      return c.json({ error: 'Too many changes from this connection — try again shortly' }, 429)
+    }
+    return await next()
+  }
 
   return c.json({ error: 'This action is locked in the demo' }, 403)
 })
