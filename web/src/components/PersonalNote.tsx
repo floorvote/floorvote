@@ -52,6 +52,12 @@ export function PersonalNote({ billId, initialContent }: PersonalNoteProps) {
           tabIndex={0}
           aria-label="Personal note"
           onClick={() => setIsEditing(true)}
+          // A role="button" div is not natively keyboard-operable. It is always
+          // tabIndex={0} now (demo tenants accept notes, so it is never a
+          // focus-skipped read-only box), which without this made it
+          // focusable-but-inoperable for keyboard users. Space preventDefaults so
+          // activating the note doesn't also scroll the page.
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsEditing(true) } }}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           style={{

@@ -270,6 +270,28 @@ describe('BillDetail write controls when demoLocked', () => {
     expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
   })
 
+  it('opens the personal note with Enter from the keyboard', async () => {
+    // The note is a role="button" div, always tabIndex={0} now that demo tenants
+    // accept notes. Without an onKeyDown it is focusable-but-inoperable — a
+    // keyboard user tabs to it and nothing happens. Assert both keys, and assert
+    // Space is preventDefault'ed so activating it doesn't scroll the page too.
+    renderBillDetail({ demoLocked: true })
+    const note = await screen.findByRole('button', { name: /personal note/i })
+
+    const enter = fireEvent.keyDown(note, { key: 'Enter' })
+    expect(enter).toBe(false) // preventDefault was called
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
+  it('opens the personal note with Space and prevents the page scroll', async () => {
+    renderBillDetail({ demoLocked: true })
+    const note = await screen.findByRole('button', { name: /personal note/i })
+
+    const space = fireEvent.keyDown(note, { key: ' ' })
+    expect(space).toBe(false) // preventDefault was called, so Space won't scroll
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
+  })
+
   it('leaves the pinned custom-field editor Edit trigger enabled', async () => {
     renderBillDetail({ demoLocked: true })
     // A pinned text field surfaces in two places: BillDetail's own pinned-field
