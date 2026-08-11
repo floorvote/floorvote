@@ -232,3 +232,63 @@ describe('lake-michigan derived feed events', () => {
     for (const e of s.feedEvents) expect(known.has(e.externalId), `event ${e.id}`).toBe(true)
   })
 })
+
+describe('lake-michigan discussion', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+
+  it('keeps comments short — the demo sells features, not policy analysis', () => {
+    for (const c of s.comments) {
+      const text = stripHtml(c.content)
+      expect(text.length, `${c.id} is ${text.length} chars: ${text.slice(0, 60)}`).toBeLessThanOrEqual(420)
+      expect(c.content, `${c.id} must not use bulleted analysis`).not.toContain('<ul>')
+      expect(c.content, `${c.id} must not use bold headers`).not.toContain('<strong>')
+    }
+  })
+
+  it('resolves every comment, reaction, mention, vote, and note reference', () => {
+    const uids = new Set(s.users.map(u => u.id))
+    const rids = new Set(s.roles.map(r => r.id))
+    const bills = new Set(s.priorities.map(p => p.externalId))
+    const cids = new Set(s.comments.map(c => c.id))
+    for (const c of s.comments) {
+      expect(uids.has(c.userId), `comment ${c.id} user`).toBe(true)
+      expect(bills.has(c.externalId), `comment ${c.id} bill`).toBe(true)
+    }
+    for (const r of s.reactions) {
+      expect(cids.has(r.commentId), `reaction ${r.id} comment`).toBe(true)
+      expect(uids.has(r.userId), `reaction ${r.id} user`).toBe(true)
+    }
+    for (const m of s.mentions) {
+      expect(cids.has(m.commentId), `mention ${m.id} comment`).toBe(true)
+      expect(uids.has(m.userId), `mention ${m.id} target`).toBe(true)
+      if (m.sourceType === 'role') expect(rids.has(m.sourceId), `mention ${m.id} role`).toBe(true)
+      else expect(uids.has(m.sourceId), `mention ${m.id} user`).toBe(true)
+    }
+    for (const v of s.votes) {
+      expect(uids.has(v.userId), `vote ${v.id} user`).toBe(true)
+      expect(bills.has(v.externalId), `vote ${v.id} bill`).toBe(true)
+    }
+    for (const n of s.notes) expect(bills.has(n.externalId), `note ${n.id} bill`).toBe(true)
+  })
+
+  it('never lets a reaction predate its comment', () => {
+    const byId = new Map(s.comments.map(c => [c.id, c]))
+    for (const r of s.reactions) {
+      expect(r.daysAgo, `reaction ${r.id}`).toBeLessThanOrEqual(byId.get(r.commentId)!.daysAgo)
+    }
+  })
+
+  it('has no duplicate reaction from one person on one comment with one emoji', () => {
+    const seen = new Set(s.reactions.map(r => `${r.commentId}|${r.userId}|${r.emoji}`))
+    expect(seen.size).toBe(s.reactions.length)
+  })
+
+  it('has one vote per member per bill', () => {
+    const seen = new Set(s.votes.map(v => `${v.externalId}|${v.userId}`))
+    expect(seen.size).toBe(s.votes.length)
+  })
+
+  it('uses only valid member vote positions', () => {
+    for (const v of s.votes) expect(['support', 'oppose', 'neutral']).toContain(v.position)
+  })
+})
