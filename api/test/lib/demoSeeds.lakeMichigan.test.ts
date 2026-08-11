@@ -342,6 +342,19 @@ describe('lake-michigan discussion', () => {
     expect(seen.size).toBe(s.votes.length)
   })
 
+  it('never records a vote from a member who cannot vote', () => {
+    // demoReset writes member_votes straight from the seed without consulting
+    // users.can_vote, so a vote from a non-voting member would put the demo in a
+    // state the app itself cannot produce — the vote controls are hidden for those
+    // users. The seed deliberately includes one non-voter to show that state, so
+    // assert both halves: the non-voter exists, and casts nothing.
+    const nonVoters = new Set(s.users.filter(u => !u.canVote).map(u => u.id))
+    expect(nonVoters.size, 'seed should include a non-voting member').toBeGreaterThan(0)
+    for (const v of s.votes) {
+      expect(nonVoters.has(v.userId), `${v.id}: ${v.userId} cannot vote`).toBe(false)
+    }
+  })
+
   it('uses only valid member vote positions, and exercises all three', () => {
     for (const v of s.votes) expect(['support', 'oppose', 'neutral']).toContain(v.position)
     // A demo that sells the voting feature has to show its third state somewhere.
