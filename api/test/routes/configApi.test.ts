@@ -186,7 +186,7 @@ describe('GET /config', () => {
   // ── INSTANCE_PRESET must never touch a demo tenant's seed-written config ───
   //
   // A demo tenant's ai_context / relevance_question / tag_taxonomy / keywords
-  // come from its seed (api/src/lib/demoSeeds/), and the nightly reset writes no
+  // come from its seed (api/src/lib/demoSeeds/), and the demo reset writes no
   // instance_preset row. Because self-hosting/tenants.md recommends setting
   // INSTANCE_PRESET on every tenant and self-hosting/demo.md says to deploy a
   // demo "exactly as in Adding tenants", a fresh demo tenant would otherwise hit

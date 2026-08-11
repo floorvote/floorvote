@@ -129,7 +129,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('demo_banner', ?)`).bind(JSON.stringify(seed.bannerText)),
     // Optional widgets start OFF so visitors can experience enabling them in
     // Settings → Modules (toggling modules is allowed in demo mode; all other
-    // config stays locked). Nightly reset returns them to the seeded state.
+    // config stays locked). Reset returns them to the seeded state.
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('modules', ?)`).bind(JSON.stringify(seed.modules)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('sessions', ?)`).bind(JSON.stringify({
       data: seed.sessions.data,
@@ -253,7 +253,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
   // past timestamps, so a "now" baseline keeps the Feed nav dot dark for fresh
   // demo visitors — without this, the re-created demo-user row has a null
-  // last_seen_feed, which lights the dot after every nightly reset.
+  // last_seen_feed, which lights the dot after every reset.
   await db.prepare(`UPDATE users SET last_seen_feed = datetime('now') WHERE id = 'demo-user'`).run()
 
   // Custom field values — spread across bills so filtering produces results
@@ -275,7 +275,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   ))
 
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
-  // hearings widget always show fresh upcoming events; the nightly reset re-derives them.
+  // hearings widget always show fresh upcoming events; the demo reset re-derives them.
   await batch(seed.calendarEvents.map((e) =>
     e.externalId === null
       ? db.prepare(

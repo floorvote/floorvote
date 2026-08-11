@@ -328,7 +328,7 @@ const sb628Reactions: DemoSeedReaction[] = [
 // ---------------------------------------------------------------------------
 const ilHb1175: DemoSeedComment[] = [
   // No countdown in the prose: the hearing's date and this comment's date both
-  // slide with the nightly reset, so any "in N weeks" phrasing is wrong every night.
+  // slide with the demo reset, so any "in N weeks" phrasing is wrong after every reset.
   { id: 'lm-c-41', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
     content: '<p>Energy and Environment hearing notice just landed. Time to lock in our written testimony.</p>', daysAgo: 5 },
   { id: 'lm-c-42', externalId: 'legiscan:1906052', userId: 'lm-user-gc',

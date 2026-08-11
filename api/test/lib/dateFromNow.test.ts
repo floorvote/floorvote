@@ -1,6 +1,6 @@
 // Property tests for the calendar-date snap. dateFromNow is the one piece of the
-// reset whose output is weekday-dependent, and it runs unattended nightly against
-// a live public demo, so its invariants are asserted directly rather than inferred
+// reset whose output is weekday-dependent, and it runs unattended against a live
+// public demo on every reset, so its invariants are asserted directly rather than inferred
 // from the golden snapshot (which deliberately no longer pins this column).
 import { describe, it, expect } from 'vitest'
 import { dateFromNow } from '../../src/lib/demoReset'

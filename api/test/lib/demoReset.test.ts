@@ -105,7 +105,7 @@ describe('runDemoReset — calendar seeding', () => {
   it('marks demo-user as having seen the feed so the Pulse nav dot stays dark', async () => {
     // The reset re-creates demo-user (INSERT OR REPLACE) and seeds feed events with
     // past timestamps. Without a seen baseline, last_seen_feed is null, which lights
-    // the nav dot for the first visitor after every nightly reset. Seed it to now.
+    // the nav dot for the first visitor after every reset. Seed it to now.
     await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
     const demoUser = await db.select().from(users).where(eq(users.id, 'demo-user')).get()

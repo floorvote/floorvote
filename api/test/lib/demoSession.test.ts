@@ -43,7 +43,7 @@ describe('ensureDemoSession — D1 demo session write amplification', () => {
     expect(valid).toBeTruthy()
   })
 
-  it('recreates the shared row after sessions are wiped (nightly-reset self-heal)', async () => {
+  it('recreates the shared row after sessions are wiped (demo-reset self-heal)', async () => {
     await ensureDemoSession(env.DB)
     await env.DB.prepare('DELETE FROM sessions').run()
     await ensureDemoSession(env.DB)

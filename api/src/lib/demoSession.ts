@@ -7,12 +7,12 @@ import { hashToken } from './crypto'
  * visitor in as `demo-user`. It previously minted a BRAND-NEW `sessions` row on
  * every cookieless (or stale-cookie) request, each with a 30-day expiry. Because
  * demo HTML is served `no-store` (so the edge can't absorb it), every crawler /
- * bot hit ran the Worker and inserted another row — unbounded growth between the
- * nightly resets, matching the June 2026 crawler spike.
+ * bot hit ran the Worker and inserted another row — unbounded growth between
+ * resets, matching the June 2026 crawler spike.
  *
  * The fix: reuse ONE shared session row for `demo-user`. `ensureDemoSession` is
  * idempotent (INSERT OR IGNORE on a fixed id), so the row count stays at one no
- * matter how much bot traffic arrives, and it self-heals if the nightly reset
+ * matter how much bot traffic arrives, and it self-heals if the demo reset
  * wipes sessions.
  *
  * The raw token is a known constant. This is safe: DEMO_MODE already auto-logs
