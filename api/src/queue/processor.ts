@@ -22,7 +22,7 @@ function isGeminiShed(err: unknown): boolean {
 // AiSkipReason values mirror the column in api/migrations/0039_ai_skip_reason.sql.
 // Add new reasons here and document them in the migration when new permanent-failure
 // modes are discovered.
-type AiSkipReason = 'pdf_too_large'
+type AiSkipReason = 'pdf_too_large' | 'unreadable_document'
 
 /**
  * Map an AI provider error to a permanent skip reason, or null if the error is
@@ -39,6 +39,15 @@ function classifyAiError(err: unknown): AiSkipReason | null {
   const message = e?.message ?? ''
   if (status === 400 && /exceeds the supported page limit/i.test(message)) {
     return 'pdf_too_large'
+  }
+  // Gemini rejecting the bytes as a document at all. Retrying cannot help: the
+  // stored object is not the document it claims to be (a state site serving an
+  // HTML shell under a .pdf URL is the known cause). Recording it as a permanent
+  // skip is what makes the failure visible instead of looking like a bill that
+  // was never processed. `status` is matched loosely because the message is the
+  // reliable signal — the code arrives on the error body, not always on `status`.
+  if (/document has no pages|unable to process input image|invalid_argument.*document/i.test(message)) {
+    return 'unreadable_document'
   }
   return null
 }

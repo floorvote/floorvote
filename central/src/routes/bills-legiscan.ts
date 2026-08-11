@@ -169,9 +169,15 @@ billsLsRoutes.get('/:id', async (c) => {
     .sort((a, b) => b.date.localeCompare(a.date))
     .find(t => t.r2Key)
 
-  type TextStatus = 'not_checked' | 'no_texts' | 'available' | 'in_r2'
+  // 'fetch_failed' means we tried to download every text we know about and none
+  // of them yielded a usable document (see bill_texts.fetch_error). It ranks
+  // below 'in_r2' but must outrank 'available', which otherwise implies "we just
+  // haven't fetched it yet" and hides a real, persistent failure.
+  type TextStatus = 'not_checked' | 'no_texts' | 'available' | 'in_r2' | 'fetch_failed'
+  const allTextsFailed = texts.length > 0 && texts.every(t => t.fetchError)
   const textStatus: TextStatus =
     textWithR2 ? 'in_r2' :
+    allTextsFailed ? 'fetch_failed' :
     texts.length > 0 ? 'available' :
     bill.textsFetchedAt ? 'no_texts' :
     'not_checked'

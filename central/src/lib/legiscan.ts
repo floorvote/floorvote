@@ -218,6 +218,36 @@ export async function getBill(billId: number, apiKey: string): Promise<LegiscanB
   return data.bill
 }
 
+/** One bill-text document, as returned by `getBillText`. `doc` is base64. */
+export interface LegiscanBillText {
+  doc_id: number
+  bill_id: number
+  date: string
+  type: string
+  type_id: number
+  mime: string
+  mime_id: number
+  text_size: number
+  text_hash: string
+  /** base64-encoded document bytes */
+  doc: string
+}
+
+/**
+ * Fetch one bill-text document from LegiScan, base64-encoded.
+ *
+ * This is the fallback for when a state's own `state_link` won't give us the
+ * document — some legislature sites answer non-browser clients with their SPA
+ * shell or an outright block, and LegiScan's mirror can 403. Keyed on **doc_id,
+ * not bill_id**, so a bill with four text versions costs four calls: quota-wise
+ * this is the expensive path, which is why it is only used after a direct fetch
+ * has been tried and rejected.
+ */
+export async function getBillText(docId: number, apiKey: string): Promise<LegiscanBillText> {
+  const data = await legiscanFetch<{ text: LegiscanBillText }>('getBillText', { id: String(docId) }, apiKey)
+  return data.text
+}
+
 interface MasterListRawEntry {
   bill_id: number
   number: string
