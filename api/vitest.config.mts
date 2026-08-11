@@ -29,5 +29,12 @@ export default defineConfig({
   ],
   test: {
     pool: cloudflarePool(),
+    // Vitest's 5s default is too tight for this suite. The bulk-operation tests
+    // seed 1,000+ bills to exercise the >1000 guard and the dismiss batching
+    // boundary; they pass in under a second locally but have timed out at 7s and
+    // 12s on contended CI runners, failing as "Test timed out in 5000ms" rather
+    // than on any assertion. Raised rather than retried: these are duration
+    // failures, not flake, so a real hang still fails, just later.
+    testTimeout: 20_000,
   },
 })

@@ -11,7 +11,12 @@
 -- provider's limits change, or an admin forces a re-run).
 --
 -- Current reasons:
---   'pdf_too_large'  -> Gemini returned INVALID_ARGUMENT / page limit
+--   'pdf_too_large'        -> Gemini returned INVALID_ARGUMENT / page limit
+--   'unreadable_document'  -> Gemini could not parse the bytes as a document at
+--                             all ("The document has no pages"). Means the stored
+--                             object is not the document it claims to be, so a
+--                             retry cannot help. Central records the underlying
+--                             cause in bill_texts.fetch_error.
 --
 -- The column is text (not enum) so adding new reasons later doesn't require
 -- another migration.

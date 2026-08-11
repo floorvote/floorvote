@@ -151,6 +151,13 @@ export const billTexts = sqliteTable('bill_texts', {
   altTextSize:  integer('alt_text_size'),
   altTextHash:  text('alt_text_hash'),
   r2Key:        text('r2_key'),
+  /**
+   * Why the last download attempt failed, or null when it succeeded / has not
+   * run. Without this a failed fetch is indistinguishable from one that never
+   * happened, since both simply leave `r2_key` null.
+   */
+  fetchError:       text('fetch_error'),
+  fetchAttemptedAt: text('fetch_attempted_at'),
 }, (t) => [index('idx_bill_texts_bill').on(t.billId)])
 
 export const billSupplements = sqliteTable('bill_supplements', {

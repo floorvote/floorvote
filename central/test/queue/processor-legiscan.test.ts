@@ -10,12 +10,16 @@ import migration0004 from '../../migrations-legiscan/0004_match_tracking.sql?raw
 import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_change_log.sql?raw'
 import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
+import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
 
 // Mock the LegiScan API surface. The processor calls getBill at the top of
 // processLsBill. We don't want real network calls.
+// getBillText must be mocked too: it is the fallback when a state's own link
+// won't yield the document, and the real one would hit api.legiscan.com (and
+// burn a quota call) from the test suite.
 vi.mock('../../src/lib/legiscan', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
-  return { ...actual, getBill: vi.fn() }
+  return { ...actual, getBill: vi.fn(), getBillText: vi.fn() }
 })
 
 // Mock text downloads — these go to state legislature sites and we don't
@@ -23,7 +27,7 @@ vi.mock('../../src/lib/legiscan', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
+import { processLsIngestorQueue, validateTextPayload } from '../../src/queue/processor-legiscan'
 import * as legiscan from '../../src/lib/legiscan'
 
 function parseMigration(sql: string, name: string) {
@@ -45,6 +49,7 @@ beforeEach(async () => {
     parseMigration(migration0005, '0005_bill_amendments_and_change_log'),
     parseMigration(migration0006, '0006_texts_fetched_at'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
+    parseMigration(migration0016, '0016_bill_texts_fetch_error'),
   ])
   fetchMock.mockReset()
   // Default: text downloads succeed with empty html so r2_key gets stamped.
@@ -362,5 +367,115 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     // Child writes also happened — the field didn't divert control flow somewhere weird.
     const historyRows = await db.select().from(schema.billHistory).where(eq(schema.billHistory.billId, 9001)).all()
     expect(historyRows.length).toBe(1)
+  })
+})
+
+// ── Bill-text fetch hardening ───────────────────────────────────────────────
+//
+// Indiana's iga.in.gov answers non-browser clients with its JavaScript app
+// shell — HTTP 200, content-type text/html, ~691 bytes — even for a URL ending
+// in .pdf. That payload was stored as the document, so all 40 Indiana keyword
+// bills failed AI with "The document has no pages" while looking, in the
+// database, exactly like bills that had never been processed.
+
+const IN_APP_SHELL =
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"/>'
+  + '<title>Indiana General Assembly</title></head>'
+  + '<body>You need to enable JavaScript to run this app.</body></html>'
+
+/** Minimal byte string that passes a %PDF- magic check. */
+const REAL_PDF = '%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
+
+function abuf(s: string): ArrayBuffer {
+  return new TextEncoder().encode(s).buffer as ArrayBuffer
+}
+
+function toBase64(s: string): string {
+  let out = ''
+  for (const b of new TextEncoder().encode(s)) out += String.fromCharCode(b)
+  return btoa(out)
+}
+
+describe('validateTextPayload', () => {
+  it('rejects an HTML app shell served under a PDF mime', () => {
+    // The exact Indiana failure.
+    expect(validateTextPayload(abuf(IN_APP_SHELL), 'application/pdf', 180826))
+      .toMatch(/expected a PDF/)
+  })
+
+  it('accepts real PDF bytes', () => {
+    expect(validateTextPayload(abuf(REAL_PDF), 'application/pdf', null)).toBeNull()
+  })
+
+  it('rejects an empty body', () => {
+    expect(validateTextPayload(new ArrayBuffer(0), 'text/html', null)).toMatch(/empty/)
+  })
+
+  it('rejects an HTML body far smaller than the declared size', () => {
+    // Catches the same substitution for HTML documents, where there is no magic
+    // number to check.
+    expect(validateTextPayload(abuf('<html>blocked</html>'), 'text/html', 200000))
+      .toMatch(/far smaller/)
+  })
+
+  it('ignores the size ratio when the declared size is small', () => {
+    // Short documents legitimately vary in size, so the ratio only carries
+    // signal once the declared size is big enough to be a real document.
+    expect(validateTextPayload(abuf('<html></html>'), 'text/html', 1024)).toBeNull()
+  })
+
+  it('accepts an HTML document of roughly the declared size', () => {
+    const doc = '<html>' + 'x'.repeat(20000) + '</html>'
+    expect(validateTextPayload(abuf(doc), 'text/html', 20000)).toBeNull()
+  })
+})
+
+describe('downloadTextToR2: bot-wall handling', () => {
+  const pdfText = {
+    doc_id: 1000, date: '2026-01-15', type: 'Introduced', type_id: 1,
+    mime: 'application/pdf', mime_id: 2, url: 'u',
+    state_link: 'https://iga.in.gov/pdf-documents/124/2026/house/bills/HB1022/HB1022.01.INTR.pdf',
+    text_size: 180826, text_hash: 'th',
+    alt_bill_text: 0, alt_mime: '', alt_mime_id: 0, alt_state_link: '', alt_text_size: 0, alt_text_hash: '',
+  }
+
+  it('falls back to getBillText when the state link returns an app shell', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [pdfText] }))
+    // The state site: 200 OK, but HTML instead of the PDF.
+    fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
+      status: 200, headers: { 'content-type': 'text/html' },
+    }))
+    vi.mocked(legiscan.getBillText).mockResolvedValue({
+      doc_id: 1000, bill_id: 9001, date: '2026-01-15', type: 'Introduced', type_id: 1,
+      mime: 'application/pdf', mime_id: 2, text_size: REAL_PDF.length, text_hash: 'th',
+      doc: toBase64(REAL_PDF),
+    } as any)
+
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1000)).get()
+    expect(legiscan.getBillText).toHaveBeenCalledWith(1000, 'test-key')
+    expect(row!.r2Key, 'the fallback document should be stored').toBeTruthy()
+    expect(row!.fetchError, 'a recovered fetch is not a failure').toBeNull()
+  })
+
+  it('records fetch_error and no r2_key when both sources fail', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [pdfText] }))
+    fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
+      status: 200, headers: { 'content-type': 'text/html' },
+    }))
+    vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('LegiScan HTTP 403'))
+
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1000)).get()
+    // Storing nothing is deliberate: an r2_key here would be sticky, because the
+    // download path only retries texts WHERE r2_key IS NULL.
+    expect(row!.r2Key).toBeNull()
+    expect(row!.fetchError).toMatch(/expected a PDF/)
+    expect(row!.fetchError).toMatch(/403/)
+    expect(row!.fetchAttemptedAt).toBeTruthy()
   })
 })
