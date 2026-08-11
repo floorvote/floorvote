@@ -12,6 +12,14 @@ import type { DemoSeed, DemoSeedComment, DemoSeedMention, DemoSeedReaction } fro
  * Comments stay short and plain — one idea, a sentence or three — because the
  * point of the demo is to show the feature surface (comments, reactions,
  * mentions, votes, notes), not to relitigate the bills in memo form.
+ *
+ * This task adds the eleven Illinois, Indiana, and federal bills. Illinois
+ * and Indiana each get a live high-priority bill with fresh, near-term
+ * chatter ahead of a real scheduled hearing; their enacted bills get
+ * outcome-and-implementation threads; Indiana's withdrawn beach-parking bill
+ * gets the shrug it deserves. The federal bills are appropriations-and-
+ * programs bills, so their register is funding and timing, not statutory
+ * text.
  */
 
 // ---------------------------------------------------------------------------
@@ -275,24 +283,343 @@ const sb628Reactions: DemoSeedReaction[] = [
 ]
 
 // ---------------------------------------------------------------------------
+// IL HB1175 — legiscan:1906052 (Great Lakes coal-ash protection, live)
+// ---------------------------------------------------------------------------
+const ilHb1175: DemoSeedComment[] = [
+  { id: 'lm-c-41', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
+    content: '<p>Rules Committee hearing is in less than two weeks. Time to lock in our written testimony.</p>', daysAgo: 5 },
+  { id: 'lm-c-42', externalId: 'legiscan:1906052', userId: 'lm-user-gc',
+    content: '<p>Checking whether the CCR language tracks the federal coal ash rule or goes further. Should know by Wednesday.</p>', daysAgo: 4 },
+  { id: 'lm-c-43', externalId: 'legiscan:1906052', userId: 'lm-user-gov',
+    content: '<p>Utility lobbyists are already working Rules Committee members. We should not wait for the hearing to make our case.</p>', daysAgo: 3 },
+  { id: 'lm-c-44', externalId: 'legiscan:1906052', userId: 'demo-user',
+    content: '<p><span data-type="mention" data-id="role:lm-role-il" data-label="Illinois Team">@Illinois Team</span> can we get a one-pager on the coal ash sites near the lake by Friday?</p>', daysAgo: 3 },
+  { id: 'lm-c-45', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
+    content: "<p>On it. I'll have a draft by Thursday.</p>", daysAgo: 2 },
+]
+
+const ilHb1175Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-18', commentId: 'lm-c-43', userId: 'demo-user', emoji: '👍', daysAgo: 3 },
+  { id: 'lm-r-19', commentId: 'lm-c-45', userId: 'lm-user-gov', emoji: '✅', daysAgo: 2 },
+]
+
+const ilHb1175Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-21', commentId: 'lm-c-44', userId: 'lm-user-dep', sourceType: 'role', sourceId: 'lm-role-il', daysAgo: 3 },
+  { id: 'lm-m-22', commentId: 'lm-c-44', userId: 'lm-user-gov', sourceType: 'role', sourceId: 'lm-role-il', daysAgo: 3 },
+  { id: 'lm-m-23', commentId: 'lm-c-44', userId: 'lm-user-gc', sourceType: 'role', sourceId: 'lm-role-il', daysAgo: 3 },
+]
+
+const ilHb1175Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-27', externalId: 'legiscan:1906052', userId: 'demo-user', position: 'support', daysAgo: 300 },
+  { id: 'lm-v-28', externalId: 'legiscan:1906052', userId: 'lm-user-dep', position: 'support', daysAgo: 299 },
+  { id: 'lm-v-29', externalId: 'legiscan:1906052', userId: 'lm-user-gov', position: 'support', daysAgo: 298 },
+  { id: 'lm-v-30', externalId: 'legiscan:1906052', userId: 'lm-user-gc', position: 'neutral', daysAgo: 297 },
+  { id: 'lm-v-31', externalId: 'legiscan:1906052', userId: 'lm-user-comms', position: 'support', daysAgo: 296 },
+]
+
+// ---------------------------------------------------------------------------
+// IL SB4025 — legiscan:2111275 (lead service line replacement, enacted)
+// ---------------------------------------------------------------------------
+const ilSb4025: DemoSeedComment[] = [
+  { id: 'lm-c-46', externalId: 'legiscan:2111275', userId: 'lm-user-dep',
+    content: '<p>Signed as Public Act 104-0572. Biggest lead line commitment Illinois has made yet.</p>', daysAgo: 30 },
+  { id: 'lm-c-47', externalId: 'legiscan:2111275', userId: 'lm-user-gc',
+    content: '<p>Curious how the compliance timeline compares to the federal LCRR deadline. Pulling the text now.</p>', daysAgo: 30 },
+  { id: 'lm-c-48', externalId: 'legiscan:2111275', userId: 'lm-user-grants',
+    content: '<p>Utilities can start applying for state matching funds. Flagging this to our municipal partners this week.</p>', daysAgo: 20 },
+  { id: 'lm-c-49', externalId: 'legiscan:2111275', userId: 'demo-user',
+    content: '<p>Good template for other Great Lakes states still working on lead line funding. Worth sharing with the Michigan and Indiana teams.</p>', daysAgo: 10 },
+]
+
+const ilSb4025Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-20', commentId: 'lm-c-46', userId: 'demo-user', emoji: '✅', daysAgo: 30 },
+  { id: 'lm-r-21', commentId: 'lm-c-47', userId: 'lm-user-dep', emoji: '👍', daysAgo: 29 },
+]
+
+const ilSb4025Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-32', externalId: 'legiscan:2111275', userId: 'demo-user', position: 'support', daysAgo: 25 },
+  { id: 'lm-v-33', externalId: 'legiscan:2111275', userId: 'lm-user-dep', position: 'support', daysAgo: 24 },
+  { id: 'lm-v-34', externalId: 'legiscan:2111275', userId: 'lm-user-gov', position: 'support', daysAgo: 23 },
+  { id: 'lm-v-35', externalId: 'legiscan:2111275', userId: 'lm-user-gc', position: 'support', daysAgo: 22 },
+  { id: 'lm-v-36', externalId: 'legiscan:2111275', userId: 'lm-user-grants', position: 'support', daysAgo: 21 },
+]
+
+// ---------------------------------------------------------------------------
+// IL HB5268 — legiscan:2109237 (Lake Michigan water sale, live)
+// ---------------------------------------------------------------------------
+const ilHb5268: DemoSeedComment[] = [
+  { id: 'lm-c-50', externalId: 'legiscan:2109237', userId: 'lm-user-dep',
+    content: "<p>Re-referred to Rules three times this session already. Not sure this one's going anywhere.</p>", daysAgo: 90 },
+  { id: 'lm-c-51', externalId: 'legiscan:2109237', userId: 'lm-user-gov',
+    content: '<p>Water sale bills like this tend to die quietly in Rules. Keeping it on the watch list, not the priority list.</p>', daysAgo: 85 },
+  { id: 'lm-c-52', externalId: 'legiscan:2109237', userId: 'lm-user-gc',
+    content: "<p>No position needed yet—nothing in the amendment changes the interstate compact question we'd care about.</p>", daysAgo: 80 },
+  { id: 'lm-c-53', externalId: 'legiscan:2109237', userId: 'demo-user',
+    content: '<p>Still stuck in Rules. Checking back next month.</p>', daysAgo: 6 },
+]
+
+const ilHb5268Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-22', commentId: 'lm-c-50', userId: 'lm-user-gc', emoji: '👀', daysAgo: 89 },
+]
+
+// ---------------------------------------------------------------------------
+// IL HB2516 — legiscan:1952725 (PFAS product ban, enacted)
+// ---------------------------------------------------------------------------
+const ilHb2516: DemoSeedComment[] = [
+  { id: 'lm-c-54', externalId: 'legiscan:1952725', userId: 'lm-user-dep',
+    content: '<p>Public Act 104-0231 has been in effect a year now. Worth checking compliance rates before the newsletter goes out.</p>', daysAgo: 45 },
+  { id: 'lm-c-55', externalId: 'legiscan:1952725', userId: 'lm-user-gc',
+    content: '<p>The product categories covered are broader than I remembered. Pulling the list for our PFAS working group.</p>', daysAgo: 45 },
+  { id: 'lm-c-56', externalId: 'legiscan:1952725', userId: 'lm-user-comms',
+    content: '<p><span data-type="mention" data-id="role:lm-role-contam" data-label="Contaminants">@Contaminants</span> can someone confirm which retailers have flagged compliance issues?</p>', daysAgo: 40 },
+  { id: 'lm-c-57', externalId: 'legiscan:1952725', userId: 'lm-user-wq',
+    content: "<p>On it, I'll have a short list by end of week.</p>", daysAgo: 38 },
+]
+
+const ilHb2516Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-23', commentId: 'lm-c-54', userId: 'demo-user', emoji: '👍', daysAgo: 45 },
+]
+
+const ilHb2516Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-24', commentId: 'lm-c-56', userId: 'lm-user-dep', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
+  { id: 'lm-m-25', commentId: 'lm-c-56', userId: 'lm-user-la1', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
+  { id: 'lm-m-26', commentId: 'lm-c-56', userId: 'lm-user-wq', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 40 },
+]
+
+const ilHb2516Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-37', externalId: 'legiscan:1952725', userId: 'demo-user', position: 'support', daysAgo: 40 },
+  { id: 'lm-v-38', externalId: 'legiscan:1952725', userId: 'lm-user-dep', position: 'support', daysAgo: 39 },
+  { id: 'lm-v-39', externalId: 'legiscan:1952725', userId: 'lm-user-wq', position: 'support', daysAgo: 38 },
+  { id: 'lm-v-40', externalId: 'legiscan:1952725', userId: 'lm-user-gc', position: 'support', daysAgo: 37 },
+]
+
+// ---------------------------------------------------------------------------
+// IN HB1124 — legiscan:2061476 (lead testing in school drinking water, live)
+// ---------------------------------------------------------------------------
+const inHb1124: DemoSeedComment[] = [
+  { id: 'lm-c-58', externalId: 'legiscan:2061476', userId: 'lm-user-res',
+    content: '<p>Public Health Committee hearing is set. Good bill to push hard on early.</p>', daysAgo: 5 },
+  { id: 'lm-c-59', externalId: 'legiscan:2061476', userId: 'lm-user-prog',
+    content: '<p>I can line up two district facilities managers to testify. Reaching out today.</p>', daysAgo: 4 },
+  { id: 'lm-c-60', externalId: 'legiscan:2061476', userId: 'lm-user-out',
+    content: '<p>PTA coalition is already asking about this one. Happy to get them a fact sheet before the hearing.</p>', daysAgo: 3 },
+  { id: 'lm-c-61', externalId: 'legiscan:2061476', userId: 'demo-user',
+    content: '<p><span data-type="mention" data-id="role:lm-role-in" data-label="Indiana Team">@Indiana Team</span> who is attending the hearing in person?</p>', daysAgo: 3 },
+  { id: 'lm-c-62', externalId: 'legiscan:2061476', userId: 'lm-user-res',
+    content: "<p>I'll be there. Testimony's nearly done.</p>", daysAgo: 2 },
+]
+
+const inHb1124Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-24', commentId: 'lm-c-59', userId: 'demo-user', emoji: '👍', daysAgo: 4 },
+  { id: 'lm-r-25', commentId: 'lm-c-62', userId: 'lm-user-prog', emoji: '✅', daysAgo: 2 },
+]
+
+const inHb1124Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-27', commentId: 'lm-c-61', userId: 'lm-user-res', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
+  { id: 'lm-m-28', commentId: 'lm-c-61', userId: 'lm-user-prog', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
+  { id: 'lm-m-29', commentId: 'lm-c-61', userId: 'lm-user-out', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
+]
+
+const inHb1124Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-41', externalId: 'legiscan:2061476', userId: 'demo-user', position: 'support', daysAgo: 200 },
+  { id: 'lm-v-42', externalId: 'legiscan:2061476', userId: 'lm-user-res', position: 'support', daysAgo: 199 },
+  { id: 'lm-v-43', externalId: 'legiscan:2061476', userId: 'lm-user-prog', position: 'support', daysAgo: 198 },
+  { id: 'lm-v-44', externalId: 'legiscan:2061476', userId: 'lm-user-ed', position: 'support', daysAgo: 197 },
+  { id: 'lm-v-45', externalId: 'legiscan:2061476', userId: 'lm-user-comms', position: 'support', daysAgo: 196 },
+]
+
+// ---------------------------------------------------------------------------
+// IN SB0006 — legiscan:2056216 (water/wastewater main extension, enacted)
+// ---------------------------------------------------------------------------
+const inSb0006: DemoSeedComment[] = [
+  { id: 'lm-c-63', externalId: 'legiscan:2056216', userId: 'lm-user-res',
+    content: "<p>Signed as Public Law 65. Smaller bill, but it clears up who pays for main extensions to new developments.</p>", daysAgo: 80 },
+  { id: 'lm-c-64', externalId: 'legiscan:2056216', userId: 'lm-user-prog',
+    content: "<p>Good for our rural utility partners. They've been asking about this cost question for years.</p>", daysAgo: 80 },
+  { id: 'lm-c-65', externalId: 'legiscan:2056216', userId: 'lm-user-out',
+    content: '<p>Passing this along to the county coalition newsletter.</p>', daysAgo: 75 },
+  { id: 'lm-c-66', externalId: 'legiscan:2056216', userId: 'demo-user',
+    content: '<p>Checking whether any counties have flagged implementation issues yet.</p>', daysAgo: 30 },
+]
+
+const inSb0006Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-26', commentId: 'lm-c-63', userId: 'demo-user', emoji: '✅', daysAgo: 80 },
+  { id: 'lm-r-27', commentId: 'lm-c-64', userId: 'lm-user-ed', emoji: '👍', daysAgo: 79 },
+]
+
+const inSb0006Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-46', externalId: 'legiscan:2056216', userId: 'demo-user', position: 'support', daysAgo: 70 },
+  { id: 'lm-v-47', externalId: 'legiscan:2056216', userId: 'lm-user-res', position: 'support', daysAgo: 69 },
+  { id: 'lm-v-48', externalId: 'legiscan:2056216', userId: 'lm-user-ed', position: 'support', daysAgo: 68 },
+  { id: 'lm-v-49', externalId: 'legiscan:2056216', userId: 'lm-user-prog', position: 'support', daysAgo: 67 },
+]
+
+// ---------------------------------------------------------------------------
+// IN SB0188 — legiscan:2065860 (parking at Lake Michigan beaches, withdrawn)
+// ---------------------------------------------------------------------------
+const inSb0188: DemoSeedComment[] = [
+  { id: 'lm-c-67', externalId: 'legiscan:2065860', userId: 'lm-user-out',
+    content: "<p>Huh, this one's gone. Withdrawn less than a week after it was filed.</p>", daysAgo: 211 },
+  { id: 'lm-c-68', externalId: 'legiscan:2065860', userId: 'lm-user-res',
+    content: "<p>Parking fights at the beach are usually local anyway. Not surprised it didn't have legs at the statehouse.</p>", daysAgo: 211 },
+  { id: 'lm-c-69', externalId: 'legiscan:2065860', userId: 'demo-user',
+    content: '<p>Low priority, so no loss. Leaving it here in case it comes back.</p>', daysAgo: 210 },
+  { id: 'lm-c-70', externalId: 'legiscan:2065860', userId: 'lm-user-prog',
+    content: '<p>Noted for the tracker. Nothing to do here.</p>', daysAgo: 205 },
+]
+
+const inSb0188Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-28', commentId: 'lm-c-67', userId: 'lm-user-prog', emoji: '👀', daysAgo: 211 },
+]
+
+// ---------------------------------------------------------------------------
+// US HB284 — legiscan:1910159 (GLRI Act of 2025, live)
+// ---------------------------------------------------------------------------
+const usHb284: DemoSeedComment[] = [
+  { id: 'lm-c-71', externalId: 'legiscan:1910159', userId: 'lm-user-fed',
+    content: '<p>GLRI funding is the whole ballgame for us. If this stalls, three of our restoration projects stall with it.</p>', daysAgo: 8 },
+  { id: 'lm-c-72', externalId: 'legiscan:1910159', userId: 'lm-user-grants',
+    content: '<p>Appropriations season is coming up fast. We should get letters in before the subcommittee marks up anything else.</p>', daysAgo: 7 },
+  { id: 'lm-c-73', externalId: 'legiscan:1910159', userId: 'lm-user-ed',
+    content: '<p>Still sitting in the Water Resources and Environment Subcommittee. Been there since January 2025.</p>', daysAgo: 6 },
+  { id: 'lm-c-74', externalId: 'legiscan:1910159', userId: 'demo-user',
+    content: '<p><span data-type="mention" data-id="role:lm-role-us" data-label="Federal Team">@Federal Team</span> any read on when this moves, or are we just watching the appropriations bill instead?</p>', daysAgo: 6 },
+  { id: 'lm-c-75', externalId: 'legiscan:1910159', userId: 'lm-user-fed',
+    content: '<p>Watching the appropriations bill for now. GLRI funding levels usually move there before this bill ever gets a vote.</p>', daysAgo: 5 },
+]
+
+const usHb284Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-29', commentId: 'lm-c-71', userId: 'demo-user', emoji: '👍', daysAgo: 8 },
+  { id: 'lm-r-30', commentId: 'lm-c-73', userId: 'lm-user-grants', emoji: '👀', daysAgo: 6 },
+]
+
+const usHb284Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-30', commentId: 'lm-c-74', userId: 'lm-user-ed', sourceType: 'role', sourceId: 'lm-role-us', daysAgo: 6 },
+  { id: 'lm-m-31', commentId: 'lm-c-74', userId: 'lm-user-fed', sourceType: 'role', sourceId: 'lm-role-us', daysAgo: 6 },
+  { id: 'lm-m-32', commentId: 'lm-c-74', userId: 'lm-user-grants', sourceType: 'role', sourceId: 'lm-role-us', daysAgo: 6 },
+]
+
+const usHb284Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-50', externalId: 'legiscan:1910159', userId: 'demo-user', position: 'support', daysAgo: 500 },
+  { id: 'lm-v-51', externalId: 'legiscan:1910159', userId: 'lm-user-ed', position: 'support', daysAgo: 499 },
+  { id: 'lm-v-52', externalId: 'legiscan:1910159', userId: 'lm-user-fed', position: 'support', daysAgo: 498 },
+  { id: 'lm-v-53', externalId: 'legiscan:1910159', userId: 'lm-user-grants', position: 'support', daysAgo: 497 },
+  { id: 'lm-v-54', externalId: 'legiscan:1910159', userId: 'lm-user-dep', position: 'support', daysAgo: 496 },
+]
+
+// ---------------------------------------------------------------------------
+// US HB8876 — legiscan:2150744 (Aquatic Invasive Species Control and
+// Prevention Act of 2026, live)
+// ---------------------------------------------------------------------------
+const usHb8876: DemoSeedComment[] = [
+  { id: 'lm-c-76', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
+    content: "<p>Subcommittee hearing already happened last month. Next one's on the calendar for later this year.</p>", daysAgo: 6 },
+  { id: 'lm-c-77', externalId: 'legiscan:2150744', userId: 'lm-user-res',
+    content: "<p>Invasive mussel data from Michigan would be useful testimony material here too. I'll pull the numbers.</p>", daysAgo: 5 },
+  { id: 'lm-c-78', externalId: 'legiscan:2150744', userId: 'lm-user-ed',
+    content: '<p>We filed an amend position on this one—good bill, but the enforcement funding needs to scale with the mandate.</p>', daysAgo: 4 },
+  { id: 'lm-c-79', externalId: 'legiscan:2150744', userId: 'demo-user',
+    content: "<p>Good sign that this got a bipartisan sponsor pair. Walberg and Elfreth don't often co-sponsor the same bill.</p>", daysAgo: 3 },
+  { id: 'lm-c-80', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
+    content: '<p>Hearing notice for the next one just went out. Marking the calendar.</p>', daysAgo: 1 },
+]
+
+const usHb8876Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-31', commentId: 'lm-c-77', userId: 'lm-user-ed', emoji: '👍', daysAgo: 5 },
+  { id: 'lm-r-32', commentId: 'lm-c-79', userId: 'lm-user-fed', emoji: '✅', daysAgo: 3 },
+]
+
+const usHb8876Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-55', externalId: 'legiscan:2150744', userId: 'demo-user', position: 'support', daysAgo: 50 },
+  { id: 'lm-v-56', externalId: 'legiscan:2150744', userId: 'lm-user-ed', position: 'support', daysAgo: 49 },
+  { id: 'lm-v-57', externalId: 'legiscan:2150744', userId: 'lm-user-fed', position: 'support', daysAgo: 48 },
+  { id: 'lm-v-58', externalId: 'legiscan:2150744', userId: 'lm-user-res', position: 'support', daysAgo: 47 },
+  { id: 'lm-v-59', externalId: 'legiscan:2150744', userId: 'lm-user-gc', position: 'neutral', daysAgo: 46 },
+]
+
+// ---------------------------------------------------------------------------
+// US HB583 — legiscan:1933798 (BEACH Act of 2025, live)
+// ---------------------------------------------------------------------------
+const usHb583: DemoSeedComment[] = [
+  { id: 'lm-c-81', externalId: 'legiscan:1933798', userId: 'lm-user-fed',
+    content: '<p>BEACH Act funding is what keeps our beach monitoring grants alive. Worth a check-in with the subcommittee staff.</p>', daysAgo: 60 },
+  { id: 'lm-c-82', externalId: 'legiscan:1933798', userId: 'lm-user-grants',
+    content: '<p>If this moves, it would restore same-day notification funding that lapsed two cycles ago.</p>', daysAgo: 55 },
+  { id: 'lm-c-83', externalId: 'legiscan:1933798', userId: 'lm-user-wq',
+    content: '<p>Same-day beach notification is the single biggest ask we hear from the public. Would love to see this move.</p>', daysAgo: 50 },
+  { id: 'lm-c-84', externalId: 'legiscan:1933798', userId: 'demo-user',
+    content: '<p>Still sitting in subcommittee since January 2025. No movement since.</p>', daysAgo: 45 },
+]
+
+const usHb583Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-33', commentId: 'lm-c-83', userId: 'demo-user', emoji: '👍', daysAgo: 50 },
+]
+
+const usHb583Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-60', externalId: 'legiscan:1933798', userId: 'demo-user', position: 'support', daysAgo: 40 },
+  { id: 'lm-v-61', externalId: 'legiscan:1933798', userId: 'lm-user-fed', position: 'support', daysAgo: 39 },
+  { id: 'lm-v-62', externalId: 'legiscan:1933798', userId: 'lm-user-wq', position: 'support', daysAgo: 38 },
+]
+
+// ---------------------------------------------------------------------------
+// US HB6668 — legiscan:2058690 (Clean Water Standards for PFAS Act, live)
+// ---------------------------------------------------------------------------
+const usHb6668: DemoSeedComment[] = [
+  { id: 'lm-c-85', externalId: 'legiscan:2058690', userId: 'lm-user-fed',
+    content: '<p>Bipartisan sponsor pair again—Pappas and Fitzpatrick. PFAS seems to be one of the few things that still gets that.</p>', daysAgo: 35 },
+  { id: 'lm-c-86', externalId: 'legiscan:2058690', userId: 'lm-user-wq',
+    content: '<p>Federal PFAS drinking water standards would finally give us a floor to point to in Michigan and Wisconsin fights too.</p>', daysAgo: 30 },
+  { id: 'lm-c-87', externalId: 'legiscan:2058690', userId: 'lm-user-gc',
+    content: "<p>Curious how this interacts with the EPA's own PFAS rule already in effect. Might make part of this redundant.</p>", daysAgo: 25 },
+  { id: 'lm-c-88', externalId: 'legiscan:2058690', userId: 'demo-user',
+    content: '<p><span data-type="mention" data-id="role:lm-role-contam" data-label="Contaminants">@Contaminants</span> can you sort out how this interacts with the EPA\'s existing PFAS rule before we take a position?</p>', daysAgo: 20 },
+]
+
+const usHb6668Reactions: DemoSeedReaction[] = [
+  { id: 'lm-r-34', commentId: 'lm-c-86', userId: 'lm-user-fed', emoji: '👀', daysAgo: 30 },
+]
+
+const usHb6668Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-33', commentId: 'lm-c-88', userId: 'lm-user-dep', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 20 },
+  { id: 'lm-m-34', commentId: 'lm-c-88', userId: 'lm-user-la1', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 20 },
+  { id: 'lm-m-35', commentId: 'lm-c-88', userId: 'lm-user-wq', sourceType: 'role', sourceId: 'lm-role-contam', daysAgo: 20 },
+]
+
+const usHb6668Votes: DemoSeed['votes'] = [
+  { id: 'lm-v-63', externalId: 'legiscan:2058690', userId: 'demo-user', position: 'support', daysAgo: 15 },
+  { id: 'lm-v-64', externalId: 'legiscan:2058690', userId: 'lm-user-wq', position: 'support', daysAgo: 14 },
+  { id: 'lm-v-65', externalId: 'legiscan:2058690', userId: 'lm-user-fed', position: 'support', daysAgo: 13 },
+]
+
+// ---------------------------------------------------------------------------
 // Combined exports
 // ---------------------------------------------------------------------------
 export const LM_COMMENTS: DemoSeedComment[] = [
   ...hb4427, ...hb5308, ...sb0771, ...hb5674, ...hb4768, ...sb56, ...ab131, ...ab129, ...sb628,
+  ...ilHb1175, ...ilSb4025, ...ilHb5268, ...ilHb2516,
+  ...inHb1124, ...inSb0006, ...inSb0188,
+  ...usHb284, ...usHb8876, ...usHb583, ...usHb6668,
 ]
 
 export const LM_REACTIONS: DemoSeedReaction[] = [
   ...hb4427Reactions, ...hb5308Reactions, ...sb0771Reactions, ...hb5674Reactions, ...hb4768Reactions,
   ...sb56Reactions, ...ab131Reactions, ...ab129Reactions, ...sb628Reactions,
+  ...ilHb1175Reactions, ...ilSb4025Reactions, ...ilHb5268Reactions, ...ilHb2516Reactions,
+  ...inHb1124Reactions, ...inSb0006Reactions, ...inSb0188Reactions,
+  ...usHb284Reactions, ...usHb8876Reactions, ...usHb583Reactions, ...usHb6668Reactions,
 ]
 
 export const LM_MENTIONS: DemoSeedMention[] = [
   ...hb4427Mentions, ...hb5308Mentions, ...sb0771Mentions, ...hb4768Mentions,
   ...ab131Mentions, ...ab129Mentions,
+  ...ilHb1175Mentions, ...ilHb2516Mentions, ...inHb1124Mentions, ...usHb284Mentions, ...usHb6668Mentions,
 ]
 
 export const LM_VOTES: DemoSeed['votes'] = [
   ...hb4427Votes, ...hb5308Votes, ...sb0771Votes, ...sb56Votes, ...ab131Votes, ...ab129Votes,
+  ...ilHb1175Votes, ...ilSb4025Votes, ...ilHb2516Votes,
+  ...inHb1124Votes, ...inSb0006Votes,
+  ...usHb284Votes, ...usHb8876Votes, ...usHb583Votes, ...usHb6668Votes,
 ]
 
 // Personal notes, all owned by demo-user (demoReset.ts hardcodes the note
@@ -306,4 +633,8 @@ export const LM_NOTES: DemoSeed['notes'] = [
     content: '<p>Good template for a Michigan lead service line bill next session.</p>' },
   { id: 'lm-n-4', externalId: 'legiscan:2006944', daysAgo: 130,
     content: '<p>Reintroduction target is the January 2027 session start.</p>' },
+  { id: 'lm-n-5', externalId: 'legiscan:1906052', daysAgo: 4,
+    content: '<p>Ask Rules Committee staff whether the CCR standard cross-references the federal EPA rule directly.</p>' },
+  { id: 'lm-n-6', externalId: 'legiscan:2150744', daysAgo: 5,
+    content: "<p>Follow up with Grace on whether Michigan's mussel data can strengthen the record for the next subcommittee hearing.</p>" },
 ]

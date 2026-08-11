@@ -292,3 +292,54 @@ describe('lake-michigan discussion', () => {
     for (const v of s.votes) expect(['support', 'oppose', 'neutral']).toContain(v.position)
   })
 })
+
+describe('lake-michigan feed density', () => {
+  const s = DEMO_SEEDS['lake-michigan']
+  // `daysAgo` is already a whole-day bucket, so it groups directly.
+
+  it('has enough discussion to look inhabited', () => {
+    expect(s.comments.length).toBeGreaterThanOrEqual(70)
+    expect(s.reactions.length).toBeGreaterThanOrEqual(30)
+    expect(s.votes.length).toBeGreaterThanOrEqual(60)
+  })
+
+  it('covers every bill with at least three comments', () => {
+    for (const p of s.priorities) {
+      const n = s.comments.filter(c => c.externalId === p.externalId).length
+      expect(n, `${p.externalId} comment count`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('produces at least 12 bill-day groups within the last 14 days', () => {
+    const groups = new Set(
+      s.feedEvents.filter(e => e.daysAgo <= 14).map(e => `${e.externalId}::${e.daysAgo}`),
+    )
+    expect(groups.size).toBeGreaterThanOrEqual(12)
+  })
+
+  it('produces at least 4 bill-day groups within the last 72 hours', () => {
+    const groups = new Set(
+      s.feedEvents.filter(e => e.daysAgo <= 3).map(e => `${e.externalId}::${e.daysAgo}`),
+    )
+    expect(groups.size).toBeGreaterThanOrEqual(4)
+  })
+
+  it('has at least one bill-day group carrying three or more events', () => {
+    const counts = new Map<string, number>()
+    for (const e of s.feedEvents) {
+      const k = `${e.externalId}::${e.daysAgo}`
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    expect(Math.max(...counts.values())).toBeGreaterThanOrEqual(3)
+  })
+
+  it('mixes legislative activity with discussion in the recent window', () => {
+    const recent = s.feedEvents.filter(e => e.daysAgo <= 14)
+    expect(recent.some(e => e.type === 'bill_updated')).toBe(true)
+    expect(recent.some(e => e.type === 'comment_added')).toBe(true)
+  })
+
+  it('mentions teams, not just people', () => {
+    expect(s.mentions.filter(m => m.sourceType === 'role').length).toBeGreaterThanOrEqual(8)
+  })
+})

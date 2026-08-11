@@ -291,6 +291,14 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-u-il-hb1175-4', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 116, metadata: { changes: [
     chg('action_added', { newValue: 'Rule 19(a) / Re-referred to Rules Committee' }),
   ] } },
+  // Hearing-notice record, not a manifest action string — same synthesized
+  // convention as this bill's `lm-hearing-4` calendar entry (offsetDays: 13),
+  // which is itself invented scheduling rather than a literal LegiScan date.
+  // Keeps the top of the feed showing legislative movement on a live,
+  // high-priority bill rather than only Michigan's.
+  { id: 'lm-fe-u-il-hb1175-5', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 3, metadata: { changes: [
+    chg('action_added', { newValue: 'Hearing notice issued — House Rules Committee' }),
+  ] } },
 
   // IL HB2516 — PFAS & Contaminants, medium, enacted (Public Act 104-0231)
   { id: 'lm-fe-u-il-hb2516-1', type: 'bill_updated', externalId: 'legiscan:1952725', userId: 'system', daysAgo: 413, metadata: { changes: [
@@ -333,6 +341,10 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
     chg('action_added', { newValue: 'Authored by Representative Jackson C' }),
     chg('action_added', { newValue: 'Coauthored by Representative Aylesworth' }),
     chg('action_added', { newValue: 'First reading: referred to Committee on Public Health' }),
+  ] } },
+  // Hearing-notice record — see the note on lm-fe-u-il-hb1175-5.
+  { id: 'lm-fe-u-in-hb1124-2', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 3, metadata: { changes: [
+    chg('action_added', { newValue: 'Hearing notice issued — House Public Health Committee' }),
   ] } },
 
   // IN SB0006 — Septic & Wastewater, medium, enacted (Public Law 65)
@@ -400,6 +412,10 @@ export const LM_BILL_UPDATED_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
   { id: 'lm-fe-u-us-hb8876-3', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 21, metadata: { changes: [
     chg('action_added', { newValue: 'Subcommittee Hearings Held' }),
+  ] } },
+  // Hearing-notice record — see the note on lm-fe-u-il-hb1175-5.
+  { id: 'lm-fe-u-us-hb8876-4', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 4, metadata: { changes: [
+    chg('action_added', { newValue: 'Hearing notice issued — Subcommittee on Water, Wildlife and Fisheries' }),
   ] } },
 ]
 
