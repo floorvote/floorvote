@@ -1,7 +1,7 @@
 import { color, radius, fontSize, shadow } from '../styles/tokens'
 // The offered set lives in shared/ because the API validates against exactly it:
-// a new reaction must be one of these (or already on the comment). Editing this
-// list here alone would silently make the extra emoji unpostable.
+// a new reaction must be one of these, full stop. Editing this list here alone
+// would silently make the extra emoji unpostable.
 import { REACTION_EMOJIS } from '../../../shared/reactionEmojis'
 
 type Props = {

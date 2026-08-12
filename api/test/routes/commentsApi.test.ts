@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
@@ -326,6 +327,35 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
       { method: 'DELETE', headers: { Cookie: `session=${memberToken}` } },
     )
     expect(res.status).toBe(400)
+  })
+
+  // DELETE deliberately never calls isReactionEmoji. A member holding a
+  // reaction that predates (or falls outside) the current allowlist — a
+  // retired seed emoji, or the smuggled-text row that motivated the
+  // allowlist in the first place — must still be able to remove it. Validating
+  // the delete path would strand that member with a chip they can never clear,
+  // for no security benefit: the row is already theirs, scoped by userId, and
+  // deleting it can only shrink the table.
+  async function seedOwnReaction(emoji: string) {
+    const db = getDb(env.DB)
+    await db.insert(commentReactions).values({
+      id: crypto.randomUUID(), commentId, userId: memberId, emoji, createdAt: new Date().toISOString(),
+    })
+  }
+
+  it.each([
+    ['a retired seed emoji', '✅'],
+    ['legacy smuggled text', '😀BUY-CRYPTO'],
+  ])('removes a legacy reaction outside the offered set (%s)', async (_label, emoji) => {
+    await seedOwnReaction(emoji)
+    const res = await SELF.fetch(
+      `http://localhost/api/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`,
+      { method: 'DELETE', headers: { Cookie: `session=${memberToken}` } },
+    )
+    expect(res.status).toBe(204)
+    const db = getDb(env.DB)
+    const rows = await db.select().from(commentReactions).where(eq(commentReactions.emoji, emoji)).all()
+    expect(rows).toHaveLength(0)
   })
 })
 
