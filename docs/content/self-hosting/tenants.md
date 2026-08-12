@@ -44,6 +44,14 @@ Save the `database_id` from the output.
 npx wrangler queues create floorvote-[slug]-queue
 ```
 
+Every tenant's queue consumer names a shared dead-letter queue. It isn't created for you, and a tenant deploy fails outright if it doesn't exist — so create it once, before your first tenant:
+
+```bash
+npx wrangler queues create floorvote-dlq
+```
+
+Later tenants reuse the same one; running this again for a second tenant is harmless but unnecessary.
+
 ## Step 3: Add a config block to `api/wrangler.toml`
 
 Copy the `CF_ACCOUNT_ID`, `CF_AIG_GATEWAY`, `CENTRAL_API_URL`, and `SUPERADMIN_JWT_PUBLIC_KEY` values from an existing tenant block — they're identical across every tenant. See `api/wrangler.example.toml` for a documented template.
