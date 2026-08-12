@@ -21,6 +21,18 @@ Adding a tenant reuses the account-level credentials you set up once and then re
 > [!NOTE]
 > The AI Gateway token is account-scoped — any "AI Gateway Run" token can send requests through every gateway on the account. That's fine here because all tenants intentionally share one gateway.
 
+> [!IMPORTANT]
+> **A gateway and a token are not enough — you also need credits.** FloorVote calls Google Gemini, a third-party provider, and sends no provider key of its own. AI Gateway resolves credentials in a fixed order: a provider key on the request, then a stored BYOK key, then **Unified Billing** against your prepaid credit balance. With no key stored, every request lands on that balance, and an empty balance returns `HTTP 402 — Insufficient wholesale credits`.
+>
+> This fails *silently* from the app's point of view: bills arrive with no summary, no tags, and no relevance score, and nothing in the database records why. Check your Worker logs if AI seems inert.
+>
+> Two ways to satisfy it:
+>
+> - **Load credits** on the Cloudflare dashboard under **AI → AI Gateway → Credits**, and set an auto top-up so it cannot quietly run dry. Note credits carry a **5% purchase fee** — $100 of credit costs $105. Inference itself is passed through at the provider's own per-token rates with no markup.
+> - **Bring your own key (free of Cloudflare credits)** — store a Google AI Studio key on the gateway and Google bills you directly. It **must be stored under the `default` alias**; a key saved under any other alias is not consulted on this path, and requests still fall through to Unified Billing.
+>
+> The gateway's **Workers AI Billing** setting (Standard vs Unified) does *not* govern this. That setting applies only to Workers AI `@cf/…` models, so switching it to Standard will not make Gemini requests bill to your card.
+
 For which pieces can be scripted versus created by hand in the dashboard, see [`docs/internal/tenant-automation.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/tenant-automation.md) in the repository.
 
 ## Prerequisites
@@ -43,6 +55,14 @@ Save the `database_id` from the output.
 ```bash
 npx wrangler queues create floorvote-[slug]-queue
 ```
+
+Every tenant's queue consumer names a shared dead-letter queue. It isn't created for you, and a tenant deploy fails outright if it doesn't exist — so create it once, before your first tenant:
+
+```bash
+npx wrangler queues create floorvote-dlq
+```
+
+Later tenants reuse the same one; running this again for a second tenant is harmless but unnecessary.
 
 ## Step 3: Add a config block to `api/wrangler.toml`
 

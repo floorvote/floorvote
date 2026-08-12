@@ -47,7 +47,7 @@ export CLOUDFLARE_API_TOKEN="..."
 
 - A Cloudflare account on the Workers Paid plan, with the deploy token above exported in your shell.
 - **R2 storage enabled** on that account — a one-time step: in the dashboard, go to **R2 → Overview** and complete the subscription checkout. It has a free tier, but you can't create a bucket until it's activated.
-- `wrangler` installed: `npm install -g wrangler`.
+- `wrangler` installed: `npm install -g wrangler`. Commands below are written as bare `wrangler`, which uses that global install. You can instead prefix every command with `npx` to use the version pinned in the repository's `package.json` — which is what the project's own scripts (`new-instance.sh`, `deploy.sh`) do. Either works; **pick one and stay with it**, since a global wrangler and a pinned one can differ enough in config handling to make a resource you created one way invisible to a script run the other.
 - The repository cloned, with dependencies installed (`npm install` from the repo root, and once inside `central/`).
 
 ## How it fits together
@@ -72,12 +72,18 @@ flowchart TB
 Run from the repository root:
 
 ```bash
-wrangler d1 create central-bills
-wrangler r2 bucket create central-bill-texts
+wrangler d1 create central-bills-ls --location enam
+wrangler r2 bucket create central-bill-texts-ls
 wrangler queues create central-legiscan-ingestor
 ```
 
 Save the `database_id` from the D1 output — you'll need it in the next step.
+
+> [!IMPORTANT]
+> **The `-ls` suffix is required, not stylistic.** `npm run deploy:legiscan` applies migrations to a database named exactly `central-bills-ls`. The unsuffixed names belong to the OpenStates path, so the two providers can coexist on one account without colliding.
+
+> [!TIP]
+> `--location` sets the D1 primary region, and it defaults to wherever *you* are when you run the command — not where your users are. Pick the hint nearest your audience (`enam`, `wnam`, `weur`, `eeur`, `apac`, `oc`). Getting this wrong adds a cross-ocean round trip to every query, and changing it later means recreating the database and reseeding.
 
 ### 2. Configure `central/wrangler.toml`
 
@@ -95,13 +101,13 @@ BILL_PROVIDER = "legiscan"
 
 [[env.legiscan.d1_databases]]
 binding = "DB"
-database_name = "central-bills"
+database_name = "central-bills-ls"
 database_id = "<YOUR_D1_DATABASE_ID>"
 migrations_dir = "migrations-legiscan"
 
 [[env.legiscan.r2_buckets]]
 binding = "BILLS_BUCKET"
-bucket_name = "central-bill-texts"
+bucket_name = "central-bill-texts-ls"
 
 [[env.legiscan.queues.producers]]
 binding = "INGESTOR_QUEUE"
@@ -123,20 +129,23 @@ See `central/wrangler.example.toml` for the complete template, including optiona
 
 ### 3. Set central secrets
 
-From inside `central/`:
-
-```bash
-wrangler secret put LEGISCAN_API_KEY --env legiscan
-
-# A strong random string that guards admin endpoints
-wrangler secret put ADMIN_SECRET --env legiscan
-```
-
-Generate a strong `ADMIN_SECRET` with:
+From inside `central/`. First generate a strong `ADMIN_SECRET` — copy the output, you'll paste it at the prompt in a moment, and save it to your password manager:
 
 ```bash
 openssl rand -base64 32
 ```
+
+Then set both secrets. Each command prompts for the value:
+
+```bash
+# Paste the openssl output above at this prompt — it guards the admin endpoints
+wrangler secret put ADMIN_SECRET --env legiscan
+
+wrangler secret put LEGISCAN_API_KEY --env legiscan
+```
+
+> [!NOTE]
+> You haven't deployed yet, so the Worker doesn't exist — wrangler will ask whether to create one with this name and add the secret to it. Answer **yes**. That's the expected path when setting secrets before the first deploy.
 
 #### Queue delivery
 
@@ -155,9 +164,12 @@ Also set `CF_ACCOUNT_ID` in `[env.legiscan.vars]` (it's not a secret — get it 
 
 ```bash
 cd central
-npm install
+npm ci
 npm run deploy:legiscan
 ```
+
+> [!NOTE]
+> Use `npm ci`, not `npm install`. The repository ships a lockfile; `npm ci` installs exactly those versions, while `npm install` re-resolves against whatever has been published since and can fail on a peer-dependency conflict that has nothing to do with your setup.
 
 The deploy script runs migrations for you. The deployed URL will be `https://floorvote-central-legiscan.<your-subdomain>.workers.dev` — note it, you'll use it as `CENTRAL_API_URL` when adding tenants.
 
