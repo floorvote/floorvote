@@ -890,23 +890,37 @@ export function Config() {
                     <>
                       <span style={{ fontSize: fontSize.base, color: demoLocked ? color.borderDefault : color.borderStrong, cursor: demoLocked ? 'not-allowed' : 'grab', userSelect: 'none', flexShrink: 0 }}>⠿</span>
                       <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium }}>{field.name}</span>
-                      <button
-                        onClick={demoLocked ? undefined : () => {
-                          setCfEditing(field.id)
-                          setCfEditName(field.name)
-                          setCfEditOptions(field.type === 'dropdown' && field.options ? field.options.join(', ') : '')
-                          setCfEditMultiple(field.multiple ?? false)
-                          setCfEditError(null)
-                        }}
-                        disabled={demoLocked}
+                      {/* Hover handlers sit on the wrapper, not the button. A disabled
+                          button fires no pointer events, so on a demo tenant — where
+                          every one of these is disabled — the tooltip explaining the
+                          control would never appear, which is exactly when a visitor
+                          most needs it. */}
+                      <span
                         onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setCfTooltip({ key: `${field.id}-edit`, x: r.left + r.width / 2, y: r.top }) }}
                         onMouseLeave={() => setCfTooltip(null)}
-                        style={{ background: 'none', border: 'none', color: demoLocked ? color.borderDefault : color.textMuted, cursor: demoLocked ? 'not-allowed' : 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                        style={{ display: 'inline-flex', alignItems: 'center' }}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>edit</span>
-                      </button>
+                        <button
+                          onClick={demoLocked ? undefined : () => {
+                            setCfEditing(field.id)
+                            setCfEditName(field.name)
+                            setCfEditOptions(field.type === 'dropdown' && field.options ? field.options.join(', ') : '')
+                            setCfEditMultiple(field.multiple ?? false)
+                            setCfEditError(null)
+                          }}
+                          disabled={demoLocked}
+                          style={{ background: 'none', border: 'none', color: demoLocked ? color.borderDefault : color.textMuted, cursor: demoLocked ? 'not-allowed' : 'pointer', padding: '2px', display: 'inline-flex', alignItems: 'center' }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>edit</span>
+                        </button>
+                      </span>
                       <span style={{ flex: 1 }} />
                       {field.type === 'text' && (
+                        <span
+                          onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setCfTooltip({ key: `${field.id}-pin`, x: r.left + r.width / 2, y: r.top }) }}
+                          onMouseLeave={() => setCfTooltip(null)}
+                          style={{ display: 'inline-flex', alignItems: 'center' }}
+                        >
                         <button
                           onClick={demoLocked ? undefined : async () => {
                             const newPinned = !field.pinned
@@ -917,8 +931,6 @@ export function Config() {
                             setCustomFields(prev => prev.map(f => f.id === field.id ? { ...f, pinned: newPinned } : f))
                           }}
                           disabled={demoLocked}
-                          onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setCfTooltip({ key: `${field.id}-pin`, x: r.left + r.width / 2, y: r.top }) }}
-                          onMouseLeave={() => setCfTooltip(null)}
                           style={{
                             background: 'none',
                             border: 'none',
@@ -941,6 +953,7 @@ export function Config() {
                             keep
                           </span>
                         </button>
+                        </span>
                       )}
                       <span
                         onMouseEnter={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setCfTooltip({ key: `${field.id}-type`, x: r.left + r.width / 2, y: r.top }) }}
@@ -975,7 +988,7 @@ export function Config() {
                             ? 'Unpin this field. Pinned fields, when they are filled out, appear above the AI summary on bill detail pages.'
                             : 'Pin this field. Pinned fields, when they are filled out, appear above the AI summary on bill detail pages.')
                           : el === 'edit'
-                            ? (demoLocked ? 'Locked in demo mode' : 'Edit')
+                            ? (demoLocked ? 'Rename this field, or change its dropdown options — locked in the demo' : 'Edit')
                             : (field.type === 'binary' ? 'Yes/no toggle'
                               : field.type === 'dropdown' ? 'Pick from a predefined list'
                               : field.type === 'text' ? 'Free-form text with markdown; URLs auto-linked'

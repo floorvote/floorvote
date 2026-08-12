@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import { render, screen, waitFor, act, within, fireEvent } from '@testing-library/react'
 import React from 'react'
 
 // Mock heavy dependencies before importing Config
@@ -223,6 +223,33 @@ describe('Config — demo gating', () => {
   it('when not in demo: leaves "Save AI instructions" enabled', async () => {
     render(<Config />)
     expect(await screen.findByRole('button', { name: /save ai instructions/i })).toBeEnabled()
+  })
+
+  // A disabled button fires no pointer events, so hover handlers placed on the
+  // button itself go dead in exactly the situation where the explanation is most
+  // useful: a demo visitor who cannot click the control and wants to know what it
+  // would do. The handlers therefore live on a wrapper element.
+  it('in demo: the custom-field pin tooltip still appears on hover, though the button is disabled', async () => {
+    demo.demoLocked = true
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG }
+      if (path === '/admin/presets') return EMPTY_PRESETS
+      if (path === '/admin/custom-fields') return [{ id: 'cf1', name: 'Coalition lead', type: 'text', pinned: false }]
+      if (path === '/bills/drafts') return { drafts: [] }
+      throw new Error('unexpected path: ' + path)
+    })
+    render(<Config />)
+
+    const pinButton = await screen.findByText('keep')
+    const button = pinButton.closest('button')!
+    expect(button).toBeDisabled()
+
+    // The wrapper carries the hover, not the dead button.
+    const hoverTarget = button.parentElement!
+    await act(async () => { fireEvent.mouseEnter(hoverTarget) })
+
+    expect(await screen.findByText(/Pinned fields, when they are filled out, appear above the AI summary/i))
+      .toBeInTheDocument()
   })
 })
 
