@@ -6,33 +6,24 @@ import { comments, commentReactions, commentMentions, feedEvents } from '../db/s
 import { extractAndNotifyMentions } from '../lib/mentions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
-import { DEMO_COMMENT_REACTION_CAP } from './billsApi/engagementRoutes'
-import { isPickerEmoji } from '../../../shared/reactionEmojis'
+import { isReactionEmoji } from '../../../shared/reactionEmojis'
 import type { AppEnv } from '../types'
 
 export const commentsApiRouter = new Hono<AppEnv>()
 
 // `emoji` is attacker-controlled and the unique index is (comment, user, emoji),
-// so anything the checker admits that onConflictDoNothing won't collapse becomes
-// another chip rendered beside the comment. The old rule only asked whether the
-// string CONTAINED a pictograph, so "😀BUY-CRYPTO" (15 bytes) passed — roughly a
-// dozen characters of arbitrary text, repeatable thousands of chips deep, next
-// to a comment on a public site. React escapes it, so this was never XSS; it was
-// defacement. Accepting text smuggled inside an "emoji" field is a bug on a real
-// tenant too, so this applies everywhere, not just under DEMO_MODE.
+// so every distinct value it admits is another chip rendered beside the comment.
+// It used to be checked with a Unicode property test ("is this all emoji
+// characters, under N bytes"), which still admitted every emoji that exists and
+// left "what can be smuggled through a property test" as a live question — the
+// rule before that admitted "😀BUY-CRYPTO", i.e. arbitrary text.
 //
-// Allow only: pictographs, ZWJ (U+200D), variation selectors, skin-tone
-// modifiers, and regional indicators (flags) — so multi-codepoint sequences
-// (👨‍👩‍👧‍👦, 👍🏽, 🇺🇸, ❤️) still work.
-const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\p{Regional_Indicator}|‍|[︎️])+$/u
-// ...and require a real base character, so a lone ZWJ or bare skin-tone modifier
-// can't stand in as a "reaction". Regional indicators are NOT Extended_Pictographic,
-// hence both alternatives here — checking only the former rejected 🇺🇸.
-const EMOJI_HAS_BASE = /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u
-// 64, not the previous 16: a family ZWJ sequence (👨‍👩‍👧‍👦) is 25 bytes and the old
-// cap rejected it outright. With EMOJI_ONLY above, extra bytes can only buy more
-// emoji — never smuggled text — so length is no longer the load-bearing check.
-const EMOJI_MAX_BYTES = 64
+// The picker offers eight emoji and always has, so the set is closed: membership
+// in REACTION_EMOJIS is the whole rule. A closed set of eight known-short
+// literals makes the character class and the byte cap dead weight — there is no
+// length or codepoint to reason about, only eight exact strings — so both are
+// gone. This applies everywhere, not just under DEMO_MODE: text smuggled into an
+// "emoji" field is a bug on a real tenant too.
 
 commentsApiRouter.use('*', requireAuth)
 
@@ -97,64 +88,14 @@ commentsApiRouter.post('/:id/reactions', async (c) => {
   const currentUser = c.get('user')
   const body = await c.req.json<{ emoji?: string }>().catch(() => ({} as { emoji?: string }))
   if (!body.emoji) return c.json({ error: 'emoji is required' }, 400)
-  if (new TextEncoder().encode(body.emoji).length > EMOJI_MAX_BYTES) {
-    return c.json({ error: 'emoji too long' }, 400)
-  }
-  if (!EMOJI_ONLY.test(body.emoji) || !EMOJI_HAS_BASE.test(body.emoji)) {
-    return c.json({ error: 'emoji must be an emoji character' }, 400)
+  if (!isReactionEmoji(body.emoji)) {
+    return c.json({ error: 'emoji must be one of the offered reactions' }, 400)
   }
 
   const comment = await db.select({ id: comments.id }).from(comments).where(
     and(eq(comments.id, commentId), isNull(comments.deletedAt))
   ).get()
   if (!comment) return c.json({ error: 'not found' }, 404)
-
-  // The character rule above still admits every emoji that exists — thousands of
-  // them, each a distinct chip under the (comment, user, emoji) index. The UI
-  // only ever offers eight, so a NEW emoji has to be one of those eight.
-  //
-  // The exception: an emoji ALREADY on this comment, from any user. Clicking an
-  // existing chip to join it POSTs that emoji, and the demo seeds use ✅ 👀 🎉 😕
-  // — 41 of 65 seeded reactions sit outside the picker — so a picker-only rule
-  // would make most seeded chips unjoinable. Joining adds no new distinct value,
-  // so it cannot widen what a comment displays.
-  //
-  // Ordering matters: the byte cap and the character class ran BEFORE this, so
-  // they apply on the existing-emoji path too. A junk row a tenant's table
-  // picked up before the character rule landed ("😀BUY-CRYPTO") therefore can't
-  // be laundered through the exception into more rows of the same junk.
-  if (!isPickerEmoji(body.emoji)) {
-    const present = await db
-      .select({ emoji: commentReactions.emoji })
-      .from(commentReactions)
-      .where(and(
-        eq(commentReactions.commentId, commentId),
-        eq(commentReactions.emoji, body.emoji),
-        isNull(commentReactions.deletedAt),
-      ))
-      .get()
-    if (!present) {
-      return c.json({ error: 'emoji must be one of the offered reactions, or one already on this comment' }, 400)
-    }
-  }
-
-  // Demo tenants: bound the distinct emojis one comment can carry. Reactions
-  // hang off the SEEDED comments, which always exist, so the per-bill comment
-  // cap is no backstop here. Only a NEW emoji is refused — an emoji already on
-  // the comment must stay togglable at the cap, or reacting normally breaks the
-  // moment a comment gets popular. 403, not 429: the next reset clears it, not
-  // waiting.
-  if (c.env.DEMO_MODE === 'true') {
-    const existing = await db
-      .selectDistinct({ emoji: commentReactions.emoji })
-      .from(commentReactions)
-      .where(and(eq(commentReactions.commentId, commentId), isNull(commentReactions.deletedAt)))
-      .all()
-    const alreadyPresent = existing.some(r => r.emoji === body.emoji)
-    if (!alreadyPresent && existing.length >= DEMO_COMMENT_REACTION_CAP) {
-      return c.json({ error: 'This comment has reached the demo reaction limit' }, 403)
-    }
-  }
 
   await db.insert(commentReactions)
     .values({

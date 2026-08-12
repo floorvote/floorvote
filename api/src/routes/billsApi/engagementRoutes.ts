@@ -21,15 +21,6 @@ import { activeUser } from '../../lib/accountDeletion'
 // payload returns only the first 20.
 export const DEMO_BILL_COMMENT_CAP = 60
 
-// Max DISTINCT emojis one comment may carry on a DEMO_MODE tenant. The comment
-// cap cannot reach this table: reactions attach to the *seeded* comments, which
-// always exist, so no cap on new comments bounds them. Each distinct emoji is
-// its own chip in the UI, so unbounded distinct emojis is unbounded content
-// rendered beside a comment. 12 is above the 8 the picker offers, so a visitor
-// reacting normally never meets it. Toggling an emoji already present stays
-// allowed at the cap — otherwise reacting breaks once a comment gets popular.
-export const DEMO_COMMENT_REACTION_CAP = 12
-
 export function registerEngagementRoutes(router: Hono<AppEnv>) {
   // POST /bills/:id/votes
   router.post('/:id/votes', async (c) => {

@@ -256,25 +256,25 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   reactions: [
     // demo-comment-25 (A1715, daysAgo 2) — freshest comment
     { id: 'demo-reaction-1', commentId: 'demo-comment-25', userId: 'demo-dep', emoji: '👍', daysAgo: 1 },
-    { id: 'demo-reaction-2', commentId: 'demo-comment-25', userId: 'demo-m5',  emoji: '✅', daysAgo: 1 },
-    { id: 'demo-reaction-3', commentId: 'demo-comment-25', userId: 'demo-m1',  emoji: '👀', daysAgo: 1 },
+    { id: 'demo-reaction-2', commentId: 'demo-comment-25', userId: 'demo-m5',  emoji: '👍', daysAgo: 1 },
+    { id: 'demo-reaction-3', commentId: 'demo-comment-25', userId: 'demo-m1',  emoji: '🤔', daysAgo: 1 },
     // demo-comment-26 (A1129, daysAgo 4)
     { id: 'demo-reaction-4', commentId: 'demo-comment-26', userId: 'demo-dir', emoji: '👍', daysAgo: 3 },
-    { id: 'demo-reaction-5', commentId: 'demo-comment-26', userId: 'demo-m6',  emoji: '✅', daysAgo: 3 },
+    { id: 'demo-reaction-5', commentId: 'demo-comment-26', userId: 'demo-m6',  emoji: '👍', daysAgo: 3 },
     // demo-comment-27 (A1195, daysAgo 6)
     { id: 'demo-reaction-6', commentId: 'demo-comment-27', userId: 'demo-dir', emoji: '👍', daysAgo: 5 },
-    { id: 'demo-reaction-7', commentId: 'demo-comment-27', userId: 'demo-m3',  emoji: '👀', daysAgo: 5 },
+    { id: 'demo-reaction-7', commentId: 'demo-comment-27', userId: 'demo-m3',  emoji: '🤔', daysAgo: 5 },
     // demo-comment-28 (A1680, daysAgo 9)
     { id: 'demo-reaction-8', commentId: 'demo-comment-28', userId: 'demo-m11', emoji: '👍', daysAgo: 8 },
-    { id: 'demo-reaction-9', commentId: 'demo-comment-28', userId: 'demo-dep', emoji: '✅', daysAgo: 8 },
+    { id: 'demo-reaction-9', commentId: 'demo-comment-28', userId: 'demo-dep', emoji: '👍', daysAgo: 8 },
     // Older comments — lighter engagement, for realism.
     { id: 'demo-reaction-10', commentId: 'demo-comment-1',  userId: 'demo-m1', emoji: '👍', daysAgo: 59 },
     { id: 'demo-reaction-11', commentId: 'demo-comment-5',  userId: 'demo-dir', emoji: '👍', daysAgo: 29 },
-    { id: 'demo-reaction-12', commentId: 'demo-comment-11', userId: 'demo-m3', emoji: '✅', daysAgo: 29 },
+    { id: 'demo-reaction-12', commentId: 'demo-comment-11', userId: 'demo-m3', emoji: '👍', daysAgo: 29 },
     { id: 'demo-reaction-13', commentId: 'demo-comment-14', userId: 'demo-m4', emoji: '👍', daysAgo: 20 },
     { id: 'demo-reaction-14', commentId: 'demo-comment-18', userId: 'demo-m5', emoji: '👍', daysAgo: 59 },
-    { id: 'demo-reaction-15', commentId: 'demo-comment-18', userId: 'demo-m7', emoji: '✅', daysAgo: 59 },
-    { id: 'demo-reaction-16', commentId: 'demo-comment-24', userId: 'demo-dep', emoji: '👀', daysAgo: 6 },
+    { id: 'demo-reaction-15', commentId: 'demo-comment-18', userId: 'demo-m7', emoji: '👍', daysAgo: 59 },
+    { id: 'demo-reaction-16', commentId: 'demo-comment-24', userId: 'demo-dep', emoji: '🤔', daysAgo: 6 },
   ],
 
   // One row per (comment, notified user).

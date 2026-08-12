@@ -166,19 +166,19 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"demo-reaction-1","comment_id":"demo-comment-25","user_id":"demo-dep","emoji":"👍","created_at":"<d-1>","deleted_at":null}
 {"id":"demo-reaction-10","comment_id":"demo-comment-1","user_id":"demo-m1","emoji":"👍","created_at":"<d-59>","deleted_at":null}
 {"id":"demo-reaction-11","comment_id":"demo-comment-5","user_id":"demo-dir","emoji":"👍","created_at":"<d-29>","deleted_at":null}
-{"id":"demo-reaction-12","comment_id":"demo-comment-11","user_id":"demo-m3","emoji":"✅","created_at":"<d-29>","deleted_at":null}
+{"id":"demo-reaction-12","comment_id":"demo-comment-11","user_id":"demo-m3","emoji":"👍","created_at":"<d-29>","deleted_at":null}
 {"id":"demo-reaction-13","comment_id":"demo-comment-14","user_id":"demo-m4","emoji":"👍","created_at":"<d-20>","deleted_at":null}
 {"id":"demo-reaction-14","comment_id":"demo-comment-18","user_id":"demo-m5","emoji":"👍","created_at":"<d-59>","deleted_at":null}
-{"id":"demo-reaction-15","comment_id":"demo-comment-18","user_id":"demo-m7","emoji":"✅","created_at":"<d-59>","deleted_at":null}
-{"id":"demo-reaction-16","comment_id":"demo-comment-24","user_id":"demo-dep","emoji":"👀","created_at":"<d-6>","deleted_at":null}
-{"id":"demo-reaction-2","comment_id":"demo-comment-25","user_id":"demo-m5","emoji":"✅","created_at":"<d-1>","deleted_at":null}
-{"id":"demo-reaction-3","comment_id":"demo-comment-25","user_id":"demo-m1","emoji":"👀","created_at":"<d-1>","deleted_at":null}
+{"id":"demo-reaction-15","comment_id":"demo-comment-18","user_id":"demo-m7","emoji":"👍","created_at":"<d-59>","deleted_at":null}
+{"id":"demo-reaction-16","comment_id":"demo-comment-24","user_id":"demo-dep","emoji":"🤔","created_at":"<d-6>","deleted_at":null}
+{"id":"demo-reaction-2","comment_id":"demo-comment-25","user_id":"demo-m5","emoji":"👍","created_at":"<d-1>","deleted_at":null}
+{"id":"demo-reaction-3","comment_id":"demo-comment-25","user_id":"demo-m1","emoji":"🤔","created_at":"<d-1>","deleted_at":null}
 {"id":"demo-reaction-4","comment_id":"demo-comment-26","user_id":"demo-dir","emoji":"👍","created_at":"<d-3>","deleted_at":null}
-{"id":"demo-reaction-5","comment_id":"demo-comment-26","user_id":"demo-m6","emoji":"✅","created_at":"<d-3>","deleted_at":null}
+{"id":"demo-reaction-5","comment_id":"demo-comment-26","user_id":"demo-m6","emoji":"👍","created_at":"<d-3>","deleted_at":null}
 {"id":"demo-reaction-6","comment_id":"demo-comment-27","user_id":"demo-dir","emoji":"👍","created_at":"<d-5>","deleted_at":null}
-{"id":"demo-reaction-7","comment_id":"demo-comment-27","user_id":"demo-m3","emoji":"👀","created_at":"<d-5>","deleted_at":null}
+{"id":"demo-reaction-7","comment_id":"demo-comment-27","user_id":"demo-m3","emoji":"🤔","created_at":"<d-5>","deleted_at":null}
 {"id":"demo-reaction-8","comment_id":"demo-comment-28","user_id":"demo-m11","emoji":"👍","created_at":"<d-8>","deleted_at":null}
-{"id":"demo-reaction-9","comment_id":"demo-comment-28","user_id":"demo-dep","emoji":"✅","created_at":"<d-8>","deleted_at":null}
+{"id":"demo-reaction-9","comment_id":"demo-comment-28","user_id":"demo-dep","emoji":"👍","created_at":"<d-8>","deleted_at":null}
 ### feed_events (47)
 {"id":"demo-fe-c1","type":"comment_added","bill_id":"bill-legiscan:2099974","user_id":"demo-dep","metadata":"{\\"preview\\":\\"Michael Brown — good catch. I'd suggest we request a clarifying amendment: \\\\\\"county board of elections or its designee.\\\\\\"\\",\\"commentId\\":\\"demo-comment-4\\",\\"mentionedUserIds\\":[\\"demo-m4\\"]}","suppressed":0,"created_at":"<d-14>"}
 {"id":"demo-fe-c10","type":"comment_added","bill_id":"bill-legiscan:2100182","user_id":"demo-m3","metadata":"{\\"preview\\":\\"We pulled our 2024 numbers: roughly 8% of voters were registered in a different precinct — approximately 2,200 additional provisional ballots, a 40% increase over 2024.\\",\\"commentId\\":\\"demo-comment-24\\"}","suppressed":0,"created_at":"<d-7>"}
