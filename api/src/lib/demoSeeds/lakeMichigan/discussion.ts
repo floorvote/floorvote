@@ -33,10 +33,10 @@ const hb4427: DemoSeedComment[] = [
   { id: 'lm-c-5', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
     content: "<p>I've got it, I'll be there.</p>", daysAgo: 2 },
   // The mention sits mid-sentence on purpose: stripHtml() replaces the span with a
-  // space, so a mention immediately before a period renders "…@Devon Clarke ." on
+  // space, so a mention immediately before a period renders "…@Devon Brook ." on
   // the feed card.
   { id: 'lm-c-6', externalId: 'legiscan:2029026', userId: 'demo-user',
-    content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Clarke">@Devon Clarke</span> for the fast turnaround.</p>', daysAgo: 1 },
+    content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Brook">@Devon Brook</span> for the fast turnaround.</p>', daysAgo: 1 },
 ]
 
 // The two stacked pills the demo needs: four people on 👍 for lm-c-6 (the newest
@@ -84,7 +84,7 @@ const hb5308: DemoSeedComment[] = [
   { id: 'lm-c-11', externalId: 'legiscan:2055958', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-habitat" data-label="Habitat">@Habitat</span> should we flag this decal fee model to the other states we track?</p>', daysAgo: 3 },
   { id: 'lm-c-12', externalId: 'legiscan:2055958', userId: 'lm-user-res',
-    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Marcus Bell">@Marcus Bell</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
+    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Marcus Weir">@Marcus Weir</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
 ]
 
 const hb5308Reactions: DemoSeedReaction[] = [
@@ -146,7 +146,7 @@ const sb0771Mentions: DemoSeedMention[] = [
 ]
 
 // A genuine internal split: the mandate is right on the merits, but the evaluation
-// cost lands on counties. Denise (lm-user-gov) works that relationship directly and
+// cost lands on counties. Marina (lm-user-gov) works that relationship directly and
 // says so in lm-c-16 and lm-c-89; Sofia (lm-user-la2) is on the Infrastructure
 // working group that owns this bill's theme and brings the Wisconsin precedent in
 // lm-c-91. Both oppose votes have a comment behind them.
@@ -437,7 +437,7 @@ const ilHb2516: DemoSeedComment[] = [
   { id: 'lm-c-56', externalId: 'legiscan:1952725', userId: 'lm-user-comms',
     content: '<p><span data-type="mention" data-id="role:lm-role-contam" data-label="Contaminants">@Contaminants</span> can someone confirm which retailers have flagged compliance issues?</p>', daysAgo: 40 },
   { id: 'lm-c-57', externalId: 'legiscan:1952725', userId: 'lm-user-wq',
-    content: '<p><span data-type="mention" data-id="user:lm-user-comms" data-label="Renee Barron">@Renee Barron</span> two came up on our compliance calls. Let me confirm with the state first.</p>', daysAgo: 38 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-comms" data-label="Renee Rains">@Renee Rains</span> two came up on our compliance calls. Let me confirm with the state first.</p>', daysAgo: 38 },
 ]
 
 const ilHb2516Reactions: DemoSeedReaction[] = [
@@ -466,7 +466,7 @@ const inHb1124: DemoSeedComment[] = [
   { id: 'lm-c-58', externalId: 'legiscan:2061476', userId: 'lm-user-res',
     content: '<p>Public Health Committee hearing is set. Good bill to push hard on early.</p>', daysAgo: 5 },
   { id: 'lm-c-59', externalId: 'legiscan:2061476', userId: 'lm-user-prog',
-    content: '<p><span data-type="mention" data-id="user:lm-user-res" data-label="Grace Lin">@Grace Lin</span> I can line up two district facilities managers to testify. Reaching out today.</p>', daysAgo: 4 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-res" data-label="Grace Jiang">@Grace Jiang</span> I can line up two district facilities managers to testify. Reaching out today.</p>', daysAgo: 4 },
   { id: 'lm-c-60', externalId: 'legiscan:2061476', userId: 'lm-user-out',
     content: '<p>PTA coalition is already asking about this one. Happy to get them a fact sheet before the hearing.</p>', daysAgo: 3 },
   // Deliberately not the MI HB4427 beat again (lm-c-4/lm-c-5, "can someone cover

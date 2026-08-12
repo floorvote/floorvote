@@ -191,9 +191,19 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // one visitor dismissing each new match removes the triage experience from the
   // demo permanently. NULL is the right baseline: no seed writes triagedAt, so a
   // freshly ingested demo tenant has it NULL on every row.
+  // …and clear the new-match flag itself. newMatchWhere requires match_type
+  // 'keyword' AND new_match_at IS NOT NULL AND triaged_at IS NULL, so resetting
+  // only triaged_at put every keyword match back into "New matches" on every
+  // reset. A visitor then meets a worklist of bills presented as newly arrived
+  // on a demo whose content is months old, with a dismiss button that undoes
+  // itself six hours later — the triage feature reads as broken rather than as
+  // a feature. NULL is the honest steady state: after a reset nothing has newly
+  // matched. The processor only sets new_match_at alongside a fresh AI result
+  // (isFirstKeywordMatch in queue/processor.ts), and AI dedups on an unchanged
+  // text hash, so cleared rows stay cleared.
   const priorityExtIds = seed.priorities.map((p) => p.externalId)
   await batch([
-    db.prepare(`UPDATE bills SET triaged_at = NULL, triaged_by = NULL`),
+    db.prepare(`UPDATE bills SET triaged_at = NULL, triaged_by = NULL, new_match_at = NULL`),
     ...seed.priorities.map((p) =>
       db.prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`).bind(p.priority, p.externalId),
     ),
