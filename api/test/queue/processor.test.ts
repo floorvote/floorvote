@@ -243,6 +243,35 @@ describe('processCentralNotification', () => {
   //   2. A successful run on a new text version clears the reason
   //   3. `forceAI` always bypasses the skip
 
+  // A transient failure — provider outage, exhausted AI Gateway credits, bad token —
+  // is NOT a property of the document, so it must not set aiSkipReason. But leaving
+  // every field null makes it indistinguishable from "never queued", which is exactly
+  // how 42 bills sat silently after an AI Gateway credit balance hit zero: the logs
+  // showed 402s while the database showed nothing at all.
+  it('records ai_error and ai_attempted_at on a transient failure, without claiming a permanent skip', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    const { processBill } = await import('../../src/lib/llm')
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(new Error('Insufficient wholesale credits.'), { status: 402 })
+    )
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.aiError).toContain('Insufficient wholesale credits')
+    expect(row!.aiAttemptedAt).not.toBeNull()
+    // Not a document problem, so no permanent skip and no summary.
+    expect(row!.aiSkipReason).toBeNull()
+    expect(row!.aiProcessedAt).toBeNull()
+    expect(row!.tenantSummary).toBeNull()
+    // Crucially, no lastAiTextHash: recording it would dedup the retry away and
+    // make a billing outage permanent for these bills.
+    expect(row!.lastAiTextHash).toBeNull()
+  })
+
   it('records ai_skip_reason on Gemini page-limit error and leaves ai_processed_at null', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

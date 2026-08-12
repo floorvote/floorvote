@@ -87,6 +87,13 @@ export const bills = sqliteTable('bills', {
   lastAiTextHash: text('last_ai_text_hash'),
   lastAiTextDocId: text('last_ai_text_doc_id'),
   aiSkipReason: text('ai_skip_reason'),
+  // Transient AI failures (provider outage, exhausted AI Gateway credits, bad
+  // token). Distinct from aiSkipReason, which means the document itself is
+  // permanently unprocessable. Without these, a failed bill looks exactly like
+  // one that was never queued — the same ambiguity central's bill_texts
+  // .fetch_attempted_at/.fetch_error exist to prevent.
+  aiAttemptedAt: text('ai_attempted_at'),
+  aiError: text('ai_error'),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   triagedAt: text('triaged_at'),
