@@ -4,6 +4,7 @@ import { LM_ORG } from './org'
 import { LM_CUSTOM_FIELDS, LM_ROLES, LM_USER_ROLES, LM_USERS } from './roster'
 import {
   LM_BILL_UPDATED_EVENTS,
+  LM_RECENT_ACTIVITY_EVENTS,
   LM_CALENDAR_EVENTS,
   LM_CUSTOM_FIELD_VALUES,
   LM_ENGAGEMENT_EVENTS,
@@ -62,7 +63,7 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   priorities: LM_PRIORITIES, positions: LM_POSITIONS, votes: LM_VOTES,
   comments: LM_COMMENTS, reactions: LM_REACTIONS, mentions: LM_MENTIONS,
   feedEvents: [
-    ...LM_BILL_UPDATED_EVENTS, ...LM_HEARING_EVENTS, ...LM_ENGAGEMENT_EVENTS,
+    ...LM_BILL_UPDATED_EVENTS, ...LM_RECENT_ACTIVITY_EVENTS, ...LM_HEARING_EVENTS, ...LM_ENGAGEMENT_EVENTS,
     ...commentEvents, ...voteMilestones,
   ],
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,

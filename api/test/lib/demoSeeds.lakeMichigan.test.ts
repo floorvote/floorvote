@@ -37,7 +37,11 @@ describe('lake-michigan seed registration', () => {
     const b = DEMO_SEEDS['lake-michigan'].bannerText
     expect(b).not.toMatch(/read-only/i)
     expect(b).toMatch(/fictional/i)
-    expect(b).toContain('the organization, its staff, and the hearing dates are fictional')
+    // Each invented category must be named. The seed carries fictional recent
+    // legislative activity (LM_RECENT_ACTIVITY_EVENTS) on top of real bills, so
+    // the banner has to disclose that too — a visitor who looks a bill up should
+    // not be surprised by an action that never happened.
+    expect(b).toContain('the organization, its staff, the hearing dates, and the most recent legislative activity are fictional')
     expect(b).toMatch(/resets every few hours/i)
   })
 

@@ -72,8 +72,8 @@ export const LM_PRIORITIES: Array<{ externalId: string; priority: 'high' | 'medi
 ]
 
 // Official positions — set only by one of the three org admins (demo-user =
-// Marcus Bell/Policy Director, lm-user-ed = Karen Whitfield/Executive Director,
-// lm-user-dep = Priya Raman/Deputy Policy Director). The two dead Wisconsin bills
+// Marcus Weir/Policy Director, lm-user-ed = Karen Waters/Executive Director,
+// lm-user-dep = Varsha Raman/Deputy Policy Director). The two dead Wisconsin bills
 // (AB129, SB628) get Support too: they lost, and that's the point of tracking a
 // concluded bill. SB0771 and HB8876 carry Amend/Monitor so the vocabulary isn't
 // all Support.
@@ -520,4 +520,63 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
   { id: 'lm-fe-o12', type: 'position_set', externalId: 'legiscan:2056216', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 180 },
   { id: 'lm-fe-o13', type: 'position_set', externalId: 'legiscan:1910159', userId: 'lm-user-ed',  metadata: { position: 'Support' }, daysAgo: 500 },
   { id: 'lm-fe-o14', type: 'position_set', externalId: 'legiscan:2150744', userId: 'lm-user-ed',  metadata: { position: 'Amend' },   daysAgo: 50 },
+]
+
+// ── Recent legislative activity (fictional) ─────────────────────────────────
+//
+// Everything in LM_BILL_UPDATED_EVENTS above is verbatim real action history,
+// which means the feed ages: the newest real action in the manifest was ~3 weeks
+// before the seed was written, and drifts further every day the demo runs. The
+// practical effect is that the first screen of the feed is pure social chatter —
+// comments, votes, priorities — and a visitor has to scroll back weeks before
+// any legislative activity appears. That misrepresents the product, whose whole
+// point is legislative activity arriving alongside the team's reaction to it.
+//
+// These events are INVENTED, unlike every other event in this file. They are
+// written to be plausible for each bill's real chamber and status: nothing here
+// advances a bill that is dead, enacts one that is pending, or claims a roll
+// call. They are committee referrals, hearings, substitutions and readings —
+// the procedural texture of a live session. The seed's bannerText names them as
+// fictional alongside the hearing dates.
+//
+// If the manifest is ever refreshed with newer real actions, delete this block
+// rather than growing it.
+export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
+  // MI HB5308 — Invasive Species, Engrossed, so second-chamber committee work.
+  { id: 'lm-fe-r-mi-hb5308-1', type: 'bill_updated', externalId: 'legiscan:2055958', userId: 'system', daysAgo: 3, metadata: { changes: [
+    chg('action_added', { newValue: 'Reported With Recommendation Without Amendment' }),
+    chg('action_added', { newValue: 'Placed On Order Of Third Reading' }),
+  ] } },
+  { id: 'lm-fe-r-mi-hb5308-2', type: 'bill_updated', externalId: 'legiscan:2055958', userId: 'system', daysAgo: 12, metadata: { changes: [
+    chg('action_added', { newValue: 'Referred To Committee On Natural Resources And Agriculture' }),
+  ] } },
+
+  // MI SB0771 — Septic & Wastewater, still Introduced; committee activity only.
+  { id: 'lm-fe-r-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 5, metadata: { changes: [
+    chg('action_added', { newValue: 'Committee Hearing Held' }),
+    chg('action_added', { newValue: 'Substitute S-1 Offered' }),
+  ] } },
+
+  // IN HB1124 — Drinking Water, Introduced; Indiana reads bills by number.
+  { id: 'lm-fe-r-in-hb1124-1', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 8, metadata: { changes: [
+    chg('action_added', { newValue: 'Second reading: amended, ordered engrossed' }),
+  ] } },
+
+  // US HB8876 — Invasive Species, Introduced; federal committee referral.
+  { id: 'lm-fe-r-us-hb8876-1', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 6, metadata: { changes: [
+    chg('action_added', { newValue: 'Referred to the Subcommittee on Water, Wildlife and Fisheries' }),
+  ] } },
+
+  // IL HB5268 — Water Withdrawal, Introduced; IL uses committee deadlines.
+  { id: 'lm-fe-r-il-hb5268-1', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 10, metadata: { changes: [
+    chg('action_added', { newValue: 'Assigned to Energy & Environment Committee' }),
+  ] } },
+  { id: 'lm-fe-r-il-hb5268-2', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 17, metadata: { changes: [
+    chg('action_added', { newValue: 'Committee Deadline Extended' }),
+  ] } },
+
+  // MI HB5674 — Drinking Water, Introduced.
+  { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 15, metadata: { changes: [
+    chg('action_added', { newValue: 'Referred To Committee On Government Operations' }),
+  ] } },
 ]

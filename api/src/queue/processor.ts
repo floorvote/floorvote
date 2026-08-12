@@ -368,6 +368,9 @@ export async function processCentralNotification(
 
   let aiResult: { summary: string; tags: string[]; relevanceScore: number } | null = null
   let aiSkipReason: AiSkipReason | null = null
+  // Transient failure text, recorded so a bill that failed is distinguishable
+  // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
+  let aiError: string | null = null
   if (shouldRunAi && activePreset && !aiDedup) {
     const [aiContextRow, taxonomyRow, relevanceQuestionRow] = await Promise.all([
       db.select().from(associationConfig).where(eq(associationConfig.key, 'ai_context')).get(),
@@ -423,6 +426,7 @@ export async function processCentralNotification(
             if (aiSkipReason) {
               console.warn(`[processor] AI permanently skipped for ${centralBill.number}: ${aiSkipReason}`)
             } else {
+              aiError = String(retryErr).slice(0, 300)
               console.error(`AI processing failed for ${centralBill.number}:`, retryErr)
             }
           }
@@ -434,6 +438,7 @@ export async function processCentralNotification(
         if (aiSkipReason) {
           console.warn(`[processor] AI permanently skipped for ${centralBill.number}: ${aiSkipReason}`)
         } else {
+          aiError = String(err).slice(0, 300)
           console.error(`AI processing failed for ${centralBill.number}:`, err)
         }
       }
@@ -474,6 +479,9 @@ export async function processCentralNotification(
       relevanceScore: aiResult.relevanceScore,
       // Clear any prior permanent skip — AI ran successfully on this text version.
       aiSkipReason: null,
+      // …and any prior transient failure, for the same reason.
+      aiAttemptedAt: null,
+      aiError: null,
       ...(isFirstKeywordMatch ? { newMatchAt: now } : {}),
     } : aiSkipReason ? {
       // Permanent AI failure on this text. Recording lastAiTextHash here serves the
@@ -481,6 +489,13 @@ export async function processCentralNotification(
       lastAiTextHash: centralBill.textHash ?? null,
       lastAiTextDocId: aiTextDocId,
       aiSkipReason,
+      aiAttemptedAt: now,
+      aiError: null,
+    } : aiError ? {
+      // Transient failure: deliberately does NOT record lastAiTextHash, so the
+      // next pass retries rather than deduping itself into permanent silence.
+      aiAttemptedAt: now,
+      aiError,
     } : {}),
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
