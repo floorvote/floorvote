@@ -24,7 +24,9 @@ const chg = (changeType: string, f: { oldValue?: string; newValue?: string; deta
 export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   slug: 'nj-county-clerks',
   associationName: NJ_COUNTY_CLERKS.name,
-  bannerText: "You're exploring a read-only demo — explore anything, but changes won't save. Data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.",
+  bannerText:
+    'Demo instance. The bills are real New Jersey legislation — the association, its county clerks, ' +
+    'and the hearing dates are fictional. Anything you change resets every few hours.',
   orgNoun: 'association',
   aiContext: NJ_COUNTY_CLERKS.aiContext,
   relevanceQuestion: NJ_COUNTY_CLERKS.relevanceQuestion,
@@ -33,11 +35,11 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   positionVocabulary: ['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'],
 
   // Start the demo with optional widgets OFF so visitors can experience enabling
-  // them in Settings → Modules (toggling modules is allowed in demo mode; all
-  // other config stays locked). Nightly reset returns them to off. email-digest is
-  // shown ON but read-only (the toggle is disabled in demo and runDigest hard-stops
-  // before sending), so demo visitors see the configured state without any email
-  // actually going out.
+  // them from the sidebar's "Customize widgets" panel (toggling modules is
+  // allowed in demo mode; all other config stays locked). The reset returns them
+  // to off. email-digest is shown ON but read-only (the toggle is disabled in demo
+  // and runDigest hard-stops before sending), so demo visitors see the configured
+  // state without any email actually going out.
   modules: {
     'waiting-for-vote': false,
     'upcoming-hearings': false,
@@ -254,25 +256,25 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
   reactions: [
     // demo-comment-25 (A1715, daysAgo 2) — freshest comment
     { id: 'demo-reaction-1', commentId: 'demo-comment-25', userId: 'demo-dep', emoji: '👍', daysAgo: 1 },
-    { id: 'demo-reaction-2', commentId: 'demo-comment-25', userId: 'demo-m5',  emoji: '✅', daysAgo: 1 },
-    { id: 'demo-reaction-3', commentId: 'demo-comment-25', userId: 'demo-m1',  emoji: '👀', daysAgo: 1 },
+    { id: 'demo-reaction-2', commentId: 'demo-comment-25', userId: 'demo-m5',  emoji: '👍', daysAgo: 1 },
+    { id: 'demo-reaction-3', commentId: 'demo-comment-25', userId: 'demo-m1',  emoji: '🤔', daysAgo: 1 },
     // demo-comment-26 (A1129, daysAgo 4)
     { id: 'demo-reaction-4', commentId: 'demo-comment-26', userId: 'demo-dir', emoji: '👍', daysAgo: 3 },
-    { id: 'demo-reaction-5', commentId: 'demo-comment-26', userId: 'demo-m6',  emoji: '✅', daysAgo: 3 },
+    { id: 'demo-reaction-5', commentId: 'demo-comment-26', userId: 'demo-m6',  emoji: '👍', daysAgo: 3 },
     // demo-comment-27 (A1195, daysAgo 6)
     { id: 'demo-reaction-6', commentId: 'demo-comment-27', userId: 'demo-dir', emoji: '👍', daysAgo: 5 },
-    { id: 'demo-reaction-7', commentId: 'demo-comment-27', userId: 'demo-m3',  emoji: '👀', daysAgo: 5 },
+    { id: 'demo-reaction-7', commentId: 'demo-comment-27', userId: 'demo-m3',  emoji: '🤔', daysAgo: 5 },
     // demo-comment-28 (A1680, daysAgo 9)
     { id: 'demo-reaction-8', commentId: 'demo-comment-28', userId: 'demo-m11', emoji: '👍', daysAgo: 8 },
-    { id: 'demo-reaction-9', commentId: 'demo-comment-28', userId: 'demo-dep', emoji: '✅', daysAgo: 8 },
+    { id: 'demo-reaction-9', commentId: 'demo-comment-28', userId: 'demo-dep', emoji: '👍', daysAgo: 8 },
     // Older comments — lighter engagement, for realism.
     { id: 'demo-reaction-10', commentId: 'demo-comment-1',  userId: 'demo-m1', emoji: '👍', daysAgo: 59 },
     { id: 'demo-reaction-11', commentId: 'demo-comment-5',  userId: 'demo-dir', emoji: '👍', daysAgo: 29 },
-    { id: 'demo-reaction-12', commentId: 'demo-comment-11', userId: 'demo-m3', emoji: '✅', daysAgo: 29 },
+    { id: 'demo-reaction-12', commentId: 'demo-comment-11', userId: 'demo-m3', emoji: '👍', daysAgo: 29 },
     { id: 'demo-reaction-13', commentId: 'demo-comment-14', userId: 'demo-m4', emoji: '👍', daysAgo: 20 },
     { id: 'demo-reaction-14', commentId: 'demo-comment-18', userId: 'demo-m5', emoji: '👍', daysAgo: 59 },
-    { id: 'demo-reaction-15', commentId: 'demo-comment-18', userId: 'demo-m7', emoji: '✅', daysAgo: 59 },
-    { id: 'demo-reaction-16', commentId: 'demo-comment-24', userId: 'demo-dep', emoji: '👀', daysAgo: 6 },
+    { id: 'demo-reaction-15', commentId: 'demo-comment-18', userId: 'demo-m7', emoji: '👍', daysAgo: 59 },
+    { id: 'demo-reaction-16', commentId: 'demo-comment-24', userId: 'demo-dep', emoji: '🤔', daysAgo: 6 },
   ],
 
   // One row per (comment, notified user).

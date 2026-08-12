@@ -50,6 +50,13 @@ export type Env = {
   // (`[[ratelimits]]` in wrangler.toml, per tenant env). Optional: absent in dev/
   // tests → checkRateLimit fails open.
   LOGIN_RATE_LIMITER?: RateLimiter
+  // Workers Rate Limiting binding for the additive writes a DEMO_MODE tenant
+  // allows. Demo auto-login hands any caller a session with no interaction, so
+  // those writes are anonymous by construction and keyed per-IP in demoReadOnly.
+  // Optional, and only worth declaring on demo tenants: absent → checkRateLimit
+  // fails open, which is what keeps this safe for tenants (and tests) that never
+  // bind it.
+  DEMO_WRITE_RATE_LIMITER?: RateLimiter
   // Cloudflare Turnstile secret (siteverify). Unset → gate fails open (stub).
   // Set by the operator after creating a widget.
   TURNSTILE_SECRET_KEY?: string

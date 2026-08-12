@@ -22,10 +22,9 @@ interface CompactPrioritySelectProps {
   placeholder?: string
   /** Drop the select's own border so a parent (e.g. the segmented triage control) owns it. */
   seamless?: boolean
-  disabled?: boolean
 }
 
-export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Not set', seamless, disabled }: CompactPrioritySelectProps) {
+export function CompactPrioritySelect({ billId, current, onChange, isFiltered, mini, placeholder = 'Not set', seamless }: CompactPrioritySelectProps) {
   const c = current ? PRIORITY_COLORS[current] : NO_PRIORITY
   const borderColor = seamless ? 'transparent' : (current ? 'transparent' : color.borderDefault)
 
@@ -39,7 +38,6 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
       <select
         aria-label="Priority"
         value={current ?? ''}
-        disabled={disabled}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onChange={(e) => {
@@ -53,8 +51,7 @@ export function CompactPrioritySelect({ billId, current, onChange, isFiltered, m
           fontSize: fs, fontWeight: fontWeight.semibold,
           padding: pad, borderRadius: borderRad,
           border: `1px solid ${borderColor}`, background: c.fill, color: c.text,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
+          cursor: 'pointer',
           width: seamless ? '100%' : undefined,
           outline: isFiltered ? `2px solid ${color.accentBlue}` : 'none',
           outlineOffset: 2,

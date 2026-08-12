@@ -110,7 +110,7 @@ SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
 # CF_AIG_GATEWAY = "your-gateway-slug"
 # ALERT_EMAILS = "ops@example.com"
-# DEMO_MODE = "true"                              # optional: make this tenant a public, read-only demo (auto-login, no email, nightly reset). Leave INSTANCE_PRESET unset when set.
+# DEMO_MODE = "true"                              # optional: make this tenant a public demo (auto-login, no email, additive writes only, reset every six hours via a 0 0,6,12,18 * * * cron in the per-tenant api/wrangler.toml — operator-only, not in this repo). Leave INSTANCE_PRESET unset when set.
 # DEMO_SEED = "nj-county-clerks"                  # which demo seed supplies the content — a key in api/src/lib/demoSeeds/index.ts. Defaults to "nj-county-clerks" when unset.
 
 [[env.example.d1_databases]]
@@ -150,6 +150,17 @@ namespace_id = "3001"               # unique per env
   [env.example.ratelimits.simple]
   limit = 10
   period = 60
+
+# Only needed on a DEMO_MODE tenant. Demo auto-login gives any caller a session
+# without interaction, so the additive writes the demo allows are anonymous;
+# demoReadOnly caps them per client IP. The code fails open when this binding is
+# absent, so a normal (non-demo) tenant can leave the whole block out.
+# [[env.example.ratelimits]]
+# name = "DEMO_WRITE_RATE_LIMITER"
+# namespace_id = "3002"             # unique per env
+#   [env.example.ratelimits.simple]
+#   limit = 30
+#   period = 60
 
 # Secrets (set via `wrangler secret put --env example`):
 # RESEND_API_KEY           — magic-link email (if EMAIL_PROVIDER=resend)

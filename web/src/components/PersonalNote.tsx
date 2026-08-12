@@ -10,10 +10,9 @@ import { color, fontSize, radius } from '../styles/tokens'
 interface PersonalNoteProps {
   billId: string
   initialContent: string | null
-  disabled?: boolean
 }
 
-export function PersonalNote({ billId, initialContent, disabled }: PersonalNoteProps) {
+export function PersonalNote({ billId, initialContent }: PersonalNoteProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [content, setContent] = useState(initialContent ?? '')
@@ -44,22 +43,25 @@ export function PersonalNote({ billId, initialContent, disabled }: PersonalNoteP
           placeholder="Write a personal note…"
           submitLabel="Save"
           autoFocus
-          disabled={disabled}
           onSubmit={html => save(html.replace(/<[^>]*>/g, '').trim() ? html : null)}
           onCancel={() => setIsEditing(false)}
         />
       ) : (
         <div
           role="button"
-          tabIndex={disabled ? -1 : 0}
+          tabIndex={0}
           aria-label="Personal note"
-          aria-disabled={disabled}
-          onClick={() => { if (!disabled) setIsEditing(true) }}
+          onClick={() => setIsEditing(true)}
+          // A role="button" div is not natively keyboard-operable. It is always
+          // tabIndex={0} now (demo tenants accept notes, so it is never a
+          // focus-skipped read-only box), which without this made it
+          // focusable-but-inoperable for keyboard users. Space preventDefaults so
+          // activating the note doesn't also scroll the page.
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsEditing(true) } }}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           style={{
-            cursor: disabled ? 'not-allowed' : 'text',
-            opacity: disabled ? 0.5 : 1,
+            cursor: 'text',
             minHeight: 60,
             border: `1px solid ${isHovered ? color.borderStrong : color.borderDefault}`,
             borderRadius: radius.md,

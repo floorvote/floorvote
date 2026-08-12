@@ -993,7 +993,7 @@ export function Members() {
                         checked={member.canVote}
                         onChange={demoLocked ? undefined : () => handleCanVoteToggle(member)}
                         disabled={demoLocked}
-                        title={demoLocked ? 'Read-only in demo mode' : member.canVote ? 'Click to remove voting rights' : 'Click to grant voting rights'}
+                        title={demoLocked ? 'Locked in demo mode' : member.canVote ? 'Click to remove voting rights' : 'Click to grant voting rights'}
                         style={{ cursor: demoLocked ? 'not-allowed' : 'pointer', width: 16, height: 16 }}
                       />
                     </td>

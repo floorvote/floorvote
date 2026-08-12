@@ -6,9 +6,24 @@ import { comments, commentReactions, commentMentions, feedEvents } from '../db/s
 import { extractAndNotifyMentions } from '../lib/mentions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
+import { isReactionEmoji } from '../../../shared/reactionEmojis'
 import type { AppEnv } from '../types'
 
 export const commentsApiRouter = new Hono<AppEnv>()
+
+// `emoji` is attacker-controlled and the unique index is (comment, user, emoji),
+// so every distinct value it admits is another chip rendered beside the comment.
+// It used to be checked with a Unicode property test ("is this all emoji
+// characters, under N bytes"), which still admitted every emoji that exists and
+// left "what can be smuggled through a property test" as a live question — the
+// rule before that admitted "😀BUY-CRYPTO", i.e. arbitrary text.
+//
+// The picker offers eight emoji and always has, so the set is closed: membership
+// in REACTION_EMOJIS is the whole rule. A closed set of eight known-short
+// literals makes the character class and the byte cap dead weight — there is no
+// length or codepoint to reason about, only eight exact strings — so both are
+// gone. This applies everywhere, not just under DEMO_MODE: text smuggled into an
+// "emoji" field is a bug on a real tenant too.
 
 commentsApiRouter.use('*', requireAuth)
 
@@ -73,11 +88,8 @@ commentsApiRouter.post('/:id/reactions', async (c) => {
   const currentUser = c.get('user')
   const body = await c.req.json<{ emoji?: string }>().catch(() => ({} as { emoji?: string }))
   if (!body.emoji) return c.json({ error: 'emoji is required' }, 400)
-  if (new TextEncoder().encode(body.emoji).length > 16) {
-    return c.json({ error: 'emoji too long' }, 400)
-  }
-  if (!/\p{Extended_Pictographic}/u.test(body.emoji)) {
-    return c.json({ error: 'emoji must be an emoji character' }, 400)
+  if (!isReactionEmoji(body.emoji)) {
+    return c.json({ error: 'emoji must be one of the offered reactions' }, 400)
   }
 
   const comment = await db.select({ id: comments.id }).from(comments).where(

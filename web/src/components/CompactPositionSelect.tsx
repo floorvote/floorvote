@@ -19,10 +19,9 @@ interface CompactPositionSelectProps {
   onChange: (p: string | null) => void
   size?: 'sm' | 'lg'
   isFiltered?: boolean
-  disabled?: boolean
 }
 
-export function CompactPositionSelect({ billId, current, options, onChange, isFiltered, disabled }: CompactPositionSelectProps) {
+export function CompactPositionSelect({ billId, current, options, onChange, isFiltered }: CompactPositionSelectProps) {
   const c = current ? (POSITION_COLORS[current] ?? NO_POSITION) : NO_POSITION
 
   return (
@@ -30,7 +29,6 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
       <select
         aria-label="Position"
         value={current ?? ''}
-        disabled={disabled}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onChange={(e) => {
@@ -49,8 +47,7 @@ export function CompactPositionSelect({ billId, current, options, onChange, isFi
           fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
           padding: '3px 22px 3px 10px', borderRadius: radius.sm,
           border: `1px solid ${c.border}`, background: c.bg, color: c.color,
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
+          cursor: 'pointer',
           outline: isFiltered ? `2px solid ${color.accentBlue}` : 'none',
           outlineOffset: 2,
         }}

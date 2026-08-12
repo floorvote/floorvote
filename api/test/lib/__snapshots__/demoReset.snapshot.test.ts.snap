@@ -48,7 +48,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 ### association_config (10)
 {"key":"ai_context","value":"You are analyzing a bill for an association of New Jersey county clerks. Their duties include: elections administration (ballot design and printing, Vote by Mail applications, candidate petitions, certifying results), recording deeds and land documents, serving the Superior Court, issuing passports and marriage licenses, registering trade names, certifying notary publics, and managing public records requests under OPRA (Open Public Records Act).\\n\\nNote: NJ county boards of elections — a separate body from the county clerk — operate polling places, maintain the voter database, and hire poll workers.\\n\\nWhen writing the summary, start directly with an action verb or gerund phrase — do not begin with \\"This bill\\", \\"The bill\\", or the bill number. For example, you could start with \\"Requires all counties to...\\", \\"Establishes a new procedure for...\\", etc.\\n\\nScale the description to the bill's complexity and relevance. For less relevant, simple, or narrow bills 1–2 plain sentences should suffice. For bills that are longer and more relevant, you might write a paragraph or two. For a bill with multiple distinct provisions, you might also—or instead—use a list of 2–8 items, with the most impactful provisions first (unless there is some other order that would be more logical). Each item should start with a verb and be one sentence. You should aim to minimize redundancy in the description."}
 {"key":"association_name","value":"\\"Demo — NJ County Clerks\\""}
-{"key":"demo_banner","value":"\\"You're exploring a read-only demo — explore anything, but changes won't save. Data resets nightly. The bills are real New Jersey legislation, but the people, county names, and hearing dates are fictional.\\""}
+{"key":"demo_banner","value":"\\"Demo instance. The bills are real New Jersey legislation — the association, its county clerks, and the hearing dates are fictional. Anything you change resets every few hours.\\""}
 {"key":"keywords","value":"[\\"election\\",\\"ballot\\",\\"vote by mail\\",\\"county clerk\\",\\"board of elections\\",\\"deed\\",\\"land records\\",\\"public records\\",\\"OPRA\\",\\"notary\\",\\"voter\\"]"}
 {"key":"modules","value":"{\\"waiting-for-vote\\":false,\\"upcoming-hearings\\":false,\\"calendar\\":true,\\"email-digest\\":{\\"enabled\\":true,\\"settings\\":{\\"frequency\\":\\"daily\\",\\"weeklyDay\\":\\"1\\"}}}"}
 {"key":"org_noun","value":"\\"association\\""}
@@ -166,19 +166,19 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"id":"demo-reaction-1","comment_id":"demo-comment-25","user_id":"demo-dep","emoji":"👍","created_at":"<d-1>","deleted_at":null}
 {"id":"demo-reaction-10","comment_id":"demo-comment-1","user_id":"demo-m1","emoji":"👍","created_at":"<d-59>","deleted_at":null}
 {"id":"demo-reaction-11","comment_id":"demo-comment-5","user_id":"demo-dir","emoji":"👍","created_at":"<d-29>","deleted_at":null}
-{"id":"demo-reaction-12","comment_id":"demo-comment-11","user_id":"demo-m3","emoji":"✅","created_at":"<d-29>","deleted_at":null}
+{"id":"demo-reaction-12","comment_id":"demo-comment-11","user_id":"demo-m3","emoji":"👍","created_at":"<d-29>","deleted_at":null}
 {"id":"demo-reaction-13","comment_id":"demo-comment-14","user_id":"demo-m4","emoji":"👍","created_at":"<d-20>","deleted_at":null}
 {"id":"demo-reaction-14","comment_id":"demo-comment-18","user_id":"demo-m5","emoji":"👍","created_at":"<d-59>","deleted_at":null}
-{"id":"demo-reaction-15","comment_id":"demo-comment-18","user_id":"demo-m7","emoji":"✅","created_at":"<d-59>","deleted_at":null}
-{"id":"demo-reaction-16","comment_id":"demo-comment-24","user_id":"demo-dep","emoji":"👀","created_at":"<d-6>","deleted_at":null}
-{"id":"demo-reaction-2","comment_id":"demo-comment-25","user_id":"demo-m5","emoji":"✅","created_at":"<d-1>","deleted_at":null}
-{"id":"demo-reaction-3","comment_id":"demo-comment-25","user_id":"demo-m1","emoji":"👀","created_at":"<d-1>","deleted_at":null}
+{"id":"demo-reaction-15","comment_id":"demo-comment-18","user_id":"demo-m7","emoji":"👍","created_at":"<d-59>","deleted_at":null}
+{"id":"demo-reaction-16","comment_id":"demo-comment-24","user_id":"demo-dep","emoji":"🤔","created_at":"<d-6>","deleted_at":null}
+{"id":"demo-reaction-2","comment_id":"demo-comment-25","user_id":"demo-m5","emoji":"👍","created_at":"<d-1>","deleted_at":null}
+{"id":"demo-reaction-3","comment_id":"demo-comment-25","user_id":"demo-m1","emoji":"🤔","created_at":"<d-1>","deleted_at":null}
 {"id":"demo-reaction-4","comment_id":"demo-comment-26","user_id":"demo-dir","emoji":"👍","created_at":"<d-3>","deleted_at":null}
-{"id":"demo-reaction-5","comment_id":"demo-comment-26","user_id":"demo-m6","emoji":"✅","created_at":"<d-3>","deleted_at":null}
+{"id":"demo-reaction-5","comment_id":"demo-comment-26","user_id":"demo-m6","emoji":"👍","created_at":"<d-3>","deleted_at":null}
 {"id":"demo-reaction-6","comment_id":"demo-comment-27","user_id":"demo-dir","emoji":"👍","created_at":"<d-5>","deleted_at":null}
-{"id":"demo-reaction-7","comment_id":"demo-comment-27","user_id":"demo-m3","emoji":"👀","created_at":"<d-5>","deleted_at":null}
+{"id":"demo-reaction-7","comment_id":"demo-comment-27","user_id":"demo-m3","emoji":"🤔","created_at":"<d-5>","deleted_at":null}
 {"id":"demo-reaction-8","comment_id":"demo-comment-28","user_id":"demo-m11","emoji":"👍","created_at":"<d-8>","deleted_at":null}
-{"id":"demo-reaction-9","comment_id":"demo-comment-28","user_id":"demo-dep","emoji":"✅","created_at":"<d-8>","deleted_at":null}
+{"id":"demo-reaction-9","comment_id":"demo-comment-28","user_id":"demo-dep","emoji":"👍","created_at":"<d-8>","deleted_at":null}
 ### feed_events (47)
 {"id":"demo-fe-c1","type":"comment_added","bill_id":"bill-legiscan:2099974","user_id":"demo-dep","metadata":"{\\"preview\\":\\"Michael Brown — good catch. I'd suggest we request a clarifying amendment: \\\\\\"county board of elections or its designee.\\\\\\"\\",\\"commentId\\":\\"demo-comment-4\\",\\"mentionedUserIds\\":[\\"demo-m4\\"]}","suppressed":0,"created_at":"<d-14>"}
 {"id":"demo-fe-c10","type":"comment_added","bill_id":"bill-legiscan:2100182","user_id":"demo-m3","metadata":"{\\"preview\\":\\"We pulled our 2024 numbers: roughly 8% of voters were registered in a different precinct — approximately 2,200 additional provisional ballots, a 40% increase over 2024.\\",\\"commentId\\":\\"demo-comment-24\\"}","suppressed":0,"created_at":"<d-7>"}

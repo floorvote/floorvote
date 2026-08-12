@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { users, authEvents } from '../../src/db/schema'
+import { users, authEvents, sessions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
@@ -706,5 +706,58 @@ describe('GET /auth/demo-mode — login bootstrap (Turnstile sitekey)', () => {
     expect(res.status).toBe(200)
     const body = await res.json<{ demoMode: boolean; turnstileSiteKey: string }>()
     expect(body.turnstileSiteKey).toBe('0xABC123')
+  })
+})
+
+describe('POST /auth/demo-login', () => {
+  const demoEnv = { ...env, DEMO_MODE: 'true' }
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    // seedUser can't set the id, and the route looks up the fixed 'demo-user'.
+    await getDb(env.DB).insert(users).values({
+      id: 'demo-user',
+      email: 'demo@example.com',
+      name: 'Demo User',
+      role: 'member',
+      canVote: 1,
+      emailDigestEnabled: 1,
+    })
+  })
+
+  const tokenFrom = (res: Response) =>
+    /session=([^;]+)/.exec(res.headers.get('set-cookie') ?? '')?.[1]
+
+  const demoLogin = () => app.request('/api/auth/demo-login', { method: 'POST' }, demoEnv)
+
+  it('reuses the one shared demo session instead of minting a row per call', async () => {
+    // This endpoint is on the visitor entry path (web/src/pages/Login.tsx
+    // auto-posts it), so a row per call is unbounded growth from bot traffic —
+    // the same amplification ensureDemoSession was written to stop.
+    const first = await demoLogin()
+    const second = await demoLogin()
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+
+    const t1 = tokenFrom(first)
+    expect(t1).toBeTruthy()
+    expect(tokenFrom(second)).toBe(t1)
+
+    const rows = await getDb(env.DB).select().from(sessions).where(eq(sessions.userId, 'demo-user')).all()
+    expect(rows).toHaveLength(1)
+  })
+
+  it('hands out a cookie that actually authenticates', async () => {
+    const res = await demoLogin()
+    const authed = await app.request('/api/config', {
+      headers: { Cookie: `session=${tokenFrom(res)}` },
+    }, demoEnv)
+    expect(authed.status).toBe(200)
+  })
+
+  it('stays 404 when DEMO_MODE is unset', async () => {
+    const res = await app.request('/api/auth/demo-login', { method: 'POST' }, env)
+    expect(res.status).toBe(404)
   })
 })

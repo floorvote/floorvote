@@ -17,8 +17,8 @@ const daysAgoDb = (n: number) =>
  * daysAgoDb above.
  *
  * Why the snap: `offsetDays` is relative to the reset, so a fixed offset lands on
- * a different weekday every night — which put committee hearings on Saturdays and
- * Sundays roughly two nights in seven. Legislatures don't sit at the weekend, and
+ * a different weekday on every reset — which put committee hearings on Saturdays
+ * and Sundays roughly two days in seven. Legislatures don't sit at the weekend, and
  * a demo advertising a Sunday hearing is the sort of detail a prospect notices.
  *
  * The snap preserves the offset's sense: a future event moves forward to Monday,
@@ -127,9 +127,10 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('position_vocabulary', ?)`).bind(JSON.stringify(seed.positionVocabulary)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('org_noun', ?)`).bind(JSON.stringify(seed.orgNoun)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('demo_banner', ?)`).bind(JSON.stringify(seed.bannerText)),
-    // Optional widgets start OFF so visitors can experience enabling them in
-    // Settings → Modules (toggling modules is allowed in demo mode; all other
-    // config stays locked). Nightly reset returns them to the seeded state.
+    // Optional widgets start OFF so visitors can experience enabling them from
+    // the sidebar's "Customize widgets" panel (toggling modules is allowed in
+    // demo mode; all other config stays locked). Reset returns them to the
+    // seeded state.
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('modules', ?)`).bind(JSON.stringify(seed.modules)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('sessions', ?)`).bind(JSON.stringify({
       data: seed.sessions.data,
@@ -182,9 +183,17 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // idiom so a seed row whose bill has not been ingested yet no-ops instead of
   // failing the batch.
 
-  // Bill priorities
+  // Bill priorities. Also clear the triage latch: PATCH /bills/:id/triage-dismiss
+  // is an allowed demo write, and it is the only allowed write that is otherwise
+  // irreversible — bills.triaged_at is what takes a bill OUT of the "New matches"
+  // worklist (newMatchWhere in billsApi/query.ts is `triaged_at IS NULL`), and
+  // demoResetAndSeed only re-seeds bills when the table is empty. Without this,
+  // one visitor dismissing each new match removes the triage experience from the
+  // demo permanently. NULL is the right baseline: no seed writes triagedAt, so a
+  // freshly ingested demo tenant has it NULL on every row.
   const priorityExtIds = seed.priorities.map((p) => p.externalId)
   await batch([
+    db.prepare(`UPDATE bills SET triaged_at = NULL, triaged_by = NULL`),
     ...seed.priorities.map((p) =>
       db.prepare(`UPDATE bills SET priority = ? WHERE external_id = ?`).bind(p.priority, p.externalId),
     ),
@@ -253,7 +262,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // Mark demo-user as having seen the feed as of now. All seeded feed events carry
   // past timestamps, so a "now" baseline keeps the Feed nav dot dark for fresh
   // demo visitors — without this, the re-created demo-user row has a null
-  // last_seen_feed, which lights the dot after every nightly reset.
+  // last_seen_feed, which lights the dot after every reset.
   await db.prepare(`UPDATE users SET last_seen_feed = datetime('now') WHERE id = 'demo-user'`).run()
 
   // Custom field values — spread across bills so filtering produces results
@@ -275,7 +284,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   ))
 
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
-  // hearings widget always show fresh upcoming events; the nightly reset re-derives them.
+  // hearings widget always show fresh upcoming events; the demo reset re-derives them.
   await batch(seed.calendarEvents.map((e) =>
     e.externalId === null
       ? db.prepare(

@@ -19,7 +19,6 @@ import { SECTION_LABEL, CHROME_TEXT } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
 import { useConfig } from '../../context/ConfigContext'
-import { useDemo } from '../../context/DemoContext'
 import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID } from './constants'
 import type { Bill } from './types'
@@ -30,9 +29,9 @@ export function formatYearChip(yearStart: number | null, yearEnd: number | null)
   return `${yearStart}–${String(yearEnd ?? yearStart).slice(2)}`
 }
 
-function MiniBar({ count, total, barColor, label, isActive, onVote, disabled }: {
+function MiniBar({ count, total, barColor, label, isActive, onVote }: {
   count: number; total: number; barColor: string; label: string
-  isActive?: boolean; onVote?: () => void; disabled?: boolean
+  isActive?: boolean; onVote?: () => void
 }) {
   const [hovered, setHovered] = useState(false)
   const [ready, setReady] = useState(false)
@@ -48,13 +47,11 @@ function MiniBar({ count, total, barColor, label, isActive, onVote, disabled }: 
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onVote() }}
-            disabled={disabled}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
             style={{
               width: 60, fontSize: fontSize.sm, padding: '3px 6px',
               ...voteButtonStyle(label.toLowerCase() as VoteKey, !!isActive, hovered),
-              ...(disabled ? { cursor: 'not-allowed', opacity: 0.5 } : null),
             }}
           >
             {label}
@@ -116,7 +113,6 @@ export const BillRow = memo(function BillRow({
   onToggleSelect: ((shiftKey: boolean) => void) | undefined
 }) {
   const navigate = useNavigate()
-  const { demoLocked } = useDemo()
   const [hovered, setHovered] = useState(false)
   const [hoveredChip, setHoveredChip] = useState<string | null>(null)
   const checkboxShiftRef = useRef(false)
@@ -143,7 +139,6 @@ export const BillRow = memo(function BillRow({
         current={bill.priority}
         onChange={(p) => onPriorityChange(bill.id, p)}
         isFiltered={bill.priority != null && filterPriorities.includes(bill.priority)}
-        disabled={demoLocked}
       />
     )
   const billPath = billUrl({ id: bill.id, state: bill.state, session: bill.session, billNumber: bill.billNumber })
@@ -334,7 +329,6 @@ export const BillRow = memo(function BillRow({
                   onChange={(p) => onPositionChange(bill.id, p)}
                   isFiltered={bill.position != null && filterPositions.includes(bill.position)}
                   size="lg"
-                  disabled={demoLocked}
                 />
               </HoverTooltip>
             )
@@ -360,9 +354,9 @@ export const BillRow = memo(function BillRow({
         </div>
         <div>
           <span style={{ ...SECTION_LABEL, display: 'block', marginBottom: 4 }}>Member votes</span>
-          <MiniBar count={support} total={totalVotes} barColor={color.voteSupport} label="Support" isActive={bill.myVote === 'support'} onVote={onVote ? () => onVote(bill.id, 'support') : undefined} disabled={demoLocked} />
-          <MiniBar count={neutral} total={totalVotes} barColor={color.textMuted} label="Neutral" isActive={bill.myVote === 'neutral'} onVote={onVote ? () => onVote(bill.id, 'neutral') : undefined} disabled={demoLocked} />
-          <MiniBar count={oppose} total={totalVotes} barColor={color.textErrorRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} disabled={demoLocked} />
+          <MiniBar count={support} total={totalVotes} barColor={color.voteSupport} label="Support" isActive={bill.myVote === 'support'} onVote={onVote ? () => onVote(bill.id, 'support') : undefined} />
+          <MiniBar count={neutral} total={totalVotes} barColor={color.textMuted} label="Neutral" isActive={bill.myVote === 'neutral'} onVote={onVote ? () => onVote(bill.id, 'neutral') : undefined} />
+          <MiniBar count={oppose} total={totalVotes} barColor={color.textErrorRed} label="Oppose" isActive={bill.myVote === 'oppose'} onVote={onVote ? () => onVote(bill.id, 'oppose') : undefined} />
         </div>
         {(bill.commentCount > 0 || bill.hasNote) && (
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>

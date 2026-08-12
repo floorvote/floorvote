@@ -39,17 +39,17 @@ const hb4427: DemoSeedComment[] = [
     content: '<p>Testimony is submitted. Thanks to <span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Clarke">@Devon Clarke</span> for the fast turnaround.</p>', daysAgo: 1 },
 ]
 
-// The two stacked pills the demo needs: four people on ✅ for lm-c-6 (the newest
+// The two stacked pills the demo needs: four people on 👍 for lm-c-6 (the newest
 // card in the feed) and three on 👍 for lm-c-2, so the reaction row shows a real
 // count badge rather than a line of lone 1s.
 const hb4427Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-1', commentId: 'lm-c-2', userId: 'demo-user', emoji: '👍', daysAgo: 2 },
   { id: 'lm-r-38', commentId: 'lm-c-2', userId: 'lm-user-la1', emoji: '👍', daysAgo: 2 },
   { id: 'lm-r-39', commentId: 'lm-c-2', userId: 'lm-user-comms', emoji: '👍', daysAgo: 2 },
-  { id: 'lm-r-2', commentId: 'lm-c-6', userId: 'lm-user-ed', emoji: '✅', daysAgo: 1 },
-  { id: 'lm-r-35', commentId: 'lm-c-6', userId: 'lm-user-comms', emoji: '✅', daysAgo: 1 },
-  { id: 'lm-r-36', commentId: 'lm-c-6', userId: 'lm-user-wq', emoji: '✅', daysAgo: 1 },
-  { id: 'lm-r-37', commentId: 'lm-c-6', userId: 'lm-user-dep', emoji: '✅', daysAgo: 1 },
+  { id: 'lm-r-2', commentId: 'lm-c-6', userId: 'lm-user-ed', emoji: '👍', daysAgo: 1 },
+  { id: 'lm-r-35', commentId: 'lm-c-6', userId: 'lm-user-comms', emoji: '👍', daysAgo: 1 },
+  { id: 'lm-r-36', commentId: 'lm-c-6', userId: 'lm-user-wq', emoji: '👍', daysAgo: 1 },
+  { id: 'lm-r-37', commentId: 'lm-c-6', userId: 'lm-user-dep', emoji: '👍', daysAgo: 1 },
 ]
 
 const hb4427Mentions: DemoSeedMention[] = [
@@ -88,8 +88,8 @@ const hb5308: DemoSeedComment[] = [
 ]
 
 const hb5308Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-3', commentId: 'lm-c-7', userId: 'lm-user-ed', emoji: '✅', daysAgo: 5 },
-  { id: 'lm-r-4', commentId: 'lm-c-10', userId: 'demo-user', emoji: '👀', daysAgo: 3 },
+  { id: 'lm-r-3', commentId: 'lm-c-7', userId: 'lm-user-ed', emoji: '👍', daysAgo: 5 },
+  { id: 'lm-r-4', commentId: 'lm-c-10', userId: 'demo-user', emoji: '🤔', daysAgo: 3 },
 ]
 
 const hb5308Mentions: DemoSeedMention[] = [
@@ -134,7 +134,7 @@ const sb0771: DemoSeedComment[] = [
 ]
 
 const sb0771Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-5', commentId: 'lm-c-13', userId: 'lm-user-dep', emoji: '✅', daysAgo: 55 },
+  { id: 'lm-r-5', commentId: 'lm-c-13', userId: 'lm-user-dep', emoji: '👍', daysAgo: 55 },
   { id: 'lm-r-6', commentId: 'lm-c-13', userId: 'lm-user-gc', emoji: '👍', daysAgo: 55 },
 ]
 
@@ -172,7 +172,7 @@ const hb5674: DemoSeedComment[] = [
 
 const hb5674Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-7', commentId: 'lm-c-19', userId: 'demo-user', emoji: '👍', daysAgo: 11 },
-  { id: 'lm-r-8', commentId: 'lm-c-21', userId: 'lm-user-comms', emoji: '👀', daysAgo: 9 },
+  { id: 'lm-r-8', commentId: 'lm-c-21', userId: 'lm-user-comms', emoji: '🤔', daysAgo: 9 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ const hb4768: DemoSeedComment[] = [
 ]
 
 const hb4768Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-9', commentId: 'lm-c-25', userId: 'lm-user-comms', emoji: '👀', daysAgo: 18 },
+  { id: 'lm-r-9', commentId: 'lm-c-25', userId: 'lm-user-comms', emoji: '🤔', daysAgo: 18 },
 ]
 
 // demo-user is the third Michigan Team member but also wrote lm-c-24, so no row
@@ -213,14 +213,14 @@ const sb56: DemoSeedComment[] = [
     content: "<p>Utilities can start applying for capitalization grant funds now. I'll flag this to our municipal partners.</p>", daysAgo: 400 },
 ]
 
-// 🎉 is reserved for the two enacted-bill announcements a colleague would actually
-// celebrate (here and lm-c-29), which is also where a second and third person pile
-// onto the same emoji.
+// 🔥 is reserved for the two enacted-bill announcements a colleague would actually
+// mark as a win (here and lm-c-29), which is also where a second and third person
+// pile onto the same emoji.
 const sb56Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-10', commentId: 'lm-c-26', userId: 'demo-user', emoji: '✅', daysAgo: 405 },
-  { id: 'lm-r-42', commentId: 'lm-c-26', userId: 'lm-user-ed', emoji: '🎉', daysAgo: 405 },
-  { id: 'lm-r-43', commentId: 'lm-c-26', userId: 'lm-user-grants', emoji: '🎉', daysAgo: 404 },
-  { id: 'lm-r-11', commentId: 'lm-c-27', userId: 'lm-user-dep', emoji: '✅', daysAgo: 404 },
+  { id: 'lm-r-10', commentId: 'lm-c-26', userId: 'demo-user', emoji: '👍', daysAgo: 405 },
+  { id: 'lm-r-42', commentId: 'lm-c-26', userId: 'lm-user-ed', emoji: '🔥', daysAgo: 405 },
+  { id: 'lm-r-43', commentId: 'lm-c-26', userId: 'lm-user-grants', emoji: '🔥', daysAgo: 404 },
+  { id: 'lm-r-11', commentId: 'lm-c-27', userId: 'lm-user-dep', emoji: '👍', daysAgo: 404 },
   { id: 'lm-r-12', commentId: 'lm-c-27', userId: 'lm-user-wq', emoji: '👍', daysAgo: 403 },
 ]
 
@@ -250,9 +250,9 @@ const ab131: DemoSeedComment[] = [
 ]
 
 const ab131Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-13', commentId: 'lm-c-29', userId: 'demo-user', emoji: '✅', daysAgo: 127 },
-  { id: 'lm-r-44', commentId: 'lm-c-29', userId: 'lm-user-la2', emoji: '🎉', daysAgo: 127 },
-  { id: 'lm-r-45', commentId: 'lm-c-29', userId: 'lm-user-ed', emoji: '🎉', daysAgo: 126 },
+  { id: 'lm-r-13', commentId: 'lm-c-29', userId: 'demo-user', emoji: '👍', daysAgo: 127 },
+  { id: 'lm-r-44', commentId: 'lm-c-29', userId: 'lm-user-la2', emoji: '🔥', daysAgo: 127 },
+  { id: 'lm-r-45', commentId: 'lm-c-29', userId: 'lm-user-ed', emoji: '🔥', daysAgo: 126 },
   { id: 'lm-r-14', commentId: 'lm-c-32', userId: 'lm-user-wq', emoji: '👍', daysAgo: 117 },
 ]
 
@@ -284,12 +284,14 @@ const ab129: DemoSeedComment[] = [
     content: "<p>Frustrating, but not surprising given how late in session it landed. January's the right call.</p>", daysAgo: 135 },
 ]
 
-// 😕 is the seed's only negative reaction and appears only on the two bill deaths
-// (here and lm-c-38) — the emoji set has to cover a bad outcome, not just approval.
+// 🤔 carries the seed's non-approving reactions — the two bill deaths (here and
+// lm-c-38) and the wait-and-see ones — so the set covers more than agreement. Not
+// 👎: on a comment, a thumbs-down reads as disagreeing with the colleague who
+// wrote it rather than with the bill's outcome.
 const ab129Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '👀', daysAgo: 140 },
-  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '😕', daysAgo: 140 },
-  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '😕', daysAgo: 139 },
+  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '🤔', daysAgo: 140 },
+  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '🤔', daysAgo: 140 },
+  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '🤔', daysAgo: 139 },
   { id: 'lm-r-16', commentId: 'lm-c-36', userId: 'lm-user-la2', emoji: '👍', daysAgo: 138 },
 ]
 
@@ -319,8 +321,8 @@ const sb628: DemoSeedComment[] = [
 ]
 
 const sb628Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '👀', daysAgo: 140 },
-  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '😕', daysAgo: 141 },
+  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '🤔', daysAgo: 140 },
+  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '🤔', daysAgo: 141 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -328,7 +330,7 @@ const sb628Reactions: DemoSeedReaction[] = [
 // ---------------------------------------------------------------------------
 const ilHb1175: DemoSeedComment[] = [
   // No countdown in the prose: the hearing's date and this comment's date both
-  // slide with the nightly reset, so any "in N weeks" phrasing is wrong every night.
+  // slide with the demo reset, so any "in N weeks" phrasing is wrong after every reset.
   { id: 'lm-c-41', externalId: 'legiscan:1906052', userId: 'lm-user-dep',
     content: '<p>Energy and Environment hearing notice just landed. Time to lock in our written testimony.</p>', daysAgo: 5 },
   { id: 'lm-c-42', externalId: 'legiscan:1906052', userId: 'lm-user-gc',
@@ -341,12 +343,12 @@ const ilHb1175: DemoSeedComment[] = [
     content: "<p>Taking that. I'll start from our shoreline survey and add the discharge permits for each site.</p>", daysAgo: 2 },
 ]
 
-// The third stacked pill, on the newest Illinois card: three people on ✅.
+// The third stacked pill, on the newest Illinois card: three people on 👍.
 const ilHb1175Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-18', commentId: 'lm-c-43', userId: 'demo-user', emoji: '👍', daysAgo: 3 },
-  { id: 'lm-r-19', commentId: 'lm-c-45', userId: 'lm-user-gov', emoji: '✅', daysAgo: 2 },
-  { id: 'lm-r-40', commentId: 'lm-c-45', userId: 'demo-user', emoji: '✅', daysAgo: 2 },
-  { id: 'lm-r-41', commentId: 'lm-c-45', userId: 'lm-user-gc', emoji: '✅', daysAgo: 1 },
+  { id: 'lm-r-19', commentId: 'lm-c-45', userId: 'lm-user-gov', emoji: '👍', daysAgo: 2 },
+  { id: 'lm-r-40', commentId: 'lm-c-45', userId: 'demo-user', emoji: '👍', daysAgo: 2 },
+  { id: 'lm-r-41', commentId: 'lm-c-45', userId: 'lm-user-gc', emoji: '👍', daysAgo: 1 },
 ]
 
 const ilHb1175Mentions: DemoSeedMention[] = [
@@ -378,8 +380,8 @@ const ilSb4025: DemoSeedComment[] = [
 ]
 
 const ilSb4025Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-20', commentId: 'lm-c-46', userId: 'demo-user', emoji: '✅', daysAgo: 30 },
-  { id: 'lm-r-46', commentId: 'lm-c-46', userId: 'lm-user-gov', emoji: '🎉', daysAgo: 30 },
+  { id: 'lm-r-20', commentId: 'lm-c-46', userId: 'demo-user', emoji: '👍', daysAgo: 30 },
+  { id: 'lm-r-46', commentId: 'lm-c-46', userId: 'lm-user-gov', emoji: '🔥', daysAgo: 30 },
   { id: 'lm-r-21', commentId: 'lm-c-47', userId: 'lm-user-dep', emoji: '👍', daysAgo: 29 },
 ]
 
@@ -409,7 +411,7 @@ const ilHb5268: DemoSeedComment[] = [
 ]
 
 const ilHb5268Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-22', commentId: 'lm-c-50', userId: 'lm-user-gc', emoji: '👀', daysAgo: 89 },
+  { id: 'lm-r-22', commentId: 'lm-c-50', userId: 'lm-user-gc', emoji: '🤔', daysAgo: 89 },
 ]
 
 // The one bill in the set the members voted against. Paul (General Counsel) stays
@@ -479,7 +481,7 @@ const inHb1124: DemoSeedComment[] = [
 
 const inHb1124Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-24', commentId: 'lm-c-59', userId: 'demo-user', emoji: '👍', daysAgo: 4 },
-  { id: 'lm-r-25', commentId: 'lm-c-62', userId: 'lm-user-prog', emoji: '✅', daysAgo: 2 },
+  { id: 'lm-r-25', commentId: 'lm-c-62', userId: 'lm-user-prog', emoji: '👍', daysAgo: 2 },
 ]
 
 const inHb1124Mentions: DemoSeedMention[] = [
@@ -513,7 +515,7 @@ const inSb0006: DemoSeedComment[] = [
 ]
 
 const inSb0006Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-26', commentId: 'lm-c-63', userId: 'demo-user', emoji: '✅', daysAgo: 80 },
+  { id: 'lm-r-26', commentId: 'lm-c-63', userId: 'demo-user', emoji: '👍', daysAgo: 80 },
   { id: 'lm-r-27', commentId: 'lm-c-64', userId: 'lm-user-ed', emoji: '👍', daysAgo: 79 },
 ]
 
@@ -539,7 +541,7 @@ const inSb0188: DemoSeedComment[] = [
 ]
 
 const inSb0188Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-28', commentId: 'lm-c-67', userId: 'lm-user-prog', emoji: '👀', daysAgo: 211 },
+  { id: 'lm-r-28', commentId: 'lm-c-67', userId: 'lm-user-prog', emoji: '🤔', daysAgo: 211 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -560,7 +562,7 @@ const usHb284: DemoSeedComment[] = [
 
 const usHb284Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-29', commentId: 'lm-c-71', userId: 'demo-user', emoji: '👍', daysAgo: 8 },
-  { id: 'lm-r-30', commentId: 'lm-c-73', userId: 'lm-user-grants', emoji: '👀', daysAgo: 6 },
+  { id: 'lm-r-30', commentId: 'lm-c-73', userId: 'lm-user-grants', emoji: '🤔', daysAgo: 6 },
 ]
 
 const usHb284Mentions: DemoSeedMention[] = [
@@ -599,7 +601,7 @@ const usHb8876: DemoSeedComment[] = [
 
 const usHb8876Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-31', commentId: 'lm-c-77', userId: 'lm-user-ed', emoji: '👍', daysAgo: 5 },
-  { id: 'lm-r-32', commentId: 'lm-c-79', userId: 'lm-user-fed', emoji: '✅', daysAgo: 3 },
+  { id: 'lm-r-32', commentId: 'lm-c-79', userId: 'lm-user-fed', emoji: '👍', daysAgo: 3 },
 ]
 
 const usHb8876Votes: DemoSeed['votes'] = [
@@ -649,7 +651,7 @@ const usHb6668: DemoSeedComment[] = [
 ]
 
 const usHb6668Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-34', commentId: 'lm-c-86', userId: 'lm-user-fed', emoji: '👀', daysAgo: 30 },
+  { id: 'lm-r-34', commentId: 'lm-c-86', userId: 'lm-user-fed', emoji: '🤔', daysAgo: 30 },
 ]
 
 const usHb6668Mentions: DemoSeedMention[] = [

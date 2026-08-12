@@ -94,7 +94,7 @@ describe('DraftBills read-only demo', () => {
     mockDrafts([{ id: 'd1', billNumber: 'DRAFT-1', title: 'A draft bill', state: null }])
     render(<MemoryRouter><DraftBills /></MemoryRouter>)
     const deleteBtn = await screen.findByRole('button', { name: 'delete' })
-    expect(deleteBtn).toHaveAttribute('title', 'Read-only in demo mode')
+    expect(deleteBtn).toHaveAttribute('title', 'Locked in demo mode')
   })
 
   it('keeps the plain delete-draft tooltip when not demoLocked', async () => {

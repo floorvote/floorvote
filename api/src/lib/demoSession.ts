@@ -7,12 +7,12 @@ import { hashToken } from './crypto'
  * visitor in as `demo-user`. It previously minted a BRAND-NEW `sessions` row on
  * every cookieless (or stale-cookie) request, each with a 30-day expiry. Because
  * demo HTML is served `no-store` (so the edge can't absorb it), every crawler /
- * bot hit ran the Worker and inserted another row — unbounded growth between the
- * nightly resets, matching the June 2026 crawler spike.
+ * bot hit ran the Worker and inserted another row — unbounded growth between
+ * resets, matching the June 2026 crawler spike.
  *
  * The fix: reuse ONE shared session row for `demo-user`. `ensureDemoSession` is
  * idempotent (INSERT OR IGNORE on a fixed id), so the row count stays at one no
- * matter how much bot traffic arrives, and it self-heals if the nightly reset
+ * matter how much bot traffic arrives, and it self-heals if the demo reset
  * wipes sessions.
  *
  * The raw token is a known constant. This is safe: DEMO_MODE already auto-logs
@@ -34,6 +34,20 @@ const DEMO_SESSION_EXPIRES_DB = '9999-12-31 23:59:59'
  * return its raw token to hand out as the `session` cookie. INSERT OR IGNORE
  * keeps the row count at one and recreates it after a reset wipes sessions.
  */
+/**
+ * The `Set-Cookie` value handing out the shared demo session. Built here, not at
+ * each call site, so the HTML auto-login middleware (api/src/index.ts) and
+ * POST /auth/demo-login (api/src/routes/auth.ts) cannot drift on attributes or
+ * expiry — they hand out the same session and must describe it identically.
+ *
+ * Appended as a raw header rather than passed to hono's `setCookie`, which
+ * throws on an Expires more than 400 days out.
+ */
+export function demoSessionCookie(token: string = DEMO_SESSION_TOKEN): string {
+  const expires = new Date('9999-12-31T23:59:59Z').toUTCString()
+  return `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Expires=${expires}`
+}
+
 export async function ensureDemoSession(db: D1Database): Promise<string> {
   const tokenHash = await hashToken(DEMO_SESSION_TOKEN)
   await db

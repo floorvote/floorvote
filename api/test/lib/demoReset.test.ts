@@ -105,7 +105,7 @@ describe('runDemoReset — calendar seeding', () => {
   it('marks demo-user as having seen the feed so the Pulse nav dot stays dark', async () => {
     // The reset re-creates demo-user (INSERT OR REPLACE) and seeds feed events with
     // past timestamps. Without a seen baseline, last_seen_feed is null, which lights
-    // the nav dot for the first visitor after every nightly reset. Seed it to now.
+    // the nav dot for the first visitor after every reset. Seed it to now.
     await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)
     const demoUser = await db.select().from(users).where(eq(users.id, 'demo-user')).get()
@@ -336,6 +336,46 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
     expect(userIds).toContain('other-user')
     expect(userIds).toContain('demo-user')
     expect(userIds.length).toBe(16)
+  })
+
+  it('clears the triage latch so dismissed new matches come back', async () => {
+    // triage-dismiss is an allowed demo write (DEMO_WRITE_ALLOWLIST) and it was
+    // the one allowed write the reset could not undo: bills.triaged_at is what
+    // removes a bill from the "New matches" worklist (newMatchWhere =
+    // `triaged_at IS NULL`), and demoResetAndSeed only re-ingests bills when the
+    // table is empty. So a visitor dismissing each match used to strip the triage
+    // experience out of the demo for good.
+    //
+    // The latch is set by a direct D1 write rather than by calling
+    // PATCH /bills/:id/triage-dismiss: the subject here is runDemoReset, which
+    // takes a D1Database and no request context, and the route's own latching is
+    // already pinned by test/routes/triageDismiss.test.ts. Going through the
+    // route would only add an auth/router harness between the test and the two
+    // columns it asserts on.
+    const first = seed.comments[0].externalId
+    const billId = await seedBill({
+      externalId: first, billNumber: 'A1129', title: 'Drop boxes', state: 'NJ',
+      matchType: 'keyword', newMatchAt: '2026-08-01 00:00:00',
+    })
+    await env.DB.prepare(
+      `UPDATE bills SET triaged_at = '2026-08-02 00:00:00', triaged_by = 'demo-user' WHERE id = ?`
+    ).bind(billId).run()
+
+    const dismissed = await env.DB.prepare(
+      `SELECT triaged_at AS at, triaged_by AS by FROM bills WHERE id = ?`
+    ).bind(billId).first<{ at: string | null; by: string | null }>()
+    // Guard the arrange step: if the latch never landed the assertion below would
+    // pass for the wrong reason.
+    expect(dismissed!.at).not.toBeNull()
+    expect(dismissed!.by).toBe('demo-user')
+
+    await runDemoReset(env.DB, seed)
+
+    const after = await env.DB.prepare(
+      `SELECT triaged_at AS at, triaged_by AS by FROM bills WHERE id = ?`
+    ).bind(billId).first<{ at: string | null; by: string | null }>()
+    expect(after!.at).toBeNull()
+    expect(after!.by).toBeNull()
   })
 
   it('restores comment reactions', async () => {

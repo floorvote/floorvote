@@ -8,11 +8,12 @@ import { SidebarRefreshProvider } from '../context/SidebarRefreshContext'
 import { NotificationsProvider } from '../context/NotificationsContext'
 import { FeedUnreadProvider } from '../context/FeedUnreadContext'
 
-// Task 8 (global chrome): the sidebar's own vote controls and the admin
-// priority select must be disabled — not hidden — when the demo is locked;
-// the Feedback entry point is the deliberate exception and is hidden entirely
-// in demo mode; and the "Customize widgets" module toggles must stay enabled
-// even when the demo is locked (the one write a read-only demo preserves).
+// demoLocked is the *destructive and admin* lock, not "every write". The
+// sidebar's own vote controls and the admin priority select are additive member
+// actions the server allows, so they stay live under a locked demo; Log out
+// (POST /auth/logout is denied) stays disabled; the Feedback entry point is
+// hidden entirely in demo mode; and the "Customize widgets" module toggles stay
+// enabled.
 
 const hoisted = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin', demoMode: false, demoLocked: false }))
 
@@ -41,7 +42,11 @@ vi.mock('../lib/api', () => ({
       }
     }
     if (path === '/config') {
-      return { states: ['NJ'], modules: { 'waiting-for-vote': true, 'upcoming-hearings': false } }
+      return {
+        states: ['NJ'],
+        modules: { 'waiting-for-vote': true, 'upcoming-hearings': false },
+        demoLocked: hoisted.demoLocked,
+      }
     }
     if (path === '/notifications') return { unreadCount: 0 }
     if (path === '/stats') {
@@ -91,35 +96,31 @@ beforeEach(() => {
 })
 
 describe('Sidebar vote controls when demoLocked', () => {
-  it('disables the vote buttons and does not POST/DELETE /bills/:id/votes', async () => {
+  it('leaves the vote buttons enabled and POSTs /bills/:id/votes', async () => {
     hoisted.demoLocked = true
     const { apiFetch } = await import('../lib/api')
     renderSidebar()
     const supportBtn = await screen.findByRole('button', { name: /vote support on this bill/i })
-    expect(supportBtn).toBeDisabled()
-    fireEvent.click(supportBtn)
-    expect(apiFetch).not.toHaveBeenCalledWith(expect.stringMatching(/\/votes$/), expect.anything())
-  })
-
-  it('leaves the vote buttons enabled when not demoLocked', async () => {
-    renderSidebar()
-    const supportBtn = await screen.findByRole('button', { name: /vote support on this bill/i })
     expect(supportBtn).toBeEnabled()
+    fireEvent.click(supportBtn)
+    expect(apiFetch).toHaveBeenCalledWith(expect.stringMatching(/\/votes$/), expect.anything())
   })
 })
 
 describe('Sidebar admin priority select when demoLocked', () => {
-  it('disables the priority select in the prioritized-bills widget', async () => {
+  it('leaves the priority select in the prioritized-bills widget enabled', async () => {
     hoisted.role = 'admin'
     hoisted.demoLocked = true
     renderSidebar()
-    expect(await screen.findByRole('combobox', { name: /priority/i })).toBeDisabled()
-  })
-
-  it('leaves the priority select enabled when not demoLocked', async () => {
-    hoisted.role = 'admin'
-    renderSidebar()
     expect(await screen.findByRole('combobox', { name: /priority/i })).toBeEnabled()
+  })
+})
+
+describe('Sidebar Log out when demoLocked', () => {
+  it('stays disabled — POST /auth/logout is denied on demo tenants', async () => {
+    hoisted.demoLocked = true
+    renderSidebar()
+    expect(await screen.findByRole('button', { name: /log out/i })).toBeDisabled()
   })
 })
 

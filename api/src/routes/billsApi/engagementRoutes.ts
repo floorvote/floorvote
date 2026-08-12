@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
@@ -12,6 +12,14 @@ import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
 import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
+
+// Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
+// per-IP limiter in demoReadOnly bounds the *rate* an anonymous visitor can
+// write; this bounds total growth, which a slow drip from many IPs would
+// otherwise leave unbounded between resets. 60 is far past anything a visitor
+// can see: the busiest seeded bill carries 8 comments, and the bill-detail
+// payload returns only the first 20.
+export const DEMO_BILL_COMMENT_CAP = 60
 
 export function registerEngagementRoutes(router: Hono<AppEnv>) {
   // POST /bills/:id/votes
@@ -142,7 +150,12 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
       .where(and(eq(comments.billId, id), isNull(comments.deletedAt), activeUser))
-      .orderBy(comments.createdAt)
+      // Same tiebreaker as the bill-detail comment block (billsApi/detail.ts):
+      // created_at is truncated to seconds, so seeded comments sharing a daysAgo
+      // — and a visitor's comment landing the same second — collide, and rowid
+      // (insert order) is the intended reading order. This endpoint has no web
+      // caller today, but the two must not disagree about comment order.
+      .orderBy(comments.createdAt, sql`comments.rowid`)
       .all()
 
     const commentIds = commentRows.map((r) => r.c.id)
@@ -191,6 +204,19 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     if (!body.content?.trim()) return c.json({ error: 'content is required' }, 400)
     if (new TextEncoder().encode(body.content.trim()).length > 10_240) {
       return c.json({ error: 'Comment too long (max 10 KB)' }, 400)
+    }
+    if (c.env.DEMO_MODE === 'true') {
+      const live = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(comments)
+        .where(and(eq(comments.billId, id), isNull(comments.deletedAt)))
+        .get()
+      if ((live?.n ?? 0) >= DEMO_BILL_COMMENT_CAP) {
+        // 403, not 429: waiting doesn't clear this. The bill stays full until
+        // the next reset, so "try again shortly" would be a false promise. The
+        // per-IP limiter in demoReadOnly is the genuinely temporary one.
+        return c.json({ error: 'This bill has reached the demo comment limit — try another bill' }, 403)
+      }
     }
     // Sanitize on write to the same allowlist the on-screen renderer uses — the
     // raw value is otherwise interpolated into mention emails unescaped (H5).

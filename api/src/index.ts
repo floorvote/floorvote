@@ -33,7 +33,7 @@ import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
 import { nowDb } from './lib/dbTime'
-import { ensureDemoSession, DEMO_SESSION_TOKEN } from './lib/demoSession'
+import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
 
@@ -106,14 +106,15 @@ app.use('*', async (c, next) => {
   // which means the Worker never runs for cached requests and auto-login is skipped.
   h.set('Cache-Control', 'no-store, no-cache')
   if (setDemoCookie) {
-    const expires = new Date('9999-12-31T23:59:59Z').toUTCString()
-    h.append('Set-Cookie', `session=${DEMO_SESSION_TOKEN}; HttpOnly; Secure; SameSite=Lax; Path=/; Expires=${expires}`)
+    h.append('Set-Cookie', demoSessionCookie())
   }
   c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers: h })
 })
 
-// Demo tenants are read-only. Mounted before every /api route so a write route
-// added later is locked by default rather than by remembering to guard it.
+// Demo tenants allow the additive member actions and refuse every other non-GET
+// request (see DEMO_WRITE_ALLOWLIST in middleware/auth.ts). Mounted before every
+// /api route so a write route added later is locked by default rather than by
+// remembering to guard it.
 app.use('/api/*', demoReadOnly)
 
 // Cap the body on the public, unauthenticated auth endpoints. Their
@@ -235,7 +236,7 @@ export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     const db = getDb(env.DB)
     if (env.DEMO_MODE === 'true') {
-      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))))   // demo: 06:00 reset only; no digests
+      ctx.waitUntil(runJob(env, 'demo-reset', () => runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))))   // demo: reset only; no digests
       return
     }
     if (event.cron === '0 11 * * *') {

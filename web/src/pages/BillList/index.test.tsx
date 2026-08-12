@@ -27,6 +27,14 @@ const deferred: {
 // vote rolls back.
 const voteReject = { value: false }
 
+// Mutable so one test can opt into a locked demo tenant. Member votes are on the
+// server's demo allowlist, so handleVote must NOT consult demoLocked — see the
+// "list-page votes on a locked demo tenant" describe below.
+const demoState = vi.hoisted(() => ({ demoLocked: false }))
+vi.mock('../../context/DemoContext', () => ({
+  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
+}))
+
 const CONFIG = {
   associationName: 'Test Assoc',
   states: ['RI'],
@@ -151,6 +159,7 @@ beforeEach(() => {
   deferred.resolveBillDetail = null
   deferred.rejectVote = null
   voteReject.value = false
+  demoState.demoLocked = false
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -179,6 +188,22 @@ describe('BillList vote failure rollback', () => {
     // ...now fail the request; the count must roll back to 0.
     deferred.rejectVote?.(new ApiError(500, 'fail'))
     await waitFor(() => expect(within(supportRow()).getByText('0')).toBeInTheDocument())
+  })
+})
+
+describe('BillList votes on a locked demo tenant', () => {
+  // Pins the handler, not the button. BillRow.test.tsx covers the vote bar being
+  // enabled, but it passes its own vi.fn() for onVote, so it never reaches
+  // BillList's handleVote — a reinstated `if (demoLocked) return` there would
+  // make every list-page vote a silent no-op with a green suite. POST
+  // /bills/:id/votes is on the server's demo allowlist; assert it actually fires.
+  it('still POSTs /bills/:id/votes when the demo is locked', async () => {
+    demoState.demoLocked = true
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Support' })[0])
+    await waitFor(() => expect(apiCalls.some(p => p.endsWith('/votes'))).toBe(true))
   })
 })
 

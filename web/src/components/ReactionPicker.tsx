@@ -1,6 +1,8 @@
 import { color, radius, fontSize, shadow } from '../styles/tokens'
-
-const EMOJIS = ['❤️', '👍', '👎', '😂', '😭', '💯', '🔥', '🤔']
+// The offered set lives in shared/ because the API validates against exactly it:
+// a new reaction must be one of these, full stop. Editing this list here alone
+// would silently make the extra emoji unpostable.
+import { REACTION_EMOJIS } from '../../../shared/reactionEmojis'
 
 type Props = {
   onSelect: (emoji: string) => void
@@ -17,7 +19,7 @@ export function ReactionPicker({ onSelect }: Props) {
       borderRadius: radius.lg,
       boxShadow: shadow.md,
     }}>
-      {EMOJIS.map((emoji) => (
+      {REACTION_EMOJIS.map((emoji) => (
         <button
           key={emoji}
           onClick={() => onSelect(emoji)}

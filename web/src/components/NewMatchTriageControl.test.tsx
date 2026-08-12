@@ -39,19 +39,20 @@ describe('NewMatchTriageControl', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith('high', expect.anything()))
   })
 
-  it('disables the priority select and Dismiss button when the demo is locked', () => {
+  it('leaves the priority select and Dismiss button enabled when the demo is locked', () => {
     demoState.demoLocked = true
     render(<NewMatchTriageControl billId="b1" current={null} onChange={vi.fn()} onDismiss={vi.fn()} />)
-    expect(screen.getByRole('combobox')).toBeDisabled()
-    expect(screen.getByRole('button', { name: /dismiss/i })).toBeDisabled()
+    expect(screen.getByRole('combobox')).toBeEnabled()
+    expect(screen.getByRole('button', { name: /dismiss/i })).toBeEnabled()
   })
 
-  it('does not call the triage-dismiss endpoint when the demo is locked', () => {
+  it('calls the triage-dismiss endpoint even when the demo is locked', async () => {
     demoState.demoLocked = true
+    apiFetchMock.mockResolvedValue({ ok: true })
     const onDismiss = vi.fn()
     render(<NewMatchTriageControl billId="b1" current={null} onChange={vi.fn()} onDismiss={onDismiss} />)
     fireEvent.click(screen.getByRole('button', { name: /dismiss/i }))
-    expect(apiFetchMock).not.toHaveBeenCalled()
-    expect(onDismiss).not.toHaveBeenCalled()
+    await waitFor(() => expect(onDismiss).toHaveBeenCalled())
+    expect(apiFetchMock).toHaveBeenCalledWith('/bills/b1/triage-dismiss', { method: 'PATCH' })
   })
 })

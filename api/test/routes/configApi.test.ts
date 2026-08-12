@@ -186,13 +186,13 @@ describe('GET /config', () => {
   // ── INSTANCE_PRESET must never touch a demo tenant's seed-written config ───
   //
   // A demo tenant's ai_context / relevance_question / tag_taxonomy / keywords
-  // come from its seed (api/src/lib/demoSeeds/), and the nightly reset writes no
+  // come from its seed (api/src/lib/demoSeeds/), and the demo reset writes no
   // instance_preset row. Because self-hosting/tenants.md recommends setting
   // INSTANCE_PRESET on every tenant and self-hosting/demo.md says to deploy a
   // demo "exactly as in Adding tenants", a fresh demo tenant would otherwise hit
   // ensureInstancePreset's bootstrap branch on its very first GET /config and
   // have all four keys overwritten with preset values — silently, and only until
-  // the next 06:00 reset.
+  // the next reset.
 
   /** Write the four keys a seed owns, as runDemoReset would. */
   async function seedWrittenAiConfig(db: ReturnType<typeof getDb>) {
