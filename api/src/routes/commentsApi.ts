@@ -7,6 +7,7 @@ import { extractAndNotifyMentions } from '../lib/mentions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
 import { DEMO_COMMENT_REACTION_CAP } from './billsApi/engagementRoutes'
+import { isPickerEmoji } from '../../../shared/reactionEmojis'
 import type { AppEnv } from '../types'
 
 export const commentsApiRouter = new Hono<AppEnv>()
@@ -107,6 +108,35 @@ commentsApiRouter.post('/:id/reactions', async (c) => {
     and(eq(comments.id, commentId), isNull(comments.deletedAt))
   ).get()
   if (!comment) return c.json({ error: 'not found' }, 404)
+
+  // The character rule above still admits every emoji that exists — thousands of
+  // them, each a distinct chip under the (comment, user, emoji) index. The UI
+  // only ever offers eight, so a NEW emoji has to be one of those eight.
+  //
+  // The exception: an emoji ALREADY on this comment, from any user. Clicking an
+  // existing chip to join it POSTs that emoji, and the demo seeds use ✅ 👀 🎉 😕
+  // — 41 of 65 seeded reactions sit outside the picker — so a picker-only rule
+  // would make most seeded chips unjoinable. Joining adds no new distinct value,
+  // so it cannot widen what a comment displays.
+  //
+  // Ordering matters: the byte cap and the character class ran BEFORE this, so
+  // they apply on the existing-emoji path too. A junk row a tenant's table
+  // picked up before the character rule landed ("😀BUY-CRYPTO") therefore can't
+  // be laundered through the exception into more rows of the same junk.
+  if (!isPickerEmoji(body.emoji)) {
+    const present = await db
+      .select({ emoji: commentReactions.emoji })
+      .from(commentReactions)
+      .where(and(
+        eq(commentReactions.commentId, commentId),
+        eq(commentReactions.emoji, body.emoji),
+        isNull(commentReactions.deletedAt),
+      ))
+      .get()
+    if (!present) {
+      return c.json({ error: 'emoji must be one of the offered reactions, or one already on this comment' }, 400)
+    }
+  }
 
   // Demo tenants: bound the distinct emojis one comment can carry. Reactions
   // hang off the SEEDED comments, which always exist, so the per-bill comment
