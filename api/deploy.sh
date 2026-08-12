@@ -3,9 +3,9 @@ set -e
 
 ENV=${1:?Usage: npm run deploy:tenant -- <wrangler-env-name>  (e.g. my-org)}
 # Resource-name prefix — override RESOURCE_PREFIX if you renamed your Workers/DBs/queues.
-# This BPC fork renames everything to "the-tracker-*", so that's the default here
-# (upstream defaults to "floorvote"). Must match the database_name in wrangler.toml.
-DB="${RESOURCE_PREFIX:-the-tracker}-${ENV}"
+# Defaults to "floorvote", matching the names the self-hosting guide has you
+# create. Must match the database_name in your wrangler.toml.
+DB="${RESOURCE_PREFIX:-floorvote}-${ENV}"
 
 cd "$(dirname "$0")"
 
