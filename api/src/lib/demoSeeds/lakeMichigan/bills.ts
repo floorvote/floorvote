@@ -571,7 +571,7 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // MI SB0771 — Septic & Wastewater, still Introduced; committee activity only.
   { id: 'lm-fe-r-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 27, metadata: { changes: [
     chg('action_added', { newValue: 'Committee Hearing Held' }),
-    chg('action_added', { newValue: 'Substitute S-1 Offered' }),
+    chg('action_added', { newValue: 'Substitute S-2 Offered' }),
   ] } },
 
   // IN HB1124 — Drinking Water, Introduced; Indiana reads bills by number.
@@ -620,8 +620,8 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
 
   // MI SB0771 — follows lm-fe-r-mi-sb0771-1 (hearing held, substitute offered) at day 5.
   { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 24, metadata: { changes: [
-    chg('action_added', { newValue: 'Substitute S-1 Adopted' }),
-    chg('action_added', { newValue: 'Reported Favorably With Substitute S-1' }),
+    chg('action_added', { newValue: 'Substitute S-2 Adopted' }),
+    chg('action_added', { newValue: 'Placed On Order Of Third Reading With Substitute (s-2)' }),
   ] } },
 
   // US HB8876 — follows lm-fe-r-us-hb8876-1 (subcommittee referral) at day 6.
@@ -636,6 +636,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
 
   // US HB6668 — PFAS, Introduced.
   { id: 'lm-fe-r-us-hb6668-1', type: 'bill_updated', externalId: 'legiscan:2058690', userId: 'system', daysAgo: 4, metadata: { changes: [
-    chg('action_added', { newValue: 'Referred to the Subcommittee on Environment and Climate Change' }),
+    chg('action_added', { newValue: 'Referred to the Subcommittee on Water Resources and Environment.' }),
   ] } },
 ]

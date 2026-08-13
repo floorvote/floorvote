@@ -661,28 +661,11 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // ---------------------------------------------------------------------------
 // Combined exports
 // ---------------------------------------------------------------------------
-// Replies to the recent (fictional) legislative activity in bills.ts. Each sits a
-// day or two after the event it reacts to, so the feed reads as action-then-
-// response rather than two unrelated streams — which is what a working tracker
-// actually looks like.
-const recentActivityReplies: DemoSeedComment[] = [
-  // Follows lm-fe-r-mi-hb5308-1 (reported out, placed on third reading), daysAgo 3.
-  { id: 'lm-c-ra1', externalId: 'legiscan:2055958', userId: 'lm-user-la2',
-    content: '<p>Reported out without amendment, so third reading could come up any session day. Worth watching the calendar.</p>', daysAgo: 2 },
-  // Follows lm-fe-r-mi-sb0771-1 (hearing held, substitute S-1 offered), daysAgo 5.
-  { id: 'lm-c-ra2', externalId: 'legiscan:2095619', userId: 'lm-user-wq',
-    content: '<p>Substitute S-1 narrows the inspection trigger to point of sale. That is most of what we asked for in testimony.</p>', daysAgo: 26 },
-  // Follows lm-fe-r-us-hb8876-1 (subcommittee referral), daysAgo 6.
-  { id: 'lm-c-ra3', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
-    content: '<p>Subcommittee referral is the first real movement since introduction. I will ask for a markup date.</p>', daysAgo: 5 },
-]
-
 export const LM_COMMENTS: DemoSeedComment[] = [
   ...hb4427, ...hb5308, ...sb0771, ...hb5674, ...hb4768, ...sb56, ...ab131, ...ab129, ...sb628,
   ...ilHb1175, ...ilSb4025, ...ilHb5268, ...ilHb2516,
   ...inHb1124, ...inSb0006, ...inSb0188,
   ...usHb284, ...usHb8876, ...usHb583, ...usHb6668,
-  ...recentActivityReplies,
 ]
 
 export const LM_REACTIONS: DemoSeedReaction[] = [
