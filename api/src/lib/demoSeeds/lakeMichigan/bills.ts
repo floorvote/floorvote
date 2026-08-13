@@ -558,7 +558,7 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
 
   // IN HB1124 — Drinking Water, Introduced; Indiana reads bills by number.
-  { id: 'lm-fe-r-in-hb1124-1', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 8, metadata: { changes: [
+  { id: 'lm-fe-r-in-hb1124-1', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 2, metadata: { changes: [
     chg('action_added', { newValue: 'Second reading: amended, ordered engrossed' }),
   ] } },
 
@@ -578,5 +578,37 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // MI HB5674 — Drinking Water, Introduced.
   { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 15, metadata: { changes: [
     chg('action_added', { newValue: 'Referred To Committee On Government Operations' }),
+  ] } },
+
+  // ── Top-of-feed coverage ───────────────────────────────────────────────────
+  // The six bills a visitor meets first are the ones carrying the newest
+  // comments: MI HB4427, MI SB0771, IL HB1175, IN HB1124, MI HB5308 and US
+  // HB8876. Without these, five of the six showed only social activity above the
+  // fold, and the feed read as a comment stream rather than as legislation and
+  // reaction interleaved — the single thing this view exists to demonstrate.
+  // Each entry below continues that bill's own sequence rather than contradicting
+  // it, and none claims a roll call.
+
+  // MI HB4427 — Engrossed, sitting in Senate Local Government per its real history.
+  { id: 'lm-fe-r-mi-hb4427-1', type: 'bill_updated', externalId: 'legiscan:2029026', userId: 'system', daysAgo: 1, metadata: { changes: [
+    chg('action_added', { newValue: 'Committee Hearing Held' }),
+    chg('action_added', { newValue: 'Reported By Committee Favorably Without Amendment' }),
+  ] } },
+
+  // IL HB1175 — still Introduced; a Rules re-referral moves nothing, which suits
+  // a bill the manifest never advances out of that bucket.
+  { id: 'lm-fe-r-il-hb1175-1', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 2, metadata: { changes: [
+    chg('action_added', { newValue: 'Re-referred to Rules Committee' }),
+  ] } },
+
+  // MI SB0771 — follows lm-fe-r-mi-sb0771-1 (hearing held, substitute offered) at day 5.
+  { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 2, metadata: { changes: [
+    chg('action_added', { newValue: 'Substitute S-1 Adopted' }),
+    chg('action_added', { newValue: 'Reported Favorably With Substitute S-1' }),
+  ] } },
+
+  // US HB8876 — follows lm-fe-r-us-hb8876-1 (subcommittee referral) at day 6.
+  { id: 'lm-fe-r-us-hb8876-2', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 2, metadata: { changes: [
+    chg('action_added', { newValue: 'Subcommittee Hearings Held' }),
   ] } },
 ]
