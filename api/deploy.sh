@@ -2,12 +2,31 @@
 set -e
 
 ENV=${1:?Usage: npm run deploy:tenant -- <wrangler-env-name>  (e.g. my-org)}
-# Resource-name prefix — override RESOURCE_PREFIX if you renamed your Workers/DBs/queues.
-# Defaults to "floorvote", matching the names the self-hosting guide has you
-# create. Must match the database_name in your wrangler.toml.
-DB="${RESOURCE_PREFIX:-floorvote}-${ENV}"
 
 cd "$(dirname "$0")"
+
+# The D1 database to migrate, read from the env's own binding in wrangler.toml.
+#
+# This used to be rebuilt from a prefix (RESOURCE_PREFIX-ENV), which meant the
+# script held a second, independent opinion about a name wrangler.toml already
+# states. Any deployment whose databases are not named <prefix>-<env> got
+#   Couldn't find a D1 DB with the name or binding '<prefix>-<env>'
+# with nothing pointing at the cause. Reading the binding cannot drift from the
+# config it is deploying.
+DB=$(awk -v want="[[env.${ENV}.d1_databases]]" '
+  $0 == want { inblock = 1; next }
+  inblock && /^\[/ { inblock = 0 }
+  inblock && /^[[:space:]]*database_name[[:space:]]*=/ {
+    sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
+  }
+' wrangler.toml)
+
+# Fallback for a config that binds D1 some other way. RESOURCE_PREFIX still
+# overrides, so existing setups keep working.
+if [[ -z "$DB" ]]; then
+  DB="${RESOURCE_PREFIX:-floorvote}-${ENV}"
+  echo "Note: no database_name under [[env.${ENV}.d1_databases]]; using ${DB}"
+fi
 
 # Preflight: refuse to deploy into the wrong Cloudflare account.
 #
