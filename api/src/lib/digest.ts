@@ -9,7 +9,7 @@ import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting, type ModulesConfig } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
-const DIGEST_CATEGORIES = ['bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'position_set']
+const DIGEST_CATEGORIES = ['bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'position_set', 'comment_added', 'priority_set']
 
 async function readModules(db: AppDb): Promise<ModulesConfig | undefined> {
   const row = await db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get()

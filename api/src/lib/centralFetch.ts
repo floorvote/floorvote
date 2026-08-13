@@ -7,10 +7,11 @@ import type { Env } from '../types'
  * WorkerEntrypoint that is reachable ONLY over same-account bindings, never the
  * public internet. It injects the admin secret server-side, so we do NOT attach
  * `x-admin-secret` here — this OUTBOUND path no longer transmits the secret.
- * (The tenant still holds `CENTRAL_ADMIN_SECRET` for the INBOUND direction:
- * central→tenant calls to `/api/internal/*` — e.g. the engagement-stats pull —
- * are still HTTP and validated against it. So the secret is not removed from
- * tenants by this change.)
+ * (Inbound — central→tenant calls such as the engagement-stats pull — prefer the
+ * `CentralApi` RPC binding, which carries no secret; they fall back to HTTP
+ * `/api/internal/*` validated against `CENTRAL_ADMIN_SECRET` ONLY for un-bound
+ * tenants. A deployment where every tenant has the CentralApi binding therefore
+ * needs no `CENTRAL_ADMIN_SECRET` on tenants in either direction.)
  *
  * Local dev (no binding): fall back to a plain HTTP fetch against
  * CENTRAL_API_URL, which still requires the shared `x-admin-secret` header
