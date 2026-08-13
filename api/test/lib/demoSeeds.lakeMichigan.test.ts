@@ -256,13 +256,15 @@ describe('lake-michigan derived feed events', () => {
     }
   })
 
-  it('carries three hearing notices, detailed straight from the calendar', () => {
+  it('carries a hearing notice per listed source, detailed straight from the calendar', () => {
     // Keyed on the calendar row `hearingNotice()` actually read, not on a row found
     // by bill: a bill carrying two hearings would let a bill-keyed lookup match the
     // wrong one and pass while the feed row and the calendar disagreed.
     const sourceOf = new Map(LM_HEARING_NOTICE_SOURCES.map(x => [x.eventId, x.calendarId]))
     const hearings = s.feedEvents.filter(e => e.type === 'hearing_added')
-    expect(hearings).toHaveLength(3)
+    // Count tracks LM_HEARING_NOTICE_SOURCES, which the next line pins exactly;
+    // this guards against a notice being derived from nowhere.
+    expect(hearings).toHaveLength(LM_HEARING_NOTICE_SOURCES.length)
     expect(hearings.map(e => e.id).sort()).toEqual([...sourceOf.keys()].sort())
     for (const e of hearings) {
       expect(e.userId).toBe('system')

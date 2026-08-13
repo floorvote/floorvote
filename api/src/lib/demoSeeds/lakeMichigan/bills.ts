@@ -487,6 +487,13 @@ const hearingNotice = (id: string, calendarId: string, daysAgo: number): DemoSee
  * carries two hearings.
  */
 const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: number }> = [
+  // MI HB5308 and MI HB5674 previously had calendar hearings with no notice, so
+  // the feed never mentioned them. A hearing notice is derived from a calendar
+  // row and touches no bill history, so unlike bill_updated it cannot contradict
+  // the actions tab — which makes it the safe way to put legislative activity at
+  // the top of the feed.
+  { eventId: 'lm-fe-h-mi-hb5308', calendarId: 'lm-hearing-2', daysAgo: 4 },
+  { eventId: 'lm-fe-h-mi-hb5674', calendarId: 'lm-hearing-3', daysAgo: 3 },
   { eventId: 'lm-fe-h-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 16 },
   { eventId: 'lm-fe-h-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 6 },
   { eventId: 'lm-fe-h-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 5 },
@@ -560,10 +567,6 @@ export const LM_ENGAGEMENT_EVENTS: DemoSeedFeedEvent[] = [
 // rather than growing it.
 export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // MI HB5308 — Invasive Species, Engrossed, so second-chamber committee work.
-  { id: 'lm-fe-r-mi-hb5308-1', type: 'bill_updated', externalId: 'legiscan:2055958', userId: 'system', daysAgo: 3, metadata: { changes: [
-    chg('action_added', { newValue: 'Reported With Recommendation Without Amendment' }),
-    chg('action_added', { newValue: 'Placed On Order Of Third Reading' }),
-  ] } },
   { id: 'lm-fe-r-mi-hb5308-2', type: 'bill_updated', externalId: 'legiscan:2055958', userId: 'system', daysAgo: 12, metadata: { changes: [
     chg('action_added', { newValue: 'Referred To Committee On Natural Resources And Agriculture' }),
   ] } },
@@ -575,9 +578,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
 
   // IN HB1124 — Drinking Water, Introduced; Indiana reads bills by number.
-  { id: 'lm-fe-r-in-hb1124-1', type: 'bill_updated', externalId: 'legiscan:2061476', userId: 'system', daysAgo: 2, metadata: { changes: [
-    chg('action_added', { newValue: 'Second reading: amended, ordered engrossed' }),
-  ] } },
 
   // US HB8876 — Invasive Species, Introduced; federal committee referral.
   { id: 'lm-fe-r-us-hb8876-1', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 6, metadata: { changes: [
@@ -585,12 +585,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
 
   // IL HB5268 — Water Withdrawal, Introduced; IL uses committee deadlines.
-  { id: 'lm-fe-r-il-hb5268-1', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 10, metadata: { changes: [
-    chg('action_added', { newValue: 'Assigned to Energy & Environment Committee' }),
-  ] } },
-  { id: 'lm-fe-r-il-hb5268-2', type: 'bill_updated', externalId: 'legiscan:2109237', userId: 'system', daysAgo: 17, metadata: { changes: [
-    chg('action_added', { newValue: 'Committee Deadline Extended' }),
-  ] } },
 
   // MI HB5674 — Drinking Water, Introduced.
   { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 3, metadata: { changes: [
@@ -607,10 +601,6 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // it, and none claims a roll call.
 
   // MI HB4427 — Engrossed, sitting in Senate Local Government per its real history.
-  { id: 'lm-fe-r-mi-hb4427-1', type: 'bill_updated', externalId: 'legiscan:2029026', userId: 'system', daysAgo: 31, metadata: { changes: [
-    chg('action_added', { newValue: 'Committee Hearing Held' }),
-    chg('action_added', { newValue: 'Reported By Committee Favorably Without Amendment' }),
-  ] } },
 
   // IL HB1175 — still Introduced; a Rules re-referral moves nothing, which suits
   // a bill the manifest never advances out of that bucket.

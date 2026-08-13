@@ -661,11 +661,34 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // ---------------------------------------------------------------------------
 // Combined exports
 // ---------------------------------------------------------------------------
+// Hearing coordination, deliberately not status narration.
+//
+// A comment about who is covering a hearing demonstrates what the product is
+// for — a team dividing work — and stays true no matter what the bill does next.
+// A comment about where the bill has got to duplicates the feed and the actions
+// tab, and goes stale the moment either moves. That distinction is why the three
+// replies added on 2026-08-12 were removed: each narrated an invented procedural
+// step, and one contradicted its bill outright.
+//
+// Each sits a day after the hearing notice it answers (lm-fe-h-mi-hb5308 at
+// daysAgo 4, lm-fe-h-mi-hb5674 at 3), so the feed reads notice-then-response.
+const hearingCoordination: DemoSeedComment[] = [
+  { id: 'lm-c-hc1', externalId: 'legiscan:2055958', userId: 'lm-user-la1',
+    content: '<p>Who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
+  { id: 'lm-c-hc2', externalId: 'legiscan:2055958', userId: 'lm-user-la2',
+    content: '<p>I can take it. I will bring the decal cost sheet from last session.</p>', daysAgo: 2 },
+  { id: 'lm-c-hc3', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
+    content: '<p>I will draft testimony for this one — first pass by Friday if anyone wants to review it.</p>', daysAgo: 2 },
+  { id: 'lm-c-hc4', externalId: 'legiscan:2129983', userId: 'lm-user-res',
+    content: '<p>Happy to review. I have the school lead-testing numbers ready to fold in.</p>', daysAgo: 1 },
+]
+
 export const LM_COMMENTS: DemoSeedComment[] = [
   ...hb4427, ...hb5308, ...sb0771, ...hb5674, ...hb4768, ...sb56, ...ab131, ...ab129, ...sb628,
   ...ilHb1175, ...ilSb4025, ...ilHb5268, ...ilHb2516,
   ...inHb1124, ...inSb0006, ...inSb0188,
   ...usHb284, ...usHb8876, ...usHb583, ...usHb6668,
+  ...hearingCoordination,
 ]
 
 export const LM_REACTIONS: DemoSeedReaction[] = [
