@@ -1,4 +1,4 @@
-import { color } from './tokens'
+import { color, fontWeight } from './tokens'
 
 // Single source of truth for @-mention pill colors, shared by every surface that
 // renders a mention so the web UI and the emails can't drift apart:
@@ -15,4 +15,11 @@ import { color } from './tokens'
 export const MENTION_STYLE = {
   role: { bg: color.roleMentionBg, text: color.roleMentionText },
   user: { bg: color.borderDefault, text: color.textSlate500 },
+  // One weight for every mention pill on every surface. Colours were already
+  // shared here; weight was not, and drifted — the mentions panel's attribution
+  // chip was semibold (600) while the pill inside the quoted comment, ROLE_CHIP,
+  // and the emails were all medium (500). A role mention prints the pill twice
+  // in one panel row (attribution line + the comment that contains it), so the
+  // mismatch was plainly visible. Read this instead of writing a literal.
+  weight: fontWeight.medium,
 } as const

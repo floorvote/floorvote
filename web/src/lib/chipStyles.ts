@@ -96,7 +96,7 @@ export function countBadge(active = false, activeBg = 'transparent'): React.CSSP
 // emails (api/src/lib/mentions.ts). The X button style is admin-only.
 export const ROLE_CHIP: React.CSSProperties = {
   fontSize: fontSize.xs,
-  fontWeight: fontWeight.medium,
+  fontWeight: MENTION_STYLE.weight,
   color: MENTION_STYLE.role.text,
   background: MENTION_STYLE.role.bg,
   borderRadius: radius.pill,

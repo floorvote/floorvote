@@ -361,7 +361,19 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       <div className="sidebar-brand" style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <Wordmark dark size={fontSize.xxxl} />
+            {/* The lockup navigates home, per the near-universal convention. onClose
+                is explicit rather than left to the close-on-route-change effect,
+                which never fires when we're already on "/". Wrapped here rather
+                than inside Wordmark: the shared component also renders on the
+                login pages, where linking into an authed route would be wrong. */}
+            <Link
+              to="/"
+              onClick={onClose}
+              aria-label={`${PRODUCT_NAME} home`}
+              style={{ display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
+            >
+              <Wordmark dark size={fontSize.xxxl} />
+            </Link>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button

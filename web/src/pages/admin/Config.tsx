@@ -963,7 +963,10 @@ export function Config() {
                           display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'default',
                           ...(field.type === 'binary' ? { background: color.bgAmberPriority, color: color.textAmberDark }
                             : field.type === 'dropdown' ? { background: color.bgBlueChip, color: color.linkBlue }
-                            : field.type === 'text' ? { background: color.surfaceMuted, color: color.textSlate500 }
+                            // countChipBg, not surfaceMuted: the near-white surfaceMuted fill
+                            // made this chip vanish against the white card while its amber/blue/
+                            // violet siblings read as chips.
+                            : field.type === 'text' ? { background: color.countChipBg, color: color.textSlate500 }
                             : { background: color.bgVioletChip, color: color.textVioletChip })
                         }}
                       >

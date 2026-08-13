@@ -83,27 +83,36 @@ export function NotificationsSlideOver(
     ? { position: 'fixed' as const, top: 46, left: 8, right: 8, maxHeight: 'min(70vh, 560px)', display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
     : { position: 'fixed' as const, top: 46, left: 162, width: 400, maxHeight: 560, display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
 
-  // Fetch notifications + roles + bulk mark-read on open
+  // Fetch notifications + roles on open, and only then bulk mark-read.
+  //
+  // The order is load-bearing, not incidental. These two used to be fired
+  // concurrently (`void load(); void markAllRead()`), which raced: when the POST
+  // reached the DB first, the GET came back with every row already read and the
+  // unread treatment (blue rail + bgInfo) never rendered for the very mentions it
+  // exists to point at. Sequencing costs one request's latency on the panel's
+  // badge clearing — the badge is derived from refresh(), which still runs — and
+  // buys a deterministic unread highlight.
   useEffect(() => {
-    async function load() {
+    let cancelled = false
+    async function run() {
       try {
         const [data, rolesData] = await Promise.all([
           apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications'),
           apiFetch<RoleData[]>('/roles').catch(() => [] as RoleData[]),
         ])
+        if (cancelled) return
         setMentions(data.mentions)
         setRoles(rolesData)
       } catch {}
+      if (cancelled) return
       setLoading(false)
-    }
-    async function markAllRead() {
       try {
         await apiFetch('/notifications/mark-read', { method: 'POST' })
         await refresh()
       } catch {}
     }
-    void load()
-    void markAllRead()
+    void run()
+    return () => { cancelled = true }
   }, [refresh])
 
   // Shared by mouse hover (onMouseOver/onMouseOut) and keyboard focus
@@ -155,7 +164,7 @@ export function NotificationsSlideOver(
           .notif-comment ul, .notif-comment ol { margin: 3px 0 3px 16px; padding: 0; }
           .notif-comment li { margin: 1px 0; }
           .notif-comment a { color: #2563eb; }
-          .notif-comment span[data-type="mention"] { font-weight: 500; cursor: default; }
+          .notif-comment span[data-type="mention"] { font-weight: ${MENTION_STYLE.weight}; cursor: default; }
           /* Mention pills from the shared MENTION_STYLE (role = indigo, user =
              gray) — in lockstep with ROLE_CHIP, CommentContent.tsx,
              RichTextEditor.tsx, and the emails; padding stays compact here. */
@@ -228,14 +237,20 @@ export function NotificationsSlideOver(
                     title={attributionRole
                       ? `${attributionRole.name}: ${attributionRole.members.map(mb => mb.name).join(', ')}`
                       : undefined}
+                    // Geometry and weight are deliberately identical to the role
+                    // pill inside the comment body (the CSS block above), to the
+                    // shared ROLE_CHIP, and to the emails — all MENTION_STYLE.weight.
+                    // This chip used to be semibold with different padding, which
+                    // read as a bug whenever a role mention printed it twice in one
+                    // row. The two pills differ in size only because each inherits
+                    // its own line's font size.
                     style={{
                       display: 'inline-block',
                       background: MENTION_STYLE.role.bg,
                       color: MENTION_STYLE.role.text,
                       borderRadius: radius.pill,
-                      padding: '0 7px',
-                      fontSize: fontSize.sm,
-                      fontWeight: fontWeight.semibold,
+                      padding: '1px 7px',
+                      fontWeight: MENTION_STYLE.weight,
                       cursor: 'default',
                     }}
                     onMouseEnter={e => {
@@ -260,79 +275,76 @@ export function NotificationsSlideOver(
                 onClick={() => onClose()}
                 style={{
                   display: 'block',
-                  padding: '12px 16px',
-                  borderBottom: `1px solid ${color.surfaceMuted}`,
-                  borderLeft: m.isUnread ? '3px solid #3b82f6' : '3px solid transparent',
+                  padding: '11px 16px 12px',
+                  borderBottom: `1px solid ${color.borderDefault}`,
+                  borderLeft: m.isUnread ? `3px solid ${color.accentBlue}` : '3px solid transparent',
                   background: m.isUnread ? color.bgInfo : color.white,
                   textDecoration: 'none',
                 }}
               >
-                {/* Author name · subtitle and time on same line */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
-                  <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textPrimary, minWidth: 0 }}>
-                    {m.authorName}
-                    {m.authorSubtitle && (
-                      <span style={{ fontWeight: fontWeight.normal, color: color.textMuted, fontSize: fontSize.sm }}> · {m.authorSubtitle}</span>
-                    )}
+                {/* One sentence, phrased exactly as the mention email phrases it
+                    ("{author} mentioned @{role}" — api/src/lib/mentions.ts), so the
+                    panel reads as the same message the recipient already has in
+                    their inbox. It replaces what used to be two separate lines: an
+                    author line and a standalone attribution line. The author's
+                    subtitle is deliberately dropped — in a 400px panel it cost a
+                    line's worth of attention for a detail the name usually carries. */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                  <div style={{ fontSize: fontSize.sm, color: color.textSecondary, minWidth: 0 }}>
+                    <span style={{ fontWeight: fontWeight.semibold, color: color.textPrimary }}>{m.authorName}</span>
+                    {' '}
+                    {mentionedVia}
                   </div>
                   <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 0 }}>{relativeTime(m.createdAt)}</span>
                 </div>
 
-                {/* Navy bill chip + bill title inline */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 5 }}>
-                  <span style={{ flexShrink: 0, marginTop: 1 }}>
-                    <BillBadge
-                      billNumber={m.billNumber}
-                      state={m.billState ?? undefined}
-                      mini
-                    />
-                  </span>
+                {/* The comment is the primary content — it's what you opened the
+                    panel to read — but it is promoted by *colour*, not size: every
+                    line in the row (this, the sentence above, the footer below) is
+                    fontSize.sm, because a mention pill inherits its line's size and
+                    two sizes of the same pill in one row read as an inconsistency
+                    rather than a hierarchy. Rendered verbatim: a mention can sit
+                    anywhere in a sentence, so a role pill can't be stripped from the
+                    front just because the line above names the same role. One size
+                    and one weight is what makes that repeat read as a quote. */}
+                <div
+                  className="notif-comment"
+                  style={{
+                    fontSize: fontSize.sm,
+                    color: color.textSlate,
+                    lineHeight: 1.5,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                  onMouseOver={handleCommentMouseOver}
+                  onMouseOut={handleCommentMouseOut}
+                  onFocus={handleCommentMouseOver}
+                  onBlur={handleCommentMouseOut}
+                  dangerouslySetInnerHTML={{ __html: safeHtml }}
+                />
+
+                {/* Bill footer — one line, single-line-ellipsized. The bill stays
+                    identifiable without the two-line serif title block competing
+                    with the comment above it. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, minWidth: 0 }}>
+                  <BillBadge
+                    billNumber={m.billNumber}
+                    state={m.billState ?? undefined}
+                    mini
+                  />
                   <span style={{
                     fontFamily: '"Source Serif 4", "Source Serif", Georgia, serif',
                     fontSize: fontSize.sm,
-                    fontWeight: fontWeight.bold,
-                    color: color.billBadgeNavy,
-                    lineHeight: 1.35,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
+                    color: color.textMuted,
+                    whiteSpace: 'nowrap',
                     overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     minWidth: 0,
                   }}>
                     {m.billTitle}
                   </span>
-                </div>
-
-                {/* Attribution line */}
-                <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 8 }}>
-                  {mentionedVia}
-                </div>
-
-                {/* Comment quote */}
-                <div style={{
-                  borderLeft: `3px solid ${color.borderStrong}`,
-                  background: color.white,
-                  padding: '6px 10px',
-                  borderRadius: '0 6px 6px 0',
-                  overflow: 'hidden',
-                }}>
-                  <div
-                    className="notif-comment"
-                    style={{
-                      fontSize: fontSize.sm,
-                      color: color.textSlate500,
-                      lineHeight: 1.5,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                    onMouseOver={handleCommentMouseOver}
-                    onMouseOut={handleCommentMouseOut}
-                    onFocus={handleCommentMouseOver}
-                    onBlur={handleCommentMouseOut}
-                    dangerouslySetInnerHTML={{ __html: safeHtml }}
-                  />
                 </div>
               </Link>
             )
