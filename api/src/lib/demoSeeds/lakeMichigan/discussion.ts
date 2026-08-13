@@ -84,7 +84,7 @@ const hb5308: DemoSeedComment[] = [
   { id: 'lm-c-11', externalId: 'legiscan:2055958', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-habitat" data-label="Habitat">@Habitat</span> should we flag this decal fee model to the other states we track?</p>', daysAgo: 3 },
   { id: 'lm-c-12', externalId: 'legiscan:2055958', userId: 'lm-user-res',
-    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Marcus Weir">@Marcus Weir</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
+    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Josh Marsh">@Josh Marsh</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
 ]
 
 const hb5308Reactions: DemoSeedReaction[] = [

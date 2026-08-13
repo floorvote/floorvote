@@ -72,7 +72,7 @@ export const LM_PRIORITIES: Array<{ externalId: string; priority: 'high' | 'medi
 ]
 
 // Official positions — set only by one of the three org admins (demo-user =
-// Marcus Weir/Policy Director, lm-user-ed = Karen Waters/Executive Director,
+// Josh Marsh/Policy Director, lm-user-ed = Karen Waters/Executive Director,
 // lm-user-dep = Varsha Raman/Deputy Policy Director). The two dead Wisconsin bills
 // (AB129, SB628) get Support too: they lost, and that's the point of tracking a
 // concluded bill. SB0771 and HB8876 carry Amend/Monitor so the vocabulary isn't

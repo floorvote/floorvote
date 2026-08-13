@@ -17,7 +17,7 @@ import type { DemoSeedCustomField, DemoSeedRole, DemoSeedUser } from '../types'
 // personas active within 7 days, the rest within 30 — the sidebar member
 // count and the admin active-member stats both read this field.
 export const LM_USERS: DemoSeedUser[] = [
-  { id: 'demo-user',       email: 'demo@example.com',   name: 'Marcus Weir',       role: 'admin',  subtitle: 'Policy Director',              createdDaysAgo: 90, canVote: true,  lastActiveDaysAgo: 0 },
+  { id: 'demo-user',       email: 'demo@example.com',   name: 'Josh Marsh',       role: 'admin',  subtitle: 'Policy Director',              createdDaysAgo: 90, canVote: true,  lastActiveDaysAgo: 0 },
   { id: 'lm-user-ed',      email: 'karen@demo.example', name: 'Karen Waters',   role: 'admin',  subtitle: 'Executive Director',           createdDaysAgo: 88, canVote: true,  lastActiveDaysAgo: 0 },
   { id: 'lm-user-dep',     email: 'varsha@demo.example', name: 'Varsha Raman',       role: 'admin',  subtitle: 'Deputy Policy Director',       createdDaysAgo: 85, canVote: true,  lastActiveDaysAgo: 1 },
   { id: 'lm-user-la1',     email: 'devon@demo.example', name: 'Devon Brook',      role: 'member', subtitle: 'Legislative Analyst',          createdDaysAgo: 80, canVote: true,  lastActiveDaysAgo: 1 },
@@ -31,7 +31,7 @@ export const LM_USERS: DemoSeedUser[] = [
   { id: 'lm-user-grants',  email: 'tanya@demo.example', name: 'Tanya Wells',      role: 'member', subtitle: 'Grants Manager',               createdDaysAgo: 40, canVote: true,  lastActiveDaysAgo: 10 },
   { id: 'lm-user-prog',    email: 'miguel@demo.example', name: 'Miguel Rivera',     role: 'member', subtitle: 'Program Coordinator',          createdDaysAgo: 35, canVote: true,  lastActiveDaysAgo: 14 },
   { id: 'lm-user-data',    email: 'nina@demo.example',  name: 'Nina Potocnik',        role: 'member', subtitle: 'Data Analyst',                 createdDaysAgo: 32, canVote: true,  lastActiveDaysAgo: 20 },
-  { id: 'lm-user-out',     email: 'josh@demo.example',  name: 'Josh Marsh',     role: 'member', subtitle: 'Outreach Coordinator',         createdDaysAgo: 30, canVote: false, lastActiveDaysAgo: 28 },
+  { id: 'lm-user-out',     email: 'marcus@demo.example',  name: 'Marcus Weir',     role: 'member', subtitle: 'Outreach Coordinator',         createdDaysAgo: 30, canVote: false, lastActiveDaysAgo: 28 },
 ]
 
 // Five jurisdiction teams (one per covered legislature) plus three working
