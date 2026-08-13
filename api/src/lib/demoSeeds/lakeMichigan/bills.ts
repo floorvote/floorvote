@@ -470,7 +470,7 @@ const hearingNotice = (id: string, calendarId: string, daysAgo: number): DemoSee
  * carries two hearings.
  */
 const LM_HEARING_NOTICES: Array<{ eventId: string; calendarId: string; daysAgo: number }> = [
-  { eventId: 'lm-fe-h-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 6 },
+  { eventId: 'lm-fe-h-il-hb1175', calendarId: 'lm-hearing-4', daysAgo: 16 },
   { eventId: 'lm-fe-h-in-hb1124', calendarId: 'lm-hearing-5', daysAgo: 6 },
   { eventId: 'lm-fe-h-us-hb8876', calendarId: 'lm-hearing-6', daysAgo: 5 },
 ]
@@ -552,7 +552,7 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
 
   // MI SB0771 — Septic & Wastewater, still Introduced; committee activity only.
-  { id: 'lm-fe-r-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 5, metadata: { changes: [
+  { id: 'lm-fe-r-mi-sb0771-1', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 27, metadata: { changes: [
     chg('action_added', { newValue: 'Committee Hearing Held' }),
     chg('action_added', { newValue: 'Substitute S-1 Offered' }),
   ] } },
@@ -576,7 +576,7 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   ] } },
 
   // MI HB5674 — Drinking Water, Introduced.
-  { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 15, metadata: { changes: [
+  { id: 'lm-fe-r-mi-hb5674-1', type: 'bill_updated', externalId: 'legiscan:2129983', userId: 'system', daysAgo: 3, metadata: { changes: [
     chg('action_added', { newValue: 'Referred To Committee On Government Operations' }),
   ] } },
 
@@ -590,19 +590,19 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // it, and none claims a roll call.
 
   // MI HB4427 — Engrossed, sitting in Senate Local Government per its real history.
-  { id: 'lm-fe-r-mi-hb4427-1', type: 'bill_updated', externalId: 'legiscan:2029026', userId: 'system', daysAgo: 1, metadata: { changes: [
+  { id: 'lm-fe-r-mi-hb4427-1', type: 'bill_updated', externalId: 'legiscan:2029026', userId: 'system', daysAgo: 31, metadata: { changes: [
     chg('action_added', { newValue: 'Committee Hearing Held' }),
     chg('action_added', { newValue: 'Reported By Committee Favorably Without Amendment' }),
   ] } },
 
   // IL HB1175 — still Introduced; a Rules re-referral moves nothing, which suits
   // a bill the manifest never advances out of that bucket.
-  { id: 'lm-fe-r-il-hb1175-1', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 2, metadata: { changes: [
+  { id: 'lm-fe-r-il-hb1175-1', type: 'bill_updated', externalId: 'legiscan:1906052', userId: 'system', daysAgo: 12, metadata: { changes: [
     chg('action_added', { newValue: 'Re-referred to Rules Committee' }),
   ] } },
 
   // MI SB0771 — follows lm-fe-r-mi-sb0771-1 (hearing held, substitute offered) at day 5.
-  { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 2, metadata: { changes: [
+  { id: 'lm-fe-r-mi-sb0771-2', type: 'bill_updated', externalId: 'legiscan:2095619', userId: 'system', daysAgo: 24, metadata: { changes: [
     chg('action_added', { newValue: 'Substitute S-1 Adopted' }),
     chg('action_added', { newValue: 'Reported Favorably With Substitute S-1' }),
   ] } },
@@ -610,5 +610,15 @@ export const LM_RECENT_ACTIVITY_EVENTS: DemoSeedFeedEvent[] = [
   // US HB8876 — follows lm-fe-r-us-hb8876-1 (subcommittee referral) at day 6.
   { id: 'lm-fe-r-us-hb8876-2', type: 'bill_updated', externalId: 'legiscan:2150744', userId: 'system', daysAgo: 2, metadata: { changes: [
     chg('action_added', { newValue: 'Subcommittee Hearings Held' }),
+  ] } },
+
+  // MI HB4768 — Drinking Water, Introduced.
+  { id: 'lm-fe-r-mi-hb4768-1', type: 'bill_updated', externalId: 'legiscan:2041788', userId: 'system', daysAgo: 3, metadata: { changes: [
+    chg('action_added', { newValue: 'Referred To Committee On Regulatory Reform' }),
+  ] } },
+
+  // US HB6668 — PFAS, Introduced.
+  { id: 'lm-fe-r-us-hb6668-1', type: 'bill_updated', externalId: 'legiscan:2058690', userId: 'system', daysAgo: 4, metadata: { changes: [
+    chg('action_added', { newValue: 'Referred to the Subcommittee on Environment and Climate Change' }),
   ] } },
 ]
