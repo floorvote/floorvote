@@ -8,7 +8,7 @@ It's a guided, one-time setup, and every step is a terminal command you copy and
 
 Set up two accounts before you start:
 
-- **Cloudflare** — where FloorVote runs. You'll need the [**Workers Paid**](https://www.cloudflare.com/plans/developer-platform/) plan ($5/month), which is required for Queues (how bill updates move from central out to your teams).
+- **Cloudflare** — where FloorVote runs. You'll need the [**Workers Paid**](https://www.cloudflare.com/plans/developer-platform/) plan ($5/month): the Free plan can't send email to your members, and FloorVote uses magic-link authentication, so email is the only way anyone can log in. The Free plan also covers only very light traffic — enough for a demo, not a working deployment.
 - **LegiScan** — where the bill data comes from. Register for a LegiScan account [here](https://legiscan.com/user/register), confirm it, then generate a free API key [here](https://legiscan.com/legiscan). The free tier — **30,000 API calls per month** — is enough for a national deployment.
 
 > [!IMPORTANT]
