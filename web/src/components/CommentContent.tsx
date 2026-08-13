@@ -166,7 +166,7 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
         .comment-html a { color: #2563eb; text-decoration: none; }
         .comment-html a:hover { text-decoration: underline; }
         .comment-html span[data-type="mention"] {
-          font-weight: 500;
+          font-weight: ${MENTION_STYLE.weight};
           cursor: default;
         }
         /* Mention pills come from the shared MENTION_STYLE (role = indigo,

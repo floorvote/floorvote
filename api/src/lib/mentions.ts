@@ -105,7 +105,7 @@ export function tiptapToEmailHtml(rawHtml: string): string {
         const pill = isGroup ? MENTION_STYLE.role : MENTION_STYLE.user
         const rad = isGroup ? '99px' : '4px'
         const pad = isGroup ? '2px 8px' : '1px 6px'
-        return `<span style="background:${pill.bg};color:${pill.text};padding:${pad};border-radius:${rad};font-weight:500;">${label}</span>`
+        return `<span style="background:${pill.bg};color:${pill.text};padding:${pad};border-radius:${rad};font-weight:${MENTION_STYLE.weight};">${label}</span>`
       },
     )
 }

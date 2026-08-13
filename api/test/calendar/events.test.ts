@@ -429,12 +429,18 @@ describe('custom event details/url', () => {
     const admin = await seedUser({ email: 'admin@b.com', role: 'admin' }); adminToken = await seedSession(admin)
   })
 
+  // isoDay, not a literal date: this is the only test in the block that reads the
+  // event back from `GET /events`, which windows to [today-90d, today+365d]. With
+  // the literal '2026-05-14' it passed until 2026-08-12 and failed from 2026-08-13,
+  // when the event fell one day out of the window — a time bomb, not a route bug.
+  // Any test that round-trips through the list must date its event relatively.
   it('persists and returns details and url', async () => {
+    const eventDay = isoDay(1)
     const r = await SELF.fetch('http://localhost/api/calendar/events', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        description: 'Filing period', date: '2026-05-14',
+        description: 'Filing period', date: eventDay,
         details: 'Through May 29\nStatute: W.S. 22-5-209', url: 'https://sos.example.gov',
       }),
     })

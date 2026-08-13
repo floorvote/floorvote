@@ -502,7 +502,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           height: 0;
         }
         .comment-editor-wrapper .tiptap.ProseMirror .mention {
-          font-weight: 500;
+          font-weight: ${MENTION_STYLE.weight};
         }
         /* Mention pills come from the shared MENTION_STYLE (role = indigo,
            user = gray) — in lockstep with CommentContent.tsx, ROLE_CHIP, and
