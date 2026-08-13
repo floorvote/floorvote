@@ -57,15 +57,38 @@ describe('runDigest', () => {
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
   })
 
-  it('excludes non-priority bills and comment events', async () => {
+  it('excludes events on non-priority bills', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const plain = await seedBill({ billNumber: 'H 999', state: 'RI', session: '2026' })
     await addEvent(db, plain, 'bill_updated', '{"changes":[{"changeType":"status_change","oldValue":"a","newValue":"b","detail":null}]}')
-    await addEvent(db, billId, 'comment_added', '{}')
     const f = vi.fn(); vi.stubGlobal('fetch', f)
     const result = await runDigest(env as any, db)
     expect(f).not.toHaveBeenCalled()
     expect(result).toEqual({ ok: true, recipients: 0, sent: 0, failed: 0 })
+  })
+
+  it('includes comment_added on priority bills', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    await addEvent(db, billId, 'comment_added', JSON.stringify({ preview: 'We should testify against this at the hearing.', commentId: 'c-test-1' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    const result = await runDigest(env as any, db)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].to).toEqual(['a@e.com'])
+    expect(calls[0].html).toContain('We should testify against this at the hearing.')
+    expect(result).toEqual({ ok: true, recipients: 1, sent: 1, failed: 0 })
+  })
+
+  it('includes priority_set on priority bills', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    await addEvent(db, billId, 'priority_set', JSON.stringify({ priority: 'high' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    const result = await runDigest(env as any, db)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].to).toEqual(['a@e.com'])
+    expect(calls[0].html).toContain('Marked high priority')
+    expect(result).toEqual({ ok: true, recipients: 1, sent: 1, failed: 0 })
   })
 
   it('respects per-user opt-out (no recipients → no send)', async () => {
