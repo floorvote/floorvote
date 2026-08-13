@@ -153,7 +153,6 @@ const sb0771Mentions: DemoSeedMention[] = [
 const sb0771Votes: DemoSeed['votes'] = [
   { id: 'lm-v-10', externalId: 'legiscan:2095619', userId: 'demo-user', position: 'support', daysAgo: 70 },
   { id: 'lm-v-11', externalId: 'legiscan:2095619', userId: 'lm-user-gc', position: 'neutral', daysAgo: 68 },
-  { id: 'lm-v-12', externalId: 'legiscan:2095619', userId: 'lm-user-grants', position: 'support', daysAgo: 66 },
   { id: 'lm-v-66', externalId: 'legiscan:2095619', userId: 'lm-user-gov', position: 'oppose', daysAgo: 67 },
   { id: 'lm-v-67', externalId: 'legiscan:2095619', userId: 'lm-user-la2', position: 'oppose', daysAgo: 65 },
 ]
@@ -227,7 +226,6 @@ const sb56Reactions: DemoSeedReaction[] = [
 const sb56Votes: DemoSeed['votes'] = [
   { id: 'lm-v-13', externalId: 'legiscan:1979645', userId: 'lm-user-la2', position: 'support', daysAgo: 400 },
   { id: 'lm-v-14', externalId: 'legiscan:1979645', userId: 'lm-user-wq', position: 'support', daysAgo: 399 },
-  { id: 'lm-v-15', externalId: 'legiscan:1979645', userId: 'lm-user-data', position: 'support', daysAgo: 398 },
   { id: 'lm-v-16', externalId: 'legiscan:1979645', userId: 'lm-user-ed', position: 'support', daysAgo: 397 },
   { id: 'lm-v-17', externalId: 'legiscan:1979645', userId: 'lm-user-dep', position: 'support', daysAgo: 396 },
   { id: 'lm-v-18', externalId: 'legiscan:1979645', userId: 'demo-user', position: 'support', daysAgo: 395 },
@@ -265,7 +263,6 @@ const ab131Mentions: DemoSeedMention[] = [
 const ab131Votes: DemoSeed['votes'] = [
   { id: 'lm-v-19', externalId: 'legiscan:2006749', userId: 'lm-user-la2', position: 'support', daysAgo: 115 },
   { id: 'lm-v-20', externalId: 'legiscan:2006749', userId: 'lm-user-wq', position: 'support', daysAgo: 114 },
-  { id: 'lm-v-21', externalId: 'legiscan:2006749', userId: 'lm-user-data', position: 'support', daysAgo: 113 },
   { id: 'lm-v-22', externalId: 'legiscan:2006749', userId: 'lm-user-gc', position: 'neutral', daysAgo: 112 },
   { id: 'lm-v-23', externalId: 'legiscan:2006749', userId: 'lm-user-ed', position: 'support', daysAgo: 111 },
 ]
@@ -305,7 +302,6 @@ const ab129Mentions: DemoSeedMention[] = [
 const ab129Votes: DemoSeed['votes'] = [
   { id: 'lm-v-24', externalId: 'legiscan:2006944', userId: 'lm-user-la2', position: 'support', daysAgo: 130 },
   { id: 'lm-v-25', externalId: 'legiscan:2006944', userId: 'lm-user-wq', position: 'support', daysAgo: 128 },
-  { id: 'lm-v-26', externalId: 'legiscan:2006944', userId: 'lm-user-data', position: 'neutral', daysAgo: 125 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -390,7 +386,6 @@ const ilSb4025Votes: DemoSeed['votes'] = [
   { id: 'lm-v-33', externalId: 'legiscan:2111275', userId: 'lm-user-dep', position: 'support', daysAgo: 24 },
   { id: 'lm-v-34', externalId: 'legiscan:2111275', userId: 'lm-user-gov', position: 'support', daysAgo: 23 },
   { id: 'lm-v-35', externalId: 'legiscan:2111275', userId: 'lm-user-gc', position: 'support', daysAgo: 22 },
-  { id: 'lm-v-36', externalId: 'legiscan:2111275', userId: 'lm-user-grants', position: 'support', daysAgo: 21 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -495,7 +490,6 @@ const inHb1124Mentions: DemoSeedMention[] = [
 const inHb1124Votes: DemoSeed['votes'] = [
   { id: 'lm-v-41', externalId: 'legiscan:2061476', userId: 'demo-user', position: 'support', daysAgo: 200 },
   { id: 'lm-v-42', externalId: 'legiscan:2061476', userId: 'lm-user-res', position: 'support', daysAgo: 199 },
-  { id: 'lm-v-43', externalId: 'legiscan:2061476', userId: 'lm-user-prog', position: 'support', daysAgo: 198 },
   { id: 'lm-v-44', externalId: 'legiscan:2061476', userId: 'lm-user-ed', position: 'support', daysAgo: 197 },
   { id: 'lm-v-45', externalId: 'legiscan:2061476', userId: 'lm-user-comms', position: 'support', daysAgo: 196 },
 ]
@@ -523,7 +517,6 @@ const inSb0006Votes: DemoSeed['votes'] = [
   { id: 'lm-v-46', externalId: 'legiscan:2056216', userId: 'demo-user', position: 'support', daysAgo: 70 },
   { id: 'lm-v-47', externalId: 'legiscan:2056216', userId: 'lm-user-res', position: 'support', daysAgo: 69 },
   { id: 'lm-v-48', externalId: 'legiscan:2056216', userId: 'lm-user-ed', position: 'support', daysAgo: 68 },
-  { id: 'lm-v-49', externalId: 'legiscan:2056216', userId: 'lm-user-prog', position: 'support', daysAgo: 67 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -575,7 +568,6 @@ const usHb284Votes: DemoSeed['votes'] = [
   { id: 'lm-v-50', externalId: 'legiscan:1910159', userId: 'demo-user', position: 'support', daysAgo: 500 },
   { id: 'lm-v-51', externalId: 'legiscan:1910159', userId: 'lm-user-ed', position: 'support', daysAgo: 499 },
   { id: 'lm-v-52', externalId: 'legiscan:1910159', userId: 'lm-user-fed', position: 'support', daysAgo: 498 },
-  { id: 'lm-v-53', externalId: 'legiscan:1910159', userId: 'lm-user-grants', position: 'support', daysAgo: 497 },
   { id: 'lm-v-54', externalId: 'legiscan:1910159', userId: 'lm-user-dep', position: 'support', daysAgo: 496 },
 ]
 

@@ -28,9 +28,9 @@ export const LM_USERS: DemoSeedUser[] = [
   { id: 'lm-user-res',     email: 'grace@demo.example', name: 'Grace Jiang',         role: 'member', subtitle: 'Research Associate',           createdDaysAgo: 55, canVote: true,  lastActiveDaysAgo: 5 },
   { id: 'lm-user-comms',   email: 'renee@demo.example', name: 'Renee Rains',      role: 'member', subtitle: 'Communications Director',      createdDaysAgo: 50, canVote: true,  lastActiveDaysAgo: 6 },
   { id: 'lm-user-gc',      email: 'paul@demo.example',  name: 'Paul Ford',     role: 'member', subtitle: 'General Counsel',              createdDaysAgo: 45, canVote: true,  lastActiveDaysAgo: 7 },
-  { id: 'lm-user-grants',  email: 'tanya@demo.example', name: 'Tanya Wells',      role: 'member', subtitle: 'Grants Manager',               createdDaysAgo: 40, canVote: true,  lastActiveDaysAgo: 10 },
-  { id: 'lm-user-prog',    email: 'miguel@demo.example', name: 'Miguel Rivera',     role: 'member', subtitle: 'Program Coordinator',          createdDaysAgo: 35, canVote: true,  lastActiveDaysAgo: 14 },
-  { id: 'lm-user-data',    email: 'nina@demo.example',  name: 'Nina Potocnik',        role: 'member', subtitle: 'Data Analyst',                 createdDaysAgo: 32, canVote: true,  lastActiveDaysAgo: 20 },
+  { id: 'lm-user-grants',  email: 'tanya@demo.example', name: 'Tanya Wells',      role: 'member', subtitle: 'Grants Manager',               createdDaysAgo: 40, canVote: false,  lastActiveDaysAgo: 10 },
+  { id: 'lm-user-prog',    email: 'miguel@demo.example', name: 'Miguel Rivera',     role: 'member', subtitle: 'Program Coordinator',          createdDaysAgo: 35, canVote: false,  lastActiveDaysAgo: 14 },
+  { id: 'lm-user-data',    email: 'nina@demo.example',  name: 'Nina Potocnik',        role: 'member', subtitle: 'Data Analyst',                 createdDaysAgo: 32, canVote: false,  lastActiveDaysAgo: 20 },
   { id: 'lm-user-out',     email: 'marcus@demo.example',  name: 'Marcus Weir',     role: 'member', subtitle: 'Outreach Coordinator',         createdDaysAgo: 30, canVote: false, lastActiveDaysAgo: 28 },
 ]
 

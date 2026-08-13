@@ -178,6 +178,23 @@ export const LM_CALENDAR_EVENTS: DemoSeedCalendarEvent[] = [
   { id: 'lm-event-2', externalId: 'legiscan:2055958', source: 'custom', offsetDays: 3, time: '17:00:00', location: null, description: 'Testimony deadline — MI HB5308 (watercraft invasive species decals)' },
   { id: 'lm-event-3', externalId: null, source: 'custom', offsetDays: 16, time: '10:00:00', location: 'Zoom', description: 'Great Lakes coalition partner call' },
   { id: 'lm-event-4', externalId: null, source: 'custom', offsetDays: 40, time: '09:00:00', location: 'Grand Rapids, MI', description: 'Lake Michigan Alliance — annual meeting' },
+
+  // ── Past ───────────────────────────────────────────────────────────────────
+  // The calendar previously held exactly one past entry, so it read as a list of
+  // things that had not happened yet rather than as a working calendar. These
+  // fill in the weeks behind today.
+  //
+  // The two past hearings are pinned to bills that have no UPCOMING hearing, so
+  // no bill ends up with the same committee meeting twice, and each lines up with
+  // that bill's own invented activity: SB0771's 'Committee Hearing Held' at day
+  // 27, and HB5268 sitting in Energy & Environment since day 10.
+  { id: 'lm-hearing-past-1', externalId: 'legiscan:2095619', source: 'hearing', offsetDays: -27, time: '09:00:00', location: 'Binsfeld Office Building, Room 1100, Lansing', description: 'Senate Natural Resources and Agriculture Committee — hearing' },
+  { id: 'lm-hearing-past-2', externalId: 'legiscan:2109237', source: 'hearing', offsetDays: -6,  time: '13:00:00', location: 'Illinois State Capitol, Room 118, Springfield', description: 'House Energy & Environment Committee — hearing' },
+
+  { id: 'lm-event-past-1', externalId: 'legiscan:2095619', source: 'custom', offsetDays: -29, time: '15:00:00', location: 'Zoom', description: 'Testimony prep — MI SB0771 (septic inspection at point of sale)' },
+  { id: 'lm-event-past-2', externalId: null, source: 'custom', offsetDays: -18, time: '09:30:00', location: 'Milwaukee, WI', description: 'Staff retreat — 2027 policy priorities' },
+  { id: 'lm-event-past-3', externalId: null, source: 'custom', offsetDays: -33, time: '10:00:00', location: 'Zoom', description: 'Great Lakes coalition partner call' },
+  { id: 'lm-event-past-4', externalId: null, source: 'custom', offsetDays: -47, time: '14:00:00', location: 'Zoom', description: 'Quarterly board meeting' },
 ]
 
 /** One entry in a bill_updated event's `changes` array, matching ChangeRecord. */

@@ -98,6 +98,10 @@ const EXPECTED_OFFSETS: Record<string, Record<string, number>> = {
     'lm-hearing-1': 2, 'lm-hearing-2': 5, 'lm-hearing-3': 9,
     'lm-hearing-4': 13, 'lm-hearing-5': 18, 'lm-hearing-6': 26,
     'lm-event-1': -5, 'lm-event-2': 3, 'lm-event-3': 16, 'lm-event-4': 40,
+    // Past entries — the calendar previously held only lm-event-1 behind today.
+    'lm-hearing-past-1': -27, 'lm-hearing-past-2': -6,
+    'lm-event-past-1': -29, 'lm-event-past-2': -18,
+    'lm-event-past-3': -33, 'lm-event-past-4': -47,
   },
 }
 

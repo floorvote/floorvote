@@ -175,8 +175,18 @@ describe('lake-michigan bills', () => {
     for (const h of hearings) {
       expect(h.externalId, `hearing ${h.id} must be on a live bill`).not.toBeNull()
       expect(live.has(h.externalId!), `hearing ${h.id} on ${h.externalId}`).toBe(true)
-      expect(h.offsetDays, `hearing ${h.id} must be upcoming`).toBeGreaterThan(0)
     }
+    // Advertising a future committee date is a claim about what will happen, so
+    // it has to be on a live bill — that is what the loop above guards. A PAST
+    // hearing is a record of what already did, and carries no such claim, so the
+    // upcoming check applies only to future entries. Both kinds must exist: the
+    // calendar previously held one past event in total and read as a to-do list
+    // rather than a calendar.
+    const upcoming = hearings.filter(h => h.offsetDays > 0)
+    const past = hearings.filter(h => h.offsetDays < 0)
+    expect(upcoming.length, 'needs upcoming hearings').toBeGreaterThanOrEqual(6)
+    expect(past.length, 'needs past hearings').toBeGreaterThanOrEqual(1)
+    expect(hearings.some(h => h.offsetDays === 0), 'no hearing should land on today').toBe(false)
   })
 
   it('references only known bills and users from bill-linked rows', () => {
