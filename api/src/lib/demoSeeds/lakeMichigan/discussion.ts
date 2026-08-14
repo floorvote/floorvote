@@ -88,7 +88,7 @@ const hb5308: DemoSeedComment[] = [
   { id: 'lm-c-11', externalId: 'legiscan:2055958', userId: 'demo-user',
     content: '<p><span data-type="mention" data-id="role:lm-role-habitat" data-label="Habitat">@Habitat</span> should we flag this decal fee model to the other states we track?</p>', daysAgo: 3 },
   { id: 'lm-c-12', externalId: 'legiscan:2055958', userId: 'lm-user-res',
-    content: '<p>Good idea <span data-type="mention" data-id="user:demo-user" data-label="Josh Marsh">@Josh Marsh</span> — I\'ll draft a quick comparison for the coalition call.</p>', daysAgo: 3 },
+    content: "<p>Good idea — I'll draft a quick comparison for the coalition call.</p>", daysAgo: 3 },
 ]
 
 const hb5308Reactions: DemoSeedReaction[] = [
@@ -101,8 +101,6 @@ const hb5308Mentions: DemoSeedMention[] = [
   { id: 'lm-m-5', commentId: 'lm-c-11', userId: 'lm-user-res', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
   { id: 'lm-m-6', commentId: 'lm-c-11', userId: 'lm-user-prog', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
   { id: 'lm-m-7', commentId: 'lm-c-11', userId: 'lm-user-data', sourceType: 'role', sourceId: 'lm-role-habitat', daysAgo: 3 },
-  // Person-to-person reply mention: Grace answering the demo visitor by name.
-  { id: 'lm-m-36', commentId: 'lm-c-12', userId: 'demo-user', sourceType: 'user', sourceId: 'demo-user', daysAgo: 3 },
 ]
 
 const hb5308Votes: DemoSeed['votes'] = [
@@ -478,6 +476,8 @@ const inHb1124: DemoSeedComment[] = [
     content: '<p><span data-type="mention" data-id="role:lm-role-in" data-label="Indiana Team">@Indiana Team</span> the hearing collides with our budget call. Who can be in Indianapolis?</p>', daysAgo: 3 },
   { id: 'lm-c-62', externalId: 'legiscan:2061476', userId: 'lm-user-res',
     content: "<p>I'm in the city that morning for a school district meeting, so I can take the room.</p>", daysAgo: 2 },
+  { id: 'lm-c-93', externalId: 'legiscan:2061476', userId: 'lm-user-out',
+    content: '<p><span data-type="mention" data-id="user:demo-user" data-label="Josh Marsh">@Josh Marsh</span> fact sheet is with the PTA coalition — they want parents there alongside Miguel\'s facilities managers.</p>', daysAgo: 1 },
 ]
 
 const inHb1124Reactions: DemoSeedReaction[] = [
@@ -491,6 +491,8 @@ const inHb1124Mentions: DemoSeedMention[] = [
   { id: 'lm-m-27', commentId: 'lm-c-61', userId: 'lm-user-res', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
   { id: 'lm-m-28', commentId: 'lm-c-61', userId: 'lm-user-prog', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
   { id: 'lm-m-29', commentId: 'lm-c-61', userId: 'lm-user-out', sourceType: 'role', sourceId: 'lm-role-in', daysAgo: 3 },
+  // Marcus answering the visitor by name, closing the thread he opened in lm-c-60.
+  { id: 'lm-m-45', commentId: 'lm-c-93', userId: 'demo-user', sourceType: 'user', sourceId: 'demo-user', daysAgo: 1 },
 ]
 
 const inHb1124Votes: DemoSeed['votes'] = [
@@ -595,6 +597,14 @@ const usHb8876: DemoSeedComment[] = [
     content: '<p>Hearing notice for the next one just went out. Marking the calendar.</p>', daysAgo: 4 },
   { id: 'lm-c-79', externalId: 'legiscan:2150744', userId: 'demo-user',
     content: "<p>Good sign that this got a bipartisan sponsor pair. Walberg and Elfreth don't often co-sponsor the same bill.</p>", daysAgo: 3 },
+  { id: 'lm-c-92', externalId: 'legiscan:2150744', userId: 'lm-user-fed',
+    content: '<p><span data-type="mention" data-id="user:demo-user" data-label="Josh Marsh">@Josh Marsh</span> worth putting that pairing in the coalition brief — it is our clearest signal for the Senate side.</p>', daysAgo: 2 },
+]
+
+// Aaron answering the visitor by name. This and lm-m-45 are what put a federal
+// and an Indiana bill in the bell, which otherwise showed Michigan three times.
+const usHb8876Mentions: DemoSeedMention[] = [
+  { id: 'lm-m-44', commentId: 'lm-c-92', userId: 'demo-user', sourceType: 'user', sourceId: 'demo-user', daysAgo: 2 },
 ]
 
 const usHb8876Reactions: DemoSeedReaction[] = [
@@ -680,7 +690,7 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // daysAgo 4, lm-fe-h-mi-hb5674 at 3), so the feed reads notice-then-response.
 const hearingCoordination: DemoSeedComment[] = [
   { id: 'lm-c-hc1', externalId: 'legiscan:2055958', userId: 'lm-user-la1',
-    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
+    content: '<p>Who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
   { id: 'lm-c-hc2', externalId: 'legiscan:2055958', userId: 'lm-user-la2',
     content: '<p>I can take it. I will bring the decal cost sheet from last session.</p>', daysAgo: 2 },
   { id: 'lm-c-hc3', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
@@ -689,16 +699,13 @@ const hearingCoordination: DemoSeedComment[] = [
     content: '<p>Happy to review. I have the school lead-testing numbers ready to fold in.</p>', daysAgo: 1 },
 ]
 
-// The hearing-coordination thread is the newest content in the seed and carried
-// no mentions at all, so none of it reached the bell. These two comments are the
-// asks — cover the hearing, review the testimony — which is what a mention is
-// for; hc2 and hc4 are the answers to them, and answering in thread needs no
-// @-tag. Michigan Team is demo-user, lm-user-la1, and lm-user-comms: hc1's
-// author (lm-user-la1) is filtered out of its own fan-out, hc3's author
-// (lm-user-wq, Wisconsin) is not a member, so it reaches all three.
+// hc3 is the one ask in this thread that carries a mention. hc1 makes the same
+// request on MI HB5308, but tagging it too would spend a second of the bell's
+// three rows on Michigan, and the thread answers itself in hc2 either way — the
+// ask does not need a tag to land. Michigan Team is demo-user, lm-user-la1, and
+// lm-user-comms;
+// hc3's author (lm-user-wq, Wisconsin) is not a member, so it reaches all three.
 const hearingCoordinationMentions: DemoSeedMention[] = [
-  { id: 'lm-m-39', commentId: 'lm-c-hc1', userId: 'demo-user',     sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 3 },
-  { id: 'lm-m-40', commentId: 'lm-c-hc1', userId: 'lm-user-comms', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 3 },
   { id: 'lm-m-41', commentId: 'lm-c-hc3', userId: 'demo-user',     sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
   { id: 'lm-m-42', commentId: 'lm-c-hc3', userId: 'lm-user-la1',   sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
   { id: 'lm-m-43', commentId: 'lm-c-hc3', userId: 'lm-user-comms', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
@@ -724,6 +731,7 @@ export const LM_MENTIONS: DemoSeedMention[] = [
   ...hb4427Mentions, ...hb5308Mentions, ...sb0771Mentions, ...hb4768Mentions,
   ...ab131Mentions, ...ab129Mentions,
   ...ilHb1175Mentions, ...ilHb2516Mentions, ...inHb1124Mentions, ...usHb284Mentions, ...usHb6668Mentions,
+  ...usHb8876Mentions,
   ...hearingCoordinationMentions,
 ]
 
