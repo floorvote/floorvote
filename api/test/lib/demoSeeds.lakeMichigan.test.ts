@@ -473,6 +473,19 @@ describe('lake-michigan mention fan-out', () => {
       }
     }
   })
+
+  // The demo visitor browses as demo-user, so these rows ARE the mentions bell.
+  // Two of them used to point at comments 32 and 72 days old, which is what the
+  // panel showed a first-time visitor. A stale bell reads as an abandoned demo,
+  // and the seed has no other guard against one — every other mention assertion
+  // is about structure, not recency.
+  it("keeps the demo visitor's bell recent", () => {
+    const bell = s.mentions.filter(m => m.userId === 'demo-user')
+    expect(bell.length, 'the visitor needs a populated bell').toBeGreaterThanOrEqual(3)
+    for (const m of bell) {
+      expect(m.daysAgo, `mention ${m.id} on ${m.commentId} is stale in the bell`).toBeLessThanOrEqual(14)
+    }
+  })
 })
 
 describe('lake-michigan feed density', () => {
