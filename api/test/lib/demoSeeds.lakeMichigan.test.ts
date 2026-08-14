@@ -473,6 +473,19 @@ describe('lake-michigan mention fan-out', () => {
       }
     }
   })
+
+  // The demo visitor browses as demo-user, so these rows ARE the mentions bell.
+  // Two of them used to point at comments 32 and 72 days old, which is what the
+  // panel showed a first-time visitor. A stale bell reads as an abandoned demo,
+  // and the seed has no other guard against one — every other mention assertion
+  // is about structure, not recency.
+  it("keeps the demo visitor's bell recent", () => {
+    const bell = s.mentions.filter(m => m.userId === 'demo-user')
+    expect(bell.length, 'the visitor needs a populated bell').toBeGreaterThanOrEqual(3)
+    for (const m of bell) {
+      expect(m.daysAgo, `mention ${m.id} on ${m.commentId} is stale in the bell`).toBeLessThanOrEqual(14)
+    }
+  })
 })
 
 describe('lake-michigan feed density', () => {
@@ -526,6 +539,16 @@ describe('lake-michigan feed density', () => {
 
   it('mentions teams, not just people', () => {
     expect(s.mentions.filter(m => m.sourceType === 'role').length).toBeGreaterThanOrEqual(8)
+  })
+
+  // Remapping the seeds onto the eight-emoji picker set collapsed five emoji to
+  // three and left the discussion uniformly positive, with 🤔 carrying both
+  // "watching this" and "this went badly". A demo tracking real legislation
+  // should show a real range.
+  it('reacts with more than agreement', () => {
+    const used = new Set(s.reactions.map(r => r.emoji))
+    expect(used.size, `only ${[...used].join(' ')} in use`).toBeGreaterThanOrEqual(5)
+    expect(used.has('😭'), 'no reaction registers a bad outcome').toBe(true)
   })
 })
 

@@ -48,7 +48,7 @@ vi.mock('../lib/api', () => ({
         demoLocked: hoisted.demoLocked,
       }
     }
-    if (path === '/notifications') return { unreadCount: 0 }
+    if (path === '/notifications') return { unreadCount: 0, mentions: [] }
     if (path === '/stats') {
       return { billCount: 10, memberCount: 3, calendarUpcomingCount: 0, calendarUpcomingDays: 30 }
     }

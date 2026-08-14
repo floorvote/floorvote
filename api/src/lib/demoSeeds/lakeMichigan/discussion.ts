@@ -29,7 +29,7 @@ const hb4427: DemoSeedComment[] = [
   { id: 'lm-c-3', externalId: 'legiscan:2029026', userId: 'lm-user-comms',
     content: '<p>If this passes the Senate, the brown alert name makes a clean, simple press release. People will get it immediately.</p>', daysAgo: 32 },
   { id: 'lm-c-4', externalId: 'legiscan:2029026', userId: 'lm-user-ed',
-    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> can someone cover the hearing in person? I\'m traveling that day.</p>', daysAgo: 32 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-la1" data-label="Devon Brook">@Devon Brook</span> can you cover the hearing in person? I\'m traveling that day.</p>', daysAgo: 32 },
   { id: 'lm-c-5', externalId: 'legiscan:2029026', userId: 'lm-user-la1',
     content: "<p>I've got it, I'll be there.</p>", daysAgo: 32 },
   // The mention sits mid-sentence on purpose: stripHtml() replaces the span with a
@@ -50,12 +50,16 @@ const hb4427Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-35', commentId: 'lm-c-6', userId: 'lm-user-comms', emoji: '👍', daysAgo: 31 },
   { id: 'lm-r-36', commentId: 'lm-c-6', userId: 'lm-user-wq', emoji: '👍', daysAgo: 31 },
   { id: 'lm-r-37', commentId: 'lm-c-6', userId: 'lm-user-dep', emoji: '👍', daysAgo: 31 },
+  { id: 'lm-r-50', commentId: 'lm-c-5', userId: 'lm-user-ed', emoji: '❤️', daysAgo: 32 },
 ]
 
+// Karen asks by name the analyst who volunteered the written testimony in
+// lm-c-1, and he answers in lm-c-5. This was a @Michigan Team fan-out,
+// which put a 32-day-old sewage bill in the demo visitor's bell — see the
+// recency test in demoSeeds.lakeMichigan.test.ts. Person-to-person is also the
+// truer read: lm-c-1 already has Devon on the testimony.
 const hb4427Mentions: DemoSeedMention[] = [
-  { id: 'lm-m-1', commentId: 'lm-c-4', userId: 'demo-user', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 32 },
-  { id: 'lm-m-2', commentId: 'lm-c-4', userId: 'lm-user-la1', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 32 },
-  { id: 'lm-m-3', commentId: 'lm-c-4', userId: 'lm-user-comms', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 32 },
+  { id: 'lm-m-1', commentId: 'lm-c-4', userId: 'lm-user-la1', sourceType: 'user', sourceId: 'lm-user-la1', daysAgo: 32 },
   { id: 'lm-m-4', commentId: 'lm-c-6', userId: 'lm-user-la1', sourceType: 'user', sourceId: 'lm-user-la1', daysAgo: 31 },
 ]
 
@@ -90,6 +94,7 @@ const hb5308: DemoSeedComment[] = [
 const hb5308Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-3', commentId: 'lm-c-7', userId: 'lm-user-ed', emoji: '👍', daysAgo: 5 },
   { id: 'lm-r-4', commentId: 'lm-c-10', userId: 'demo-user', emoji: '🤔', daysAgo: 3 },
+  { id: 'lm-r-51', commentId: 'lm-c-7', userId: 'lm-user-la1', emoji: '💯', daysAgo: 5 },
 ]
 
 const hb5308Mentions: DemoSeedMention[] = [
@@ -116,7 +121,7 @@ const sb0771: DemoSeedComment[] = [
   { id: 'lm-c-14', externalId: 'legiscan:2095619', userId: 'lm-user-gc',
     content: '<p>Substitute language clears up the assessment cost question we flagged. Much better draft.</p>', daysAgo: 77 },
   { id: 'lm-c-15', externalId: 'legiscan:2095619', userId: 'lm-user-dep',
-    content: '<p><span data-type="mention" data-id="role:lm-role-infra" data-label="Infrastructure">@Infrastructure</span> flagging for the tracker, this just moved to third reading.</p>', daysAgo: 72 },
+    content: '<p><span data-type="mention" data-id="user:lm-user-gov" data-label="Marina Okafor">@Marina Okafor</span> flagging for the tracker, this just moved to third reading.</p>', daysAgo: 72 },
   { id: 'lm-c-16', externalId: 'legiscan:2095619', userId: 'lm-user-gov',
     content: '<p>Added. The counties association is the group to watch here—they carry the evaluation cost objection.</p>', daysAgo: 71 },
   // The oppose side of the split shown by sb0771Votes below — one reason per
@@ -138,11 +143,12 @@ const sb0771Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-6', commentId: 'lm-c-13', userId: 'lm-user-gc', emoji: '👍', daysAgo: 77 },
 ]
 
+// Varsha flags it to the one person who works the counties relationship, and
+// Marina answers in lm-c-16 — so the reply reads as an answer rather than a
+// coincidence. Was an @Infrastructure fan-out, which put a 72-day-old septic
+// bill at the bottom of the demo visitor's bell.
 const sb0771Mentions: DemoSeedMention[] = [
-  { id: 'lm-m-8', commentId: 'lm-c-15', userId: 'demo-user', sourceType: 'role', sourceId: 'lm-role-infra', daysAgo: 72 },
-  { id: 'lm-m-9', commentId: 'lm-c-15', userId: 'lm-user-la2', sourceType: 'role', sourceId: 'lm-role-infra', daysAgo: 72 },
-  { id: 'lm-m-10', commentId: 'lm-c-15', userId: 'lm-user-gov', sourceType: 'role', sourceId: 'lm-role-infra', daysAgo: 72 },
-  { id: 'lm-m-11', commentId: 'lm-c-15', userId: 'lm-user-grants', sourceType: 'role', sourceId: 'lm-role-infra', daysAgo: 72 },
+  { id: 'lm-m-8', commentId: 'lm-c-15', userId: 'lm-user-gov', sourceType: 'user', sourceId: 'lm-user-gov', daysAgo: 72 },
 ]
 
 // A genuine internal split: the mandate is right on the merits, but the evaluation
@@ -281,14 +287,14 @@ const ab129: DemoSeedComment[] = [
     content: "<p>Frustrating, but not surprising given how late in session it landed. January's the right call.</p>", daysAgo: 135 },
 ]
 
-// 🤔 carries the seed's non-approving reactions — the two bill deaths (here and
-// lm-c-38) and the wait-and-see ones — so the set covers more than agreement. Not
-// 👎: on a comment, a thumbs-down reads as disagreeing with the colleague who
-// wrote it rather than with the bill's outcome.
+// 😭 carries the two bill deaths (here and lm-c-38) — negative signal aimed at
+// the outcome, which is what makes it usable where 👎 is not: on a comment, a
+// thumbs-down reads as disagreeing with the colleague who reported the death
+// rather than with the death. That leaves 🤔 a single meaning, "watching this".
 const ab129Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '🤔', daysAgo: 139 },
+  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '😭', daysAgo: 139 },
   { id: 'lm-r-16', commentId: 'lm-c-36', userId: 'lm-user-la2', emoji: '👍', daysAgo: 138 },
 ]
 
@@ -317,8 +323,8 @@ const sb628: DemoSeedComment[] = [
 ]
 
 const sb628Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '🤔', daysAgo: 141 },
+  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '😭', daysAgo: 141 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -674,13 +680,28 @@ const usHb6668Votes: DemoSeed['votes'] = [
 // daysAgo 4, lm-fe-h-mi-hb5674 at 3), so the feed reads notice-then-response.
 const hearingCoordination: DemoSeedComment[] = [
   { id: 'lm-c-hc1', externalId: 'legiscan:2055958', userId: 'lm-user-la1',
-    content: '<p>Who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
+    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> who can cover the Lansing hearing? I am double-booked with the county call that morning.</p>', daysAgo: 3 },
   { id: 'lm-c-hc2', externalId: 'legiscan:2055958', userId: 'lm-user-la2',
     content: '<p>I can take it. I will bring the decal cost sheet from last session.</p>', daysAgo: 2 },
   { id: 'lm-c-hc3', externalId: 'legiscan:2129983', userId: 'lm-user-wq',
-    content: '<p>I will draft testimony for this one — first pass by Friday if anyone wants to review it.</p>', daysAgo: 2 },
+    content: '<p><span data-type="mention" data-id="role:lm-role-mi" data-label="Michigan Team">@Michigan Team</span> I will draft testimony for this one — first pass by Friday if anyone wants to review it.</p>', daysAgo: 2 },
   { id: 'lm-c-hc4', externalId: 'legiscan:2129983', userId: 'lm-user-res',
     content: '<p>Happy to review. I have the school lead-testing numbers ready to fold in.</p>', daysAgo: 1 },
+]
+
+// The hearing-coordination thread is the newest content in the seed and carried
+// no mentions at all, so none of it reached the bell. These two comments are the
+// asks — cover the hearing, review the testimony — which is what a mention is
+// for; hc2 and hc4 are the answers to them, and answering in thread needs no
+// @-tag. Michigan Team is demo-user, lm-user-la1, and lm-user-comms: hc1's
+// author (lm-user-la1) is filtered out of its own fan-out, hc3's author
+// (lm-user-wq, Wisconsin) is not a member, so it reaches all three.
+const hearingCoordinationMentions: DemoSeedMention[] = [
+  { id: 'lm-m-39', commentId: 'lm-c-hc1', userId: 'demo-user',     sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 3 },
+  { id: 'lm-m-40', commentId: 'lm-c-hc1', userId: 'lm-user-comms', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 3 },
+  { id: 'lm-m-41', commentId: 'lm-c-hc3', userId: 'demo-user',     sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
+  { id: 'lm-m-42', commentId: 'lm-c-hc3', userId: 'lm-user-la1',   sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
+  { id: 'lm-m-43', commentId: 'lm-c-hc3', userId: 'lm-user-comms', sourceType: 'role', sourceId: 'lm-role-mi', daysAgo: 2 },
 ]
 
 export const LM_COMMENTS: DemoSeedComment[] = [
@@ -703,6 +724,7 @@ export const LM_MENTIONS: DemoSeedMention[] = [
   ...hb4427Mentions, ...hb5308Mentions, ...sb0771Mentions, ...hb4768Mentions,
   ...ab131Mentions, ...ab129Mentions,
   ...ilHb1175Mentions, ...ilHb2516Mentions, ...inHb1124Mentions, ...usHb284Mentions, ...usHb6668Mentions,
+  ...hearingCoordinationMentions,
 ]
 
 export const LM_VOTES: DemoSeed['votes'] = [

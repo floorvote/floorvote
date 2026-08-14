@@ -65,7 +65,7 @@ vi.mock('../context/SidebarRefreshContext', () => ({
 }))
 
 vi.mock('../context/NotificationsContext', () => ({
-  useNotifications: () => ({ unreadCount: 0, refresh: vi.fn() }),
+  useNotifications: () => ({ unreadCount: 0, mentions: [], refresh: vi.fn() }),
 }))
 
 vi.mock('../hooks/usePolling', () => ({

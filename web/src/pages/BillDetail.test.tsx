@@ -60,16 +60,33 @@ vi.mock('../hooks/useAuth', () => ({
   }),
 }))
 
+// Mutable so the demo-tenant cases below can flip demoMode/settled without a
+// per-test module mock. Defaults mirror a settled non-demo tenant, which is what
+// every other test in this file assumes.
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true }))
 vi.mock('../context/DemoContext', () => ({
-  useDemo: () => ({ demoLocked: false }),
+  useDemo: () => ({ ...demoState }),
 }))
 
 vi.mock('../context/SidebarRefreshContext', () => ({
   useSidebarRefresh: () => vi.fn(),
 }))
 
+// mentionIds drives a *fresh* mentions array on every call — mirroring the real
+// NotificationsProvider, whose refresh() calls setMentions(freshArrayFromJSON)
+// (NotificationsContext.tsx), so mentions never keeps a stable identity across
+// renders. Empty by default so existing tests, which don't care about mentions,
+// see a merely-empty (not undefined) array.
+const notifState = vi.hoisted(() => ({
+  mentionIds: [] as string[],
+  refresh: vi.fn(async () => {}),
+}))
 vi.mock('../context/NotificationsContext', () => ({
-  useNotifications: () => ({ unreadCount: 0, refresh: vi.fn() }),
+  useNotifications: () => ({
+    unreadCount: 0,
+    mentions: notifState.mentionIds.map(id => ({ id, billId: '42' })),
+    refresh: notifState.refresh,
+  }),
 }))
 
 vi.mock('../hooks/usePolling', () => ({
@@ -170,6 +187,10 @@ function makeMockApiFetch(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(resetRouterMock)
+afterEach(() => {
+  notifState.mentionIds = []
+  notifState.refresh.mockClear()
+})
 
 describe('BillDetail org noun labels', () => {
   beforeEach(() => vi.restoreAllMocks())
@@ -594,6 +615,77 @@ describe('BillDetail reaction hover name list stays in sync with the count', () 
       const dropped = screen.getByRole('button', { name: '👍 1' })
       expect(tipFor(dropped).textContent).toContain('Bob')
       expect(tipFor(dropped).textContent).not.toContain('Alice')
+    })
+  })
+})
+
+describe('BillDetail mark-read-by-bill effect', () => {
+  it('POSTs mark-read-by-bill exactly once, even though mentions has no stable identity across renders', async () => {
+    // Regression test for a self-retriggering loop: the effect used to depend on
+    // `mentions` directly and called refreshNotifications() in its own body. Since
+    // the real NotificationsProvider.refresh() always calls setMentions(a fresh
+    // array), and the mock here reproduces that by rebuilding the array on every
+    // call, a `[mentions]` dependency retriggers the effect every time it's read
+    // during one of BillDetail's own re-renders — POST, refresh, re-render, POST,
+    // forever. The fix depends on a value-stable joined-ids string instead.
+    notifState.mentionIds = ['m1']
+    const spy = makeMockApiFetch()
+    // vi.spyOn reuses the same instance across tests in this file (nothing here
+    // resets it globally), so its call history carries over from whatever ran
+    // before this test. Clear it after wiring the new mock but before mounting,
+    // so only calls this render makes are counted.
+    spy.mockClear()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    // Give any runaway effect several turns of the microtask/macrotask queue to
+    // retrigger before asserting — a single findBy resolving is not enough time
+    // for a synchronous-ish loop to reveal itself.
+    await new Promise(r => setTimeout(r, 50))
+
+    const markReadCalls = spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')
+    expect(markReadCalls).toHaveLength(1)
+  })
+
+  describe('on a demo tenant', () => {
+    afterEach(() => {
+      demoState.demoMode = false
+      demoState.settled = true
+      localStorage.clear()
+    })
+
+    it('records read state in localStorage instead of POSTing', async () => {
+      // Every demo visitor is the same `demo-user` row, so a server-side
+      // mark-read clears the badge for everyone after them until the reset cron
+      // re-lights it. See lib/demoReadState.ts.
+      demoState.demoMode = true
+      notifState.mentionIds = ['m1', 'm2']
+      const spy = makeMockApiFetch()
+      spy.mockClear()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Test Bill')
+
+      const { readMentionIds } = await import('../lib/demoReadState')
+      await waitFor(() => expect(readMentionIds()).toEqual(new Set(['m1', 'm2'])))
+      expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
+    })
+
+    // DemoProvider starts at demoMode:false and only learns the truth when
+    // GET /config resolves, so a cold direct load of a demo bill URL renders
+    // this effect at least once before the gate can flip. Without `settled` the
+    // POST goes out in that window and writes read_at on the shared row.
+    it('POSTs nothing while /config is still in flight', async () => {
+      demoState.settled = false
+      notifState.mentionIds = ['m1']
+      const spy = makeMockApiFetch()
+      spy.mockClear()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Test Bill')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
+      const { readMentionIds } = await import('../lib/demoReadState')
+      expect(readMentionIds()).toEqual(new Set())
     })
   })
 })

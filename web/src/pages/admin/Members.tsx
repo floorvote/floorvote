@@ -606,7 +606,7 @@ export function Members() {
       <SettingsNav />
       {demoLocked && (
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, padding: '8px 12px', background: color.surfaceSubtle, borderRadius: radius.md, border: `1px solid ${color.borderDefault}` }}>
-          This is a demo instance — member management is read-only.
+          Member management is locked in demo mode.
         </div>
       )}
       {/* Invite form card */}

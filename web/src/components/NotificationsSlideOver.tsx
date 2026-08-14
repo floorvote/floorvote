@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom'
 import type { Ref, RefObject } from 'react'
 import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
-import { useNotifications } from '../context/NotificationsContext'
+import { useNotifications, type Mention } from '../context/NotificationsContext'
+import { useDemo } from '../context/DemoContext'
+import { isUnreadForDemo, readMentionIds, markMentionsRead } from '../lib/demoReadState'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -15,24 +17,6 @@ import { PopPanel, type PopPanelHandle } from './ui/PopPanel'
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'strong', 'em', 'a', 'blockquote', 'ul', 'ol', 'li', 'span', 'br', 's'],
   ALLOWED_ATTR: ['href', 'target', 'rel', 'data-type', 'data-id', 'data-label', 'class'],
-}
-
-type Mention = {
-  id: string
-  commentId: string
-  billId: string
-  billNumber: string
-  billTitle: string
-  billState: string | null
-  sessionSlug: string | null
-  authorName: string
-  authorSubtitle: string | null
-  commentPreview: string
-  commentHtml: string
-  sourceType: 'user' | 'role' | 'everyone'
-  sourceLabel: string | null
-  createdAt: string
-  isUnread: boolean
 }
 
 type RoleData = {
@@ -65,11 +49,12 @@ interface Props {
 export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
-  const { refresh } = useNotifications()
-  const [mentions, setMentions] = useState<Mention[]>([])
+  const { mentions: liveMentions, loaded, refresh } = useNotifications()
+  const { demoMode, settled: demoSettled } = useDemo()
+  const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
-  const [loading, setLoading] = useState(true)
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
+  const loading = snapshot === null
 
   // Internal ref so the × button can call close() with animation
   const innerRef = useRef<PopPanelHandle>(null)
@@ -83,37 +68,93 @@ export function NotificationsSlideOver(
     ? { position: 'fixed' as const, top: 46, left: 8, right: 8, maxHeight: 'min(70vh, 560px)', display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
     : { position: 'fixed' as const, top: 46, left: 162, width: 400, maxHeight: 560, display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
 
-  // Fetch notifications + roles on open, and only then bulk mark-read.
+  // Freeze the mentions the context held when the panel opened.
   //
-  // The order is load-bearing, not incidental. These two used to be fired
-  // concurrently (`void load(); void markAllRead()`), which raced: when the POST
-  // reached the DB first, the GET came back with every row already read and the
-  // unread treatment (blue rail + bgInfo) never rendered for the very mentions it
-  // exists to point at. Sequencing costs one request's latency on the panel's
-  // badge clearing — the badge is derived from refresh(), which still runs — and
-  // buys a deterministic unread highlight.
+  // The freeze is load-bearing, not incidental. It is what makes the unread
+  // treatment (blue rail + bgInfo) deterministic: the rows rendered are pre-read
+  // by construction, so the mark-read POST below cannot erase the highlight it
+  // exists to point at while the panel is still on screen. This used to be a
+  // race — `void load(); void markAllRead()` fired concurrently, and when the
+  // POST won, the GET came back with every row already read. Sequencing
+  // GET-before-POST fixed the race but paid a request's latency on every open;
+  // the context already polls that GET, so now there is nothing to wait for.
+  //
+  // demoSettled gates the freeze rather than the mark-read below, because the
+  // branch taken *here* is what decides whether read state goes to localStorage
+  // or to the server. `demoMode` reads false until GET /config resolves
+  // (context/DemoContext.tsx), so a bell clicked in that window would otherwise
+  // take the server branch on a demo tenant.
   useEffect(() => {
-    let cancelled = false
-    async function run() {
+    if (!loaded || !demoSettled || snapshot !== null) return
+    if (demoMode) {
+      // Overlay the local set onto the server's isUnread before freezing: after a
+      // reset the server calls every row unread again, and this browser's own
+      // reading is the only record that survives it.
+      const alreadyRead = readMentionIds()
+      setSnapshot(liveMentions.map(m => ({ ...m, isUnread: isUnreadForDemo(m, alreadyRead) })))
+      markMentionsRead(liveMentions.map(m => m.id))
+      return
+    }
+    setSnapshot(liveMentions)
+  }, [loaded, demoSettled, liveMentions, snapshot, demoMode])
+
+  // Mark read once per open, after the snapshot above has been taken — kept as
+  // its own effect for readability. `markedRef` is what makes it once, not the
+  // `snapshot === null` guard: the non-demo branch below writes the snapshot
+  // back when it reconciles, which would otherwise retrigger this effect.
+  const markedRef = useRef(false)
+  useEffect(() => {
+    if (snapshot === null || markedRef.current) return
+    markedRef.current = true
+    if (demoMode) {
+      // Read state already went to localStorage in the freeze effect above —
+      // the server's read_at is not usable on a demo. Still refresh so the
+      // badge count (context's effectiveUnread) picks up the newly-read ids.
+      void refresh()
+      return
+    }
+    void (async () => {
       try {
-        const [data, rolesData] = await Promise.all([
-          apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications'),
-          apiFetch<RoleData[]>('/roles').catch(() => [] as RoleData[]),
-        ])
-        if (cancelled) return
-        setMentions(data.mentions)
-        setRoles(rolesData)
-      } catch {}
-      if (cancelled) return
-      setLoading(false)
-      try {
+        // Reconcile before marking read. POST /notifications/mark-read takes no
+        // id list — it clears *every* unread row — while the snapshot above is
+        // only as fresh as the context's last 30 s poll. A mention that arrived
+        // in between would be marked read, and its badge cleared, without ever
+        // having rendered its unread rail. Refreshing first pulls those rows in
+        // so they are shown a beat after the panel paints instead of swallowed.
+        // The panel still opens instantly: this runs after the first paint.
+        const fresh = await refresh()
+        setSnapshot(prev => {
+          if (prev === null) return prev
+          const shown = new Set(prev.map(m => m.id))
+          const missing = fresh.filter(m => !shown.has(m.id))
+          if (missing.length === 0) return prev
+          // isUnread comes from this pre-POST fetch, so it is the server's
+          // answer as of the moment we are about to clear it — accurate for a
+          // row already read elsewhere (BillDetail's mark-read-by-bill) too.
+          // Re-sorted rather than prepended: newest-first is the order
+          // GET /notifications returns and the panel renders in, and a merged
+          // row is not guaranteed to be newer than everything on screen.
+          return [...prev, ...missing].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        })
         await apiFetch('/notifications/mark-read', { method: 'POST' })
+        // Second refresh, to drop the badge the click just cleared. Both were
+        // already being made before the panel started reading the context's
+        // cache — one as the panel's own GET on open, one after the POST.
         await refresh()
       } catch {}
-    }
-    void run()
+    })()
+  }, [snapshot, refresh, demoMode])
+
+  // Role member lists, for the tooltip on a role-mention pill. Deliberately not
+  // awaited alongside anything: a missing role list degrades to no tooltip, which
+  // must never be a reason to hold back the panel.
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<RoleData[]>('/roles')
+      .then(r => { if (!cancelled) setRoles(r) })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [refresh])
+  }, [])
 
   // Shared by mouse hover (onMouseOver/onMouseOut) and keyboard focus
   // (onFocus/onBlur, added below to satisfy jsx-a11y/mouse-events-have-key-events)
@@ -208,13 +249,13 @@ export function NotificationsSlideOver(
             <div style={{ padding: 24, fontSize: fontSize.sm, color: color.textMuted, textAlign: 'center' }}>Loading…</div>
           )}
 
-          {!loading && mentions.length === 0 && (
+          {!loading && snapshot.length === 0 && (
             <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: fontSize.sm, color: color.textMuted, lineHeight: 1.6 }}>
               No mentions yet — when someone @-tags you in a comment, it'll appear here.
             </div>
           )}
 
-          {!loading && mentions.map(m => {
+          {!loading && snapshot.map(m => {
             const url = billUrl({ state: m.billState, sessionSlug: m.sessionSlug, billNumber: m.billNumber }) + `#comment-${m.commentId}`
             const safeHtml = DOMPurify.sanitize(m.commentHtml, PURIFY_CONFIG)
             // Role members for the attribution chip tooltip
