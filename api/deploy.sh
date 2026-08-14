@@ -68,4 +68,26 @@ SHA=$(git rev-parse --short HEAD)
 echo "Deploying worker (env: ${ENV}, build: ${SHA})..."
 npx wrangler deploy --env "$ENV" --define "BUILD_SHA:'${SHA}'"
 
+# Back up the config that was just deployed, if the operator asked for it.
+#
+# api/wrangler.toml is gitignored, so it is an untracked working-tree file with
+# no version history behind it — lose the checkout and the deploy config for
+# every tenant goes with it. Tying the copy to a successful deploy means it
+# refreshes exactly when the file changes and never captures a config that was
+# never shipped, which a scheduled backup cannot promise.
+#
+# Opt-in and silent when unset, so this is a no-op for anyone who has not asked:
+#   WRANGLER_BACKUP_DIR=~/backups            # enables it
+#   WRANGLER_BACKUP_PREFIX=myorg-            # optional, for several checkouts
+#     → ~/backups/myorg-api-wrangler.toml
+if [[ -n "${WRANGLER_BACKUP_DIR:-}" ]]; then
+  dest="${WRANGLER_BACKUP_DIR}/${WRANGLER_BACKUP_PREFIX:-}api-wrangler.toml"
+  if cp wrangler.toml "$dest" 2>/dev/null; then
+    echo "Backed up wrangler.toml → ${dest}"
+  else
+    # Loud: the operator asked for a backup and did not get one.
+    echo "WARNING: could not back up wrangler.toml to ${dest}" >&2
+  fi
+fi
+
 echo "Done: ${ENV}"
