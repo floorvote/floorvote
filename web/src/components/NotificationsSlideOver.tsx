@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import type { Ref, RefObject } from 'react'
 import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
-import { useNotifications } from '../context/NotificationsContext'
+import { useNotifications, type Mention } from '../context/NotificationsContext'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -15,24 +15,6 @@ import { PopPanel, type PopPanelHandle } from './ui/PopPanel'
 const PURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'strong', 'em', 'a', 'blockquote', 'ul', 'ol', 'li', 'span', 'br', 's'],
   ALLOWED_ATTR: ['href', 'target', 'rel', 'data-type', 'data-id', 'data-label', 'class'],
-}
-
-type Mention = {
-  id: string
-  commentId: string
-  billId: string
-  billNumber: string
-  billTitle: string
-  billState: string | null
-  sessionSlug: string | null
-  authorName: string
-  authorSubtitle: string | null
-  commentPreview: string
-  commentHtml: string
-  sourceType: 'user' | 'role' | 'everyone'
-  sourceLabel: string | null
-  createdAt: string
-  isUnread: boolean
 }
 
 type RoleData = {
@@ -65,11 +47,11 @@ interface Props {
 export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
-  const { refresh } = useNotifications()
-  const [mentions, setMentions] = useState<Mention[]>([])
+  const { mentions: liveMentions, loaded, refresh } = useNotifications()
+  const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
-  const [loading, setLoading] = useState(true)
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
+  const loading = snapshot === null
 
   // Internal ref so the × button can call close() with animation
   const innerRef = useRef<PopPanelHandle>(null)
@@ -83,37 +65,46 @@ export function NotificationsSlideOver(
     ? { position: 'fixed' as const, top: 46, left: 8, right: 8, maxHeight: 'min(70vh, 560px)', display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
     : { position: 'fixed' as const, top: 46, left: 162, width: 400, maxHeight: 560, display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
 
-  // Fetch notifications + roles on open, and only then bulk mark-read.
+  // Freeze the mentions the context held when the panel opened.
   //
-  // The order is load-bearing, not incidental. These two used to be fired
-  // concurrently (`void load(); void markAllRead()`), which raced: when the POST
-  // reached the DB first, the GET came back with every row already read and the
-  // unread treatment (blue rail + bgInfo) never rendered for the very mentions it
-  // exists to point at. Sequencing costs one request's latency on the panel's
-  // badge clearing — the badge is derived from refresh(), which still runs — and
-  // buys a deterministic unread highlight.
+  // The freeze is load-bearing, not incidental. It is what makes the unread
+  // treatment (blue rail + bgInfo) deterministic: the rows rendered are pre-read
+  // by construction, so the mark-read POST below cannot erase the highlight it
+  // exists to point at while the panel is still on screen. This used to be a
+  // race — `void load(); void markAllRead()` fired concurrently, and when the
+  // POST won, the GET came back with every row already read. Sequencing
+  // GET-before-POST fixed the race but paid a request's latency on every open;
+  // the context already polls that GET, so now there is nothing to wait for.
   useEffect(() => {
-    let cancelled = false
-    async function run() {
-      try {
-        const [data, rolesData] = await Promise.all([
-          apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications'),
-          apiFetch<RoleData[]>('/roles').catch(() => [] as RoleData[]),
-        ])
-        if (cancelled) return
-        setMentions(data.mentions)
-        setRoles(rolesData)
-      } catch {}
-      if (cancelled) return
-      setLoading(false)
+    if (!loaded || snapshot !== null) return
+    setSnapshot(liveMentions)
+  }, [loaded, liveMentions, snapshot])
+
+  // Mark read only after the snapshot above has been taken — kept as its own
+  // effect for readability. It fires once per open because of the
+  // `snapshot === null` guard below, not because of the split itself: folding
+  // this back into the effect above would hit the same guard on its next run
+  // and also fire only once.
+  useEffect(() => {
+    if (snapshot === null) return
+    void (async () => {
       try {
         await apiFetch('/notifications/mark-read', { method: 'POST' })
         await refresh()
       } catch {}
-    }
-    void run()
+    })()
+  }, [snapshot, refresh])
+
+  // Role member lists, for the tooltip on a role-mention pill. Deliberately not
+  // awaited alongside anything: a missing role list degrades to no tooltip, which
+  // must never be a reason to hold back the panel.
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<RoleData[]>('/roles')
+      .then(r => { if (!cancelled) setRoles(r) })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [refresh])
+  }, [])
 
   // Shared by mouse hover (onMouseOver/onMouseOut) and keyboard focus
   // (onFocus/onBlur, added below to satisfy jsx-a11y/mouse-events-have-key-events)
@@ -208,13 +199,13 @@ export function NotificationsSlideOver(
             <div style={{ padding: 24, fontSize: fontSize.sm, color: color.textMuted, textAlign: 'center' }}>Loading…</div>
           )}
 
-          {!loading && mentions.length === 0 && (
+          {!loading && snapshot.length === 0 && (
             <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: fontSize.sm, color: color.textMuted, lineHeight: 1.6 }}>
               No mentions yet — when someone @-tags you in a comment, it'll appear here.
             </div>
           )}
 
-          {!loading && mentions.map(m => {
+          {!loading && snapshot.map(m => {
             const url = billUrl({ state: m.billState, sessionSlug: m.sessionSlug, billNumber: m.billNumber }) + `#comment-${m.commentId}`
             const safeHtml = DOMPurify.sanitize(m.commentHtml, PURIFY_CONFIG)
             // Role members for the attribution chip tooltip

@@ -107,8 +107,13 @@ describe('NotificationsSlideOver role-mention chip', () => {
   it('exposes its member list without requiring hover', async () => {
     renderPanel()
     const chip = await screen.findByText('@Board')
-    expect(chip.getAttribute('title')).toMatch(/Alice Member/)
-    expect(chip.getAttribute('title')).toMatch(/Bob Member/)
+    // The title is populated only once the independent /roles fetch lands, which
+    // is no longer batched with the mentions render — so assert on it inside
+    // waitFor rather than synchronously after the chip appears.
+    await waitFor(() => {
+      expect(chip.getAttribute('title')).toMatch(/Alice Member/)
+      expect(chip.getAttribute('title')).toMatch(/Bob Member/)
+    })
   })
 })
 
@@ -143,13 +148,22 @@ describe('NotificationsSlideOver row layout', () => {
 describe('a role mention that also opens the quoted comment', () => {
   it('renders the pill in both places — the comment body is verbatim, because a mention can sit anywhere in a sentence', async () => {
     renderPanel()
-    const pills = await screen.findAllByText('@Infrastructure')
-    // Once in the attribution sentence, once inside the quoted comment. Stripping
-    // the body's leading pill would only work for mentions that happen to lead
-    // the comment, and would mangle "cc @Infrastructure on this".
-    expect(pills).toHaveLength(2)
-    expect(pills.some(p => p.closest('.notif-comment') !== null)).toBe(true)
-    expect(pills.some(p => p.closest('.notif-comment') === null)).toBe(true)
+    await screen.findAllByText('@Infrastructure')
+    // Re-query inside waitFor rather than hold the nodes from findAllByText:
+    // nodes captured that way were observed going stale here (a later query
+    // finds a pill inside .notif-comment that a held reference's .closest()
+    // no longer sees) — the cause is under separate investigation. Asserting
+    // on freshly queried nodes tests the rendered result rather than the
+    // timing of when the query happened to run.
+    await waitFor(() => {
+      const pills = screen.getAllByText('@Infrastructure')
+      // Once in the attribution sentence, once inside the quoted comment. Stripping
+      // the body's leading pill would only work for mentions that happen to lead
+      // the comment, and would mangle "cc @Infrastructure on this".
+      expect(pills).toHaveLength(2)
+      expect(pills.some(p => p.closest('.notif-comment') !== null)).toBe(true)
+      expect(pills.some(p => p.closest('.notif-comment') === null)).toBe(true)
+    })
   })
 
   it('styles the attribution pill at the shared mention weight, so the repeat reads as intentional', async () => {
@@ -194,6 +208,31 @@ describe('mark-read ordering', () => {
     expect(unreadRow.style.background).not.toBe(readRow.style.background)
     expect(readRow.style.borderLeft).toContain('transparent')
     expect(unreadRow.style.borderLeft).not.toContain('transparent')
+  })
+})
+
+describe('NotificationsSlideOver instant open', () => {
+  it('does not fetch /notifications itself — the context already holds them', async () => {
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await screen.findByText('@Board')
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
+
+    const calls = vi.mocked(apiFetch).mock.calls
+    const postIndex = calls.findIndex(([path, init]) => path === '/notifications/mark-read' && (init as RequestInit | undefined)?.method === 'POST')
+    // The waitFor above guarantees the POST already happened, so this can't be
+    // -1 today — asserted explicitly so slice(0, -1) never degrades silently
+    // into "drop the last call" if that guarantee ever breaks.
+    expect(postIndex).toBeGreaterThan(-1)
+    const getsBeforePost = calls
+      .slice(0, postIndex)
+      .filter(([path, init]) => path === '/notifications' && (init as RequestInit | undefined)?.method === undefined)
+    // One, from NotificationsProvider's mount. The panel used to make a second,
+    // identical request of its own before marking read — that duplicate is the
+    // "Loading…" the visitor saw on every open. The GET that refresh() issues
+    // *after* the POST is expected and is deliberately outside this window.
+    expect(getsBeforePost).toHaveLength(1)
   })
 })
 
