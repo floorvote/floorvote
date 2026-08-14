@@ -540,6 +540,16 @@ describe('lake-michigan feed density', () => {
   it('mentions teams, not just people', () => {
     expect(s.mentions.filter(m => m.sourceType === 'role').length).toBeGreaterThanOrEqual(8)
   })
+
+  // Remapping the seeds onto the eight-emoji picker set collapsed five emoji to
+  // three and left the discussion uniformly positive, with 🤔 carrying both
+  // "watching this" and "this went badly". A demo tracking real legislation
+  // should show a real range.
+  it('reacts with more than agreement', () => {
+    const used = new Set(s.reactions.map(r => r.emoji))
+    expect(used.size, `only ${[...used].join(' ')} in use`).toBeGreaterThanOrEqual(5)
+    expect(used.has('😭'), 'no reaction registers a bad outcome').toBe(true)
+  })
 })
 
 // The one thing a pure data test cannot settle: whether D1 accepts the row. The

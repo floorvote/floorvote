@@ -50,6 +50,7 @@ const hb4427Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-35', commentId: 'lm-c-6', userId: 'lm-user-comms', emoji: '👍', daysAgo: 31 },
   { id: 'lm-r-36', commentId: 'lm-c-6', userId: 'lm-user-wq', emoji: '👍', daysAgo: 31 },
   { id: 'lm-r-37', commentId: 'lm-c-6', userId: 'lm-user-dep', emoji: '👍', daysAgo: 31 },
+  { id: 'lm-r-50', commentId: 'lm-c-5', userId: 'lm-user-ed', emoji: '❤️', daysAgo: 32 },
 ]
 
 // Karen asks by name the analyst who volunteered the written testimony one
@@ -93,6 +94,7 @@ const hb5308: DemoSeedComment[] = [
 const hb5308Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-3', commentId: 'lm-c-7', userId: 'lm-user-ed', emoji: '👍', daysAgo: 5 },
   { id: 'lm-r-4', commentId: 'lm-c-10', userId: 'demo-user', emoji: '🤔', daysAgo: 3 },
+  { id: 'lm-r-51', commentId: 'lm-c-7', userId: 'lm-user-la1', emoji: '💯', daysAgo: 5 },
 ]
 
 const hb5308Mentions: DemoSeedMention[] = [
@@ -285,14 +287,14 @@ const ab129: DemoSeedComment[] = [
     content: "<p>Frustrating, but not surprising given how late in session it landed. January's the right call.</p>", daysAgo: 135 },
 ]
 
-// 🤔 carries the seed's non-approving reactions — the two bill deaths (here and
-// lm-c-38) and the wait-and-see ones — so the set covers more than agreement. Not
-// 👎: on a comment, a thumbs-down reads as disagreeing with the colleague who
-// wrote it rather than with the bill's outcome.
+// 😭 carries the two bill deaths (here and lm-c-38) — negative signal aimed at
+// the outcome, which is what makes it usable where 👎 is not: on a comment, a
+// thumbs-down reads as disagreeing with the colleague who reported the death
+// rather than with the death. That leaves 🤔 a single meaning, "watching this".
 const ab129Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '🤔', daysAgo: 139 },
+  { id: 'lm-r-15', commentId: 'lm-c-34', userId: 'lm-user-dep', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-47', commentId: 'lm-c-34', userId: 'lm-user-la2', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-48', commentId: 'lm-c-34', userId: 'lm-user-wq', emoji: '😭', daysAgo: 139 },
   { id: 'lm-r-16', commentId: 'lm-c-36', userId: 'lm-user-la2', emoji: '👍', daysAgo: 138 },
 ]
 
@@ -321,8 +323,8 @@ const sb628: DemoSeedComment[] = [
 ]
 
 const sb628Reactions: DemoSeedReaction[] = [
-  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '🤔', daysAgo: 140 },
-  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '🤔', daysAgo: 141 },
+  { id: 'lm-r-17', commentId: 'lm-c-38', userId: 'lm-user-data', emoji: '😭', daysAgo: 140 },
+  { id: 'lm-r-49', commentId: 'lm-c-38', userId: 'lm-user-gov', emoji: '😭', daysAgo: 141 },
 ]
 
 // ---------------------------------------------------------------------------
