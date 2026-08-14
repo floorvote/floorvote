@@ -60,8 +60,12 @@ vi.mock('../hooks/useAuth', () => ({
   }),
 }))
 
+// Mutable so the demo-tenant cases below can flip demoMode/settled without a
+// per-test module mock. Defaults mirror a settled non-demo tenant, which is what
+// every other test in this file assumes.
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true }))
 vi.mock('../context/DemoContext', () => ({
-  useDemo: () => ({ demoLocked: false }),
+  useDemo: () => ({ ...demoState }),
 }))
 
 vi.mock('../context/SidebarRefreshContext', () => ({
@@ -641,5 +645,47 @@ describe('BillDetail mark-read-by-bill effect', () => {
 
     const markReadCalls = spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')
     expect(markReadCalls).toHaveLength(1)
+  })
+
+  describe('on a demo tenant', () => {
+    afterEach(() => {
+      demoState.demoMode = false
+      demoState.settled = true
+      localStorage.clear()
+    })
+
+    it('records read state in localStorage instead of POSTing', async () => {
+      // Every demo visitor is the same `demo-user` row, so a server-side
+      // mark-read clears the badge for everyone after them until the reset cron
+      // re-lights it. See lib/demoReadState.ts.
+      demoState.demoMode = true
+      notifState.mentionIds = ['m1', 'm2']
+      const spy = makeMockApiFetch()
+      spy.mockClear()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Test Bill')
+
+      const { readMentionIds } = await import('../lib/demoReadState')
+      await waitFor(() => expect(readMentionIds()).toEqual(new Set(['m1', 'm2'])))
+      expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
+    })
+
+    // DemoProvider starts at demoMode:false and only learns the truth when
+    // GET /config resolves, so a cold direct load of a demo bill URL renders
+    // this effect at least once before the gate can flip. Without `settled` the
+    // POST goes out in that window and writes read_at on the shared row.
+    it('POSTs nothing while /config is still in flight', async () => {
+      demoState.settled = false
+      notifState.mentionIds = ['m1']
+      const spy = makeMockApiFetch()
+      spy.mockClear()
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await screen.findByText('Test Bill')
+      await new Promise(r => setTimeout(r, 50))
+
+      expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
+      const { readMentionIds } = await import('../lib/demoReadState')
+      expect(readMentionIds()).toEqual(new Set())
+    })
   })
 })

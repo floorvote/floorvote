@@ -53,8 +53,8 @@ const hb4427Reactions: DemoSeedReaction[] = [
   { id: 'lm-r-50', commentId: 'lm-c-5', userId: 'lm-user-ed', emoji: '❤️', daysAgo: 32 },
 ]
 
-// Karen asks by name the analyst who volunteered the written testimony one
-// comment earlier, and he answers in lm-c-5. This was a @Michigan Team fan-out,
+// Karen asks by name the analyst who volunteered the written testimony in
+// lm-c-1, and he answers in lm-c-5. This was a @Michigan Team fan-out,
 // which put a 32-day-old sewage bill in the demo visitor's bell — see the
 // recency test in demoSeeds.lakeMichigan.test.ts. Person-to-person is also the
 // truer read: lm-c-1 already has Devon on the testimony.

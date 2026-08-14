@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
 import { useNotifications, type Mention } from '../context/NotificationsContext'
 import { useDemo } from '../context/DemoContext'
-import { readMentionIds, markMentionsRead } from '../lib/demoReadState'
+import { isUnreadForDemo, readMentionIds, markMentionsRead } from '../lib/demoReadState'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -50,7 +50,7 @@ export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
   const { mentions: liveMentions, loaded, refresh } = useNotifications()
-  const { demoMode } = useDemo()
+  const { demoMode, settled: demoSettled } = useDemo()
   const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
@@ -78,27 +78,34 @@ export function NotificationsSlideOver(
   // POST won, the GET came back with every row already read. Sequencing
   // GET-before-POST fixed the race but paid a request's latency on every open;
   // the context already polls that GET, so now there is nothing to wait for.
+  //
+  // demoSettled gates the freeze rather than the mark-read below, because the
+  // branch taken *here* is what decides whether read state goes to localStorage
+  // or to the server. `demoMode` reads false until GET /config resolves
+  // (context/DemoContext.tsx), so a bell clicked in that window would otherwise
+  // take the server branch on a demo tenant.
   useEffect(() => {
-    if (!loaded || snapshot !== null) return
+    if (!loaded || !demoSettled || snapshot !== null) return
     if (demoMode) {
       // Overlay the local set onto the server's isUnread before freezing: after a
       // reset the server calls every row unread again, and this browser's own
       // reading is the only record that survives it.
       const alreadyRead = readMentionIds()
-      setSnapshot(liveMentions.map(m => ({ ...m, isUnread: m.isUnread && !alreadyRead.has(m.id) })))
+      setSnapshot(liveMentions.map(m => ({ ...m, isUnread: isUnreadForDemo(m, alreadyRead) })))
       markMentionsRead(liveMentions.map(m => m.id))
       return
     }
     setSnapshot(liveMentions)
-  }, [loaded, liveMentions, snapshot, demoMode])
+  }, [loaded, demoSettled, liveMentions, snapshot, demoMode])
 
-  // Mark read only after the snapshot above has been taken — kept as its own
-  // effect for readability. It fires once per open because of the
-  // `snapshot === null` guard below, not because of the split itself: folding
-  // this back into the effect above would hit the same guard on its next run
-  // and also fire only once.
+  // Mark read once per open, after the snapshot above has been taken — kept as
+  // its own effect for readability. `markedRef` is what makes it once, not the
+  // `snapshot === null` guard: the non-demo branch below writes the snapshot
+  // back when it reconciles, which would otherwise retrigger this effect.
+  const markedRef = useRef(false)
   useEffect(() => {
-    if (snapshot === null) return
+    if (snapshot === null || markedRef.current) return
+    markedRef.current = true
     if (demoMode) {
       // Read state already went to localStorage in the freeze effect above —
       // the server's read_at is not usable on a demo. Still refresh so the
@@ -108,7 +115,31 @@ export function NotificationsSlideOver(
     }
     void (async () => {
       try {
+        // Reconcile before marking read. POST /notifications/mark-read takes no
+        // id list — it clears *every* unread row — while the snapshot above is
+        // only as fresh as the context's last 30 s poll. A mention that arrived
+        // in between would be marked read, and its badge cleared, without ever
+        // having rendered its unread rail. Refreshing first pulls those rows in
+        // so they are shown a beat after the panel paints instead of swallowed.
+        // The panel still opens instantly: this runs after the first paint.
+        const fresh = await refresh()
+        setSnapshot(prev => {
+          if (prev === null) return prev
+          const shown = new Set(prev.map(m => m.id))
+          const missing = fresh.filter(m => !shown.has(m.id))
+          if (missing.length === 0) return prev
+          // isUnread comes from this pre-POST fetch, so it is the server's
+          // answer as of the moment we are about to clear it — accurate for a
+          // row already read elsewhere (BillDetail's mark-read-by-bill) too.
+          // Re-sorted rather than prepended: newest-first is the order
+          // GET /notifications returns and the panel renders in, and a merged
+          // row is not guaranteed to be newer than everything on screen.
+          return [...prev, ...missing].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        })
         await apiFetch('/notifications/mark-read', { method: 'POST' })
+        // Second refresh, to drop the badge the click just cleared. Both were
+        // already being made before the panel started reading the context's
+        // cache — one as the panel's own GET on open, one after the POST.
         await refresh()
       } catch {}
     })()

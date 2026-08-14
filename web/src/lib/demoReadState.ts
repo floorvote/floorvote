@@ -29,6 +29,26 @@ export function readMentionIds(): Set<string> {
   }
 }
 
+/**
+ * The one unread rule for demo tenants: the server still has to call the
+ * mention unread, *and* this browser has to have no local record of it.
+ *
+ * Both halves are needed. Dropping `isUnread` would count a mention the server
+ * already marked read on some earlier visit that this browser never recorded;
+ * dropping `alreadyRead` would re-light everything the reset cron touches.
+ *
+ * Exported so the badge (context/NotificationsContext.tsx) and the panel's blue
+ * rails (components/NotificationsSlideOver.tsx) share one definition rather than
+ * two that have to be kept in agreement by hand — they were written separately
+ * once and disagreed.
+ */
+export function isUnreadForDemo(
+  mention: { id: string; isUnread: boolean },
+  alreadyRead: Set<string>,
+): boolean {
+  return mention.isUnread && !alreadyRead.has(mention.id)
+}
+
 /** Union `ids` into the stored set. No-ops if storage is unavailable. */
 export function markMentionsRead(ids: string[]): void {
   if (ids.length === 0) return

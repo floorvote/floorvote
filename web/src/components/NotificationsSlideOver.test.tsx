@@ -7,12 +7,21 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 // Mutable flag so individual tests can opt into demoLocked without a
 // module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
-const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false }))
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true }))
 // Lets a test hold `GET /notifications` open, so the ordering against
 // mark-read is observable rather than a matter of which request wins.
-const gate = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
+// `holdFrom` is 1-based over the GETs this mock serves: holdFrom = 2 lets the
+// provider's own mount fetch through and suspends every one after it.
+const gate = vi.hoisted(() => ({
+  hold: null as Promise<void> | null,
+  holdFrom: 1,
+  gets: 0,
+  // Rows the mock adds from the Nth GET onwards, standing in for a mention that
+  // lands between the context's last poll and the panel being opened.
+  lateRow: null as Record<string, unknown> | null,
+}))
 vi.mock('../context/DemoContext', () => ({
-  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked }),
+  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked, settled: demoState.settled }),
 }))
 
 // The @role-mention attribution chip ("mentioned @Board") previously showed
@@ -23,10 +32,13 @@ vi.mock('../context/DemoContext', () => ({
 vi.mock('../lib/api', () => ({
   apiFetch: vi.fn(async (path: string, init?: RequestInit) => {
     if (path === '/notifications' && (!init || init.method === undefined)) {
-      if (gate.hold) await gate.hold
+      gate.gets += 1
+      const nth = gate.gets
+      if (gate.hold && nth >= gate.holdFrom) await gate.hold
       return {
         unreadCount: 1,
         mentions: [
+          ...(gate.lateRow && nth >= 2 ? [gate.lateRow] : []),
           {
             id: 'm1',
             commentId: 'c1',
@@ -178,7 +190,12 @@ describe('a role mention that also opens the quoted comment', () => {
 })
 
 describe('mark-read ordering', () => {
-  afterEach(() => { gate.hold = null })
+  afterEach(() => {
+    gate.hold = null
+    gate.holdFrom = 1
+    gate.gets = 0
+    gate.lateRow = null
+  })
 
   it('marks read only after the unread state has been read back', async () => {
     // These two requests used to be fired concurrently, so whether a row rendered
@@ -212,27 +229,95 @@ describe('mark-read ordering', () => {
 })
 
 describe('NotificationsSlideOver instant open', () => {
-  it('does not fetch /notifications itself — the context already holds them', async () => {
+  afterEach(() => {
+    gate.hold = null
+    gate.holdFrom = 1
+    gate.gets = 0
+    gate.lateRow = null
+  })
+
+  it('paints from the context cache — the reconcile GET does not hold the rows back', async () => {
+    // Suspend every /notifications GET *after* the provider's mount fetch, so
+    // the reconcile GET the mark-read sequence makes is outstanding while we
+    // assert. The rows must already be on screen: the panel used to issue its
+    // own identical GET on open and show "Loading…" until it landed, and with
+    // that code this findByText times out.
+    let release!: () => void
+    gate.holdFrom = 2
+    gate.hold = new Promise<void>(r => { release = r })
     const { apiFetch } = await import('../lib/api')
     vi.mocked(apiFetch).mockClear()
     renderPanel()
-    await screen.findByText('@Board')
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
 
-    const calls = vi.mocked(apiFetch).mock.calls
-    const postIndex = calls.findIndex(([path, init]) => path === '/notifications/mark-read' && (init as RequestInit | undefined)?.method === 'POST')
-    // The waitFor above guarantees the POST already happened, so this can't be
-    // -1 today — asserted explicitly so slice(0, -1) never degrades silently
-    // into "drop the last call" if that guarantee ever breaks.
-    expect(postIndex).toBeGreaterThan(-1)
-    const getsBeforePost = calls
-      .slice(0, postIndex)
-      .filter(([path, init]) => path === '/notifications' && (init as RequestInit | undefined)?.method === undefined)
-    // One, from NotificationsProvider's mount. The panel used to make a second,
-    // identical request of its own before marking read — that duplicate is the
-    // "Loading…" the visitor saw on every open. The GET that refresh() issues
-    // *after* the POST is expected and is deliberately outside this window.
-    expect(getsBeforePost).toHaveLength(1)
+    await screen.findByText('@Board')
+    expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
+
+    release()
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
+  })
+
+  // The bulk POST takes no id list — it clears every unread row the user has,
+  // not just the ones on screen. The rows on screen are only as fresh as the
+  // context's last 30 s poll, so without a reconcile a mention that arrived in
+  // between is marked read, and its badge cleared, having never shown its rail.
+  it('pulls in a mention that arrived since the last poll before marking read', async () => {
+    gate.lateRow = {
+      id: 'm3',
+      commentId: 'c3',
+      billId: 'b3',
+      billNumber: 'SB999',
+      billTitle: 'Arrived after the last poll',
+      billState: 'NJ',
+      sessionSlug: 'session-1',
+      authorName: 'Late Sender',
+      authorSubtitle: null,
+      commentPreview: 'preview',
+      commentHtml: '<p>Just landed.</p>',
+      sourceType: 'user',
+      sourceLabel: null,
+      createdAt: new Date(Date.now() + 1_000).toISOString(),
+      isUnread: true,
+    }
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+
+    // Not in the frozen snapshot (the mount GET predates it), so it can only
+    // appear via the reconcile that now runs before the POST.
+    const row = (await screen.findByText('Arrived after the last poll')).closest('a') as HTMLElement
+    expect(row.style.borderLeft).not.toContain('transparent')
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
+  })
+
+  it('marks read exactly once per open, despite reconciling back into the snapshot', async () => {
+    gate.lateRow = {
+      id: 'm3',
+      commentId: 'c3',
+      billId: 'b3',
+      billNumber: 'SB999',
+      billTitle: 'Arrived after the last poll',
+      billState: 'NJ',
+      sessionSlug: 'session-1',
+      authorName: 'Late Sender',
+      authorSubtitle: null,
+      commentPreview: 'preview',
+      commentHtml: '<p>Just landed.</p>',
+      sourceType: 'user',
+      sourceLabel: null,
+      createdAt: new Date(Date.now() + 1_000).toISOString(),
+      isUnread: true,
+    }
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await screen.findByText('Arrived after the last poll')
+    // The reconcile writes the snapshot back, which the mark-read effect depends
+    // on — long enough for a self-retriggering loop to show itself.
+    await new Promise(r => setTimeout(r, 50))
+
+    const posts = vi.mocked(apiFetch).mock.calls
+      .filter(([path, init]) => path === '/notifications/mark-read' && (init as RequestInit | undefined)?.method === 'POST')
+    expect(posts).toHaveLength(1)
   })
 })
 
@@ -240,7 +325,23 @@ describe('NotificationsSlideOver demo read state', () => {
   afterEach(() => {
     demoState.demoMode = false
     demoState.demoLocked = false
+    demoState.settled = true
     localStorage.clear()
+  })
+
+  // DemoProvider reports demoMode:false until GET /config resolves, so a bell
+  // clicked in that window would take the server branch on a demo tenant and
+  // POST read_at onto the row every visitor shares.
+  it('marks nothing read, either way, while /config is still in flight', async () => {
+    demoState.settled = false
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await new Promise(r => setTimeout(r, 50))
+
+    expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
+    const { readMentionIds } = await import('../lib/demoReadState')
+    expect(readMentionIds()).toEqual(new Set())
   })
 
   // Guards the trap this replaced: the previous version of this test set

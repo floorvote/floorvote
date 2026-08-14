@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
 import { useDemo } from './DemoContext'
-import { readMentionIds } from '../lib/demoReadState'
+import { isUnreadForDemo, readMentionIds } from '../lib/demoReadState'
 
 // Lives here rather than in NotificationsSlideOver because the context now owns
 // the data. The panel imports it back; the reverse would be a cycle.
@@ -29,14 +29,18 @@ type NotificationsContextType = {
   /** False until the first fetch settles. Distinguishes "no mentions" from
    *  "not asked yet", which is the only case the panel still shows a spinner for. */
   loaded: boolean
-  refresh: () => Promise<void>
+  /** Refetches, and hands back the rows it just stored. The return value exists
+   *  for callers that must act on the fresh list in the same turn — reading
+   *  `mentions` after awaiting this would still see the pre-refresh render's
+   *  array. Empty on a failed fetch, which every caller treats as "nothing new". */
+  refresh: () => Promise<Mention[]>
 }
 
 const NotificationsContext = createContext<NotificationsContextType>({
   unreadCount: 0,
   mentions: [],
   loaded: false,
-  refresh: async () => {},
+  refresh: async () => [],
 })
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
@@ -48,6 +52,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   // is what lets the panel open without a request of its own — this poll is already
   // paid for, and the panel used to refetch exactly this payload on every open.
   const refresh = useCallback(async () => {
+    let fresh: Mention[] = []
     try {
       const data = await apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications')
       setUnreadCount(data.unreadCount)
@@ -55,11 +60,13 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       // notificationsApi.ts), but effectiveUnread below now calls .filter on this
       // during the provider's own render — a malformed 200 with no `mentions` would
       // otherwise white-screen the whole app rather than just degrade the badge.
-      setMentions(data.mentions ?? [])
+      fresh = data.mentions ?? []
+      setMentions(fresh)
     } catch {}
     // Set even on failure, so a tenant with a flaky /notifications shows the empty
     // state rather than spinning forever.
     setLoaded(true)
+    return fresh
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
@@ -73,15 +80,16 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const { demoMode } = useDemo()
 
   // On a demo the server's unreadCount is not usable — see lib/demoReadState.ts.
-  // Recomputed from the rows we already hold rather than tracked separately, so
-  // the badge and the panel can never disagree.
+  // Recomputed from the rows we already hold, through the same isUnreadForDemo
+  // predicate the panel paints its blue rails with, so the bell's number is
+  // exactly the number of rails the panel would draw.
   let effectiveUnread = unreadCount
   if (demoMode) {
     // Hoisted out of the filter callback: it round-trips through
     // localStorage.getItem + JSON.parse, so calling it once per render instead
     // of once per mention matters once the list is not tiny.
     const alreadyRead = readMentionIds()
-    effectiveUnread = mentions.filter(m => !alreadyRead.has(m.id)).length
+    effectiveUnread = mentions.filter(m => isUnreadForDemo(m, alreadyRead)).length
   }
 
   return (

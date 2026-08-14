@@ -358,7 +358,7 @@ export function BillDetail() {
   const navigation = useNavigation()
   const location = useLocation()
   const { user } = useAuth()
-  const { demoLocked, demoMode } = useDemo()
+  const { demoLocked, demoMode, settled: demoSettled } = useDemo()
   // billPaths/currentIndex are only present when arriving from the Bills list or
   // prev/next; deferred-nav entry points (Feed, sidebar, calendar, notifications)
   // pass prefetchedBill alone. Guard billPaths so a prefetched-only state can't
@@ -533,7 +533,11 @@ export function BillDetail() {
   // would make the effect below retrigger its own refresh in a loop — POST →
   // refresh() → new array identity → effect fires again → POST → ... forever,
   // for as long as the page stays open. Joining the ids means the effect only
-  // reruns when this bill's mention set actually changes.
+  // reruns when this bill's mention set actually changes. The effect below reads
+  // the ids back out of this string rather than re-deriving them from `mentions`,
+  // so `mentions` is not one of its dependencies at all — which is what keeps the
+  // dependency array exhaustive instead of needing a lint suppression. Mention ids
+  // are uuids (or the demo seed's `lm-m-*`), so none of them contains a comma.
   const billMentionIds = useMemo(
     () => mentions.filter(m => m.billId === bill?.id).map(m => m.id).sort().join(','),
     [mentions, bill?.id],
@@ -542,17 +546,22 @@ export function BillDetail() {
   // Mark all mention notifications for this bill as read when the page loads.
   // On a demo this is browser-local — the shared demo-user row and the reset cron
   // make the server's read_at useless there. See lib/demoReadState.ts.
+  //
+  // Waits for demoSettled because `demoMode` is false until GET /config resolves
+  // (context/DemoContext.tsx), and this effect otherwise fires on the very first
+  // render — so a cold direct load of a demo bill link would take the server
+  // branch once and write read_at on the row every demo visitor shares.
   useEffect(() => {
-    if (!bill?.id) return
+    if (!bill?.id || !demoSettled) return
     if (demoMode) {
-      markMentionsRead(mentions.filter(m => m.billId === bill.id).map(m => m.id))
+      markMentionsRead(billMentionIds ? billMentionIds.split(',') : [])
       void refreshNotifications()
       return
     }
     apiFetch(`/notifications/mark-read-by-bill/${bill.id}`, { method: 'POST' })
       .then(() => refreshNotifications())
       .catch(() => {})
-  }, [bill?.id, refreshNotifications, demoMode, billMentionIds])
+  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billMentionIds])
 
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/config/custom-fields')
