@@ -10,6 +10,7 @@
     "lint": "eslint src --max-warnings 0",
     "build:web": "cd web && npm install && npm run build",
     "deploy:legiscan": "npm run build:web && npm run migrate:legiscan:remote && wrangler deploy --env legiscan && npm run smoke:legiscan",
+    "postdeploy:legiscan": "bash scripts/backup-config.sh",
     "smoke:legiscan": "node scripts/smoke-text.mjs",
     "migrate:local": "wrangler d1 migrations apply central-bills --local",
     "migrate:remote": "wrangler d1 migrations apply central-bills",
