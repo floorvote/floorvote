@@ -5,6 +5,8 @@ import type { Ref, RefObject } from 'react'
 import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
 import { useNotifications, type Mention } from '../context/NotificationsContext'
+import { useDemo } from '../context/DemoContext'
+import { readMentionIds, markMentionsRead } from '../lib/demoReadState'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -48,6 +50,7 @@ export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
   const { mentions: liveMentions, loaded, refresh } = useNotifications()
+  const { demoMode } = useDemo()
   const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
@@ -77,8 +80,17 @@ export function NotificationsSlideOver(
   // the context already polls that GET, so now there is nothing to wait for.
   useEffect(() => {
     if (!loaded || snapshot !== null) return
+    if (demoMode) {
+      // Overlay the local set onto the server's isUnread before freezing: after a
+      // reset the server calls every row unread again, and this browser's own
+      // reading is the only record that survives it.
+      const alreadyRead = readMentionIds()
+      setSnapshot(liveMentions.map(m => ({ ...m, isUnread: m.isUnread && !alreadyRead.has(m.id) })))
+      markMentionsRead(liveMentions.map(m => m.id))
+      return
+    }
     setSnapshot(liveMentions)
-  }, [loaded, liveMentions, snapshot])
+  }, [loaded, liveMentions, snapshot, demoMode])
 
   // Mark read only after the snapshot above has been taken — kept as its own
   // effect for readability. It fires once per open because of the
@@ -87,13 +99,20 @@ export function NotificationsSlideOver(
   // and also fire only once.
   useEffect(() => {
     if (snapshot === null) return
+    if (demoMode) {
+      // Read state already went to localStorage in the freeze effect above —
+      // the server's read_at is not usable on a demo. Still refresh so the
+      // badge count (context's effectiveUnread) picks up the newly-read ids.
+      void refresh()
+      return
+    }
     void (async () => {
       try {
         await apiFetch('/notifications/mark-read', { method: 'POST' })
         await refresh()
       } catch {}
     })()
-  }, [snapshot, refresh])
+  }, [snapshot, refresh, demoMode])
 
   // Role member lists, for the tooltip on a role-mention pill. Deliberately not
   // awaited alongside anything: a missing role list degrades to no tooltip, which

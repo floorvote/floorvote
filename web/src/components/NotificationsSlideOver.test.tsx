@@ -7,12 +7,12 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 // Mutable flag so individual tests can opt into demoLocked without a
 // module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
-const demoState = vi.hoisted(() => ({ demoLocked: false }))
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false }))
 // Lets a test hold `GET /notifications` open, so the ordering against
 // mark-read is observable rather than a matter of which request wins.
 const gate = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
 vi.mock('../context/DemoContext', () => ({
-  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
+  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked }),
 }))
 
 // The @role-mention attribution chip ("mentioned @Board") previously showed
@@ -236,17 +236,45 @@ describe('NotificationsSlideOver instant open', () => {
   })
 })
 
-describe('NotificationsSlideOver read-only demo', () => {
-  afterEach(() => { demoState.demoLocked = false })
+describe('NotificationsSlideOver demo read state', () => {
+  afterEach(() => {
+    demoState.demoMode = false
+    demoState.demoLocked = false
+    localStorage.clear()
+  })
 
-  it('still POSTs /notifications/mark-read when the demo is locked', async () => {
-    // Per-user notification read state is allowlisted — a visitor's badge has to
-    // clear or the panel looks broken.
+  // Guards the trap this replaced: the previous version of this test set
+  // demoLocked without demoMode, so it kept passing while the demo's real
+  // behaviour changed underneath it. On the live demo both flags are true.
+  it('still POSTs mark-read on a locked NON-demo tenant', async () => {
     demoState.demoLocked = true
     const { apiFetch } = await import('../lib/api')
     vi.mocked(apiFetch).mockClear()
     renderPanel()
     await screen.findByText('@Board')
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/notifications/mark-read', expect.objectContaining({ method: 'POST' })))
+  })
+
+  it('records read state locally instead of POSTing on a demo tenant', async () => {
+    demoState.demoMode = true
+    demoState.demoLocked = true
+    const { apiFetch } = await import('../lib/api')
+    vi.mocked(apiFetch).mockClear()
+    renderPanel()
+    await screen.findByText('@Board')
+    const { readMentionIds } = await import('../lib/demoReadState')
+    await waitFor(() => expect(readMentionIds()).toEqual(new Set(['m1', 'm2'])))
+    expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
+  })
+
+  // The server sends isUnread: true on every reset, because the reset wipes
+  // read_at. The local set is what must win, or the badge re-lights four times
+  // a day for mentions this browser has already read.
+  it('treats a locally-read mention as read even when the server says unread', async () => {
+    demoState.demoMode = true
+    localStorage.setItem('floorvote:demo:readMentions', JSON.stringify(['m1']))
+    renderPanel()
+    const row = (await screen.findByText('@Board')).closest('a') as HTMLElement
+    expect(row.style.borderLeft).toContain('transparent')
   })
 })

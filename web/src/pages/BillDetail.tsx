@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
@@ -38,6 +38,7 @@ import { CommentContent } from '../components/CommentContent'
 import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFieldsSection'
 import { useDemo } from '../context/DemoContext'
 import { useNotifications } from '../context/NotificationsContext'
+import { markMentionsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { getScrollContainer } from '../lib/scrollUtils'
@@ -357,7 +358,7 @@ export function BillDetail() {
   const navigation = useNavigation()
   const location = useLocation()
   const { user } = useAuth()
-  const { demoLocked } = useDemo()
+  const { demoLocked, demoMode } = useDemo()
   // billPaths/currentIndex are only present when arriving from the Bills list or
   // prev/next; deferred-nav entry points (Feed, sidebar, calendar, notifications)
   // pass prefetchedBill alone. Guard billPaths so a prefetched-only state can't
@@ -438,7 +439,7 @@ export function BillDetail() {
   const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | null>(null)
 
   const refreshSidebar = useSidebarRefresh()
-  const { refresh: refreshNotifications } = useNotifications()
+  const { refresh: refreshNotifications, mentions } = useNotifications()
   const billRef = useRef<BillDetailData | null>(null)
 
   const applyBillData = useCallback((data: BillDetailData) => {
@@ -527,13 +528,31 @@ export function BillDetail() {
     return () => clearTimeout(timerId)
   }, [location.hash, bill?.id])
 
-  // Mark all mention notifications for this bill as read when the page loads
+  // Value-stable key: refresh() hands back a new array every time (a fresh parse
+  // of the response, NotificationsContext.tsx), so depending on `mentions` itself
+  // would make the effect below retrigger its own refresh in a loop — POST →
+  // refresh() → new array identity → effect fires again → POST → ... forever,
+  // for as long as the page stays open. Joining the ids means the effect only
+  // reruns when this bill's mention set actually changes.
+  const billMentionIds = useMemo(
+    () => mentions.filter(m => m.billId === bill?.id).map(m => m.id).sort().join(','),
+    [mentions, bill?.id],
+  )
+
+  // Mark all mention notifications for this bill as read when the page loads.
+  // On a demo this is browser-local — the shared demo-user row and the reset cron
+  // make the server's read_at useless there. See lib/demoReadState.ts.
   useEffect(() => {
     if (!bill?.id) return
+    if (demoMode) {
+      markMentionsRead(mentions.filter(m => m.billId === bill.id).map(m => m.id))
+      void refreshNotifications()
+      return
+    }
     apiFetch(`/notifications/mark-read-by-bill/${bill.id}`, { method: 'POST' })
       .then(() => refreshNotifications())
       .catch(() => {})
-  }, [bill?.id, refreshNotifications])
+  }, [bill?.id, refreshNotifications, demoMode, billMentionIds])
 
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/config/custom-fields')

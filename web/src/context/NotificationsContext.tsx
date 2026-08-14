@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
+import { useDemo } from './DemoContext'
+import { readMentionIds } from '../lib/demoReadState'
 
 // Lives here rather than in NotificationsSlideOver because the context now owns
 // the data. The panel imports it back; the reverse would be a cycle.
@@ -49,7 +51,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     try {
       const data = await apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications')
       setUnreadCount(data.unreadCount)
-      setMentions(data.mentions)
+      // The server always sends `mentions` alongside `unreadCount` (api/src/routes/
+      // notificationsApi.ts), but effectiveUnread below now calls .filter on this
+      // during the provider's own render — a malformed 200 with no `mentions` would
+      // otherwise white-screen the whole app rather than just degrade the badge.
+      setMentions(data.mentions ?? [])
     } catch {}
     // Set even on failure, so a tenant with a flaky /notifications shows the empty
     // state rather than spinning forever.
@@ -64,8 +70,22 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, [refresh])
 
+  const { demoMode } = useDemo()
+
+  // On a demo the server's unreadCount is not usable — see lib/demoReadState.ts.
+  // Recomputed from the rows we already hold rather than tracked separately, so
+  // the badge and the panel can never disagree.
+  let effectiveUnread = unreadCount
+  if (demoMode) {
+    // Hoisted out of the filter callback: it round-trips through
+    // localStorage.getItem + JSON.parse, so calling it once per render instead
+    // of once per mention matters once the list is not tiny.
+    const alreadyRead = readMentionIds()
+    effectiveUnread = mentions.filter(m => !alreadyRead.has(m.id)).length
+  }
+
   return (
-    <NotificationsContext value={{ unreadCount, mentions, loaded, refresh }}>
+    <NotificationsContext value={{ unreadCount: effectiveUnread, mentions, loaded, refresh }}>
       {children}
     </NotificationsContext>
   )

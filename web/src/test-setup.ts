@@ -1,3 +1,4 @@
+import { afterEach } from 'vitest'
 import '@testing-library/jest-dom'
 import { configure } from '@testing-library/react'
 
@@ -33,6 +34,39 @@ class NoopResizeObserver {
 }
 globalThis.ResizeObserver =
   globalThis.ResizeObserver ?? (NoopResizeObserver as unknown as typeof ResizeObserver)
+
+// Node 22+'s own built-in `localStorage` global (lazy, and only functional with
+// `--localstorage-file`) takes precedence over jsdom's working implementation:
+// vitest's jsdom environment only overrides globals that are *not* already
+// present on Node's global object, and "localStorage" already is. Left alone,
+// every read/write throws "Cannot read properties of undefined", which is not
+// specific to jsdom — a bare Vitest+jsdom+Node 22+ repro hits it too. Polyfill
+// unconditionally (rather than probing the existing global first, which is
+// itself enough to fire Node's noisy "--localstorage-file was not provided"
+// warning) with a minimal in-memory Storage, so demoReadState.ts and anything
+// else that reads/writes localStorage has a real, working store during tests.
+{
+  const store = new Map<string, string>()
+  const memoryStorage: Storage = {
+    getItem: (key) => (store.has(key) ? store.get(key)! : null),
+    setItem: (key, value) => { store.set(key, String(value)) },
+    removeItem: (key) => { store.delete(key) },
+    clear: () => { store.clear() },
+    key: (index) => Array.from(store.keys())[index] ?? null,
+    get length() { return store.size },
+  }
+  Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage, configurable: true, writable: true })
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'localStorage', { value: memoryStorage, configurable: true, writable: true })
+  }
+  // Before this polyfill, an unpatched `localStorage` call threw and was
+  // swallowed by the try/catch call sites (Sidebar.tsx, demoReadState.ts), so
+  // every test started clean by accident. Now that reads/writes actually land
+  // in `store`, a write in one test would otherwise leak into the next test in
+  // the same file — clear it globally rather than relying on each file to
+  // remember its own afterEach.
+  afterEach(() => { store.clear() })
+}
 
 // jsdom has no matchMedia (used by useIsBreakpoint for responsive layout, e.g.
 // MonthGrid and the tiptap editor). Baseline to a no-op that always reports
