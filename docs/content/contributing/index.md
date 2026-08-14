@@ -65,6 +65,10 @@ git push origin <branch>
 gh pr create --repo floorvote/floorvote --head <your-org>:<branch> --base main
 ```
 
+**Assert your overlay in CI, not in a written list.** An overlay file that a merge silently deletes fails quietly — the branding disappears, or a deploy script stops matching your resource names, and nothing errors. Prose inventories of "which files are ours" go stale as the overlay moves. The durable version is a committed list of the paths you expect to differ, checked in CI against `git diff --name-only upstream/main..main`, which fails both when an overlay file goes missing and when a new divergence appears that should have gone upstream instead.
+
+Note this only applies if your fork *tracks* its operator files. `api/wrangler.toml` and `central/wrangler.toml` are gitignored here, so an operator who clones rather than forks keeps them untracked, never merges into a divergent tree, and has no overlay to protect.
+
 **Do this in a separate worktree, not by switching branches in place**, if your fork carries overlay files. Checking out an upstream-based branch in your primary checkout deletes every tracked file absent from that branch (for example, your `wrangler.toml`). Nothing is lost, since it's all still committed, but it breaks local dev and deploys until you switch back.
 
 ```bash
