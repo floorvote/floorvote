@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NotificationsSlideOver } from './NotificationsSlideOver'
 import { NotificationsProvider } from '../context/NotificationsContext'
@@ -318,6 +318,46 @@ describe('NotificationsSlideOver instant open', () => {
     const posts = vi.mocked(apiFetch).mock.calls
       .filter(([path, init]) => path === '/notifications/mark-read' && (init as RequestInit | undefined)?.method === 'POST')
     expect(posts).toHaveLength(1)
+  })
+})
+
+describe('mention pill tooltip inside the quoted comment', () => {
+  // Reproduces a bug confirmed with a real MutationObserver in a real browser:
+  // opening the tooltip called setRoleTooltip, which re-rendered the row and
+  // re-applied dangerouslySetInnerHTML, destroying and rebuilding the comment
+  // body's DOM out from under the pointer. A detached node never fires
+  // mouseout, so the tooltip could never clear. The attribution chip sits
+  // outside that subtree, so its own tooltip always cleared fine — only the
+  // comment-body pill's got stuck.
+  it('does not replace the comment body DOM node when a hover re-renders the row', async () => {
+    renderPanel()
+    await screen.findAllByText('@Infrastructure')
+    const pill = screen.getAllByText('@Infrastructure').find(p => p.closest('.notif-comment') !== null) as HTMLElement
+    const container = pill.closest('.notif-comment') as HTMLElement
+    const firstChildBefore = container.firstChild
+
+    // Hovering the pill opens the role tooltip, which is exactly the state
+    // update that used to re-apply dangerouslySetInnerHTML on every row.
+    fireEvent.mouseOver(pill)
+    await screen.findByText('Members with this role')
+
+    expect(container.firstChild).toBe(firstChildBefore)
+  })
+
+  it('clears the tooltip when the pointer leaves the comment body, even though the hovered pill may not survive the re-render that opened it', async () => {
+    renderPanel()
+    await screen.findAllByText('@Infrastructure')
+    const pill = screen.getAllByText('@Infrastructure').find(p => p.closest('.notif-comment') !== null) as HTMLElement
+    const container = pill.closest('.notif-comment') as HTMLElement
+
+    fireEvent.mouseOver(pill)
+    await screen.findByText('Members with this role')
+
+    // The container is what survives even when the pill inside it does not, so
+    // the container — not the pill — is where the leave must be handled.
+    fireEvent.mouseLeave(container)
+
+    await waitFor(() => expect(screen.queryByText('Members with this role')).toBeNull())
   })
 })
 

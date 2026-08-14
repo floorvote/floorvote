@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import type { Ref, RefObject } from 'react'
@@ -18,6 +18,51 @@ const PURIFY_CONFIG = {
   ALLOWED_TAGS: ['p', 'strong', 'em', 'a', 'blockquote', 'ul', 'ol', 'li', 'span', 'br', 's'],
   ALLOWED_ATTR: ['href', 'target', 'rel', 'data-type', 'data-id', 'data-label', 'class'],
 }
+
+// Module-level so it's the same object reference on every render — an inline
+// literal here would defeat CommentBody's memo just as surely as a fresh
+// dangerouslySetInnerHTML object would.
+const COMMENT_BODY_STYLE: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  color: color.textSlate,
+  lineHeight: 1.5,
+  display: '-webkit-box',
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+}
+
+// Isolated so an unrelated re-render of the row (e.g. opening the role
+// tooltip) does not re-apply dangerouslySetInnerHTML and destroy the mention
+// pill the pointer is currently over. React skips re-rendering this component
+// — and so never touches its DOM — as long as `html` and all three handlers are
+// referentially unchanged, which is why the parent passes a raw string and
+// useCallback-wrapped handlers rather than recomputing them inline.
+const CommentBody = memo(function CommentBody({
+  html,
+  onMouseOver,
+  onMouseOut,
+  onMouseLeave,
+}: {
+  html: string
+  onMouseOver: (e: React.SyntheticEvent) => void
+  onMouseOut: (e: React.SyntheticEvent) => void
+  onMouseLeave: () => void
+}) {
+  const safeHtml = DOMPurify.sanitize(html, PURIFY_CONFIG)
+  return (
+    <div
+      className="notif-comment"
+      style={COMMENT_BODY_STYLE}
+      onMouseOver={onMouseOver}
+      onMouseOut={onMouseOut}
+      onFocus={onMouseOver}
+      onBlur={onMouseOut}
+      onMouseLeave={onMouseLeave}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
+    />
+  )
+})
 
 type RoleData = {
   id: string
@@ -164,7 +209,10 @@ export function NotificationsSlideOver(
   // wired so a real focusable descendant (e.g. a link inside the comment body)
   // doesn't silently skip this affordance, and so the row is no longer
   // mouse-only per jsx-a11y's rule.
-  function handleCommentMouseOver(e: React.SyntheticEvent) {
+  // useCallback so CommentBody's memo actually holds: a fresh function
+  // literal on every render would defeat it just as surely as a fresh
+  // dangerouslySetInnerHTML object would.
+  const handleCommentMouseOver = useCallback((e: React.SyntheticEvent) => {
     const target = e.target as HTMLElement
     if (target.dataset.type !== 'mention') return
     const dataId = target.dataset.id || ''
@@ -176,11 +224,18 @@ export function NotificationsSlideOver(
       anchorRect: target.getBoundingClientRect(),
       members: role.members.map(m => ({ name: m.name, subtitle: m.subtitle })),
     })
-  }
+  }, [roles])
 
-  function handleCommentMouseOut(e: React.SyntheticEvent) {
+  const handleCommentMouseOut = useCallback((e: React.SyntheticEvent) => {
     if ((e.target as HTMLElement).dataset.type === 'mention') setRoleTooltip(null)
-  }
+  }, [])
+
+  // Defence in depth: the container is what survives a mid-hover re-render
+  // even when the pill inside it does not (dangerouslySetInnerHTML rebuilds
+  // its children), so it's the reliable place to clear the tooltip from if a
+  // future change ever reintroduces churn that detaches the hovered node
+  // before it can fire mouseout.
+  const handleCommentMouseLeave = useCallback(() => setRoleTooltip(null), [])
 
   return (
     <>
@@ -257,7 +312,6 @@ export function NotificationsSlideOver(
 
           {!loading && snapshot.map(m => {
             const url = billUrl({ state: m.billState, sessionSlug: m.sessionSlug, billNumber: m.billNumber }) + `#comment-${m.commentId}`
-            const safeHtml = DOMPurify.sanitize(m.commentHtml, PURIFY_CONFIG)
             // Role members for the attribution chip tooltip
             const attributionRole = m.sourceType === 'role' && m.sourceLabel
               ? roles.find(r => r.name === m.sourceLabel)
@@ -348,22 +402,11 @@ export function NotificationsSlideOver(
                     anywhere in a sentence, so a role pill can't be stripped from the
                     front just because the line above names the same role. One size
                     and one weight is what makes that repeat read as a quote. */}
-                <div
-                  className="notif-comment"
-                  style={{
-                    fontSize: fontSize.sm,
-                    color: color.textSlate,
-                    lineHeight: 1.5,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
+                <CommentBody
+                  html={m.commentHtml}
                   onMouseOver={handleCommentMouseOver}
                   onMouseOut={handleCommentMouseOut}
-                  onFocus={handleCommentMouseOver}
-                  onBlur={handleCommentMouseOut}
-                  dangerouslySetInnerHTML={{ __html: safeHtml }}
+                  onMouseLeave={handleCommentMouseLeave}
                 />
 
                 {/* Bill footer — one line, single-line-ellipsized. The bill stays
