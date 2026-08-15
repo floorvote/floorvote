@@ -39,7 +39,20 @@ function renderProvider() {
 describe('NotificationsProvider badge count', () => {
   afterEach(() => {
     demoState.demoMode = false
+    demoState.settled = true
     localStorage.clear()
+  })
+
+  // GET /notifications routinely resolves before GET /config, so demoMode is
+  // still false while the server's count is already in hand. On a demo that
+  // count is the FULL unread set — nothing ever POSTs mark-read there — so
+  // trusting it before the gate settles painted a red badge that vanished a
+  // beat later. Report nothing until we know which rule applies.
+  it('reports nothing until the demo gate settles', async () => {
+    demoState.settled = false
+    localStorage.setItem('floorvote:demo:readMentions', JSON.stringify(['m1', 'm2']))
+    renderProvider()
+    await waitFor(() => expect(screen.getByText('count:0')).toBeInTheDocument())
   })
 
   it('uses the server unreadCount verbatim on a non-demo tenant', async () => {

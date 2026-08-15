@@ -77,19 +77,32 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, [refresh])
 
-  const { demoMode } = useDemo()
+  const { demoMode, settled: demoSettled } = useDemo()
 
-  // On a demo the server's unreadCount is not usable — see lib/demoReadState.ts.
-  // Recomputed from the rows we already hold, through the same isUnreadForDemo
-  // predicate the panel paints its blue rails with, so the bell's number is
-  // exactly the number of rails the panel would draw.
-  let effectiveUnread = unreadCount
-  if (demoMode) {
-    // Hoisted out of the filter callback: it round-trips through
-    // localStorage.getItem + JSON.parse, so calling it once per render instead
-    // of once per mention matters once the list is not tiny.
+  // Which rule applies depends on /config, which routinely resolves AFTER
+  // /notifications — so until the gate settles we hold at zero rather than
+  // guessing. Guessing meant trusting the server's count, and on a demo that
+  // count is the full unread set (nothing ever POSTs mark-read there), so a
+  // visitor who had already read everything got a red badge for the length of
+  // one /config round trip and then watched it vanish.
+  //
+  // Costs a real tenant the gap between its two boot requests, which both fire
+  // at mount — the badge is briefly low rather than briefly wrong, and zero is
+  // what it renders as before either lands anyway.
+  let effectiveUnread = 0
+  if (demoSettled && demoMode) {
+    // On a demo the server's unreadCount is not usable — see lib/demoReadState.ts.
+    // Recomputed from the rows we already hold, through the same isUnreadForDemo
+    // predicate the panel paints its blue rails with, so the bell's number is
+    // exactly the number of rails the panel would draw.
+    //
+    // readMentionIds() is hoisted out of the filter callback: it round-trips
+    // through localStorage.getItem + JSON.parse, so calling it once per render
+    // instead of once per mention matters once the list is not tiny.
     const alreadyRead = readMentionIds()
     effectiveUnread = mentions.filter(m => isUnreadForDemo(m, alreadyRead)).length
+  } else if (demoSettled) {
+    effectiveUnread = unreadCount
   }
 
   return (
