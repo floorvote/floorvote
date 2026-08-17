@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { BillDetail, countClippedSponsors, isTextClamped } from './BillDetail'
+import { BillDetail, countClippedSponsors, largestFittingPrefix } from './BillDetail'
 import * as api from '../lib/api'
 
 // ── Route params (mutable so individual tests can vary route + nav state) ──────
@@ -542,36 +542,46 @@ describe('countClippedSponsors', () => {
   })
 })
 
-// Same reasoning as countClippedSponsors — the abstract's "show more" is
-// layout-driven and jsdom has no layout, so the decision lives in a pure helper.
-// The measurement differs though: the abstract clamps to N lines rather than one,
-// so what matters is vertical overflow of the box the clamp created, not each
-// item's right edge.
-describe('isTextClamped', () => {
-  it('reports clamped when the content overflows the clamped box', () => {
-    // A four-line abstract clamped to two: content is taller than the box.
-    expect(isTextClamped(64, 32)).toBe(true)
+// Same reasoning as countClippedSponsors — the abstract's truncation point is
+// layout-driven and jsdom has no layout, so the search lives in a pure helper
+// that takes the fits() predicate rather than measuring anything itself.
+describe('largestFittingPrefix', () => {
+  // fits() is monotonic in the real caller (more characters can only ever be
+  // taller), so a synthetic threshold is a faithful stand-in.
+  const upTo = (threshold: number) => (n: number) => n <= threshold
+
+  it('returns the full length when everything fits', () => {
+    expect(largestFittingPrefix(10, upTo(10))).toBe(10)
+    expect(largestFittingPrefix(10, upTo(99))).toBe(10)
   })
 
-  it('reports not clamped when the content fits exactly', () => {
-    expect(isTextClamped(32, 32)).toBe(false)
+  it('finds the exact threshold when it does not', () => {
+    expect(largestFittingPrefix(10, upTo(5))).toBe(5)
+    expect(largestFittingPrefix(100, upTo(37))).toBe(37)
   })
 
-  it('tolerates sub-pixel line-height rounding', () => {
-    // Fractional line-heights routinely leave scrollHeight a hair above
-    // clientHeight on text that fits, which would otherwise show a "show more"
-    // that reveals nothing.
-    expect(isTextClamped(32.6, 32)).toBe(false)
+  it('finds the threshold at either extreme', () => {
+    expect(largestFittingPrefix(10, upTo(9))).toBe(9)
+    expect(largestFittingPrefix(10, upTo(0))).toBe(0)
   })
 
-  it('reports clamped once the overflow exceeds the tolerance', () => {
-    expect(isTextClamped(34, 32)).toBe(true)
+  it('returns 0 when nothing fits, including the empty prefix', () => {
+    // The caller reads 0 as "do not truncate" rather than rendering an empty
+    // abstract, so this must not loop or go negative.
+    expect(largestFittingPrefix(10, () => false)).toBe(0)
   })
 
-  // jsdom (and any un-laid-out context) reports both as 0; the guard must read
-  // that as "nothing hidden" rather than rendering a toggle that does nothing.
-  it('reports not clamped when there is no layout at all', () => {
-    expect(isTextClamped(0, 0)).toBe(false)
+  it('handles empty text', () => {
+    expect(largestFittingPrefix(0, () => true)).toBe(0)
+  })
+
+  // A linear scan would be O(n) calls to a layout-forcing predicate on text
+  // that can run to several hundred characters; the search must stay
+  // logarithmic or every resize janks.
+  it('probes a logarithmic number of times', () => {
+    let calls = 0
+    largestFittingPrefix(1000, (n) => { calls++; return n <= 500 })
+    expect(calls).toBeLessThan(15)
   })
 })
 

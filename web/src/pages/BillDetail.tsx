@@ -176,62 +176,138 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
   )
 }
 
-// Whether a line-clamped block is actually hiding anything. Unlike the sponsors
-// row — which clamps to one line and measures each chip's right edge — the
-// abstract clamps to N lines, so the question is vertical: does the content
-// overflow the box the clamp created? Pure and layout-agnostic (the caller
-// supplies heights measured from the DOM) so it is unit-testable. The 1px
-// tolerance absorbs sub-pixel line-height rounding, which otherwise reports a
-// permanent 1px overflow on text that fits exactly.
-export function isTextClamped(scrollHeight: number, clientHeight: number): boolean {
-  return scrollHeight > clientHeight + 1
+// Largest n in [0, len] for which `fits(n)` holds, assuming fits() is monotonic
+// (true for every n below the threshold, false above it) — which holds here
+// because adding characters can only ever make text taller, never shorter.
+//
+// Pure, and takes the predicate rather than doing its own measuring, so the
+// binary search is unit-testable without a layout engine. Returns 0 when even
+// the empty prefix does not fit, which callers treat as "don't truncate".
+export function largestFittingPrefix(len: number, fits: (n: number) => boolean): number {
+  if (fits(len)) return len
+  let lo = 0
+  let hi = len
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (fits(mid)) lo = mid
+    else hi = mid - 1
+  }
+  return lo
 }
 
-// The bill's italic abstract. Collapsed, it clamps to two lines; the toggle
-// appears only when those two lines actually hide something (measured, not
-// guessed from string length, which cannot know the column width). Without it
-// the abstract was simply truncated with no way to read the rest.
+// Number of lines the collapsed abstract shows, and the line-height it is laid
+// out at. The line-height must be explicit: the measurement below turns it into
+// a pixel budget, and a computed `normal` gives no number to multiply.
+const ABSTRACT_MAX_LINES = 2
+const ABSTRACT_LINE_HEIGHT = 1.45
+
+// The bill's italic abstract. Collapsed it shows two lines, with the toggle
+// sitting at the end of the last line and wrapping only when there is no room —
+// the same inline behaviour as the sponsors row above it.
+//
+// That placement is why this measures a text length rather than using
+// `-webkit-line-clamp`. A clamp cuts the box after N lines, and any inline
+// content after the cut — the button — is cut with it. Reserving room for the
+// button inside the clamped lines is not expressible in CSS, so the prefix that
+// leaves room for it is found by measurement instead: binary-search the longest
+// slice of text for which text + ellipsis + button still fits the line budget.
+//
+// The hidden measurer is a sibling with the same width and typography. React
+// never renders children into it, so mutating its textContent here does not
+// fight the reconciler; the visible copy is always rendered from state.
 function AbstractText({ text }: { text: string }) {
   const [showAll, setShowAll] = useState(false)
-  const [clamped, setClamped] = useState(false)
-  const pRef = useRef<HTMLParagraphElement>(null)
+  // null = not yet measured, or the whole abstract fits and needs no toggle.
+  const [visibleLen, setVisibleLen] = useState<number | null>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const lastWidthRef = useRef(-1)
 
-  // Re-measure as the column resizes, the same way SponsorsRow does. jsdom has
-  // neither layout nor a ResizeObserver, so both heights read 0 there and the
-  // guarded measure simply yields false — no toggle, no crash.
   useLayoutEffect(() => {
     if (showAll) return
-    const el = pRef.current
-    if (!el) return
-    const measure = () => setClamped(isTextClamped(el.scrollHeight, el.clientHeight))
+    const el = measureRef.current
+    const wrap = wrapRef.current
+    if (!el || !wrap) return
+
+    const measure = () => {
+      const lineHeightPx = parseFloat(getComputedStyle(el).fontSize) * ABSTRACT_LINE_HEIGHT
+      const budget = lineHeightPx * ABSTRACT_MAX_LINES
+      // jsdom reports 0 for every box, so the full text trivially "fits" and no
+      // toggle renders — same no-layout behaviour the sponsors row relies on.
+      if (!(budget > 0)) { setVisibleLen(null); return }
+
+      const setAndMeasure = (s: string) => { el.textContent = s; return el.scrollHeight }
+      if (setAndMeasure(text) <= budget + 1) { setVisibleLen(null); return }
+
+      // The reserved tail approximates the rendered button: same font size, so
+      // its label's width is the right order. Over-reserving is harmless (the
+      // button just sits a little further left); under-reserving would push it
+      // onto a third line, which is the thing being fixed.
+      const fits = (n: number) =>
+        setAndMeasure(`${text.slice(0, n).trimEnd()}… show more`) <= budget + 1
+      const n = largestFittingPrefix(text.length, fits)
+      setVisibleLen(n > 0 && n < text.length ? n : null)
+    }
+
+    lastWidthRef.current = -1
     measure()
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
-    ro?.observe(el)
-    return () => ro?.disconnect()
+
+    if (typeof ResizeObserver === 'undefined') return
+    // Observe the WRAPPER, never the measurer: measuring mutates the measurer's
+    // text and so its height, which would retrigger the observer that triggered
+    // the measurement — a feedback loop. The wrapper's width is also the only
+    // input that can change the answer, so the width guard keeps a height-only
+    // change (the visible copy growing when the toggle appears) from re-running
+    // the search for no reason.
+    const ro = new ResizeObserver(() => {
+      const w = Math.round(wrap.getBoundingClientRect().width)
+      if (w === lastWidthRef.current) return
+      lastWidthRef.current = w
+      measure()
+    })
+    ro.observe(wrap)
+    return () => ro.disconnect()
   }, [showAll, text])
 
+  const truncated = !showAll && visibleLen !== null
+  const shown = truncated ? `${text.slice(0, visibleLen!).trimEnd()}… ` : text
+  const showToggle = truncated || showAll
+
+  const typography = {
+    fontSize: fontSize.sm, fontStyle: 'italic' as const,
+    fontFamily: "'Source Serif 4', serif", lineHeight: ABSTRACT_LINE_HEIGHT,
+  }
+
   return (
-    <div style={{ margin: '0 0 10px' }}>
-      <p
-        ref={pRef}
-        style={{
-          fontSize: fontSize.sm, color: color.textMuted, margin: 0, fontStyle: 'italic',
-          fontFamily: "'Source Serif 4', serif",
-          ...(showAll
-            ? {}
-            : { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }),
-        }}
-      >
-        {text}
+    <div ref={wrapRef} style={{ position: 'relative', margin: '0 0 10px' }}>
+      {/* Visible copy. One inline flow, so the toggle rides the end of the last
+          line and wraps with it rather than claiming a line of its own. */}
+      <p style={{ ...typography, color: color.textMuted, margin: 0 }}>
+        {shown}
+        {showToggle && (
+          <button
+            onClick={() => setShowAll(v => !v)}
+            style={{
+              fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none',
+              cursor: 'pointer', padding: 0, whiteSpace: 'nowrap', fontStyle: 'normal',
+              // Sits in the text's own inline flow; the leading space keeps it
+              // off the ellipsis without a margin that could wrap on its own.
+              marginLeft: showAll ? 4 : 0,
+            }}
+          >
+            {showAll ? 'show less' : 'show more'}
+          </button>
+        )}
       </p>
-      {(showAll || clamped) && (
-        <button
-          onClick={() => setShowAll(v => !v)}
-          style={{ fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
-        >
-          {showAll ? 'show less' : 'show more'}
-        </button>
-      )}
+      {/* Hidden measurer — same width and typography as the copy above. */}
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        style={{
+          ...typography, position: 'absolute', top: 0, left: 0, right: 0,
+          visibility: 'hidden', pointerEvents: 'none', display: 'block',
+        }}
+      />
     </div>
   )
 }
