@@ -30,7 +30,7 @@ import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
-import { SECTION_LABEL, CHROME_TEXT } from '../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, FONT_SANS } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
@@ -292,10 +292,14 @@ function AbstractText({ text }: { text: string }) {
   // the real one is an atomic inline-block that must wrap whole, while the
   // reserved text could break at its space. Both made the reservation too
   // small, so the toggle landed on a third line — the bug this was meant to fix.
-  // fontFamily is pinned to inherit rather than left to the UA so the stand-in,
-  // which does inherit, cannot diverge from it.
+  //
+  // FONT_SANS rather than inherit: the toggle is interface, not prose, so it
+  // opts out of the abstract's serif italic. Setting it here is safe precisely
+  // because both the button and the stand-in read this one object — the
+  // measurement follows the font automatically instead of having to be kept in
+  // agreement with it by hand.
   const toggleStyle = {
-    fontSize: fontSize.sm, fontFamily: 'inherit', color: color.linkBlue,
+    fontSize: fontSize.sm, fontFamily: FONT_SANS, color: color.linkBlue,
     background: 'none', border: 'none', padding: 0,
     whiteSpace: 'nowrap' as const, fontStyle: 'normal' as const,
     // A <button> is inline-block by default and a <span> is inline; pinning it
