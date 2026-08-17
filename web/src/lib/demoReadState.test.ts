@@ -29,13 +29,27 @@ describe('demoReadState', () => {
     expect(readMentionIds(E2)).toEqual(new Set(['c']))
   })
 
-  // Undefined means /config has not answered, or the tenant has never reset.
-  // Treating that as a match would let a pre-reset set leak into a new demo.
-  it('treats an unknown epoch as no read state, and refuses to write under one', () => {
+  // Undefined means /config has not answered, or the tenant has not been reset
+  // since demo_reset_at shipped. A real epoch's state must not be visible under
+  // it — that would be the leak the scoping exists to prevent.
+  it('does not see a real epoch’s read state under an unknown epoch', () => {
     markMentionsRead(['a'], E1)
     expect(readMentionIds(undefined)).toEqual(new Set())
-    markMentionsRead(['z'], undefined)
-    expect(readMentionIds(E1)).toEqual(new Set(['a']))
+  })
+
+  // The regression this guards: refusing to WRITE without an epoch left the
+  // badge permanently lit on every demo tenant between deploy and its next
+  // reset — opening the panel could never clear it.
+  it('still records read state when the epoch is unknown', () => {
+    markMentionsRead(['a', 'b'], undefined)
+    expect(readMentionIds(undefined)).toEqual(new Set(['a', 'b']))
+  })
+
+  // And the first real reset must still re-light them, which is the point of
+  // the whole mechanism.
+  it('discards unknown-epoch state once a real epoch arrives', () => {
+    markMentionsRead(['a', 'b'], undefined)
+    expect(readMentionIds(E1)).toEqual(new Set())
   })
 
   it('ignores a malformed or legacy stored value', () => {
