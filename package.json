@@ -19,12 +19,12 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.45.10",
+    "@material-symbols/svg-400": "^0.46.0",
     "@resvg/resvg-js": "^2.6.2",
     "concurrently": "^10.0.4",
     "fflate": "^0.8.3",
     "mermaid": "^11.16.1",
-    "tsx": "^4.23.11",
+    "tsx": "^4.23.12",
     "vite": "^8.2.1",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
