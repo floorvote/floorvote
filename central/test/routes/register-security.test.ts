@@ -164,3 +164,60 @@ describe('POST /tenants/register — apiUrl origin change (H4: auto-heal + warn)
     expect(row!.apiUrl).toBe('https://new.example.com')
   })
 })
+
+// ── Task 9: operator-side personalization signal ──────────────────────────
+
+describe('POST /tenants/register — aiContextPersonalized', () => {
+  it('stores whether the tenant has personalized its AI context', async () => {
+    const res = await register({
+      tenantId: 'nj-clerks',
+      name: 'NJ Clerks',
+      apiUrl: 'https://nj.example.com',
+      stateCoverage: ['NJ'],
+      keywords: ['election'],
+      aiContextPersonalized: true,
+    })
+    expect(res.status).toBe(200)
+
+    const row = await tenantRow('nj-clerks')
+    expect(row?.aiContextPersonalized).toBe(true)
+  })
+
+  it('defaults to not-personalized when the field is absent', async () => {
+    const res = await register({
+      tenantId: 'old-tenant',
+      name: 'Old Tenant',
+      apiUrl: 'https://old.example.com',
+      stateCoverage: ['NJ'],
+      keywords: [],
+    })
+    expect(res.status).toBe(200)
+
+    const row = await tenantRow('old-tenant')
+    expect(row?.aiContextPersonalized).toBe(false)
+  })
+
+  it('updates the value on re-registration (does not stick at the first value)', async () => {
+    await register({
+      tenantId: 'flip',
+      name: 'Flip',
+      apiUrl: 'https://flip.example.com',
+      stateCoverage: ['NJ'],
+      keywords: [],
+      aiContextPersonalized: false,
+    })
+    let row = await tenantRow('flip')
+    expect(row?.aiContextPersonalized).toBe(false)
+
+    await register({
+      tenantId: 'flip',
+      name: 'Flip',
+      apiUrl: 'https://flip.example.com',
+      stateCoverage: ['NJ'],
+      keywords: [],
+      aiContextPersonalized: true,
+    })
+    row = await tenantRow('flip')
+    expect(row?.aiContextPersonalized).toBe(true)
+  })
+})

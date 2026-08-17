@@ -35,7 +35,7 @@ beforeEach(() => {
     if (u.includes('/admin/dash/tenants/ri')) {
       return new Response(JSON.stringify({
         data: {
-          tenant: { id: 'ri', name: 'RI', states: ['RI'] },
+          tenant: { id: 'ri', name: 'RI', states: ['RI'], aiContextPersonalized: false },
           matchTypeBreakdown: { keyword: 5, manual: 2, null: 1 },
           textStatusBreakdown: { not_checked: 1, no_texts: 0, available: 7 },
           keywordEffectiveness: [{ keyword: 'election', billCount: 3, pct: 37.5 }],
@@ -77,5 +77,15 @@ describe('TenantDetail page', () => {
     await waitFor(() => expect(screen.getByText(/DB health/)).toBeInTheDocument())
     expect(screen.getByText('ok')).toBeInTheDocument()
     expect(screen.getByText(/1234ms/)).toBeInTheDocument()
+  })
+
+  it('flags generic default AI instructions as advisory', async () => {
+    render(
+      <MemoryRouter initialEntries={['/tenants/ri']}>
+        <Routes><Route path="/tenants/:id" element={<TenantDetail />} /></Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() => expect(screen.getByText(/AI instructions/)).toBeInTheDocument())
+    expect(screen.getByText(/AI instructions: generic default/)).toBeInTheDocument()
   })
 })

@@ -13,7 +13,7 @@ beforeEach(async () => { await setupLsDb() })
 async function seed() {
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.tenants).values([
-    { tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true } as any,
+    { tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true, aiContextPersonalized: true } as any,
   ])
   await db.insert(schema.bills).values([
     { billId: 1, sessionId: 1, state: 'RI', stateId: 41, billNumber: 'H1', changeHash: 'h', title: 'Election day registration', createdAt: '2026-05-28T00:00:00Z', updatedAt: '2026-05-28T10:00:00Z' } as any,
@@ -62,6 +62,7 @@ describe('GET /admin/dash/tenants/:id', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as any
     expect(body.data.tenant.id).toBe('ri')
+    expect(body.data.tenant.aiContextPersonalized).toBe(true)
     expect(body.data.matchTypeBreakdown).toEqual({ keyword: 1, manual: 1, null: 1 })
     expect(Array.isArray(body.data.keywordEffectiveness)).toBe(true)
     expect(body.data.crossTenantBills.length).toBe(1)

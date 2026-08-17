@@ -17,7 +17,7 @@ describe('GET /admin/dash/ops-health', () => {
     const old = new Date(Date.now() - 200 * 60 * 60 * 1000).toISOString()   // ~8d ago
 
     await db.insert(schema.tenants).values([
-      { tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true, apiUrl: 'http://ri', lastSeenAt: recent } as any,
+      { tenantId: 'ri', name: 'RI', stateCoverage: '["RI"]', active: true, apiUrl: 'http://ri', lastSeenAt: recent, aiContextPersonalized: true } as any,
       { tenantId: 'stale', name: 'Stale', stateCoverage: '["NJ"]', active: true, apiUrl: 'http://s', lastSeenAt: old } as any,
     ])
     await db.insert(schema.bills).values([{ billId: 1, sessionId: 1, state: 'RI', stateId: 41, billNumber: 'H1', changeHash: 'h', title: 't' } as any])
@@ -41,9 +41,11 @@ describe('GET /admin/dash/ops-health', () => {
     expect(ri.lastStatsPullAt).toBe(recent)
     expect(ri.lastSeenAt).toBe(recent)
     expect(ri.stale).toBe(false)
+    expect(ri.aiContextPersonalized).toBe(true)
 
     const stale = body.data.tenants.find((t: any) => t.tenantId === 'stale')
     expect(stale.stale).toBe(true) // never delivered a bill + lastSeen old
+    expect(stale.aiContextPersonalized).toBe(false)
 
     const nj = body.data.states.find((s: any) => s.state === 'NJ')
     expect(nj.stale).toBe(true)

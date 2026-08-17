@@ -67,4 +67,27 @@ describe('registerWithCentral', () => {
     const db = getDb(env.DB)
     await expect(registerWithCentral(testEnv as any, db)).resolves.not.toThrow()
   })
+
+  it('reports aiContextPersonalized: false when ai_context is unset', async () => {
+    const db = getDb(env.DB)
+    await registerWithCentral(testEnv as any, db)
+    const body = JSON.parse(fetchCalls[0].options.body as string)
+    expect(body.aiContextPersonalized).toBe(false)
+  })
+
+  it('reports whether ai_context has been personalized', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: 'ai_context',
+      value: JSON.stringify('Analyze for county clerks.'),
+    }).onConflictDoUpdate({
+      target: associationConfig.key,
+      set: { value: JSON.stringify('Analyze for county clerks.') },
+    })
+
+    await registerWithCentral(testEnv as any, db)
+
+    const body = JSON.parse(fetchCalls[0].options.body as string)
+    expect(body.aiContextPersonalized).toBe(true)
+  })
 })

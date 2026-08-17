@@ -619,7 +619,7 @@ dashRoutes.get('/tenants/:id', async (c) => {
 
   return c.json({
     data: {
-      tenant: { id, name: tenant.name, states },
+      tenant: { id, name: tenant.name, states, aiContextPersonalized: tenant.aiContextPersonalized },
       matchTypeBreakdown,
       textStatusBreakdown,
       keywordEffectiveness,
@@ -712,6 +712,7 @@ dashRoutes.get('/ops-health', async (c) => {
       lastStatsPullAt,
       lastSeenAt: t.lastSeenAt,
       stale,
+      aiContextPersonalized: t.aiContextPersonalized,
     }
   })
 

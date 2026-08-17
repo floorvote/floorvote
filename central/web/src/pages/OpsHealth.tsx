@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { DataTable, Column } from '../components/DataTable'
 
-type TenantHealth = { tenantId: string; name: string; active: boolean; lastBillDeliveredAt: string | null; lastStatsPullAt: string | null; lastSeenAt: string | null; stale: boolean }
+type TenantHealth = { tenantId: string; name: string; active: boolean; lastBillDeliveredAt: string | null; lastStatsPullAt: string | null; lastSeenAt: string | null; stale: boolean; aiContextPersonalized: boolean }
 type StateHealth = { state: string; lastSyncedAt: string | null; stale: boolean }
 type OpsData = { tenants: TenantHealth[]; states: StateHealth[]; thresholds: Record<string, number> }
 
@@ -24,6 +24,15 @@ const tenantCols: Column<TenantHealth>[] = [
   { key: 'bill', header: 'Last bill delivered', cell: t => fmt(t.lastBillDeliveredAt) },
   { key: 'stats', header: 'Last stats pull', cell: t => fmt(t.lastStatsPullAt) },
   { key: 'seen', header: 'Last seen', cell: t => fmt(t.lastSeenAt) },
+  {
+    key: 'ai',
+    header: 'AI instructions',
+    cell: t => (
+      <span style={{ color: t.aiContextPersonalized ? 'var(--success)' : 'var(--warning)' }}>
+        {t.aiContextPersonalized ? 'personalized' : 'generic default'}
+      </span>
+    ),
+  },
 ]
 
 const stateCols: Column<StateHealth>[] = [

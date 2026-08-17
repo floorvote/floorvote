@@ -33,6 +33,7 @@ tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
     apiUrl: string
     stateCoverage: string[]
     keywords?: string[]
+    aiContextPersonalized?: boolean
   }>()
 
   // H3: validate apiUrl before any DB write to prevent ADMIN_SECRET exfiltration
@@ -91,19 +92,21 @@ tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
   const mergedCoverage = JSON.stringify(mergeCoverage(existingCoverage, body.stateCoverage))
 
   await db.insert(schema.tenants).values({
-    tenantId:      body.tenantId,
-    name:          body.name,
-    apiUrl:        body.apiUrl,
-    stateCoverage: mergedCoverage,
-    active:        true,
-    lastSeenAt:    now,
+    tenantId:              body.tenantId,
+    name:                  body.name,
+    apiUrl:                body.apiUrl,
+    stateCoverage:         mergedCoverage,
+    active:                true,
+    lastSeenAt:            now,
+    aiContextPersonalized: body.aiContextPersonalized ?? false,
   }).onConflictDoUpdate({
     target: schema.tenants.tenantId,
     set: {
-      name:          body.name,
-      apiUrl:        body.apiUrl,
-      lastSeenAt:    now,
-      stateCoverage: mergedCoverage,
+      name:                  body.name,
+      apiUrl:                body.apiUrl,
+      lastSeenAt:            now,
+      stateCoverage:         mergedCoverage,
+      aiContextPersonalized: body.aiContextPersonalized ?? false,
     },
   })
 
