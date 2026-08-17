@@ -1,4 +1,4 @@
-import { useId, useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useId, useState, useRef, useEffect, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -140,6 +140,39 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   // click still correctly reads as "currently closed" and reopens rather than
   // no-op-closing again.
   const hide = () => { pinnedRef.current = false; setAnchor(null) }
+
+  // Dismiss on scroll. The bubble is position:fixed at coordinates measured once
+  // when it opened, so scrolling moves the thing it describes and leaves the
+  // bubble behind, floating next to whatever happens to be there now.
+  //
+  // Dismissing rather than re-anchoring is the deliberate choice. Following the
+  // anchor would keep a hovered bubble alive through a scroll, but it also has
+  // to decide what to do when the anchor scrolls out of view or under the sticky
+  // header, or it ends up pointing at something occluded. And it would not fix
+  // the other half of the oddity: browsers do not reliably re-dispatch
+  // pointerenter when an element scrolls under a stationary cursor, so a tooltip
+  // still would not appear for an item that arrived under the mouse by scrolling.
+  // Dismissing makes that consistent instead of arbitrary -- tooltips appear only
+  // from deliberate pointer movement or focus, and scrolling never shows or keeps
+  // one. Synthesising hover from elementFromPoint on scroll would fix it
+  // literally, at the cost of bubbles popping up unprompted mid-scroll.
+  //
+  // Capture phase because the app scrolls inner containers (the main region, the
+  // sidebar's widget rail), and scroll does not bubble to window from those.
+  // Passive because this never calls preventDefault, so it must not make the
+  // scroll itself wait on a listener.
+  //
+  // This dismisses a click-pinned toggletip too, widening its documented
+  // Escape/blur/second-click contract. That is intended: a pinned bubble is
+  // position:fixed like any other and detaches exactly the same way.
+  useEffect(() => {
+    if (!anchor) return
+    // Resets pinnedRef inline rather than calling hide(), which is redefined
+    // every render and would re-register the listener on each one.
+    const dismiss = () => { pinnedRef.current = false; setAnchor(null) }
+    window.addEventListener('scroll', dismiss, { capture: true, passive: true })
+    return () => window.removeEventListener('scroll', dismiss, { capture: true })
+  }, [anchor])
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
