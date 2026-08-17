@@ -20,9 +20,14 @@ import { apiFetch } from '../lib/api'
 // strength of `!demoMode` — the two mention mark-read call sites — has to wait
 // for this instead, or a cold load of a demo URL POSTs read_at onto the shared
 // demo-user row before the gate can close.
+// demoResetAt — the epoch stamped by the most recent demo reset. Opaque: only
+// ever compared for equality, to namespace per-browser mention read state so it
+// is discarded when the reset re-lights those mentions server-side. Undefined
+// on non-demo tenants and on a demo that has not reset since this shipped.
 type DemoState = {
   demoMode: boolean
   demoLocked: boolean
+  demoResetAt?: string
   settled: boolean
 }
 
@@ -32,8 +37,8 @@ export function DemoProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DemoState>({ demoMode: false, demoLocked: false, settled: false })
 
   useEffect(() => {
-    apiFetch<{ demoMode: boolean; demoLocked: boolean }>('/config')
-      .then((r) => setState({ demoMode: r.demoMode ?? false, demoLocked: r.demoLocked ?? false, settled: true }))
+    apiFetch<{ demoMode: boolean; demoLocked: boolean; demoResetAt?: string }>('/config')
+      .then((r) => setState({ demoMode: r.demoMode ?? false, demoLocked: r.demoLocked ?? false, demoResetAt: r.demoResetAt, settled: true }))
       // Settle on failure too. A tenant whose /config is down is not a demo as
       // far as anything downstream can tell, and leaving `settled` false forever
       // would silently disable mark-read on every real tenant that hiccups.

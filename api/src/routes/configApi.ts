@@ -46,7 +46,7 @@ configRouter.get('/', async (c) => {
   await ensureInstancePreset(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, taxonomyItems] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -55,6 +55,7 @@ configRouter.get('/', async (c) => {
     db.select().from(associationConfig).where(eq(associationConfig.key, 'modules')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'org_noun')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_banner')).get(),
+    db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_reset_at')).get(),
     loadEffectiveTaxonomy(db),
   ])
 
@@ -189,7 +190,14 @@ configRouter.get('/', async (c) => {
     }
   }
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, modules, operator, accountDeletionEnabled, tagTaxonomy, demoBanner })
+  // Stamped by runDemoReset on every reset. The client uses it purely as an
+  // opaque epoch to namespace per-browser demo read state, so that the four-a-day
+  // reset — which re-lights the seeded mentions server-side — also clears the
+  // local record of having read them. Undefined on a tenant that has never been
+  // reset, and on every non-demo tenant.
+  const demoResetAt = demoResetAtRow?.value
+
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, accountDeletionEnabled, tagTaxonomy, demoBanner })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central

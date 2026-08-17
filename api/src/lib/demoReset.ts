@@ -127,6 +127,14 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('position_vocabulary', ?)`).bind(JSON.stringify(seed.positionVocabulary)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('org_noun', ?)`).bind(JSON.stringify(seed.orgNoun)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('demo_banner', ?)`).bind(JSON.stringify(seed.bannerText)),
+    // A fresh opaque epoch on every reset, surfaced through GET /config. The
+    // browser namespaces its local mention read state on this, so the reset
+    // that re-lights the seeded mentions server-side also clears the local
+    // record of having read them — otherwise a laptop that demoed once shows
+    // those mentions read forever, which is the opposite of what a reset means.
+    // Only ever compared for equality, never parsed or SQL-sorted.
+    db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('demo_reset_at', ?)`)
+      .bind(new Date().toISOString()), // ts-write-ok: opaque cache-busting epoch, never SQL-sorted
     // Optional widgets start OFF so visitors can experience enabling them from
     // the sidebar's "Customize widgets" panel (toggling modules is allowed in
     // demo mode; all other config stays locked). Reset returns them to the

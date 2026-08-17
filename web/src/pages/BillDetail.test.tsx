@@ -63,7 +63,7 @@ vi.mock('../hooks/useAuth', () => ({
 // Mutable so the demo-tenant cases below can flip demoMode/settled without a
 // per-test module mock. Defaults mirror a settled non-demo tenant, which is what
 // every other test in this file assumes.
-const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true }))
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true, demoResetAt: 'epoch-1' }))
 vi.mock('../context/DemoContext', () => ({
   useDemo: () => ({ ...demoState }),
 }))
@@ -666,7 +666,7 @@ describe('BillDetail mark-read-by-bill effect', () => {
       await screen.findByText('Test Bill')
 
       const { readMentionIds } = await import('../lib/demoReadState')
-      await waitFor(() => expect(readMentionIds()).toEqual(new Set(['m1', 'm2'])))
+      await waitFor(() => expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
     })
 
@@ -685,7 +685,7 @@ describe('BillDetail mark-read-by-bill effect', () => {
 
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
       const { readMentionIds } = await import('../lib/demoReadState')
-      expect(readMentionIds()).toEqual(new Set())
+      expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set())
     })
   })
 })
