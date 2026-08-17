@@ -16,7 +16,7 @@ import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
 import { TOOLTIP_STYLE } from '../../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT } from '../../lib/textStyles'
-import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
+import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
 import { useConfig } from '../../context/ConfigContext'
 import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
@@ -41,31 +41,35 @@ function MiniBar({ count, total, barColor, label, isActive, onVote }: {
     ? `You voted ${label.toLowerCase()} — click to remove your vote`
     : `Vote ${label.toLowerCase()} on this bill`
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+    // data-testid: the vote-rollback test needs to scope its count assertion to
+    // one vote row. It used to walk parentElement twice from the button, which
+    // silently broke the moment the button gained a wrapper. An explicit hook
+    // survives markup changes.
+    <div data-testid="vote-row" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
       {onVote ? (
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onVote() }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            style={{
-              width: 60, fontSize: fontSize.sm, padding: '3px 6px',
-              ...voteButtonStyle(label.toLowerCase() as VoteKey, !!isActive, hovered),
-            }}
-          >
-            {label}
-          </button>
-          {hovered && (
-            <span style={{
-              position: 'absolute', bottom: 'calc(100% + 5px)', left: '50%', transform: 'translateX(-50%)',
-              background: color.white, border: `1px solid ${color.borderDefault}`, boxShadow: shadow.md,
-              color: color.textSlate500, padding: '4px 8px', borderRadius: radius.sm, fontSize: fontSize.xs,
-              whiteSpace: 'nowrap', zIndex: 200, pointerEvents: 'none',
-            }}>
-              {tooltip}
-            </span>
-          )}
+        <div style={{ flexShrink: 0 }}>
+          {/* Was a hand-rolled absolutely-positioned bubble. It asked for
+              zIndex 200 and still lost to the sticky header, because the row
+              around it establishes a stacking context — so the inner value was
+              only ever ordered against its siblings. HoverTooltip portals to
+              body, which escapes that entirely, and brings keyboard focus
+              reveal plus the mouse-only pointer guard (a tap can't strand the
+              bubble) that the hand-rolled span never had. `hovered` stays: it
+              still drives the button's own hover styling. */}
+          <HoverTooltip text={tooltip} placement="top">
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onVote() }}
+              onMouseEnter={() => setHovered(true)}
+              onMouseLeave={() => setHovered(false)}
+              style={{
+                width: 60, fontSize: fontSize.sm, padding: '3px 6px',
+                ...voteButtonStyle(label.toLowerCase() as VoteKey, !!isActive, hovered),
+              }}
+            >
+              {label}
+            </button>
+          </HoverTooltip>
         </div>
       ) : (
         <span style={{ width: 60, fontSize: fontSize.sm, color: color.textSlate500, flexShrink: 0 }}>{label}</span>

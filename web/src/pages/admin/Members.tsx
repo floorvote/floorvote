@@ -1202,16 +1202,16 @@ export function Members() {
                     )}
                   </button>
                 )
-                // The dropdown is position: fixed and overflow-clipped, so the
-                // bubble portals to body. `block` makes the whole row the hover
-                // target (not just the label); 'top' centers the bubble on the
-                // menu, and boundaryRef clamps its right edge to the members card
-                // so it can't spill past the card's right edge.
+                // The dropdown is position: fixed and overflow-clipped, which
+                // the default portal escapes. `block` makes the whole row the
+                // hover target (not just the label); 'top' centers the bubble on
+                // the menu, and boundaryRef clamps its right edge to the members
+                // card so it can't spill past the card's right edge.
                 return (
                   <Fragment key={i}>
                     {item.tooltip
                       ? (
-                        <HoverTooltip text={item.tooltip} portal block placement="top" maxWidth={280} boundaryRef={cardRef}>
+                        <HoverTooltip text={item.tooltip} block placement="top" maxWidth={280} boundaryRef={cardRef}>
                           {row}
                         </HoverTooltip>
                       )

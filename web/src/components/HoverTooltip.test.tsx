@@ -30,6 +30,25 @@ describe('HoverTooltip', () => {
     expect(container.contains(bubble)).toBe(false)
   })
 
+  // The default is what the bug was about: a caller that says nothing must not
+  // be left inline, where any ancestor stacking context caps the bubble's depth
+  // and a sticky header paints over it.
+  it('portals by default, with no portal prop passed', () => {
+    const { container } = render(
+      <HoverTooltip text="Default tip"><button>trigger</button></HoverTooltip>,
+    )
+    fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+    expect(container.contains(screen.getByText('Default tip'))).toBe(false)
+  })
+
+  it('still renders inline when portal is explicitly disabled', () => {
+    const { container } = render(
+      <HoverTooltip text="Inline tip" portal={false}><button>trigger</button></HoverTooltip>,
+    )
+    fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+    expect(container.contains(screen.getByText('Inline tip'))).toBe(true)
+  })
+
   it('wraps multi-line text when maxWidth is set', () => {
     render(<HoverTooltip text="Wrapping tip" maxWidth={200}><button>trigger</button></HoverTooltip>)
     fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })

@@ -9,8 +9,21 @@ export type Placement = 'top' | 'top-start' | 'top-end' | 'bottom' | 'bottom-sta
 //  - anchor measured on hover via getBoundingClientRect (HoverTip/InfoTooltip)
 //  - pointer events with a mouse-only guard so a tap can't strand the bubble
 //    (FilterTooltip) — a touch fires pointerenter with no matching leave
-//  - optional portal to document.body so an ancestor's overflow/transform can't
-//    clip it (HoverTip — calendar popovers)
+//  - portal to document.body by default, so no ancestor can clip, mis-anchor,
+//    or out-stack the bubble. This is the default rather than an opt-in because
+//    the bubble is already position:fixed at viewport coordinates taken from
+//    getBoundingClientRect, so portaling never changes where it is drawn — it
+//    only changes which ancestor properties can interfere with it, and every
+//    one of those interferes destructively:
+//      * an `overflow: hidden|auto` ancestor clips the bubble;
+//      * a `transform`/`filter`/`perspective`/`will-change` ancestor becomes
+//        the containing block for position:fixed, silently mis-anchoring it;
+//      * any ancestor stacking context (e.g. a row with position:relative and
+//        a z-index) caps the bubble's effective depth, making zIndex 9000 mean
+//        nothing against a sticky header — the bug this default was flipped for.
+//    pointerEvents:'none' means portaling cannot change hit-testing either, so
+//    portal is a strict superset of inline. `portal={false}` remains as an
+//    escape hatch but should not be needed.
 //  - optional maxWidth to opt into a wrapping multi-line bubble (FilterTooltip)
 //  - unified `placement`: 'top' centers above; 'top-start'/'top-end' align the
 //    bubble's left/right edge to the anchor (InfoTooltip's old left/right align);
@@ -37,6 +50,8 @@ interface HoverTooltipProps {
   children: ReactNode
   placement?: Placement
   maxWidth?: number
+  // Escape hatch only — see the file header. Defaults to true; inline rendering
+  // has no advantage over portaled and several failure modes of its own.
   portal?: boolean
   // Make the hover target fill its container (block wrapper, width 100%) instead
   // of shrink-wrapping the children — so a whole row is hoverable, not just its
@@ -56,7 +71,7 @@ interface HoverTooltipProps {
   ariaLabel?: string
 }
 
-export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = false, block = false, boundaryRef, toggletip = false, ariaLabel }: HoverTooltipProps) {
+export function HoverTooltip({ text, children, placement = 'top', maxWidth, portal = true, block = false, boundaryRef, toggletip = false, ariaLabel }: HoverTooltipProps) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null)
   const ref = useRef<HTMLElement | null>(null)
   // toggletip mode only: click's own open/closed parity, independent of the

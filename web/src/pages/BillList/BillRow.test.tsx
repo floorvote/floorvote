@@ -110,3 +110,40 @@ describe('BillRow write controls when demoLocked', () => {
     expect(onVote).toHaveBeenCalled()
   })
 })
+
+// The row sets position:relative with a z-index, which makes it a stacking
+// context: every z-index inside it is ordered only against its siblings, so no
+// inner value — however large — can compete with the sticky filter/column
+// header outside it. The vote tooltip previously asked for z-index 200 from
+// inside that trap and was painted behind the header anyway. Escaping to
+// document.body is what actually fixes it, so that is what these pin.
+describe('BillRow tooltips escape the row stacking context', () => {
+  afterEach(() => { demoState.demoLocked = false })
+
+  it('renders the vote-button tooltip outside the row subtree', () => {
+    const { container } = renderRow(false, { onVote: vi.fn() })
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Support' }), { pointerType: 'mouse' })
+    const bubble = screen.getByText(/vote support on this bill/i)
+    expect(bubble).toBeInTheDocument()
+    expect(container.contains(bubble)).toBe(false)
+  })
+
+  // Scope to the desktop column rather than taking the first matching combobox:
+  // each control also renders a mobile-meta duplicate, and the two are wrapped
+  // differently, so an index-based lookup silently targets the wrong one.
+  it('renders the position-select tooltip outside the row subtree', () => {
+    const { container } = renderRow(true)
+    // Walk up from the control, not down from the column: the column's first
+    // span is its "Position" label, not the tooltip wrapper.
+    const wrapper = container.querySelector('.bill-col-position select')!.closest('span')!
+    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
+    expect(container.contains(screen.getByText(/official position on this bill/i))).toBe(false)
+  })
+
+  it('renders the priority-select tooltip outside the row subtree', () => {
+    const { container } = renderRow(true)
+    const wrapper = container.querySelector('.bill-col-priority span')!
+    fireEvent.pointerEnter(wrapper, { pointerType: 'mouse' })
+    expect(container.contains(screen.getByText(/priority level/i))).toBe(false)
+  })
+})

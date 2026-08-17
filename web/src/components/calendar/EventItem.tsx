@@ -74,7 +74,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
         </div>
       ) : (
         <>
-          <HoverTooltip text={eventSourceIcon(event).label} portal>
+          <HoverTooltip text={eventSourceIcon(event).label}>
             <EventSourceIcon event={event} />
           </HoverTooltip>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -84,7 +84,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
             <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignSelf: 'center' }}>
               {cancelled
                 ? (
-                  <HoverTooltip text="Restore event" portal>
+                  <HoverTooltip text="Restore event">
                     <button
                       type="button"
                       disabled={demoLocked}
@@ -98,12 +98,12 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
                 )
                 : (
                   <>
-                    <HoverTooltip text="Edit event" portal>
+                    <HoverTooltip text="Edit event">
                       <button type="button" style={iconBtn} aria-label="Edit event" onClick={() => onEdit(event)}>
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>edit</span>
                       </button>
                     </HoverTooltip>
-                    <HoverTooltip text="Delete event" portal>
+                    <HoverTooltip text="Delete event">
                       <button
                         type="button"
                         disabled={demoLocked}

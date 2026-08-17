@@ -178,7 +178,10 @@ describe('BillList vote failure rollback', () => {
     // Re-resolve the row on each check rather than caching the node: an optimistic
     // re-render can replace the row's DOM element, so a reference captured once can
     // go stale (an intermittent "unable to find 1/0" under load).
-    const supportRow = () => screen.getAllByRole('button', { name: 'Support' })[0].parentElement!.parentElement!
+    // Scope by the row's own test hook rather than by DOM depth: walking
+    // parentElement a fixed number of times silently broke when the vote button
+    // gained a tooltip wrapper.
+    const supportRow = () => screen.getAllByRole('button', { name: 'Support' })[0].closest('[data-testid="vote-row"]') as HTMLElement
     expect(within(supportRow()).getByText('0')).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Support' })[0])

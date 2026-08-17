@@ -71,7 +71,7 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
   return (
     <div data-event-detail style={{ padding: expanded ? 0 : 12 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <HoverTooltip text={eventSourceIcon(event).label} portal>
+        <HoverTooltip text={eventSourceIcon(event).label}>
           <EventSourceIcon event={event} />
         </HoverTooltip>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -81,14 +81,14 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
         {canManage && (
           <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
             {event.status !== 'cancelled' && (
-              <HoverTooltip text="Edit event" portal>
+              <HoverTooltip text="Edit event">
                 <button type="button" onClick={() => onEdit(event)} style={iconBtn} aria-label="Edit event">
                   <span className="material-symbols-outlined" style={{ fontSize: fontSize.xl }}>edit</span>
                 </button>
               </HoverTooltip>
             )}
             {event.status !== 'cancelled' && (
-              <HoverTooltip text="Delete event" portal>
+              <HoverTooltip text="Delete event">
                 <button
                   type="button"
                   disabled={demoLocked}
@@ -101,7 +101,7 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
               </HoverTooltip>
             )}
             {event.status === 'cancelled' && (
-              <HoverTooltip text="Restore event" portal>
+              <HoverTooltip text="Restore event">
                 <button
                   type="button"
                   disabled={demoLocked}
