@@ -70,6 +70,36 @@ describe('HoverTooltip', () => {
       expect(screen.getByText('Tip text')).toBeInTheDocument()
     })
 
+    // The dismissal has to survive the browser re-dispatching pointerenter
+    // because content moved under a stationary cursor — otherwise show() runs
+    // again in the same frame and the bubble never visibly goes away. This is
+    // the widget-rail case: a small scroll container where the row stays under
+    // the pointer.
+    it('stays dismissed when scrolling re-triggers pointerenter without a mouse move', () => {
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      const trigger = screen.getByText('trigger')
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+
+      fireEvent.scroll(window)
+      // The content moved under a cursor that never moved; the browser re-enters.
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+      expect(screen.queryByText('Tip text')).toBeNull()
+    })
+
+    it('re-hovers normally once the pointer actually moves', () => {
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      const trigger = screen.getByText('trigger')
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+      fireEvent.scroll(window)
+      expect(screen.queryByText('Tip text')).toBeNull()
+
+      // A real movement clears the suppression, so the next enter shows again.
+      fireEvent.pointerMove(window)
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+    })
+
     it('does not listen while no bubble is open', () => {
       const add = vi.spyOn(window, 'addEventListener')
       render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)

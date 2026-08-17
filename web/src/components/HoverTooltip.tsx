@@ -134,6 +134,16 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
     : null
 
   const setRef = (el: HTMLElement | null) => { ref.current = el }
+  // Set when a scroll dismisses the bubble, cleared by the next real pointer
+  // movement. Without it the dismissal does not stick: where a browser DOES
+  // re-dispatch pointerenter because content moved under a stationary cursor —
+  // most reliably inside a small scroll container, like the sidebar's widget
+  // rail, where the row stays under the pointer — that re-entry calls show()
+  // again in the same frame and the bubble never visibly goes away. Window
+  // capture runs before any handler inside the page, so nothing downstream can
+  // suppress the dismissal; it was being undone after the fact instead.
+  const scrollSuppressedRef = useRef(false)
+
   const show = () => { if (ref.current) setAnchor(ref.current.getBoundingClientRect()) }
   // Hiding always resets pinnedRef too, so a later Escape/blur (or an
   // unpinned pointerleave) can't leave click's toggle parity stale — the next
@@ -169,13 +179,33 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
     if (!anchor) return
     // Resets pinnedRef inline rather than calling hide(), which is redefined
     // every render and would re-register the listener on each one.
-    const dismiss = () => { pinnedRef.current = false; setAnchor(null) }
+    //
+    // The one-shot pointermove is what makes the dismissal stick against a
+    // scroll-induced pointerenter (see scrollSuppressedRef). `once` means it
+    // costs nothing once the user actually moves — no standing listener per
+    // tooltip — and re-hovering works immediately because any real movement
+    // clears the flag before the enter that follows it.
+    const dismiss = () => {
+      pinnedRef.current = false
+      scrollSuppressedRef.current = true
+      window.addEventListener(
+        'pointermove',
+        () => { scrollSuppressedRef.current = false },
+        { once: true, passive: true },
+      )
+      setAnchor(null)
+    }
     window.addEventListener('scroll', dismiss, { capture: true, passive: true })
     return () => window.removeEventListener('scroll', dismiss, { capture: true })
   }, [anchor])
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
+    // Guarded here rather than in show() so it only ever suppresses a *hover*
+    // reveal. Click and focus are deliberate acts and must still work with the
+    // pointer sitting still after a scroll — gating show() itself made a
+    // toggletip unclickable until the mouse twitched.
+    if (scrollSuppressedRef.current) return
     show()
   }
   // Gated on pinnedRef so a click-pinned toggletip survives the mouse moving
