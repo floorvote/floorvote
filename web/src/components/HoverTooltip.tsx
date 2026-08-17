@@ -134,15 +134,6 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
     : null
 
   const setRef = (el: HTMLElement | null) => { ref.current = el }
-  // Set when a scroll dismisses the bubble, cleared by the next real pointer
-  // movement. Without it the dismissal does not stick: where a browser DOES
-  // re-dispatch pointerenter because content moved under a stationary cursor —
-  // most reliably inside a small scroll container, like the sidebar's widget
-  // rail, where the row stays under the pointer — that re-entry calls show()
-  // again in the same frame and the bubble never visibly goes away. Window
-  // capture runs before any handler inside the page, so nothing downstream can
-  // suppress the dismissal; it was being undone after the fact instead.
-  const scrollSuppressedRef = useRef(false)
 
   const show = () => { if (ref.current) setAnchor(ref.current.getBoundingClientRect()) }
   // Hiding always resets pinnedRef too, so a later Escape/blur (or an
@@ -151,61 +142,62 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   // no-op-closing again.
   const hide = () => { pinnedRef.current = false; setAnchor(null) }
 
-  // Dismiss on scroll. The bubble is position:fixed at coordinates measured once
-  // when it opened, so scrolling moves the thing it describes and leaves the
-  // bubble behind, floating next to whatever happens to be there now.
+  // Follow the anchor on scroll. The bubble is position:fixed at coordinates
+  // measured when it opened, so without this a scroll moves the thing it
+  // describes and leaves the bubble floating beside whatever is there now.
   //
-  // Dismissing rather than re-anchoring is the deliberate choice. Following the
-  // anchor would keep a hovered bubble alive through a scroll, but it also has
-  // to decide what to do when the anchor scrolls out of view or under the sticky
-  // header, or it ends up pointing at something occluded. And it would not fix
-  // the other half of the oddity: browsers do not reliably re-dispatch
-  // pointerenter when an element scrolls under a stationary cursor, so a tooltip
-  // still would not appear for an item that arrived under the mouse by scrolling.
-  // Dismissing makes that consistent instead of arbitrary -- tooltips appear only
-  // from deliberate pointer movement or focus, and scrolling never shows or keeps
-  // one. Synthesising hover from elementFromPoint on scroll would fix it
-  // literally, at the cost of bubbles popping up unprompted mid-scroll.
+  // This replaces a dismiss-on-scroll that did not work, and the reason it did
+  // not is worth recording, because it is not obvious from the code. Window
+  // capture runs before any handler in the page, so the dismissal always fired
+  // — it was undone afterwards. A scroll makes the browser dispatch a
+  // pointermove with UNCHANGED coordinates (the hit-tested element moved under a
+  // stationary cursor), that re-entry called show() again, and React batched the
+  // null and the re-anchor into one render — so nothing visibly changed at all,
+  // not even a flicker. Two attempts at suppressing that re-entry failed.
+  //
+  // Re-anchoring sidesteps it entirely rather than fighting it: a re-entry now
+  // sets the anchor to the same rect this handler would have set, so the outcome
+  // is identical whether or not the browser re-dispatches. That property is what
+  // makes this robust to the event behaviour it is impossible to test here.
+  //
+  // Hides only once the anchor has left the viewport, where "follow it" has no
+  // sensible answer.
   //
   // Capture phase because the app scrolls inner containers (the main region, the
-  // sidebar's widget rail), and scroll does not bubble to window from those.
-  // Passive because this never calls preventDefault, so it must not make the
-  // scroll itself wait on a listener.
+  // sidebar's widget rail) and scroll does not bubble to window from those.
+  // Passive because it never calls preventDefault, so it must not make the
+  // scroll wait on a listener. rAF-throttled so a fast scroll costs one
+  // measurement per frame rather than one per event.
   //
-  // This dismisses a click-pinned toggletip too, widening its documented
-  // Escape/blur/second-click contract. That is intended: a pinned bubble is
-  // position:fixed like any other and detaches exactly the same way.
+  // Keyed on whether a bubble is open, NOT on `anchor` itself: this effect sets
+  // `anchor`, so depending on it would tear down and re-register the listener
+  // every frame of every scroll.
+  const isOpen = anchor !== null
   useEffect(() => {
-    if (!anchor) return
-    // Resets pinnedRef inline rather than calling hide(), which is redefined
-    // every render and would re-register the listener on each one.
-    //
-    // The one-shot pointermove is what makes the dismissal stick against a
-    // scroll-induced pointerenter (see scrollSuppressedRef). `once` means it
-    // costs nothing once the user actually moves — no standing listener per
-    // tooltip — and re-hovering works immediately because any real movement
-    // clears the flag before the enter that follows it.
-    const dismiss = () => {
-      pinnedRef.current = false
-      scrollSuppressedRef.current = true
-      window.addEventListener(
-        'pointermove',
-        () => { scrollSuppressedRef.current = false },
-        { once: true, passive: true },
-      )
-      setAnchor(null)
+    if (!isOpen) return
+    let frame = 0
+    const reanchor = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        const el = ref.current
+        if (!el) return
+        const r = el.getBoundingClientRect()
+        const offscreen = r.bottom < 0 || r.right < 0
+          || r.top > window.innerHeight || r.left > window.innerWidth
+        if (offscreen) { pinnedRef.current = false; setAnchor(null); return }
+        setAnchor(r)
+      })
     }
-    window.addEventListener('scroll', dismiss, { capture: true, passive: true })
-    return () => window.removeEventListener('scroll', dismiss, { capture: true })
-  }, [anchor])
+    window.addEventListener('scroll', reanchor, { capture: true, passive: true })
+    return () => {
+      window.removeEventListener('scroll', reanchor, { capture: true })
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [isOpen])
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
-    // Guarded here rather than in show() so it only ever suppresses a *hover*
-    // reveal. Click and focus are deliberate acts and must still work with the
-    // pointer sitting still after a scroll — gating show() itself made a
-    // toggletip unclickable until the mouse twitched.
-    if (scrollSuppressedRef.current) return
     show()
   }
   // Gated on pinnedRef so a click-pinned toggletip survives the mouse moving
