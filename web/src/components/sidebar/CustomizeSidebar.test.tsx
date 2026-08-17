@@ -6,11 +6,14 @@ import * as api from '../../lib/api'
 describe('CustomizeSidebarPanel', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('lists toggleable widgets with kind tags', () => {
+  it('lists toggleable widgets by name, with no redundant kind chip', () => {
     render(<CustomizeSidebarPanel modules={{}} onSaved={vi.fn()} />)
     expect(screen.getByText('Prioritized bills')).toBeInTheDocument()
     expect(screen.getByText('Upcoming hearings')).toBeInTheDocument()
-    expect(screen.getAllByText('Widget').length).toBeGreaterThanOrEqual(2)
+    // The panel filters MODULES to type === 'widget', so every row was labelled
+    // "Widget" and the per-row chip carried no information. Asserting its
+    // absence keeps it from creeping back in.
+    expect(screen.queryByText('Widget')).not.toBeInTheDocument()
   })
 
   it('shows the fixed-behavior hint instead of any hearings settings controls', () => {

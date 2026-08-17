@@ -6,7 +6,6 @@ import {
   isModuleEnabled,
   getModuleSetting,
   visibleModuleSettings,
-  moduleKindLabel,
 } from '../../lib/modules'
 import type { ModulesConfig, ModuleSettingValue } from '../../lib/modules'
 import { useConfig } from '../../context/ConfigContext'
@@ -110,18 +109,6 @@ export function CustomizeSidebarPanel({
                 <div>
                   <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold }}>
                     {m.name}
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: fontSize.xs,
-                        color: color.textSlate500,
-                        background: color.surfaceMuted,
-                        borderRadius: radius.sm,
-                        padding: '1px 5px',
-                      }}
-                    >
-                      {moduleKindLabel(m.type)}
-                    </span>
                   </div>
                   {m.description && (
                     <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>{m.description}</div>
