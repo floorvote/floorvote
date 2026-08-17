@@ -202,6 +202,9 @@ npx wrangler d1 migrations apply floorvote-[slug] --remote --env [slug]
 > [!WARNING]
 > Always use `migrations apply`, never `d1 execute` with raw SQL files — `apply` tracks which migrations have run.
 
+> [!WARNING]
+> **Upgrading an existing deployment:** some migrations must run either strictly before or strictly after the worker is redeployed — running them in the wrong order can silently overwrite an admin-customized tenant's AI config or break every tenant query until the migration lands. Check the comment block at the top of each new migration file for an explicit ordering requirement before you deploy. This does not apply to a fresh install: there is no old worker or old central deployment yet, so there's nothing for a new migration to be ordered against.
+
 ## Step 4b: Seed the state list (multi-state teams only)
 
 Single-state teams skip this — the `STATE` var is enough. For a multi-state team, from `api/`, store the list in the database:
