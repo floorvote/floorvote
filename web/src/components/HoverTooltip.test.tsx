@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HoverTooltip } from './HoverTooltip'
@@ -17,6 +17,65 @@ describe('HoverTooltip', () => {
     render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
     fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'touch' })
     expect(screen.queryByText('Tip text')).toBeNull()
+  })
+
+  // The bubble is position:fixed at coordinates taken once on open, so a scroll
+  // moves the thing it describes and leaves the bubble floating beside whatever
+  // is there now.
+  describe('dismissal on scroll', () => {
+    it('dismisses the bubble when the window scrolls', () => {
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+      fireEvent.scroll(window)
+      expect(screen.queryByText('Tip text')).toBeNull()
+    })
+
+    // The app scrolls inner containers rather than the document, and scroll does
+    // not bubble from those — hence a capture-phase listener. Firing on a nested
+    // element is what distinguishes capture from a plain window listener.
+    it('dismisses on a scroll inside a nested scroll container', () => {
+      const { container } = render(
+        <div style={{ overflowY: 'auto' }}>
+          <HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>
+        </div>,
+      )
+      fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+      fireEvent.scroll(container.firstChild as Element)
+      expect(screen.queryByText('Tip text')).toBeNull()
+    })
+
+    // A click-pinned toggletip is fixed-positioned like any other bubble and
+    // detaches the same way, so scroll dismisses it too — deliberately widening
+    // the Escape/blur/second-click contract documented on the component.
+    it('dismisses a click-pinned toggletip', () => {
+      render(<HoverTooltip text="Tip text" toggletip ariaLabel="More info">i</HoverTooltip>)
+      fireEvent.click(screen.getByRole('button', { name: 'More info' }))
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+      fireEvent.scroll(window)
+      expect(screen.queryByText('Tip text')).toBeNull()
+    })
+
+    // Re-hover has to work after a scroll dismissal: hide() resets the pinned
+    // parity, and a stale `true` there would make the next click read as
+    // "already open" and close instead of reopening.
+    it('reopens on a later click after a scroll dismissal', () => {
+      render(<HoverTooltip text="Tip text" toggletip ariaLabel="More info">i</HoverTooltip>)
+      const trigger = screen.getByRole('button', { name: 'More info' })
+      fireEvent.click(trigger)
+      fireEvent.scroll(window)
+      expect(screen.queryByText('Tip text')).toBeNull()
+      fireEvent.click(trigger)
+      expect(screen.getByText('Tip text')).toBeInTheDocument()
+    })
+
+    it('does not listen while no bubble is open', () => {
+      const add = vi.spyOn(window, 'addEventListener')
+      render(<HoverTooltip text="Tip text"><button>trigger</button></HoverTooltip>)
+      expect(add.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(0)
+      add.mockRestore()
+    })
   })
 
   it('renders the bubble into document.body when portal is set', () => {
