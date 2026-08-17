@@ -33,6 +33,16 @@ const BILL_ANALYSIS_SCHEMA = {
   additionalProperties: false,
 } as const
 
+// These two texts intentionally differ from shared/aiDefaults.ts's
+// AI_CONTEXT_TEMPLATE / RELEVANCE_QUESTION_TEMPLATE, which name the
+// association ("...for {name}."). This pair is the name-free last-resort
+// fallback inside composeSystemInstruction() below, for a caller that supplies
+// no aiContext at all. In practice that branch is unreachable from the bill
+// pipeline: queue/processor.ts always resolves aiContext through
+// buildDefaultAiContext (falling back to the association name placeholder,
+// never to this constant) before calling into processBill. Keep this fallback
+// text generic and keep the shared templates as the authoritative source of
+// what tenants actually see — do not merge the two or delete this fallback.
 export const DEFAULT_AI_CONTEXT = `You are analyzing a bill for a policy organization.
 
 When writing the summary, start directly with an action verb or gerund phrase — do not begin with "This bill", "The bill", or the bill number (e.g. "Requires all counties to...", "Establishes a new procedure for...", "Prohibits local governments from..."). Be concise and proportional to the bill's complexity — a simple or narrow amendment warrants 1–2 sentences; a multi-part or substantive bill may warrant a short paragraph.`

@@ -40,6 +40,15 @@ type CustomFieldDef = {
   pinned: boolean
 }
 
+// Mirrors DEFAULT_TAXONOMY in api/src/lib/taxonomy.ts — the actual runtime
+// fallback the API uses when tag_taxonomy is unset/empty/malformed. Kept as a
+// hand-maintained duplicate rather than a shared import because importing api
+// code into web would cross an existing package boundary, and a shared
+// taxonomy module was ruled out of scope for this change. This copy only
+// drives the UI (the ghost placeholder text and the "generic tag list" hint
+// above) and does not stay in sync automatically: update it whenever
+// api/src/lib/taxonomy.ts's DEFAULT_TAXONOMY changes, or this placeholder will
+// silently start lying about what the AI actually does.
 const DEFAULT_TAXONOMY = [
   'Health & Healthcare', 'Education', 'Elections & Voting', 'Housing & Land Use',
   'Transportation & Infrastructure', 'Environment & Natural Resources',
@@ -630,7 +639,7 @@ export function Config() {
                 </div>
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
-                    Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
+                    Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your group's own priorities and issue areas.
                   </div>
                 )}
               </div>
