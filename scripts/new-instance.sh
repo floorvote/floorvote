@@ -236,7 +236,6 @@ routes = [{ pattern = "${APP_URL#https://}", custom_domain = true }]
 [env.${SLUG}.vars]
 APP_URL = "${APP_URL}"
 ASSOCIATION_NAME = "${ASSOC_NAME}"
-INSTANCE_PRESET = "election_officials"
 STATE = "${STATE}"
 TENANT_ID = "${SLUG}"
 PROVIDER = "legiscan"
@@ -364,9 +363,11 @@ TOML
   log_ok "Central deployed with ${CENTRALAPI_BINDING} binding"
 fi
 
-# ── Step 7: Register with central (applies preset, syncs keywords) ─────────────
+# ── Step 7: Register with central (syncs keywords + state coverage) ────────────
 # force-register routes operator → central → RPC → tenant.forceRegister(), which
-# applies INSTANCE_PRESET to the tenant DB and registers state_coverage + keywords.
+# calls ensureAssociationName (seeds association_name from ASSOCIATION_NAME, only
+# over the migration placeholder) and registers the tenant's keywords — empty on
+# a new instance — and state coverage with central.
 if step "Register tenant with central"; then
   log "Waiting 10s for the central deploy to settle..."
   sleep 10
@@ -374,7 +375,7 @@ if step "Register tenant with central"; then
     -H "x-admin-secret: ${ADMIN_SECRET}" --max-time 60 2>&1) || true
   echo "$REGISTER_RESP"
   if echo "$REGISTER_RESP" | grep -q '"ok":true'; then
-    log_ok "Registered with central (preset applied, keywords synced)"
+    log_ok "Registered with central (keywords + state coverage synced)"
   else
     die "force-register failed: $REGISTER_RESP (check the CentralApi binding deployed in Step 6)"
   fi
