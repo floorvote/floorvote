@@ -6,6 +6,13 @@ import { centralFetch } from '../lib/centralFetch'
 import { matchesKeywords } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
+import { readConfigString } from '../lib/configValue'
+import {
+  ASSOCIATION_NAME_PLACEHOLDER,
+  buildDefaultAiContext,
+  buildDefaultRelevanceQuestion,
+  isAiConfigDefault,
+} from '../../../shared/aiDefaults'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -372,13 +379,24 @@ export async function processCentralNotification(
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
   let aiError: string | null = null
   if (shouldRunAi && activePreset && !aiDedup) {
-    const [aiContextRow, taxonomyRow, relevanceQuestionRow] = await Promise.all([
+    const [aiContextRow, taxonomyRow, relevanceQuestionRow, nameRow] = await Promise.all([
       db.select().from(associationConfig).where(eq(associationConfig.key, 'ai_context')).get(),
       db.select().from(associationConfig).where(eq(associationConfig.key, 'tag_taxonomy')).get(),
       db.select().from(associationConfig).where(eq(associationConfig.key, 'relevance_question')).get(),
+      db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     ])
-    const aiContext = aiContextRow?.value ?? undefined
-    const relevanceQuestion = relevanceQuestionRow?.value ?? undefined
+    // Resolve here rather than relying on downstream `??` fallbacks: the fields are
+    // empty by default, and the defaults interpolate the association name so a
+    // rename is reflected on the next prompt with no stored state to migrate.
+    const associationName = readConfigString(nameRow) ?? ASSOCIATION_NAME_PLACEHOLDER
+    const storedAiContext = readConfigString(aiContextRow)
+    const storedRelevanceQuestion = readConfigString(relevanceQuestionRow)
+    const aiContext = isAiConfigDefault(storedAiContext)
+      ? buildDefaultAiContext(associationName)
+      : storedAiContext
+    const relevanceQuestion = isAiConfigDefault(storedRelevanceQuestion)
+      ? buildDefaultRelevanceQuestion(associationName)
+      : storedRelevanceQuestion
     const dbTaxonomy = taxonomyRow ? parseTaxonomyItems(JSON.parse(taxonomyRow.value)) : []
     const taxonomy = dbTaxonomy.length > 0 ? dbTaxonomy : DEFAULT_TAXONOMY
 

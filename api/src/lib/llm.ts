@@ -50,7 +50,10 @@ If you present multiple items as a list, format it as a Markdown unordered list:
 
 /** Compose the full system instruction: tenant editorial voice + universal format contract. */
 export function composeSystemInstruction(aiContext: string | null | undefined): string {
-  return `${aiContext ?? DEFAULT_AI_CONTEXT}\n\n${SUMMARY_FORMAT_CONTRACT}`
+  // Blank must behave as absent: fields are empty by default, so `??` alone
+  // would send an empty editorial voice.
+  const voice = (aiContext ?? '').trim().length > 0 ? aiContext : DEFAULT_AI_CONTEXT
+  return `${voice}\n\n${SUMMARY_FORMAT_CONTRACT}`
 }
 
 function buildPrompt(
