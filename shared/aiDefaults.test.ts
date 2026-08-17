@@ -38,6 +38,15 @@ describe('buildDefaultAiContext', () => {
     expect(buildDefaultAiContext('')).toContain(ASSOCIATION_NAME_PLACEHOLDER)
     expect(buildDefaultAiContext('   ')).toContain(ASSOCIATION_NAME_PLACEHOLDER)
   })
+
+  it('inserts a name containing $-based replacement patterns verbatim', () => {
+    // String.replace treats $&, $$, $`, $', $<n> specially when the replacement
+    // is a string. buildDefaultAiContext must use a function replacer so a name
+    // like this passes through untouched instead of being corrupted.
+    const name = 'Smith & Co. ($$)'
+    const out = buildDefaultAiContext(name)
+    expect(out).toContain(`You are analyzing a bill for ${name}.`)
+  })
 })
 
 describe('buildDefaultRelevanceQuestion', () => {

@@ -30,11 +30,15 @@ function resolveName(name: string | null | undefined): string {
 }
 
 export function buildDefaultAiContext(name: string | null | undefined): string {
-  return AI_CONTEXT_TEMPLATE.replace('{name}', resolveName(name))
+  // Function replacer, not a string one: a string replacement argument is
+  // subject to $&/$$/$`/$'/$<n> special-pattern substitution, so an
+  // association name containing e.g. "$$" would corrupt the interpolated
+  // prompt. A function replacer's return value is inserted verbatim.
+  return AI_CONTEXT_TEMPLATE.replace('{name}', () => resolveName(name))
 }
 
 export function buildDefaultRelevanceQuestion(name: string | null | undefined): string {
-  return RELEVANCE_QUESTION_TEMPLATE.replace('{name}', resolveName(name))
+  return RELEVANCE_QUESTION_TEMPLATE.replace('{name}', () => resolveName(name))
 }
 
 /**
