@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { BillDetail, countClippedSponsors } from './BillDetail'
+import { BillDetail, countClippedSponsors, isTextClamped } from './BillDetail'
 import * as api from '../lib/api'
 
 // ── Route params (mutable so individual tests can vary route + nav state) ──────
@@ -539,6 +539,39 @@ describe('countClippedSponsors', () => {
 
   it('tolerates sub-pixel overhang at the boundary', () => {
     expect(countClippedSponsors([200.4], 200)).toBe(0)
+  })
+})
+
+// Same reasoning as countClippedSponsors — the abstract's "show more" is
+// layout-driven and jsdom has no layout, so the decision lives in a pure helper.
+// The measurement differs though: the abstract clamps to N lines rather than one,
+// so what matters is vertical overflow of the box the clamp created, not each
+// item's right edge.
+describe('isTextClamped', () => {
+  it('reports clamped when the content overflows the clamped box', () => {
+    // A four-line abstract clamped to two: content is taller than the box.
+    expect(isTextClamped(64, 32)).toBe(true)
+  })
+
+  it('reports not clamped when the content fits exactly', () => {
+    expect(isTextClamped(32, 32)).toBe(false)
+  })
+
+  it('tolerates sub-pixel line-height rounding', () => {
+    // Fractional line-heights routinely leave scrollHeight a hair above
+    // clientHeight on text that fits, which would otherwise show a "show more"
+    // that reveals nothing.
+    expect(isTextClamped(32.6, 32)).toBe(false)
+  })
+
+  it('reports clamped once the overflow exceeds the tolerance', () => {
+    expect(isTextClamped(34, 32)).toBe(true)
+  })
+
+  // jsdom (and any un-laid-out context) reports both as 0; the guard must read
+  // that as "nothing hidden" rather than rendering a toggle that does nothing.
+  it('reports not clamped when there is no layout at all', () => {
+    expect(isTextClamped(0, 0)).toBe(false)
   })
 })
 
