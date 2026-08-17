@@ -1,4 +1,4 @@
-import { useId, useState, useRef, useEffect, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useId, useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -142,59 +142,26 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   // no-op-closing again.
   const hide = () => { pinnedRef.current = false; setAnchor(null) }
 
-  // Follow the anchor on scroll. The bubble is position:fixed at coordinates
-  // measured when it opened, so without this a scroll moves the thing it
-  // describes and leaves the bubble floating beside whatever is there now.
+  // NOTE: there is deliberately no scroll handling here.
   //
-  // This replaces a dismiss-on-scroll that did not work, and the reason it did
-  // not is worth recording, because it is not obvious from the code. Window
-  // capture runs before any handler in the page, so the dismissal always fired
-  // — it was undone afterwards. A scroll makes the browser dispatch a
-  // pointermove with UNCHANGED coordinates (the hit-tested element moved under a
-  // stationary cursor), that re-entry called show() again, and React batched the
-  // null and the re-anchor into one render — so nothing visibly changed at all,
-  // not even a flicker. Two attempts at suppressing that re-entry failed.
+  // The bubble is position:fixed at coordinates measured once when it opened, so
+  // scrolling leaves it beside whatever is there now, and a browser does not
+  // reliably fire pointerenter for an element that arrives under a stationary
+  // cursor by scrolling. Both are known and accepted.
   //
-  // Re-anchoring sidesteps it entirely rather than fighting it: a re-entry now
-  // sets the anchor to the same rect this handler would have set, so the outcome
-  // is identical whether or not the browser re-dispatches. That property is what
-  // makes this robust to the event behaviour it is impossible to test here.
+  // Three attempts to improve on that were reverted for making things worse:
+  //   1. dismiss on scroll — the dismissal fired, but a scroll also dispatches a
+  //      pointermove with UNCHANGED coordinates, whose re-entry called show()
+  //      again; React batched both into one render, so nothing changed on screen.
+  //   2. dismiss plus a one-shot suppression of that re-entry — same outcome, the
+  //      synthesised move cleared the suppression before the enter arrived.
+  //   3. re-anchor to follow the element — correct in principle and idempotent
+  //      with the re-entry, but it still did not fix the sidebar widgets and it
+  //      regressed tooltips everywhere else.
   //
-  // Hides only once the anchor has left the viewport, where "follow it" has no
-  // sensible answer.
-  //
-  // Capture phase because the app scrolls inner containers (the main region, the
-  // sidebar's widget rail) and scroll does not bubble to window from those.
-  // Passive because it never calls preventDefault, so it must not make the
-  // scroll wait on a listener. rAF-throttled so a fast scroll costs one
-  // measurement per frame rather than one per event.
-  //
-  // Keyed on whether a bubble is open, NOT on `anchor` itself: this effect sets
-  // `anchor`, so depending on it would tear down and re-register the listener
-  // every frame of every scroll.
-  const isOpen = anchor !== null
-  useEffect(() => {
-    if (!isOpen) return
-    let frame = 0
-    const reanchor = () => {
-      if (frame) return
-      frame = requestAnimationFrame(() => {
-        frame = 0
-        const el = ref.current
-        if (!el) return
-        const r = el.getBoundingClientRect()
-        const offscreen = r.bottom < 0 || r.right < 0
-          || r.top > window.innerHeight || r.left > window.innerWidth
-        if (offscreen) { pinnedRef.current = false; setAnchor(null); return }
-        setAnchor(r)
-      })
-    }
-    window.addEventListener('scroll', reanchor, { capture: true, passive: true })
-    return () => {
-      window.removeEventListener('scroll', reanchor, { capture: true })
-      if (frame) cancelAnimationFrame(frame)
-    }
-  }, [isOpen])
+  // Anything attempted here has to be verified in a real browser first. All three
+  // passed their unit tests; jsdom cannot reproduce the synthesised pointermove,
+  // the batching, or the scroll containers, so green tests meant nothing.
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
