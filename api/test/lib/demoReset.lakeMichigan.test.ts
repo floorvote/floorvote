@@ -84,13 +84,12 @@ describe('runDemoReset with the lake-michigan seed', () => {
     expect(total!.n).toBe(seed.priorities.length)
   })
 
-  it('writes the multi-state coverage and no instance_preset', async () => {
+  it('writes the multi-state coverage', async () => {
     expect(seed.stateCoverage).not.toBeNull()
     await runDemoReset(env.DB, seed)
     const cov = await env.DB.prepare(`SELECT value FROM association_config WHERE key = 'state_coverage'`).first<{ value: string }>()
     expect(cov, 'state_coverage row must exist for a multi-state seed').toBeDefined()
     expect(JSON.parse(cov!.value)).toEqual(seed.stateCoverage)
-    expect(await env.DB.prepare(`SELECT value FROM association_config WHERE key = 'instance_preset'`).first()).toBeNull()
   })
 
   it('resolves role mentions to real user rows', async () => {

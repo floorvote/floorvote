@@ -138,13 +138,6 @@ export async function dumpResetState(baseMs: number, realNowMs: number): Promise
   for (const t of TABLES) {
     const { results } = await env.DB.prepare(`SELECT * FROM ${t}`).all()
     const rows = (results as Record<string, unknown>[])
-      // instance_preset is the one *intentional* difference between the pre- and
-      // post-refactor output: the preset system is being retired, and the seed now
-      // carries ai_context / relevance_question / tag_taxonomy / keywords directly.
-      // Excluded here so this snapshot stays a pure transcription check rather than
-      // failing on a change we meant to make. Its absence is asserted outright in
-      // demoReset.test.ts ('does not set instance_preset').
-      .filter(r => !(t === 'association_config' && r.key === 'instance_preset'))
       .map(r => JSON.stringify(Object.fromEntries(
         Object.entries(r).map(([k, v]) => [k, normalize(t, k, v, baseMs, realNowMs)]),
       )))
