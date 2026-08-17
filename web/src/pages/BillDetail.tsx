@@ -220,14 +220,18 @@ function AbstractText({ text }: { text: string }) {
   // null = not yet measured, or the whole abstract fits and needs no toggle.
   const [visibleLen, setVisibleLen] = useState<number | null>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
+  const measureTextRef = useRef<HTMLSpanElement>(null)
+  const measureToggleRef = useRef<HTMLSpanElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const lastWidthRef = useRef(-1)
 
   useLayoutEffect(() => {
     if (showAll) return
     const el = measureRef.current
+    const textEl = measureTextRef.current
+    const toggleEl = measureToggleRef.current
     const wrap = wrapRef.current
-    if (!el || !wrap) return
+    if (!el || !textEl || !toggleEl || !wrap) return
 
     const measure = () => {
       const lineHeightPx = parseFloat(getComputedStyle(el).fontSize) * ABSTRACT_LINE_HEIGHT
@@ -236,15 +240,17 @@ function AbstractText({ text }: { text: string }) {
       // toggle renders — same no-layout behaviour the sponsors row relies on.
       if (!(budget > 0)) { setVisibleLen(null); return }
 
-      const setAndMeasure = (s: string) => { el.textContent = s; return el.scrollHeight }
-      if (setAndMeasure(text) <= budget + 1) { setVisibleLen(null); return }
+      const setAndMeasure = (s: string) => { textEl.textContent = s; return el.scrollHeight }
 
-      // The reserved tail approximates the rendered button: same font size, so
-      // its label's width is the right order. Over-reserving is harmless (the
-      // button just sits a little further left); under-reserving would push it
-      // onto a third line, which is the thing being fixed.
-      const fits = (n: number) =>
-        setAndMeasure(`${text.slice(0, n).trimEnd()}… show more`) <= budget + 1
+      // Does the whole abstract fit on its own? Measured with the stand-in
+      // hidden, because in that case no toggle renders and its width must not
+      // count against the budget.
+      toggleEl.style.display = 'none'
+      const fitsWhole = setAndMeasure(text) <= budget + 1
+      toggleEl.style.display = ''
+      if (fitsWhole) { setVisibleLen(null); return }
+
+      const fits = (n: number) => setAndMeasure(`${text.slice(0, n).trimEnd()}… `) <= budget + 1
       const n = largestFittingPrefix(text.length, fits)
       setVisibleLen(n > 0 && n < text.length ? n : null)
     }
@@ -278,6 +284,25 @@ function AbstractText({ text }: { text: string }) {
     fontFamily: "'Source Serif 4', serif", lineHeight: ABSTRACT_LINE_HEIGHT,
   }
 
+  // ONE style object for the real toggle and the measurer's stand-in, so the
+  // space reserved for the toggle is the space it actually occupies. The first
+  // attempt reserved a plain string instead, which was wrong twice over: a
+  // <button> does not inherit font-family, so the real one rendered in the UA
+  // default sans while the reserved text rendered in Source Serif italic; and
+  // the real one is an atomic inline-block that must wrap whole, while the
+  // reserved text could break at its space. Both made the reservation too
+  // small, so the toggle landed on a third line — the bug this was meant to fix.
+  // fontFamily is pinned to inherit rather than left to the UA so the stand-in,
+  // which does inherit, cannot diverge from it.
+  const toggleStyle = {
+    fontSize: fontSize.sm, fontFamily: 'inherit', color: color.linkBlue,
+    background: 'none', border: 'none', padding: 0,
+    whiteSpace: 'nowrap' as const, fontStyle: 'normal' as const,
+    // A <button> is inline-block by default and a <span> is inline; pinning it
+    // makes the stand-in lay out the same way rather than nearly the same way.
+    display: 'inline-block' as const,
+  }
+
   return (
     <div ref={wrapRef} style={{ position: 'relative', margin: '0 0 10px' }}>
       {/* Visible copy. One inline flow, so the toggle rides the end of the last
@@ -287,19 +312,17 @@ function AbstractText({ text }: { text: string }) {
         {showToggle && (
           <button
             onClick={() => setShowAll(v => !v)}
-            style={{
-              fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none',
-              cursor: 'pointer', padding: 0, whiteSpace: 'nowrap', fontStyle: 'normal',
-              // Sits in the text's own inline flow; the leading space keeps it
-              // off the ellipsis without a margin that could wrap on its own.
-              marginLeft: showAll ? 4 : 0,
-            }}
+            style={{ ...toggleStyle, cursor: 'pointer', marginLeft: showAll ? 4 : 0 }}
           >
             {showAll ? 'show less' : 'show more'}
           </button>
         )}
       </p>
-      {/* Hidden measurer — same width and typography as the copy above. */}
+      {/* Hidden measurer — same width and typography as the copy above, and
+          carrying a stand-in for the toggle so its width is part of the budget.
+          Only the text span's textContent is mutated during measurement, and
+          React renders no children into it, so this does not fight the
+          reconciler. */}
       <span
         ref={measureRef}
         aria-hidden="true"
@@ -307,7 +330,13 @@ function AbstractText({ text }: { text: string }) {
           ...typography, position: 'absolute', top: 0, left: 0, right: 0,
           visibility: 'hidden', pointerEvents: 'none', display: 'block',
         }}
-      />
+      >
+        <span ref={measureTextRef} />
+        {/* Always the longer of the two labels: the collapsed state is the only
+            one measured, but reserving the wider label keeps the reservation
+            valid if the labels are ever changed independently. */}
+        <span ref={measureToggleRef} style={toggleStyle}>show more</span>
+      </span>
     </div>
   )
 }
