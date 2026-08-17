@@ -1,4 +1,4 @@
-import { useId, useState, useRef, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useId, useState, useRef, useEffect, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -142,26 +142,45 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   // no-op-closing again.
   const hide = () => { pinnedRef.current = false; setAnchor(null) }
 
-  // NOTE: there is deliberately no scroll handling here.
+  // Dismiss on scroll. The bubble is position:fixed at coordinates measured once
+  // when it opened, so scrolling moves the thing it describes and leaves the
+  // bubble behind, floating next to whatever happens to be there now.
   //
-  // The bubble is position:fixed at coordinates measured once when it opened, so
-  // scrolling leaves it beside whatever is there now, and a browser does not
-  // reliably fire pointerenter for an element that arrives under a stationary
-  // cursor by scrolling. Both are known and accepted.
+  // Capture phase because the app scrolls inner containers (the main region, the
+  // sidebar's widget rail), and scroll does not bubble to window from those.
+  // Passive because this never calls preventDefault, so it must not make the
+  // scroll itself wait on a listener.
   //
-  // Three attempts to improve on that were reverted for making things worse:
-  //   1. dismiss on scroll — the dismissal fired, but a scroll also dispatches a
-  //      pointermove with UNCHANGED coordinates, whose re-entry called show()
-  //      again; React batched both into one render, so nothing changed on screen.
-  //   2. dismiss plus a one-shot suppression of that re-entry — same outcome, the
-  //      synthesised move cleared the suppression before the enter arrived.
-  //   3. re-anchor to follow the element — correct in principle and idempotent
-  //      with the re-entry, but it still did not fix the sidebar widgets and it
-  //      regressed tooltips everywhere else.
+  // This dismisses a click-pinned toggletip too, widening its documented
+  // Escape/blur/second-click contract. That is intended: a pinned bubble is
+  // position:fixed like any other and detaches exactly the same way.
   //
-  // Anything attempted here has to be verified in a real browser first. All three
-  // passed their unit tests; jsdom cannot reproduce the synthesised pointermove,
-  // the batching, or the scroll containers, so green tests meant nothing.
+  // KNOWN LIMITATION, deliberately left alone: this does not take effect inside
+  // the sidebar's widget rail. The dismissal does fire there — window capture
+  // runs before any handler in the page — but a scroll also makes the browser
+  // dispatch a pointermove with UNCHANGED coordinates, and the pointerenter that
+  // follows calls show() again; React batches the null and the re-show into one
+  // render, so nothing changes on screen. It is most reliable in a small scroll
+  // container, where the row stays under the pointer.
+  //
+  // Two attempts to fix that were tried and reverted for making things worse: a
+  // one-shot suppression of the re-entry (defeated by the same synthesised move),
+  // and re-anchoring the bubble to follow the element (immune to the re-entry,
+  // but it regressed tooltips everywhere else). This state — dismisses on scroll
+  // except in the widget rail — is the accepted one.
+  //
+  // Anything attempted here must be verified in a real browser first. All three
+  // attempts passed their unit tests; jsdom reproduces neither the synthesised
+  // pointermove, nor React's batching of the resulting pair, nor the app's nested
+  // scroll containers, so green tests carry no information about this behaviour.
+  useEffect(() => {
+    if (!anchor) return
+    // Resets pinnedRef inline rather than calling hide(), which is redefined
+    // every render and would re-register the listener on each one.
+    const dismiss = () => { pinnedRef.current = false; setAnchor(null) }
+    window.addEventListener('scroll', dismiss, { capture: true, passive: true })
+    return () => window.removeEventListener('scroll', dismiss, { capture: true })
+  }, [anchor])
 
   const handlePointerEnter = (e: ReactPointerEvent) => {
     if (e.pointerType !== 'mouse') return
