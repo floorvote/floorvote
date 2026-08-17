@@ -176,6 +176,66 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
   )
 }
 
+// Whether a line-clamped block is actually hiding anything. Unlike the sponsors
+// row — which clamps to one line and measures each chip's right edge — the
+// abstract clamps to N lines, so the question is vertical: does the content
+// overflow the box the clamp created? Pure and layout-agnostic (the caller
+// supplies heights measured from the DOM) so it is unit-testable. The 1px
+// tolerance absorbs sub-pixel line-height rounding, which otherwise reports a
+// permanent 1px overflow on text that fits exactly.
+export function isTextClamped(scrollHeight: number, clientHeight: number): boolean {
+  return scrollHeight > clientHeight + 1
+}
+
+// The bill's italic abstract. Collapsed, it clamps to two lines; the toggle
+// appears only when those two lines actually hide something (measured, not
+// guessed from string length, which cannot know the column width). Without it
+// the abstract was simply truncated with no way to read the rest.
+function AbstractText({ text }: { text: string }) {
+  const [showAll, setShowAll] = useState(false)
+  const [clamped, setClamped] = useState(false)
+  const pRef = useRef<HTMLParagraphElement>(null)
+
+  // Re-measure as the column resizes, the same way SponsorsRow does. jsdom has
+  // neither layout nor a ResizeObserver, so both heights read 0 there and the
+  // guarded measure simply yields false — no toggle, no crash.
+  useLayoutEffect(() => {
+    if (showAll) return
+    const el = pRef.current
+    if (!el) return
+    const measure = () => setClamped(isTextClamped(el.scrollHeight, el.clientHeight))
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [showAll, text])
+
+  return (
+    <div style={{ margin: '0 0 10px' }}>
+      <p
+        ref={pRef}
+        style={{
+          fontSize: fontSize.sm, color: color.textMuted, margin: 0, fontStyle: 'italic',
+          fontFamily: "'Source Serif 4', serif",
+          ...(showAll
+            ? {}
+            : { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const }),
+        }}
+      >
+        {text}
+      </p>
+      {(showAll || clamped) && (
+        <button
+          onClick={() => setShowAll(v => !v)}
+          style={{ fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
+        >
+          {showAll ? 'show less' : 'show more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // Effective date for a document/amendment row: the central-resolved date
 // (real or recovered) falls back to the structured date, then nothing.
 function effectiveItemDate(item: { date: string | null; dateResolved?: string | null }): string | null {
@@ -358,7 +418,7 @@ export function BillDetail() {
   const navigation = useNavigation()
   const location = useLocation()
   const { user } = useAuth()
-  const { demoLocked, demoMode, settled: demoSettled } = useDemo()
+  const { demoLocked, demoMode, demoResetAt, settled: demoSettled } = useDemo()
   // billPaths/currentIndex are only present when arriving from the Bills list or
   // prev/next; deferred-nav entry points (Feed, sidebar, calendar, notifications)
   // pass prefetchedBill alone. Guard billPaths so a prefetched-only state can't
@@ -554,14 +614,14 @@ export function BillDetail() {
   useEffect(() => {
     if (!bill?.id || !demoSettled) return
     if (demoMode) {
-      markMentionsRead(billMentionIds ? billMentionIds.split(',') : [])
+      markMentionsRead(billMentionIds ? billMentionIds.split(',') : [], demoResetAt)
       void refreshNotifications()
       return
     }
     apiFetch(`/notifications/mark-read-by-bill/${bill.id}`, { method: 'POST' })
       .then(() => refreshNotifications())
       .catch(() => {})
-  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billMentionIds])
+  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billMentionIds, demoResetAt])
 
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/config/custom-fields')
@@ -1188,7 +1248,7 @@ export function BillDetail() {
           </h1>
         )}
         {bill.abstract && bill.title && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase() && (
-          <p style={{ fontSize: fontSize.sm, color: color.textMuted, margin: '0 0 10px', fontStyle: 'italic', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, fontFamily: "'Source Serif 4', serif" }}>{bill.abstract}</p>
+          <AbstractText text={bill.abstract} />
         )}
 
         {/* Meta row 1: body · type · related bills · external link */}
