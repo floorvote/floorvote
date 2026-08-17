@@ -280,10 +280,8 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
 
   it('deletes a pre-existing instance_preset row', async () => {
     // Not merely "does not write one": a demo tenant deployed before the presets
-    // were retired (or one that briefly ran with INSTANCE_PRESET set) still has
-    // the row. Leaving it behind keeps ensureInstancePreset returning a preset
-    // slug forever, so the tenant never converges on "no preset". The reset must
-    // delete it so demo tenants old and new end up in the same state.
+    // were retired still carries the row as dead data. The reset must delete it so
+    // demo tenants old and new end up in the same state.
     await env.DB.prepare(
       `INSERT OR REPLACE INTO association_config (key, value) VALUES ('instance_preset', ?)`
     ).bind(JSON.stringify('election_officials')).run()

@@ -114,10 +114,10 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // tag_taxonomy, and keywords directly.
   await batch([
     // Delete rather than skip: a demo tenant deployed before presets were retired
-    // still carries the row, and while it exists ensureInstancePreset keeps
-    // reporting a preset slug. Deleting it makes every demo tenant — old and new —
-    // converge on "no preset". Safe because the four keys a preset would have
-    // supplied are written from the seed immediately below.
+    // still carries the row, which is now dead data that nothing reads. Deleting it
+    // makes every demo tenant — old and new — converge on the same config shape.
+    // Safe because the four keys a preset would have supplied are written from the
+    // seed immediately below.
     db.prepare(`DELETE FROM association_config WHERE key = 'instance_preset'`),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('association_name', ?)`).bind(JSON.stringify(`Demo — ${seed.associationName}`)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('ai_context', ?)`).bind(seed.aiContext),

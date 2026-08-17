@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { associationConfig } from '../db/schema'
-import { ensureInstancePreset } from '../lib/instancePreset'
+import { ensureAssociationName } from '../lib/associationName'
 import { centralFetch } from '../lib/centralFetch'
 import type { AppDb, Env } from '../types'
 
 export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean> {
-  await ensureInstancePreset(env, db)
+  await ensureAssociationName(env, db)
   const [keywordsRow, stateCoverageRow] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'state_coverage')).get(),

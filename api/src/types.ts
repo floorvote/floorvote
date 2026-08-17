@@ -29,7 +29,6 @@ export type Env = {
   OPERATOR_NAME?: string            // sidebar footer operator label; empty = no name line
   OPERATOR_URL?: string             // operator credit link target; empty = unlinked
   OPERATOR_CONTACT_EMAILS?: string  // comma-separated support recipients; empty = no contact / feedback disabled
-  INSTANCE_PRESET?: string
   STATE?: string
   TENANT_ID: string
   CENTRAL_API_URL: string

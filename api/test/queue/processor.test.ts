@@ -60,7 +60,6 @@ const testEnv = {
   ...env,
   TENANT_ID: 'test-org',
   CENTRAL_API_URL: 'https://central.test',
-  INSTANCE_PRESET: 'election_officials',
 }
 
 describe('processCentralNotification', () => {
@@ -117,6 +116,24 @@ describe('processCentralNotification', () => {
     expect(row!.aiProcessedAt).not.toBeNull()
   })
 
+  // Regression guard for the retired preset gate. AI used to be gated on
+  // `shouldRunAi && activePreset`, using a preset's existence as a proxy for "this
+  // tenant is configured enough to run AI". Reinstating any such gate would stop AI
+  // for every tenant with no error at all — bills would simply arrive with no
+  // summary, no tags, and no relevance score. Nothing here configures a preset or an
+  // ai_context: the interpolated defaults must carry the run on their own.
+  it('runs AI with no preset concept and no ai_context configured', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).toHaveBeenCalled()
+    const row = await db.select().from(bills).get()
+    expect(row!.tenantSummary).toBe('Directly affects absentee ballot handling')
+    expect(row!.aiProcessedAt).not.toBeNull()
+  })
+
   it('skips AI when bill does not match keywords', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['zoning']) })
@@ -130,16 +147,22 @@ describe('processCentralNotification', () => {
     expect(row!.relevanceScore).toBeNull()
   })
 
-  it('runs AI when no keywords configured (treat as match-all)', async () => {
+  // Empty keywords mean "match nothing", the same rule central applies when it
+  // decides which bills to fan out. Previously empty meant match-everything here,
+  // which would stamp match_type='keyword' on a keyword-less tenant.
+  it('skips AI when no keywords are configured (empty means match nothing)', async () => {
     const db = getDb(env.DB)
     const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
     await processCentralNotification(msg, testEnv as any, db)
     const { processBill } = await import('../../src/lib/llm')
-    expect(processBill).toHaveBeenCalled()
+    expect(processBill).not.toHaveBeenCalled()
+    const row = await db.select().from(bills).get()
+    expect(row!.matchType).toBeNull()
   })
 
   it('skips reprocessing when providerUpdatedAt is unchanged', async () => {
     const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
     const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
     await processCentralNotification(msg, testEnv as any, db)
     vi.clearAllMocks()

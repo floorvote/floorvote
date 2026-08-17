@@ -68,7 +68,7 @@ const EXPORT_CONFIG_KEYS = [
   'association_name', 'ai_context', 'keywords',
   'org_noun', 'position_label', 'position_vocabulary',
   'relevance_question', 'tag_taxonomy',
-  'modules', 'instance_preset', 'sync_frequency',
+  'modules', 'sync_frequency',
   'mention_emails_enabled', 'state_coverage',
 ] as const
 

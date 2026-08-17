@@ -5,7 +5,6 @@ import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { env } from 'cloudflare:test'
 import { associationConfig, customFieldDefinitions } from '../../src/db/schema'
-import { PRESETS } from '../../src/lib/presets'
 import { computeMultiState } from '../../src/routes/configApi'
 import { app } from '../../src/index'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
@@ -183,16 +182,14 @@ describe('GET /config', () => {
     expect(body.demoBanner).toBe('Test banner')
   })
 
-  // ── INSTANCE_PRESET must never touch a demo tenant's seed-written config ───
+  // ── GET /config must never rewrite the four AI-config keys ─────────────────
   //
-  // A demo tenant's ai_context / relevance_question / tag_taxonomy / keywords
-  // come from its seed (api/src/lib/demoSeeds/), and the demo reset writes no
-  // instance_preset row. Because self-hosting/tenants.md recommends setting
-  // INSTANCE_PRESET on every tenant and self-hosting/demo.md says to deploy a
-  // demo "exactly as in Adding tenants", a fresh demo tenant would otherwise hit
-  // ensureInstancePreset's bootstrap branch on its very first GET /config and
-  // have all four keys overwritten with preset values — silently, and only until
-  // the next reset.
+  // A demo tenant's ai_context / relevance_question / tag_taxonomy / keywords come
+  // from its seed (api/src/lib/demoSeeds/); a self-hosted tenant's come from the
+  // admin UI. GET /config runs a bootstrap hook on every request, and the retired
+  // preset version of that hook clobbered all four on a tenant's very first request
+  // — silently, and on a demo only until the next reset. Nothing on this path may
+  // write those keys again.
 
   /** Write the four keys a seed owns, as runDemoReset would. */
   async function seedWrittenAiConfig(db: ReturnType<typeof getDb>) {
@@ -212,36 +209,33 @@ describe('GET /config', () => {
     return row?.value
   }
 
-  it('leaves a demo tenant\'s seed-written config alone even with INSTANCE_PRESET set', async () => {
-    const db = getDb(env.DB)
-    await seedWrittenAiConfig(db)
-
-    const res = await app.request('/api/config', { headers: { Cookie: cookie } },
-      { ...env, DEMO_MODE: 'true', INSTANCE_PRESET: 'election_officials' })
-    expect(res.status).toBe(200)
-
+  async function expectSeedConfigIntact(db: ReturnType<typeof getDb>) {
     expect(await configRow(db, 'ai_context')).toBe(JSON.stringify('Seed AI context for county clerks.'))
     expect(await configRow(db, 'relevance_question')).toBe(JSON.stringify('Seed relevance question?'))
     expect(await configRow(db, 'tag_taxonomy')).toBe(JSON.stringify([{ name: 'Seed Tag', description: 'From the demo seed' }]))
     expect(await configRow(db, 'keywords')).toBe(JSON.stringify(['seed-keyword']))
-    // and no preset row is bootstrapped into existence either
-    expect(await configRow(db, 'instance_preset')).toBeUndefined()
-  })
+  }
 
-  it('still applies INSTANCE_PRESET on a non-demo tenant', async () => {
+  it('leaves a demo tenant\'s seed-written config alone', async () => {
     const db = getDb(env.DB)
     await seedWrittenAiConfig(db)
 
     const res = await app.request('/api/config', { headers: { Cookie: cookie } },
-      { ...env, DEMO_MODE: undefined, INSTANCE_PRESET: 'election_officials' })
+      { ...env, DEMO_MODE: 'true' })
     expect(res.status).toBe(200)
 
-    expect(await configRow(db, 'instance_preset')).toBe(JSON.stringify('election_officials'))
-    const preset = PRESETS.election_officials
-    expect(await configRow(db, 'ai_context')).toBe(JSON.stringify(preset.aiContext))
-    expect(await configRow(db, 'relevance_question')).toBe(JSON.stringify(preset.relevanceQuestion))
-    expect(await configRow(db, 'tag_taxonomy')).toBe(JSON.stringify(preset.taxonomy))
-    expect(await configRow(db, 'keywords')).toBe(JSON.stringify(preset.keywords))
+    await expectSeedConfigIntact(db)
+  })
+
+  it('leaves a non-demo tenant\'s stored config alone', async () => {
+    const db = getDb(env.DB)
+    await seedWrittenAiConfig(db)
+
+    const res = await app.request('/api/config', { headers: { Cookie: cookie } },
+      { ...env, DEMO_MODE: undefined })
+    expect(res.status).toBe(200)
+
+    await expectSeedConfigIntact(db)
   })
 })
 
