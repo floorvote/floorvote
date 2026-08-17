@@ -17,7 +17,15 @@ export const POSITION_COLORS: Record<string, { bg: string; color: string; border
   Neutral:       { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
   // Amend deepened (borderAmber fill + textAmberWarning) so it no longer reads as the
   // relevance-score amber (#fef3c7 / textAmberDark) — ΔE ~25 apart, no new hue.
-  Amend:         { bg: color.borderAmber,     color: color.textAmberWarning, border: color.borderAmber },
+  // Its border was the same token as its fill, so Amend was the only position
+  // chip drawn with no outline at all — visible wherever c.border is actually
+  // painted, i.e. the CompactPositionSelect dropdown. accentAmber restores the
+  // outline at the weight its siblings carry: Support, Oppose, and Monitor are
+  // each a -100 fill against a -300 border, and since this fill is already
+  // amber-200, ~amber-400 is the token two steps up. accentAmber is the only
+  // existing amber in that range; the darker text ambers sit 5-6 steps past the
+  // fill and would make Amend the heaviest chip in the row.
+  Amend:         { bg: color.borderAmber,     color: color.textAmberWarning, border: color.accentAmber },
   Monitor:       { bg: color.bgVioletChip,    color: color.brandViolet,  border: color.borderVioletSoft },
   'No Position': { bg: color.countChipBg,     color: color.textSlate500,     border: color.borderDefault },
 }
