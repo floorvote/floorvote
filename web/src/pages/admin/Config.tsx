@@ -15,6 +15,7 @@ import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { parseTagTaxonomy, aiInstructionsChanged } from './aiConfig'
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 
 type ConfigData = {
   keywords?: string[]
@@ -23,7 +24,6 @@ type ConfigData = {
   ai_context?: string
   relevance_question?: string
   tag_taxonomy?: { name: string; description?: string }[]
-  instance_preset?: string
   matched_bills_count?: number
   prioritized_bills_count?: number
   new_match_min_relevance?: number
@@ -39,22 +39,6 @@ type CustomFieldDef = {
   displayOrder: number
   pinned: boolean
 }
-
-type PresetFull = {
-  slug: string
-  name: string
-  description: string
-  aiContext: string
-  relevanceQuestion: string
-  taxonomy: { name: string; description?: string }[]
-  keywords: string[]
-}
-
-const DEFAULT_AI_CONTEXT = `You are analyzing a bill for a policy organization.
-
-When writing the summary, start directly with an action verb or gerund phrase — do not begin with "This bill", "The bill", or the bill number (e.g. "Requires all counties to...", "Establishes a new procedure for...", "Prohibits local governments from..."). Be concise and proportional to the bill's complexity — a simple or narrow amendment warrants 1–2 sentences; a multi-part or substantive bill may warrant a short paragraph.`
-
-const DEFAULT_RELEVANCE_QUESTION = "Rate how relevant this bill is to the organization's legislative priorities."
 
 const DEFAULT_TAXONOMY = [
   'Health & Healthcare', 'Education', 'Elections & Voting', 'Housing & Land Use',
@@ -82,12 +66,6 @@ export function Config() {
   const [aiContext, setAiContext] = useState('')
   const [relevanceQuestion, setRelevanceQuestion] = useState('')
   const [tagTaxonomy, setTagTaxonomy] = useState('')
-
-  const [instancePreset, setInstancePreset] = useState<string | null>(null)
-  const [presets, setPresets] = useState<PresetFull[]>([])
-  const [selectedPresetSlug, setSelectedPresetSlug] = useState('')
-  const [applyingPreset, setApplyingPreset] = useState(false)
-  const [applyPresetResult, setApplyPresetResult] = useState<string | null>(null)
 
   const [savingKeywords, setSavingKeywords] = useState(false)
   const [savedKeywords, setSavedKeywords] = useState(false)
@@ -146,11 +124,8 @@ export function Config() {
   }, [])
 
   useEffect(() => {
-    Promise.all([
-      apiFetch<ConfigData>('/admin/config'),
-      apiFetch<PresetFull[]>('/admin/presets'),
-    ])
-      .then(([data, presetList]) => {
+    apiFetch<ConfigData>('/admin/config')
+      .then((data) => {
         setKeywords(Array.isArray(data.keywords) && data.keywords.length > 0 ? data.keywords.join('\n') : '')
         setAssociationName(data.association_name ?? '')
         const noun = data.org_noun ?? 'team'
@@ -166,7 +141,6 @@ export function Config() {
               .join('\n')
           : '')
         setTagTaxonomy(taxonomyString)
-        setInstancePreset(data.instance_preset ?? null)
         setMatchedBillsCount(data.matched_bills_count ?? null)
         setPrioritizedBillsCount(data.prioritized_bills_count ?? null)
         aiSnapshot.current = {
@@ -174,32 +148,16 @@ export function Config() {
           relevanceQuestion: data.relevance_question ?? '',
           tagTaxonomy: taxonomyString,
         }
-        if (Array.isArray(presetList)) setPresets(presetList)
       })
       .catch(() => setFetchError('Failed to load configuration.'))
       .finally(() => setLoading(false))
   }, [])
 
-  function getActivePreset(): PresetFull | null {
-    if (!instancePreset) return null
-    return presets.find(p => p.slug === instancePreset) ?? null
-  }
-
-  function resetToPreset(field: 'aiContext' | 'relevanceQuestion' | 'tagTaxonomy' | 'keywords') {
-    const preset = getActivePreset()
-    if (!preset) {
-      if (field === 'aiContext') setAiContext('')
-      if (field === 'relevanceQuestion') setRelevanceQuestion('')
-      if (field === 'tagTaxonomy') setTagTaxonomy('')
-      if (field === 'keywords') setKeywords('')
-    } else {
-      if (field === 'aiContext') setAiContext(preset.aiContext)
-      if (field === 'relevanceQuestion') setRelevanceQuestion(preset.relevanceQuestion)
-      if (field === 'tagTaxonomy') setTagTaxonomy(
-        preset.taxonomy.map(t => t.description ? `${t.name}: ${t.description}` : t.name).join('\n')
-      )
-      if (field === 'keywords') setKeywords(preset.keywords.join('\n'))
-    }
+  function resetToDefault(field: 'aiContext' | 'relevanceQuestion' | 'tagTaxonomy' | 'keywords') {
+    if (field === 'aiContext') setAiContext('')
+    if (field === 'relevanceQuestion') setRelevanceQuestion('')
+    if (field === 'tagTaxonomy') setTagTaxonomy('')
+    if (field === 'keywords') setKeywords('')
   }
 
   async function handleSaveKeywords() {
@@ -396,37 +354,6 @@ export function Config() {
     }
   }
 
-  async function handleApplyPreset() {
-    if (!selectedPresetSlug) return
-    if (!confirm(`Apply the "${presets.find(p => p.slug === selectedPresetSlug)?.name ?? selectedPresetSlug}" preset? This will overwrite your current AI context, relevance question, tag taxonomy, and keywords.`)) return
-    setApplyingPreset(true)
-    setApplyPresetResult(null)
-    try {
-      await apiFetch(`/admin/apply-preset/${selectedPresetSlug}`, { method: 'POST' })
-      const data = await apiFetch<ConfigData>('/admin/config')
-      const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
-        ? data.tag_taxonomy
-            .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
-            .join('\n')
-        : '')
-      setAiContext(data.ai_context ?? '')
-      setRelevanceQuestion(data.relevance_question ?? '')
-      setTagTaxonomy(taxonomyString)
-      setKeywords(Array.isArray(data.keywords) && data.keywords.length > 0 ? data.keywords.join('\n') : '')
-      setInstancePreset(data.instance_preset ?? null)
-      aiSnapshot.current = {
-        aiContext: data.ai_context ?? '',
-        relevanceQuestion: data.relevance_question ?? '',
-        tagTaxonomy: taxonomyString,
-      }
-      setApplyPresetResult(`Preset applied.`)
-    } catch {
-      setApplyPresetResult('Failed to apply preset.')
-    } finally {
-      setApplyingPreset(false)
-    }
-  }
-
   async function handleExport() {
     setExporting(true)
     setExportProgress('Starting…')
@@ -532,7 +459,6 @@ export function Config() {
 
   if (fetchError) return <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}><SettingsNav /><div style={{ color: color.textErrorRed, fontSize: fontSize.sm, marginTop: 24 }}>{fetchError}</div></div>
 
-  const activePreset = getActivePreset()
   const sectionCard: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
   const sectionTitle: React.CSSProperties = CARD_TITLE
   const sectionIntro: React.CSSProperties = { fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginBottom: 20 }
@@ -552,51 +478,6 @@ export function Config() {
       )}
 
       <>
-
-      {/* Preset panel */}
-      <div style={{ background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, padding: 16, marginBottom: 20 }}>
-        {loading ? (
-          <div style={hintStyle}>Loading…</div>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textPrimary }}>
-                Preset:{' '}
-                <span style={{ fontWeight: fontWeight.normal, color: instancePreset ? color.accentBlue : color.textMuted }}>
-                  {instancePreset ? (presets.find(p => p.slug === instancePreset)?.name ?? instancePreset) : 'None'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
-                <select
-                  value={selectedPresetSlug}
-                  onChange={e => { setSelectedPresetSlug(e.target.value); setApplyPresetResult(null) }}
-                  style={selectStyle}
-                >
-                  <option value=''>Load a preset…</option>
-                  {presets.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-                </select>
-                <button
-                  onClick={handleApplyPreset}
-                  disabled={!selectedPresetSlug || applyingPreset || demoLocked}
-                  style={{ fontSize: fontSize.sm, padding: '8px 12px', background: (selectedPresetSlug && !demoLocked) ? color.accentBlue : color.borderDefault, color: (selectedPresetSlug && !demoLocked) ? color.white : color.textMuted, border: 'none', borderRadius: radius.md, cursor: (selectedPresetSlug && !demoLocked) ? 'pointer' : 'not-allowed', fontWeight: fontWeight.medium }}
-                >
-                  {applyingPreset ? 'Applying…' : 'Apply'}
-                </button>
-              </div>
-            </div>
-            {selectedPresetSlug && presets.find(p => p.slug === selectedPresetSlug) && (
-              <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginTop: 8 }}>
-                {presets.find(p => p.slug === selectedPresetSlug)?.description}
-              </div>
-            )}
-            {applyPresetResult && (
-              <div style={{ fontSize: fontSize.sm, color: applyPresetResult.startsWith('Failed') ? color.textErrorRed : color.textSuccess, marginTop: 8 }}>
-                {applyPresetResult}
-              </div>
-            )}
-          </>
-        )}
-      </div>
 
       {/* Bill keywords */}
       <div style={sectionCard}>
@@ -618,9 +499,9 @@ export function Config() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                 <label htmlFor="config-keywords" style={{ ...labelStyle, marginBottom: 0 }}>Keywords</label>
-                {(keywords.trim() || activePreset) && (
-                  <button type='button' onClick={() => resetToPreset('keywords')} disabled={demoLocked} style={resetBtnStyle}>
-                    {activePreset ? 'Reset to preset' : 'Clear'}
+                {keywords.trim() && (
+                  <button type='button' onClick={() => resetToDefault('keywords')} disabled={demoLocked} style={resetBtnStyle}>
+                    Clear
                   </button>
                 )}
               </div>
@@ -675,9 +556,9 @@ export function Config() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-ai-context" style={{ ...labelStyle, marginBottom: 0 }}>Bill summary</label>
-                  {(aiContext.trim() || activePreset) && (
-                    <button type='button' onClick={() => resetToPreset('aiContext')} disabled={demoLocked} style={resetBtnStyle}>
-                      {activePreset ? 'Reset to preset' : 'Reset to default'}
+                  {aiContext.trim() && (
+                    <button type='button' onClick={() => resetToDefault('aiContext')} disabled={demoLocked} style={resetBtnStyle}>
+                      Reset to default
                     </button>
                   )}
                 </div>
@@ -688,17 +569,22 @@ export function Config() {
                   initialHeight={160}
                   minHeight={60}
                   style={{ fontSize: fontSize.sm }}
-                  placeholder={DEFAULT_AI_CONTEXT}
+                  placeholder={buildDefaultAiContext(associationName)}
                 />
                 <div style={hintStyle}>System instructions sent to the AI for every bill. Controls the summary style and framing.</div>
+                {isAiConfigDefault(aiContext) && (
+                  <div style={hintStyle}>
+                    Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
+                  </div>
+                )}
               </div>
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-relevance-question" style={{ ...labelStyle, marginBottom: 0 }}>Relevance score</label>
-                  {(relevanceQuestion.trim() || activePreset) && (
-                    <button type='button' onClick={() => resetToPreset('relevanceQuestion')} disabled={demoLocked} style={resetBtnStyle}>
-                      {activePreset ? 'Reset to preset' : 'Reset to default'}
+                  {relevanceQuestion.trim() && (
+                    <button type='button' onClick={() => resetToDefault('relevanceQuestion')} disabled={demoLocked} style={resetBtnStyle}>
+                      Reset to default
                     </button>
                   )}
                 </div>
@@ -709,17 +595,22 @@ export function Config() {
                   initialHeight={100}
                   minHeight={60}
                   style={{ fontSize: fontSize.sm }}
-                  placeholder={DEFAULT_RELEVANCE_QUESTION}
+                  placeholder={buildDefaultRelevanceQuestion(associationName)}
                 />
                 <div style={hintStyle}>Prompt sent to guide the AI in scoring each bill's relevance from 1–10.</div>
+                {isAiConfigDefault(relevanceQuestion) && (
+                  <div style={hintStyle}>
+                    Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
+                  </div>
+                )}
               </div>
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-tag-taxonomy" style={{ ...labelStyle, marginBottom: 0 }}>Tags</label>
-                  {(tagTaxonomy.trim() || activePreset) && (
-                    <button type='button' onClick={() => resetToPreset('tagTaxonomy')} disabled={demoLocked} style={resetBtnStyle}>
-                      {activePreset ? 'Reset to preset' : 'Reset to default'}
+                  {tagTaxonomy.trim() && (
+                    <button type='button' onClick={() => resetToDefault('tagTaxonomy')} disabled={demoLocked} style={resetBtnStyle}>
+                      Reset to default
                     </button>
                   )}
                 </div>
@@ -737,6 +628,11 @@ export function Config() {
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Municipal Court</code><br />
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Elections: Local election administration, voting rights, voter registration, voting equipment, etc.</code>
                 </div>
+                {isAiConfigDefault(tagTaxonomy) && (
+                  <div style={hintStyle}>
+                    Leaving this blank uses the generic instructions shown above. Personalizing them improves summaries and relevance scores.
+                  </div>
+                )}
               </div>
             </div>
 
