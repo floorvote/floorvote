@@ -34,28 +34,6 @@ export const DEFAULT_TAXONOMY: TaxonomyItem[] = [
   { name: 'Agriculture & Rural Affairs' },
 ]
 
-export const ELECTION_TAXONOMY: TaxonomyItem[] = [
-  { name: 'Voter Registration' },
-  { name: 'Voter ID Requirements' },
-  { name: 'Mail & Absentee Voting' },
-  { name: 'Early Voting' },
-  { name: 'Election Day Operations' },
-  { name: 'Poll Workers' },
-  { name: 'Voting Equipment & Technology' },
-  { name: 'Election Security' },
-  { name: 'Redistricting & Reapportionment' },
-  { name: 'Campaign Finance' },
-  { name: 'Ballot Access & Candidate Filing' },
-  { name: 'Overseas & Military Voting' },
-  { name: 'Provisional Ballots' },
-  { name: 'Election Audits & Recounts' },
-  { name: 'Election Funding & Resources' },
-  { name: 'Ranked Choice Voting' },
-  { name: 'Voting Rights & Access' },
-  { name: 'Primary Elections' },
-  { name: 'Election Officials & Administration' },
-]
-
 /**
  * The tenant's effective tag taxonomy: the configured list, or DEFAULT_TAXONOMY when
  * unset/empty/malformed. Mirrors the resolution rule in api/src/queue/processor.ts so the

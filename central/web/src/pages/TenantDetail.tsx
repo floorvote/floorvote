@@ -6,7 +6,7 @@ import { DataTable, Column } from '../components/DataTable'
 import { EngagementChart } from '../components/EngagementChart'
 
 type D = {
-  tenant: { id: string; name: string; states: string[] }
+  tenant: { id: string; name: string; states: string[]; aiContextPersonalized: boolean }
   matchTypeBreakdown: { keyword: number; manual: number; null: number }
   textStatusBreakdown: { not_checked: number; no_texts: number; available: number }
   keywordEffectiveness: { keyword: string; billCount: number; pct: number }[]
@@ -104,7 +104,17 @@ export default function TenantDetail() {
     <div>
       <Link to="/tenants" style={{ fontSize: 13, color: 'var(--muted)' }}>← Tenants</Link>
       <h1 style={{ marginTop: 4, fontSize: 24 }}>{data.tenant.name} <span style={{ color: 'var(--muted)', fontSize: 14, fontWeight: 400 }}>· {data.tenant.id}</span></h1>
-      <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 24 }}>{data.tenant.states.join(', ')}</div>
+      <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 4 }}>{data.tenant.states.join(', ')}</div>
+      <div
+        style={{
+          fontSize: 13,
+          marginBottom: 24,
+          fontWeight: 600,
+          color: data.tenant.aiContextPersonalized ? 'var(--success)' : 'var(--warning)',
+        }}
+      >
+        {data.tenant.aiContextPersonalized ? 'AI instructions: personalized' : 'AI instructions: generic default'}
+      </div>
 
       <h2 style={{ fontSize: 16 }}>Match type</h2>
       <div style={{ marginBottom: 24 }}>

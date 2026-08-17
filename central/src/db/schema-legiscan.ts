@@ -257,6 +257,11 @@ export const tenants = sqliteTable('tenants', {
   // HTTP fan-out when no static TENANT_QUEUE_<ID> producer binding exists.
   // Populated at registration via the Queues REST API. NULL = binding-only.
   queueId:       text('queue_id'),
+  // Whether the tenant has replaced the generic default AI instructions.
+  // Reported by the tenant at registration (see shared/aiDefaults.ts
+  // isAiConfigDefault). Defaults to false so tenants that have not
+  // re-registered since this shipped read as not-personalized.
+  aiContextPersonalized: integer('ai_context_personalized', { mode: 'boolean' }).notNull().default(false),
 })
 
 export const keywordRegistry = sqliteTable('keyword_registry', {

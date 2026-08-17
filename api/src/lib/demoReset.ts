@@ -109,16 +109,8 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   const seedFieldIds = seed.customFields.map((f) => f.id)
   await db.prepare(`DELETE FROM custom_field_definitions WHERE id NOT IN (${placeholdersFor(seedFieldIds)})`).bind(...seedFieldIds).run()
 
-  // Canonical association config. instance_preset is deliberately NOT set — the
-  // preset system is retired; the seed carries ai_context, relevance_question,
-  // tag_taxonomy, and keywords directly.
+  // Canonical association config.
   await batch([
-    // Delete rather than skip: a demo tenant deployed before presets were retired
-    // still carries the row, and while it exists ensureInstancePreset keeps
-    // reporting a preset slug. Deleting it makes every demo tenant — old and new —
-    // converge on "no preset". Safe because the four keys a preset would have
-    // supplied are written from the seed immediately below.
-    db.prepare(`DELETE FROM association_config WHERE key = 'instance_preset'`),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('association_name', ?)`).bind(JSON.stringify(`Demo — ${seed.associationName}`)),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('ai_context', ?)`).bind(seed.aiContext),
     db.prepare(`INSERT OR REPLACE INTO association_config (key, value) VALUES ('relevance_question', ?)`).bind(seed.relevanceQuestion),

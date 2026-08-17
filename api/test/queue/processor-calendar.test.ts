@@ -51,7 +51,6 @@ const testEnv = {
   TENANT_ID: 'ri',
   CENTRAL_API_URL: 'https://central.test',
   CENTRAL_ADMIN_SECRET: 'x',
-  INSTANCE_PRESET: 'election_officials',
 }
 
 function calendarBlock(changeType: 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' = 'hearing_added') {

@@ -1,11 +1,17 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
 import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../lib/taxonomy'
-import { ensureInstancePreset } from '../lib/instancePreset'
 import { centralFetch } from '../lib/centralFetch'
 import { matchesKeywords } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
+import { readConfigString } from '../lib/configValue'
+import {
+  ASSOCIATION_NAME_PLACEHOLDER,
+  buildDefaultAiContext,
+  buildDefaultRelevanceQuestion,
+  isAiConfigDefault,
+} from '../../../shared/aiDefaults'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -346,7 +352,12 @@ export async function processCentralNotification(
   // Determine if AI should run
   const kwRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
   const keywords: string[] = kwRow ? JSON.parse(kwRow.value) : []
-  const keywordMatch = keywords.length === 0 || matchesKeywords(`${centralBill.title} ${centralBill.abstract ?? ''}`, keywords)
+  // Empty means "match nothing", matching central: tenants-legiscan.ts:218 is an
+  // explicit `keywords.length > 0 ? matchesUnion(...) : false`. Treating empty as
+  // match-everything here would stamp match_type='keyword' on a keyword-less tenant
+  // during a forceAI re-queue, and empty keywords are now the documented default.
+  const keywordMatch = keywords.length > 0
+    && matchesKeywords(`${centralBill.title} ${centralBill.abstract ?? ''}`, keywords)
   // If message carries an explicit matchType (from central), use it.
   // If not (e.g. forceAI re-queue from tenant), preserve whatever is already on the row.
   // Only derive from keyword matching for brand-new bills with no classification yet.
@@ -363,7 +374,6 @@ export async function processCentralNotification(
     shouldRunAi = false
   }
 
-  const activePreset = await ensureInstancePreset(env, db)
   const aiDedup = !msg.forceAI && !msg.forceMetadata && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
   let aiResult: { summary: string; tags: string[]; relevanceScore: number } | null = null
@@ -371,14 +381,25 @@ export async function processCentralNotification(
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
   let aiError: string | null = null
-  if (shouldRunAi && activePreset && !aiDedup) {
-    const [aiContextRow, taxonomyRow, relevanceQuestionRow] = await Promise.all([
+  if (shouldRunAi && !aiDedup) {
+    const [aiContextRow, taxonomyRow, relevanceQuestionRow, nameRow] = await Promise.all([
       db.select().from(associationConfig).where(eq(associationConfig.key, 'ai_context')).get(),
       db.select().from(associationConfig).where(eq(associationConfig.key, 'tag_taxonomy')).get(),
       db.select().from(associationConfig).where(eq(associationConfig.key, 'relevance_question')).get(),
+      db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     ])
-    const aiContext = aiContextRow?.value ?? undefined
-    const relevanceQuestion = relevanceQuestionRow?.value ?? undefined
+    // Resolve here rather than relying on downstream `??` fallbacks: the fields are
+    // empty by default, and the defaults interpolate the association name so a
+    // rename is reflected on the next prompt with no stored state to migrate.
+    const associationName = readConfigString(nameRow) ?? ASSOCIATION_NAME_PLACEHOLDER
+    const storedAiContext = readConfigString(aiContextRow)
+    const storedRelevanceQuestion = readConfigString(relevanceQuestionRow)
+    const aiContext = isAiConfigDefault(storedAiContext)
+      ? buildDefaultAiContext(associationName)
+      : storedAiContext
+    const relevanceQuestion = isAiConfigDefault(storedRelevanceQuestion)
+      ? buildDefaultRelevanceQuestion(associationName)
+      : storedRelevanceQuestion
     const dbTaxonomy = taxonomyRow ? parseTaxonomyItems(JSON.parse(taxonomyRow.value)) : []
     const taxonomy = dbTaxonomy.length > 0 ? dbTaxonomy : DEFAULT_TAXONOMY
 
@@ -455,8 +476,6 @@ export async function processCentralNotification(
       }
       aiResult.tags = filterTagsToTaxonomy(aiResult.tags, allowed)
     }
-  } else if (shouldRunAi && !activePreset) {
-    console.log(`[processor] Skipping AI for ${centralBill.number} — no instance preset configured`)
   }
 
   const aiTextDocId = pickLatestTextDocId(centralBill)

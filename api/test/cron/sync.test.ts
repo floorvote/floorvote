@@ -4,6 +4,7 @@ import { applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { registerWithCentral } from '../../src/cron/sync'
 import { associationConfig } from '../../src/db/schema'
+import { eq } from 'drizzle-orm'
 
 const testEnv = {
   ...env,
@@ -48,22 +49,45 @@ describe('registerWithCentral', () => {
     expect(body.stateCoverage).toEqual(['NJ', 'PA'])
   })
 
-  it('auto-applies INSTANCE_PRESET before registering', async () => {
+  // Registration runs the association_name bootstrap first, so a tenant's very first
+  // cron tick leaves the name set rather than on the migration placeholder. This used
+  // to ride along on the preset bootstrap, which is why it is asserted here.
+  it('seeds association_name from env before registering', async () => {
     const db = getDb(env.DB)
-    await registerWithCentral({ ...testEnv, INSTANCE_PRESET: 'election_officials' } as any, db)
+    await registerWithCentral(testEnv as any, db)
 
-    const body = JSON.parse(fetchCalls[0].options.body as string)
-    expect(body.keywords.length).toBeGreaterThan(0)
-
-    const presetRow = await db.select().from(associationConfig).all()
-    const instancePresetRow = presetRow.find((row) => row.key === 'instance_preset')
-    expect(instancePresetRow).toBeDefined()
-    expect(JSON.parse(instancePresetRow!.value)).toBe('election_officials')
+    const nameRow = await db.select().from(associationConfig)
+      .where(eq(associationConfig.key, 'association_name')).get()
+    expect(nameRow).toBeDefined()
+    expect(JSON.parse(nameRow!.value)).toBe('Test Association')
   })
 
   it('does not throw if central returns non-ok', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }))
     const db = getDb(env.DB)
     await expect(registerWithCentral(testEnv as any, db)).resolves.not.toThrow()
+  })
+
+  it('reports aiContextPersonalized: false when ai_context is unset', async () => {
+    const db = getDb(env.DB)
+    await registerWithCentral(testEnv as any, db)
+    const body = JSON.parse(fetchCalls[0].options.body as string)
+    expect(body.aiContextPersonalized).toBe(false)
+  })
+
+  it('reports whether ai_context has been personalized', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: 'ai_context',
+      value: JSON.stringify('Analyze for county clerks.'),
+    }).onConflictDoUpdate({
+      target: associationConfig.key,
+      set: { value: JSON.stringify('Analyze for county clerks.') },
+    })
+
+    await registerWithCentral(testEnv as any, db)
+
+    const body = JSON.parse(fetchCalls[0].options.body as string)
+    expect(body.aiContextPersonalized).toBe(true)
   })
 })

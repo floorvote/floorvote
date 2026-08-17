@@ -1,14 +1,17 @@
 import { eq } from 'drizzle-orm'
 import { associationConfig } from '../db/schema'
-import { ensureInstancePreset } from '../lib/instancePreset'
+import { ensureAssociationName } from '../lib/associationName'
 import { centralFetch } from '../lib/centralFetch'
+import { readConfigString } from '../lib/configValue'
+import { isAiConfigDefault } from '../../../shared/aiDefaults'
 import type { AppDb, Env } from '../types'
 
 export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean> {
-  await ensureInstancePreset(env, db)
-  const [keywordsRow, stateCoverageRow] = await Promise.all([
+  await ensureAssociationName(env, db)
+  const [keywordsRow, stateCoverageRow, aiContextRow] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'state_coverage')).get(),
+    db.select().from(associationConfig).where(eq(associationConfig.key, 'ai_context')).get(),
   ])
 
   const keywords: string[] = keywordsRow ? JSON.parse(keywordsRow.value) : []
@@ -22,6 +25,7 @@ export async function registerWithCentral(env: Env, db: AppDb): Promise<boolean>
     apiUrl: env.APP_URL,
     stateCoverage,
     keywords,
+    aiContextPersonalized: !isAiConfigDefault(readConfigString(aiContextRow)),
   }
 
   try {

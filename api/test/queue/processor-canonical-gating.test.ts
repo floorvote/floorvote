@@ -71,7 +71,6 @@ const testEnv = {
   ...env,
   TENANT_ID: 'test-org',
   CENTRAL_API_URL: 'https://central.test',
-  INSTANCE_PRESET: 'election_officials',
 }
 
 describe('F5+B5: canonical-field gating', () => {

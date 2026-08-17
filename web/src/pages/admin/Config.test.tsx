@@ -65,19 +65,15 @@ const BASE_CONFIG = {
   ai_context: '',
   relevance_question: '',
   tag_taxonomy: [],
-  instance_preset: null,
   matched_bills_count: 0,
   prioritized_bills_count: 0,
 }
-
-const EMPTY_PRESETS: never[] = []
 
 beforeEach(() => {
   vi.resetAllMocks()
   demo.demoLocked = false
   mockFetch.mockImplementation(async (path: string) => {
     if (path === '/admin/config') return { ...BASE_CONFIG }
-    if (path === '/admin/presets') return EMPTY_PRESETS
     if (path === '/admin/custom-fields') return []
     if (path === '/bills/drafts') return { drafts: [] }
     throw new Error('unexpected path: ' + path)
@@ -99,7 +95,7 @@ describe('Config — per-section loading skeleton', () => {
     mockFetch.mockImplementation(async (path: string) => {
       if (path === '/admin/custom-fields') return []
       if (path === '/bills/drafts') return { drafts: [] }
-      // /admin/config and /admin/presets hang — simulates in-flight
+      // /admin/config hangs — simulates in-flight
       return neverSettles as never
     })
 
@@ -144,7 +140,6 @@ describe('Config — org noun select', () => {
   it('shows preset value "coalition" selected and no custom input', async () => {
     mockFetch.mockImplementation(async (path: string) => {
       if (path === '/admin/config') return { ...BASE_CONFIG, org_noun: 'coalition' }
-      if (path === '/admin/presets') return EMPTY_PRESETS
       if (path === '/admin/custom-fields') return []
       if (path === '/bills/drafts') return { drafts: [] }
       throw new Error('unexpected path: ' + path)
@@ -162,7 +157,6 @@ describe('Config — org noun select', () => {
   it('shows "custom" selected and pre-fills input for non-preset noun "league"', async () => {
     mockFetch.mockImplementation(async (path: string) => {
       if (path === '/admin/config') return { ...BASE_CONFIG, org_noun: 'league' }
-      if (path === '/admin/presets') return EMPTY_PRESETS
       if (path === '/admin/custom-fields') return []
       if (path === '/bills/drafts') return { drafts: [] }
       throw new Error('unexpected path: ' + path)
@@ -233,7 +227,6 @@ describe('Config — demo gating', () => {
     demo.demoLocked = true
     mockFetch.mockImplementation(async (path: string) => {
       if (path === '/admin/config') return { ...BASE_CONFIG }
-      if (path === '/admin/presets') return EMPTY_PRESETS
       if (path === '/admin/custom-fields') return [{ id: 'cf1', name: 'Coalition lead', type: 'text', pinned: false }]
       if (path === '/bills/drafts') return { drafts: [] }
       throw new Error('unexpected path: ' + path)
@@ -279,6 +272,73 @@ describe('Config — data export control accessibility', () => {
     render(<Config />)
     const exportBtn = await screen.findByRole('button', { name: /download all data/i })
     expect(exportBtn).toHaveAttribute('aria-disabled', 'true')
+  })
+})
+
+describe('Config — preset panel removed', () => {
+  it('renders no preset panel and does not fetch /admin/presets', async () => {
+    const paths: string[] = []
+    mockFetch.mockImplementation(async (path: string) => {
+      paths.push(path)
+      if (path === '/admin/config') return { ...BASE_CONFIG, ai_context: undefined }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    render(<Config />)
+    await screen.findByText('Bill keywords')
+
+    expect(paths).not.toContain('/admin/presets')
+    expect(screen.queryByText(/Load a preset/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+  })
+
+  it('shows the personalization hint when ai_context is blank and hides it once set', async () => {
+    // Isolate the ai_context field: give relevance_question and tag_taxonomy real
+    // values so only the Bill summary field's hint renders, not all three.
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return {
+        ...BASE_CONFIG,
+        ai_context: '',
+        relevance_question: 'Custom relevance question.',
+        tag_taxonomy: [{ name: 'Custom Tag' }],
+      }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    render(<Config />)
+    expect(await screen.findByText(/Leaving this blank uses the generic instructions/)).toBeTruthy()
+  })
+
+  it('hides the personalization hint once ai_context is set', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return {
+        ...BASE_CONFIG,
+        ai_context: 'Custom voice.',
+        relevance_question: 'Custom relevance question.',
+        tag_taxonomy: [{ name: 'Custom Tag' }],
+      }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    render(<Config />)
+    await screen.findByText('AI instructions')
+    expect(screen.queryByText(/Leaving this blank uses the generic instructions/)).toBeNull()
+  })
+
+  it('offers "Reset to default" rather than "Reset to preset"', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, ai_context: 'Custom voice.' }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    render(<Config />)
+    await screen.findByText('AI instructions')
+    expect(screen.queryByText('Reset to preset')).toBeNull()
+    expect(screen.getAllByText('Reset to default').length).toBeGreaterThan(0)
   })
 })
 

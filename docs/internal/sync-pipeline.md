@@ -136,7 +136,6 @@ Only `ai_processed_at` is ever set successfully; `ai_skip_reason` is never set i
   - Fetches text from central if `text_status ∈ {'available', 'in_r2'}`.
   - Runs AI (Gemini default; Claude fallback on 429/503) when:
     - **shouldRunAi**: `msg.forceAI || derivedMatchType !== null` (where `derivedMatchType` comes from the message, the existing row, or keyword-match for brand-new bills)
-    - **AND** an `instance_preset` is configured
     - **AND** text was successfully fetched
     - **AND** `aiDedup` is false: `existing.lastAiTextHash !== centralBill.textHash`, *unless* `forceAI` or `forceMetadata` bypasses dedup
   - Writes `ai_processed_at`, `last_ai_text_hash`, `last_ai_text_doc_id` on success.

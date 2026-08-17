@@ -1,0 +1,28 @@
+-- Whether the tenant has replaced the generic default AI instructions.
+--
+-- Reported by the tenant at registration. Surfaces on the operator's tenant
+-- detail page: presets are retired and personalizing is a nagged default rather
+-- than an enforced precondition, so the operator needs to see which instances are
+-- still summarizing generically. Defaults to 0 so tenants that have not
+-- re-registered since this shipped read as not-personalized.
+--
+-- ============================================================================
+-- DEPLOY ORDER: apply this migration BEFORE deploying central, never after.
+-- Deploying central first breaks every tenants query.
+--
+-- Why: central/src/routes/dash.ts calls `db.select().from(schema.tenants)`
+-- (unqualified — no column list) in several handlers, e.g. `GET /tenants`,
+-- `GET /tenants/:id`, and the tenant-health query. Drizzle expands an
+-- unqualified select() to the schema's full column list, which after this
+-- change includes ai_context_personalized. If central is deployed before this
+-- migration runs, the underlying `tenants` table has no such column yet, and
+-- every one of those queries fails with "no such column: ai_context_personalized"
+-- — taking down GET /tenants, GET /tenants/:id, and POST /tenants/register
+-- (tenant registration, keyword sync, and bill fan-out all stop) until the
+-- migration is applied.
+--
+-- A fresh install deploys central for the first time against an already-
+-- migrated database, so this hazard only applies when upgrading an existing
+-- central deployment.
+-- ============================================================================
+ALTER TABLE tenants ADD COLUMN ai_context_personalized INTEGER NOT NULL DEFAULT 0;

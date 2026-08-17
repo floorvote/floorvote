@@ -3,7 +3,7 @@ import { eq, asc } from 'drizzle-orm'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { associationConfig, customFieldDefinitions } from '../db/schema'
-import { ensureInstancePreset } from '../lib/instancePreset'
+import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -43,7 +43,7 @@ const DEFAULT_POSITION_VOCABULARY = ['Support', 'Oppose', 'Amend', 'Monitor', 'N
 // GET /config — public (auth required, not admin)
 configRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
-  await ensureInstancePreset(c.env, db)
+  await ensureAssociationName(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
   const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems] = await Promise.all([

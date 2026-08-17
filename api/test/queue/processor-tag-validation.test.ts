@@ -30,17 +30,13 @@ const centralBill = {
   sponsors: [{ name: 'Rep A', party: 'D', role: 'Assembly', primary: true, personId: 'p1' }],
   votes: [], relatedBills: [],
 }
-const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://central.test', INSTANCE_PRESET: 'election_officials' }
+const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://central.test' }
 
 describe('processor — write-time tag validation', () => {
   beforeEach(async () => { await resetDb(); await applyMigrations(); vi.clearAllMocks() })
 
   it('drops AI tags not in the tenant taxonomy before storing', async () => {
     const db = getDb(env.DB)
-    // Seed instance_preset too: ensureInstancePreset() bootstraps a fresh tenant (no
-    // instance_preset row) by overwriting tag_taxonomy with the preset default, which would
-    // clobber the taxonomy seeded below before this test's AI/store step ever reads it.
-    await db.insert(associationConfig).values({ key: 'instance_preset', value: JSON.stringify('election_officials') })
     await db.insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Elections' }]) })
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>
       url.includes('/text')

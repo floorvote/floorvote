@@ -270,32 +270,6 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
     expect(JSON.parse(row!.value)).toBe(seed.bannerText)
   })
 
-  it('does not set instance_preset', async () => {
-    await runDemoReset(env.DB, seed)
-    const row = await env.DB.prepare(
-      `SELECT value FROM association_config WHERE key = 'instance_preset'`
-    ).first()
-    expect(row).toBeNull()
-  })
-
-  it('deletes a pre-existing instance_preset row', async () => {
-    // Not merely "does not write one": a demo tenant deployed before the presets
-    // were retired (or one that briefly ran with INSTANCE_PRESET set) still has
-    // the row. Leaving it behind keeps ensureInstancePreset returning a preset
-    // slug forever, so the tenant never converges on "no preset". The reset must
-    // delete it so demo tenants old and new end up in the same state.
-    await env.DB.prepare(
-      `INSERT OR REPLACE INTO association_config (key, value) VALUES ('instance_preset', ?)`
-    ).bind(JSON.stringify('election_officials')).run()
-
-    await runDemoReset(env.DB, seed)
-
-    const row = await env.DB.prepare(
-      `SELECT value FROM association_config WHERE key = 'instance_preset'`
-    ).first()
-    expect(row).toBeNull()
-  })
-
   it('omits state_coverage for a single-state seed', async () => {
     // nj-county-clerks is a STATE = "NJ" tenant, so it carries no coverage list.
     expect(seed.stateCoverage).toBeNull()

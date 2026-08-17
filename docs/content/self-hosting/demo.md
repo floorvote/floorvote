@@ -9,7 +9,7 @@ A "demo site" is just a regular tenant deployed with one extra var, `DEMO_MODE =
 - **Additive actions only.** Visitors can comment, vote, react, take notes, and set priorities, positions, and custom fields. Destructive and admin actions are refused. See [What a visitor can change](#what-a-visitor-can-change) below.
 - **Reset every six hours.** A cron at 00:00, 06:00, 12:00, and 18:00 UTC resets and re-seeds the tenant to a known state. You can also trigger it by hand with `POST /api/internal/demo-reset`.
 
-To run one, deploy a tenant exactly as in [Adding tenants](/self-hosting/tenants), with `DEMO_MODE = "true"` added to its vars — but leave `INSTANCE_PRESET` out (see [Choosing the demo content](#choosing-the-demo-content)). To not run one, just leave `DEMO_MODE` out.
+To run one, deploy a tenant exactly as in [Adding tenants](/self-hosting/tenants), with `DEMO_MODE = "true"` added to its vars (see [Choosing the demo content](#choosing-the-demo-content) for what else the seed controls). To not run one, just leave `DEMO_MODE` out.
 
 ## What a visitor can change
 
@@ -39,14 +39,13 @@ DEMO_SEED = "nj-county-clerks"
 
 Leave `DEMO_SEED` out and the tenant gets `nj-county-clerks`, the New Jersey county clerks seed. An unrecognized value fails the reset loudly rather than falling back.
 
-**Leave `INSTANCE_PRESET` unset on a demo tenant.** The seed writes `ai_context`, `relevance_question`, `tag_taxonomy`, and `keywords` itself, so a preset has nothing to add and the two would be competing for the same four keys. (The worker ignores `INSTANCE_PRESET` when `DEMO_MODE = "true"`, so setting it does no damage — but it's noise in the config, and the reset deletes any `instance_preset` row it finds.)
+The seed writes `ai_context`, `relevance_question`, `tag_taxonomy`, and `keywords` itself on every reset, so a demo tenant's content comes entirely from its seed module — there's no separate configuration step.
 
 ### Adding a second demo
 
 1. Add a seed module beside `njCountyClerks.ts` in `api/src/lib/demoSeeds/`, exporting a `DemoSeed`. Copy the existing one — the type is the contract, and its comments explain the conventions (day offsets, timestamp format, mention markup).
 2. Register it in `DEMO_SEEDS` in `api/src/lib/demoSeeds/index.ts` under the key you want operators to type.
 3. Deploy the tenant with `DEMO_MODE = "true"` and `DEMO_SEED = "<your key>"` in its vars.
-4. Leave `INSTANCE_PRESET` unset.
 
 ## Wiring a demo site into the deploy smoke check
 

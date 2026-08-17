@@ -8,8 +8,7 @@ import { sendMagicLink } from '../lib/email'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords } from '../lib/keywords'
 import { centralFetch } from '../lib/centralFetch'
-import { PRESETS } from '../lib/presets'
-import { applyPresetConfig, ensureInstancePreset } from '../lib/instancePreset'
+import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { nowDb } from '../lib/dbTime'
@@ -615,12 +614,12 @@ adminApiRouter.delete('/roles/:id', async (c) => {
   return new Response(null, { status: 204 })
 })
 
-const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'instance_preset', 'modules', 'mention_emails_enabled', 'new_match_min_relevance'] as const
+const ALLOWED_CONFIG_KEYS = ['association_name', 'sync_frequency', 'keywords', 'org_noun', 'position_label', 'ai_context', 'relevance_question', 'tag_taxonomy', 'modules', 'mention_emails_enabled', 'new_match_min_relevance'] as const
 
 // GET /admin/config
 adminApiRouter.get('/config', async (c) => {
   const db = getDb(c.env.DB)
-  await ensureInstancePreset(c.env, db)
+  await ensureAssociationName(c.env, db)
   const rows = await db.select().from(associationConfig).all()
   const result: Record<string, unknown> = {}
   for (const row of rows) {
@@ -1013,47 +1012,6 @@ adminApiRouter.post('/promote-bill/:billId', async (c) => {
 
   const result = await res.json() as { ok?: boolean; matchType?: string }
   return c.json({ ok: true, billId, matchType: result.matchType })
-})
-
-// GET /admin/presets
-adminApiRouter.get('/presets', async (c) => {
-  return c.json(Object.values(PRESETS))
-})
-
-// POST /admin/apply-preset/:slug
-adminApiRouter.post('/apply-preset/:slug', async (c) => {
-  const slug = c.req.param('slug')
-  if (!PRESETS[slug]) return c.json({ error: 'Unknown preset' }, 404)
-
-  const db = getDb(c.env.DB)
-  await applyPresetConfig(db, slug)
-
-  let queuedForAi = 0
-  if (c.env.BILL_QUEUE) {
-    const eligible = await db
-      .select({ externalId: bills.externalId })
-      .from(bills)
-      .where(and(isNotNull(bills.externalId), or(isNull(bills.tenantSummary), eq(bills.tenantSummary, ''))))
-      .all()
-
-    const queueable = eligible.filter((b) => b.externalId !== null)
-    queuedForAi = queueable.length
-
-    for (let i = 0; i < queueable.length; i += 100) {
-      const batch = queueable.slice(i, i + 100).map((b) => ({
-        body: { billId: Number(b.externalId!), source: 'reprocess' as const, changeHash: '', llmOnly: true },
-      }))
-      await c.env.BILL_QUEUE.sendBatch(batch)
-    }
-  }
-
-  try {
-    c.executionCtx.waitUntil(registerWithCentral(c.env, db).catch(console.error))
-  } catch {
-    registerWithCentral(c.env, db).catch(console.error)
-  }
-
-  return c.json({ ok: true, preset: slug, queuedForAi })
 })
 
 // POST /admin/clear-interactions

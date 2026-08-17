@@ -9,8 +9,8 @@ beforeEach(() => {
     if (String(url).includes('/ops-health')) {
       return new Response(JSON.stringify({ data: {
         tenants: [
-          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false },
-          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true },
+          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, aiContextPersonalized: true },
+          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true, aiContextPersonalized: false },
         ],
         states: [
           { state: 'RI', lastSyncedAt: '2026-06-05T05:00:00Z', stale: false },
@@ -33,5 +33,12 @@ describe('OpsHealth page', () => {
     expect(staleRow).toHaveClass('row-stale')
     const njRow = screen.getByText('NJ').closest('tr')
     expect(njRow).toHaveClass('row-stale')
+  })
+
+  it('shows whether each tenant has personalized its AI instructions', async () => {
+    render(<MemoryRouter><OpsHealth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getAllByText('RI').length).toBeGreaterThanOrEqual(1))
+    expect(screen.getByText('personalized')).toBeInTheDocument()
+    expect(screen.getByText('generic default')).toBeInTheDocument()
   })
 })

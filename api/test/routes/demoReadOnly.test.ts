@@ -240,7 +240,6 @@ const DENIED = new Set([
   'PATCH /api/admin/roles/:id',
   'PATCH /api/bills/:id/draft',
   'PATCH /api/users/me',
-  'POST /api/admin/apply-preset/:slug',
   'POST /api/admin/clear-interactions',
   'POST /api/admin/custom-fields',
   'POST /api/admin/keyword-resync',
@@ -315,8 +314,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(44)
-    expect(registered().length).toBe(68)
+    expect(DENIED.size).toBe(43)
+    expect(registered().length).toBe(67)
   })
 
   it('refuses every denied route with the read-only message', async () => {

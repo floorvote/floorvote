@@ -11,6 +11,7 @@ import migration0004 from '../../migrations-legiscan/0004_match_tracking.sql?raw
 import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_change_log.sql?raw'
 import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
+import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
 
 // Mock the legiscan module — runFullPass uses getMasterListBySession + refreshLsSessions
 // (which calls getSessionList); runRawPass uses getMasterListRaw.
@@ -64,6 +65,7 @@ beforeEach(async () => {
     parseMigration(migration0005, '0005_bill_amendments_and_change_log'),
     parseMigration(migration0006, '0006_texts_fetched_at'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
+    parseMigration(migration0017, '0017_tenant_ai_personalized'),
   ])
   vi.clearAllMocks()
   // Re-establish the default for getSessionList after clearAllMocks wipes implementations.

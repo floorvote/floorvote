@@ -299,7 +299,7 @@ flowchart TD
     FT --> AICheck{shouldRunAi?<br/>forceAI OR derivedMatchType ≠ null}
     NoText --> AICheck
     AICheck -->|no| WriteOnly[Upsert bill row<br/>no AI fields]
-    AICheck -->|yes| TextOk{has full text<br/>AND not aiDedup<br/>AND preset configured?}
+    AICheck -->|yes| TextOk{has full text<br/>AND not aiDedup?}
     TextOk -->|no| WriteOnly
     TextOk -->|yes| RunAI[Run Gemini<br/>fallback Claude on 429/503]
     RunAI --> WriteAI[Upsert bill row<br/>+ ai_processed_at<br/>+ summary, tags, relevance<br/>+ last_ai_text_hash]

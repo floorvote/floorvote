@@ -110,7 +110,7 @@ SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
 # CF_AIG_GATEWAY = "your-gateway-slug"
 # ALERT_EMAILS = "ops@example.com"
-# DEMO_MODE = "true"                              # optional: make this tenant a public demo (auto-login, no email, additive writes only, reset every six hours via a 0 0,6,12,18 * * * cron in the per-tenant api/wrangler.toml — operator-only, not in this repo). Leave INSTANCE_PRESET unset when set.
+# DEMO_MODE = "true"                              # optional: make this tenant a public demo (auto-login, no email, additive writes only, reset every six hours via a 0 0,6,12,18 * * * cron in the per-tenant api/wrangler.toml — operator-only, not in this repo).
 # DEMO_SEED = "nj-county-clerks"                  # which demo seed supplies the content — a key in api/src/lib/demoSeeds/index.ts. Defaults to "nj-county-clerks" when unset.
 
 [[env.example.d1_databases]]

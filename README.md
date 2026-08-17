@@ -38,7 +38,7 @@ Each team gets a private, isolated deployment with its own database, member rost
 | **Roles** | Owner, admin, and member · custom roles for committee assignments · per-member voting restrictions |
 | **Calendar** | Auto-added hearings · custom events · subscribe from any calendar app over ICS · spreadsheet import |
 | **Email** | Magic-link sign-in · daily or weekly digests · week-ahead hearing preview · new-match and mention alerts |
-| **Admin** | Configurable AI context, relevance question, and tag taxonomy · named presets · toggleable feature modules · bulk member invites · data export |
+| **Admin** | Configurable AI context, relevance question, and tag taxonomy · toggleable feature modules · bulk member invites · data export |
 
 Each of these is explained in full on the docs site: **[What can FloorVote do?](https://floorvote.org/docs/overview/what-can-it-do.html)**
 

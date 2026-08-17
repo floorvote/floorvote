@@ -58,7 +58,6 @@ const testEnv = {
   ...env,
   TENANT_ID: 'test-tenant',
   CENTRAL_API_URL: 'https://central.test',
-  INSTANCE_PRESET: 'election_officials',
 }
 
 describe('processCentralNotification with stubOnly=true', () => {

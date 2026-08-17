@@ -1,0 +1,30 @@
+-- Drop the dead instance_preset bookkeeping key.
+--
+-- The presets feature is retired. instance_preset only ever recorded which preset
+-- had been applied. The four functional values it wrote (ai_context,
+-- relevance_question, tag_taxonomy, keywords) are independent rows and are
+-- deliberately untouched here, so existing tenants keep the configuration they run
+-- on today.
+--
+-- ============================================================================
+-- DEPLOY ORDER: apply this migration AFTER deploying the new worker, never
+-- before. Applying it first is a live-data hazard on any tenant upgrading an
+-- existing deployment.
+--
+-- Why: ensureInstancePreset() (api/src/lib/instancePreset.ts) still bootstraps
+-- from env when it finds no instance_preset row: it falls back to
+-- env.INSTANCE_PRESET and, if set, calls applyPresetConfig(), which overwrites
+-- ai_context, relevance_question, tag_taxonomy, and keywords with preset values
+-- via onConflictDoUpdate — clobbering any admin customization already in
+-- association_config. If this DELETE runs while the OLD worker is still
+-- serving (its env still carries INSTANCE_PRESET = "..."), the very next
+-- GET /config, GET /admin/config, or cron register call finds no
+-- instance_preset row, takes that bootstrap branch, and silently overwrites a
+-- live, admin-customized tenant's AI config. No error is logged and nothing
+-- self-heals: the damage is discovered only when an admin notices their
+-- instructions changed.
+--
+-- A fresh install has no old worker running yet, so this hazard does not apply
+-- there — order only matters when upgrading an existing deployment.
+-- ============================================================================
+DELETE FROM association_config WHERE key = 'instance_preset';

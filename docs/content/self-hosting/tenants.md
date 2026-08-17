@@ -112,9 +112,6 @@ OPERATOR_URL = "https://example.org"
 # optional — feedback recipient(s)
 OPERATOR_CONTACT_EMAILS = "support@example.org"
 
-# applied automatically on first register
-INSTANCE_PRESET = "election_officials"
-
 # e.g. "NJ"; leave "" for a multi-state team
 STATE = "[STATE]"
 
@@ -205,6 +202,9 @@ npx wrangler d1 migrations apply floorvote-[slug] --remote --env [slug]
 > [!WARNING]
 > Always use `migrations apply`, never `d1 execute` with raw SQL files — `apply` tracks which migrations have run.
 
+> [!WARNING]
+> **Upgrading an existing deployment:** some migrations must run either strictly before or strictly after the worker is redeployed — running them in the wrong order can silently overwrite an admin-customized tenant's AI config or break every tenant query until the migration lands. Check the comment block at the top of each new migration file for an explicit ordering requirement before you deploy. This does not apply to a fresh install: there is no old worker or old central deployment yet, so there's nothing for a new migration to be ordered against.
+
 ## Step 4b: Seed the state list (multi-state teams only)
 
 Single-state teams skip this — the `STATE` var is enough. For a multi-state team, from `api/`, store the list in the database:
@@ -254,7 +254,7 @@ cd central && npm run deploy:legiscan
 
 ## Step 8: Register the tenant with central
 
-This applies the `INSTANCE_PRESET` (keywords, AI context, taxonomy, relevance question), syncs the keywords to central, and registers the team's state coverage:
+This syncs the team's keywords (empty on a new instance) and state coverage to central, and provisions its queue:
 
 > [!TIP]
 > **You already have both of these — no dashboard needed.** `https://<your-central>.workers.dev` is your `CENTRAL_API_URL` from the Step 3 config block (and the URL wrangler printed when you deployed central). `<central ADMIN_SECRET>` is the `ADMIN_SECRET` you set on central during its setup — the same value for every tenant. To make the commands here and in Step 12 copy-pasteable, export them once:
@@ -292,11 +292,14 @@ Replace `<owner-email>` and `<owner-name>` with the founding owner's real email 
 
 They then log in with a magic link sent to that email address.
 
-## Step 11: Confirm the preset and configuration
+## Step 11: Configure the instance
 
-Now switch from the terminal to a browser. Go to your instance at the `APP_URL` from your Step 3 config block — `https://[slug].[your-domain]` (the custom domain from Step 9). There's no password: enter the founding owner's email from Step 10 and the app emails you a magic link; click it to sign in, then open **Settings → Configuration**. If you set `INSTANCE_PRESET` in Step 3 (recommended), the keywords, AI context, taxonomy, and relevance question are already in place — applied once at registration, so anything you change here sticks. If not, apply a preset now — see [Presets](/self-hosting/presets). **This is the moment to adjust them** — you're setting the config the seed in Step 12 will spend AI against, so tune the keywords and AI instructions here first.
+Now switch from the terminal to a browser. Go to your instance at the `APP_URL` from your Step 3 config block — `https://[slug].[your-domain]` (the custom domain from Step 9). There's no password: enter the founding owner's email from Step 10 and the app emails you a magic link; click it to sign in, then open **Settings → Configuration**. A new instance starts with no keywords and no AI instructions, so there are two ways to proceed from here:
 
-You can also set these four fields directly in the database if you prefer (from `api/`). They live in the `association_config` table:
+- **Path 1 (recommended — explore first).** Leave the AI fields and keywords blank, seed the session in Step 12, and every bill arrives as a free monitor stub with no AI cost. Browse and search the real corpus, then come back here and fill in both sections — **and save both, in either order**: keywords in the Keywords section, saved with **Save keywords and sync** (this is the button that queues the newly-matching bills for full analysis); and AI context, relevance question, and tag taxonomy in the AI section, saved separately with **Save AI instructions**. Saving only one leaves the other on its blank default — in particular, writing AI instructions and clicking only **Save keywords and sync** leaves those instructions unsaved, silently falling back to the generic default. The free exploration window ends the moment you save the keywords — from then on, re-tuning keywords or instructions means paying for AI a second time on whatever newly matches.
+- **Path 2 (keywords already known).** Write the config now, before seeding, so the Step 12 seed produces AI summaries on its first pass. Use the `wrangler d1 execute` block below to set it directly, or fill in the same fields in **Settings → Configuration** and save.
+
+You can set these four fields directly in the database if you prefer (from `api/`). They live in the `association_config` table:
 
 | Key | Example |
 |-----|---------|
@@ -315,17 +318,22 @@ wrangler d1 execute floorvote-[slug] --remote --env [slug] \
     ('state_coverage', '[\"NJ\"]')"
 ```
 
+**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync.
+
 While you're here, set the **org noun** (team / association / coalition / custom) — it drives the labels on the positions section. (**Rerun AI on all bills** is for later — after bills are in — if you re-tune your instructions and want to regenerate existing summaries.)
 
-> [!NOTE]
-> **Tuning at your own pace?** If another team already tracks this state, central has its bills and can start delivering them before you seed — summarized with whatever keywords are set (the un-tuned preset, if you haven't changed them yet). To avoid any AI spend while you work, clear the keywords: with none set, every bill arrives as a no-cost stub. Restore your real keywords when you're ready, then seed in Step 12.
+### Getting AI on every bill
+
+Blank keywords buy you a free look at the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared 30,000-calls/month quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
+
+What works instead: write broad keywords that cover your real scope, or manually promote the specific bills you care about once they're in view as stubs.
 
 ## Step 12: Seed the active session(s)
 
 Seeding loads a whole legislative session into the team at once — bills matching its keywords get full AI summaries, and the rest come in as lightweight "monitor" stubs (no AI cost). This means the team mirrors the full session from day one.
 
 > [!TIP]
-> **Keywords come from Step 11.** Seeding uses the keywords already synced to central to decide which bills get full AI versus a stub. If you still need to change them, do it in **Settings → Configuration** and let it sync **first**; changing them after seeding works too, but then you'd "Rerun AI on all bills" to regenerate.
+> **No keywords yet is the expected case (Path 1 from Step 11).** Seeding uses whatever keywords are already synced to central to decide which bills get full AI versus a stub — with none set, every bill comes in as a stub, which is exactly the free-exploration state Path 1 wants. When you're ready to tune, go to **Settings → Configuration** and save both sections — keywords with **Save keywords and sync**, AI context/relevance question/tag taxonomy with **Save AI instructions**. Changing them after seeding works too, but then you'd "Rerun AI on all bills" to regenerate against the new instructions.
 
 There are two paths, depending on whether central already has the state's bills.
 
