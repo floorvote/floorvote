@@ -55,6 +55,29 @@ describe('runDemoReset — calendar seeding', () => {
     expect(joins.length).toBe(0)
   })
 
+  // The browser namespaces its local mention read state on this value, so a
+  // reset that does not move it leaves a laptop showing the seeded mentions read
+  // forever — the bug this stamp exists to fix. Seeded mention ids are stable
+  // across resets by design, so the epoch is the only thing that can change.
+  it('stamps a demo_reset_at epoch that changes on every reset', async () => {
+    const db = getDb(env.DB)
+    const read = async () =>
+      (await db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_reset_at')).get())?.value
+
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    const first = await read()
+    expect(first).toBeTruthy()
+
+    // Date.now() has 1ms resolution and the two resets can land in the same
+    // millisecond, so wait long enough that a changed value is meaningful.
+    await new Promise((r) => setTimeout(r, 5))
+    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    const second = await read()
+
+    expect(second).toBeTruthy()
+    expect(second).not.toBe(first)
+  })
+
   it('enables the calendar module in association config', async () => {
     await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
     const db = getDb(env.DB)

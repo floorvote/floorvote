@@ -77,7 +77,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id)
   }, [refresh])
 
-  const { demoMode, settled: demoSettled } = useDemo()
+  const { demoMode, demoResetAt, settled: demoSettled } = useDemo()
 
   // Which rule applies depends on /config, which routinely resolves AFTER
   // /notifications — so until the gate settles we hold at zero rather than
@@ -99,7 +99,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // readMentionIds() is hoisted out of the filter callback: it round-trips
     // through localStorage.getItem + JSON.parse, so calling it once per render
     // instead of once per mention matters once the list is not tiny.
-    const alreadyRead = readMentionIds()
+    const alreadyRead = readMentionIds(demoResetAt)
     effectiveUnread = mentions.filter(m => isUnreadForDemo(m, alreadyRead)).length
   } else if (demoSettled) {
     effectiveUnread = unreadCount

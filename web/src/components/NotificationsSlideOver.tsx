@@ -95,7 +95,7 @@ export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
   const { mentions: liveMentions, loaded, refresh } = useNotifications()
-  const { demoMode, settled: demoSettled } = useDemo()
+  const { demoMode, demoResetAt, settled: demoSettled } = useDemo()
   const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
@@ -135,13 +135,13 @@ export function NotificationsSlideOver(
       // Overlay the local set onto the server's isUnread before freezing: after a
       // reset the server calls every row unread again, and this browser's own
       // reading is the only record that survives it.
-      const alreadyRead = readMentionIds()
+      const alreadyRead = readMentionIds(demoResetAt)
       setSnapshot(liveMentions.map(m => ({ ...m, isUnread: isUnreadForDemo(m, alreadyRead) })))
-      markMentionsRead(liveMentions.map(m => m.id))
+      markMentionsRead(liveMentions.map(m => m.id), demoResetAt)
       return
     }
     setSnapshot(liveMentions)
-  }, [loaded, demoSettled, liveMentions, snapshot, demoMode])
+  }, [loaded, demoSettled, liveMentions, snapshot, demoMode, demoResetAt])
 
   // Mark read once per open, after the snapshot above has been taken — kept as
   // its own effect for readability. `markedRef` is what makes it once, not the

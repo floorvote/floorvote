@@ -3,11 +3,12 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NotificationsSlideOver } from './NotificationsSlideOver'
 import { NotificationsProvider } from '../context/NotificationsContext'
+import { markMentionsRead } from '../lib/demoReadState'
 import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 // Mutable flag so individual tests can opt into demoLocked without a
 // module-level mock rewrite per test (mirrors Members.roleRename.test.tsx).
-const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true }))
+const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true, demoResetAt: 'epoch-1' }))
 // Lets a test hold `GET /notifications` open, so the ordering against
 // mark-read is observable rather than a matter of which request wins.
 // `holdFrom` is 1-based over the GETs this mock serves: holdFrom = 2 lets the
@@ -21,7 +22,7 @@ const gate = vi.hoisted(() => ({
   lateRow: null as Record<string, unknown> | null,
 }))
 vi.mock('../context/DemoContext', () => ({
-  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked, settled: demoState.settled }),
+  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked, settled: demoState.settled, demoResetAt: demoState.demoResetAt }),
 }))
 
 // The @role-mention attribution chip ("mentioned @Board") previously showed
@@ -381,7 +382,7 @@ describe('NotificationsSlideOver demo read state', () => {
 
     expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
     const { readMentionIds } = await import('../lib/demoReadState')
-    expect(readMentionIds()).toEqual(new Set())
+    expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set())
   })
 
   // Guards the trap this replaced: the previous version of this test set
@@ -404,7 +405,7 @@ describe('NotificationsSlideOver demo read state', () => {
     renderPanel()
     await screen.findByText('@Board')
     const { readMentionIds } = await import('../lib/demoReadState')
-    await waitFor(() => expect(readMentionIds()).toEqual(new Set(['m1', 'm2'])))
+    await waitFor(() => expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
     expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
   })
 
@@ -413,7 +414,7 @@ describe('NotificationsSlideOver demo read state', () => {
   // a day for mentions this browser has already read.
   it('treats a locally-read mention as read even when the server says unread', async () => {
     demoState.demoMode = true
-    localStorage.setItem('floorvote:demo:readMentions', JSON.stringify(['m1']))
+    markMentionsRead(['m1'], demoState.demoResetAt)
     renderPanel()
     const row = (await screen.findByText('@Board')).closest('a') as HTMLElement
     expect(row.style.borderLeft).toContain('transparent')

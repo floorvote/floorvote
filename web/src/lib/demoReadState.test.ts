@@ -7,10 +7,41 @@ describe('demoReadState', () => {
     localStorage.clear()
   })
 
-  it('round-trips ids through storage', () => {
-    markMentionsRead(['a', 'b'])
-    markMentionsRead(['b', 'c'])
-    expect(readMentionIds()).toEqual(new Set(['a', 'b', 'c']))
+  const E1 = '2026-08-16T00:00:00.000Z'
+  const E2 = '2026-08-16T06:00:00.000Z'
+
+  it('round-trips ids through storage within one epoch', () => {
+    markMentionsRead(['a', 'b'], E1)
+    markMentionsRead(['b', 'c'], E1)
+    expect(readMentionIds(E1)).toEqual(new Set(['a', 'b', 'c']))
+  })
+
+  // The reported bug: seeded mention ids are stable across resets, so without
+  // epoch scoping a browser that demoed once showed them read forever.
+  it('discards read state from an earlier reset epoch', () => {
+    markMentionsRead(['a', 'b'], E1)
+    expect(readMentionIds(E2)).toEqual(new Set())
+  })
+
+  it('does not merge a stale epoch into the new one on write', () => {
+    markMentionsRead(['a', 'b'], E1)
+    markMentionsRead(['c'], E2)
+    expect(readMentionIds(E2)).toEqual(new Set(['c']))
+  })
+
+  // Undefined means /config has not answered, or the tenant has never reset.
+  // Treating that as a match would let a pre-reset set leak into a new demo.
+  it('treats an unknown epoch as no read state, and refuses to write under one', () => {
+    markMentionsRead(['a'], E1)
+    expect(readMentionIds(undefined)).toEqual(new Set())
+    markMentionsRead(['z'], undefined)
+    expect(readMentionIds(E1)).toEqual(new Set(['a']))
+  })
+
+  it('ignores a malformed or legacy stored value', () => {
+    // The pre-epoch format was a bare array; it must not be read as a set.
+    localStorage.setItem('floorvote:demo:readMentions', JSON.stringify(['a', 'b']))
+    expect(readMentionIds(E1)).toEqual(new Set())
   })
 
   // test-setup.ts installs a working in-memory localStorage for every suite, so
@@ -32,12 +63,12 @@ describe('demoReadState', () => {
 
     it('reads back an empty set rather than throwing', () => {
       stubThrowingStorage()
-      expect(readMentionIds()).toEqual(new Set())
+      expect(readMentionIds('e')).toEqual(new Set())
     })
 
     it('no-ops on write rather than throwing', () => {
       stubThrowingStorage()
-      expect(() => markMentionsRead(['a'])).not.toThrow()
+      expect(() => markMentionsRead(['a'], 'e')).not.toThrow()
     })
   })
 
