@@ -107,7 +107,7 @@ export function ChangeHistoryTooltip({ changes, lastActionDate, relativeTime }: 
   )
 
   return (
-    <HoverTooltip placement="bottom" maxWidth={360} portal text={panel}>
+    <HoverTooltip placement="bottom" maxWidth={360} text={panel}>
       {trigger}
     </HoverTooltip>
   )

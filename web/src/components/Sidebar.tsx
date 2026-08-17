@@ -657,10 +657,10 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                       bills"/"N new" chips (see prioritizedChipSelection).
                       A real <button> (not a plain span) so it stays clickable
                       on its own — see the priorityMeaning comment above.
-                      portal: this tooltip lives inside the sidebar's scrollable
-                      widget region (overflow), which can clip a non-portaled
-                      bubble; portal escapes that ancestor entirely. */}
-                  <HoverTooltip text={priorityMeaning} maxWidth={220} portal>
+                      This tooltip lives inside the sidebar's scrollable widget
+                      region, whose overflow would clip an inline bubble;
+                      HoverTooltip portals by default, which escapes it. */}
+                  <HoverTooltip text={priorityMeaning} maxWidth={220}>
                     <button
                       type="button"
                       aria-label={priorityMeaning}
@@ -677,10 +677,10 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                     </button>
                   </HoverTooltip>
                   {user?.canVote && sidebarData.unvotedPriorityCount > 0 && (
-                    // portal: same overflow-clipping concern as the chip above —
-                    // this one was the reported regression (bubble clipped by
-                    // the sidebar's right edge, being the rightmost chip).
-                    <HoverTooltip text={unvotedMeaning} maxWidth={220} portal>
+                    // Same overflow-clipping concern as the chip above — this
+                    // one was the reported regression (bubble clipped by the
+                    // sidebar's right edge, being the rightmost chip).
+                    <HoverTooltip text={unvotedMeaning} maxWidth={220}>
                       <Link
                         to={`${priorityFilter}&unvoted=1`}
                         aria-label={unvotedMeaning}
