@@ -26,25 +26,31 @@ export function NewMatchTriageControl({ billId, current, onChange, onDismiss }: 
 
   return (
     <div style={{
-      display: 'inline-flex', flexDirection: 'column', minWidth: 116,
-      border: `1px solid ${color.borderDefault}`, borderRadius: radius.sm, overflow: 'hidden', background: color.white,
+      display: 'inline-flex', position: 'relative', minWidth: 116,
+      border: `1px solid ${color.borderDefault}`, borderRadius: radius.sm, background: color.white,
     }}>
       <CompactPrioritySelect billId={billId} current={current} onChange={onChange} seamless />
-      <span style={{ height: 1, background: color.borderDefault }} />
-      <button
-        type="button"
-        onClick={handleDismiss}
-        onMouseDown={(e) => e.stopPropagation()}
-        title="Reviewed — no priority"
-        style={{
-          border: 'none', background: color.white, cursor: 'pointer', textAlign: 'left',
-          padding: '4px 10px', whiteSpace: 'nowrap', color: color.textMuted, fontSize: fontSize.sm,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = color.surfaceSubtle; e.currentTarget.style.color = color.textSecondary }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = color.white; e.currentTarget.style.color = color.textMuted }}
-      >
-        ✕ Dismiss
-      </button>
+      <div style={{
+        position: 'absolute', top: '100%', left: -1, right: -1,
+        border: `1px solid ${color.borderDefault}`, borderTop: 'none',
+        borderRadius: `0 0 ${radius.sm}px ${radius.sm}px`, overflow: 'hidden', background: color.white,
+      }}>
+        <button
+          type="button"
+          onClick={handleDismiss}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="Reviewed — no priority"
+          style={{
+            display: 'block', width: '100%',
+            border: 'none', background: color.white, cursor: 'pointer', textAlign: 'left',
+            padding: '4px 10px', whiteSpace: 'nowrap', color: color.textMuted, fontSize: fontSize.sm,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = color.surfaceSubtle; e.currentTarget.style.color = color.textSecondary }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = color.white; e.currentTarget.style.color = color.textMuted }}
+        >
+          ✕ Dismiss
+        </button>
+      </div>
     </div>
   )
 }
