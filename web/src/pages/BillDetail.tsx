@@ -1127,7 +1127,7 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (priorityMeta || (isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed)) ? 20 : 12 }}>
           <BillBadge
             billNumber={bill.billNumber}
             state={bill.state}
