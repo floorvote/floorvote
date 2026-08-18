@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF } from 'cloudflare:test'
+import { SELF, env } from 'cloudflare:test'
+import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { getDb } from '../../src/db/client'
+import { calendarEvents } from '../../src/db/schema'
 
 async function adminPost(path: string, body: unknown, token: string) {
   return SELF.fetch(`http://localhost${path}`, {
@@ -93,4 +96,45 @@ describe('POST /calendar/import', () => {
     const j3 = await r3.json() as any
     expect(j3.updated).toBe(1)   // content changed → updated
   })
+
+  it('uses a supplied uid instead of deriving one, and stores the timezone', async () => {
+    const res = await adminPost('/api/calendar/import', {
+      rows: [{
+        title: 'Filing deadline', date: '2026-05-04', time: '17:00',
+        details: null, location: null, url: null,
+        uid: 'ics-outlook-123@example.com', timezone: 'America/Chicago',
+      }],
+    }, adminToken)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ created: 1 })
+
+    const db = getDb(env.DB)
+    const row = await db.select().from(calendarEvents)
+      .where(eq(calendarEvents.uid, 'ics-outlook-123@example.com')).get()
+    expect(row).toBeTruthy()
+    expect(row!.timezone).toBe('America/Chicago')
+  })
+
+  it('re-importing the same uid with a changed title updates rather than duplicating', async () => {
+    const body = (title: string) => ({
+      rows: [{ title, date: '2026-05-04', time: null, details: null, location: null, url: null, uid: 'ics-stable@example.com', timezone: null }],
+    })
+    expect(await (await adminPost('/api/calendar/import', body('First name'), adminToken)).json()).toMatchObject({ created: 1 })
+    expect(await (await adminPost('/api/calendar/import', body('Renamed'), adminToken)).json()).toMatchObject({ updated: 1 })
+
+    const db = getDb(env.DB)
+    const rows2 = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'ics-stable@example.com')).all()
+    expect(rows2).toHaveLength(1)
+    expect(rows2[0].description).toBe('Renamed')
+  })
+
+  it('rejects a malformed timezone rather than storing it', async () => {
+    await adminPost('/api/calendar/import', {
+      rows: [{ title: 'Bad tz', date: '2026-05-04', time: '09:00', details: null, location: null, url: null, uid: 'ics-badtz@example.com', timezone: 'Not/A Zone!!' }],
+    }, adminToken)
+    const db = getDb(env.DB)
+    const row = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'ics-badtz@example.com')).get()
+    expect(row!.timezone).toBeNull()
+  })
+
 })

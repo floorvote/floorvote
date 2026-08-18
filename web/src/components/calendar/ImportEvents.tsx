@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { apiFetch } from '../../lib/api'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { matchHeaders, rowToImport, type ImportRowPreview, type RawRow } from '../../lib/calendarImportParse'
+import { parseIcs, isIcs } from '../../lib/icsImportParse'
 import { useDemo } from '../../context/DemoContext'
 
 interface Props {
@@ -66,7 +67,19 @@ export function ImportEvents({ onClose, onImported }: Props) {
     setResult(null)
     setError(null)
     try {
-      const csv = Papa.parse<string[]>(await file.text(), { skipEmptyLines: 'greedy' })
+      const text = await file.text()
+      if (isIcs(text)) {
+        // Fields are already named in an ICS, so the CSV header-matching step is skipped.
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+        const parsed = parseIcs(text, browserTz)
+        if (parsed.length === 0) {
+          setError('No events found in this calendar file.')
+          return
+        }
+        setRows(parsed)
+        return
+      }
+      const csv = Papa.parse<string[]>(text, { skipEmptyLines: 'greedy' })
       const matrix = csv.data
       if (matrix.length === 0) {
         setError(
@@ -155,6 +168,8 @@ export function ImportEvents({ onClose, onImported }: Props) {
             time: r.time,
             location: r.location,
             url: r.url,
+            uid: r.uid,
+            timezone: r.timezone ?? null,
           })),
         }),
       })
@@ -199,7 +214,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
 
         {/* Instructions + template download */}
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 12, lineHeight: 1.5 }}>
-          Upload a CSV file. <strong>Title</strong> and <strong>Date</strong> are required; <strong>Time</strong>, <strong>Location</strong>, <strong>Description</strong>, and <strong>Link</strong> are optional. Any extra columns are appended to the event description.
+          Upload a <strong>CSV</strong> or an <strong>.ics</strong> calendar file. For CSV, <strong>Title</strong> and <strong>Date</strong> are required; <strong>Time</strong>, <strong>Location</strong>, <strong>Description</strong>, and <strong>Link</strong> are optional, and any extra columns are appended to the event description. An .ics file is read directly — no column matching needed.
         </div>
         <button
           type="button"
@@ -219,7 +234,8 @@ export function ImportEvents({ onClose, onImported }: Props) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.ics,text/csv,text/calendar"
+            aria-label="Upload a CSV or ICS file"
             onChange={handleFileChange}
             disabled={demoLocked}
             style={{ fontSize: fontSize.sm, color: color.textPrimary, cursor: demoLocked ? 'not-allowed' : undefined, opacity: demoLocked ? 0.5 : 1 }}
@@ -291,6 +307,11 @@ export function ImportEvents({ onClose, onImported }: Props) {
                     {row.reason && (
                       <span style={{ fontSize: fontSize.xs, color: row.status === 'warning' ? color.textAmberDark : color.textMuted }}>
                         {row.reason}
+                      </span>
+                    )}
+                    {row.notice && (
+                      <span style={{ fontSize: fontSize.xs, color: color.textAmberDark }}>
+                        {row.notice}
                       </span>
                     )}
                   </div>
