@@ -311,8 +311,12 @@ calendarRouter.post('/import', requireAuth, requireAdmin, async (c) => {
       time: (raw.time ?? '').toString().trim() || null,
       location: (raw.location ?? '').toString().trim() || null,
       url: urlCheck.ok ? urlCheck.value : null,
+      timezone: sanitizeTimezone(raw.timezone),
     }
-    const uid = await importUid(row)
+    // An ICS row carries its source VEVENT UID, which survives a title or date edit in the
+    // source calendar; a CSV row has none, so fall back to the date+title derivation.
+    const suppliedUid = (raw.uid ?? '').toString().trim()
+    const uid = suppliedUid || await importUid(row)
     const hash = await importEventHash(row)
     const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
@@ -321,13 +325,14 @@ calendarRouter.post('/import', requireAuth, requireAdmin, async (c) => {
         id: crypto.randomUUID(), uid, billId: null, source: 'custom', sequence: 0,
         date: row.date, time: row.time, location: row.location, description: row.title,
         details: row.details, url: row.url, status: 'confirmed', eventHash: hash,
-        // timezone left null — import rows are date-only; the ICS feed falls back to STATE/default zone.
+        timezone: row.timezone ?? null,
       })
       created++
     } else if ((existing.eventHash ?? '') !== hash) {
       await db.update(calendarEvents).set({
         date: row.date, time: row.time, location: row.location, description: row.title,
         details: row.details, url: row.url, eventHash: hash,
+        timezone: row.timezone ?? null,
         sequence: existing.sequence + 1, status: 'confirmed', updatedAt: nowDb(),
       }).where(eq(calendarEvents.id, existing.id))
       updated++

@@ -5,6 +5,10 @@ export interface ImportRow {
   time: string | null
   location: string | null
   url: string | null
+  /** ICS only: the source VEVENT UID. When absent, importUid derives one from date+title. */
+  uid?: string
+  /** ICS only: IANA zone for a timed event. */
+  timezone?: string | null
 }
 
 async function sha256Hex(s: string): Promise<string> {
@@ -19,5 +23,10 @@ export async function importUid(row: ImportRow): Promise<string> {
 }
 
 export async function importEventHash(row: ImportRow): Promise<string> {
-  return sha256Hex([row.date, row.title.trim(), row.details ?? '', row.time ?? '', row.location ?? '', row.url ?? ''].join('|'))
+  const fields = [row.date, row.title.trim(), row.details ?? '', row.time ?? '', row.location ?? '', row.url ?? '']
+  // Timezone joins the hash ONLY when set. Appending it unconditionally would change the
+  // hash of every already-imported CSV event, so an unchanged re-upload would report them
+  // all as `updated` and bump every subscriber's SEQUENCE for no reason.
+  if (row.timezone) fields.push(row.timezone)
+  return sha256Hex(fields.join('|'))
 }
