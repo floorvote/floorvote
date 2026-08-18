@@ -22,16 +22,42 @@ interface ProcessBillResult {
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
-const BILL_ANALYSIS_SCHEMA = {
-  type: 'object',
-  properties: {
-    summary: { type: 'string' },
-    tags: { type: 'array', items: { type: 'string' } },
-    relevanceScore: { type: 'integer', description: 'An integer from 1 to 10 inclusive.' },
-  },
-  required: ['summary', 'tags', 'relevanceScore'],
-  additionalProperties: false,
-} as const
+/**
+ * Response schema for one bill analysis. Built per call because `tags` is constrained to
+ * the tenant's taxonomy: under constrained decoding the model cannot emit a non-member, so
+ * it picks the nearest real entry rather than inventing one that write-time filtering would
+ * silently drop (turning a wrong tag into a missing tag).
+ *
+ * Verified 2026-08-17 against the live API through the AI Gateway: the enum is enforced at
+ * decode time, not merely suggested — a nonsense enum with `minItems: 1` forced an absurd
+ * but in-enum answer. Which is also why `minItems` is deliberately NOT set here: without it
+ * the model still returns `[]` when nothing fits, preserving the prompt's explicit allowance
+ * that assigning no tags can be correct.
+ *
+ * An empty taxonomy would produce `enum: []`, which is not a valid schema, so that case
+ * falls back to unconstrained strings. `loadEffectiveTaxonomy` makes this unreachable from
+ * the bill pipeline (it falls back to DEFAULT_TAXONOMY), but processBill is called directly
+ * with an empty taxonomy in tests.
+ *
+ * Uniqueness is NOT expressible here — the SDK's Schema type has no `uniqueItems` — so
+ * duplicates are removed downstream by filterTagsToTaxonomy in lib/taxonomy.ts.
+ */
+export function buildAnalysisSchema(taxonomy: TaxonomyItem[]) {
+  const names = taxonomy.map(t => t.name).filter(n => n.length > 0)
+  const tagItems = names.length > 0
+    ? { type: 'string', format: 'enum', enum: names }
+    : { type: 'string' }
+  return {
+    type: 'object',
+    properties: {
+      summary: { type: 'string' },
+      tags: { type: 'array', items: tagItems },
+      relevanceScore: { type: 'integer', description: 'An integer from 1 to 10 inclusive.' },
+    },
+    required: ['summary', 'tags', 'relevanceScore'],
+    additionalProperties: false,
+  }
+}
 
 // These two texts intentionally differ from shared/aiDefaults.ts's
 // AI_CONTEXT_TEMPLATE / RELEVANCE_QUESTION_TEMPLATE, which name the
@@ -145,7 +171,7 @@ async function callGemini(
     config: {
       systemInstruction: composeSystemInstruction(params.aiContext),
       responseMimeType: 'application/json',
-      responseSchema: BILL_ANALYSIS_SCHEMA,
+      responseSchema: buildAnalysisSchema(params.taxonomy),
       thinkingConfig: { thinkingBudget: 0 },
       serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
     },

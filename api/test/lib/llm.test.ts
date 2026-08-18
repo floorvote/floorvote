@@ -129,6 +129,29 @@ describe('processBill — Gemini provider (default)', () => {
     const model = geminiGenerateMock.mock.calls[0][0].model
     expect(model).toBe('gemini-2.5-flash')
   })
+
+  it('constrains tags to the taxonomy with a responseSchema enum', async () => {
+    await processBill(
+      {
+        billNumber: 'HB 10', title: 'T', text: 't',
+        taxonomy: [{ name: 'Elections & Voting' }, { name: 'Local Government', description: 'county and municipal' }],
+      },
+      makeEnv(),
+    )
+    const schema = geminiGenerateMock.mock.calls[0][0].config.responseSchema
+    expect(schema.properties.tags.items).toEqual({
+      type: 'string', format: 'enum', enum: ['Elections & Voting', 'Local Government'],
+    })
+  })
+
+  it('falls back to an unconstrained tag schema when the taxonomy is empty', async () => {
+    await processBill(
+      { billNumber: 'HB 11', title: 'T', text: 't', taxonomy: [] },
+      makeEnv(),
+    )
+    const schema = geminiGenerateMock.mock.calls[0][0].config.responseSchema
+    expect(schema.properties.tags.items).toEqual({ type: 'string' })
+  })
 })
 
 describe('provider factory', () => {
