@@ -10,11 +10,18 @@ const apiSignals: (AbortSignal | undefined)[] = []
 // `gate`, when set, holds every apiFetch open until the test opens it — that is
 // how the loader-race tests below decide whether the fetch beats UNBLOCK_AT_MS.
 let gate: Promise<void> | null = null
+// Page-1 body for tests that need the refetch to be idempotent rather than
+// destructive. The default empty response is what most tests want (it makes an
+// unwanted refetch visible), but a component rendered under StrictMode really
+// does refetch page 1 — see the StrictMode test below — and an empty body there
+// deletes the very card the test is waiting on.
+let page1Body: unknown = null
 vi.mock('../lib/api', () => ({
   apiFetch: async (path: string, init?: { signal?: AbortSignal }) => {
     apiCalls.push(path)
     apiSignals.push(init?.signal)
     if (gate) await gate
+    if (page1Body && path.startsWith('/feed?page=1')) return page1Body
     return { events: [], total: 0, page: 1, limit: 40 }
   },
   ApiError: class extends Error {},
@@ -29,7 +36,7 @@ import { FeedPane, feedLoader } from './Feed'
 
 // A never-opened gate would leave a retryFetch loop (and its visibilitychange /
 // online listeners) alive across files, so every test releases it here.
-afterEach(() => { gate = null; apiSignals.length = 0 })
+afterEach(() => { gate = null; page1Body = null; apiSignals.length = 0 })
 
 // feedLoader now reads RR7's request.signal, so a direct call needs the args
 // the router would have passed.
@@ -161,7 +168,16 @@ it('aborts the retry loop when the pane unmounts', async () => {
 // from that teardown kills the live fetch, which rejects AbortError straight
 // into the error boundary — dev-only, but it breaks the exact slow path this
 // feature exists to make graceful, so it needs its own test.
+//
+// Harness note: `Feed`'s initial-load guard is a ref, so StrictMode's second
+// invocation of the effect finds it already consumed and refetches page 1 for
+// real. That refetch is harmless in dev, where it returns the same feed — but
+// with this file's default empty mock it would call setEvents([]) and delete
+// the seeded card mid-assertion, which findByText loses roughly one run in ten.
+// Serve the fixture for page 1 so the refetch is idempotent, as it is in dev,
+// and the test measures the StrictMode abort behaviour it is actually about.
 it('survives StrictMode double-invoked effects on the slow path', async () => {
+  page1Body = PRELOADED
   const controller = new AbortController()
   let resolveFeed: (v: typeof PRELOADED) => void = () => {}
   const pending = new Promise<typeof PRELOADED>((resolve, reject) => {
