@@ -27,3 +27,34 @@ export function aiInstructionsChanged(
     || a.relevanceQuestion !== b.relevanceQuestion
     || a.tagTaxonomy !== b.tagTaxonomy
 }
+
+/**
+ * Full snapshot of every savable field on the Config page — what was last
+ * loaded from the API or successfully written back to it. Used both by
+ * aiInstructionsChanged (the ai-context/relevance/tags subset, for deciding
+ * whether to offer a reprocess) and by the page's unsaved-changes dirty check
+ * (all fields). Stores the raw, un-trimmed editor values (not the
+ * trim()-on-save values sent to the API) so that a successful save — which
+ * snapshots the field exactly as it stood in the editor at that moment —
+ * immediately reads as clean, with no whitespace-trim mismatch.
+ */
+export type ConfigSnapshot = {
+  keywords: string
+  aiContext: string
+  relevanceQuestion: string
+  tagTaxonomy: string
+  associationName: string
+  orgNoun: string
+  newMatchMinRelevance: number
+}
+
+/** True if any savable field differs from the snapshot. */
+export function configChanged(a: ConfigSnapshot, b: ConfigSnapshot): boolean {
+  return a.keywords !== b.keywords
+    || a.aiContext !== b.aiContext
+    || a.relevanceQuestion !== b.relevanceQuestion
+    || a.tagTaxonomy !== b.tagTaxonomy
+    || a.associationName !== b.associationName
+    || a.orgNoun !== b.orgNoun
+    || a.newMatchMinRelevance !== b.newMatchMinRelevance
+}

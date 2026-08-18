@@ -49,6 +49,8 @@ vi.mock('../../components/BillBadge', () => ({
 vi.mock('../admin/aiConfig', () => ({
   parseTagTaxonomy: (_v: string) => ({ ok: true, value: [], error: null }),
   aiInstructionsChanged: () => false,
+  configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
+    Object.keys(a).some((k) => a[k] !== b[k]),
 }))
 vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
@@ -58,6 +60,13 @@ import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
 
 import { Config } from './Config'
+import { createUnsavedRegistry, UnsavedTextContext } from '../../lib/unsavedText'
+
+function renderInRegistry(ui: React.ReactElement) {
+  const reg = createUnsavedRegistry()
+  render(<UnsavedTextContext.Provider value={reg}>{ui}</UnsavedTextContext.Provider>)
+  return reg
+}
 
 const BASE_CONFIG = {
   keywords: [],
@@ -355,5 +364,161 @@ describe('Config heading structure', () => {
     for (const name of ['Bill keywords', 'AI instructions', 'New matches', 'Custom fields', 'Labels', 'Additional operations']) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument()
     }
+  })
+})
+
+describe('Config — reset/clear undo', () => {
+  it('Undo restores a field cleared with "Reset to default"', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, ai_context: 'Custom AI voice.' }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+    render(<Config />)
+
+    const label = await screen.findByText('Bill summary')
+    const row = label.parentElement as HTMLElement
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+    expect(textarea.value).toBe('Custom AI voice.')
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset to default' }))
+    expect(textarea.value).toBe('')
+    expect(within(row).getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Undo' }))
+    expect(textarea.value).toBe('Custom AI voice.')
+    expect(within(row).queryByRole('button', { name: 'Undo' })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Reset to default' })).toBeInTheDocument()
+  })
+
+  it('a manual edit after Reset clears the Undo affordance', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, ai_context: 'Custom AI voice.' }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+    render(<Config />)
+
+    const label = await screen.findByText('Bill summary')
+    const row = label.parentElement as HTMLElement
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Reset to default' }))
+    expect(within(row).getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+
+    fireEvent.change(textarea, { target: { value: 'Something the admin typed instead.' } })
+
+    expect(within(row).queryByRole('button', { name: 'Undo' })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Reset to default' })).toBeInTheDocument()
+  })
+})
+
+describe('Config — empty keyword list confirm copy', () => {
+  it('skips the preview call and warns that future bills stop being captured', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const paths: string[] = []
+    mockFetch.mockImplementation(async (path: string) => {
+      paths.push(path)
+      if (path === '/admin/config') return { ...BASE_CONFIG }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    render(<Config />)
+    const saveBtn = await screen.findByRole('button', { name: /save keywords and sync/i })
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
+    expect(paths).not.toContain('/admin/keyword-resync-preview')
+    const confirmMsg = confirmSpy.mock.calls[0][0] as string
+    expect(confirmMsg).toMatch(/no new bills will be captured for full analysis/i)
+    expect(confirmMsg).toMatch(/keep their summaries/i)
+    expect(confirmMsg).not.toMatch(/no bills will be added or downgraded/i)
+
+    confirmSpy.mockRestore()
+  })
+
+  it('still shows real counts (not the empty-list copy) when removing some but not all keywords', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, keywords: ['zoning', 'housing'] }
+      if (path === '/admin/custom-fields') return []
+      if (path === '/admin/keyword-resync-preview') return { wouldAdd: 0, wouldDemote: 2, wouldProtect: 0 }
+      return {}
+    })
+
+    render(<Config />)
+    const textarea = (await screen.findByLabelText('Keywords')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'zoning' } })
+
+    const saveBtn = await screen.findByRole('button', { name: /save keywords and sync/i })
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
+    const confirmMsg = confirmSpy.mock.calls[0][0] as string
+    expect(confirmMsg).toMatch(/2 bills will be downgraded/i)
+
+    confirmSpy.mockRestore()
+  })
+})
+
+describe('Config — org-noun-aware tag hint', () => {
+  it('uses the default org noun ("team") in the tag personalization hint', async () => {
+    render(<Config />)
+    expect(await screen.findByText(/keeps tags meaningful to your team's own priorities/i)).toBeInTheDocument()
+  })
+
+  it('uses a custom org noun in the tag personalization hint', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, org_noun: 'league' }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+    render(<Config />)
+    expect(await screen.findByText(/keeps tags meaningful to your league's own priorities/i)).toBeInTheDocument()
+  })
+})
+
+describe('Config — unsaved-changes guard', () => {
+  it('is clean after load, dirty after an edit, and clean again after a successful save', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    const reg = renderInRegistry(<Config />)
+    const input = (await screen.findByLabelText('Group name')) as HTMLInputElement
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+
+    fireEvent.change(input, { target: { value: 'New Org Name' } })
+    expect(reg.hasUnsaved()).toBe(true)
+
+    const labelsHeading = screen.getByRole('heading', { name: 'Labels' })
+    const labelsSection = labelsHeading.parentElement as HTMLElement
+    const saveBtn = within(labelsSection).getByRole('button', { name: /^save$/i })
+    fireEvent.click(saveBtn)
+
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+  })
+
+  it('reset() restores the field to its last-saved value', async () => {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, association_name: 'Original Org' }
+      if (path === '/admin/custom-fields') return []
+      return {}
+    })
+
+    const reg = renderInRegistry(<Config />)
+    const input = (await screen.findByLabelText('Group name')) as HTMLInputElement
+    await waitFor(() => expect(input.value).toBe('Original Org'))
+
+    fireEvent.change(input, { target: { value: 'Edited but not saved' } })
+    expect(reg.hasUnsaved()).toBe(true)
+
+    act(() => reg.resetAll())
+
+    expect(input.value).toBe('Original Org')
+    expect(reg.hasUnsaved()).toBe(false)
   })
 })
