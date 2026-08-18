@@ -34,9 +34,7 @@ export function NewMatchTriageControl({ billId, current, onChange, onDismiss }: 
       <CompactPrioritySelect billId={billId} current={current} onChange={onChange} seamless />
       <div style={{
         position: 'absolute', top: '100%', left: -1, right: -1,
-        borderLeft: `1px solid ${color.borderDefault}`,
-        borderRight: `1px solid ${color.borderDefault}`,
-        borderBottom: `1px solid ${color.borderDefault}`,
+        border: `1px solid ${color.borderDefault}`,
         borderRadius: `0 0 ${radius.sm}px ${radius.sm}px`, overflow: 'hidden', background: color.white,
       }}>
         <button
