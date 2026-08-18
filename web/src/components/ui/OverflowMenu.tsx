@@ -80,6 +80,8 @@ export function OverflowMenu({ rows, triggerStyle }: OverflowMenuProps) {
           fontSize: fontSize.base,
           color: color.textSecondary,
           borderRadius: radius.sm,
+          display: 'flex',
+          alignItems: 'center',
           lineHeight: 1,
           letterSpacing: '1px',
           ...triggerStyle,

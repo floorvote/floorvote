@@ -1799,27 +1799,34 @@ export function BillDetail() {
                     <span style={SECTION_LABEL}>
                       AI Summary
                     </span>
-                    {bill.tenantSummary && bill.lastAiTextDocId && (() => {
-                      const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
-                      if (!text) return null
-                      return (
-                        <>
-                          <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
-                            <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on text
-                          </span>
-                          <BillTextChip
-                            type={text.type}
-                            date={text.date}
-                            onClick={() => {
-                              setShowBillText(true)
-                              setRequestedDocId(text.docId)
-                              setTimeout(() => setRequestedDocId(null), 100)
-                            }}
-                            title="Show this bill text version"
-                          />
-                        </>
+                    {regenerating
+                      ? (
+                        <span className="regenerating-label">
+                          <span className="material-symbols-outlined regenerating-label__icon">autorenew</span>
+                          Regenerating…
+                        </span>
                       )
-                    })()}
+                      : bill.tenantSummary && bill.lastAiTextDocId && (() => {
+                        const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
+                        if (!text) return null
+                        return (
+                          <>
+                            <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+                              <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on text
+                            </span>
+                            <BillTextChip
+                              type={text.type}
+                              date={text.date}
+                              onClick={() => {
+                                setShowBillText(true)
+                                setRequestedDocId(text.docId)
+                                setTimeout(() => setRequestedDocId(null), 100)
+                              }}
+                              title="Show this bill text version"
+                            />
+                          </>
+                        )
+                      })()}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     {bill.relevanceScore != null && (
