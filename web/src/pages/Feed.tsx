@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useLoaderData } from 'react-router-dom'
+import { useLoaderData, useRevalidator, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
-import { apiFetchForLoader } from '../lib/loaderFetch'
+import { apiFetchForLoader, UNBLOCK_AT_MS } from '../lib/loaderFetch'
+import { createProgressBox, type ProgressBox } from '../lib/retryFetch'
+import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
 import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed } from '../lib/feedUtils'
@@ -32,10 +34,136 @@ const FILL_TARGET = 15
 const INITIAL_TARGET = 20
 const MAX_FILL_FETCHES = 10
 
-// Route loader: fetch the first page before the feed renders (RR7 data router).
-// The component tops up to the visible target client-side from here.
-export function feedLoader(): Promise<FeedResponse> {
-  return apiFetchForLoader<FeedResponse>(`/feed?page=1&limit=${LIMIT}&scope=default`)
+export type FeedLoaderResult =
+  | { data: FeedResponse }
+  | { pending: Promise<FeedResponse>; progress: ProgressBox; abort: () => void }
+
+// Route loader: fetch the first page before the feed renders (RR7 data router),
+// but only block the router for UNBLOCK_AT_MS. Fast path returns resolved data
+// so the first frame paints with content; slow path hands FeedPane the pending
+// promise so the shell can come up with a spinner in the feed column.
+//
+// Cancellation has two owners, and it needs both. retryFetch retries
+// indefinitely until it succeeds or its signal aborts, so any loop nobody stops
+// runs forever, holding visibilitychange/online listeners:
+//
+//   - `request.signal` is RR7's. It fires when a loader run never gets to
+//     commit — an interrupted navigation, or a revalidation superseded by a
+//     newer one. Those runs have no component to clean them up, so without this
+//     mashing "Retry now" leaks a loop per discarded run. RR7 does NOT fire it
+//     after a run commits successfully, which is why it is not sufficient alone.
+//   - `abort` is the committed run's handle, for the mirror case: FeedPane owns
+//     the lifetime once mounted and calls it on unmount, so navigating away
+//     mid-outage doesn't leave the loop behind.
+export function feedLoader({ request }: Pick<LoaderFunctionArgs, 'request'>): Promise<FeedLoaderResult> {
+  const progress = createProgressBox()
+  const controller = new AbortController()
+  const signal = AbortSignal.any([controller.signal, request.signal])
+  const pending = apiFetchForLoader<FeedResponse>(
+    `/feed?page=1&limit=${LIMIT}&scope=default`,
+    { progress, signal },
+  )
+  let unblockTimer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race<FeedLoaderResult>([
+    pending.then((data) => ({ data })),
+    new Promise<FeedLoaderResult>((resolve) => {
+      unblockTimer = setTimeout(
+        () => resolve({ pending, progress, abort: () => controller.abort() }),
+        UNBLOCK_AT_MS,
+      )
+    }),
+    // Clear the loser: on the fast path the timer would otherwise sit armed for
+    // the rest of its 400ms, once per navigation, resolving a settled race.
+  ]).finally(() => clearTimeout(unblockTimer))
+}
+
+/**
+ * Route element for the index route. Owns the loader result so `Feed` itself
+ * stays a pure "render this data" component.
+ *
+ * Deliberately not Suspense/<Await>: Suspense gives exactly one fallback with
+ * no way to express "attempt 3, retrying in 8s".
+ */
+export function FeedPane() {
+  const result = useLoaderData() as FeedLoaderResult | null
+  const revalidator = useRevalidator()
+  const resolved = result && 'data' in result ? result.data : null
+  const waiting = result && 'pending' in result ? result : null
+
+  // Deliberately not seeded from `resolved` via useState's initializer: a
+  // revalidation can replace a pending result with a resolved one, and state
+  // initialized once at mount would never see it — the retry would succeed and
+  // still render an empty feed. `resolved` wins whenever the loader has it.
+  //
+  // The mirror case is a revalidation that replaces *resolved* data with a
+  // pending one: `resolved` goes null with `fetched` still null, so the feed is
+  // swapped for LoadingState — which shows nothing at all for its first 500ms.
+  // Unreachable today (nothing revalidates this route except the Retry now
+  // button below, which only exists while there is no data), so it is left
+  // alone rather than papered over with a "keep the last good data" cache that
+  // no caller would exercise. Anything that adds a revalidation trigger here —
+  // a fetcher, a route action, a poll — has to revisit this.
+  const [fetched, setFetched] = useState<FeedResponse | null>(null)
+  const [error, setError] = useState<unknown>(null)
+  const data = resolved ?? fetched
+
+  // Holds a scheduled abort between an effect teardown and a possible immediate
+  // re-subscribe. Refs survive StrictMode's remount, which is the whole point.
+  //
+  // The constraint that buys: this only covers a *same-instance* remount, since
+  // a ref dies with its component instance — a remount that produced a NEW
+  // instance against the SAME loader result would find an empty ref, let the
+  // abort fire, and lose the loop. Not reachable today (React Router hands back
+  // a fresh result object every time it re-runs a loader, so a new instance
+  // always gets a new `waiting` and a new fetch), and it fails closed anyway:
+  // the aborted promise rejects and lands in the error boundary, i.e. the
+  // pre-existing behavior, rather than leaking a retry loop.
+  const deferredAbort = useRef<{ waiting: object; timer: ReturnType<typeof setTimeout> } | null>(null)
+
+  useEffect(() => {
+    if (!waiting) return
+    // Re-subscribing to the very loop we just scheduled an abort for: this is
+    // StrictMode's mount/cleanup/remount, so call the abort off.
+    if (deferredAbort.current?.waiting === waiting) {
+      clearTimeout(deferredAbort.current.timer)
+      deferredAbort.current = null
+    }
+    let cancelled = false
+    waiting.pending.then(
+      (d) => { if (!cancelled) setFetched(d) },
+      (e) => { if (!cancelled) setError(e) },
+    )
+    // abort() as well as the `cancelled` flag: the flag stops us setting state
+    // after unmount, but only abort() stops retryFetch's loop, which otherwise
+    // retries forever with nobody listening.
+    //
+    // Deferred by a tick rather than called here, because under StrictMode
+    // (main.tsx wraps the app in it) React runs this teardown and then re-runs
+    // the effect synchronously with the same `waiting`. Aborting inline would
+    // kill a loop we are about to resubscribe to: the fetch rejects AbortError,
+    // the new subscription sets it, render rethrows, and dev gets "Something
+    // went wrong" on exactly the slow path this feature exists to make
+    // graceful. A real unmount never re-subscribes, so the timer fires and the
+    // loop dies as intended. Keyed by `waiting` so a *superseded* result — new
+    // identity — is still aborted rather than cancelled by its replacement.
+    return () => {
+      cancelled = true
+      deferredAbort.current = {
+        waiting,
+        timer: setTimeout(() => { deferredAbort.current = null; waiting.abort() }, 0),
+      }
+    }
+  }, [waiting])
+
+  // Rethrow during render so the route's errorElement handles it, exactly as a
+  // loader rejection would have.
+  if (error) throw error
+  if (!data && waiting) {
+    // revalidate() re-runs feedLoader, which restarts the race from scratch —
+    // lighter and faster than a full page reload.
+    return <LoadingState variant="bare" progress={waiting.progress} onRetryNow={() => revalidator.revalidate()} />
+  }
+  return <Feed preloaded={data} />
 }
 
 type ScopeMode = 'default' | 'analyzed'
@@ -46,11 +174,8 @@ const SCOPE_OPTIONS: ScopeSelectOption<ScopeMode>[] = [
 ]
 
 
-export function Feed() {
+export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
   usePageTitle('Feed')
-  // First page comes from feedLoader (RR7 data router) — already resolved before
-  // this renders, so the first frame is painted (no loading flash).
-  const preloaded = useLoaderData() as FeedResponse
   const [events, setEvents] = useState<FeedEvent[]>(preloaded?.events ?? [])
   const [total, setTotal] = useState(preloaded?.total ?? 0)
   const [page, setPage] = useState(1)

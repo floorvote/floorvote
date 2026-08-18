@@ -9,6 +9,9 @@ import { HTTPException } from 'hono/http-exception'
  */
 export function errorHandler(err: Error, c: Context): Response | Promise<Response> {
   if (err instanceof HTTPException) return err.getResponse()
-  console.error('[unhandled]', err)
+  // Log name + message explicitly: for some runtime errors (notably a D1 backend
+  // stall) `err.stack` carries only frames, so logging the object alone leaves
+  // Workers Logs with no statement of what actually failed.
+  console.error('[unhandled]', `${err.name}: ${err.message}`, err.stack)
   return c.json({ error: 'internal_error' }, 500)
 }

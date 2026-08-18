@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams, useLoaderData } from 'react-router-dom'
+import { useSearchParams, useLoaderData, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
 import { useMultiState } from '../context/ConfigContext'
@@ -23,8 +23,15 @@ import type { Box } from '../components/calendar/expandTarget'
 import { clampTargetFor } from '../components/calendar/expandBounds'
 
 // Route loader: fetch events before the calendar renders (RR7 data router).
-export function calendarLoader(): Promise<CalendarEvent[]> {
-  return apiFetchForLoader<CalendarEvent[]>('/calendar/events')
+//
+// `request.signal` is not optional in practice, exactly as in billDetailLoader
+// and prefetchBills: apiFetchForLoader retries until it succeeds or aborts, so a
+// run nobody cancels outlives its navigation and keeps hitting a struggling API
+// for the life of the tab, holding retryFetch's visibilitychange/online
+// listeners. RR7 fires this signal for every loader run that never commits — an
+// abandoned navigation, a superseded revalidation — which is precisely that run.
+export function calendarLoader({ request }: LoaderFunctionArgs): Promise<CalendarEvent[]> {
+  return apiFetchForLoader<CalendarEvent[]>('/calendar/events', { signal: request.signal })
 }
 
 export function Calendar() {

@@ -22,7 +22,11 @@ vi.mock('./components/MobileTopBar', () => ({
 }))
 
 // Light page stubs so the test exercises routing, not page internals.
-vi.mock('./pages/Feed', () => ({ Feed: () => <div>feed page</div>, feedLoader: () => null }))
+vi.mock('./pages/Feed', () => ({
+  Feed: () => <div>feed page</div>,
+  FeedPane: () => <div>feed page</div>,
+  feedLoader: () => null,
+}))
 vi.mock('./pages/BillList', () => ({
   BillList: () => <div><Link to="/admin/config">go admin</Link><span>bills page</span></div>,
   billListLoader: () => null,

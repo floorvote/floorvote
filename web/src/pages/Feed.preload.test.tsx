@@ -1,10 +1,49 @@
-import { it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { it, expect, vi, afterEach } from 'vitest'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
 const apiCalls: string[] = []
+// The signal retryFetch handed each attempt, so a test can assert that a
+// discarded loader run was actually cancelled and not just forgotten.
+const apiSignals: { path: string; signal?: AbortSignal }[] = []
+
+/**
+ * The attempts that came from a *loader* — the only ones with a signal to abort.
+ * feedLoader always passes one; Feed's in-component refetches call apiFetch with
+ * no init at all.
+ *
+ * Selecting them this way rather than by position is the point. An effect-driven
+ * refetch from a neighbouring test can still land in this shared array after that
+ * test's afterEach on a contended runner, and it records a signal-less attempt
+ * that can never abort — which a positional `slice(0, -1)` then reported as a
+ * superseded loader run left running forever.
+ *
+ * Path is NOT a usable discriminator here, unlike in Calendar.preload.test.tsx:
+ * Feed's own page-1 refetch builds the byte-identical query string feedLoader
+ * does (`/feed?page=1&limit=40&scope=default`), so the stray traffic cannot be
+ * told apart by path. Carrying the path anyway keeps the failure message able to
+ * name what it saw.
+ */
+const loaderAttempts = (): { path: string; signal: AbortSignal }[] =>
+  apiSignals.filter((a): a is { path: string; signal: AbortSignal } => !!a.signal)
+// `gate`, when set, holds every apiFetch open until the test opens it — that is
+// how the loader-race tests below decide whether the fetch beats UNBLOCK_AT_MS.
+let gate: Promise<void> | null = null
+// Page-1 body for tests that need the refetch to be idempotent rather than
+// destructive. The default empty response is what most tests want (it makes an
+// unwanted refetch visible), but a component rendered under StrictMode really
+// does refetch page 1 — see the StrictMode test below — and an empty body there
+// deletes the very card the test is waiting on.
+let page1Body: unknown = null
 vi.mock('../lib/api', () => ({
-  apiFetch: async (path: string) => { apiCalls.push(path); return { events: [], total: 0, page: 1, limit: 40 } },
+  apiFetch: async (path: string, init?: { signal?: AbortSignal }) => {
+    apiCalls.push(path)
+    apiSignals.push({ path, signal: init?.signal })
+    if (gate) await gate
+    if (page1Body && path.startsWith('/feed?page=1')) return page1Body
+    return { events: [], total: 0, page: 1, limit: 40 }
+  },
   ApiError: class extends Error {},
 }))
 // FeedUnread + auth contexts are consumed by Feed; stub to no-ops.
@@ -13,7 +52,15 @@ vi.mock('../context/FeedUnreadContext', () => ({
 }))
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 
-import { Feed } from './Feed'
+import { FeedPane, feedLoader } from './Feed'
+
+// A never-opened gate would leave a retryFetch loop (and its visibilitychange /
+// online listeners) alive across files, so every test releases it here.
+afterEach(() => { gate = null; page1Body = null; apiSignals.length = 0 })
+
+// feedLoader now reads RR7's request.signal, so a direct call needs the args
+// the router would have passed.
+const loaderArgs = () => ({ request: new Request('http://localhost/') })
 
 // FeedEvent shape from shared/feedUtils.ts — all required fields must be present
 // so groupEventsByBillAndDay renders the card with billTitle.
@@ -41,10 +88,10 @@ const PRELOADED = {
 
 it('renders the loader-provided feed without a loading flash or a refetch', async () => {
   apiCalls.length = 0
-  // The route loader resolves the first page before render (here, directly from
-  // the fixture), so Feed seeds from useLoaderData and must not refetch page 1.
+  // The race resolved before the unblock deadline (here, straight from the
+  // fixture), so FeedPane hands Feed the data and Feed must not refetch page 1.
   const router = createMemoryRouter(
-    [{ path: '/', element: <Feed />, loader: () => PRELOADED }],
+    [{ path: '/', element: <FeedPane />, loader: () => ({ data: PRELOADED }) }],
     { initialEntries: ['/'] },
   )
   render(<RouterProvider router={router} />)
@@ -52,4 +99,178 @@ it('renders the loader-provided feed without a loading flash or a refetch', asyn
   expect(screen.queryByText('Loading…')).toBeNull()
   // The page must NOT immediately refetch page 1 when the loader already seeded it.
   expect(apiCalls.some(c => c.startsWith('/feed?page=1'))).toBe(false)
+})
+
+// The two tests below bracket UNBLOCK_AT_MS from either side. The first holds
+// the fetch open for a real 120ms rather than letting it settle in a microtask:
+// a microtask beats even `setTimeout(…, 0)`, so an instantly-resolving mock
+// would pass no matter how short the deadline was and pin nothing.
+it('resolves to data when the fetch beats the unblock deadline', async () => {
+  gate = new Promise<void>((r) => { setTimeout(r, 120) })
+  const result = await feedLoader(loaderArgs())
+  expect(result).toHaveProperty('data')
+  expect(result).not.toHaveProperty('pending')
+})
+
+it('resolves to a pending handle when the fetch misses the unblock deadline', async () => {
+  let open: () => void = () => {}
+  gate = new Promise<void>((r) => { open = r })
+  const race = feedLoader(loaderArgs())
+  // Real timers: fake ones would also have to stand in for AbortSignal.timeout,
+  // which vitest does not patch. 450ms is one test, not a suite-wide cost.
+  await new Promise((r) => setTimeout(r, 450))
+  const result = await race
+  expect(result).toHaveProperty('pending')
+  expect(result).not.toHaveProperty('data')
+  open()
+  // The handle's promise is the same in-flight fetch, and it still settles.
+  await expect((result as { pending: Promise<unknown> }).pending).resolves.toBeTruthy()
+})
+
+it('unblocks with a pending promise when the fetch is slow, then renders the feed', async () => {
+  let resolveFeed: (v: typeof PRELOADED) => void = () => {}
+  const pending = new Promise<typeof PRELOADED>((r) => { resolveFeed = r })
+  const router = createMemoryRouter(
+    [{
+      path: '/',
+      element: <FeedPane />,
+      loader: () => ({ pending, progress: { current: null }, abort: () => {} }),
+    }],
+    { initialEntries: ['/'] },
+  )
+  render(<RouterProvider router={router} />)
+  expect(screen.queryByText('Seeded Bill')).toBeNull()
+  resolveFeed(PRELOADED)
+  expect(await screen.findByText('Seeded Bill')).toBeInTheDocument()
+})
+
+// "Retry now" revalidates, and a revalidation that succeeds inside the unblock
+// window comes back as a *resolved* result. The pane has to pick that up — state
+// seeded once from the first render's result never would, and the retry would
+// appear to do nothing but blank the feed.
+it('renders the feed when a revalidation replaces a pending result with data', async () => {
+  let calls = 0
+  const abort = vi.fn()
+  const pending = new Promise<typeof PRELOADED>(() => {})
+  const router = createMemoryRouter(
+    [{
+      path: '/',
+      element: <FeedPane />,
+      loader: () => (++calls === 1
+        ? { pending, progress: { current: null }, abort }
+        : { data: PRELOADED }),
+    }],
+    { initialEntries: ['/'] },
+  )
+  render(<RouterProvider router={router} />)
+  await screen.findByRole('img', { name: 'Loading' })
+  await act(async () => { await router.revalidate() })
+  expect(await screen.findByText('Seeded Bill')).toBeInTheDocument()
+  // The superseded pending result must not be left retrying behind the feed.
+  await waitFor(() => expect(abort).toHaveBeenCalledOnce())
+})
+
+it('aborts the retry loop when the pane unmounts', async () => {
+  const abort = vi.fn()
+  const pending = new Promise<typeof PRELOADED>(() => {})
+  const router = createMemoryRouter(
+    [{ path: '/', element: <FeedPane />, loader: () => ({ pending, progress: { current: null }, abort }) }],
+    { initialEntries: ['/'] },
+  )
+  const { unmount } = render(<RouterProvider router={router} />)
+  await screen.findByRole('img', { name: 'Loading' })
+  unmount()
+  // Deferred by a tick (see FeedPane) so StrictMode's remount can call it off.
+  await waitFor(() => expect(abort).toHaveBeenCalledOnce())
+})
+
+// StrictMode mounts, tears down, and remounts effects. An abort fired inline
+// from that teardown kills the live fetch, which rejects AbortError straight
+// into the error boundary — dev-only, but it breaks the exact slow path this
+// feature exists to make graceful, so it needs its own test.
+//
+// Harness note: `Feed`'s initial-load guard is a ref, so StrictMode's second
+// invocation of the effect finds it already consumed and refetches page 1 for
+// real. That refetch is harmless in dev, where it returns the same feed — but
+// with this file's default empty mock it would call setEvents([]) and delete
+// the seeded card mid-assertion, which findByText loses roughly one run in ten.
+// Serve the fixture for page 1 so the refetch is idempotent, as it is in dev,
+// and the test measures the StrictMode abort behaviour it is actually about.
+it('survives StrictMode double-invoked effects on the slow path', async () => {
+  page1Body = PRELOADED
+  const controller = new AbortController()
+  let resolveFeed: (v: typeof PRELOADED) => void = () => {}
+  const pending = new Promise<typeof PRELOADED>((resolve, reject) => {
+    resolveFeed = resolve
+    // Aborting really does reject the in-flight fetch, as retryFetch's would.
+    controller.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+  })
+  const router = createMemoryRouter(
+    [{
+      path: '/',
+      element: <FeedPane />,
+      errorElement: <div>BOUNDARY</div>,
+      loader: () => ({ pending, progress: { current: null }, abort: () => controller.abort() }),
+    }],
+    { initialEntries: ['/'] },
+  )
+  render(<StrictMode><RouterProvider router={router} /></StrictMode>)
+  await screen.findByRole('img', { name: 'Loading' })
+  // Past the deferred abort's tick — if it fired, the loop is already dead.
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+  expect(controller.signal.aborted).toBe(false)
+
+  resolveFeed(PRELOADED)
+  expect(await screen.findByText('Seeded Bill')).toBeInTheDocument()
+  expect(screen.queryByText('BOUNDARY')).toBeNull()
+})
+
+// Mashing "Retry now" during an outage fires overlapping revalidations. Every
+// superseded run must be cancelled: retryFetch retries forever on a 30s-capped
+// backoff, so each leaked run is a permanent background loop holding
+// visibilitychange/online listeners. RR7 aborts request.signal for exactly
+// these discarded runs, which is why feedLoader has to honour it.
+it('aborts every superseded loader run when revalidation is mashed', async () => {
+  apiCalls.length = 0
+  apiSignals.length = 0
+  let open: () => void = () => {}
+  gate = new Promise<void>((r) => { open = r })
+  const router = createMemoryRouter(
+    [{ path: '/', element: <FeedPane />, loader: feedLoader }],
+    { initialEntries: ['/'] },
+  )
+  render(<RouterProvider router={router} />)
+  await screen.findByRole('img', { name: 'Loading' })
+
+  await act(async () => {
+    router.revalidate()
+    router.revalidate()
+    await router.revalidate()
+  })
+  await waitFor(() => expect(loaderAttempts().length).toBeGreaterThanOrEqual(3))
+
+  // Every run but the one that survived to commit must be aborted. Ordering
+  // within the loader attempts is well defined — they are pushed in call order —
+  // so the last one is the committed run; it is only the *shared* array that
+  // cannot be indexed into safely.
+  const attempts = loaderAttempts()
+  const superseded = attempts.slice(0, -1)
+  expect(superseded.length).toBeGreaterThanOrEqual(2)
+  // Spelled out per run, and given a timeout under the test's own, because the
+  // bare form of this failure is `Test timed out in 5000ms` — which says only
+  // that something never aborted, not which run, nor whether any aborted at
+  // all. A future regression here should read as a diagnosis, not a flake.
+  await waitFor(
+    () => {
+      const stillOpen = superseded.flatMap((a, i) => (a.signal.aborted ? [] : [`#${i}`]))
+      expect(
+        stillOpen,
+        `superseded loader runs left un-aborted: ${stillOpen.join(', ') || 'none'} ` +
+        `(abort state per run, last one is the committed run and is expected to stay open: ` +
+        `${attempts.map((a, i) => `#${i}=${a.signal.aborted ? 'aborted' : 'open'}`).join(' ')})`,
+      ).toEqual([])
+    },
+    { timeout: 2_000 },
+  )
+  open()
 })

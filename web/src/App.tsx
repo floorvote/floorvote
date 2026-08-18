@@ -4,11 +4,12 @@ import { AuthProvider } from './context/AuthContext'
 import { DemoProvider, useDemo } from './context/DemoContext'
 import { NotificationsProvider } from './context/NotificationsContext'
 import { RequireAuth } from './components/RequireAuth'
+import { LoadingState } from './components/LoadingState'
 import { Sidebar } from './components/Sidebar'
 import { MobileTopBar } from './components/MobileTopBar'
 import { Login } from './pages/Login'
 import { AuthVerify } from './pages/AuthVerify'
-import { Feed, feedLoader } from './pages/Feed'
+import { FeedPane, feedLoader } from './pages/Feed'
 import { BillList, billListLoader } from './pages/BillList'
 import { BillDetail, billDetailLoader } from './pages/BillDetail'
 import { BillDetailError } from './pages/BillDetailError'
@@ -147,20 +148,29 @@ function AppLayout() {
 }
 
 function RequireAdmin() {
-  const { user, loading } = useAuth()
-  if (loading) return <div style={{ padding: 32 }}>Loading…</div>
+  const { user, loading, authProgress } = useAuth()
+  if (loading) return <LoadingState variant="full" progress={authProgress} />
   if (!user || (user.role !== 'admin' && user.role !== 'owner')) return <Navigate to="/" replace />
   return <Outlet />
 }
 
 const LegalPage = lazy(() => import('./pages/LegalPage').then((m) => ({ default: m.LegalPage })))
 
+// Renders while the router is uninitialized on a cold load. LoadingState's
+// first tier is empty for 500ms, which is what keeps this from flashing on a
+// healthy load — and what makes a deep link to /bills legible during an
+// outage, since billListLoader has no 400ms race like feedLoader's: it blocks
+// for however long its 10s-deadline attempts keep retrying.
+function RootHydrateFallback() {
+  return <LoadingState variant="full" progress={{ current: null }} />
+}
+
 // Route tree shared by the live browser router and tests (which build a
 // createMemoryRouter from these same route objects). Same tree as the prior
 // <Routes>; the v6→v7 data-router swap is intentionally behavior-neutral here —
 // no loaders yet. Static segments still outrank the greedy bill param routes.
 export const routes = createRoutesFromElements(
-  <>
+  <Route HydrateFallback={RootHydrateFallback}>
     <Route path="/login" element={<Login />} />
     <Route path="/auth/verify" element={<AuthVerify />} />
     {hasTerms && (
@@ -175,7 +185,7 @@ export const routes = createRoutesFromElements(
     )}
     <Route element={<RequireAuth />} errorElement={<RootErrorBoundary />}>
       <Route element={<AppLayout />}>
-        <Route index element={<Feed />} loader={feedLoader} />
+        <Route index element={<FeedPane />} loader={feedLoader} />
         <Route path="bills" element={<BillList />} loader={billListLoader} />
         <Route path="bills/:billId" element={<BillDetail />} loader={billDetailLoader} errorElement={<BillDetailError />} />
         <Route path="calendar" element={<Calendar />} loader={calendarLoader} />
@@ -194,7 +204,7 @@ export const routes = createRoutesFromElements(
       </Route>
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
-  </>,
+  </Route>,
 )
 
 const router = createBrowserRouter(routes)

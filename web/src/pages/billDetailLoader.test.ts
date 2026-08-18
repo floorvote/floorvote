@@ -18,7 +18,11 @@ describe('billDetailLoader', () => {
       loaderArgs({ state: 'RI', sessionSlug: '2025-2026', billNumber: 'HB 1' }, 'http://localhost/RI/2025-2026/HB%201'),
     )
     expect(result).toEqual(BILL)
-    expect(spy).toHaveBeenCalledWith('/bills/resolve/RI/2025-2026/HB 1')
+    expect(spy.mock.calls[0][0]).toBe('/bills/resolve/RI/2025-2026/HB 1')
+    // The loader fetches through apiFetchForLoader → retryFetch, which hands
+    // apiFetch a signal (the 10s deadline, combined with the loader's own).
+    // A bare apiFetch call would pass no init at all.
+    expect(spy.mock.calls[0][1]?.signal).toBeTruthy()
   })
 
   it('redirects /bills/:id to the canonical URL', async () => {
@@ -44,5 +48,29 @@ describe('billDetailLoader', () => {
     await expect(
       billDetailLoader(loaderArgs({ sessionSlug: '2025-2026', billNumber: 'HB 1' }, 'http://localhost/2025-2026/HB%201')),
     ).rejects.toMatchObject({ status: 409 })
+  })
+
+  // A 401 no longer reaches the catch as an ApiError: apiFetchForLoader has
+  // already converted it into a thrown redirect('/login'), which is a Response.
+  // Without the `err instanceof Response` re-throw it falls past both ApiError
+  // checks into the generic 500, turning an expired session into an error card
+  // that no amount of retrying can clear.
+  it('re-throws the /login redirect on 401 rather than reclassifying it as a 500', async () => {
+    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(401, 'Not authenticated'))
+    const thrown = await billDetailLoader(
+      loaderArgs({ state: 'RI', sessionSlug: '2025-2026', billNumber: 'HB 1' }, 'http://localhost/RI/2025-2026/HB%201'),
+    ).then(() => null, (err: unknown) => err)
+    expect(thrown).toBeInstanceOf(Response)
+    expect((thrown as Response).status).toBe(302)
+    expect((thrown as Response).headers.get('Location')).toBe('/login')
+  })
+
+  // The mirror of the test above: the Response re-throw must not swallow
+  // everything else into a silent pass-through.
+  it('still surfaces an unrecognized failure as a 500', async () => {
+    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(404, 'not found'))
+    await expect(
+      billDetailLoader(loaderArgs({ billId: '42' }, 'http://localhost/bills/42')),
+    ).rejects.toMatchObject({ status: 500 })
   })
 })

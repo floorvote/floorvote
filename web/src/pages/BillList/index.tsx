@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useSearchParams, type LoaderFunctionArgs } fr
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { BulkActionBar } from '../../components/BulkActionBar'
 import { apiFetch } from '../../lib/api'
+import { apiFetchForLoader, UNBLOCK_AT_MS } from '../../lib/loaderFetch'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useAuth } from '../../hooks/useAuth'
@@ -36,10 +37,27 @@ export const knownSessions: Set<string> = new Set()
 export const knownStatuses: Set<string> = new Set()
 export const knownTagsCache: Set<string> = new Set()
 
-export async function prefetchBills(targetUrl: string): Promise<void> {
+/**
+ * Read-only peek at the warmed first-page cache. The cache stays module-private
+ * on purpose; this exists because "billListLoader's fast path warmed it" has no
+ * other observable effect short of rendering the whole list, and that fast path
+ * is precisely what the loader's race can lose. Reads only — nothing outside
+ * this module writes the cache.
+ */
+export function peekBillsListCache(): { params: string; page: BillsListPage } | null {
+  return billsListCache
+}
+
+// Loader-only cache warmer (billListLoader is the sole caller — nothing renders
+// through it), so the fetch goes through apiFetchForLoader: a 10s per-attempt
+// deadline instead of inheriting the server's own 30s, which is what a stalled
+// backend costs a deep link to /bills. `signal` is the loader's, not optional in
+// practice: retryFetch retries until it succeeds or aborts, so a run nobody
+// cancels outlives its navigation and keeps hitting a struggling API forever.
+export async function prefetchBills(targetUrl: string, opts?: { signal?: AbortSignal }): Promise<void> {
   const search = new URLSearchParams(targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?') + 1) : '')
   const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE)
-  const data = await apiFetch<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`)
+  const data = await apiFetchForLoader<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`, opts)
   billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
 }
 
@@ -49,11 +67,48 @@ export async function prefetchBills(targetUrl: string): Promise<void> {
 // failure degrades to the component's own in-list error state rather than an error
 // page. (prefetchBills is the loader's cache-warmer; no longer called from the
 // sidebar, which now uses plain router navigation.)
+//
+// The catch now only sees terminal answers (a 4xx, or the redirect Response
+// apiFetchForLoader throws on 401) and cancellation — a 5xx or a stall is
+// retried inside prefetchBills rather than reaching here. Swallowing the 401
+// redirect keeps this loader's pre-existing behavior: an unauthenticated visit
+// falls through to RequireAuth, which redirects at render time.
+//
+// Bounded, though: prefetchBills now retries without an attempt cap, so awaiting
+// it outright means a stalled backend leaves this loader neither resolving nor
+// rejecting — a cold deep link sits on the root HydrateFallback forever, and an
+// in-app navigation shows the previous page under a progress bar with no
+// explanation. So it races the prefetch against UNBLOCK_AT_MS, the same as
+// feedLoader. Simpler than feedLoader's version, which had to hand the pending
+// promise to a pane wrapper because Feed had no loading or error state of its
+// own: BillList already owns both, so on a race loss this just returns null and
+// the component fetches for itself. Losing the cache warm is the entire cost.
 export async function billListLoader({ request }: LoaderFunctionArgs): Promise<null> {
+  // Cancellation has two owners and needs both. `request.signal` is RR7's: it
+  // fires for a loader run that never commits (interrupted navigation,
+  // superseded revalidation). `controller` covers the mirror case this race
+  // creates — once the timer wins, the router treats the navigation as
+  // committed and will never fire request.signal, and there is no component
+  // holding a handle to the run either. An un-aborted retry loop left there
+  // would retry forever, holding visibilitychange/online listeners, for the
+  // life of the tab. On race loss the in-flight prefetch is aborted, not
+  // abandoned.
+  const controller = new AbortController()
+  const signal = AbortSignal.any([controller.signal, request.signal])
+  let unblockTimer: ReturnType<typeof setTimeout> | undefined
   try {
-    await prefetchBills(request.url)
+    await Promise.race([
+      prefetchBills(request.url, { signal }),
+      new Promise<void>((resolve) => {
+        unblockTimer = setTimeout(() => { controller.abort(); resolve() }, UNBLOCK_AT_MS)
+      }),
+    ])
   } catch {
     // component's fetchBills will retry and surface the error
+  } finally {
+    // Clear the loser: on the fast path the timer would otherwise sit armed for
+    // the rest of its 400ms and then abort a request that already landed.
+    clearTimeout(unblockTimer)
   }
   return null
 }
