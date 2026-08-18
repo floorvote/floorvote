@@ -1157,7 +1157,7 @@ export function BillDetail() {
             lastActionDate={bill.lastActionDate}
             relativeTime={relativeTime}
           />
-          <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isAdmin
               ? (
