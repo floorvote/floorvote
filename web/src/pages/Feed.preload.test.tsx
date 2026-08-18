@@ -6,7 +6,27 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 const apiCalls: string[] = []
 // The signal retryFetch handed each attempt, so a test can assert that a
 // discarded loader run was actually cancelled and not just forgotten.
-const apiSignals: (AbortSignal | undefined)[] = []
+const apiSignals: { path: string; signal?: AbortSignal }[] = []
+
+/**
+ * The attempts that came from a *loader* — the only ones with a signal to abort.
+ * feedLoader always passes one; Feed's in-component refetches call apiFetch with
+ * no init at all.
+ *
+ * Selecting them this way rather than by position is the point. An effect-driven
+ * refetch from a neighbouring test can still land in this shared array after that
+ * test's afterEach on a contended runner, and it records a signal-less attempt
+ * that can never abort — which a positional `slice(0, -1)` then reported as a
+ * superseded loader run left running forever.
+ *
+ * Path is NOT a usable discriminator here, unlike in Calendar.preload.test.tsx:
+ * Feed's own page-1 refetch builds the byte-identical query string feedLoader
+ * does (`/feed?page=1&limit=40&scope=default`), so the stray traffic cannot be
+ * told apart by path. Carrying the path anyway keeps the failure message able to
+ * name what it saw.
+ */
+const loaderAttempts = (): { path: string; signal: AbortSignal }[] =>
+  apiSignals.filter((a): a is { path: string; signal: AbortSignal } => !!a.signal)
 // `gate`, when set, holds every apiFetch open until the test opens it — that is
 // how the loader-race tests below decide whether the fetch beats UNBLOCK_AT_MS.
 let gate: Promise<void> | null = null
@@ -19,7 +39,7 @@ let page1Body: unknown = null
 vi.mock('../lib/api', () => ({
   apiFetch: async (path: string, init?: { signal?: AbortSignal }) => {
     apiCalls.push(path)
-    apiSignals.push(init?.signal)
+    apiSignals.push({ path, signal: init?.signal })
     if (gate) await gate
     if (page1Body && path.startsWith('/feed?page=1')) return page1Body
     return { events: [], total: 0, page: 1, limit: 40 }
@@ -212,6 +232,7 @@ it('survives StrictMode double-invoked effects on the slow path', async () => {
 // these discarded runs, which is why feedLoader has to honour it.
 it('aborts every superseded loader run when revalidation is mashed', async () => {
   apiCalls.length = 0
+  apiSignals.length = 0
   let open: () => void = () => {}
   gate = new Promise<void>((r) => { open = r })
   const router = createMemoryRouter(
@@ -226,10 +247,14 @@ it('aborts every superseded loader run when revalidation is mashed', async () =>
     router.revalidate()
     await router.revalidate()
   })
-  await waitFor(() => expect(apiSignals.length).toBeGreaterThanOrEqual(3))
+  await waitFor(() => expect(loaderAttempts().length).toBeGreaterThanOrEqual(3))
 
-  // Every run but the one that survived to commit must be aborted.
-  const superseded = apiSignals.slice(0, -1)
+  // Every run but the one that survived to commit must be aborted. Ordering
+  // within the loader attempts is well defined — they are pushed in call order —
+  // so the last one is the committed run; it is only the *shared* array that
+  // cannot be indexed into safely.
+  const attempts = loaderAttempts()
+  const superseded = attempts.slice(0, -1)
   expect(superseded.length).toBeGreaterThanOrEqual(2)
   // Spelled out per run, and given a timeout under the test's own, because the
   // bare form of this failure is `Test timed out in 5000ms` — which says only
@@ -237,12 +262,12 @@ it('aborts every superseded loader run when revalidation is mashed', async () =>
   // all. A future regression here should read as a diagnosis, not a flake.
   await waitFor(
     () => {
-      const stillOpen = superseded.flatMap((s, i) => (s?.aborted ? [] : [`#${i}`]))
+      const stillOpen = superseded.flatMap((a, i) => (a.signal.aborted ? [] : [`#${i}`]))
       expect(
         stillOpen,
         `superseded loader runs left un-aborted: ${stillOpen.join(', ') || 'none'} ` +
         `(abort state per run, last one is the committed run and is expected to stay open: ` +
-        `${apiSignals.map((s, i) => `#${i}=${s?.aborted ? 'aborted' : 'open'}`).join(' ')})`,
+        `${attempts.map((a, i) => `#${i}=${a.signal.aborted ? 'aborted' : 'open'}`).join(' ')})`,
       ).toEqual([])
     },
     { timeout: 2_000 },
