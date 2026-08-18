@@ -27,7 +27,7 @@ export type RetryProgress = {
 
 /**
  * A mutable cell the UI reads on its own render tick. Deliberately not an
- * event emitter or context: LoadingState already ticks once a second to drive
+ * event emitter or context: LoadingState already ticks on its own timer to drive
  * its countdown, so polling a cell is enough and keeps both sides trivial.
  */
 export type ProgressBox = { current: RetryProgress | null }
