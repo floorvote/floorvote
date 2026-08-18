@@ -113,6 +113,15 @@ export function FeedPane() {
 
   // Holds a scheduled abort between an effect teardown and a possible immediate
   // re-subscribe. Refs survive StrictMode's remount, which is the whole point.
+  //
+  // The constraint that buys: this only covers a *same-instance* remount, since
+  // a ref dies with its component instance — a remount that produced a NEW
+  // instance against the SAME loader result would find an empty ref, let the
+  // abort fire, and lose the loop. Not reachable today (React Router hands back
+  // a fresh result object every time it re-runs a loader, so a new instance
+  // always gets a new `waiting` and a new fetch), and it fails closed anyway:
+  // the aborted promise rejects and lands in the error boundary, i.e. the
+  // pre-existing behavior, rather than leaking a retry loop.
   const deferredAbort = useRef<{ waiting: object; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {

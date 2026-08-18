@@ -215,6 +215,21 @@ it('aborts every superseded loader run when revalidation is mashed', async () =>
   // Every run but the one that survived to commit must be aborted.
   const superseded = apiSignals.slice(0, -1)
   expect(superseded.length).toBeGreaterThanOrEqual(2)
-  await waitFor(() => expect(superseded.filter((s) => !s?.aborted)).toEqual([]))
+  // Spelled out per run, and given a timeout under the test's own, because the
+  // bare form of this failure is `Test timed out in 5000ms` — which says only
+  // that something never aborted, not which run, nor whether any aborted at
+  // all. A future regression here should read as a diagnosis, not a flake.
+  await waitFor(
+    () => {
+      const stillOpen = superseded.flatMap((s, i) => (s?.aborted ? [] : [`#${i}`]))
+      expect(
+        stillOpen,
+        `superseded loader runs left un-aborted: ${stillOpen.join(', ') || 'none'} ` +
+        `(abort state per run, last one is the committed run and is expected to stay open: ` +
+        `${apiSignals.map((s, i) => `#${i}=${s?.aborted ? 'aborted' : 'open'}`).join(' ')})`,
+      ).toEqual([])
+    },
+    { timeout: 2_000 },
+  )
   open()
 })
