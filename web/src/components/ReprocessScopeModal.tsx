@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { Dialog } from './ui/Dialog'
+import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 
 export type ReprocessScope = 'prioritized' | 'all'
 
@@ -46,6 +47,9 @@ export function ReprocessScopeModal({ matchedBillsCount, prioritizedBillsCount, 
       <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 16, lineHeight: 1.5 }}>
         New bill texts will automatically use the instructions you just saved. Do you want to apply the
         instructions retroactively, to existing bills?
+      </div>
+      <div style={{ fontSize: fontSize.xs, color: color.textSecondary, marginBottom: 12, lineHeight: 1.5 }}>
+        {REGENERATE_PRESERVES_DESCRIPTION}
       </div>
 
       {showPrioritized && (

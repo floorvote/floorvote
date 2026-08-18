@@ -109,7 +109,7 @@ body.nav-pending * { cursor: wait !important; }
   right: 0;
   bottom: 0;
   left: -23px;
-  background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #f5f8fc 8px, #f5f8fc 16px);
+  background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(59,130,246,0.04) 8px, rgba(59,130,246,0.04) 16px);
   pointer-events: none;
 }
 
@@ -118,6 +118,19 @@ body.nav-pending * { cursor: wait !important; }
 }
 
 .analyzing-box__content { position: relative; }
+
+.regenerating-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b82f6;
+}
+.regenerating-label__icon {
+  font-size: 14px;
+  animation: spin 1.2s linear infinite;
+}
 
 .blue-link {
   color: #2563eb;

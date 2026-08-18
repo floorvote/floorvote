@@ -1,3 +1,6 @@
+export const REGENERATE_PRESERVES_DESCRIPTION =
+  'Replaces the summary, tags, and relevance score. Comments, votes, priority, positions, and notes are untouched.'
+
 type MatchType = 'keyword' | 'manual' | null
 type TextStatus = 'in_r2' | 'available' | 'no_texts' | 'not_checked' | null
 type AiSkipReason = 'pdf_too_large' | null

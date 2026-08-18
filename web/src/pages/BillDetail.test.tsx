@@ -732,3 +732,85 @@ describe('BillDetail mark-read-by-bill effect', () => {
     })
   })
 })
+
+describe('overflow menu', () => {
+  afterEach(() => { authState.role = 'member'; demoState.demoLocked = false; demoState.demoMode = false })
+
+  it('renders the overflow menu trigger in the header', async () => {
+    makeMockApiFetch()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+  })
+
+  it('shows only Copy link for a member', async () => {
+    const user = userEvent.setup()
+    authState.role = 'member'
+    makeMockApiFetch()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+  })
+
+  it('shows Copy link + Re-generate for an admin on a non-draft bill', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+    expect(items[1]).toHaveTextContent(/Re-generate/)
+  })
+
+  it('shows Copy link + Re-generate + Delete draft for an admin on a draft bill', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(3)
+    expect(items[2]).toHaveTextContent(/Delete this draft bill/)
+  })
+
+  it('does not render old inline Re-generate button', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({ tags: ['tax'] })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    // The old button had text "Re-generate" as a standalone button; now it's
+    // only inside the menu. Confirm no button with that exact text is visible
+    // outside the menu.
+    const buttons = screen.getAllByRole('button')
+    const regenButtons = buttons.filter(b => b.textContent === 'Re-generate' || b.textContent === 'Regenerating…')
+    expect(regenButtons).toHaveLength(0)
+  })
+
+  it('does not render old inline Delete draft button in the draft banner', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    // The old standalone delete button in the draft banner is gone.
+    // "Delete this draft bill" text now only appears inside the overflow menu.
+    const buttons = screen.getAllByRole('button')
+    const deleteButtons = buttons.filter(b => b.textContent === 'Delete this draft bill' || b.textContent === 'Deleting…')
+    expect(deleteButtons).toHaveLength(0)
+  })
+
+  it('untagged bill renders no tag row', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({ tags: [], tenantSummary: 'Summary', relevanceScore: 85 })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    // With tags=[] the tag row should be absent entirely (no empty flex container)
+    expect(screen.queryByText('Re-generate')).not.toBeInTheDocument()
+  })
+})

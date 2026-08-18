@@ -13,6 +13,8 @@ import { CompactPositionSelect } from '../components/CompactPositionSelect'
 import { StatusChip } from '../components/StatusChip'
 import { decodeStatus } from '../lib/legislativeStatus'
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
+import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
+import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
 import { orgPositionLabel, orgRelevanceLabel, DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
@@ -27,7 +29,7 @@ import { ReactionPicker } from '../components/ReactionPicker'
 import { usePolling } from '../hooks/usePolling'
 import { useSidebarRefresh } from '../context/SidebarRefreshContext'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
@@ -615,6 +617,7 @@ export function BillDetail() {
   const [linkTarget, setLinkTarget] = useState<string | null>(null)
   const [linking, setLinking] = useState(false)
   const [deletingDraft, setDeletingDraft] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [filedOptions, setFiledOptions] = useState<BillOption[]>([])
   const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | null>(null)
   const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | null>(null)
@@ -1124,7 +1127,7 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
           <BillBadge
             billNumber={bill.billNumber}
             state={bill.state}
@@ -1157,7 +1160,7 @@ export function BillDetail() {
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {isAdmin
               ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                   {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
                     ? (
                       <HoverTooltip text="New keyword match — set a priority or dismiss">
@@ -1185,7 +1188,7 @@ export function BillDetail() {
                   </HoverTooltip>
                     )}
                   {priorityMeta && (
-                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                       Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
                     </div>
                   )}
@@ -1193,12 +1196,12 @@ export function BillDetail() {
               )
               : priority
                 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                     <HoverTooltip text="This bill's priority level">
                       <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
                     </HoverTooltip>
                     {priorityMeta && (
-                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                         Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
                       </div>
                     )}
@@ -1222,6 +1225,55 @@ export function BillDetail() {
                 >→</button>
               </>
             )}
+            <OverflowMenu rows={(() => {
+              const menuRows: OverflowMenuRow[] = [
+                {
+                  key: 'copy-link',
+                  label: 'Copy link to bill',
+                  description: 'Only members of this FloorVote can open this link.',
+                  onSelect: async () => {
+                    try {
+                      await navigator.clipboard.writeText(window.location.href)
+                      setCopyFeedback('Link copied — only members of this FloorVote can open it.')
+                      setTimeout(() => setCopyFeedback(null), 3000)
+                    } catch {
+                      setCopyFeedback("Couldn't copy — copy the address bar instead.")
+                      setTimeout(() => setCopyFeedback(null), 4000)
+                    }
+                  },
+                },
+              ]
+              if (isAdmin) {
+                menuRows.push({
+                  key: 'regenerate',
+                  label: 'Re-generate AI summary, tags, and relevance',
+                  description: REGENERATE_PRESERVES_DESCRIPTION,
+                  onSelect: handleRegenerate,
+                  disabled: regenerating || demoLocked,
+                })
+              }
+              if (isAdmin && bill.isDraft) {
+                menuRows.push({
+                  key: 'delete-draft',
+                  label: 'Delete this draft bill',
+                  description: 'Permanently removes it and its votes, positions, comments, and notes.',
+                  tone: 'danger',
+                  disabled: deletingDraft || demoLocked,
+                  onSelect: async () => {
+                    if (deletingDraft || demoLocked) return
+                    if (!window.confirm('Delete this draft bill? This permanently removes it and its votes, positions, comments, and notes.')) return
+                    setDeletingDraft(true)
+                    try {
+                      await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
+                      navigate('/bills')
+                    } catch {
+                      setDeletingDraft(false)
+                    }
+                  },
+                })
+              }
+              return menuRows
+            })()} />
           </span>
         </div>
 
@@ -1256,33 +1308,6 @@ export function BillDetail() {
                     }}
                   >
                     {linking ? 'Linking…' : 'Link & merge into filed bill'}
-                  </button>
-                </div>
-                {/* Delete draft — right-aligned; red button matching the Re-generate button */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (deletingDraft || demoLocked) return
-                      if (!window.confirm('Delete this draft bill? This permanently removes it and its votes, positions, comments, and notes.')) return
-                      setDeletingDraft(true)
-                      try {
-                        await apiFetch(`/bills/${bill.id}`, { method: 'DELETE' })
-                        navigate('/bills')
-                      } catch {
-                        setDeletingDraft(false)
-                      }
-                    }}
-                    disabled={deletingDraft || demoLocked}
-                    style={{
-                      flexShrink: 0,
-                      background: (deletingDraft || demoLocked) ? color.bgRedDisabled : color.textErrorRed,
-                      color: color.white, border: 'none', borderRadius: radius.md,
-                      padding: '6px 12px', cursor: (deletingDraft || demoLocked) ? 'not-allowed' : 'pointer',
-                      fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {deletingDraft ? 'Deleting…' : 'Delete this draft bill'}
                   </button>
                 </div>
               </div>
@@ -1774,29 +1799,36 @@ export function BillDetail() {
                     <span style={SECTION_LABEL}>
                       AI Summary
                     </span>
-                    {bill.tenantSummary && bill.lastAiTextDocId && (() => {
-                      const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
-                      if (!text) return null
-                      return (
-                        <>
-                          <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
-                            <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on text
-                          </span>
-                          <BillTextChip
-                            type={text.type}
-                            date={text.date}
-                            onClick={() => {
-                              setShowBillText(true)
-                              setRequestedDocId(text.docId)
-                              setTimeout(() => setRequestedDocId(null), 100)
-                            }}
-                            title="Show this bill text version"
-                          />
-                        </>
+                    {regenerating
+                      ? (
+                        <span className="regenerating-label">
+                          <span className="material-symbols-outlined regenerating-label__icon">autorenew</span>
+                          Regenerating…
+                        </span>
                       )
-                    })()}
+                      : bill.tenantSummary && bill.lastAiTextDocId && (() => {
+                        const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
+                        if (!text) return null
+                        return (
+                          <>
+                            <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+                              <span style={{ marginRight: 6, marginLeft: 2 }}>·</span>based on text
+                            </span>
+                            <BillTextChip
+                              type={text.type}
+                              date={text.date}
+                              onClick={() => {
+                                setShowBillText(true)
+                                setRequestedDocId(text.docId)
+                                setTimeout(() => setRequestedDocId(null), 100)
+                              }}
+                              title="Show this bill text version"
+                            />
+                          </>
+                        )
+                      })()}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
                     {bill.relevanceScore != null && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={SECTION_LABEL}>
@@ -1811,18 +1843,20 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
+                <div style={regenerating ? { opacity: 0.4 } : undefined}>
                 <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>
                   {bill.tenantSummary}
                 </MarkdownSummary>
+                </div>
               </div>
             )}
             {!bill.tenantSummary && bill.relevanceScore != null && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? { opacity: 0.4 } : {}) }}>
                 <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
               </div>
             )}
-            {(bill.tags.length > 0 || isAdmin) && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0 }}>
+            {bill.tags.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                   {bill.tags.map((tag) => (
                     <button
@@ -1836,23 +1870,6 @@ export function BillDetail() {
                     </button>
                   ))}
                 </div>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={handleRegenerate}
-                    disabled={regenerating || demoLocked}
-                    title="Re-run AI summary, tags, and relevance for this bill"
-                    style={{
-                      flexShrink: 0, marginLeft: 'auto',
-                      background: (regenerating || demoLocked) ? color.bgRedDisabled : color.textErrorRed,
-                      color: color.white, border: 'none', borderRadius: radius.md,
-                      padding: '6px 12px', cursor: (regenerating || demoLocked) ? 'not-allowed' : 'pointer',
-                      fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {regenerating ? 'Regenerating…' : 'Re-generate'}
-                  </button>
-                )}
               </div>
             )}
             {regenerateError && (
@@ -2422,6 +2439,22 @@ export function BillDetail() {
       <div style={{ padding: '12px 0', borderTop: `1px solid ${color.borderDefault}` }}>
         <Link to={sessionStorage.getItem('lastBillsUrl') ?? '/bills'} style={{ fontSize: fontSize.sm, color: color.linkBlue, textDecoration: 'none' }}>← Back to bills</Link>
       </div>
+
+      {copyFeedback && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 300,
+          background: color.textSlate,
+          color: color.white,
+          padding: '10px 20px',
+          borderRadius: radius.md,
+          fontSize: fontSize.sm,
+          boxShadow: shadow.md,
+          pointerEvents: 'none',
+        }}>
+          {copyFeedback}
+        </div>
+      )}
       </div>
   )
 }

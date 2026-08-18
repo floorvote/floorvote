@@ -68,4 +68,9 @@ describe('ReprocessScopeModal', () => {
     mount({ prioritizedBillsCount: 0 })
     expect(screen.queryByRole('button', { name: /prioritized/i })).toBeNull()
   })
+
+  it('shows what reprocessing replaces and preserves', () => {
+    mount()
+    expect(screen.getByText(/Comments, votes, priority, positions, and notes are untouched/)).toBeInTheDocument()
+  })
 })
