@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLoaderData, useRevalidator, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
-import { apiFetchForLoader } from '../lib/loaderFetch'
+import { apiFetchForLoader, UNBLOCK_AT_MS } from '../lib/loaderFetch'
 import { createProgressBox, type ProgressBox } from '../lib/retryFetch'
 import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
@@ -33,10 +33,6 @@ const FILL_TARGET = 15
 // the opening view never feels smaller than a subsequent scroll's worth.
 const INITIAL_TARGET = 20
 const MAX_FILL_FETCHES = 10
-
-/** Unblock the router if the first page hasn't landed by here. Comfortably above
- *  a healthy load (40-70ms server-side) and below the threshold of noticing. */
-const UNBLOCK_AT_MS = 400
 
 export type FeedLoaderResult =
   | { data: FeedResponse }

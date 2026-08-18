@@ -21,3 +21,17 @@ export async function apiFetchForLoader<T>(path: string, opts?: RetryOptions): P
     throw err
   }
 }
+
+/**
+ * How long a route loader may block the router waiting on its own prefetch.
+ *
+ * Every loader here fetches through retryFetch, which has no attempt cap by
+ * design — so awaiting one outright means a stalled backend leaves the loader
+ * neither resolving nor rejecting, and the router has nothing to commit. Racing
+ * against this deadline turns that into a shell that paints and explains itself.
+ *
+ * Lives here rather than in either page because both loaders need the same
+ * number and neither page should be importing from the other. Comfortably above
+ * a healthy load (40-70ms server-side) and below the threshold of noticing.
+ */
+export const UNBLOCK_AT_MS = 400
