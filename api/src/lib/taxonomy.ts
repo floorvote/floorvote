@@ -55,7 +55,15 @@ export async function loadTaxonomyTagNameSet(db: AppDb): Promise<Set<string>> {
   return new Set((await loadEffectiveTaxonomy(db)).map(t => t.name))
 }
 
-/** Drop any tag not present in `allowed` (exact string membership). Pure. */
+/**
+ * Drop any tag not present in `allowed` (exact string membership), and drop duplicates,
+ * keeping first-occurrence order. Pure.
+ *
+ * Dedupe matters because the write path constrains tags with a `responseSchema` enum
+ * (see buildAnalysisSchema in lib/llm.ts): the enum guarantees every emitted string is a
+ * taxonomy member but says nothing about uniqueness, and the SDK's Schema type has no
+ * `uniqueItems`. A repeated pick would otherwise survive straight into bills.tags.
+ */
 export function filterTagsToTaxonomy(tags: string[], allowed: Set<string>): string[] {
-  return tags.filter(t => allowed.has(t))
+  return [...new Set(tags.filter(t => allowed.has(t)))]
 }

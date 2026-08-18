@@ -49,4 +49,23 @@ describe('processor — write-time tag validation', () => {
     const row = await db.select({ tags: bills.tags }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
     expect(JSON.parse(row!.tags)).toEqual(['Elections']) // 'Provisional Voting' dropped
   })
+
+  it('stores deduplicated in-taxonomy tags', async () => {
+    const llm = await import('../../src/lib/llm')
+    vi.mocked(llm.processBill).mockResolvedValueOnce({
+      summary: 'AI summary', tags: ['Elections', 'Elections', 'Provisional Voting'], relevanceScore: 5,
+    })
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Elections' }]) })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) =>
+      url.includes('/text')
+        ? Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>text</p>' }) })
+        : Promise.resolve({ ok: true, json: async () => centralBill }),
+    ))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', forceAI: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select({ tags: bills.tags }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(JSON.parse(row!.tags)).toEqual(['Elections'])
+  })
 })

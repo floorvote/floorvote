@@ -19,6 +19,13 @@ describe('taxonomy helpers', () => {
     expect(filterTagsToTaxonomy([], allowed)).toEqual([])
   })
 
+  it('filterTagsToTaxonomy removes duplicates, keeping first-occurrence order', () => {
+    const allowed = new Set(['Elections', 'Public Records'])
+    expect(filterTagsToTaxonomy(['Public Records', 'Elections', 'Public Records'], allowed))
+      .toEqual(['Public Records', 'Elections'])
+    expect(filterTagsToTaxonomy(['Elections', 'Elections'], allowed)).toEqual(['Elections'])
+  })
+
   it('loadEffectiveTaxonomy / loadTaxonomyTagNameSet return the configured taxonomy', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({
