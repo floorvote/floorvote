@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { apiFetchForLoader } from '../lib/loaderFetch'
 import { useAuth } from '../hooks/useAuth'
 import { MarkdownSummary } from '../components/MarkdownSummary'
 import { BillBadge } from '../components/BillBadge'
@@ -500,8 +501,19 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
       : `/bills/resolve/${sessionSlug}/${billNumber}`
   let bill: BillDetailData
   try {
-    bill = await apiFetch<BillDetailData>(apiPath)
+    // apiFetchForLoader, not apiFetch: a 10s per-attempt deadline (with retry)
+    // instead of hanging for the server's own timeout when the backend stalls.
+    // `request.signal` bounds the retry loop — RR7 fires it when a loader run
+    // never commits, which is exactly the run that would otherwise retry
+    // forever behind an abandoned navigation. Only this call changes: the
+    // in-component refetches below must stay on apiFetch, since the redirect
+    // Response thrown here on a 401 is meaningful to the router and nothing else.
+    bill = await apiFetchForLoader<BillDetailData>(apiPath, { signal: request.signal })
   } catch (err) {
+    // apiFetchForLoader signals 401 by throwing redirect('/login'), a Response.
+    // Anything already shaped as a Response is a router instruction — pass it
+    // through rather than reclassifying it as a 500.
+    if (err instanceof Response) throw err
     if (err instanceof ApiError && err.status === 409) {
       throw new Response('This bill number exists in multiple states. Please use a state-prefixed URL (e.g. /RI/2026/HB0209).', { status: 409 })
     }

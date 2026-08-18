@@ -18,6 +18,10 @@ describe('billListLoader', () => {
     const calledPath = String(spy.mock.calls[0][0])
     expect(calledPath.startsWith('/bills?')).toBe(true)
     expect(calledPath).toContain('Introduced')
+    // Routed through apiFetchForLoader → retryFetch, so the request carries a
+    // signal (the 10s deadline, combined with the loader's cancellation).
+    // A bare apiFetch would be called with no init.
+    expect(spy.mock.calls[0][1]?.signal).toBeTruthy()
   })
 
   it('does not throw if the prefetch fails — the component surfaces its own error state', async () => {

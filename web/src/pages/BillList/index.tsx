@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useSearchParams, type LoaderFunctionArgs } fr
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { BulkActionBar } from '../../components/BulkActionBar'
 import { apiFetch } from '../../lib/api'
+import { apiFetchForLoader } from '../../lib/loaderFetch'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useAuth } from '../../hooks/useAuth'
@@ -36,10 +37,16 @@ export const knownSessions: Set<string> = new Set()
 export const knownStatuses: Set<string> = new Set()
 export const knownTagsCache: Set<string> = new Set()
 
-export async function prefetchBills(targetUrl: string): Promise<void> {
+// Loader-only cache warmer (billListLoader is the sole caller — nothing renders
+// through it), so the fetch goes through apiFetchForLoader: a 10s per-attempt
+// deadline instead of inheriting the server's own 30s, which is what a stalled
+// backend costs a deep link to /bills. `signal` is the loader's, not optional in
+// practice: retryFetch retries until it succeeds or aborts, so a run nobody
+// cancels outlives its navigation and keeps hitting a struggling API forever.
+export async function prefetchBills(targetUrl: string, opts?: { signal?: AbortSignal }): Promise<void> {
   const search = new URLSearchParams(targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?') + 1) : '')
   const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE)
-  const data = await apiFetch<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`)
+  const data = await apiFetchForLoader<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`, opts)
   billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
 }
 
@@ -49,9 +56,15 @@ export async function prefetchBills(targetUrl: string): Promise<void> {
 // failure degrades to the component's own in-list error state rather than an error
 // page. (prefetchBills is the loader's cache-warmer; no longer called from the
 // sidebar, which now uses plain router navigation.)
+//
+// The catch now only sees terminal answers (a 4xx, or the redirect Response
+// apiFetchForLoader throws on 401) and cancellation — a 5xx or a stall is
+// retried inside prefetchBills rather than reaching here. Swallowing the 401
+// redirect keeps this loader's pre-existing behavior: an unauthenticated visit
+// falls through to RequireAuth, which redirects at render time.
 export async function billListLoader({ request }: LoaderFunctionArgs): Promise<null> {
   try {
-    await prefetchBills(request.url)
+    await prefetchBills(request.url, { signal: request.signal })
   } catch {
     // component's fetchBills will retry and surface the error
   }

@@ -159,7 +159,8 @@ const LegalPage = lazy(() => import('./pages/LegalPage').then((m) => ({ default:
 // Renders while the router is uninitialized on a cold load. LoadingState's
 // first tier is empty for 500ms, which is what keeps this from flashing on a
 // healthy load — and what makes a deep link to /bills legible during an
-// outage, since billListLoader blocks for the full 10s deadline and has no race.
+// outage, since billListLoader has no 400ms race like feedLoader's: it blocks
+// for however long its 10s-deadline attempts keep retrying.
 function RootHydrateFallback() {
   return <LoadingState variant="full" progress={{ current: null }} />
 }
