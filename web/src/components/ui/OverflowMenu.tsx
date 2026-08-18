@@ -76,18 +76,15 @@ export function OverflowMenu({ rows, triggerStyle }: OverflowMenuProps) {
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          padding: '2px 6px',
-          fontSize: fontSize.base,
+          padding: '2px 4px',
           color: color.textSecondary,
           borderRadius: radius.sm,
           display: 'flex',
           alignItems: 'center',
-          lineHeight: 1,
-          letterSpacing: '1px',
           ...triggerStyle,
         }}
       >
-        &hellip;
+        <span className="material-symbols-outlined" style={{ fontSize: 20 }} aria-hidden="true">more_horiz</span>
       </button>
       {open && (
         <PopPanel

@@ -1791,7 +1791,7 @@ export function BillDetail() {
               : { background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '12px 16px', marginTop: 14, marginBottom: 0 }}
           >
             {regenerating && <div className="analyzing-box__stripes analyzing-box__stripes--animated" />}
-            <div className={regenerating ? 'analyzing-box__content' : undefined}>
+            <div className={regenerating ? 'analyzing-box__content' : undefined} style={regenerating ? { color: color.textMuted } : undefined}>
             {bill.tenantSummary && (
               <div style={{ marginBottom: bill.tags.length > 0 ? 10 : 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
