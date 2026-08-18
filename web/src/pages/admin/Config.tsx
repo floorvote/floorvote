@@ -14,8 +14,9 @@ import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
-import { parseTagTaxonomy, aiInstructionsChanged } from './aiConfig'
+import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
+import { useUnsavedRegistration } from '../../lib/unsavedText'
 
 type ConfigData = {
   keywords?: string[]
@@ -67,6 +68,13 @@ export function Config() {
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
+  type ResettableField = 'aiContext' | 'relevanceQuestion' | 'tagTaxonomy' | 'keywords'
+  // Captures the pre-reset value for each field so a "Reset to default"/"Clear"
+  // click can be undone. Cleared for a field when: the field is edited manually
+  // (resurrecting stale text would be worse than no undo), Undo is clicked, or a
+  // save that covers that field succeeds.
+  const [undoValues, setUndoValues] = useState<Partial<Record<ResettableField, string>>>({})
+
   const [keywords, setKeywords] = useState('')
   const [associationName, setAssociationName] = useState('')
   const [orgNoun, setOrgNoun] = useState<string>('team')
@@ -88,7 +96,11 @@ export function Config() {
   const [saveAiError, setSaveAiError] = useState<string | null>(null)
   const [saveAiResult, setSaveAiResult] = useState<{ queued: number } | null>(null)
   const [showScopeModal, setShowScopeModal] = useState(false)
-  const aiSnapshot = useRef<{ aiContext: string; relevanceQuestion: string; tagTaxonomy: string } | null>(null)
+  // Snapshot of every savable field, as last loaded or successfully saved.
+  // Backs both the "did AI instructions change" reprocess-modal decision (via
+  // aiInstructionsChanged, ai-fields subset) and the page's unsaved-changes
+  // dirty check (all fields) below.
+  const configSnapshot = useRef<ConfigSnapshot | null>(null)
 
   const [newMatchMinRelevance, setNewMatchMinRelevance] = useState(0)
   const [savingNewMatch, setSavingNewMatch] = useState(false)
@@ -135,15 +147,20 @@ export function Config() {
   useEffect(() => {
     apiFetch<ConfigData>('/admin/config')
       .then((data) => {
-        setKeywords(Array.isArray(data.keywords) && data.keywords.length > 0 ? data.keywords.join('\n') : '')
-        setAssociationName(data.association_name ?? '')
+        const keywordsString = Array.isArray(data.keywords) && data.keywords.length > 0 ? data.keywords.join('\n') : ''
+        setKeywords(keywordsString)
+        const associationNameValue = data.association_name ?? ''
+        setAssociationName(associationNameValue)
         const noun = data.org_noun ?? 'team'
         setOrgNoun(noun)
         if ((PRESET_NOUNS as readonly string[]).includes(noun)) { setNounChoice(noun); setCustomNoun('') }
         else { setNounChoice('custom'); setCustomNoun(noun) }
-        setAiContext(data.ai_context ?? '')
-        setRelevanceQuestion(data.relevance_question ?? '')
-        setNewMatchMinRelevance(typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0)
+        const aiContextValue = data.ai_context ?? ''
+        setAiContext(aiContextValue)
+        const relevanceQuestionValue = data.relevance_question ?? ''
+        setRelevanceQuestion(relevanceQuestionValue)
+        const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
+        setNewMatchMinRelevance(newMatchMinRelevanceValue)
         const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
           ? data.tag_taxonomy
               .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
@@ -152,21 +169,66 @@ export function Config() {
         setTagTaxonomy(taxonomyString)
         setMatchedBillsCount(data.matched_bills_count ?? null)
         setPrioritizedBillsCount(data.prioritized_bills_count ?? null)
-        aiSnapshot.current = {
-          aiContext: data.ai_context ?? '',
-          relevanceQuestion: data.relevance_question ?? '',
+        configSnapshot.current = {
+          keywords: keywordsString,
+          aiContext: aiContextValue,
+          relevanceQuestion: relevanceQuestionValue,
           tagTaxonomy: taxonomyString,
+          associationName: associationNameValue,
+          orgNoun: noun,
+          newMatchMinRelevance: newMatchMinRelevanceValue,
         }
       })
       .catch(() => setFetchError('Failed to load configuration.'))
       .finally(() => setLoading(false))
   }, [])
 
-  function resetToDefault(field: 'aiContext' | 'relevanceQuestion' | 'tagTaxonomy' | 'keywords') {
+  // Merges a patch of newly-saved field(s) into the snapshot, leaving any
+  // other (still-unsaved) fields' snapshot values untouched. current* falls
+  // back to the live field values only in the not-yet-loaded edge case.
+  function updateSnapshot(patch: Partial<ConfigSnapshot>) {
+    configSnapshot.current = {
+      keywords, aiContext, relevanceQuestion, tagTaxonomy, associationName, orgNoun, newMatchMinRelevance,
+      ...configSnapshot.current,
+      ...patch,
+    }
+  }
+
+  function clearUndoValue(field: ResettableField) {
+    setUndoValues(prev => {
+      if (!(field in prev)) return prev
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+  }
+
+  function resetToDefault(field: ResettableField) {
+    const current = { aiContext, relevanceQuestion, tagTaxonomy, keywords }[field]
+    setUndoValues(prev => ({ ...prev, [field]: current }))
     if (field === 'aiContext') setAiContext('')
     if (field === 'relevanceQuestion') setRelevanceQuestion('')
     if (field === 'tagTaxonomy') setTagTaxonomy('')
     if (field === 'keywords') setKeywords('')
+  }
+
+  function undoReset(field: ResettableField) {
+    const previous = undoValues[field]
+    if (previous === undefined) return
+    if (field === 'aiContext') setAiContext(previous)
+    if (field === 'relevanceQuestion') setRelevanceQuestion(previous)
+    if (field === 'tagTaxonomy') setTagTaxonomy(previous)
+    if (field === 'keywords') setKeywords(previous)
+    clearUndoValue(field)
+  }
+
+  // Wraps a field's onChange so any manual edit (as opposed to the undoReset
+  // restore above) drops that field's undo affordance.
+  function editField(field: ResettableField, setter: (v: string) => void) {
+    return (value: string) => {
+      setter(value)
+      clearUndoValue(field)
+    }
   }
 
   async function handleSaveKeywords() {
@@ -174,31 +236,40 @@ export function Config() {
 
     // Fetch preview counts before asking the user to confirm
     let confirmMsg = 'Save and sync keywords?'
-    try {
-      const preview = await apiFetch<{ wouldAdd: number; wouldDemote: number; wouldProtect: number }>(
-        '/admin/keyword-resync-preview',
-        { method: 'POST', body: JSON.stringify({ keywords: newKeywords }) }
-      )
-      const parts: string[] = []
-      if (preview.wouldAdd > 0) {
-        const b = preview.wouldAdd === 1 ? '1 additional bill' : `${preview.wouldAdd} additional bills`
-        parts.push(`${b} will be fully analyzed`)
+    if (newKeywords.length === 0) {
+      // An empty list can only ever preview as all-zeros (see
+      // /admin/keyword-resync-preview's early return), so skip the network
+      // call and go straight to copy that describes what actually happens.
+      // This is the most consequential action on the page — it turns off
+      // future bill capture entirely — so it must not read as a no-op.
+      confirmMsg = 'Save an empty keyword list?\n\nNo new bills will be captured for full analysis from now on. Bills already analyzed keep their summaries and stay in the tracker. Nothing will be downgraded.'
+    } else {
+      try {
+        const preview = await apiFetch<{ wouldAdd: number; wouldDemote: number; wouldProtect: number }>(
+          '/admin/keyword-resync-preview',
+          { method: 'POST', body: JSON.stringify({ keywords: newKeywords }) }
+        )
+        const parts: string[] = []
+        if (preview.wouldAdd > 0) {
+          const b = preview.wouldAdd === 1 ? '1 additional bill' : `${preview.wouldAdd} additional bills`
+          parts.push(`${b} will be fully analyzed`)
+        }
+        if (preview.wouldDemote > 0) {
+          const b = preview.wouldDemote === 1 ? '1 bill' : `${preview.wouldDemote} bills`
+          parts.push(`${b} will be downgraded to status monitoring`)
+        }
+        if (preview.wouldProtect > 0) {
+          const b = preview.wouldProtect === 1 ? '1 matched bill has' : `${preview.wouldProtect} matched bills have`
+          parts.push(`${b} existing engagement and will be kept as manual`)
+        }
+        if (parts.length > 0) {
+          confirmMsg = `Save and sync keywords?\n\n${parts.map(p => '• ' + p).join('\n')}`
+        } else {
+          confirmMsg = 'Save keywords? No bills will be added or downgraded.'
+        }
+      } catch {
+        // Preview failure is non-fatal — fall back to generic confirm
       }
-      if (preview.wouldDemote > 0) {
-        const b = preview.wouldDemote === 1 ? '1 bill' : `${preview.wouldDemote} bills`
-        parts.push(`${b} will be downgraded to status monitoring`)
-      }
-      if (preview.wouldProtect > 0) {
-        const b = preview.wouldProtect === 1 ? '1 matched bill has' : `${preview.wouldProtect} matched bills have`
-        parts.push(`${b} existing engagement and will be kept as manual`)
-      }
-      if (parts.length > 0) {
-        confirmMsg = `Save and sync keywords?\n\n${parts.map(p => '• ' + p).join('\n')}`
-      } else {
-        confirmMsg = 'Save keywords? No bills will be added or downgraded.'
-      }
-    } catch {
-      // Preview failure is non-fatal — fall back to generic confirm
     }
 
     if (!confirm(confirmMsg)) return
@@ -219,6 +290,8 @@ export function Config() {
       } catch {
         // Resync failure is non-fatal — keywords were saved successfully
       }
+      clearUndoValue('keywords')
+      updateSnapshot({ keywords })
       setSavedKeywords(true)
       setTimeout(() => { setSavedKeywords(false); setSyncKeywordsResult(null) }, 4000)
     } catch (err) {
@@ -239,7 +312,7 @@ export function Config() {
     }
 
     const current = { aiContext, relevanceQuestion, tagTaxonomy }
-    const changed = aiSnapshot.current == null || aiInstructionsChanged(aiSnapshot.current, current)
+    const changed = configSnapshot.current == null || aiInstructionsChanged(configSnapshot.current, current)
 
     setSavingAi(true)
     setSavedAi(false)
@@ -252,11 +325,14 @@ export function Config() {
           tag_taxonomy: parsed.value,
         }),
       })
-      aiSnapshot.current = {
-        aiContext: aiContext.trim(),
-        relevanceQuestion: relevanceQuestion.trim(),
-        tagTaxonomy,
-      }
+      updateSnapshot({ aiContext, relevanceQuestion, tagTaxonomy })
+      setUndoValues(prev => {
+        const next = { ...prev }
+        delete next.aiContext
+        delete next.relevanceQuestion
+        delete next.tagTaxonomy
+        return next
+      })
       setSavedAi(true)
       setTimeout(() => setSavedAi(false), 5000)
       if (changed && (matchedBillsCount ?? 0) > 0) setShowScopeModal(true)
@@ -275,6 +351,7 @@ export function Config() {
     try {
       await apiFetch('/admin/config', { method: 'PUT', body: JSON.stringify({ new_match_min_relevance: n }) })
       setNewMatchMinRelevance(n)
+      updateSnapshot({ newMatchMinRelevance: n })
       setSavedNewMatch(true)
       setTimeout(() => setSavedNewMatch(false), 5000)
     } catch (err) {
@@ -308,6 +385,7 @@ export function Config() {
           org_noun: normalizeOrgNoun(nounChoice === 'custom' ? customNoun : nounChoice),
         }),
       })
+      updateSnapshot({ associationName, orgNoun })
       setSavedLabels(true)
       setTimeout(() => setSavedLabels(false), 2000)
     } catch (err) {
@@ -460,11 +538,59 @@ export function Config() {
     }
   }
 
+  // Registers the page's savable fields with the app-wide unsaved-changes
+  // guard (UnsavedTextProvider, mounted in AppLayout — Config renders as a
+  // descendant route of it). Excludes custom fields (separate CRUD that saves
+  // immediately) and transient UI state (export format, modals, tooltips).
+  useUnsavedRegistration({
+    isDirty: () => {
+      const snap = configSnapshot.current
+      if (!snap) return false
+      return configChanged(snap, {
+        keywords, aiContext, relevanceQuestion, tagTaxonomy, associationName, orgNoun, newMatchMinRelevance,
+      })
+    },
+    reset: () => {
+      const snap = configSnapshot.current
+      if (!snap) return
+      setKeywords(snap.keywords)
+      setAiContext(snap.aiContext)
+      setRelevanceQuestion(snap.relevanceQuestion)
+      setTagTaxonomy(snap.tagTaxonomy)
+      setAssociationName(snap.associationName)
+      setOrgNoun(snap.orgNoun)
+      if ((PRESET_NOUNS as readonly string[]).includes(snap.orgNoun)) { setNounChoice(snap.orgNoun); setCustomNoun('') }
+      else { setNounChoice('custom'); setCustomNoun(snap.orgNoun) }
+      setNewMatchMinRelevance(snap.newMatchMinRelevance)
+      // Fields are being force-reverted to their last-saved values, so any
+      // pending "Undo a reset" affordance no longer applies to what's on screen.
+      setUndoValues({})
+    },
+  })
+
   const labelStyle: React.CSSProperties = FORM_LABEL
   const hintStyle: React.CSSProperties = { ...HELPER_TEXT, marginTop: 4 }
   const inputStyle: React.CSSProperties = { width: '100%', fontSize: fontSize.sm, padding: '8px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, boxSizing: 'border-box', fontFamily: 'inherit' }
   const selectStyle: React.CSSProperties = { fontSize: fontSize.sm, padding: '8px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, boxSizing: 'border-box', fontFamily: 'inherit', color: color.textSlate, background: color.white }
   const resetBtnStyle: React.CSSProperties = { fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: demoLocked ? 'not-allowed' : 'pointer', padding: 0, textDecoration: 'underline' }
+
+  // Renders either "Undo" (if this field was just reset/cleared) or the
+  // reset/clear trigger itself — mutually exclusive, same slot, same style.
+  function renderResetControl(field: ResettableField, hasValue: boolean, label: string) {
+    if (undoValues[field] !== undefined) {
+      return (
+        <button type='button' onClick={() => undoReset(field)} disabled={demoLocked} style={resetBtnStyle}>
+          Undo
+        </button>
+      )
+    }
+    if (!hasValue) return null
+    return (
+      <button type='button' onClick={() => resetToDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
+        {label}
+      </button>
+    )
+  }
 
   if (fetchError) return <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}><SettingsNav /><div style={{ color: color.textErrorRed, fontSize: fontSize.sm, marginTop: 24 }}>{fetchError}</div></div>
 
@@ -508,16 +634,12 @@ export function Config() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                 <label htmlFor="config-keywords" style={{ ...labelStyle, marginBottom: 0 }}>Keywords</label>
-                {keywords.trim() && (
-                  <button type='button' onClick={() => resetToDefault('keywords')} disabled={demoLocked} style={resetBtnStyle}>
-                    Clear
-                  </button>
-                )}
+                {renderResetControl('keywords', !!keywords.trim(), 'Clear')}
               </div>
               <ResizableTextarea
                 id="config-keywords"
                 value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
+                onChange={(e) => editField('keywords', setKeywords)(e.target.value)}
                 initialHeight={160}
                 minHeight={60}
                 style={{ fontFamily: 'monospace', fontSize: fontSize.sm }}
@@ -565,16 +687,12 @@ export function Config() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-ai-context" style={{ ...labelStyle, marginBottom: 0 }}>Bill summary</label>
-                  {aiContext.trim() && (
-                    <button type='button' onClick={() => resetToDefault('aiContext')} disabled={demoLocked} style={resetBtnStyle}>
-                      Reset to default
-                    </button>
-                  )}
+                  {renderResetControl('aiContext', !!aiContext.trim(), 'Reset to default')}
                 </div>
                 <ResizableTextarea
                   id="config-ai-context"
                   value={aiContext}
-                  onChange={(e) => setAiContext(e.target.value)}
+                  onChange={(e) => editField('aiContext', setAiContext)(e.target.value)}
                   initialHeight={160}
                   minHeight={60}
                   style={{ fontSize: fontSize.sm }}
@@ -591,16 +709,12 @@ export function Config() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-relevance-question" style={{ ...labelStyle, marginBottom: 0 }}>Relevance score</label>
-                  {relevanceQuestion.trim() && (
-                    <button type='button' onClick={() => resetToDefault('relevanceQuestion')} disabled={demoLocked} style={resetBtnStyle}>
-                      Reset to default
-                    </button>
-                  )}
+                  {renderResetControl('relevanceQuestion', !!relevanceQuestion.trim(), 'Reset to default')}
                 </div>
                 <ResizableTextarea
                   id="config-relevance-question"
                   value={relevanceQuestion}
-                  onChange={(e) => setRelevanceQuestion(e.target.value)}
+                  onChange={(e) => editField('relevanceQuestion', setRelevanceQuestion)(e.target.value)}
                   initialHeight={100}
                   minHeight={60}
                   style={{ fontSize: fontSize.sm }}
@@ -617,16 +731,12 @@ export function Config() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <label htmlFor="config-tag-taxonomy" style={{ ...labelStyle, marginBottom: 0 }}>Tags</label>
-                  {tagTaxonomy.trim() && (
-                    <button type='button' onClick={() => resetToDefault('tagTaxonomy')} disabled={demoLocked} style={resetBtnStyle}>
-                      Reset to default
-                    </button>
-                  )}
+                  {renderResetControl('tagTaxonomy', !!tagTaxonomy.trim(), 'Reset to default')}
                 </div>
                 <ResizableTextarea
                   id="config-tag-taxonomy"
                   value={tagTaxonomy}
-                  onChange={(e) => setTagTaxonomy(e.target.value)}
+                  onChange={(e) => editField('tagTaxonomy', setTagTaxonomy)(e.target.value)}
                   initialHeight={200}
                   minHeight={60}
                   style={{ fontFamily: 'monospace', fontSize: fontSize.sm }}
@@ -639,7 +749,7 @@ export function Config() {
                 </div>
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
-                    Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your group's own priorities and issue areas.
+                    Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your {orgNoun}'s own priorities and issue areas.
                   </div>
                 )}
               </div>
