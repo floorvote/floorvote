@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import type { CSSProperties, RefObject } from 'react'
-import { PopPanel } from './PopPanel'
+import { PopPanel, type PopPanelHandle } from './PopPanel'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 
 export interface OverflowMenuRow {
@@ -22,6 +22,7 @@ export function OverflowMenu({ rows, triggerStyle }: OverflowMenuProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const focusIndex = useRef(0)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const panelRef = useRef<PopPanelHandle>(null)
 
   const enabledRows = rows.filter(r => !r.disabled)
 
@@ -88,6 +89,7 @@ export function OverflowMenu({ rows, triggerStyle }: OverflowMenuProps) {
       </button>
       {open && (
         <PopPanel
+          ref={panelRef}
           onClose={() => { setOpen(false); triggerRef.current?.focus() }}
           positionStyle={positionStyle()}
           transformOrigin="top right"
@@ -107,7 +109,7 @@ export function OverflowMenu({ rows, triggerStyle }: OverflowMenuProps) {
                   disabled={row.disabled}
                   onClick={() => {
                     if (row.disabled) return
-                    setOpen(false)
+                    panelRef.current?.close()
                     row.onSelect()
                   }}
                   onFocus={() => {
