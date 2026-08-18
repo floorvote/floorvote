@@ -51,7 +51,7 @@ vi.mock('../context/FeedUnreadContext', () => ({
 }))
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 
-import { Feed, feedLoader } from './Feed'
+import { FeedPane, feedLoader } from './Feed'
 
 // Capturing IntersectionObserver — records the callback so the test can simulate
 // the sentinel scrolling into view exactly once.
@@ -74,7 +74,7 @@ const feedCalls = () => apiCalls.filter(c => c.includes('/feed'))
 
 it('auto-fills the initial load and adds a full batch per scroll', async () => {
   const router = createMemoryRouter(
-    [{ path: '/', element: <Feed />, loader: feedLoader }],
+    [{ path: '/', element: <FeedPane />, loader: feedLoader }],
     { initialEntries: ['/'] },
   )
   render(<RouterProvider router={router} />)
