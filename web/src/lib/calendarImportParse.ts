@@ -74,6 +74,12 @@ export interface ImportRowPreview {
   title: string; dateIso: string | null; rawDate?: string
   details: string | null; time: string | null; location: string | null; url: string | null
   raw: RawRow
+  /** ICS only: the VEVENT UID (suffixed per occurrence for a series). CSV rows derive one instead. */
+  uid?: string
+  /** ICS only: IANA zone for a timed event. CSV rows are date-only and leave this null. */
+  timezone?: string | null
+  /** Advisory text shown next to the status badge. Unlike `status`, it does NOT affect importability. */
+  notice?: string
 }
 
 export function rowToImport(raw: RawRow, map: HeaderMap): ImportRowPreview {
