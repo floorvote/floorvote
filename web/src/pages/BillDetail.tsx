@@ -1157,11 +1157,11 @@ export function BillDetail() {
             lastActionDate={bill.lastActionDate}
             relativeTime={relativeTime}
           />
-          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {isAdmin
               ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                  {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
+                  bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
                     ? (
                       <HoverTooltip text="New keyword match — set a priority or dismiss">
                         <NewMatchTriageControl
@@ -1186,26 +1186,13 @@ export function BillDetail() {
                       if (result?.promoted) startAnalyzingPoll()
                     }} placeholder="Priority not set" />
                   </HoverTooltip>
-                    )}
-                  {priorityMeta && (
-                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
-                      Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
-                    </div>
-                  )}
-                </div>
+                    )
               )
               : priority
                 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                     <HoverTooltip text="This bill's priority level">
                       <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
                     </HoverTooltip>
-                    {priorityMeta && (
-                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
-                        Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
-                      </div>
-                    )}
-                  </div>
                 )
                 : null
             }
@@ -1275,6 +1262,12 @@ export function BillDetail() {
               return menuRows
             })()} />
           </span>
+          {priorityMeta && (
+            <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+              Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
+            </div>
+          )}
+          </div>
         </div>
 
         {bill.isDraft && (
@@ -1791,7 +1784,7 @@ export function BillDetail() {
               : { background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '12px 16px', marginTop: 14, marginBottom: 0 }}
           >
             {regenerating && <div className="analyzing-box__stripes analyzing-box__stripes--animated" />}
-            <div className={regenerating ? 'analyzing-box__content' : undefined} style={regenerating ? { color: color.textMuted } : undefined}>
+            <div className={regenerating ? 'analyzing-box__content' : undefined}>
             {bill.tenantSummary && (
               <div style={{ marginBottom: bill.tags.length > 0 ? 10 : 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
@@ -1828,7 +1821,7 @@ export function BillDetail() {
                         )
                       })()}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
                     {bill.relevanceScore != null && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={SECTION_LABEL}>
@@ -1843,18 +1836,20 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
+                <div style={regenerating ? { opacity: 0.4 } : undefined}>
                 <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>
                   {bill.tenantSummary}
                 </MarkdownSummary>
+                </div>
               </div>
             )}
             {!bill.tenantSummary && bill.relevanceScore != null && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? { opacity: 0.4 } : {}) }}>
                 <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
               </div>
             )}
             {bill.tags.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                   {bill.tags.map((tag) => (
                     <button
