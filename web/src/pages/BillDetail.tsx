@@ -1157,11 +1157,11 @@ export function BillDetail() {
             lastActionDate={bill.lastActionDate}
             relativeTime={relativeTime}
           />
-          <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {isAdmin
               ? (
-                  bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
                     ? (
                       <HoverTooltip text="New keyword match — set a priority or dismiss">
                         <NewMatchTriageControl
@@ -1186,13 +1186,26 @@ export function BillDetail() {
                       if (result?.promoted) startAnalyzingPoll()
                     }} placeholder="Priority not set" />
                   </HoverTooltip>
-                    )
+                    )}
+                  {priorityMeta && (
+                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                      Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
+                    </div>
+                  )}
+                </div>
               )
               : priority
                 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                     <HoverTooltip text="This bill's priority level">
                       <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
                     </HoverTooltip>
+                    {priorityMeta && (
+                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                        Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
+                      </div>
+                    )}
+                  </div>
                 )
                 : null
             }
@@ -1262,12 +1275,6 @@ export function BillDetail() {
               return menuRows
             })()} />
           </span>
-          {priorityMeta && (
-            <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
-              Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
-            </div>
-          )}
-          </div>
         </div>
 
         {bill.isDraft && (
