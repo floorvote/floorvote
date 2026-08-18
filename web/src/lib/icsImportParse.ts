@@ -10,6 +10,31 @@ export function isIcs(text: string): boolean {
   return /^﻿?\s*BEGIN:VCALENDAR/i.test(text)
 }
 
+/**
+ * Outlook writes Windows zone names ("Central Standard Time"), not IANA ones. They must be
+ * translated: the server's sanitizeTimezone requires an Area/City shape, so an untranslated
+ * Windows name is silently dropped and the outbound feed loses the event's anchor.
+ *
+ * US zones only — an unmapped name falls through to the caller's fallback zone, which is the
+ * same behaviour as a DTSTART carrying no zone at all.
+ */
+const WINDOWS_TZ: Record<string, string> = {
+  'eastern standard time': 'America/New_York',
+  'central standard time': 'America/Chicago',
+  'mountain standard time': 'America/Denver',
+  'us mountain standard time': 'America/Phoenix',   // Arizona, no DST
+  'pacific standard time': 'America/Los_Angeles',
+  'alaskan standard time': 'America/Anchorage',
+  'hawaiian standard time': 'Pacific/Honolulu',
+  'utc': 'UTC',
+}
+
+/** An IANA zone already contains a slash; anything else may be a Windows name. */
+function toIana(tzid: string): string | null {
+  if (tzid.includes('/')) return tzid
+  return WINDOWS_TZ[tzid.trim().toLowerCase()] ?? null
+}
+
 const pad = (n: number) => String(n).padStart(2, '0')
 
 /** Render a UTC instant as wall-clock date + time in `tz`. Used only for a zoneless UTC DTSTART. */
@@ -45,11 +70,14 @@ function resolveTime(t: ICAL.Time, fallbackTz: string): Resolved {
     return { dateIso: ymd, time: `${pad(t.hour)}:${pad(t.minute)}`, timezone: null }
   }
   if (tzid === 'UTC' || tzid === 'Z') {
-    // A true UTC instant. Convert into the importing admin's zone, mirroring Calendar.tsx:216.
+    // A true UTC instant, so it says nothing about where the event happens. Resolve it against
+    // the caller's zone — the tenant's own jurisdiction where known, not the admin's browser.
     const { date, time } = toWallClock(t.toJSDate(), fallbackTz)
     return { dateIso: date, time, timezone: fallbackTz }
   }
-  return { dateIso: ymd, time: `${pad(t.hour)}:${pad(t.minute)}`, timezone: tzid }
+  // Wall clock is already correct whatever the zone is named; only the recorded zone needs
+  // translating. An unrecognised name is dropped rather than stored in a form the server rejects.
+  return { dateIso: ymd, time: `${pad(t.hour)}:${pad(t.minute)}`, timezone: toIana(tzid) }
 }
 
 /**

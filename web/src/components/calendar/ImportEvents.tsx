@@ -5,6 +5,8 @@ import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens
 import { matchHeaders, rowToImport, type ImportRowPreview, type RawRow } from '../../lib/calendarImportParse'
 import { parseIcs, isIcs } from '../../lib/icsImportParse'
 import { useDemo } from '../../context/DemoContext'
+import { useConfig } from '../../context/ConfigContext'
+import { tzidForState } from '../../../../shared/stateTimezones'
 
 interface Props {
   onClose: () => void
@@ -52,6 +54,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { demoLocked } = useDemo()
+  const { config } = useConfig()
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -70,8 +73,13 @@ export function ImportEvents({ onClose, onImported }: Props) {
       const text = await file.text()
       if (isIcs(text)) {
         // Fields are already named in an ICS, so the CSV header-matching step is skipped.
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone
-        const parsed = parseIcs(text, browserTz)
+        //
+        // A UTC DTSTART says nothing about WHERE the event happens, so it has to be resolved
+        // against some zone. Prefer the tenant's own jurisdiction: an admin in DC importing a
+        // Texas deadline calendar should get Central wall-clock, not Eastern. Only a
+        // multi-state tenant (where no single state applies) falls back to the browser.
+        const tenantTz = config?.states?.length === 1 ? tzidForState(config.states[0]) : null
+        const parsed = parseIcs(text, tenantTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
         if (parsed.length === 0) {
           setError('No events found in this calendar file.')
           return

@@ -98,4 +98,26 @@ describe('parseIcs', () => {
   it('returns an empty array for a calendar with no events', () => {
     expect(parseIcs(wrap('BEGIN:VTODO\r\nUID:t@x\r\nEND:VTODO'), 'UTC')).toEqual([])
   })
+
+  it('maps an Outlook Windows zone name to its IANA equivalent', () => {
+    const OUTLOOK_VTIMEZONE = [
+      'BEGIN:VTIMEZONE', 'TZID:Central Standard Time',
+      'BEGIN:STANDARD', 'DTSTART:16011104T020000', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0600',
+      'RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11', 'END:STANDARD',
+      'BEGIN:DAYLIGHT', 'DTSTART:16010311T020000', 'TZOFFSETFROM:-0600', 'TZOFFSETTO:-0500',
+      'RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3', 'END:DAYLIGHT',
+      'END:VTIMEZONE',
+    ].join('\r\n')
+    const [r] = parseIcs(wrap(`${OUTLOOK_VTIMEZONE}\r\nBEGIN:VEVENT\r\nUID:w@x\r\nSUMMARY:Hearing\r\nDTSTART;TZID=Central Standard Time:20260916T140000\r\nEND:VEVENT`), 'America/New_York')
+    expect(r.time).toBe('14:00')            // wall clock is preserved verbatim
+    expect(r.timezone).toBe('America/Chicago')  // NOT the Windows name, which the server would drop
+  })
+
+  it('resolves a zoneless UTC DTSTART against the zone the caller supplies', () => {
+    const ics = 'BEGIN:VEVENT\r\nUID:u@x\r\nSUMMARY:Cutoff\r\nDTSTART:20260918T210000Z\r\nEND:VEVENT'
+    // Same instant, different jurisdiction: the tenant's zone must win over the admin's.
+    expect(parseIcs(wrap(ics), 'America/Chicago')[0]).toMatchObject({ time: '16:00', timezone: 'America/Chicago' })
+    expect(parseIcs(wrap(ics), 'America/New_York')[0]).toMatchObject({ time: '17:00', timezone: 'America/New_York' })
+  })
+
 })
