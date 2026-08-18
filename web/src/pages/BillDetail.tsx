@@ -1127,7 +1127,7 @@ export function BillDetail() {
       <div style={{ ...CARD, padding: '20px 24px' }}>
 
         {/* Chip strip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: priorityMeta ? 20 : 12 }}>
           <BillBadge
             billNumber={bill.billNumber}
             state={bill.state}
@@ -1160,7 +1160,7 @@ export function BillDetail() {
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             {isAdmin
               ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                   {bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed
                     ? (
                       <HoverTooltip text="New keyword match — set a priority or dismiss">
@@ -1188,7 +1188,7 @@ export function BillDetail() {
                   </HoverTooltip>
                     )}
                   {priorityMeta && (
-                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                    <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                       Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
                     </div>
                   )}
@@ -1196,12 +1196,12 @@ export function BillDetail() {
               )
               : priority
                 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', position: 'relative' }}>
                     <HoverTooltip text="This bill's priority level">
                       <PriorityBadge priority={priority} onClick={() => navigate(`/bills?priority=${priority}`)} />
                     </HoverTooltip>
                     {priorityMeta && (
-                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default' }}>
+                      <div title={absoluteTime(priorityMeta.updatedAt)} style={{ ...CHROME_TEXT, marginTop: 3, cursor: 'default', position: 'absolute', top: '100%', left: 0, whiteSpace: 'nowrap' }}>
                         Set by {priorityMeta.setByName} · {relativeTime(priorityMeta.updatedAt)}
                       </div>
                     )}
