@@ -108,10 +108,14 @@ export function NotificationsSlideOver(
   // The panel is portaled to <body> and positioned against the viewport.
   // On phones (≤768px, where the sidebar is a drawer) a fixed 400px panel
   // runs off the right edge, so span the viewport width with small insets.
+  // Position is measured from the bell button's rect so the panel sits below
+  // whatever is above it (topbar, demo banner, etc.) rather than hardcoding
+  // a chrome-height offset that breaks when the banner is present.
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768
+  const bellBottom = triggerRef?.current?.getBoundingClientRect().bottom ?? 48
   const positionStyle = isMobile
-    ? { position: 'fixed' as const, top: 46, left: 8, right: 8, maxHeight: 'min(70vh, 560px)', display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
-    : { position: 'fixed' as const, top: 46, left: 162, width: 400, maxHeight: 560, display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
+    ? { position: 'fixed' as const, top: bellBottom + 4, left: 8, right: 8, maxHeight: 'min(70vh, 560px)', display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
+    : { position: 'fixed' as const, top: bellBottom + 4, left: 162, width: 400, maxHeight: 560, display: 'flex' as const, flexDirection: 'column' as const, overflow: 'hidden' as const }
 
   // Freeze the mentions the context held when the panel opened.
   //
