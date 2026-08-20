@@ -1,6 +1,6 @@
 # Architecture
 
-FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to LegiScan, stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls LegiScan directly. That way your legislative-API usage stays on a single account no matter how many tenants you run.
+FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to LegiScan, stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls LegiScan directly. That way all legislative-API traffic comes from one place, on a schedule you control, however many tenants you run.
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ For the full, code-grounded pipeline — the cron passes, the ingestor, deduplic
 
 The central-and-tenant split isn't just a diagram — each piece answers a real constraint.
 
-**One shared LegiScan account.** Legislative data providers meter access by account, so if every tenant called the API directly, a deployment with ten tenants would need ten subscriptions and would burn through query quota ten times as fast. Centralizing that one account means every tenant benefits from the same data without paying for it, or rate-limiting against it, individually.
+**One cache, one caller.** Legislative APIs meter and rate-limit per account, and the same bill is usually of interest to more than one tenant. Central holds the provider account and the only copy of the bill text, so a bill is fetched once and read many times, and every request to the provider comes from a single hourly sync rather than from N tenants calling independently and racing each other's rate limits. Quota is then something you can see and plan for in one place — which is also why the seeding tools prefer the provider's bulk datasets over the API, and why there is no match-all keyword mode. Size your provider plan to the coverage and volume you actually need; see [How much does it cost?](/overview/how-much-does-it-cost#legiscan-free-for-most-paid-for-heavy-users).
 
 **One provider interface.** Central reads legislative data through a provider interface (`central/src/providers/`), not a hardcoded vendor. LegiScan is the maintained implementation; an OpenStates provider sits alongside it, and adding another means writing one adapter against that interface rather than touching the pipeline. Everything downstream of central — storage, fan-out, tenants, AI — is provider-agnostic.
 

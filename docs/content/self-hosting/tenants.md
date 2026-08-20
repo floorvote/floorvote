@@ -324,7 +324,7 @@ While you're here, set the **org noun** (team / association / coalition / custom
 
 ### Getting AI on every bill
 
-Blank keywords buy you a free look at the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared 30,000-calls/month quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
+Blank keywords match the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared 30,000-calls/month quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
 
 What works instead: write broad keywords that cover your real scope, or manually promote the specific bills you care about once they're in view as stubs.
 

@@ -72,7 +72,7 @@ flowchart TB
   C -->|per-tenant queue| TB["Tenant B — Worker + D1 + Queue"]
 ```
 
-**Central** — one per operator. It makes every legislative API call and stores all bill text, so you pay for one LegiScan key no matter how many teams you run. It does no AI processing.
+**Central** — one per operator. It makes every legislative API call and stores all bill text, so provider traffic, caching, and quota all sit in one place however many teams you run. It does no AI processing.
 
 **Tenants** — one per team. Each runs the AI pass (summary, tags, relevance score) using its own configured context and taxonomy, keeps its own D1 database, serves the React app via Workers Assets, and never calls LegiScan directly. Because relevance is scored per team, the same bill can score very differently for two teams.
 
