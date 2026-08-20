@@ -1,15 +1,16 @@
 /* Type system, shared with floorvote.org and with the app.
    ------------------------------------------------------------------------
-   Body copy is Inter, which VitePress already bundles — hence no override of
-   --vp-font-family-base here, and no second copy of Inter to download.
+   Body copy and headings are Inter, which VitePress already bundles — hence no
+   override of --vp-font-family-base here, and no second copy to download.
 
-   Archivo, the brand face, is used in two places and only two:
+   Archivo, the brand face, is reserved for the identity zone: the wordmark and
+   the primary nav. On this site the primary nav is the sidebar, which mirrors
+   the app, where Feed / Bills / Calendar are Archivo at medium weight. See the
+   BRAND_FONT note in shared/tokens.ts.
 
-   - Headings. Matches floorvote.org, where the h1 sits directly under the
-     lockup and reads as brand rather than as generic bold sans.
-   - The sidebar, which is this site's primary nav. That mirrors the app,
-     where the primary sidebar nav (Feed / Bills / Calendar) is Archivo at
-     medium weight — see the BRAND_FONT note in shared/tokens.ts.
+   Headings are deliberately *not* Archivo. A display face on every heading
+   spends the brand's distinctiveness on chrome and leaves the wordmark less
+   special, which is the whole point of scoping it.
 
    Sizes are not matched to the marketing site: 17px body and a 48px h1 are
    display typography for one screen, while these are documentation sizes tuned
@@ -19,22 +20,15 @@
   --fv-font-brand: 'Archivo', var(--vp-font-family-base);
 }
 
-/* 700 to match the marketing site's section and feature headings. VitePress
-   ships 600, which reads noticeably lighter beside it. The docs h1 stays at 700
-   rather than the marketing hero's 800: that 800 lives at 48px, and this h1 is
-   32px — the size the marketing h2 occupies, which is 700. */
+/* Heading weight matches the marketing site's sections and features, which are
+   700. VitePress ships 600, which reads noticeably lighter beside it. The docs
+   h1 stays at 700 rather than the marketing hero's 800: that 800 lives at 48px,
+   and this h1 is 32px — the size the marketing h2 occupies, which is 700. */
 .vp-doc h1,
 .vp-doc h2,
 .vp-doc h3,
 .vp-doc h4 {
-  font-family: var(--fv-font-brand);
   font-weight: 700;
-}
-
-/* Home page hero and feature cards use their own classes, not .vp-doc. */
-.VPHero .text,
-.VPFeature .title {
-  font-family: var(--fv-font-brand);
 }
 
 /* Primary nav: the sidebar. Weight is left to the theme (500 for links, 700 for

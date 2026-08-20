@@ -128,16 +128,15 @@ export const fontWeight = {
 } as const
 
 // ---------------------------------------------------------------------------
-// Brand display face — Archivo. In the app it is scoped to the identity zone:
-// the wordmark and the primary sidebar nav (Feed / Bills / Calendar). The rest
-// of the app UI is Inter (set on <body> in web/index.html). Both families load
-// there.
+// Brand display face — Archivo. Scoped to the identity zone only: the wordmark
+// and the primary nav. In the app that is the sidebar (Feed / Bills / Calendar)
+// at medium weight; on floorvote.org it is the top nav links, and in the docs
+// the sidebar. Everything else — body copy and headings, on all three — is Inter
+// (set on <body> in web/index.html). Both families load there.
 //
-// The web properties (floorvote.org and the docs) additionally set their
-// headings in Archivo, since a heading there sits under the lockup and reads as
-// brand rather than as chrome. Their body copy is Inter and their primary nav is
-// Archivo at medium weight, matching the sidebar here. If you are tempted to
-// "fix" a heading back to Inter on those sites, that is the reason it is not.
+// Headings are deliberately not Archivo. Setting every heading in the display
+// face spends the brand's distinctiveness on chrome and leaves the wordmark less
+// special, which is the reason for scoping it in the first place.
 // ---------------------------------------------------------------------------
 
 export const BRAND_FONT = "'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
