@@ -813,4 +813,62 @@ describe('overflow menu', () => {
     // With tags=[] the tag row should be absent entirely (no empty flex container)
     expect(screen.queryByText('Re-generate')).not.toBeInTheDocument()
   })
+
+  it('hides Re-generate on a lightweight bill with no analysis to re-generate', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+  })
+
+  it('hides Re-generate on a tracked bill whose analysis never landed', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: 'keyword', tenantSummary: null, tags: [], relevanceScore: null, textStatus: 'in_r2' })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+  })
+
+  it('still offers Re-generate when only tags exist', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.getByRole('menuitem', { name: /Re-generate/ })).toBeInTheDocument()
+  })
+
+  it('renders exactly one analysis box on a lightweight bill', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
+  })
+
+  it('keeps the promote button label stable while a run is in flight', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'Enable full analysis' }))
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Analyzing…'))
+      expect(screen.getByRole('button', { name: 'Enable full analysis' })).toBeDisabled()
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
 })

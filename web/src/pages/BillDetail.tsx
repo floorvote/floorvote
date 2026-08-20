@@ -54,6 +54,8 @@ import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { useMultiState } from '../context/ConfigContext'
+import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
+import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -988,27 +990,19 @@ export function BillDetail() {
     if (!bill) return
     setPendingPromote(true)
     setPromoteTimeoutMsg(null)
-    const startedAt = Date.now()
-    const POLL_MS = 5000
-    const TIMEOUT_MS = 3 * 60 * 1000
-    const poll = async () => {
-      try {
-        const r = await fetch(`/api/bills/${bill.id}`, { credentials: 'include' })
-        if (r.ok) {
-          const fresh = await r.json()
-          if (fresh.aiProcessedAt) { setPendingPromote(false); refetchBill(); return }
-          if (fresh.textStatus === 'no_texts') { setPendingPromote(false); refetchBill(); return }
-          if (fresh.aiSkipReason) { setPendingPromote(false); refetchBill(); return }
-        }
-      } catch { /* swallow polling errors; retry */ }
-      if (Date.now() - startedAt > TIMEOUT_MS) {
-        setPendingPromote(false)
-        setPromoteTimeoutMsg('AI did not complete within 3 minutes. Try refreshing the page in a few minutes.')
-        return
-      }
-      setTimeout(poll, POLL_MS)
-    }
-    setTimeout(poll, POLL_MS)  // first check after 5s
+    const baselineProcessedAt = bill.aiProcessedAt
+    const billId = bill.id
+    void pollForAnalysis({
+      fetchSnapshot: async () => {
+        const r = await fetch(`/api/bills/${billId}`, { credentials: 'include' })
+        return r.ok ? await r.json() : null
+      },
+      baselineProcessedAt,
+    }).then((outcome) => {
+      setPendingPromote(false)
+      setPromoteTimeoutMsg(analysisOutcomeMessage(outcome))
+      if (outcome !== 'timeout') refetchBill()
+    })
   }
 
   async function handlePromote() {
@@ -1052,6 +1046,10 @@ export function BillDetail() {
 
   async function handleRegenerate() {
     if (regenerating || demoLocked || !bill) return
+    // Belt and braces behind the menu gate: a stub has no text in the tenant's
+    // own store, so reprocess-bill cannot produce anything. Promoting is the
+    // operation the caller actually wants.
+    if (bill.matchType === null) return handlePromote()
     setRegenerateError(null)
     const prevProcessedAt = bill.aiProcessedAt
     setRegenerating(true)
@@ -1064,34 +1062,16 @@ export function BillDetail() {
         const data = await res.json().catch(() => ({ error: res.statusText }))
         throw new Error(data.error ?? `Regenerate failed (${res.status})`)
       }
-      const startedAt = Date.now()
-      const POLL_MS = 5000
-      const TIMEOUT_MS = 3 * 60 * 1000
-      const poll = async () => {
-        try {
+      const outcome = await pollForAnalysis({
+        fetchSnapshot: async () => {
           const r = await fetch(`/api/bills/${bill.id}`, { credentials: 'include' })
-          if (r.ok) {
-            const fresh = await r.json()
-            if (fresh.aiProcessedAt && fresh.aiProcessedAt !== prevProcessedAt) {
-              setRegenerating(false)
-              refetchBill()
-              return
-            }
-            if (fresh.aiSkipReason) {
-              setRegenerating(false)
-              refetchBill()
-              return
-            }
-          }
-        } catch { /* swallow polling errors; retry */ }
-        if (Date.now() - startedAt > TIMEOUT_MS) {
-          setRegenerating(false)
-          setRegenerateError('AI did not finish within 3 minutes. Try refreshing in a few minutes.')
-          return
-        }
-        setTimeout(poll, POLL_MS)
-      }
-      setTimeout(poll, POLL_MS)
+          return r.ok ? await r.json() : null
+        },
+        baselineProcessedAt: prevProcessedAt,
+      })
+      setRegenerating(false)
+      setRegenerateError(analysisOutcomeMessage(outcome))
+      if (outcome !== 'timeout') refetchBill()
     } catch (e) {
       setRegenerating(false)
       setRegenerateError(e instanceof Error ? e.message : String(e))
@@ -1106,6 +1086,12 @@ export function BillDetail() {
   if (error || !bill) return <div style={{ padding: 32, color: color.textErrorRed }}>{error ?? 'Bill not found.'}</div>
 
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
+
+  // "Is there analysis to re-generate?" — the single predicate behind both the
+  // overflow menu's Re-generate item and the AI summary section's presence.
+  // Sharing it is what makes a second progress box impossible: the section
+  // cannot appear for a bill the menu won't offer the action on.
+  const hasAnalysis = !!bill.tenantSummary || bill.tags.length > 0 || bill.relevanceScore != null
 
   // Separators between collapsible sections — no border above the first one
   const hasBillText = bill.texts.length > 0 && !!bill.textR2Key
@@ -1243,7 +1229,13 @@ export function BillDetail() {
                   },
                 },
               ]
-              if (isAdmin) {
+              // Re-generate replaces existing AI output. Offering it on a bill
+              // that has none sent an un-promoted stub down the reprocess path,
+              // where the queue consumer skips AI for want of bill text — so it
+              // spun for three minutes and produced nothing. Those bills get the
+              // in-page "Enable full analysis" button instead, which promotes
+              // via central and fetches the text first.
+              if (isAdmin && hasAnalysis) {
                 menuRows.push({
                   key: 'regenerate',
                   label: 'Re-generate AI summary, tags, and relevance',
@@ -1597,7 +1589,7 @@ export function BillDetail() {
 
           const inner = (
             <>
-              <p style={{ fontSize: fontSize.base, color: color.textSlate, margin: (isAdmin && hasAdminContent) ? '0 0 10px 0' : 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: fontSize.base, color: color.textSlate, margin: (isAdmin && hasAdminContent) ? '0 0 10px 0' : 0, lineHeight: 1.5, ...(pendingPromote ? DIMMED_WHILE_RUNNING : {}) }}>
                 {message}
               </p>
               {canRunAnalysis && (
@@ -1617,34 +1609,21 @@ export function BillDetail() {
                         fontSize: fontSize.sm,
                         fontWeight: fontWeight.medium,
                         lineHeight: 1.4,
+                        ...(pendingPromote ? DIMMED_WHILE_RUNNING : {}),
                       }}
                     >
-                      {pendingPromote ? 'AI is running…' : promoting ? 'Queueing…' : promoteLabel}
+                      {promoting ? 'Queueing…' : promoteLabel}
                     </button>
-                    {isLightweight && (
+                    {pendingPromote && <AnalysisProgressChip label="Analyzing…" />}
+                    {isLightweight && !pendingPromote && (
                       <>
                         <span style={{ color: color.textMuted, fontSize: fontSize.sm }}>OR</span>
-                        <Link
-                          to="/admin/config"
-                          className="blue-link"
-                          style={{ fontSize: fontSize.sm }}
-                        >
+                        <Link to="/admin/config" className="blue-link" style={{ fontSize: fontSize.sm }}>
                           Adjust keywords to capture bills like this.
                         </Link>
                       </>
                     )}
                   </div>
-                  {pendingPromote && (
-                    <span style={{ fontSize: fontSize.sm, color: color.textSecondary }}>
-                      AI is running. This usually takes 10–60 seconds.
-                    </span>
-                  )}
-                  {promoteError && (
-                    <span style={{ fontSize: fontSize.sm, color: color.textDanger }} role="alert">{promoteError}</span>
-                  )}
-                  {promoteTimeoutMsg && (
-                    <span style={{ fontSize: fontSize.sm, color: color.textDanger }} role="alert">{promoteTimeoutMsg}</span>
-                  )}
                 </div>
               )}
             </>
@@ -1652,10 +1631,9 @@ export function BillDetail() {
 
           if (isLightweight || isStuck) {
             return (
-              <div className="analyzing-box">
-                <div className={`analyzing-box__stripes${pendingPromote ? ' analyzing-box__stripes--animated' : ''}`} />
-                <div className="analyzing-box__content">{inner}</div>
-              </div>
+              <AnalysisBox running={pendingPromote} hatched error={promoteError ?? promoteTimeoutMsg}>
+                {inner}
+              </AnalysisBox>
             )
           }
 
@@ -1783,15 +1761,8 @@ export function BillDetail() {
         })()}
 
         {/* AI summary / tags / relevance — shown when there is content to display (not for drafts) */}
-        {!bill.isDraft && (bill.tenantSummary || bill.tags.length > 0 || bill.relevanceScore != null || (isAdmin && regenerating)) && (
-          <div
-            className={regenerating ? 'analyzing-box' : undefined}
-            style={regenerating
-              ? { marginBottom: 0 }
-              : { background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '12px 16px', marginTop: 14, marginBottom: 0 }}
-          >
-            {regenerating && <div className="analyzing-box__stripes analyzing-box__stripes--animated" />}
-            <div className={regenerating ? 'analyzing-box__content' : undefined}>
+        {!bill.isDraft && hasAnalysis && (
+          <AnalysisBox running={regenerating} error={regenerateError}>
             {bill.tenantSummary && (
               <div style={{ marginBottom: bill.tags.length > 0 ? 10 : 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
@@ -1800,12 +1771,7 @@ export function BillDetail() {
                       AI Summary
                     </span>
                     {regenerating
-                      ? (
-                        <span className="regenerating-label">
-                          <span className="material-symbols-outlined regenerating-label__icon">autorenew</span>
-                          Regenerating…
-                        </span>
-                      )
+                      ? <AnalysisProgressChip label="Regenerating…" />
                       : bill.tenantSummary && bill.lastAiTextDocId && (() => {
                         const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
                         if (!text) return null
@@ -1828,7 +1794,7 @@ export function BillDetail() {
                         )
                       })()}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, ...(regenerating ? DIMMED_WHILE_RUNNING : {}) }}>
                     {bill.relevanceScore != null && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={SECTION_LABEL}>
@@ -1843,7 +1809,7 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
-                <div style={regenerating ? { opacity: 0.4 } : undefined}>
+                <div style={regenerating ? DIMMED_WHILE_RUNNING : undefined}>
                 <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>
                   {bill.tenantSummary}
                 </MarkdownSummary>
@@ -1851,12 +1817,12 @@ export function BillDetail() {
               </div>
             )}
             {!bill.tenantSummary && bill.relevanceScore != null && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? { opacity: 0.4 } : {}) }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', ...(regenerating ? DIMMED_WHILE_RUNNING : {}) }}>
                 <RelevanceChip score={bill.relevanceScore} showLabel onClick={() => navigate(`/bills?minRelevance=${bill.relevanceScore}`)} />
               </div>
             )}
             {bill.tags.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0, ...(regenerating ? { opacity: 0.4 } : {}) }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: bill.tenantSummary || bill.abstract ? 10 : 0, ...(regenerating ? DIMMED_WHILE_RUNNING : {}) }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                   {bill.tags.map((tag) => (
                     <button
@@ -1872,11 +1838,7 @@ export function BillDetail() {
                 </div>
               </div>
             )}
-            {regenerateError && (
-              <div style={{ fontSize: fontSize.sm, color: color.textDanger, marginTop: 8 }} role="alert">{regenerateError}</div>
-            )}
-            </div>{/* end analyzing-box__content wrapper */}
-          </div>
+          </AnalysisBox>
         )}
 
         {/* Draft summary + bill text — draft-only blocks replacing AI section */}
