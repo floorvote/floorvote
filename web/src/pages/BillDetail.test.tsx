@@ -149,7 +149,11 @@ const BILL = {
   createdAt: '2025-01-01 00:00:00',
   updatedAt: '2025-01-01 00:00:00',
   centralSyncedAt: null,
-  aiProcessedAt: null,
+  // Non-null and coherent with the other timestamps: the queue processor writes
+  // tenantSummary/tags/relevanceScore/aiProcessedAt in one statement, so a
+  // fixture carrying analysis fields must carry the timestamp too. Tests that
+  // want the analysis-absent or stuck shapes clear all four explicitly.
+  aiProcessedAt: '2025-01-01 00:00:00',
   aiSkipReason: null,
   lastAiTextDocId: null,
   textStatus: 'not_checked' as const,
@@ -255,7 +259,18 @@ describe('BillDetail stuck-state repair affordance', () => {
   beforeEach(() => { vi.restoreAllMocks(); authState.role = 'member' })
 
   // A tracked bill with text present in R2 but no AI output yet = the dead state.
-  const STUCK = { matchType: 'manual' as const, textStatus: 'in_r2' as const, aiProcessedAt: null, aiSkipReason: null, tenantSummary: null }
+  // relevanceScore/tags cleared too: the base fixture carries a score, and "no AI
+  // output yet" means none of the analysis fields landed, not just the summary.
+  // Leaving the score set would describe a row the pipeline cannot produce.
+  const STUCK = {
+    matchType: 'manual' as const,
+    textStatus: 'in_r2' as const,
+    aiProcessedAt: null,
+    aiSkipReason: null,
+    tenantSummary: null,
+    tags: [],
+    relevanceScore: null,
+  }
 
   it('shows a Run analysis button to admins for a stuck tracked bill', async () => {
     authState.role = 'admin'
@@ -284,7 +299,7 @@ describe('BillDetail stuck-state repair affordance', () => {
 
   it('still shows Enable full analysis (not Run analysis) for a lightweight stub to admins', async () => {
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: null, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null, tenantSummary: null })
+    makeMockApiFetch({ matchType: null, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null, tenantSummary: null, tags: [], relevanceScore: null })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await screen.findByText('Test Bill')
     expect(await screen.findByRole('button', { name: /enable full analysis/i })).toBeInTheDocument()
@@ -768,7 +783,7 @@ describe('overflow menu', () => {
     expect(items[1]).toHaveTextContent(/Re-generate/)
   })
 
-  it('shows Copy link + Re-generate + Delete draft for an admin on a draft bill', async () => {
+  it('shows Copy link + Delete draft (and no Re-generate) for an admin on a draft bill', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
     makeMockApiFetch({ isDraft: true })
@@ -776,8 +791,22 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(3)
-    expect(items[2]).toHaveTextContent(/Delete this draft bill/)
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+    expect(items[1]).toHaveTextContent(/Delete this draft bill/)
+    // Drafts have no externalId, so reprocess-bill has nothing to address.
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+  })
+
+  it('hides Re-generate on a draft bill that carries a hand-written summary', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ isDraft: true, matchType: 'manual', externalId: null, tenantSummary: 'Hand-written draft summary.' })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /Copy link to bill/ })).toBeInTheDocument()
   })
 
   it('does not render old inline Re-generate button', async () => {
@@ -812,5 +841,166 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     // With tags=[] the tag row should be absent entirely (no empty flex container)
     expect(screen.queryByText('Re-generate')).not.toBeInTheDocument()
+  })
+
+  it('hides Re-generate on a lightweight bill with no analysis to re-generate', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    const items = screen.getAllByRole('menuitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+  })
+
+  it('hides Re-generate on a tracked bill whose analysis never landed', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: 'keyword', aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null, textStatus: 'in_r2' })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+  })
+
+  it('still offers Re-generate when only tags exist', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.getByRole('menuitem', { name: /Re-generate/ })).toBeInTheDocument()
+  })
+
+  it('renders exactly one analysis box on a lightweight bill', async () => {
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
+    const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
+  })
+
+  it('renders exactly one analysis box for an incoherent row (analysis fields, NULL aiProcessedAt)', async () => {
+    // The shape this branch removed from the seed: the pipeline writes
+    // ai_processed_at and the analysis fields in one statement, so a row with
+    // one and not the other should not exist -- but if one does (hand-edited DB,
+    // bad seed, future partial write) it must not satisfy both section gates.
+    authState.role = 'admin'
+    makeMockApiFetch({
+      matchType: 'keyword',
+      aiProcessedAt: null,
+      tenantSummary: 'Summary that arrived without a timestamp.',
+      tags: ['tax'],
+      relevanceScore: 70,
+      textStatus: 'in_r2',
+    })
+    const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
+  })
+
+  it('announces a re-generate on a bill whose analysis is tags only', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    // hasAnalysis satisfied by tags alone: no summary, no relevance score. The
+    // chip used to be nested under bill.tenantSummary, so this bill dimmed and
+    // animated with nothing announced.
+    makeMockApiFetch({ tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Regenerating…'))
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('keeps the promote button label stable while a run is in flight', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'Enable full analysis' }))
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Analyzing…'))
+      expect(screen.getByRole('button', { name: 'Enable full analysis' })).toBeDisabled()
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  // ── handleRegenerate's matchType===null && !aiProcessedAt guard ────────────
+  // See the comment above the guard in BillDetail.tsx: it must stay narrowed to
+  // BOTH conjuncts. These two tests pin the guard by inspecting which endpoint
+  // actually gets POSTed, so a regression that re-widens the guard to
+  // `matchType === null` alone (dropping the `!bill.aiProcessedAt` half) fails
+  // one of them.
+
+  it('demoted-but-analyzed: Re-generate posts to reprocess-bill, not promote-bill', async () => {
+    // matchType cleared to null but aiProcessedAt still set and analysis fields
+    // retained (hasAnalysis true via the default tenantSummary). Central still
+    // has full text for this bill, so reprocess-bill is the correct, working
+    // path -- delegating to promote here would render no chip and no error for
+    // three minutes, then silently re-track the bill as manual.
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: '2025-06-01 00:00:00' })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]))
+      expect(urls.some(u => u.includes('/api/admin/reprocess-bill/legiscan%3A42'))).toBe(true)
+      expect(urls.some(u => u.includes('/api/admin/promote-bill/'))).toBe(false)
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('never-processed row with stray analysis fields: Re-generate delegates to promote-bill', async () => {
+    // matchType null AND aiProcessedAt null (never actually processed), but
+    // hasAnalysis is satisfied by a stray tag so the Re-generate menu item is
+    // still offered -- the exact incoherent shape covered by the "renders
+    // exactly one analysis box" test above. There is no full text for this
+    // bill at central yet, so reprocess-bill would queue a run the consumer
+    // silently skips; promote-bill is the only path with anywhere to show the
+    // outcome. This is the branch a re-widened guard (matchType alone) would
+    // stop reaching, because it would never fall through to the reprocess call
+    // this test differentiates against.
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]))
+      expect(urls.some(u => u.includes('/api/admin/promote-bill/42'))).toBe(true)
+      expect(urls.some(u => u.includes('/api/admin/reprocess-bill/'))).toBe(false)
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 })
