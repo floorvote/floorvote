@@ -1,0 +1,61 @@
+/* The docs footer carries the same four credits as floorvote.org, in the same
+   order, and is styled to match that footer rather than VitePress's default:
+   left-aligned instead of centred, the marketing site's system font stack, and
+   its 14px / #5e697d treatment. Logos are deliberately left out — they live in
+   the other repo, and repeating two lockups under every docs page is more
+   chrome than a reference site wants. */
+
+/* VitePress hides the global footer on every page that has a sidebar, i.e.
+   everything except the hub, which left the licence credit invisible where
+   almost all reading happens. !important because the theme's rule outranks a
+   plain override and matching its specificity is version-fragile. */
+.VPFooter.has-sidebar {
+  display: block !important;
+}
+
+/* The footer is a child of .Layout rather than of the content column, so once
+   it is visible on sidebar pages it has to reproduce VPDoc's box model or the
+   credits sit under the sidebar, or drift out of line with the body text as the
+   viewport grows: the same sidebar offset, the same 32px gutters, and the same
+   1104px centred container.
+
+   Note this aligns to .VPDoc .container, the content column itself. Aligning to
+   .content-container would not hold — that element is centred inside the
+   content area, so it shifts with the "On this page" aside. */
+.VPFooter .container {
+  max-width: 1104px;
+  margin-inline: auto;
+  padding-inline: 0;
+  text-align: left;
+}
+
+@media (min-width: 960px) {
+  .VPFooter.has-sidebar {
+    padding-left: calc(var(--vp-sidebar-width) + 32px);
+    padding-right: 32px;
+  }
+}
+
+.VPFooter .message,
+.VPFooter .copyright {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #5e697d;
+}
+
+/* Each credit is its own line, spaced like the marketing footer's stack. */
+.fv-credit {
+  display: block;
+}
+
+.fv-credit + .fv-credit {
+  margin-top: 10px;
+}
+
+.VPFooter .message a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
