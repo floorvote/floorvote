@@ -587,7 +587,7 @@ export function BillDetail() {
   const [promoting, setPromoting] = useState(false)
   const [promoteError, setPromoteError] = useState<string | null>(null)
   const [pendingPromote, setPendingPromote] = useState(false)
-  const [promoteTimeoutMsg, setPromoteTimeoutMsg] = useState<string | null>(null)
+  const [promoteOutcomeMsg, setPromoteOutcomeMsg] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
   const [regenerateError, setRegenerateError] = useState<string | null>(null)
   const [showAmendments, setShowAmendments] = useState(false)
@@ -989,8 +989,8 @@ export function BillDetail() {
   function startAnalyzingPoll() {
     if (!bill) return
     setPendingPromote(true)
-    setPromoteTimeoutMsg(null)
-    // Also clear a stale POST error: the box renders `promoteError ?? timeout`,
+    setPromoteOutcomeMsg(null)
+    // Also clear a stale POST error: the box renders `promoteError ?? outcome`,
     // so a leftover error from an earlier failed run would mask this run's
     // outcome. handlePromote clears both, but the triage call sites don't.
     setPromoteError(null)
@@ -1006,7 +1006,7 @@ export function BillDetail() {
       baselineSkipReason,
     }).then((outcome) => {
       setPendingPromote(false)
-      setPromoteTimeoutMsg(analysisOutcomeMessage(outcome))
+      setPromoteOutcomeMsg(analysisOutcomeMessage(outcome))
       if (outcome !== 'timeout') refetchBill()
     })
   }
@@ -1015,7 +1015,7 @@ export function BillDetail() {
     if (!bill) return
     setPromoting(true)
     setPromoteError(null)
-    setPromoteTimeoutMsg(null)
+    setPromoteOutcomeMsg(null)
     try {
       const res = await fetch(`/api/admin/promote-bill/${bill.id}`, {
         method: 'POST',
@@ -1052,10 +1052,19 @@ export function BillDetail() {
 
   async function handleRegenerate() {
     if (regenerating || demoLocked || !bill) return
-    // Belt and braces behind the menu gate: a stub has no text in the tenant's
-    // own store, so reprocess-bill cannot produce anything. Promoting is the
-    // operation the caller actually wants.
-    if (bill.matchType === null) return handlePromote()
+    // Belt and braces behind the menu gate. A never-analyzed stub has no full
+    // text at CENTRAL yet — the consumer's hasFullText check reads central's
+    // payload (api/src/queue/processor.ts), not the tenant's store — so
+    // reprocess-bill would queue a run the consumer immediately skips.
+    // Promoting is the operation the caller actually wants there.
+    //
+    // A bill that WAS analyzed and later had match_type cleared (central can
+    // send matchType: null, and nothing wipes the analysis fields) still has
+    // text at central, so reprocess-bill works and is the only path with
+    // anywhere to render its outcome — the promote box only renders under
+    // !bill.aiProcessedAt. Hence the aiProcessedAt half of this guard: do not
+    // widen it back to matchType alone.
+    if (bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
     setRegenerateError(null)
     const prevProcessedAt = bill.aiProcessedAt
     const prevSkipReason = bill.aiSkipReason
@@ -1577,8 +1586,15 @@ export function BillDetail() {
 
         {/* No-AI section: shown for stubs (not tracked), tracked bills with no text,
             and tracked bills where AI permanently failed (e.g. PDF too long).
-            Drafts skip this section entirely — they have their own summary/text blocks below. */}
-        {!bill.isDraft && !bill.aiProcessedAt && (() => {
+            Drafts skip this section entirely — they have their own summary/text blocks below.
+
+            The `!hasAnalysis` half of the gate is what actually keeps two progress boxes
+            off the page. This section and the AI section below are disjoint only because
+            the pipeline writes ai_processed_at and the analysis fields in one statement;
+            any row that breaks that (a hand-edited DB, a bad seed, a future partial write)
+            would otherwise satisfy both gates and render both boxes. Checking hasAnalysis
+            here makes the invariant enforced rather than merely assumed. */}
+        {!bill.isDraft && !bill.aiProcessedAt && !hasAnalysis && (() => {
           const isLightweight = bill.matchType === null
 
           const textConfirmed = bill.textStatus === 'in_r2' || bill.textStatus === 'available'
@@ -1597,7 +1613,7 @@ export function BillDetail() {
           const canRunAnalysis = isAdmin && (isLightweight || isStuck)
           const promoteLabel = isLightweight ? 'Enable full analysis' : 'Run analysis'
           const generateDisabled = promoting || pendingPromote || demoLocked
-          const hasAdminContent = canRunAnalysis && (pendingPromote || !generateDisabled || !!promoteError || !!promoteTimeoutMsg)
+          const hasAdminContent = canRunAnalysis && (pendingPromote || !generateDisabled || !!promoteError || !!promoteOutcomeMsg)
 
           const inner = (
             <>
@@ -1643,7 +1659,7 @@ export function BillDetail() {
 
           if (isLightweight || isStuck) {
             return (
-              <AnalysisBox running={pendingPromote} hatched error={promoteError ?? promoteTimeoutMsg}>
+              <AnalysisBox running={pendingPromote} hatched error={promoteError ?? promoteOutcomeMsg}>
                 {inner}
               </AnalysisBox>
             )
@@ -1775,6 +1791,15 @@ export function BillDetail() {
         {/* AI summary / tags / relevance — shown when there is content to display (not for drafts) */}
         {!bill.isDraft && hasAnalysis && (
           <AnalysisBox running={regenerating} error={regenerateError}>
+            {/* Hoisted out of the summary block on purpose: hasAnalysis is also
+                satisfied by tags or a relevance score alone, and nesting the chip
+                under bill.tenantSummary left those bills animating and dimmed with
+                no chip and no role="status" announcement at all. */}
+            {regenerating && (
+              <div style={{ marginBottom: 8 }}>
+                <AnalysisProgressChip label="Regenerating…" />
+              </div>
+            )}
             {bill.tenantSummary && (
               <div style={{ marginBottom: bill.tags.length > 0 ? 10 : 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
@@ -1782,9 +1807,9 @@ export function BillDetail() {
                     <span style={SECTION_LABEL}>
                       AI Summary
                     </span>
-                    {regenerating
-                      ? <AnalysisProgressChip label="Regenerating…" />
-                      : bill.tenantSummary && bill.lastAiTextDocId && (() => {
+                    {/* Hidden while a run is in flight: the doc it points at is the
+                        previous run's input, so it would be stale mid-regenerate. */}
+                    {!regenerating && bill.lastAiTextDocId && (() => {
                         const text = bill.texts.find(t => t.docId === bill.lastAiTextDocId)
                         if (!text) return null
                         return (

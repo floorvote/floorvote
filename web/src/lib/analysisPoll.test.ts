@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { pollForAnalysis, analysisOutcomeMessage } from './analysisPoll'
+import { pollForAnalysis, analysisOutcomeMessage, DEFAULT_ANALYSIS_TIMEOUT_MS } from './analysisPoll'
 
 describe('pollForAnalysis', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -75,6 +75,21 @@ describe('pollForAnalysis', () => {
     await expect(p).resolves.toBe('timeout')
   })
 
+  it('counts fetch latency toward the deadline, not just the interval', async () => {
+    // 900ms per fetch on top of a 1000ms interval means the 3000ms deadline is
+    // reached on the second tick. Accumulating intervalMs instead would give
+    // this run a third tick and a real wall-clock wait well past the stated
+    // timeout.
+    const fetchSnapshot = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 900))
+      return { aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' }
+    })
+    const p = pollForAnalysis({ fetchSnapshot, baselineProcessedAt: null, intervalMs: 1000, timeoutMs: 3000 })
+    await vi.advanceTimersByTimeAsync(10000)
+    await expect(p).resolves.toBe('timeout')
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps polling when a snapshot fetch throws', async () => {
     const fetchSnapshot = vi.fn()
       .mockRejectedValueOnce(new Error('network'))
@@ -101,6 +116,15 @@ describe('analysisOutcomeMessage', () => {
   })
 
   it('only mentions elapsed time for a real timeout', () => {
-    expect(analysisOutcomeMessage('timeout')).toMatch(/3 minutes/)
+    // Derived from the default timeout rather than hardcoded, so shortening the
+    // default cannot leave the copy claiming a wait that never happened.
+    const minutes = Math.round(DEFAULT_ANALYSIS_TIMEOUT_MS / 60_000)
+    expect(analysisOutcomeMessage('timeout')).toMatch(new RegExp(`${minutes} minutes`))
+  })
+
+  it('reports the caller-supplied timeout instead of the default', () => {
+    expect(analysisOutcomeMessage('timeout', 30_000)).toMatch(/30 seconds/)
+    expect(analysisOutcomeMessage('timeout', 60_000)).toMatch(/1 minute\b/)
+    expect(analysisOutcomeMessage('timeout', 10 * 60_000)).toMatch(/10 minutes/)
   })
 })

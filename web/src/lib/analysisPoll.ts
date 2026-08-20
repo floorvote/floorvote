@@ -5,6 +5,10 @@
 // real cause was "no bill text to analyze".
 export type AnalysisOutcome = 'analyzed' | 'no_texts' | 'skipped' | 'timeout'
 
+// Shared so pollForAnalysis and analysisOutcomeMessage cannot disagree about
+// how long a run was actually given before it was called a timeout.
+export const DEFAULT_ANALYSIS_TIMEOUT_MS = 3 * 60 * 1000
+
 export type AnalysisSnapshot = {
   aiProcessedAt: string | null
   aiSkipReason: string | null
@@ -24,13 +28,16 @@ export function pollForAnalysis(opts: {
   timeoutMs?: number
 }): Promise<AnalysisOutcome> {
   const intervalMs = opts.intervalMs ?? 5000
-  const timeoutMs = opts.timeoutMs ?? 3 * 60 * 1000
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_ANALYSIS_TIMEOUT_MS
   const baselineSkipReason = opts.baselineSkipReason ?? null
-  let elapsed = 0
+  // Measure real elapsed time rather than accumulating intervalMs: each tick
+  // also spends the fetch's latency, and a backgrounded tab throttles the
+  // timer, so counting intervals would undercount by an unbounded amount and
+  // make the timeout copy's stated wait a lie.
+  const startedAt = Date.now()
 
   return new Promise<AnalysisOutcome>((resolve) => {
     const tick = async () => {
-      elapsed += intervalMs
       try {
         const snap = await opts.fetchSnapshot()
         if (snap) {
@@ -47,7 +54,7 @@ export function pollForAnalysis(opts: {
       } catch {
         // Swallow and retry: a dropped poll shouldn't end the run.
       }
-      if (elapsed >= timeoutMs) { resolve('timeout'); return }
+      if (Date.now() - startedAt >= timeoutMs) { resolve('timeout'); return }
       setTimeout(tick, intervalMs)
     }
     setTimeout(tick, intervalMs)
@@ -56,7 +63,14 @@ export function pollForAnalysis(opts: {
 
 // Copy for an AI run that ended without producing analysis. Returning null for
 // the happy path keeps the call site a single assignment.
-export function analysisOutcomeMessage(outcome: AnalysisOutcome): string | null {
+//
+// `timeoutMs` must match whatever the caller passed to pollForAnalysis; it
+// defaults to the same value pollForAnalysis defaults to, so the common call
+// site stays a one-argument call and still reads "3 minutes".
+export function analysisOutcomeMessage(
+  outcome: AnalysisOutcome,
+  timeoutMs: number = DEFAULT_ANALYSIS_TIMEOUT_MS,
+): string | null {
   switch (outcome) {
     case 'analyzed':
       return null
@@ -65,6 +79,17 @@ export function analysisOutcomeMessage(outcome: AnalysisOutcome): string | null 
     case 'skipped':
       return "AI couldn't analyze this bill's text. The full document is still available via the source link."
     case 'timeout':
-      return 'AI has not finished after 3 minutes. Try refreshing the page shortly.'
+      return `AI has not finished after ${formatWait(timeoutMs)}. Try refreshing the page shortly.`
   }
+}
+
+// Whole minutes for anything a minute or longer, seconds below that, so a
+// caller that shortens the timeout gets honest copy instead of "3 minutes".
+function formatWait(timeoutMs: number): string {
+  if (timeoutMs < 60_000) {
+    const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+    return `${seconds} second${seconds === 1 ? '' : 's'}`
+  }
+  const minutes = Math.round(timeoutMs / 60_000)
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`
 }

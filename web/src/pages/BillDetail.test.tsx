@@ -255,7 +255,18 @@ describe('BillDetail stuck-state repair affordance', () => {
   beforeEach(() => { vi.restoreAllMocks(); authState.role = 'member' })
 
   // A tracked bill with text present in R2 but no AI output yet = the dead state.
-  const STUCK = { matchType: 'manual' as const, textStatus: 'in_r2' as const, aiProcessedAt: null, aiSkipReason: null, tenantSummary: null }
+  // relevanceScore/tags cleared too: the base fixture carries a score, and "no AI
+  // output yet" means none of the analysis fields landed, not just the summary.
+  // Leaving the score set would describe a row the pipeline cannot produce.
+  const STUCK = {
+    matchType: 'manual' as const,
+    textStatus: 'in_r2' as const,
+    aiProcessedAt: null,
+    aiSkipReason: null,
+    tenantSummary: null,
+    tags: [],
+    relevanceScore: null,
+  }
 
   it('shows a Run analysis button to admins for a stuck tracked bill', async () => {
     authState.role = 'admin'
@@ -284,7 +295,7 @@ describe('BillDetail stuck-state repair affordance', () => {
 
   it('still shows Enable full analysis (not Run analysis) for a lightweight stub to admins', async () => {
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: null, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null, tenantSummary: null })
+    makeMockApiFetch({ matchType: null, textStatus: 'available', aiProcessedAt: null, aiSkipReason: null, tenantSummary: null, tags: [], relevanceScore: null })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await screen.findByText('Test Bill')
     expect(await screen.findByRole('button', { name: /enable full analysis/i })).toBeInTheDocument()
@@ -866,6 +877,46 @@ describe('overflow menu', () => {
     const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
+  })
+
+  it('renders exactly one analysis box for an incoherent row (analysis fields, NULL aiProcessedAt)', async () => {
+    // The shape this branch removed from the seed: the pipeline writes
+    // ai_processed_at and the analysis fields in one statement, so a row with
+    // one and not the other should not exist -- but if one does (hand-edited DB,
+    // bad seed, future partial write) it must not satisfy both section gates.
+    authState.role = 'admin'
+    makeMockApiFetch({
+      matchType: 'keyword',
+      aiProcessedAt: null,
+      tenantSummary: 'Summary that arrived without a timestamp.',
+      tags: ['tax'],
+      relevanceScore: 70,
+      textStatus: 'in_r2',
+    })
+    const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
+  })
+
+  it('announces a re-generate on a bill whose analysis is tags only', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    // hasAnalysis satisfied by tags alone: no summary, no relevance score. The
+    // chip used to be nested under bill.tenantSummary, so this bill dimmed and
+    // animated with nothing announced.
+    makeMockApiFetch({ tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Regenerating…'))
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 
   it('keeps the promote button label stable while a run is in flight', async () => {
