@@ -14,11 +14,18 @@ export type AnalysisSnapshot = {
 export function pollForAnalysis(opts: {
   fetchSnapshot: () => Promise<AnalysisSnapshot | null>
   baselineProcessedAt: string | null
+  // A bill that was analyzed and then hit a permanent skip on newer text keeps
+  // its analysis AND carries a non-null aiSkipReason. Without a baseline, a
+  // re-generate on such a bill resolves 'skipped' on the first tick and blames
+  // the text before the queued run has had any chance to finish. Defaults to
+  // null, where any non-null reason is new — the original behavior.
+  baselineSkipReason?: string | null
   intervalMs?: number
   timeoutMs?: number
 }): Promise<AnalysisOutcome> {
   const intervalMs = opts.intervalMs ?? 5000
   const timeoutMs = opts.timeoutMs ?? 3 * 60 * 1000
+  const baselineSkipReason = opts.baselineSkipReason ?? null
   let elapsed = 0
 
   return new Promise<AnalysisOutcome>((resolve) => {
@@ -35,7 +42,7 @@ export function pollForAnalysis(opts: {
             return
           }
           if (snap.textStatus === 'no_texts') { resolve('no_texts'); return }
-          if (snap.aiSkipReason) { resolve('skipped'); return }
+          if (snap.aiSkipReason && snap.aiSkipReason !== baselineSkipReason) { resolve('skipped'); return }
         }
       } catch {
         // Swallow and retry: a dropped poll shouldn't end the run.

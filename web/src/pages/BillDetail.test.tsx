@@ -768,7 +768,7 @@ describe('overflow menu', () => {
     expect(items[1]).toHaveTextContent(/Re-generate/)
   })
 
-  it('shows Copy link + Re-generate + Delete draft for an admin on a draft bill', async () => {
+  it('shows Copy link + Delete draft (and no Re-generate) for an admin on a draft bill', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
     makeMockApiFetch({ isDraft: true })
@@ -776,8 +776,22 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(3)
-    expect(items[2]).toHaveTextContent(/Delete this draft bill/)
+    expect(items).toHaveLength(2)
+    expect(items[0]).toHaveTextContent(/Copy link to bill/)
+    expect(items[1]).toHaveTextContent(/Delete this draft bill/)
+    // Drafts have no externalId, so reprocess-bill has nothing to address.
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+  })
+
+  it('hides Re-generate on a draft bill that carries a hand-written summary', async () => {
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ isDraft: true, matchType: 'manual', externalId: null, tenantSummary: 'Hand-written draft summary.' })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: /Re-generate/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: /Copy link to bill/ })).toBeInTheDocument()
   })
 
   it('does not render old inline Re-generate button', async () => {

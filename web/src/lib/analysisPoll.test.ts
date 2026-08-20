@@ -38,6 +38,36 @@ describe('pollForAnalysis', () => {
     await expect(p).resolves.toBe('skipped')
   })
 
+  it('treats an unchanged non-null skip reason as still running', async () => {
+    const fetchSnapshot = vi.fn()
+      .mockResolvedValueOnce({ aiProcessedAt: 'OLD', aiSkipReason: 'pdf_too_large', textStatus: 'in_r2' })
+      .mockResolvedValueOnce({ aiProcessedAt: 'NEW', aiSkipReason: 'pdf_too_large', textStatus: 'in_r2' })
+    const p = pollForAnalysis({
+      fetchSnapshot,
+      baselineProcessedAt: 'OLD',
+      baselineSkipReason: 'pdf_too_large',
+      intervalMs: 1000,
+      timeoutMs: 60000,
+    })
+    await vi.advanceTimersByTimeAsync(2500)
+    // The pre-existing skip must not short-circuit the run that then succeeds.
+    await expect(p).resolves.toBe('analyzed')
+    expect(fetchSnapshot).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves "skipped" when the skip reason changes off a non-null baseline', async () => {
+    const fetchSnapshot = vi.fn().mockResolvedValue({ aiProcessedAt: 'OLD', aiSkipReason: 'ai_error', textStatus: 'in_r2' })
+    const p = pollForAnalysis({
+      fetchSnapshot,
+      baselineProcessedAt: 'OLD',
+      baselineSkipReason: 'pdf_too_large',
+      intervalMs: 1000,
+      timeoutMs: 60000,
+    })
+    await vi.advanceTimersByTimeAsync(1500)
+    await expect(p).resolves.toBe('skipped')
+  })
+
   it('resolves "timeout" once the deadline passes', async () => {
     const fetchSnapshot = vi.fn().mockResolvedValue({ aiProcessedAt: null, aiSkipReason: null, textStatus: 'in_r2' })
     const p = pollForAnalysis({ fetchSnapshot, baselineProcessedAt: null, intervalMs: 1000, timeoutMs: 3000 })

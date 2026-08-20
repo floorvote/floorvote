@@ -990,7 +990,12 @@ export function BillDetail() {
     if (!bill) return
     setPendingPromote(true)
     setPromoteTimeoutMsg(null)
+    // Also clear a stale POST error: the box renders `promoteError ?? timeout`,
+    // so a leftover error from an earlier failed run would mask this run's
+    // outcome. handlePromote clears both, but the triage call sites don't.
+    setPromoteError(null)
     const baselineProcessedAt = bill.aiProcessedAt
+    const baselineSkipReason = bill.aiSkipReason
     const billId = bill.id
     void pollForAnalysis({
       fetchSnapshot: async () => {
@@ -998,6 +1003,7 @@ export function BillDetail() {
         return r.ok ? await r.json() : null
       },
       baselineProcessedAt,
+      baselineSkipReason,
     }).then((outcome) => {
       setPendingPromote(false)
       setPromoteTimeoutMsg(analysisOutcomeMessage(outcome))
@@ -1052,6 +1058,7 @@ export function BillDetail() {
     if (bill.matchType === null) return handlePromote()
     setRegenerateError(null)
     const prevProcessedAt = bill.aiProcessedAt
+    const prevSkipReason = bill.aiSkipReason
     setRegenerating(true)
     try {
       const res = await fetch(`/api/admin/reprocess-bill/${encodeURIComponent(bill.externalId ?? bill.id)}`, {
@@ -1068,6 +1075,7 @@ export function BillDetail() {
           return r.ok ? await r.json() : null
         },
         baselineProcessedAt: prevProcessedAt,
+        baselineSkipReason: prevSkipReason,
       })
       setRegenerating(false)
       setRegenerateError(analysisOutcomeMessage(outcome))
@@ -1235,7 +1243,11 @@ export function BillDetail() {
               // spun for three minutes and produced nothing. Those bills get the
               // in-page "Enable full analysis" button instead, which promotes
               // via central and fetches the text first.
-              if (isAdmin && hasAnalysis) {
+              // Drafts are excluded too: a draft can carry a hand-written
+              // tenantSummary, but it has no externalId, so reprocess-bill
+              // would post a local UUID central has never heard of — and the
+              // error would render inside an AnalysisBox that drafts never show.
+              if (isAdmin && !bill.isDraft && hasAnalysis) {
                 menuRows.push({
                   key: 'regenerate',
                   label: 'Re-generate AI summary, tags, and relevance',
