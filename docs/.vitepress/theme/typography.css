@@ -1,30 +1,44 @@
-/* Match floorvote.org's typography, so the docs read as the same product.
-   The marketing site sets its body and headings in the system stack (--font-sans
-   in its tokens.css) — Archivo is only ever the wordmark — and weights its
-   headings at 700/800 rather than VitePress's 600.
+/* Type system, shared with floorvote.org and with the app.
+   ------------------------------------------------------------------------
+   Body copy is Inter, which VitePress already bundles — hence no override of
+   --vp-font-family-base here, and no second copy of Inter to download.
 
-   Family and weight are matched here. Sizes deliberately are not: the marketing
-   page is display typography for one screen (17px body, 48px h1), while these
-   are documentation sizes tuned for long-form reading beside a sidebar and an
-   outline. Copying the marketing scale would make the docs harder to read.
+   Archivo, the brand face, is used in two places and only two:
 
-   Trade-off worth knowing: the system stack renders as SF on Apple, Segoe UI on
-   Windows, Roboto on Android, where Inter looked identical everywhere. The
-   marketing site already accepts that variation; this makes the docs consistent
-   with it rather than with itself across platforms. */
+   - Headings. Matches floorvote.org, where the h1 sits directly under the
+     lockup and reads as brand rather than as generic bold sans.
+   - The sidebar, which is this site's primary nav. That mirrors the app,
+     where the primary sidebar nav (Feed / Bills / Calendar) is Archivo at
+     medium weight — see the BRAND_FONT note in shared/tokens.ts.
+
+   Sizes are not matched to the marketing site: 17px body and a 48px h1 are
+   display typography for one screen, while these are documentation sizes tuned
+   for long-form reading beside a sidebar and an outline. */
 
 :root {
-  --vp-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Helvetica, Arial, sans-serif;
+  --fv-font-brand: 'Archivo', var(--vp-font-family-base);
 }
 
-/* The marketing site's section and feature headings are 700. VitePress ships
-   600, which reads noticeably lighter beside it. h1 is left at 700 rather than
-   the marketing hero's 800: that 800 lives at 48px, and the docs h1 is 32px,
-   which is the size the marketing h2 occupies — and that is 700. */
+/* 700 to match the marketing site's section and feature headings. VitePress
+   ships 600, which reads noticeably lighter beside it. The docs h1 stays at 700
+   rather than the marketing hero's 800: that 800 lives at 48px, and this h1 is
+   32px — the size the marketing h2 occupies, which is 700. */
 .vp-doc h1,
 .vp-doc h2,
 .vp-doc h3,
 .vp-doc h4 {
+  font-family: var(--fv-font-brand);
   font-weight: 700;
+}
+
+/* Home page hero and feature cards use their own classes, not .vp-doc. */
+.VPHero .text,
+.VPFeature .title {
+  font-family: var(--fv-font-brand);
+}
+
+/* Primary nav: the sidebar. Weight is left to the theme (500 for links, 700 for
+   the group titles it renders as headings). */
+.VPSidebarItem .text {
+  font-family: var(--fv-font-brand);
 }

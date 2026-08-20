@@ -11,7 +11,7 @@ export default withMermaid(
     head: [
       ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
       ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
-      ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&display=swap' }],
+      ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&display=swap' }],
       ['link', { rel: 'icon', type: 'image/svg+xml', href: '/docs/favicon.svg' }],
       ['link', { rel: 'icon', href: '/docs/favicon.ico', sizes: '48x48' }],
       ['link', { rel: 'apple-touch-icon', sizes: '180x180', href: '/docs/apple-touch-icon.png' }],
