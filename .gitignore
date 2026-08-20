@@ -50,3 +50,10 @@ docs/.claudian/
 # ignored because the docs and scripts have used each.
 bulkseed/
 bulkseeds/
+
+# Superpowers plans and specs. These are working documents for a private
+# workflow and are kept in the BPC fork, not in the public repository. Ignored
+# here so a plan written while working in this clone can't be committed by
+# accident once this repo is public. The fork re-includes the path at the end
+# of its own .gitignore.
+docs/superpowers/
