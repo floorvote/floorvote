@@ -1,8 +1,10 @@
 ---
 layout: home
 hero:
-  name: FloorVote
-  # text: 
+  # No `name`: VitePress renders it as flat brand-coloured text, which puts the
+  # product name in a non-wordmark treatment directly under the real lockup in
+  # the nav. The lockup is the only place the name should be set.
+  # text:
   tagline: FloorVote is a self-hosted bill tracker for your team. Here's how to understand, deploy, and operate it.
   # actions:
   #   - theme: brand
