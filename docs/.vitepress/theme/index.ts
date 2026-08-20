@@ -1,6 +1,7 @@
 import DefaultTheme from 'vitepress/theme'
 import { h } from 'vue'
 import './wordmark.css'
+import './typography.css'
 import './footer.css'
 import { LOGO_MARK } from '../../../shared/logo'
 import { PRODUCT_NAME_WORDMARK } from '../../../shared/brand'
