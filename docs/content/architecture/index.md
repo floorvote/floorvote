@@ -45,6 +45,8 @@ The central-and-tenant split isn't just a diagram — each piece answers a real 
 
 **One shared LegiScan account.** Legislative data providers meter access by account, so if every tenant called the API directly, a deployment with ten tenants would need ten subscriptions and would burn through query quota ten times as fast. Centralizing that one account means every tenant benefits from the same data without paying for it, or rate-limiting against it, individually.
 
+**One provider interface.** Central reads legislative data through a provider interface (`central/src/providers/`), not a hardcoded vendor. LegiScan is the maintained implementation; an OpenStates provider sits alongside it, and adding another means writing one adapter against that interface rather than touching the pipeline. Everything downstream of central — storage, fan-out, tenants, AI — is provider-agnostic.
+
 **Full tenant isolation.** Each tenant is a separate Worker with its own database, users, votes, and positions. One organization's members, comments, and official positions never mix with another's, even though they're both fed by the same central pipeline. A tenant can be added, removed, or reconfigured without touching anyone else's deployment.
 
 **Artificial intelligence runs tenant-side.** Summarization and relevance scoring happen inside each tenant, not centrally, because "relevant" means something different to every organization. Each tenant tunes its own keywords, context, and relevance question, so the same bill can be summarized and scored differently for two different teams.
