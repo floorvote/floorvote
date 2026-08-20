@@ -16,7 +16,7 @@ From that full pool, you set keywords for the issues your team actually cares ab
 
 ## Custom AI summaries, relevance scores, tags
 
-Once a bill matches, artificial intelligence reads it and produces a plain-language summary, a relevance score, and tags—so your team can tell at a glance what a bill does and whether it's worth their attention, without wading through legislative text themselves.
+Once a bill matches, AI reads it and produces a plain-language summary, a relevance score, and tags—so your team can tell at a glance what a bill does and whether it's worth their attention, without wading through legislative text themselves.
 
 You control how that analysis works: write your own directions for what "relevant" means to your team, and the AI scores bills and pulls tags from your own taxonomy accordingly. The same bill can score very differently for two different teams, because you're the one setting the bar. And you're never limited to the summary alone—the full bill text, fiscal notes, and amendments are all right there next to it.
 
