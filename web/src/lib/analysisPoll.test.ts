@@ -118,13 +118,27 @@ describe('analysisOutcomeMessage', () => {
   it('only mentions elapsed time for a real timeout', () => {
     // Derived from the default timeout rather than hardcoded, so shortening the
     // default cannot leave the copy claiming a wait that never happened.
+    // Pluralization is left optional so a future one-minute default, which
+    // formatWait would correctly render as "1 minute", doesn't fail this test.
     const minutes = Math.round(DEFAULT_ANALYSIS_TIMEOUT_MS / 60_000)
-    expect(analysisOutcomeMessage('timeout')).toMatch(new RegExp(`${minutes} minutes`))
+    expect(analysisOutcomeMessage('timeout')).toMatch(new RegExp(`${minutes} minutes?\\b`))
+  })
+
+  it('states the default timeout as three whole minutes', () => {
+    expect(analysisOutcomeMessage('timeout')).toMatch(/\b3 minutes\b/)
   })
 
   it('reports the caller-supplied timeout instead of the default', () => {
     expect(analysisOutcomeMessage('timeout', 30_000)).toMatch(/30 seconds/)
     expect(analysisOutcomeMessage('timeout', 60_000)).toMatch(/1 minute\b/)
     expect(analysisOutcomeMessage('timeout', 10 * 60_000)).toMatch(/10 minutes/)
+  })
+
+  it('spells out the leftover seconds for a non-round timeout', () => {
+    // 100s must not round up to "2 minutes": that advertises a longer wait
+    // than the run was actually given.
+    const msg = analysisOutcomeMessage('timeout', 100_000)
+    expect(msg).toMatch(/1 minute 40 seconds/)
+    expect(msg).not.toMatch(/2 minutes/)
   })
 })

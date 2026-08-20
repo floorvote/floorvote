@@ -149,7 +149,11 @@ const BILL = {
   createdAt: '2025-01-01 00:00:00',
   updatedAt: '2025-01-01 00:00:00',
   centralSyncedAt: null,
-  aiProcessedAt: null,
+  // Non-null and coherent with the other timestamps: the queue processor writes
+  // tenantSummary/tags/relevanceScore/aiProcessedAt in one statement, so a
+  // fixture carrying analysis fields must carry the timestamp too. Tests that
+  // want the analysis-absent or stuck shapes clear all four explicitly.
+  aiProcessedAt: '2025-01-01 00:00:00',
   aiSkipReason: null,
   lastAiTextDocId: null,
   textStatus: 'not_checked' as const,
@@ -842,7 +846,7 @@ describe('overflow menu', () => {
   it('hides Re-generate on a lightweight bill with no analysis to re-generate', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
@@ -854,7 +858,7 @@ describe('overflow menu', () => {
   it('hides Re-generate on a tracked bill whose analysis never landed', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: 'keyword', tenantSummary: null, tags: [], relevanceScore: null, textStatus: 'in_r2' })
+    makeMockApiFetch({ matchType: 'keyword', aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null, textStatus: 'in_r2' })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
@@ -873,7 +877,7 @@ describe('overflow menu', () => {
 
   it('renders exactly one analysis box on a lightweight bill', async () => {
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
     const { container } = render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     expect(container.querySelectorAll('.analyzing-box')).toHaveLength(1)
@@ -922,7 +926,7 @@ describe('overflow menu', () => {
   it('keeps the promote button label stable while a run is in flight', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
-    makeMockApiFetch({ matchType: null, tenantSummary: null, tags: [], relevanceScore: null })
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: [], relevanceScore: null })
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )

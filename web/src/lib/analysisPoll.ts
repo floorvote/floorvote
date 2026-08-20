@@ -83,13 +83,18 @@ export function analysisOutcomeMessage(
   }
 }
 
-// Whole minutes for anything a minute or longer, seconds below that, so a
-// caller that shortens the timeout gets honest copy instead of "3 minutes".
+// Seconds below a minute, whole minutes for exact multiples, and
+// "minutes + seconds" for anything in between. Rounding to the nearest minute
+// would report a custom 100s timeout as "2 minutes", which is a longer wait
+// than the run was ever given — the copy has to be honest for whatever
+// timeoutMs the caller actually passed, not just the 3-minute default.
 function formatWait(timeoutMs: number): string {
-  if (timeoutMs < 60_000) {
-    const seconds = Math.max(1, Math.round(timeoutMs / 1000))
-    return `${seconds} second${seconds === 1 ? '' : 's'}`
-  }
-  const minutes = Math.round(timeoutMs / 60_000)
-  return `${minutes} minute${minutes === 1 ? '' : 's'}`
+  const totalSeconds = Math.max(1, Math.round(timeoutMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const minutePart = `${minutes} minute${minutes === 1 ? '' : 's'}`
+  const secondPart = `${seconds} second${seconds === 1 ? '' : 's'}`
+  if (minutes === 0) return secondPart
+  if (seconds === 0) return minutePart
+  return `${minutePart} ${secondPart}`
 }
