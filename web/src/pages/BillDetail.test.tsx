@@ -936,4 +936,67 @@ describe('overflow menu', () => {
       fetchSpy.mockRestore()
     }
   })
+
+  // ── handleRegenerate's matchType===null && !aiProcessedAt guard ────────────
+  // See the comment above the guard in BillDetail.tsx: it must stay narrowed to
+  // BOTH conjuncts. These two tests pin the guard by inspecting which endpoint
+  // actually gets POSTed, so a regression that re-widens the guard to
+  // `matchType === null` alone (dropping the `!bill.aiProcessedAt` half) fails
+  // one of them.
+
+  it('demoted-but-analyzed: Re-generate posts to reprocess-bill, not promote-bill', async () => {
+    // matchType cleared to null but aiProcessedAt still set and analysis fields
+    // retained (hasAnalysis true via the default tenantSummary). Central still
+    // has full text for this bill, so reprocess-bill is the correct, working
+    // path -- delegating to promote here would render no chip and no error for
+    // three minutes, then silently re-track the bill as manual.
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: '2025-06-01 00:00:00' })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]))
+      expect(urls.some(u => u.includes('/api/admin/reprocess-bill/legiscan%3A42'))).toBe(true)
+      expect(urls.some(u => u.includes('/api/admin/promote-bill/'))).toBe(false)
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('never-processed row with stray analysis fields: Re-generate delegates to promote-bill', async () => {
+    // matchType null AND aiProcessedAt null (never actually processed), but
+    // hasAnalysis is satisfied by a stray tag so the Re-generate menu item is
+    // still offered -- the exact incoherent shape covered by the "renders
+    // exactly one analysis box" test above. There is no full text for this
+    // bill at central yet, so reprocess-bill would queue a run the consumer
+    // silently skips; promote-bill is the only path with anywhere to show the
+    // outcome. This is the branch a re-widened guard (matchType alone) would
+    // stop reaching, because it would never fall through to the reprocess call
+    // this test differentiates against.
+    const user = userEvent.setup()
+    authState.role = 'admin'
+    makeMockApiFetch({ matchType: null, aiProcessedAt: null, tenantSummary: null, tags: ['tax'], relevanceScore: null })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    try {
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
+      await user.click(screen.getByRole('button', { name: 'More actions' }))
+      await user.click(screen.getByRole('menuitem', { name: /Re-generate/ }))
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+      const urls = fetchSpy.mock.calls.map(c => String(c[0]))
+      expect(urls.some(u => u.includes('/api/admin/promote-bill/42'))).toBe(true)
+      expect(urls.some(u => u.includes('/api/admin/reprocess-bill/'))).toBe(false)
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
 })
