@@ -62,7 +62,7 @@ flowchart TB
   C -->|per-tenant queue| TB["Tenant B — Worker + D1 + Queue"]
 ```
 
-- **Central service** — one per operator. It makes all the legislative API calls and stores all the bill data, so you pay for one API key no matter how many teams you run. You set this up on this page.
+- **Central service** — one per operator. It makes all the legislative API calls and stores all the bill data, so provider traffic, caching, and quota all sit in one place however many teams you run. You set this up on this page.
 - **Tenant workers** — one per team or topic. Each has its own users, votes, comments, and positions, and never calls LegiScan directly. You add these on the [next page](/self-hosting/tenants).
 
 ## Set up the central service
@@ -214,4 +214,4 @@ This loads the bills into central only. Linking them to a team and running AI su
 - **[Turnstile](/self-hosting/turnstile)** and **[Public demo site](/self-hosting/demo)** — optional add-ons.
 
 > [!IMPORTANT]
-> **Using LegiScan data:** the free tier is 30,000 API calls per month. Bill data is licensed CC BY 4.0, so any UI that displays it must include "Data provided by LegiScan" attribution (FloorVote does this by default). Deeper LegiScan operational notes are in [`docs/internal/legiscan-notes.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/legiscan-notes.md) in the repository.
+> **Using LegiScan data:** your API plan sets a monthly call budget, which central tracks against the `legiscan_monthly_limit` setting — see [How much does it cost?](/overview/how-much-does-it-cost#legiscan-free-for-most-paid-for-heavy-users) for the tiers. Bill data is licensed CC BY 4.0, so any UI that displays it carries a data-source credit (FloorVote does this by default). Deeper LegiScan operational notes are in [`docs/internal/legiscan-notes.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/legiscan-notes.md) in the repository.

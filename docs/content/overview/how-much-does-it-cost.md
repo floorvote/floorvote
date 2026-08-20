@@ -19,4 +19,4 @@ Typical AI usage is pretty cheap: With Google Gemini 2.5 Flash, $10 summarizes a
 LegiScan's API is the source of the bill data itself. Its free "Public" tier allows for 30,000 calls a month. Whether that will be enough for your team depends on the number of bills you track (which is a function of the number of states you want to track and the breadth of the keywords that you set) and the frequency of bill updates that you need (which you can set). A free API account should be enough for a team tracking a handful of states, but a broader deployment may need to pay for [LegiScan's "Pull API,"](https://legiscan.com/pricing) which costs between $1,000/year (for one state) and $6,000/year (for all states). (Congress is considered a single state.)
 
 > [!IMPORTANT]
-> LegiScan provides bill data via their API but is not involved with FloorVote. If you become a free LegiScan user, please **do not** reach out to LegiScan for support with FloorVote.
+> LegiScan provides bill data via their API but is not involved with FloorVote. If you sign up for LegiScan, please **do not** reach out to them for support with FloorVote.

@@ -380,7 +380,7 @@
             <li><strong>getBill</strong> — single bill, full JSON (sponsors, history, votes, texts, roll calls…)</li>
             <li><strong>getBillText</strong> — base64-encoded HTML or PDF, fetched from state legislature site</li>
           </ul>
-          <div class="note">Only central calls LegiScan — tenant workers never call it directly. Quota: 30,000 calls/month.</div>
+          <div class="note">Only central calls LegiScan — tenant workers never call it directly, so all API traffic and quota sit on one account.</div>
         </div>
       </div>
     </div>
@@ -495,7 +495,7 @@
         <div class="collapsed-summary">getBill + persist child tables + store text in R2 → notify tenant queues.</div>
         <div class="collapsible-body">
           <div class="quota-callout">
-            <strong>⚠ API quota:</strong> each non-skipFetch message triggers one <code>getBill()</code> call — 30,000 calls/month total. <strong>The cron (Stage 2) is the API gate</strong>: it only queues bills whose <code>change_hash</code> moved, so unchanged bills never reach the ingestor. <strong>reprocess</strong> bypasses the ingestor entirely (zero calls); <strong>redownload-texts</strong> uses <code>skipFetch: true</code>.
+            <strong>⚠ API quota:</strong> each non-skipFetch message triggers one <code>getBill()</code> call, drawn from the deployment's monthly API budget. <strong>The cron (Stage 2) is the API gate</strong>: it only queues bills whose <code>change_hash</code> moved, so unchanged bills never reach the ingestor. <strong>reprocess</strong> bypasses the ingestor entirely (zero calls); <strong>redownload-texts</strong> uses <code>skipFetch: true</code>.
           </div>
           <div class="box-body">
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px;">

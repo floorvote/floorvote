@@ -324,7 +324,7 @@ While you're here, set the **org noun** (team / association / coalition / custom
 
 ### Getting AI on every bill
 
-Blank keywords match the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared 30,000-calls/month quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
+Blank keywords match the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared monthly API quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
 
 What works instead: write broad keywords that cover your real scope, or manually promote the specific bills you care about once they're in view as stubs.
 
@@ -430,7 +430,7 @@ The `--tenant` flag links the bills and updates the team's `state_coverage` — 
 > **`--tenant --remote` needs `CENTRAL_API_URL`.** The seeder writes bills straight to central's database, but the `--tenant` link step calls central's API over HTTP. Without `CENTRAL_API_URL` (and the admin secret) it silently falls back to `http://localhost:8787` and dies with `fetch failed` *after* seeding — the `$CENTRAL` and `$ADMIN_SECRET` you exported in Step 8 cover both.
 
 > [!WARNING]
-> Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `--skip-fetch`/`skipFetch` — the seeder handles this for you; the free LegiScan tier is 30,000 calls/month.
+> Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `--skip-fetch`/`skipFetch` — the seeder handles this for you; a bulk queue without it would spend a month of API budget in one run.
 
 ## Step 13: Link bills and queue AI (only if you skipped `--tenant`)
 
