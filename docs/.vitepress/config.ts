@@ -8,6 +8,11 @@ export default withMermaid(
     base: '/docs/',
     srcDir: 'content',
     outDir: '.vitepress/dist/docs',
+    // The marketing sitemap lists only the apex on purpose, so the docs URLs
+    // have to be published here. The hostname carries the base path: without
+    // it the generated <loc> values would drop /docs and point at pages the
+    // marketing Worker owns.
+    sitemap: { hostname: 'https://floorvote.org/docs/' },
     head: [
       ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
       ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
@@ -42,7 +47,12 @@ export default withMermaid(
           '<a href="https://github.com/floorvote/floorvote/blob/main/LICENSE" target="_blank" rel="noreferrer">AGPL-3.0</a>.' +
           '</span>',
       },
-      logoLink: 'https://floorvote.org/',
+      // The marketing site is the same origin as the docs, so VitePress's SPA
+      // router would intercept this as an internal link and route to the docs
+      // hub instead of leaving the site. Its click handler bails on any anchor
+      // carrying a `target`, so `_self` restores a real navigation — in the
+      // same tab — without needing an off-origin URL.
+      logoLink: { link: 'https://floorvote.org/', target: '_self' },
       sidebar: [
         {
           text: 'Is FloorVote for me?',
