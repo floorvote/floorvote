@@ -57,3 +57,10 @@ bulkseeds/
 # accident once this repo is public. The fork re-includes the path at the end
 # of its own .gitignore.
 docs/superpowers/
+
+# Local demo-rehearsal scaffolding. api/wrangler.dev.toml is a single-env config
+# for running the demo against a local D1 (the tracked-config path assumes a
+# deployed tenant env), and dev-demo-local.sh boots api+web on alternate ports
+# against it. Both describe one machine's setup, not the product.
+api/wrangler.dev.toml
+scripts/dev-demo-local.sh
