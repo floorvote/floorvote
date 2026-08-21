@@ -19,3 +19,11 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | `tenant-automation.md` | What can and can't be scripted when adding a tenant (agent-facing). |
 | `legiscan-notes.md` | LegiScan operational + licensing notes (quota, `skipFetch`, attribution). |
 | `rebranding.md` | Renaming resources via `RESOURCE_PREFIX` for forks. |
+
+## Previewing the docs site locally
+
+Neither command publishes — only `wrangler deploy` and the deploy scripts do.
+
+- Content, with hot reload: `npm run docs:dev`, then open localhost:5173/docs/.
+- The Worker actually serving the built assets: `npm run docs:build`, then `npx wrangler dev -c docs/wrangler.toml`, then open localhost:8788/docs/. Use this one to check routing and `not_found_handling`, which the dev server does not model.
+- Deploy: `npm run docs:deploy`. It builds and deploys the `floorvote-docs` Worker, which registers the `/docs` and `/docs/*` routes on the floorvote.org zone.
