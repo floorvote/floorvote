@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { OperatorBranding } from './OperatorBranding'
+import { SOURCE_URL } from '../../../shared/brand'
 
 const full = { name: 'Example Org', url: 'https://example.org/elections', contactEmails: ['ops@example.org'] }
 
@@ -59,6 +60,18 @@ describe('OperatorBranding', () => {
       .toHaveAttribute('href', 'https://github.com/floorvote/floorvote')
     expect(screen.getByRole('link', { name: 'AGPLv3' }))
       .toHaveAttribute('href', 'https://github.com/floorvote/floorvote/blob/main/LICENSE')
+  })
+
+  // Guards the SOURCE_URL constant itself: every other source-line case passes
+  // `sourceUrl` explicitly, so the suite stayed green while the constant was empty
+  // and the footer shipped with no AGPLv3 §13 source offer.
+  it('renders the source line from the SOURCE_URL default when no prop is given', () => {
+    renderBranding(<OperatorBranding operator={full} />)
+    const repo = screen.getByRole('link', { name: 'FloorVote' })
+    expect(repo).toHaveAttribute('href', SOURCE_URL)
+    expect(SOURCE_URL).toMatch(/^https:\/\/\S+[^/]$/)
+    expect(screen.getByRole('link', { name: 'AGPLv3' }))
+      .toHaveAttribute('href', `${SOURCE_URL}/blob/main/LICENSE`)
   })
 
   it('renders both legal links with a separator when both docs exist', () => {
