@@ -27,6 +27,7 @@ export type Env = {
   EMAIL_REPLY_TO?: string   // reply-to address; defaults to EMAIL_FROM
   ASSOCIATION_NAME?: string
   OPERATOR_NAME?: string            // sidebar footer operator label; empty = no name line
+  OPERATOR_SOURCE_URL?: string      // AGPLv3 §13 source offer; unset = built-in default, '' = none offered
   OPERATOR_URL?: string             // operator credit link target; empty = unlinked
   OPERATOR_CONTACT_EMAILS?: string  // comma-separated support recipients; empty = no contact / feedback disabled
   STATE?: string

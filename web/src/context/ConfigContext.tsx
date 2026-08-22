@@ -5,6 +5,13 @@ export interface OperatorConfig {
   name: string
   url: string
   contactEmails: string[]
+  /**
+   * Operator's own source offer, overriding the SOURCE_URL constant. Three
+   * states, so this is deliberately optional rather than defaulted to '':
+   * absent = use the built-in default, a URL = the operator's published source,
+   * '' = the operator has none to offer. See OperatorBranding.
+   */
+  sourceUrl?: string
 }
 
 export interface AppConfig {
