@@ -153,6 +153,15 @@ describe('OperatorBranding', () => {
     expect(screen.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy')
   })
 
+  it('opens each legal doc alongside the page rather than navigating away', () => {
+    renderBranding(<OperatorBranding operator={full} showTerms showPrivacy />)
+    for (const name of ['Terms', 'Privacy']) {
+      const link = screen.getByRole('link', { name })
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    }
+  })
+
   it('renders only the present legal link, no dangling separator', () => {
     renderBranding(<OperatorBranding operator={full} showTerms={false} showPrivacy />)
     expect(screen.queryByRole('link', { name: 'Terms' })).toBeNull()

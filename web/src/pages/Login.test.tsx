@@ -128,4 +128,14 @@ describe('Login — legal links', () => {
     expect(await screen.findByRole('link', { name: 'Terms of Use' })).toHaveAttribute('href', '/terms')
     expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy')
   })
+
+  it('opens each legal doc alongside the sign-in form, discarding no typed email', async () => {
+    renderLogin()
+    await screen.findByRole('link', { name: 'Terms of Use' })
+    for (const name of ['Terms of Use', 'Privacy Policy']) {
+      const link = screen.getByRole('link', { name })
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    }
+  })
 })

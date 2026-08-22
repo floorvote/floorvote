@@ -186,13 +186,15 @@ function Wordmark() {
   )
 }
 
+// Opened alongside, not navigated to: sending someone to the Terms mid-login
+// would discard the email they had typed and the pending code.
 function LegalLinks() {
   if (!hasTerms && !hasPrivacy) return null
   return (
     <div style={{ marginTop: 20, fontSize: fontSize.sm, color: color.textMuted }}>
-      {hasTerms && <Link to="/terms" style={{ color: color.textMuted }}>Terms of Use</Link>}
+      {hasTerms && <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Terms of Use</Link>}
       {hasTerms && hasPrivacy && ' · '}
-      {hasPrivacy && <Link to="/privacy" style={{ color: color.textMuted }}>Privacy Policy</Link>}
+      {hasPrivacy && <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Privacy Policy</Link>}
     </div>
   )
 }

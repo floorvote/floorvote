@@ -138,11 +138,13 @@ export function OperatorBranding({
         {')'}
         <span id={DATA_NOTE_ID} style={SR_ONLY}>{DATA_NOTE}</span>
       </div>
+      {/* A legal doc is a reference, not a destination: opening it alongside keeps
+          whatever page the footer sits on — a half-filled form, a bill mid-scroll. */}
       {(showTerms || showPrivacy) && (
         <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
-          {showTerms && <Link to="/terms" style={{ color: color.textMuted }}>Terms</Link>}
+          {showTerms && <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Terms</Link>}
           {showTerms && showPrivacy && ' · '}
-          {showPrivacy && <Link to="/privacy" style={{ color: color.textMuted }}>Privacy</Link>}
+          {showPrivacy && <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Privacy</Link>}
         </div>
       )}
     </div>
