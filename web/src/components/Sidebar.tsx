@@ -926,10 +926,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
       )}
 
       {/* Operator branding + data attribution (pinned) */}
-      {/* Passing the opener only when the feedback button itself exists keeps the
-          license tooltip's offer honest: in demo mode there is no feedback route,
-          so it falls back to the operator's email. */}
-      <OperatorBranding onOpenFeedback={demoMode ? undefined : () => setShowFeedback(true)} />
+      <OperatorBranding />
     </aside>
   )
 }

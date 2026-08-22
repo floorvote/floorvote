@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { PRODUCT_NAME, SOURCE_URL, LICENSE_NAME, LICENSE_URL } from '../../../shared/brand'
 import { hasTerms, hasPrivacy } from '../lib/legalDocs'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
-import { InfoTooltip } from './InfoTooltip'
+import { HoverTooltip } from './HoverTooltip'
+import { SR_ONLY } from '../lib/textStyles'
 import { color, fontSize } from '../styles/tokens'
 
 // Conventional, generic asset path (not operator-specific). A deployer drops their
@@ -11,6 +12,22 @@ import { color, fontSize } from '../styles/tokens'
 // is hidden (see logoState) — no broken-image icon.
 const OPERATOR_LOGO_SRC = '/operator-logo.svg'
 const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
+
+// One plain sentence per license, hardcoded. Both state a fact about the work and
+// the data it serves, identical for every deployment, so neither is operator
+// config. They exist because "AGPLv3" and "CC BY 4.0" mean nothing to most
+// readers: a link to the license text explains the terms to a lawyer, not the
+// entitlement to a member. Deliberately not an ⓘ with contacts and actions —
+// telling someone the right exists is the whole job.
+const LICENSE_NOTE = `${PRODUCT_NAME} is free software licensed under the ${LICENSE_NAME}, which means that users are entitled to the source code of the version they are being served.`
+const DATA_NOTE = 'Legislative data comes from LegiScan under the Creative Commons Attribution 4.0 license, which allows anyone to reuse it with credit.'
+
+// The hover bubble in HoverTooltip's default archetype is aria-hidden — the
+// child's own name carries the accessible name — so on its own the sentence
+// would reach sighted users only. These ids tie an SR_ONLY copy to each link
+// via aria-describedby, so a screen reader announces the same explanation.
+const LICENSE_NOTE_ID = 'footer-license-note'
+const DATA_NOTE_ID = 'footer-data-note'
 
 /**
  * Pinned sidebar footer: the operator credit (logo + name, optionally linked) and
@@ -32,8 +49,8 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
  * preserved, so an operator can withhold a source URL they do not have but
  * cannot silently strip the attribution. Only the link is conditional:
  *
- *   url set    → "Source: <product> (AGPLv3) ⓘ", product name links to it
- *   url empty  → "<product> (AGPLv3) ⓘ", no link and no "Source:" promise
+ *   url set    → "Source: <product> (AGPLv3)", product name links to it
+ *   url empty  → "<product> (AGPLv3)", no link and no "Source:" promise
  *
  * The license name always links to `LICENSE_URL` — a canonical address, not one
  * derived from the source URL, so it cannot go stale with the operator's host.
@@ -50,19 +67,11 @@ export function OperatorBranding({
   sourceUrl: propSourceUrl,
   showTerms = hasTerms,
   showPrivacy = hasPrivacy,
-  onOpenFeedback,
 }: {
   operator?: OperatorConfig
   sourceUrl?: string
   showTerms?: boolean
   showPrivacy?: boolean
-  /**
-   * Opens the feedback dialog. Its presence IS the "feedback is available"
-   * signal: Sidebar withholds it in demo mode, where the feedback button does
-   * not exist and POST /feedback is refused outright. Undefined here means the
-   * tooltip falls back to the operator's email.
-   */
-  onOpenFeedback?: () => void
 } = {}) {
   const { config } = useConfig()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
@@ -99,55 +108,6 @@ export function OperatorBranding({
     </>
   )
 
-  // Describe the user's right, not the operator's compliance: the product cannot
-  // verify that the URL resolves or that it holds the version running here, so it
-  // must not assert on the operator's behalf that the obligation has been met.
-  //
-  // Naming the operator matters because the §13 obligation is theirs, not the
-  // project's — a reader of this bubble should know who to hold to it. Dropped
-  // when unset, same as the credit line above.
-  //
-  // Recourse is framed by whether a link exists. With one, the link IS the offer,
-  // so telling the user to ask for it would undercut what they can already click;
-  // the contact is a fallback for the failure the product cannot detect (a stale
-  // URL, or source that no longer matches what is deployed). With the link
-  // suppressed there is nothing to fall back from, so it asks outright — which is
-  // closer to §13's written-offer route than a blank footer.
-  //
-  // Feedback first when it is wired: one click beats composing an email, and it
-  // lands in a queue the operator already watches. The email stays alongside it
-  // as the durable, addressable route — and becomes the only one in demo mode,
-  // where the feedback button does not exist and a curious visitor is exactly the
-  // person likely to ask.
-  const contact = operator.contactEmails[0]
-  const requestLink = (
-    <button
-      type="button"
-      onClick={onOpenFeedback}
-      style={{
-        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-        font: 'inherit', color: 'inherit', textDecoration: 'underline',
-      }}
-    >send a request</button>
-  )
-  const recourse = (onOpenFeedback || contact) && (
-    <>
-      {sourceUrl ? " If that link doesn't provide it, " : ' To request it, '}
-      {onOpenFeedback && requestLink}
-      {onOpenFeedback && contact && ' or '}
-      {contact && <a href={`mailto:${contact}`} style={{ color: 'inherit' }}>email {contact}</a>}
-      .
-    </>
-  )
-  const licenseNote = (
-    <>
-      {operator.name && `Operated by ${operator.name}. `}
-      This service runs {PRODUCT_NAME}, free software under the {LICENSE_NAME},
-      which entitles you to the source code of the version running here.
-      {recourse}
-    </>
-  )
-
   return (
     <div style={{ flexShrink: 0, borderTop: `1px solid ${color.borderDefault}`, padding: '12px 20px', textAlign: 'center' }}>
       {showCredit && (operator.url
@@ -158,28 +118,25 @@ export function OperatorBranding({
         )
         : <div>{credit}</div>
       )}
-      {/* Flex row, not an inline ⓘ: the icon's font is larger than this line's xs
-          text, so inline it sits off the baseline. Text stays one wrappable span
-          so a narrow sidebar breaks the label, not the label from its icon. */}
-      <div style={{
-        fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0,
-        textAlign: 'left', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
-      }}>
-        <span>
-          {sourceUrl
-            ? <>Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a></>
-            : PRODUCT_NAME}
-          {' ('}
-          <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{LICENSE_NAME}</a>
-          {')'}
-        </span>
-        <InfoTooltip text={licenseNote} maxWidth={280} align="left" label="About the license" />
+      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0, textAlign: 'left' }}>
+        {sourceUrl
+          ? <>Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a></>
+          : PRODUCT_NAME}
+        {' ('}
+        <HoverTooltip text={LICENSE_NOTE} maxWidth={280} placement="top-start">
+          <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" aria-describedby={LICENSE_NOTE_ID} style={{ color: color.textMuted }}>{LICENSE_NAME}</a>
+        </HoverTooltip>
+        {')'}
+        <span id={LICENSE_NOTE_ID} style={SR_ONLY}>{LICENSE_NOTE}</span>
       </div>
       <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
         Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
         {' ('}
-        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>
+        <HoverTooltip text={DATA_NOTE} maxWidth={280} placement="top-start">
+          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" aria-describedby={DATA_NOTE_ID} style={{ color: color.textMuted }}>CC BY 4.0</a>
+        </HoverTooltip>
         {')'}
+        <span id={DATA_NOTE_ID} style={SR_ONLY}>{DATA_NOTE}</span>
       </div>
       {(showTerms || showPrivacy) && (
         <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>

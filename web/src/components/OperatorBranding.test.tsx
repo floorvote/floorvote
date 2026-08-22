@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { OperatorBranding } from './OperatorBranding'
@@ -55,7 +55,7 @@ describe('OperatorBranding', () => {
   it('keeps the license notice but drops the link when the source URL is empty', () => {
     renderBranding(<OperatorBranding operator={full} sourceUrl="" />)
     expect(screen.queryByRole('link', { name: 'FloorVote' })).toBeNull()
-    expect(screen.getByText(/AGPLv3/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AGPLv3' })).toBeInTheDocument()
     expect(screen.queryByText(/^Source:/)).toBeNull()
   })
 
@@ -97,75 +97,45 @@ describe('OperatorBranding', () => {
   it('treats an explicitly empty operator config URL as suppression, not as unset', () => {
     renderBranding(<OperatorBranding operator={{ ...full, sourceUrl: '' }} />)
     expect(screen.queryByRole('link', { name: 'FloorVote' })).toBeNull()
-    expect(screen.getByText(/AGPLv3/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AGPLv3' })).toBeInTheDocument()
   })
 
-  it('names the operator in the tooltip so the user knows who owes them the source', async () => {
+  // One sentence per license, on the license link itself — no ⓘ, no contacts, no
+  // actions. "AGPLv3" and "CC BY 4.0" are opaque to most readers, and the license
+  // text explains the terms to a lawyer rather than the entitlement to a member.
+  it('explains the software license in a tooltip on the license link', async () => {
     renderBranding(<OperatorBranding operator={full} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/Operated by Example Org/)).toBeInTheDocument()
-    expect(screen.getByText(/entitles you to the source code/i)).toBeInTheDocument()
+    fireEvent.mouseEnter(screen.getByRole('link', { name: 'AGPLv3' }))
+    expect(await screen.findByText(/entitled to the source code of the version they are being served/i))
+      .toBeInTheDocument()
   })
 
-  it('drops the operator clause when no name is configured', async () => {
-    renderBranding(<OperatorBranding operator={{ ...full, name: '' }} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
-    expect(screen.queryByText(/Operated by/)).toBeNull()
-  })
-
-  // With a working link the link IS the offer, so the recourse is framed as a
-  // fallback for when it fails — not as an instruction to ask for what is already
-  // one click away. With no link there is nothing to fall back from, so it asks.
-  it('frames the contact as a fallback when a source link is present', async () => {
+  it('explains the data license in a tooltip on the CC BY link', async () => {
     renderBranding(<OperatorBranding operator={full} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/if that link/i)).toBeInTheDocument()
-    expect(screen.queryByText(/^To request it/)).toBeNull()
+    fireEvent.mouseEnter(screen.getByRole('link', { name: 'CC BY 4.0' }))
+    expect(await screen.findByText(/allows anyone to reuse it with credit/i)).toBeInTheDocument()
   })
 
-  it('asks for the source outright when no link is offered', async () => {
-    renderBranding(<OperatorBranding operator={{ ...full, sourceUrl: '' }} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/to request it/i)).toBeInTheDocument()
-    expect(screen.queryByText(/if that link/i)).toBeNull()
-  })
-
-  it('makes the contact email a mailto link, not plain text', async () => {
+  // The hover bubble is aria-hidden in this archetype, so without a described-by
+  // copy the sentence would reach sighted users only — and its whole purpose is
+  // telling people what they are entitled to.
+  it('exposes both notes to screen readers, not just on hover', () => {
     renderBranding(<OperatorBranding operator={full} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByRole('link', { name: /ops@example\.org/ }))
-      .toHaveAttribute('href', 'mailto:ops@example.org')
+    for (const [name, text] of [
+      ['AGPLv3', /free software licensed under the AGPLv3/i],
+      ['CC BY 4.0', /Creative Commons Attribution 4.0/i],
+    ] as const) {
+      const id = screen.getByRole('link', { name }).getAttribute('aria-describedby')
+      expect(id).toBeTruthy()
+      expect(document.getElementById(id!)).toHaveTextContent(text)
+    }
   })
 
-  // Feedback first when it is wired: one click beats composing an email. The
-  // callback's presence is the availability signal — Sidebar withholds it in demo
-  // mode, where the feedback button does not exist and POST /feedback is refused.
-  it('offers the feedback box when wired, with the email alongside it', async () => {
-    const onOpenFeedback = vi.fn()
-    renderBranding(<OperatorBranding operator={full} onOpenFeedback={onOpenFeedback} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    // Both routes offered side by side; assert before acting, because acting
-    // dismisses the bubble — the feedback dialog takes over from here.
-    const request = await screen.findByRole('button', { name: /send a request/i })
-    expect(screen.getByRole('link', { name: /ops@example\.org/ })).toBeInTheDocument()
-    fireEvent.click(request)
-    expect(onOpenFeedback).toHaveBeenCalledOnce()
-  })
-
-  it('falls back to the email alone when feedback is unavailable', async () => {
+  it('carries no info-icon button and no contact plumbing', () => {
     renderBranding(<OperatorBranding operator={full} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByRole('link', { name: /ops@example\.org/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /license/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /send a request/i })).toBeNull()
-  })
-
-  it('omits the recourse clause entirely when there is no contact and no feedback', async () => {
-    renderBranding(<OperatorBranding operator={{ ...full, contactEmails: [] }} />)
-    fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
-    expect(screen.queryByText(/if that link/i)).toBeNull()
-    expect(screen.queryByRole('button', { name: /send a request/i })).toBeNull()
+    expect(screen.queryByRole('link', { name: /ops@example\.org/ })).toBeNull()
   })
 
   // Guards the SOURCE_URL constant itself: every other source-line case passes
