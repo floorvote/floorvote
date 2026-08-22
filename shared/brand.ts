@@ -15,8 +15,9 @@ export const PRODUCT_NAME_WORDMARK = { primary: 'Floor', accent: 'Vote' } as con
  * footer to satisfy AGPLv3 §13 — the offer of Corresponding Source to users who
  * interact with the software over a network.
  *
- * Empty while the repository is private, so the footer link stays hidden. Set
- * this to the public repository URL in the same commit that makes the repo
- * public (a deliberate, one-time flip — see docs/backlog.md open-source hygiene).
+ * No trailing slash: OperatorBranding appends `/blob/main/LICENSE` to build the
+ * license link. Setting this to an empty string hides the footer line entirely,
+ * which withdraws that source offer — only appropriate for a fork whose source
+ * is not published at a public URL.
  */
-export const SOURCE_URL = ''
+export const SOURCE_URL = 'https://github.com/floorvote/floorvote'
