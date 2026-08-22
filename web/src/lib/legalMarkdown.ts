@@ -37,6 +37,18 @@ export function renderLegalMarkdown(md: string): string {
     const plain = tokens.map((t) => ('raw' in t ? t.raw : '')).join('')
     return `<h${depth} id="${headingSlug(plain)}">${inner}</h${depth}>\n`
   }
+  renderer.link = function ({ href, title, tokens }) {
+    const inner = this.parser.parseInline(tokens)
+    const t = title ? ` title="${title}"` : ''
+    // Same-page jumps must stay in the tab, or a TOC entry spawns a duplicate of
+    // the document. mailto:/tel: hand off to another app and leave a blank tab
+    // behind. Everything else navigates away from a document someone is reading
+    // — including the sibling legal doc — so open it alongside instead.
+    // sanitizeHtml's forceLinkRel hook adds rel="noopener noreferrer" to whatever
+    // carries a target, so it is not spelled out here.
+    const away = !href.startsWith('#') && !/^(mailto|tel):/i.test(href)
+    return `<a href="${href}"${t}${away ? ' target="_blank"' : ''}>${inner}</a>`
+  }
   const html = marked.parse(md, { async: false, renderer }) as string
   return sanitizeHtml(html, { allowedTags: ALLOWED_TAGS, allowedAttr: ALLOWED_ATTR })
 }

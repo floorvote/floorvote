@@ -16,6 +16,22 @@ describe('renderLegalMarkdown', () => {
       .toBe('how-is-your-organizations-data-isolated')
   })
 
+  it('opens away-navigating links in a new tab, but not anchors or mailto', () => {
+    const html = renderLegalMarkdown(
+      '[jump](#a-section) [sibling](/privacy) [mail](mailto:a@b.org) [ext](https://x.org)'
+    )
+    expect(html).toContain('<a href="#a-section">jump</a>')
+    expect(html).toContain('href="mailto:a@b.org"')
+    expect(html).not.toMatch(/href="mailto:a@b\.org"[^>]*target/)
+    expect(html).toMatch(/href="\/privacy"[^>]*target="_blank"/)
+    expect(html).toMatch(/href="https:\/\/x\.org"[^>]*target="_blank"/)
+  })
+
+  it('gives every new-tab link rel=noopener noreferrer', () => {
+    const html = renderLegalMarkdown('[sibling](/privacy)')
+    expect(html).toContain('rel="noopener noreferrer"')
+  })
+
   it('strips script tags and javascript: URLs', () => {
     const html = renderLegalMarkdown('[x](javascript:alert(1))\n\n<script>alert(2)</script>')
     expect(html).not.toContain('<script')
