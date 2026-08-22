@@ -1,12 +1,19 @@
 import { describe, it, expect } from 'vitest'
-import { renderLegalMarkdown } from './legalMarkdown'
+import { renderLegalMarkdown, headingSlug } from './legalMarkdown'
 
 describe('renderLegalMarkdown', () => {
   it('renders headings, bold, and mailto links', () => {
     const html = renderLegalMarkdown('# Terms\n\nHello **world** and [contact](mailto:a@b.org).')
-    expect(html).toContain('<h1>Terms</h1>')
+    expect(html).toContain('<h1 id="terms">Terms</h1>')
     expect(html).toContain('<strong>world</strong>')
     expect(html).toContain('href="mailto:a@b.org"')
+  })
+
+  it('gives headings anchor ids the document TOC can link to', () => {
+    const html = renderLegalMarkdown('## HOW IS YOUR ORGANIZATION\'S DATA ISOLATED?')
+    expect(html).toContain('id="how-is-your-organizations-data-isolated"')
+    expect(headingSlug("HOW IS YOUR ORGANIZATION'S DATA ISOLATED?"))
+      .toBe('how-is-your-organizations-data-isolated')
   })
 
   it('strips script tags and javascript: URLs', () => {
