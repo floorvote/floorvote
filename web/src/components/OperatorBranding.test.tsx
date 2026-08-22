@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { OperatorBranding } from './OperatorBranding'
-import { SOURCE_URL } from '../../../shared/brand'
+import { SOURCE_URL, LICENSE_URL } from '../../../shared/brand'
 
 const full = { name: 'Example Org', url: 'https://example.org/elections', contactEmails: ['ops@example.org'] }
 
@@ -66,16 +66,23 @@ describe('OperatorBranding', () => {
     expect(screen.getByText(/Source:/)).toBeInTheDocument()
   })
 
-  // The license link used to be built as `${sourceUrl}/blob/main/LICENSE`, which
-  // is GitHub's URL shape with a `main` default branch. Once operators can point
-  // this anywhere — GitLab, Gitea, a source tarball, a repo on `master` — that
-  // derivation produces a 404, so there is no second link to get wrong.
-  it('never derives a license URL from the source URL', () => {
+  // The license link used to be built as `${sourceUrl}/blob/main/LICENSE` — GitHub's
+  // URL shape with a `main` default branch, which 404s the moment an operator points
+  // the source anywhere else. The license text lives at a canonical, invariant
+  // address instead, because AGPLv3 is a property of the work, not of the operator.
+  it('links the license to its canonical address, never one derived from the source', () => {
     renderBranding(<OperatorBranding operator={full} sourceUrl="https://gitlab.com/org/fork" />)
-    expect(screen.queryByRole('link', { name: 'AGPLv3' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'AGPLv3' })).toHaveAttribute('href', LICENSE_URL)
+    expect(LICENSE_URL).toContain('gnu.org')
     for (const a of screen.getAllByRole('link')) {
       expect(a.getAttribute('href')).not.toContain('blob/main/LICENSE')
     }
+  })
+
+  // The license link is invariant, so it survives suppression of the source link.
+  it('keeps the license link even when the source URL is suppressed', () => {
+    renderBranding(<OperatorBranding operator={full} sourceUrl="" />)
+    expect(screen.getByRole('link', { name: 'AGPLv3' })).toHaveAttribute('href', LICENSE_URL)
   })
 
   // Precedence: explicit prop → operator config → the built-in constant. The
@@ -93,18 +100,72 @@ describe('OperatorBranding', () => {
     expect(screen.getByText(/AGPLv3/)).toBeInTheDocument()
   })
 
-  it('explains the license in a tooltip, naming the operator contact to ask', async () => {
+  it('names the operator in the tooltip so the user knows who owes them the source', async () => {
     renderBranding(<OperatorBranding operator={full} />)
     fireEvent.click(screen.getByRole('button', { name: /license/i }))
-    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
-    expect(screen.getByText(/ops@example\.org/)).toBeInTheDocument()
+    expect(await screen.findByText(/Operated by Example Org/)).toBeInTheDocument()
+    expect(screen.getByText(/entitles you to the source code/i)).toBeInTheDocument()
   })
 
-  it('omits the contact sentence when the operator configured no email', async () => {
+  it('drops the operator clause when no name is configured', async () => {
+    renderBranding(<OperatorBranding operator={{ ...full, name: '' }} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Operated by/)).toBeNull()
+  })
+
+  // With a working link the link IS the offer, so the recourse is framed as a
+  // fallback for when it fails — not as an instruction to ask for what is already
+  // one click away. With no link there is nothing to fall back from, so it asks.
+  it('frames the contact as a fallback when a source link is present', async () => {
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByText(/if that link/i)).toBeInTheDocument()
+    expect(screen.queryByText(/^To request it/)).toBeNull()
+  })
+
+  it('asks for the source outright when no link is offered', async () => {
+    renderBranding(<OperatorBranding operator={{ ...full, sourceUrl: '' }} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByText(/to request it/i)).toBeInTheDocument()
+    expect(screen.queryByText(/if that link/i)).toBeNull()
+  })
+
+  it('makes the contact email a mailto link, not plain text', async () => {
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByRole('link', { name: /ops@example\.org/ }))
+      .toHaveAttribute('href', 'mailto:ops@example.org')
+  })
+
+  // Feedback first when it is wired: one click beats composing an email. The
+  // callback's presence is the availability signal — Sidebar withholds it in demo
+  // mode, where the feedback button does not exist and POST /feedback is refused.
+  it('offers the feedback box when wired, with the email alongside it', async () => {
+    const onOpenFeedback = vi.fn()
+    renderBranding(<OperatorBranding operator={full} onOpenFeedback={onOpenFeedback} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    // Both routes offered side by side; assert before acting, because acting
+    // dismisses the bubble — the feedback dialog takes over from here.
+    const request = await screen.findByRole('button', { name: /send a request/i })
+    expect(screen.getByRole('link', { name: /ops@example\.org/ })).toBeInTheDocument()
+    fireEvent.click(request)
+    expect(onOpenFeedback).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to the email alone when feedback is unavailable', async () => {
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByRole('link', { name: /ops@example\.org/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /send a request/i })).toBeNull()
+  })
+
+  it('omits the recourse clause entirely when there is no contact and no feedback', async () => {
     renderBranding(<OperatorBranding operator={{ ...full, contactEmails: [] }} />)
     fireEvent.click(screen.getByRole('button', { name: /license/i }))
     expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
-    expect(screen.queryByText(/email/i)).toBeNull()
+    expect(screen.queryByText(/if that link/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /send a request/i })).toBeNull()
   })
 
   // Guards the SOURCE_URL constant itself: every other source-line case passes

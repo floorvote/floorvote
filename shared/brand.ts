@@ -11,6 +11,22 @@ export const PRODUCT_NAME = 'FloorVote'
 export const PRODUCT_NAME_WORDMARK = { primary: 'Floor', accent: 'Vote' } as const
 
 /**
+ * The license the work is under, and the canonical address of its text.
+ *
+ * Deliberately NOT operator-configurable, unlike `OPERATOR_SOURCE_URL` below. A
+ * derivative of AGPL-3.0 code stays AGPL-3.0, so the license is a property of
+ * the work rather than of whoever deploys it; a config knob here could only
+ * ever let an operator mislabel it. The address is gnu.org rather than a copy
+ * inside some repository, because the license text is identical everywhere and
+ * a repo-relative path has to guess the host's URL shape and default branch —
+ * which is exactly how the old `${sourceUrl}/blob/main/LICENSE` link broke for
+ * anyone not on GitHub.
+ */
+export const LICENSE_NAME = 'AGPLv3'
+
+export const LICENSE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html'
+
+/**
  * Public source repository URL, surfaced as a "Source (AGPLv3)" link in the app
  * footer to satisfy AGPLv3 §13 — the offer of Corresponding Source to users who
  * interact with the software over a network.

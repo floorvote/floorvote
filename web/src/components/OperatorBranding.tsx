@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PRODUCT_NAME, SOURCE_URL } from '../../../shared/brand'
+import { PRODUCT_NAME, SOURCE_URL, LICENSE_NAME, LICENSE_URL } from '../../../shared/brand'
 import { hasTerms, hasPrivacy } from '../lib/legalDocs'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
 import { InfoTooltip } from './InfoTooltip'
@@ -35,6 +35,9 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
  *   url set    → "Source: <product> (AGPLv3) ⓘ", product name links to it
  *   url empty  → "<product> (AGPLv3) ⓘ", no link and no "Source:" promise
  *
+ * The license name always links to `LICENSE_URL` — a canonical address, not one
+ * derived from the source URL, so it cannot go stale with the operator's host.
+ *
  * `sourceUrl` resolves prop → operator config → the `SOURCE_URL` constant. The
  * constant is the truthful default for a deployment running unmodified code;
  * an operator running a modified version overrides it via
@@ -47,11 +50,19 @@ export function OperatorBranding({
   sourceUrl: propSourceUrl,
   showTerms = hasTerms,
   showPrivacy = hasPrivacy,
+  onOpenFeedback,
 }: {
   operator?: OperatorConfig
   sourceUrl?: string
   showTerms?: boolean
   showPrivacy?: boolean
+  /**
+   * Opens the feedback dialog. Its presence IS the "feedback is available"
+   * signal: Sidebar withholds it in demo mode, where the feedback button does
+   * not exist and POST /feedback is refused outright. Undefined here means the
+   * tooltip falls back to the operator's email.
+   */
+  onOpenFeedback?: () => void
 } = {}) {
   const { config } = useConfig()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
@@ -89,20 +100,51 @@ export function OperatorBranding({
   )
 
   // Describe the user's right, not the operator's compliance: the product cannot
-  // verify that the URL resolves or that it holds the running version, so it must
-  // not assert on the operator's behalf that the obligation has been met. Naming
-  // a contact gives the user somewhere to go when it has not been — including the
-  // suppressed case, which is closer to §13's written-offer route than silence.
+  // verify that the URL resolves or that it holds the version running here, so it
+  // must not assert on the operator's behalf that the obligation has been met.
   //
-  // The contact is the operator's email rather than the in-app feedback button:
-  // POST /feedback requires auth and the button is hidden entirely in demo mode,
-  // and a demo visitor is exactly the kind of user who asks for source.
+  // Naming the operator matters because the §13 obligation is theirs, not the
+  // project's — a reader of this bubble should know who to hold to it. Dropped
+  // when unset, same as the credit line above.
+  //
+  // Recourse is framed by whether a link exists. With one, the link IS the offer,
+  // so telling the user to ask for it would undercut what they can already click;
+  // the contact is a fallback for the failure the product cannot detect (a stale
+  // URL, or source that no longer matches what is deployed). With the link
+  // suppressed there is nothing to fall back from, so it asks outright — which is
+  // closer to §13's written-offer route than a blank footer.
+  //
+  // Feedback first when it is wired: one click beats composing an email, and it
+  // lands in a queue the operator already watches. The email stays alongside it
+  // as the durable, addressable route — and becomes the only one in demo mode,
+  // where the feedback button does not exist and a curious visitor is exactly the
+  // person likely to ask.
   const contact = operator.contactEmails[0]
+  const requestLink = (
+    <button
+      type="button"
+      onClick={onOpenFeedback}
+      style={{
+        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+        font: 'inherit', color: 'inherit', textDecoration: 'underline',
+      }}
+    >send a request</button>
+  )
+  const recourse = (onOpenFeedback || contact) && (
+    <>
+      {sourceUrl ? " If that link doesn't provide it, " : ' To request it, '}
+      {onOpenFeedback && requestLink}
+      {onOpenFeedback && contact && ' or '}
+      {contact && <a href={`mailto:${contact}`} style={{ color: 'inherit' }}>email {contact}</a>}
+      .
+    </>
+  )
   const licenseNote = (
     <>
-      This service runs {PRODUCT_NAME}, free software licensed under the AGPLv3.
-      That license entitles you to the source code of the version running here.
-      {contact && ` To request it, write to ${contact}.`}
+      {operator.name && `Operated by ${operator.name}. `}
+      This service runs {PRODUCT_NAME}, free software under the {LICENSE_NAME},
+      which entitles you to the source code of the version running here.
+      {recourse}
     </>
   )
 
@@ -127,7 +169,9 @@ export function OperatorBranding({
           {sourceUrl
             ? <>Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a></>
             : PRODUCT_NAME}
-          {' (AGPLv3)'}
+          {' ('}
+          <a href={LICENSE_URL} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{LICENSE_NAME}</a>
+          {')'}
         </span>
         <InfoTooltip text={licenseNote} maxWidth={280} align="left" label="About the license" />
       </div>
