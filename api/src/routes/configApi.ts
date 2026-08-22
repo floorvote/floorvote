@@ -173,10 +173,18 @@ configRouter.get('/', async (c) => {
     }
   }
 
+  // NOTE: sourceUrl is deliberately NOT normalized to '' like its neighbours
+  // above. It carries three states and the frontend needs all three: absent
+  // means "operator said nothing, use the built-in default", '' means "operator
+  // has no source to offer, show the license notice without a link", and a URL
+  // overrides. Collapsing unset into '' here would silently turn every
+  // unconfigured tenant into the suppressed case and strip its source offer,
+  // with every test still green. Leave it un-normalized.
   const operator = {
     name: c.env.OPERATOR_NAME ?? '',
     url: c.env.OPERATOR_URL ?? '',
     contactEmails: parseEmailList(c.env.OPERATOR_CONTACT_EMAILS),
+    sourceUrl: c.env.OPERATOR_SOURCE_URL,
   }
 
   const tagTaxonomy = taxonomyItems.map(t => t.name)

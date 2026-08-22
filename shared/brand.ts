@@ -15,9 +15,11 @@ export const PRODUCT_NAME_WORDMARK = { primary: 'Floor', accent: 'Vote' } as con
  * footer to satisfy AGPLv3 §13 — the offer of Corresponding Source to users who
  * interact with the software over a network.
  *
- * No trailing slash: OperatorBranding appends `/blob/main/LICENSE` to build the
- * license link. Setting this to an empty string hides the footer line entirely,
- * which withdraws that source offer — only appropriate for a fork whose source
- * is not published at a public URL.
+ * This is the DEFAULT, and it is truthful only for a deployment running this
+ * code unmodified. An operator running a modified version must override it with
+ * the `OPERATOR_SOURCE_URL` tenant var, which points at their own published
+ * source; nothing at runtime can detect that they should have. Setting that var
+ * to an empty string withdraws the offer, leaving the license notice in place
+ * without a link.
  */
 export const SOURCE_URL = 'https://github.com/floorvote/floorvote'

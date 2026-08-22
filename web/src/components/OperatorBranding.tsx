@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { PRODUCT_NAME, SOURCE_URL } from '../../../shared/brand'
 import { hasTerms, hasPrivacy } from '../lib/legalDocs'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
+import { InfoTooltip } from './InfoTooltip'
 import { color, fontSize } from '../styles/tokens'
 
 // Conventional, generic asset path (not operator-specific). A deployer drops their
@@ -21,16 +22,29 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
  * load, the credit block collapses — only the LegiScan / CC BY attribution remains
  * (that line is a data-provider license credit and always renders).
  *
- * The footer shows up to three muted lines below the operator credit, each
- * independently conditional: a "Source: <product> (AGPLv3)" line gated on
- * `SOURCE_URL`, the always-on "Data: LegiScan (CC BY 4.0)" credit, and a
- * "Terms · Privacy" line gated on `showTerms`/`showPrivacy` (defaulting to
- * whether the docs were bundled). `sourceUrl`/`showTerms`/`showPrivacy` are
- * optional props only so tests can drive them.
+ * The footer shows three muted lines below the operator credit: the license
+ * line, the "Data: LegiScan (CC BY 4.0)" credit, and a "Terms · Privacy" line
+ * gated on `showTerms`/`showPrivacy` (defaulting to whether the docs were
+ * bundled). `sourceUrl`/`showTerms`/`showPrivacy` are optional props only so
+ * tests can drive them.
+ *
+ * The license line always renders — AGPL §5 asks that legal notices be
+ * preserved, so an operator can withhold a source URL they do not have but
+ * cannot silently strip the attribution. Only the link is conditional:
+ *
+ *   url set    → "Source: <product> (AGPLv3) ⓘ", product name links to it
+ *   url empty  → "<product> (AGPLv3) ⓘ", no link and no "Source:" promise
+ *
+ * `sourceUrl` resolves prop → operator config → the `SOURCE_URL` constant. The
+ * constant is the truthful default for a deployment running unmodified code;
+ * an operator running a modified version overrides it via
+ * `OPERATOR_SOURCE_URL` to point at their own published source. An explicitly
+ * empty config value is suppression, which is why the chain uses `??` and not
+ * `||` — see the note in the tenant API's /config handler.
  */
 export function OperatorBranding({
   operator: propOperator,
-  sourceUrl = SOURCE_URL,
+  sourceUrl: propSourceUrl,
   showTerms = hasTerms,
   showPrivacy = hasPrivacy,
 }: {
@@ -41,6 +55,7 @@ export function OperatorBranding({
 } = {}) {
   const { config } = useConfig()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
+  const sourceUrl = propSourceUrl ?? operator.sourceUrl ?? SOURCE_URL
   const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
 
   const showName = Boolean(operator.name)
@@ -73,6 +88,24 @@ export function OperatorBranding({
     </>
   )
 
+  // Describe the user's right, not the operator's compliance: the product cannot
+  // verify that the URL resolves or that it holds the running version, so it must
+  // not assert on the operator's behalf that the obligation has been met. Naming
+  // a contact gives the user somewhere to go when it has not been — including the
+  // suppressed case, which is closer to §13's written-offer route than silence.
+  //
+  // The contact is the operator's email rather than the in-app feedback button:
+  // POST /feedback requires auth and the button is hidden entirely in demo mode,
+  // and a demo visitor is exactly the kind of user who asks for source.
+  const contact = operator.contactEmails[0]
+  const licenseNote = (
+    <>
+      This service runs {PRODUCT_NAME}, free software licensed under the AGPLv3.
+      That license entitles you to the source code of the version running here.
+      {contact && ` To request it, write to ${contact}.`}
+    </>
+  )
+
   return (
     <div style={{ flexShrink: 0, borderTop: `1px solid ${color.borderDefault}`, padding: '12px 20px', textAlign: 'center' }}>
       {showCredit && (operator.url
@@ -83,15 +116,22 @@ export function OperatorBranding({
         )
         : <div>{credit}</div>
       )}
-      {sourceUrl && (
-        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0, textAlign: 'left' }}>
-          Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a>
-          {' ('}
-          <a href={`${sourceUrl.replace(/\/$/, '')}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>AGPLv3</a>
-          {')'}
-        </div>
-      )}
-      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: sourceUrl ? 4 : (hasVisibleCredit ? 10 : 0), textAlign: 'left' }}>
+      {/* Flex row, not an inline ⓘ: the icon's font is larger than this line's xs
+          text, so inline it sits off the baseline. Text stays one wrappable span
+          so a narrow sidebar breaks the label, not the label from its icon. */}
+      <div style={{
+        fontSize: fontSize.xs, color: color.textMuted, marginTop: hasVisibleCredit ? 10 : 0,
+        textAlign: 'left', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap',
+      }}>
+        <span>
+          {sourceUrl
+            ? <>Source: <a href={sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>{PRODUCT_NAME}</a></>
+            : PRODUCT_NAME}
+          {' (AGPLv3)'}
+        </span>
+        <InfoTooltip text={licenseNote} maxWidth={280} align="left" label="About the license" />
+      </div>
+      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
         Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
         {' ('}
         <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>CC BY 4.0</a>

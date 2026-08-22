@@ -109,8 +109,17 @@ OPERATOR_NAME = "Your Operator Name"
 # optional — footer link
 OPERATOR_URL = "https://example.org"
 
-# optional — feedback recipient(s)
+# optional — feedback recipient(s), and who users are told to ask for source
 OPERATOR_CONTACT_EMAILS = "support@example.org"
+
+# optional — where your source is published. If you modify FloorVote and run it
+# for other people, AGPLv3 §13 obliges you to offer them the source of your
+# version; this is the link the footer offers. Leave it unset and the footer
+# points at the upstream repository, which is only accurate while you run the
+# code unmodified. Set it to "" if you have no published source — the license
+# notice stays, the link goes, and users are pointed at your contact address
+# instead.
+OPERATOR_SOURCE_URL = "https://github.com/yourorg/floorvote"
 
 # e.g. "NJ"; leave "" for a multi-state team
 STATE = "[STATE]"

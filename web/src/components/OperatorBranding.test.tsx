@@ -49,17 +49,62 @@ describe('OperatorBranding', () => {
     expect(screen.getByRole('link', { name: 'CC BY 4.0' })).toBeInTheDocument()
   })
 
-  it('hides the source line when no source URL is set (private repo)', () => {
+  // Suppression drops the source *link*, never the license notice: AGPL §5 asks
+  // that legal notices be preserved, so config can withhold a URL the operator
+  // does not have but cannot silently strip the attribution.
+  it('keeps the license notice but drops the link when the source URL is empty', () => {
     renderBranding(<OperatorBranding operator={full} sourceUrl="" />)
-    expect(screen.queryByRole('link', { name: 'AGPLv3' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'FloorVote' })).toBeNull()
+    expect(screen.getByText(/AGPLv3/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Source:/)).toBeNull()
   })
 
-  it('renders Source: <product> (AGPLv3) with repo + license links when configured', () => {
+  it('renders Source: <product> (AGPLv3) with the repo link when configured', () => {
     renderBranding(<OperatorBranding operator={full} sourceUrl="https://github.com/floorvote/floorvote" />)
     expect(screen.getByRole('link', { name: 'FloorVote' }))
       .toHaveAttribute('href', 'https://github.com/floorvote/floorvote')
-    expect(screen.getByRole('link', { name: 'AGPLv3' }))
-      .toHaveAttribute('href', 'https://github.com/floorvote/floorvote/blob/main/LICENSE')
+    expect(screen.getByText(/Source:/)).toBeInTheDocument()
+  })
+
+  // The license link used to be built as `${sourceUrl}/blob/main/LICENSE`, which
+  // is GitHub's URL shape with a `main` default branch. Once operators can point
+  // this anywhere — GitLab, Gitea, a source tarball, a repo on `master` — that
+  // derivation produces a 404, so there is no second link to get wrong.
+  it('never derives a license URL from the source URL', () => {
+    renderBranding(<OperatorBranding operator={full} sourceUrl="https://gitlab.com/org/fork" />)
+    expect(screen.queryByRole('link', { name: 'AGPLv3' })).toBeNull()
+    for (const a of screen.getAllByRole('link')) {
+      expect(a.getAttribute('href')).not.toContain('blob/main/LICENSE')
+    }
+  })
+
+  // Precedence: explicit prop → operator config → the built-in constant. The
+  // constant is the truthful default for an unmodified deployment; an operator
+  // running modified code overrides it with their own published source.
+  it('prefers the operator config source URL over the built-in constant', () => {
+    renderBranding(<OperatorBranding operator={{ ...full, sourceUrl: 'https://gitea.example/org/fork' }} />)
+    expect(screen.getByRole('link', { name: 'FloorVote' }))
+      .toHaveAttribute('href', 'https://gitea.example/org/fork')
+  })
+
+  it('treats an explicitly empty operator config URL as suppression, not as unset', () => {
+    renderBranding(<OperatorBranding operator={{ ...full, sourceUrl: '' }} />)
+    expect(screen.queryByRole('link', { name: 'FloorVote' })).toBeNull()
+    expect(screen.getByText(/AGPLv3/)).toBeInTheDocument()
+  })
+
+  it('explains the license in a tooltip, naming the operator contact to ask', async () => {
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
+    expect(screen.getByText(/ops@example\.org/)).toBeInTheDocument()
+  })
+
+  it('omits the contact sentence when the operator configured no email', async () => {
+    renderBranding(<OperatorBranding operator={{ ...full, contactEmails: [] }} />)
+    fireEvent.click(screen.getByRole('button', { name: /license/i }))
+    expect(await screen.findByText(/entitles you to the source code/i)).toBeInTheDocument()
+    expect(screen.queryByText(/email/i)).toBeNull()
   })
 
   // Guards the SOURCE_URL constant itself: every other source-line case passes
@@ -67,11 +112,8 @@ describe('OperatorBranding', () => {
   // and the footer shipped with no AGPLv3 §13 source offer.
   it('renders the source line from the SOURCE_URL default when no prop is given', () => {
     renderBranding(<OperatorBranding operator={full} />)
-    const repo = screen.getByRole('link', { name: 'FloorVote' })
-    expect(repo).toHaveAttribute('href', SOURCE_URL)
+    expect(screen.getByRole('link', { name: 'FloorVote' })).toHaveAttribute('href', SOURCE_URL)
     expect(SOURCE_URL).toMatch(/^https:\/\/\S+[^/]$/)
-    expect(screen.getByRole('link', { name: 'AGPLv3' }))
-      .toHaveAttribute('href', `${SOURCE_URL}/blob/main/LICENSE`)
   })
 
   it('renders both legal links with a separator when both docs exist', () => {
