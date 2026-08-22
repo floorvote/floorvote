@@ -1,12 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { renderLegalMarkdown } from './legalMarkdown'
+import { renderLegalMarkdown, headingSlug } from './legalMarkdown'
 
 describe('renderLegalMarkdown', () => {
   it('renders headings, bold, and mailto links', () => {
     const html = renderLegalMarkdown('# Terms\n\nHello **world** and [contact](mailto:a@b.org).')
-    expect(html).toContain('<h1>Terms</h1>')
+    expect(html).toContain('<h1 id="terms">Terms</h1>')
     expect(html).toContain('<strong>world</strong>')
     expect(html).toContain('href="mailto:a@b.org"')
+  })
+
+  it('gives headings anchor ids the document TOC can link to', () => {
+    const html = renderLegalMarkdown('## HOW IS YOUR ORGANIZATION\'S DATA ISOLATED?')
+    expect(html).toContain('id="how-is-your-organizations-data-isolated"')
+    expect(headingSlug("HOW IS YOUR ORGANIZATION'S DATA ISOLATED?"))
+      .toBe('how-is-your-organizations-data-isolated')
+  })
+
+  it('opens away-navigating links in a new tab, but not anchors or mailto', () => {
+    const html = renderLegalMarkdown(
+      '[jump](#a-section) [sibling](/privacy) [mail](mailto:a@b.org) [ext](https://x.org)'
+    )
+    expect(html).toContain('<a href="#a-section">jump</a>')
+    expect(html).toContain('href="mailto:a@b.org"')
+    expect(html).not.toMatch(/href="mailto:a@b\.org"[^>]*target/)
+    expect(html).toMatch(/href="\/privacy"[^>]*target="_blank"/)
+    expect(html).toMatch(/href="https:\/\/x\.org"[^>]*target="_blank"/)
+  })
+
+  it('gives every new-tab link rel=noopener noreferrer', () => {
+    const html = renderLegalMarkdown('[sibling](/privacy)')
+    expect(html).toContain('rel="noopener noreferrer"')
   })
 
   it('strips script tags and javascript: URLs', () => {
