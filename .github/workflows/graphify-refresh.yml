@@ -1,55 +1,115 @@
 name: graphify-refresh
 
-# Nightly rebuild of the knowledge graph in graphify-out/.
-# One bot commit per day, only when the graph changes. AST extraction is free;
-# if GEMINI_API_KEY is set as a repo secret, Gemini names communities (low cost).
+# Weekly rebuild of the knowledge graph in graphify-out/, proposed as a PR.
+#
+# CADENCE: Mondays, matching Dependabot (.github/dependabot.yml), so the repo
+# gets one batch of bot PRs a week rather than a daily drip. The graph tracks
+# architecture, which does not move daily.
+#
+# WHY A PR AND NOT A PUSH: `main` requires five status checks. A direct push
+# from here is rejected (`GH006 ... 5 of 5 required status checks are expected`),
+# which is how this workflow failed for the whole of its daily era. Bypassing the
+# checks was considered and rejected — it would have meant giving an automated
+# actor a standing hole in branch protection. Opening a PR instead means the
+# graph refresh passes the same checks as any other change, and the ruleset needs
+# no bypass entry at all.
+#
+# WHY AN APP TOKEN AND NOT GITHUB_TOKEN: events triggered by GITHUB_TOKEN do not
+# start new workflow runs, so a PR opened with it would never get its required
+# checks and could never merge. An app installation token has no such
+# restriction. It also attributes the commits to the app rather than to a human,
+# which keeps `git blame` honest.
+#
+# AST extraction is free; GEMINI_API_KEY (repo secret) names the communities.
 # Scope (application code, docs excluded) is governed by .graphifyignore.
 on:
   schedule:
-    - cron: "0 7 * * *" # 07:00 UTC daily
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC — same day as Dependabot
   workflow_dispatch: {} # allow manual runs from the Actions tab
 
+# The app token below carries the write access. GITHUB_TOKEN only needs to read.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: graphify-refresh
   cancel-in-progress: false
 
+env:
+  BRANCH: graphify/refresh
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
+      # Mint a short-lived (1 hour) installation token for the graphify-bot app.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.GRAPHIFY_APP_ID }}
+          private-key: ${{ secrets.GRAPHIFY_APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
 
-      # Pin the package version: this is a `contents: write` job that
-      # `git push`es, so a floating `latest` is a typosquat/hijack → push-access
-      # risk. `graphifyy` (double-y) is the correct PyPI package (single-y 404s).
-      # Bump deliberately; optionally harden further with a hash-locked
-      # requirements file (pip install --require-hashes).
+      # Pin the package version: this job holds a token that can open PRs, so a
+      # floating `latest` is a typosquat/hijack risk. `graphifyy` (double-y) is
+      # the correct PyPI package (single-y 404s). Bump deliberately; optionally
+      # harden further with a hash-locked requirements file
+      # (pip install --require-hashes).
       - run: pip install "graphifyy[openai]==0.8.44"
 
       # Rebuild the graph: re-extract code, update graph.json + GRAPH_REPORT.md +
       # manifest.json + .graphify_labels.json. graph.html/cache/backups are
       # gitignored. graphify leaves outputs untouched when topology is unchanged.
-      # When GEMINI_API_KEY is set, graphify uses Gemini to name communities;
-      # without it, communities are structural only (numbered, not named).
       - run: graphify update .
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: Commit graph if it changed
+      - name: Propose the refreshed graph
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          set -euo pipefail
+
           git config user.name  "graphify-bot"
           git config user.email "actions@users.noreply.github.com"
+
           git add graphify-out/
           if git diff --cached --quiet; then
-            echo "No graph changes — nothing to commit."
+            echo "No graph changes — nothing to propose."
             exit 0
           fi
-          git commit -m "chore(graphify): refresh knowledge graph [skip ci]"
-          git push
+
+          # A single long-lived bot branch, force-pushed each week. Its history is
+          # disposable; only the merge into main matters. Note there is no
+          # [skip ci] here — CI running on this PR is the entire point.
+          git checkout -b "$BRANCH"
+          git commit -m "chore(graphify): refresh knowledge graph"
+          git push --force origin "$BRANCH"
+
+          # Reuse the open PR if last week's has not been merged yet, so the bot
+          # never stacks duplicates.
+          open_prs=$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')
+          if [ "$open_prs" -gt 0 ]; then
+            echo "Existing PR updated with the new graph."
+            exit 0
+          fi
+
+          body=$(cat <<'MSG'
+          Automated weekly rebuild of `graphify-out/` by the `graphify-refresh` workflow.
+
+          Regenerated from the current tree with `graphify update .` — no hand edits.
+          Safe to close if unwanted; the next Monday run opens a fresh one.
+          MSG
+          )
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(graphify): refresh knowledge graph" \
+            --body "$body"
