@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PRODUCT_NAME, SOURCE_URL, LICENSE_NAME, LICENSE_URL } from '../../../shared/brand'
-import { hasTerms, hasPrivacy } from '../lib/legalDocs'
+import { legalDocsVisible } from '../lib/legalVisibility'
+import { useDemo } from '../context/DemoContext'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
 import { HoverTooltip } from './HoverTooltip'
 import { SR_ONLY } from '../lib/textStyles'
@@ -41,9 +42,9 @@ const DATA_NOTE_ID = 'footer-data-note'
  *
  * The footer shows three muted lines below the operator credit: the license
  * line, the "Data: LegiScan (CC BY 4.0)" credit, and a "Terms · Privacy" line
- * gated on `showTerms`/`showPrivacy` (defaulting to whether the docs were
- * bundled). `sourceUrl`/`showTerms`/`showPrivacy` are optional props only so
- * tests can drive them.
+ * gated on `showTerms`/`showPrivacy` (defaulting to `legalDocsVisible`: the docs
+ * were bundled and this is not a demo tenant). `sourceUrl`/`showTerms`/
+ * `showPrivacy` are optional props only so tests can drive them.
  *
  * The license line always renders — AGPL §5 asks that legal notices be
  * preserved, so an operator can withhold a source URL they do not have but
@@ -65,8 +66,8 @@ const DATA_NOTE_ID = 'footer-data-note'
 export function OperatorBranding({
   operator: propOperator,
   sourceUrl: propSourceUrl,
-  showTerms = hasTerms,
-  showPrivacy = hasPrivacy,
+  showTerms: propShowTerms,
+  showPrivacy: propShowPrivacy,
 }: {
   operator?: OperatorConfig
   sourceUrl?: string
@@ -74,8 +75,13 @@ export function OperatorBranding({
   showPrivacy?: boolean
 } = {}) {
   const { config } = useConfig()
+  const { demoMode } = useDemo()
   const operator = propOperator ?? config?.operator ?? EMPTY_OPERATOR
   const sourceUrl = propSourceUrl ?? operator.sourceUrl ?? SOURCE_URL
+  // Prop wins so tests can drive it, same as sourceUrl above.
+  const visible = legalDocsVisible(demoMode)
+  const showTerms = propShowTerms ?? visible.showTerms
+  const showPrivacy = propShowPrivacy ?? visible.showPrivacy
   const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
 
   const showName = Boolean(operator.name)

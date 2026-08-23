@@ -23,8 +23,8 @@ beforeEach(() => {
   fetchMock.mockResolvedValue({ demoMode: false, turnstileSiteKey: '0xTEST' }) // mount calls /auth/demo-mode
 })
 
-function renderLogin() {
-  return render(<MemoryRouter><Login /></MemoryRouter>)
+function renderLogin(path = '/login') {
+  return render(<MemoryRouter initialEntries={[path]}><Login /></MemoryRouter>)
 }
 
 describe('Login — Turnstile gating', () => {
@@ -127,6 +127,19 @@ describe('Login — legal links', () => {
     renderLogin()
     expect(await screen.findByRole('link', { name: 'Terms of Use' })).toHaveAttribute('href', '/terms')
     expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute('href', '/privacy')
+  })
+
+  // ?manual=1 is the only way to see this page on a demo tenant — without it the
+  // bootstrap auto-posts /auth/demo-login and leaves. Narrow, but the rule has to
+  // hold on the one surface a demo visitor can actually reach.
+  it('shows neither legal link on a demo tenant', async () => {
+    fetchMock.mockResolvedValue({ demoMode: true, turnstileSiteKey: '0xTEST' })
+    renderLogin('/login?manual=1')
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/auth/demo-mode'))
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Terms of Use' })).toBeNull()
+      expect(screen.queryByRole('link', { name: 'Privacy Policy' })).toBeNull()
+    })
   })
 
   it('opens each legal doc alongside the sign-in form, discarding no typed email', async () => {
