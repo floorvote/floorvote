@@ -5,7 +5,7 @@ import { Wordmark as BrandWordmark } from '../components/Wordmark'
 import { Turnstile } from '../components/Turnstile'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
-import { hasTerms, hasPrivacy } from '../lib/legalDocs'
+import { legalDocsVisible } from '../lib/legalVisibility'
 
 const AUTH_ERRORS: Record<string, string> = {
   expired: 'This link has expired. Request a new one.',
@@ -173,7 +173,7 @@ export function Login() {
           </div>
         )}
       </div>
-      <LegalLinks />
+      <LegalLinks demoMode={demoMode} />
     </div>
   )
 }
@@ -188,13 +188,14 @@ function Wordmark() {
 
 // Opened alongside, not navigated to: sending someone to the Terms mid-login
 // would discard the email they had typed and the pending code.
-function LegalLinks() {
-  if (!hasTerms && !hasPrivacy) return null
+function LegalLinks({ demoMode }: { demoMode: boolean }) {
+  const { showTerms, showPrivacy } = legalDocsVisible(demoMode)
+  if (!showTerms && !showPrivacy) return null
   return (
     <div style={{ marginTop: 20, fontSize: fontSize.sm, color: color.textMuted }}>
-      {hasTerms && <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Terms of Use</Link>}
-      {hasTerms && hasPrivacy && ' · '}
-      {hasPrivacy && <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Privacy Policy</Link>}
+      {showTerms && <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Terms of Use</Link>}
+      {showTerms && showPrivacy && ' · '}
+      {showPrivacy && <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>Privacy Policy</Link>}
     </div>
   )
 }
