@@ -157,7 +157,8 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           .filter(r => r.matchType === null)
           .map(r => parseLegiScanId(r.externalId))
           .filter((n): n is number => n !== null)
-        if (promoteIds.length > 0) {
+        // As in draftRoutes: promotion runs AI, which a demo must never do.
+        if (promoteIds.length > 0 && c.env.DEMO_MODE !== 'true') {
           try {
             const res = await centralFetch(c.env, `/tenants/promote-bills/${c.env.TENANT_ID}`, {
               method: 'POST',

@@ -26,6 +26,11 @@ export async function collectPriorityLegiscanIds(db: AppDb): Promise<number[]> {
 // Errors are logged, not thrown — safe to call inside waitUntil / fire-and-forget.
 export async function backfillCalendar(env: Env, legiscanIds: number[]): Promise<void> {
   if (legiscanIds.length === 0) return
+  // A demo's calendar is seeded, not backfilled. Skipping here keeps a visitor
+  // action from generating central traffic and a queue message that the
+  // processor's demo guard would only discard on the far side. Belt to that
+  // guard's braces: the processor is what actually prevents the model call.
+  if (env.DEMO_MODE === 'true') return
   try {
     const res = await centralFetch(env, `/tenants/reprocess/${env.TENANT_ID}`, {
       method: 'POST',

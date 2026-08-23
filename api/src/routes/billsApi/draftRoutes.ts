@@ -207,7 +207,10 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       if (legiscanId !== null) c.executionCtx.waitUntil(backfillCalendar(c.env, [legiscanId]))
       // Promote a lightweight LegiScan stub to full tracking + AI (zero-cost on central;
       // the ingestor will make one getBill() call). Failures log but don't fail the request.
-      if (legiscanId !== null && row?.matchType === null) {
+      // Promotion means "fetch text and run AI", which a demo must never do —
+      // see the demo guard in queue/processor.ts. `promoted` stays false so the
+      // response doesn't claim analysis is coming when none is.
+      if (legiscanId !== null && row?.matchType === null && c.env.DEMO_MODE !== 'true') {
         promoted = true
         try {
           const res = await centralFetch(c.env, `/tenants/promote-bill/${c.env.TENANT_ID}/${legiscanId}`, { method: 'POST' })
