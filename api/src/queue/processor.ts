@@ -373,8 +373,36 @@ export async function processCentralNotification(
     console.warn(`[processor] skipping AI for ${msg.billId}: no full text available in central; leaving as stub`)
     shouldRunAi = false
   }
+  // Demo tenants never call the model. This is the chokepoint: every route that
+  // can reach AI — /admin/reprocess-bill, /admin/reprocess-llm-all,
+  // /admin/promote-bill, the keyword-save re-analysis, bulk actions, and the
+  // calendar backfill behind PATCH /bills/:id/priority — converges here, so one
+  // guard covers them all, including routes added later.
+  //
+  // It has to be server-side and it has to be here. On a demo the seeded
+  // `demo-user` holds role 'admin' and every anonymous visitor shares that one
+  // account, so the admin AI endpoints are reachable by the public internet;
+  // `reprocess-llm-all` alone queues every unanalyzed matching bill with
+  // forceAI. Greying the buttons out in the UI does not close that.
+  //
+  // `forceAI` deliberately does NOT override this — a demo's content is whatever
+  // its seed shipped, and there is no visitor action that should spend a model
+  // call.
+  if (shouldRunAi && env.DEMO_MODE === 'true') {
+    console.log(`[processor] demo tenant: skipping AI for ${msg.billId}`)
+    shouldRunAi = false
+  }
 
-  const aiDedup = !msg.forceAI && !msg.forceMetadata && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
+  // Dedup on the text hash: if AI already ran against this exact text, don't pay
+  // for it again. `forceMetadata` is deliberately NOT part of this condition —
+  // it means "refresh the provider metadata", not "re-run the model". Having it
+  // here made every metadata refresh a fresh AI call: central's /reprocess sends
+  // forceMetadata, and PATCH /bills/:id/priority reaches /reprocess through
+  // backfillCalendar, so merely setting a priority re-analyzed the bill. That
+  // also re-armed isFirstKeywordMatch on any tenant whose new_match_at had been
+  // cleared, surfacing a phantom "New bill matching your keywords" event on a
+  // bill the reader had just prioritized. Only forceAI forces the model.
+  const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
   let aiResult: { summary: string; tags: string[]; relevanceScore: number } | null = null
   let aiSkipReason: AiSkipReason | null = null

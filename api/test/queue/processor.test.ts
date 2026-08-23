@@ -171,16 +171,31 @@ describe('processCentralNotification', () => {
     expect(processBill).not.toHaveBeenCalled()
   })
 
-  it('reprocesses when forceMetadata is true even if updatedAt unchanged', async () => {
+  it('reprocesses metadata when forceMetadata is true even if updatedAt unchanged', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
     const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
     await processCentralNotification(msg, testEnv as any, db)
     vi.clearAllMocks()
+
+    // Central now reports a corrected title for the same text (textHash and
+    // updatedAt unchanged). forceMetadata exists to get that through the
+    // providerUpdatedAt early return — it refreshes provider metadata, and
+    // deliberately does NOT re-run the model on text that has not changed.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, title: 'Election Administration Act (corrected)' }) })
+    }))
+
     const forceMsg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, forceMetadata: true }
     await processCentralNotification(forceMsg, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.title).toBe('Election Administration Act (corrected)')
     const { processBill } = await import('../../src/lib/llm')
-    expect(processBill).toHaveBeenCalled()
+    expect(processBill).not.toHaveBeenCalled()
   })
 
   it('forceAI bypasses keyword gate', async () => {
@@ -243,6 +258,72 @@ describe('processCentralNotification', () => {
 
     const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
     expect(events).toHaveLength(1)
+  })
+
+  // ── AI must not run on a demo tenant, and must not re-run on metadata refresh ──
+
+  it('never calls the model on a demo tenant', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, demoEnv as any, db)
+
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).not.toHaveBeenCalled()
+    const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
+    expect(events).toHaveLength(0)
+  })
+
+  it('never calls the model on a demo tenant even with forceAI', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, forceAI: true }
+    await processCentralNotification(msg, demoEnv as any, db)
+
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).not.toHaveBeenCalled()
+  })
+
+  it('forceMetadata does not bypass the AI text-hash dedup', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID }, testEnv as any, db)
+
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).toHaveBeenCalledTimes(1)
+
+    // What `PATCH /bills/:id/priority` triggers: backfillCalendar → central
+    // /reprocess, which sends forceMetadata (NOT forceAI). The text has not
+    // changed, so the model must not run again.
+    await processCentralNotification(
+      { tenantId: 'test-org', billId: BILL_ID, forceMetadata: true },
+      testEnv as any,
+      db,
+    )
+    expect(processBill).toHaveBeenCalledTimes(1)
+  })
+
+  it('emits no bill_matched on a forceMetadata reprocess after a demo reset', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID }, testEnv as any, db)
+
+    // Reproduce what demoReset actually leaves behind: feed_events truncated
+    // (demoReset.ts `DELETE FROM feed_events`) AND new_match_at cleared. Both
+    // guards are empty, so only the AI gate can prevent a phantom event.
+    await db.delete(feedEvents)
+    await db.update(bills).set({ newMatchAt: null })
+
+    await processCentralNotification(
+      { tenantId: 'test-org', billId: BILL_ID, forceMetadata: true },
+      testEnv as any,
+      db,
+    )
+
+    const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
+    expect(events).toHaveLength(0)
   })
 
   it('does not set new_match_at for manual bills', async () => {
