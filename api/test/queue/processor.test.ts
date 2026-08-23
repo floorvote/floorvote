@@ -226,6 +226,25 @@ describe('processCentralNotification', () => {
     expect(events).toHaveLength(1)
   })
 
+  it('does not re-emit bill_matched when new_match_at is cleared out from under it', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    // new_match_at is a worklist flag, and things legitimately clear it — the demo
+    // reset does exactly this on every bill so a six-hourly reset doesn't present
+    // months-old content as newly matched. The feed event is a historical marker
+    // and must not come back when the flag does.
+    await db.update(bills).set({ newMatchAt: null })
+
+    const forceMsg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, forceAI: true }
+    await processCentralNotification(forceMsg, testEnv as any, db)
+
+    const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
+    expect(events).toHaveLength(1)
+  })
+
   it('does not set new_match_at for manual bills', async () => {
     const db = getDb(env.DB)
     const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, matchType: 'manual' }

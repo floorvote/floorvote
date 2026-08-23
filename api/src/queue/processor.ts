@@ -555,17 +555,34 @@ export async function processCentralNotification(
     })
   }
 
-  // New keyword-match feed event: passive, system actor, written once. Stays out of
-  // the default feed and nav-dot (bill_matched ∈ PASSIVE_EVENT_TYPES); shows only in
-  // the "All fully analyzed bills" feed scope. Drives the new-match worklist/digest too.
+  // New keyword-match feed event: passive, system actor, written once per bill. Shows
+  // in the "All fully analyzed bills" feed scope, and — once someone prioritizes the
+  // bill — in the default feed and nav-dot too, since those admit passive events on
+  // prioritized bills (see feed.ts / PASSIVE_EVENT_TYPES). Drives the new-match
+  // worklist/digest as well.
+  //
+  // Write-once is enforced against the feed_events table itself, not against
+  // `new_match_at`. That column is a *worklist* flag and things legitimately clear it
+  // — the demo reset nulls it on every bill so a six-hourly reset doesn't present
+  // months-old content as newly matched. When a cleared row is then reprocessed with a
+  // fresh AI result (setting a priority triggers exactly that, via backfillCalendar →
+  // central reprocess), isFirstKeywordMatch goes true a second time and a duplicate
+  // "New bill matching your keywords" event surfaces, timestamped now, on a bill that
+  // by then has a priority — so it lands in the default feed and lights the nav dot.
   if (isFirstKeywordMatch) {
-    await db.insert(feedEvents).values({
-      id:       crypto.randomUUID(),
-      type:     'bill_matched',
-      billId:   billInternalId,
-      userId:   'system',
-      metadata: '{}',
-    })
+    const alreadyMatched = await db.select({ id: feedEvents.id })
+      .from(feedEvents)
+      .where(and(eq(feedEvents.billId, billInternalId), eq(feedEvents.type, 'bill_matched')))
+      .get()
+    if (!alreadyMatched) {
+      await db.insert(feedEvents).values({
+        id:       crypto.randomUUID(),
+        type:     'bill_matched',
+        billId:   billInternalId,
+        userId:   'system',
+        metadata: '{}',
+      })
+    }
   }
 
   // Mirror hearings for tracked bills (priority filtering happens at read time).
