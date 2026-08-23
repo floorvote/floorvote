@@ -25,7 +25,7 @@ FloorVote can be used by individuals or teams, but it's especially powerful for 
 
 Each team gets a private, isolated deployment with its own database, member roster, bill list, activity feed, and calendar.
 
-**[See the demo site](https://demo.floor.vote)** · **[Docs](https://floorvote.org/docs/)** · **[Get started](https://floorvote.org/docs/self-hosting/)** · **[Security](https://floorvote.org/docs/security/)** · **[Contributing](https://floorvote.org/docs/contributing/)**
+**[See the demo site](https://demo.floorvote.org)** · **[Docs](https://floorvote.org/docs/)** · **[Get started](https://floorvote.org/docs/self-hosting/)** · **[Security](https://floorvote.org/docs/security/)** · **[Contributing](https://floorvote.org/docs/contributing/)**
 
 ---
 

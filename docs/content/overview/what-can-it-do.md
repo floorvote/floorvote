@@ -68,4 +68,4 @@ You can also import a full spreadsheet of events at once—handy for loading an 
 
 ## Try it
 
-See FloorVote in action at this [demo site](https://demo.floor.vote/).
+See FloorVote in action at this [demo site](https://demo.floorvote.org/).
