@@ -41,6 +41,25 @@ describe('sendEmail (resend path)', () => {
     expect(r.ok).toBe(false)
     expect(r.provider).toBe('resend')
   })
+  it('suppresses INVITE magic links in DEMO_MODE without throwing', async () => {
+    const send = vi.fn(async () => undefined)
+    const env = { ...baseEnv, EMAIL_PROVIDER: 'cloudflare', EMAIL: { send }, DEMO_MODE: 'true', APP_URL: 'http://x' } as any
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
+    // Must not throw: sendMagicLink throws on a failed send, and the invite queue
+    // consumer turns a throw into message.retry() — suppression that threw would
+    // become an unbounded retry loop on a demo tenant.
+    await expect(sendMagicLink('a@e.com', 'http://x/verify', env, 'invite')).resolves.toBeUndefined()
+    expect(send).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('still sends LOGIN magic links in DEMO_MODE (superadmin access to demo tenants)', async () => {
+    const send = vi.fn(async () => undefined)
+    const env = { ...baseEnv, EMAIL_PROVIDER: 'cloudflare', EMAIL: { send }, DEMO_MODE: 'true', APP_URL: 'http://x' } as any
+    await sendMagicLink('ops@e.com', 'http://x/verify', env, 'login')
+    expect(send).toHaveBeenCalled()
+  })
+
   it('still sends in DEMO_MODE (auth/transactional must not be suppressed)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
     const r = await sendEmail({ ...baseEnv, DEMO_MODE: 'true' }, { to: ['a@e.com'], subject: 's', html: 'h' })

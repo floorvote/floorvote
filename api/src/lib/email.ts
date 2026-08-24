@@ -231,6 +231,30 @@ export async function sendMagicLink(
   userId?: string,
 ): Promise<void> {
   const isInvite = type === 'invite'
+
+  // Invites are the one magic link that goes to an address supplied in a request
+  // body rather than to an already-stored member address, so on a demo they are
+  // the path by which an anonymous visitor could mail a stranger from the
+  // operator's production sender (`demo-lakemi` has a live send_email binding and
+  // the same EMAIL_FROM as real tenants). Suppressed here.
+  //
+  // LOGIN links are deliberately NOT suppressed — see the "auth/transactional
+  // must not be suppressed" case in email.test.ts. Superadmin access to a demo
+  // tenant is `/login?manual=1` (.ops.md), and that link arrives by email; muting
+  // it would lock the operator out of their own demo.
+  //
+  // Returns rather than throwing: sendMagicLink throws on a failed send, and the
+  // invite queue consumer converts a throw into message.retry(), so a suppression
+  // that threw would become an unbounded retry loop.
+  //
+  // Nothing reaches here today — every invite route is outside
+  // DEMO_WRITE_ALLOWLIST and 403s (see demoWriteAllowlist.email.test.ts, which
+  // fails if one is ever added). This is the second lock on that door.
+  if (isInvite && env.DEMO_MODE === 'true') {
+    console.log('[email] demo mode — suppressing invite send')
+    return
+  }
+
   const assocName = await resolveAssocName(env, db)
   const noun = isInvite ? await resolveOrgNounFromDb(db) : undefined
   const orgPhrase = assocName ? escHtml(assocName) : `your ${escHtml(noun ?? '')}`
