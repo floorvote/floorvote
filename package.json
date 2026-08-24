@@ -21,11 +21,11 @@
   "devDependencies": {
     "@material-symbols/svg-400": "^0.46.0",
     "@resvg/resvg-js": "^2.6.2",
-    "concurrently": "^10.0.4",
+    "concurrently": "^10.0.5",
     "fflate": "^0.8.3",
-    "mermaid": "^11.16.1",
+    "mermaid": "^11.17.0",
     "tsx": "^4.23.12",
-    "vite": "^8.2.1",
+    "vite": "^8.2.2",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
     "wrangler": "^4"
