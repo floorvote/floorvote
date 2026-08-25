@@ -50,6 +50,27 @@ The full rules live in the [`Developing` section of `AGENTS.md`](https://github.
 - Run `npm run build` from `web/` to catch type errors (vitest does not run `tsc`).
 - Describe what changed and why in the PR body.
 
+## Licensing and sign-off
+
+FloorVote is licensed under [AGPL-3.0](https://github.com/floorvote/floorvote/blob/main/LICENSE). By submitting a pull request, you agree to license your contribution under the same license, and you retain copyright in your own work.
+
+Every commit must carry a `Signed-off-by` line certifying the [Developer Certificate of Origin](https://developercertificate.org/) — a short statement that you wrote the code, or otherwise have the right to submit it. The full text is in [`DCO`](https://github.com/floorvote/floorvote/blob/main/DCO) at the repository root.
+
+Git adds the line for you with `-s`:
+
+```bash
+git commit -s -m "Fix vote tally rounding"
+```
+
+The name and email must match your commit author details. A bot checks this on every pull request and fails if any commit is missing a sign-off. To fix a branch after the fact:
+
+```bash
+git rebase --signoff main    # sign off every commit on the branch
+git push --force-with-lease
+```
+
+There is no CLA to sign and no form to fill out — the one line in the commit is the whole process.
+
 ## Forking and operator overlays
 
 FloorVote is deployed per-team, and each instance is tied to a specific Cloudflare account, tenant domains, and secrets. Because of that, a fork that runs its own instance will tend to accumulate an **operator overlay**: files like `wrangler.toml`, deploy scripts, and an internal ops runbook that are meaningful only to that operator's deployment and should never appear in the public repository. If you fork to run your own instance, expect to build up the same kind of overlay. The guidance below is for sending a change from a fork like that back upstream.
