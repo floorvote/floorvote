@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../../lib/api'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { PopPanel, type PopPanelHandle } from '../ui/PopPanel'
@@ -20,6 +20,27 @@ export function SubscribeCalendar() {
       .catch((e) => console.error('[calendar/info] fetch failed', e))
   }, [])
 
+  const openPanel = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect() ?? new DOMRect(8, 80, 0, 0)
+    setPos(computeEventPopoverPosition(rect, { width: 260, align: 'right' }))
+  }, [])
+
+  // The week-ahead email's footer links `/calendar#subscribe` and lands the reader
+  // on the open chooser. It cannot link an ICS URL directly: the only feed route is
+  // slug-secret (`/api/calendar/feed/:slug.ics`), and mailing that slug would put the
+  // association's shared feed secret in every inbox, revocable only by rotating it
+  // out from under every existing subscriber.
+  //
+  // The hash is consumed once, not left in the URL: it is an instruction ("open this"),
+  // not a location, so a reload or a back-navigation after closing should not re-open.
+  const autoOpenedRef = useRef(false)
+  useEffect(() => {
+    if (!info || autoOpenedRef.current || window.location.hash !== '#subscribe') return
+    autoOpenedRef.current = true
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    openPanel()
+  }, [info, openPanel])
+
   if (!info) return null
 
   const trigger: React.CSSProperties = {
@@ -36,8 +57,7 @@ export function SubscribeCalendar() {
 
   function open() {
     if (pos) { panelRef.current?.close(); return }
-    const rect = triggerRef.current?.getBoundingClientRect() ?? new DOMRect(8, 80, 0, 0)
-    setPos(computeEventPopoverPosition(rect, { width: 260, align: 'right' }))
+    openPanel()
   }
 
   return (
