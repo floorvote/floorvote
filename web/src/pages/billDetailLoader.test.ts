@@ -50,6 +50,26 @@ describe('billDetailLoader', () => {
     ).rejects.toMatchObject({ status: 409 })
   })
 
+  // Before this branch existed, a 404 fell into the generic 500 alongside a dead
+  // backend, so a URL naming no bill and a bill service that is down were reported
+  // identically — and both as "Failed to load bill." The SPA's not-found handling
+  // makes that reachable from any mistyped path: `/api/calendar/ics` matches the
+  // three-segment bill route, so a dead link anywhere in the app became a support
+  // question about a missing bill.
+  it('throws a 404 Response when the bill does not exist', async () => {
+    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(404, 'Not found'))
+    await expect(
+      billDetailLoader(loaderArgs({ state: 'RI', sessionSlug: '2025-2026', billNumber: 'HB 9999' }, 'http://localhost/RI/2025-2026/HB%209999')),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('reports a non-bill path that merely matches the route shape as a 404', async () => {
+    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(404, 'Not found'))
+    await expect(
+      billDetailLoader(loaderArgs({ state: 'api', sessionSlug: 'calendar', billNumber: 'ics' }, 'http://localhost/api/calendar/ics')),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+
   // A 401 no longer reaches the catch as an ApiError: apiFetchForLoader has
   // already converted it into a thrown redirect('/login'), which is a Response.
   // Without the `err instanceof Response` re-throw it falls past both ApiError
@@ -67,8 +87,12 @@ describe('billDetailLoader', () => {
 
   // The mirror of the test above: the Response re-throw must not swallow
   // everything else into a silent pass-through.
+  //
+  // Was a 404 until 404 became a classified status of its own; 400 stands in for
+  // "unrecognized" now. Deliberately not a 5xx — retryFetch retries those against
+  // a 10s deadline, so a 503 would spend ten seconds proving nothing.
   it('still surfaces an unrecognized failure as a 500', async () => {
-    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(404, 'not found'))
+    vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(400, 'bad request'))
     await expect(
       billDetailLoader(loaderArgs({ billId: '42' }, 'http://localhost/bills/42')),
     ).rejects.toMatchObject({ status: 500 })

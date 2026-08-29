@@ -524,6 +524,19 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
     if (err instanceof ApiError && err.status === 401) {
       throw redirect('/login')
     }
+    // A 404 is an answer, not a failure: this URL names no bill. Without this
+    // branch it fell into the generic 500 below alongside a dead backend, so the
+    // two were reported identically — and both as "Failed to load bill."
+    //
+    // That is reachable from far outside this page. `not_found_handling =
+    // "single-page-application"` serves index.html for any unmatched path, and
+    // this route's three segments match almost anything, so a mistyped or dead
+    // link anywhere in the app (`/api/calendar/ics` was a real one) arrived here
+    // and told the reader a bill was broken — sending them to look for a bill
+    // that was never involved.
+    if (err instanceof ApiError && err.status === 404) {
+      throw new Response('Not found', { status: 404 })
+    }
     throw new Response('Failed to load bill.', { status: 500 })
   }
   // Normalize /bills/:id and legacy /:session/:billNumber to the canonical
