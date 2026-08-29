@@ -168,9 +168,9 @@ Enable the repo's git hooks once per clone:
 git config core.hooksPath .githooks
 ```
 
-`prepare-commit-msg` adds the `Signed-off-by` trailer that the DCO check requires on every commit. Without it the check fails on an already-open PR, where the fix is an amend plus a force-push.
+`commit-msg` warns when a commit has no `Signed-off-by` trailer, which the DCO check requires. Without the warning you find out on an already-open PR, where the fix is an amend plus a force-push.
 
-It signs off **only on your own commits**. The sign-off is the author's own certification under the [DCO](DCO), so when the author is someone else (`--author`, `-C`, a cherry-picked patch) the hook declines and says so — the DCO check then fails loudly, and a human decides whether to ask the author to sign or to sign as a co-author deliberately.
+It warns rather than adding the trailer, and that is deliberate. The sign-off is your own certification under the [DCO](DCO) that you have the right to submit the work under the project's license — a hook that supplies it for you turns a real attestation into something tooling stamps automatically. Sign with `git commit -s`, or `git commit --amend -s` after the fact.
 
 ### Styling
 
