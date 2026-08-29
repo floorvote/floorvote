@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Warn when a commit message carries no DCO `Signed-off-by` trailer.
+#
+# The DCO check fails any PR whose commits lack one, and finding that out on an
+# already-open PR costs an amend plus a force-push. This surfaces it at commit
+# time instead, while fixing it is still a one-liner.
+#
+# DELIBERATELY A WARNING, AND DELIBERATELY NOT ADDING THE TRAILER ITSELF.
+# The sign-off is an assertion under the DCO that you have the right to submit
+# the work under the project's license — a statement only the author can
+# truthfully make. A hook that supplies it for you turns a real attestation into
+# something tooling stamps automatically. It can also get it outright wrong: an
+# earlier version of this hook added the trailer in the AUTHOR's name, so
+# `git commit --author=…`, `-C`, and cherry-picking someone else's patch each
+# fabricated a certification that person never made. Never writing the trailer
+# makes that class of bug impossible rather than guarded against.
+#
+# Requires `git config core.hooksPath .githooks` — see AGENTS.md.
+
+msg_file="$1"
+
+# Merge commits are not authored content and the DCO check skips them.
+[ -e "$(git rev-parse --git-dir)/MERGE_HEAD" ] && exit 0
+
+# An empty message aborts the commit anyway — nothing to warn about.
+grep -qvE '^\s*(#|$)' "$msg_file" || exit 0
+
+grep -qiE '^[[:space:]]*Signed-off-by:[[:space:]]' "$msg_file" && exit 0
+
+cat >&2 <<'MSG'
+
+⚠  No Signed-off-by trailer. The DCO check will fail this commit in a pull request.
+
+   Fix it now:      git commit --amend -s
+   Avoid it later:  git commit -s
+
+MSG
+
+# Never blocks: the commit is already worth keeping, and the fix is an amend.
+exit 0
