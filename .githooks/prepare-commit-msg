@@ -8,6 +8,9 @@
 #
 # Requires `git config core.hooksPath .githooks` — see AGENTS.md.
 #
+# Note: `--no-verify` skips pre-commit and commit-msg, but whether it skips
+# prepare-commit-msg varies by git version — do not rely on it to opt out.
+#
 # `git commit -s` stays a no-op here: the trailer is only added when absent.
 
 msg_file="$1"
@@ -25,11 +28,8 @@ if grep -qiE '^Signed-off-by:' "$msg_file"; then
   exit 0
 fi
 
-# Sign off as the person git will record as the AUTHOR, which is not always
-# `user.name`/`user.email` — `--author`, `-C`, and a rebase of someone else's
-# commit all override it. DCO matches the trailer against the author, so reading
-# the author back from git is the only way to get this right; falling back to
-# user.* when git has no author yet (the ordinary case) is correct.
+# The trailer must name the commit's AUTHOR, which is not always the configured
+# user — `--author`, `-C`, and cherry-picking someone else's patch all override it.
 name=$(git var GIT_AUTHOR_IDENT 2>/dev/null | sed -n 's/^\(.*\) <.*/\1/p')
 email=$(git var GIT_AUTHOR_IDENT 2>/dev/null | sed -n 's/^.*<\([^>]*\)>.*/\1/p')
 
@@ -37,6 +37,25 @@ email=$(git var GIT_AUTHOR_IDENT 2>/dev/null | sed -n 's/^.*<\([^>]*\)>.*/\1/p')
 # would fail DCO anyway, and let the commit proceed.
 if [ -z "$name" ] || [ -z "$email" ]; then
   echo "prepare-commit-msg: no git identity, skipping DCO sign-off" >&2
+  exit 0
+fi
+
+# ONLY ever sign off on your own work.
+#
+# The sign-off is an assertion under the Developer Certificate of Origin — the
+# author certifying they have the right to submit that code under the project's
+# license. It is a statement only the author can truthfully make. So when the
+# author is somebody else, adding it here would fabricate their certification,
+# which is a worse failure than the CI red it avoids: DCO exists precisely to
+# record that the author made this promise.
+#
+# Leaving it unsigned makes the DCO check fail loudly, which is the correct
+# outcome — a human then decides whether to ask the author to sign, or to add
+# their own sign-off as a co-author deliberately.
+configured=$(git config user.email 2>/dev/null)
+if [ "$email" != "$configured" ]; then
+  echo "prepare-commit-msg: author is <$email>, not you (<$configured>) — not signing off on their behalf." >&2
+  echo "                    If you have the right to certify this work, sign it yourself: git commit --amend -s" >&2
   exit 0
 fi
 

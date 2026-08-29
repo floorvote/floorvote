@@ -170,6 +170,8 @@ git config core.hooksPath .githooks
 
 `prepare-commit-msg` adds the `Signed-off-by` trailer that the DCO check requires on every commit. Without it the check fails on an already-open PR, where the fix is an amend plus a force-push.
 
+It signs off **only on your own commits**. The sign-off is the author's own certification under the [DCO](DCO), so when the author is someone else (`--author`, `-C`, a cherry-picked patch) the hook declines and says so — the DCO check then fails loudly, and a human decides whether to ask the author to sign or to sign as a co-author deliberately.
+
 ### Styling
 
 Inline `style={{}}` backed by design tokens from `web/src/styles/tokens.ts` (`color`, `radius`, `fontSize`, `fontWeight`, `shadow`). ESLint blocks raw hex colors and raw `borderRadius`/`fontSize`/`fontWeight` values. Spacing (padding, margin, gap) is intentionally NOT tokenized — use raw numbers.
