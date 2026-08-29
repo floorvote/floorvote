@@ -162,6 +162,14 @@ cd web && npm test
 
 `central/` is a standalone package — run `npm install` separately.
 
+Enable the repo's git hooks once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`prepare-commit-msg` adds the `Signed-off-by` trailer that the DCO check requires on every commit. Without it the check fails on an already-open PR, where the fix is an amend plus a force-push.
+
 ### Styling
 
 Inline `style={{}}` backed by design tokens from `web/src/styles/tokens.ts` (`color`, `radius`, `fontSize`, `fontWeight`, `shadow`). ESLint blocks raw hex colors and raw `borderRadius`/`fontSize`/`fontWeight` values. Spacing (padding, margin, gap) is intentionally NOT tokenized — use raw numbers.
