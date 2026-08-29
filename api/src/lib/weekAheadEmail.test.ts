@@ -35,7 +35,6 @@ function render(days = SAMPLE_DAYS) {
     days,
     assocName: 'Test Association',
     appUrl: 'https://example.com',
-    icsUrl: 'https://example.com/api/calendar/ics',
   })
 }
 
@@ -55,7 +54,7 @@ describe('renderWeekAheadEmail', () => {
       date: '2026-06-15', label: 'Monday, June 15',
       events: [{ id: 'e1', source: 'custom', description: 'Meeting', location: null, time: null, status: 'confirmed', bills: [] }],
     }]
-    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com', icsUrl: 'https://x.com/ics' })
+    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com' })
     expect(html).toContain('1 event in the week ahead')
   })
 
@@ -67,10 +66,16 @@ describe('renderWeekAheadEmail', () => {
     expect(render()).toContain('RI HB 1234')
   })
 
-  it('includes ICS subscribe link', () => {
+  // Regression: this footer linked `/api/calendar/ics` for months, which is not a
+  // route — the only feed is `/api/calendar/feed/:slug.ics`. The SPA's not-found
+  // handling then matched the dead path against the three-segment bill route, so
+  // readers who clicked it got "Failed to load bill." The link now goes to the
+  // calendar page, whose Subscribe popover opens on the `#subscribe` hash.
+  it('links the subscribe footer to the calendar page, not a bare ICS path', () => {
     const html = render()
     expect(html).toContain('Subscribe to your calendar')
-    expect(html).toContain('https://example.com/api/calendar/ics')
+    expect(html).toContain('https://example.com/calendar#subscribe')
+    expect(html).not.toContain('/api/calendar/ics')
   })
 
   it('includes unsubscribe link to /profile', () => {
@@ -87,7 +92,7 @@ describe('renderWeekAheadEmail', () => {
         location: null, time: null, status: 'confirmed', bills: [],
       }],
     }]
-    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com', icsUrl: 'https://x.com/ics' })
+    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com' })
     expect(html).not.toContain('<script>')
     expect(html).toContain('&lt;script&gt;')
   })
@@ -101,7 +106,7 @@ describe('renderWeekAheadEmail', () => {
         bills: [{ id: 'b1', billNumber: 'SB 5', state: 'RI', priority: null, billTitle: 'Test' }],
       }],
     }]
-    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com', icsUrl: 'https://x.com/ics' })
+    const html = renderWeekAheadEmail({ days, assocName: 'A', appUrl: 'https://x.com' })
     // None of the three priority dot colors should appear
     expect(html).not.toContain('#850028')
     expect(html).not.toContain('#be2342')

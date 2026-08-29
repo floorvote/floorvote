@@ -88,7 +88,6 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
         subject: '[Sample] Your week ahead',
         html: renderWeekAheadEmail({
           days: SAMPLE_WEEK_AHEAD_DAYS, assocName: SAMPLE_ASSOC_NAME, appUrl,
-          icsUrl: `${appUrl}/api/calendar/feed.ics?token=sample`,
         }),
       }
     case 'digest':

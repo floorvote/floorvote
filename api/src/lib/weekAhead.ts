@@ -154,12 +154,11 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   let assocName = PRODUCT_NAME
   if (nameRow?.value) { try { assocName = JSON.parse(nameRow.value) } catch { assocName = nameRow.value } }
 
-  const icsUrl = `${env.APP_URL}/api/calendar/ics`
   const firstDay = days[0].label.split(', ').slice(1).join(', ')
   const lastDay = days[days.length - 1].label.split(', ').slice(1).join(', ')
   const range = firstDay === lastDay ? firstDay : `${firstDay}–${lastDay}`
   const subject = `${assocName}: Your week ahead — ${range}`
-  const html = renderWeekAheadEmail({ days, assocName, appUrl: env.APP_URL, icsUrl })
+  const html = renderWeekAheadEmail({ days, assocName, appUrl: env.APP_URL })
 
   const headers = unsubscribeHeaders(env.APP_URL, 'setting-week-ahead')
   await sendBatch(

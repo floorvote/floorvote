@@ -114,12 +114,10 @@ export function renderWeekAheadEmail({
   days,
   assocName,
   appUrl,
-  icsUrl,
 }: {
   days: WeekAheadDay[]
   assocName: string
   appUrl: string
-  icsUrl: string
 }): string {
   const range = formatDateRangeLabel(days)
   const totalEvents = days.reduce((n, d) => n + d.events.length, 0)
@@ -134,6 +132,6 @@ ${day.events.map(e => renderEventCard(e, appUrl)).join('')}`).join('')
     dateLabel: range,
     bodyHtml: dayBlocks,
     ctaHtml: emailButton(`${escHtml(appUrl)}/calendar`, 'View calendar'),
-    footerHtml: `${emailFooterLink(escHtml(icsUrl), 'Subscribe to your calendar')} &nbsp;·&nbsp; ${emailFooterLink(`${escHtml(appUrl)}/profile#setting-week-ahead`, 'Manage email settings')}`,
+    footerHtml: `${emailFooterLink(`${escHtml(appUrl)}/calendar#subscribe`, 'Subscribe to your calendar')} &nbsp;·&nbsp; ${emailFooterLink(`${escHtml(appUrl)}/profile#setting-week-ahead`, 'Manage email settings')}`,
   })
 }

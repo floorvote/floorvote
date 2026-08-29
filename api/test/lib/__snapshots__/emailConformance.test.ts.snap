@@ -366,7 +366,7 @@ exports[`email conformance — every sample type shares the shell contract > wee
             <div style="margin-top:18px;"><a href="https://sample.test/calendar" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View calendar</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            <a href="https://sample.test/api/calendar/feed.ics?token=sample" style="font-size:12px;color:#667386;text-decoration:underline;">Subscribe to your calendar</a> &nbsp;·&nbsp; <a href="https://sample.test/profile#setting-week-ahead" style="font-size:12px;color:#667386;text-decoration:underline;">Manage email settings</a>
+            <a href="https://sample.test/calendar#subscribe" style="font-size:12px;color:#667386;text-decoration:underline;">Subscribe to your calendar</a> &nbsp;·&nbsp; <a href="https://sample.test/profile#setting-week-ahead" style="font-size:12px;color:#667386;text-decoration:underline;">Manage email settings</a>
           </td></tr>
         </tbody>
       </table>
