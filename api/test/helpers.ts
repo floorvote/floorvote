@@ -59,6 +59,7 @@ import migrationSql56 from '../migrations/0056_auth_events_unknown_email.sql?raw
 import migrationSql58 from '../migrations/0058_triaged_at_rename.sql?raw'
 import migrationSql59 from '../migrations/0059_ai_attempt_tracking.sql?raw'
 import migrationSql61 from '../migrations/0061_drop_instance_preset.sql?raw'
+import migrationSql62 from '../migrations/0062_restore_feed_events_indexes.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -152,6 +153,7 @@ export async function applyMigrations(): Promise<void> {
     parseMigration(migrationSql58, '0058_triaged_at_rename'),
     parseMigration(migrationSql59, '0059_ai_attempt_tracking'),
     parseMigration(migrationSql61, '0061_drop_instance_preset'),
+    parseMigration(migrationSql62, '0062_restore_feed_events_indexes'),
   ])
 }
 

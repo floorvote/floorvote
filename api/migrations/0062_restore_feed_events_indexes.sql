@@ -1,0 +1,27 @@
+-- Restore the two feed_events indexes that 0053 dropped.
+--
+-- 0053 widened the type CHECK by rebuilding the table, because SQLite cannot ALTER
+-- a CHECK: CREATE TABLE feed_events_new, copy rows, DROP TABLE feed_events, rename.
+-- DROP TABLE takes the table's indexes with it. The same rebuild in 0016 and 0043
+-- re-created these two afterwards. 0053 did not, and nothing since has. The Drizzle
+-- schema declares no indexes at all (api/src/db/schema.ts defines columns only), so
+-- these migration files are their sole definition, which is why the loss was silent.
+-- Every instance that ran 0053 has been missing both since.
+--
+-- idx_feed_events_bill_id is the one that carries real load: it backs the bills join
+-- and the same-bill sibling lookup in the default-scope visibility filter
+-- (api/src/routes/feed.ts). EXPLAIN QUERY PLAN confirms the correlated subquery
+-- searches it rather than scanning.
+--
+-- idx_feed_events_created is restored to return the schema to its pre-0053 state,
+-- NOT because the feed's own ORDER BY can use it. That clause sorts on
+-- datetime(created_at), and wrapping a column in a function makes a plain column
+-- index inapplicable, so the feed sorts through a temp b-tree with or without this
+-- index. Serving that sort would take an index on the expression itself, which is a
+-- performance change rather than a regression fix and is deliberately not bundled
+-- here. billsApi/detail.ts does order on the raw column.
+--
+-- IF NOT EXISTS so this is a no-op on instances predating 0053 or already repaired
+-- by hand.
+CREATE INDEX IF NOT EXISTS idx_feed_events_bill_id ON feed_events(bill_id);
+CREATE INDEX IF NOT EXISTS idx_feed_events_created ON feed_events(created_at DESC);
