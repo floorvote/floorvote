@@ -396,3 +396,76 @@ describe('GET /feed latestEventAt', () => {
     expect(body.lastSeenFeed!).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
   })
 })
+
+// The default feed's visibility rule is a bill/day GROUP rule, not a per-event one
+// (filterPriorityEvents in shared/feedUtils). #54 moved it server-side with a
+// per-event approximation that also dropped the passive event a member's comment
+// was about; these cover the group semantics the server now implements.
+describe('GET /feed default-scope group visibility', () => {
+  let memberId: string
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    memberId = await seedUser({ name: 'Alice' })
+    memberToken = await seedSession(memberId)
+  })
+
+  const fetchFeed = (token: string) =>
+    SELF.fetch('http://localhost/api/feed', { headers: { Cookie: `session=${token}` } })
+
+  it('shows a passive update sharing a day with engagement on a non-priority bill', async () => {
+    const db = getDb(env.DB)
+    const bill = await seedBill({ billNumber: 'A 400', title: 'Debated bill', priority: null, matchType: 'keyword' })
+    await db.insert(feedEvents).values([
+      // The status change the comment below is reacting to.
+      { id: crypto.randomUUID(), type: 'bill_updated', billId: bill, userId: 'system', metadata: '{}', createdAt: '2026-06-10T09:00:00Z' },
+      { id: crypto.randomUUID(), type: 'comment_added', billId: bill, userId: memberId, metadata: '{}', createdAt: '2026-06-10T11:00:00Z' },
+    ])
+    const body = await (await fetchFeed(memberToken)).json() as { events: Array<{ billNumber: string; type: string }> }
+    const types = body.events.filter((e) => e.billNumber === 'A 400').map((e) => e.type).sort()
+    expect(types).toEqual(['bill_updated', 'comment_added'])
+  })
+
+  it('hides a passive update whose only engagement is on another day', async () => {
+    const db = getDb(env.DB)
+    const bill = await seedBill({ billNumber: 'A 500', title: 'Stale bill', priority: null, matchType: 'keyword' })
+    await db.insert(feedEvents).values([
+      { id: crypto.randomUUID(), type: 'bill_updated', billId: bill, userId: 'system', metadata: '{}', createdAt: '2026-06-12T09:00:00Z' },
+      { id: crypto.randomUUID(), type: 'comment_added', billId: bill, userId: memberId, metadata: '{}', createdAt: '2026-06-10T11:00:00Z' },
+    ])
+    const body = await (await fetchFeed(memberToken)).json() as { events: Array<{ billNumber: string; type: string }> }
+    const types = body.events.filter((e) => e.billNumber === 'A 500').map((e) => e.type)
+    expect(types).toEqual(['comment_added'])
+  })
+
+  it('does not let a suppressed engagement event anchor the group', async () => {
+    const db = getDb(env.DB)
+    const bill = await seedBill({ billNumber: 'A 600', title: 'Retracted bill', priority: null, matchType: 'keyword' })
+    await db.insert(feedEvents).values([
+      { id: crypto.randomUUID(), type: 'bill_updated', billId: bill, userId: 'system', metadata: '{}', createdAt: '2026-06-14T09:00:00Z' },
+      // A deleted comment is suppressed (see commentsApi DELETE); it can no longer
+      // hold the day-group open for the passive event beside it.
+      { id: crypto.randomUUID(), type: 'comment_added', billId: bill, userId: memberId, metadata: '{}', suppressed: true, createdAt: '2026-06-14T11:00:00Z' },
+    ])
+    const body = await (await fetchFeed(memberToken)).json() as { events: Array<{ billNumber: string }>; total: number }
+    expect(body.events.filter((e) => e.billNumber === 'A 600')).toHaveLength(0)
+    expect(body.total).toBe(0)
+  })
+
+  it('keeps the nav dot in lockstep with what the feed shows', async () => {
+    const db = getDb(env.DB)
+    const other = await seedUser({ name: 'Erin' })
+    const bill = await seedBill({ billNumber: 'A 700', title: 'Group bill', priority: null, matchType: 'keyword' })
+    await db.insert(feedEvents).values([
+      { id: crypto.randomUUID(), type: 'comment_added', billId: bill, userId: other, metadata: '{}', createdAt: '2026-06-16T09:00:00Z' },
+      // Newer, passive, and 'system'-authored — visible only because of the group
+      // rule above, so the dot must see it too or the two rules have drifted.
+      { id: crypto.randomUUID(), type: 'bill_updated', billId: bill, userId: 'system', metadata: '{}', createdAt: '2026-06-16T12:00:00Z' },
+    ])
+    const body = await (await fetchFeed(memberToken)).json() as { latestEventAt: string | null; events: unknown[] }
+    expect(body.events).toHaveLength(2)
+    expect(body.latestEventAt).toBe('2026-06-16 12:00:00')
+  })
+})

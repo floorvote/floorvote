@@ -22,22 +22,46 @@ feedRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const currentUser = c.get('user')
 
+  // Default-feed visibility. Mirrors filterPriorityEvents (shared/feedUtils) at the
+  // level that rule actually operates on — the bill/day group, not the lone event.
+  // A day-group of a non-prioritized bill surfaces when it holds at least one
+  // non-passive (engagement) event, and then the whole group surfaces, passive
+  // events included.
+  //
+  // The EXISTS arm is what closes that gap. #54 moved this filter server-side to
+  // keep pagination honest — a page of `limit` events must be `limit` visible
+  // events — and did it with a per-event approximation: drop every passive event on
+  // a non-prioritized bill. That also dropped the status change a member's comment
+  // was *about*, leaving the comment stranded without the context that prompted it.
+  //
+  // Day boundaries: date() is UTC here, while the client groups by the viewer's
+  // local day (dbTsToLocalDay), so near midnight the two can disagree. This is a
+  // close superset of the client's rule, not an exact match. Feed.tsx still runs
+  // filterPriorityEvents over the result, so where they differ the client is the
+  // stricter of the two and drops the card — and because its pagination is driven
+  // by visibleCount (groups that survive filtering) rather than raw event count,
+  // that costs one more page fetch, never the short page #54 was about. Erring
+  // toward a superset here is deliberate for that reason: the reverse — a server
+  // stricter than the client — is unrecoverable downstream.
+  const passiveTypes = [...PASSIVE_EVENT_TYPES]
+  const defaultVisible = or(
+    isNotNull(bills.priority),
+    notInArray(feedEvents.type, passiveTypes),
+    sql`EXISTS (
+      SELECT 1 FROM feed_events sib
+       WHERE sib.bill_id = ${feedEvents.billId}
+         AND sib.suppressed != 1
+         AND date(sib.created_at) = date(${feedEvents.createdAt})
+         AND sib.type NOT IN (${sql.join(passiveTypes.map((t) => sql`${t}`), sql`, `)})
+    )`,
+  )
+
   // activeUser is evaluated against the left-joined `users` row; events whose
   // userId doesn't match any user (e.g. the synthetic 'system' author) leave
   // users.deactivatedAt NULL, and isNull(NULL) is true — so those are unaffected.
   const baseWhere = scope === 'analyzed'
     ? and(ne(feedEvents.suppressed, true), isNotNull(bills.matchType), activeUser)
-    : and(
-        ne(feedEvents.suppressed, true),
-        activeUser,
-        // Default feed hides passive provider updates on non-prioritized bills
-        // (mirrors filterPriorityEvents in shared/feedUtils). Filtering here — not
-        // only client-side — keeps pagination honest: a page of `limit` events no
-        // longer collapses to empty when a burst of passive events (a bulk seed's
-        // bill_matched flood, a mass status-change sweep) tops the feed. This is the
-        // same predicate the latestEventAt nav-dot query below already uses.
-        or(isNotNull(bills.priority), notInArray(feedEvents.type, [...PASSIVE_EVENT_TYPES])),
-      )
+    : and(ne(feedEvents.suppressed, true), activeUser, defaultVisible)
 
   const [rows, countRow, latestRow, seenRow] = await Promise.all([
     db
@@ -76,9 +100,9 @@ feedRouter.get('/', async (c) => {
       .get(),
     // Nav-dot signal: newest activity the user hasn't done themselves AND that the
     // default Feed actually shows. Excluding the current user's own events
-    // means your own actions never light the dot. The priority/passive predicate
-    // mirrors filterPriorityEvents (shared/feedUtils) so the dot can't light for
-    // passive provider updates on non-prioritized bills, which the feed hides.
+    // means your own actions never light the dot. It reuses defaultVisible above
+    // rather than restating the rule, so the dot cannot light for an event the
+    // feed hides — or stay dark for one the feed shows.
     db.select({ latestEventAt: sql<string | null>`max(datetime(${feedEvents.createdAt}))` })
       .from(feedEvents)
       .innerJoin(bills, eq(feedEvents.billId, bills.id))
@@ -86,7 +110,7 @@ feedRouter.get('/', async (c) => {
       .where(and(
         ne(feedEvents.suppressed, true),
         ne(feedEvents.userId, currentUser.id),
-        or(isNotNull(bills.priority), notInArray(feedEvents.type, [...PASSIVE_EVENT_TYPES])),
+        defaultVisible,
         activeUser,
       ))
       .get(),
