@@ -90,11 +90,12 @@ jobs:
           # disposable; only the merge into main matters. Note there is no
           # [skip ci] here — CI running on this PR is the entire point.
           git checkout -b "$BRANCH"
-          # `-s` and not the .githooks/prepare-commit-msg hook: that hook needs
-          # `core.hooksPath` set per clone (AGENTS.md), which a fresh CI checkout
-          # never does, so the bot's commit arrived unsigned and DCO failed on
-          # every weekly PR. `-s` signs off as user.name/user.email set above,
-          # which is also the author DCO matches the trailer against.
+          # `-s` is what makes DCO pass here; nothing else will. The .githooks
+          # DCO hook only warns (#121) and is inert anyway without `core.hooksPath`,
+          # which a fresh CI checkout never sets — so the bot's commit arrived
+          # unsigned and DCO failed on every weekly PR until #126. The trailer
+          # signs off as user.name/user.email set above, which is also the author
+          # DCO matches it against.
           git commit -s -m "chore(graphify): refresh knowledge graph"
           git push --force origin "$BRANCH"
 
