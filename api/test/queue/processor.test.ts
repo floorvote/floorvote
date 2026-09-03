@@ -630,6 +630,57 @@ describe('processCentralNotification', () => {
     expect(joinRows.every(r => r.state === 'RI')).toBe(true)
   })
 
+  it('writes subjects on the metadata-only path', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, metadataOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
+  it('writes subjects on the full ingest path, alongside AI analysis', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    // Confirms this actually went through the full path (AI ran), not a stub/metadata shortcut.
+    expect(row!.aiProcessedAt).not.toBeNull()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
   it('clears subjects when central stops sending them', async () => {
     const db = getDb(env.DB)
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
