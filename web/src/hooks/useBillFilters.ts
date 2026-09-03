@@ -113,6 +113,12 @@ export function useBillFilters(opts: {
     })
   }
 
+  // Set by handleResetFilters so the sync effect below drops the cf_ params
+  // instead of preserving them. See the comment on handleResetFilters for why
+  // reset cannot just delete them itself.
+  const pendingCfReset = useRef(false)
+  const [resetNonce, setResetNonce] = useState(0)
+
   useEffect(() => {
     const next = new URLSearchParams()
     filterStatuses.forEach(s => next.append('status', s))
@@ -129,17 +135,24 @@ export function useBillFilters(opts: {
       next.set('sort', sortCol)
       next.set('dir', sortDir)
     }
-    // Preserve cf_ params managed outside this effect
-    for (const [key, value] of searchParams.entries()) {
-      if (key.startsWith('cf_')) {
-        next.append(key, value)
+    // Preserve cf_ params managed outside this effect — unless a reset has just
+    // asked for them to go. This effect is the last writer of the query string,
+    // so a delete performed anywhere else is resurrected here from the
+    // pre-delete `searchParams` and the reset silently does nothing.
+    if (pendingCfReset.current) {
+      pendingCfReset.current = false
+    } else {
+      for (const [key, value] of searchParams.entries()) {
+        if (key.startsWith('cf_')) {
+          next.append(key, value)
+        }
       }
     }
     const searchStr = '?' + next.toString()
     lastWrittenSearch.current = searchStr
     setSearchParams(next, { replace: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, selectedTags, sortCol, sortDir])
+  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, selectedTags, sortCol, sortDir, resetNonce])
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
@@ -169,7 +182,16 @@ export function useBillFilters(opts: {
     setFilterMinRelevance(prev => prev === score ? 0 : score)
   }, [])
 
+  // Custom fields live in the URL rather than in state, so reset has to clear
+  // them there. It defers that to the state→URL sync effect instead of writing
+  // the query string itself: the two writers raced, and the effect — which runs
+  // in response to the very state changes reset makes — rebuilt the string from
+  // the pre-reset params and won, putting every cf_ back. Bumping resetNonce
+  // guarantees the effect fires even if every other filter was already empty,
+  // rather than leaving that to the identity of the fresh [] literals below.
   const handleResetFilters = useCallback(() => {
+    pendingCfReset.current = true
+    setResetNonce(n => n + 1)
     setSearch('')
     setFilterStatuses([])
     setFilterPriorities([])
@@ -181,14 +203,7 @@ export function useBillFilters(opts: {
     setUnvotedOnly(false)
     setNewMatches(false)
     setSelectedTags([])
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      for (const key of [...next.keys()]) {
-        if (key.startsWith('cf_')) next.delete(key)
-      }
-      return next
-    })
-  }, [setSearchParams])
+  }, [])
 
   const hasActiveFilters = !!(
     search || filterStatuses.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
