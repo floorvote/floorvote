@@ -66,6 +66,7 @@ export type FacetCounts = {
   state:    Record<string, number>
   position: Record<string, number>
   tags:     Record<string, number>
+  subjects: Record<string, number>
   customFields: Record<string, Record<string, number>>
   myBillsCount: number
   newMatchesCount: number

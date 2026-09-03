@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FilterDropdown, ActiveChip, FILTER_ANY } from './FilterPanel'
+import type { ComponentProps } from 'react'
+import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
+
+function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
+  const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
+    subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    selectedSubjects: [],
+    onSubjectChange: () => {},
+    statesWithoutSubjects: [],
+  }
+  return render(<SubjectFilterDropdown {...defaults} {...props} />)
+}
 
 describe('FilterPanel primitives', () => {
   it('always-present dropdown has no top row — just options, nothing pre-checked', () => {
@@ -209,5 +220,56 @@ describe('FilterDropdown — keyboard navigation (R4 follow-up)', () => {
     expect(screen.getByRole('checkbox')).toBeInTheDocument()
     fireEvent.mouseDown(screen.getByTestId('outside'))
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+})
+
+describe('SubjectFilterDropdown', () => {
+  it('hides the subject section entirely when no state publishes subjects', () => {
+    renderPanel({ subjectGroups: [] })
+    expect(screen.queryByText(/subjects/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('renders a flat list with no state heading when only one state is present', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByText('UT')).not.toBeInTheDocument()
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+  })
+
+  it('groups options under state headings when more than one state is present', () => {
+    renderPanel({
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('NJ')).toBeInTheDocument()
+    expect(screen.getByText('UT')).toBeInTheDocument()
+  })
+
+  it('warns that a subject filter excludes states with no subject data', () => {
+    renderPanel({
+      selectedSubjects: ['UT:Counties'],
+      statesWithoutSubjects: ['CA', 'IL'],
+    })
+    expect(screen.getByText(/CA, IL/)).toBeInTheDocument()
+  })
+
+  it('omits the warning when nothing is selected', () => {
+    renderPanel({
+      selectedSubjects: [],
+      statesWithoutSubjects: ['CA', 'IL'],
+    })
+    expect(screen.queryByText(/CA, IL/)).not.toBeInTheDocument()
+  })
+
+  it('toggles a subject on click', () => {
+    const onSubjectChange = vi.fn()
+    renderPanel({ onSubjectChange })
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Counties'))
+    expect(onSubjectChange).toHaveBeenCalledWith(['UT:Counties'])
   })
 })

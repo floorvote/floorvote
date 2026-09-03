@@ -273,6 +273,131 @@ export function FilterDropdown({
   )
 }
 
+export type SubjectGroup = {
+  state: string
+  options: Array<{ value: string; label: string; count: number }>
+}
+
+/**
+ * Subject filter — state-qualified because subject vocabularies aren't
+ * comparable across states (see useBillFilters' subjectGroups). Renders
+ * nothing when no state in view publishes subjects: absence here must read
+ * as "this state does not do that," never as an empty control. Group
+ * headings appear only with more than one state present; a single state
+ * gets a flat list since the heading would be noise.
+ */
+export function SubjectFilterDropdown({
+  subjectGroups,
+  selectedSubjects,
+  onSubjectChange,
+  statesWithoutSubjects,
+}: {
+  subjectGroups: SubjectGroup[]
+  selectedSubjects: string[]
+  onSubjectChange: (next: string[]) => void
+  statesWithoutSubjects: string[]
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  if (subjectGroups.length === 0) return null
+
+  function toggle(value: string) {
+    onSubjectChange(
+      selectedSubjects.includes(value)
+        ? selectedSubjects.filter(v => v !== value)
+        : [...selectedSubjects, value],
+    )
+  }
+
+  const hasSelection = selectedSubjects.length > 0
+  const buttonLabel = hasSelection ? `Subject (${selectedSubjects.length})` : 'Subject'
+  const showHeadings = subjectGroups.length > 1
+
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
+      <div ref={ref} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+            background: hasSelection ? color.bgInfo : color.white,
+            color: hasSelection ? color.linkBlue : color.textSlate,
+            border: `1px solid ${hasSelection ? color.tagBorderBlue : color.borderDefault}`,
+            fontWeight: hasSelection ? fontWeight.medium : fontWeight.normal,
+          }}
+        >
+          {buttonLabel}
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+            <path d={open ? 'M1 5l4-4 4 4' : 'M1 1l4 4 4-4'} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {open && (
+          <div
+            role="group"
+            aria-label="Subject"
+            style={{
+              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+              background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
+              padding: '4px 0', minWidth: 220, maxHeight: 320, overflowY: 'auto',
+              boxShadow: shadow.md,
+            }}
+          >
+            {subjectGroups.map(group => (
+              <div key={group.state}>
+                {showHeadings && (
+                  <div style={{
+                    fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
+                    textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 12px 2px',
+                  }}>
+                    {group.state}
+                  </div>
+                )}
+                {group.options.map(opt => {
+                  const checked = selectedSubjects.includes(opt.value)
+                  return (
+                    <label key={opt.value} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+                      cursor: 'pointer', fontSize: fontSize.sm,
+                      color: checked ? color.linkBlue : color.textSlate,
+                      background: checked ? color.bgInfo : 'transparent',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(opt.value)}
+                        style={{ margin: 0, accentColor: color.accentBlue }}
+                      />
+                      {opt.label}
+                      <CountBadge count={opt.count} />
+                    </label>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {selectedSubjects.length > 0 && statesWithoutSubjects.length > 0 && (
+        <div style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 6 }}>
+          Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures
+          do not publish subjects.
+        </div>
+      )}
+    </div>
+  )
+}
+
 export type ChipColor = 'gray' | 'blue' | 'red' | 'green' | 'purple'
 
 export function ActiveChip({ label, onRemove, color: chipColor }: { label: string; onRemove: () => void; color: ChipColor }) {

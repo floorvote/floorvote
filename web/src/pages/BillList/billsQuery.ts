@@ -3,7 +3,7 @@ import type { SortColumn, SortDir } from './types'
 export type BillsFilterValues = {
   statuses: string[]; priorities: string[]; positions: string[]; years: number[]; states: string[]
   minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean
-  tags: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
+  tags: string[]; subjects: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
 }
 
 export function billsApiParams(v: BillsFilterValues, page: number, pageSize: number): string {
@@ -20,6 +20,7 @@ export function billsApiParams(v: BillsFilterValues, page: number, pageSize: num
   if (v.unvoted) params.set('unvoted', '1')
   if (v.newMatches) params.set('newMatches', '1')
   v.tags.forEach(t => params.append('tag', t))
+  v.subjects.forEach(s => params.append('subject', s))
   if (v.search) params.set('q', v.search)
   if (v.sortCol !== 'default') {
     params.set('sort', v.sortCol)
@@ -54,6 +55,7 @@ export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilte
     unvoted: search.get('unvoted') === '1',
     newMatches: search.get('newMatches') === '1',
     tags: search.getAll('tag'),
+    subjects: search.getAll('subject'),
     search: '', // q is never carried in the /bills URL — sidebar nav never has a search term
     sortCol: sortRaw && SORT_COLS.includes(sortRaw as SortColumn) ? (sortRaw as SortColumn) : 'default',
     sortDir: search.get('dir') === 'desc' ? 'desc' : 'asc',
@@ -73,7 +75,7 @@ export function billsChipSelection(pathname: string, search: string): { allBills
   const otherFiltersActive =
     v.statuses.length > 0 || v.priorities.length > 0 || v.positions.length > 0 ||
     v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.unvoted || v.tags.length > 0 || Object.keys(v.cfFilters).length > 0
+    v.myBills || v.unvoted || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
   if (otherFiltersActive) return { allBills: false, newMatches: false }
   if (v.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
@@ -103,7 +105,7 @@ export function prioritizedChipSelection(pathname: string, search: string): { pr
   const otherFiltersActive =
     v.statuses.length > 0 || v.positions.length > 0 ||
     v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.newMatches || v.tags.length > 0 || Object.keys(v.cfFilters).length > 0
+    v.myBills || v.newMatches || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
   if (otherFiltersActive) return { priority: false, unvoted: false }
   if (v.unvoted) return { priority: false, unvoted: true }
   return { priority: true, unvoted: false }

@@ -41,6 +41,9 @@ export function useBillFilters(opts: {
   const [unvotedOnly, setUnvotedOnly] = useState(() => searchParams.get('unvoted') === '1')
   const [newMatches, setNewMatches] = useState(() => searchParams.get('newMatches') === '1')
   const [selectedTags, setSelectedTags] = useState<string[]>(() => searchParams.getAll('tag'))
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(
+    () => searchParams.getAll('subject'),
+  )
   const lastWrittenSearch = useRef(location.search)
   useEffect(() => {
     if (location.search === lastWrittenSearch.current) return
@@ -56,6 +59,7 @@ export function useBillFilters(opts: {
     setUnvotedOnly(params.get('unvoted') === '1')
     setNewMatches(params.get('newMatches') === '1')
     setSelectedTags(params.getAll('tag'))
+    setSelectedSubjects(params.getAll('subject'))
     const s = params.get('sort')
     if (s && ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill'].includes(s)) {
       setSortCol(s as SortColumn)
@@ -88,13 +92,14 @@ export function useBillFilters(opts: {
     year: filterYears.map(String),
     state: filterStates,
     tag: selectedTags,
+    subject: selectedSubjects,
     q: search,
     minRelevance: filterMinRelevance,
     myBills,
     unvoted: unvotedOnly,
     newMatches,
     cf: cfFilters,
-  }), [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, search, filterMinRelevance, myBills, unvotedOnly, newMatches, cfFilters])
+  }), [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, selectedSubjects, search, filterMinRelevance, myBills, unvotedOnly, newMatches, cfFilters])
 
   function setCfFilter(fieldId: string, values: string[]) {
     const def = customFieldDefs.find(d => d.id === fieldId)
@@ -131,6 +136,7 @@ export function useBillFilters(opts: {
     if (unvotedOnly) next.set('unvoted', '1')
     if (newMatches) next.set('newMatches', '1')
     selectedTags.forEach(t => next.append('tag', t))
+    selectedSubjects.forEach(s => next.append('subject', s))
     if (sortCol !== 'default') {
       next.set('sort', sortCol)
       next.set('dir', sortDir)
@@ -152,7 +158,7 @@ export function useBillFilters(opts: {
     lastWrittenSearch.current = searchStr
     setSearchParams(next, { replace: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, selectedTags, sortCol, sortDir, resetNonce])
+  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, selectedTags, selectedSubjects, sortCol, sortDir, resetNonce])
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
@@ -161,6 +167,8 @@ export function useBillFilters(opts: {
   const handleTagsChange = useCallback((tags: string[]) => {
     setSelectedTags(tags)
   }, [])
+
+  const handleSubjectsChange = useCallback((next: string[]) => setSelectedSubjects(next), [])
 
   const handleStatusClick = useCallback((status: string) => {
     setFilterStatuses(prev => prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status])
@@ -203,15 +211,16 @@ export function useBillFilters(opts: {
     setUnvotedOnly(false)
     setNewMatches(false)
     setSelectedTags([])
+    setSelectedSubjects([])
   }, [])
 
   const hasActiveFilters = !!(
     search || filterStatuses.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
-    filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || myBills || unvotedOnly || newMatches ||
+    filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || selectedSubjects.length > 0 || myBills || unvotedOnly || newMatches ||
     Object.keys(cfFilters).some(k => (cfFilters[k]?.length ?? 0) > 0)
   )
 
-  const totalActiveFilters = filterStatuses.length + filterPriorities.length + filterPositions.length + selectedTags.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActiveFilters = filterStatuses.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   const yearFacetKeys = useMemo(() => {
     return Object.keys(facetCounts.year)
@@ -243,6 +252,29 @@ export function useBillFilters(opts: {
     [positionVocabulary]
   )
 
+  /**
+   * Grouped by state because the vocabularies are not comparable across states —
+   * a flat list would put New Jersey's 44 coarse terms beside Arizona's 6,449
+   * fine-grained ones under headings that mean different things.
+   */
+  const subjectGroups = useMemo(() => {
+    const byState = new Map<string, Array<{ value: string; label: string; count: number }>>()
+    for (const [value, count] of Object.entries(facetCounts.subjects ?? {})) {
+      const idx = value.indexOf(':')
+      if (idx <= 0) continue
+      const state = value.slice(0, idx)
+      const label = value.slice(idx + 1)
+      if (!byState.has(state)) byState.set(state, [])
+      byState.get(state)!.push({ value, label, count })
+    }
+    return [...byState.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([state, options]) => ({
+        state,
+        options: options.sort((x, y) => y.count - x.count || x.label.localeCompare(y.label)),
+      }))
+  }, [facetCounts.subjects])
+
   const uniqueStates = [...new Set([...knownStates, ...Object.keys(facetCounts.state)])].sort((a, b) => {
     if (a === 'US') return -1
     if (b === 'US') return 1
@@ -263,9 +295,10 @@ export function useBillFilters(opts: {
     unvotedOnly, setUnvotedOnly,
     newMatches, setNewMatches,
     selectedTags, setSelectedTags,
+    selectedSubjects, subjectGroups,
     cfFilters, setCfFilter,
     currentFilters,
-    handleTagClick, handleTagsChange, handleStatusClick, handlePriorityClick,
+    handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
     yearFacetKeys, statuses, allTags, positionOptions, uniqueStates, isMultiState,
     hasActiveFilters, totalActiveFilters,

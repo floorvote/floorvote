@@ -5,10 +5,14 @@ import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 
-const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
 
 function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills']}>{children}</MemoryRouter>
+}
+
+function subjectWrapper({ children }: { children: ReactNode }) {
+  return <MemoryRouter initialEntries={['/bills?subject=UT%3AElection+Law']}>{children}</MemoryRouter>
 }
 
 function useHarness(facetCounts: FacetCounts = emptyFacets, tagTaxonomy: string[] = [], customFieldDefs: CustomFieldDef[] = []) {
@@ -58,6 +62,31 @@ describe('useBillFilters', () => {
     expect(result.current.allTags).toEqual(['Elections', 'Land Records'])
   })
 
+  it('reads subject filters from the URL and writes them back', () => {
+    const { result } = renderHook(useHarness, { wrapper: subjectWrapper })
+    expect(result.current.selectedSubjects).toEqual(['UT:Election Law'])
+
+    act(() => result.current.handleSubjectsChange(['UT:Referenda', 'UT:Initiatives']))
+
+    const params = new URLSearchParams(result.current.urlSearch)
+    expect(params.getAll('subject')).toEqual(['UT:Referenda', 'UT:Initiatives'])
+  })
+
+  it('groups subject options by state, sorted by count within each state', () => {
+    const facets: FacetCounts = {
+      ...emptyFacets,
+      subjects: { 'UT:Counties': 2, 'UT:Election Law': 9, 'NJ:Education': 4 },
+    }
+    const { result } = renderHook(() => useHarness(facets), { wrapper })
+    expect(result.current.subjectGroups).toEqual([
+      { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+      { state: 'UT', options: [
+        { value: 'UT:Election Law', label: 'Election Law', count: 9 },
+        { value: 'UT:Counties', label: 'Counties', count: 2 },
+      ] },
+    ])
+  })
+
   describe('handleResetFilters', () => {
     const stage: CustomFieldDef = {
       id: 'cf-stage', name: 'Review Stage', slug: 'review-stage',
@@ -78,6 +107,16 @@ describe('useBillFilters', () => {
       expect(result.current.filterStatuses).toEqual([])
       expect(result.current.cfFilters).toEqual({})
       expect(result.current.urlSearch).not.toContain('cf_')
+      expect(result.current.hasActiveFilters).toBe(false)
+    })
+
+    it('clears selected subjects too', () => {
+      const { result } = renderHook(useHarness, { wrapper: subjectWrapper })
+      expect(result.current.selectedSubjects).toEqual(['UT:Election Law'])
+
+      act(() => result.current.handleResetFilters())
+
+      expect(result.current.selectedSubjects).toEqual([])
       expect(result.current.hasActiveFilters).toBe(false)
     })
   })

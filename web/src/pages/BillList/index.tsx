@@ -18,7 +18,7 @@ import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
-import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY } from './FilterPanel'
+import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
@@ -130,7 +130,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -185,7 +185,7 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.search, sortCol, sortDir],
+    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
@@ -193,7 +193,7 @@ export function BillList() {
       statuses: f.filterStatuses, priorities: f.filterPriorities, positions: f.filterPositions,
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
       myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches,
-      tags: f.selectedTags, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
+      tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
     }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
@@ -229,7 +229,7 @@ export function BillList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
@@ -243,6 +243,7 @@ export function BillList() {
     if (f.unvotedOnly) params.set('unvoted', '1')
     if (f.newMatches) params.set('newMatches', '1')
     f.selectedTags.forEach(t => params.append('tag', t))
+    f.selectedSubjects.forEach(s => params.append('subject', s))
     if (f.search) params.set('q', f.search)
     for (const [key, values] of Object.entries(f.cfFilters)) {
       values.forEach(v => params.append(`cf_${key}`, v))
@@ -255,7 +256,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -474,6 +475,14 @@ export function BillList() {
   }, [fetchBills, fetchFacets, refreshSidebar])
 
   const filterCounts = facetCounts
+
+  // States visible in the current facet counts that publish no subjects at all —
+  // shown as a warning once a subject filter is active, since those states'
+  // bills would otherwise silently drop out of the results with no explanation.
+  const statesWithoutSubjects = useMemo(
+    () => Object.keys(filterCounts.state).filter(s => !f.subjectGroups.some(g => g.state === s)),
+    [filterCounts.state, f.subjectGroups]
+  )
 
   // Server handles sorting; use allBills directly as the display list
   const sorted = allBills
@@ -722,6 +731,14 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
+          <HoverTooltip text="Filter by legislature-assigned subject">
+            <SubjectFilterDropdown
+              subjectGroups={f.subjectGroups}
+              selectedSubjects={f.selectedSubjects}
+              onSubjectChange={f.handleSubjectsChange}
+              statesWithoutSubjects={statesWithoutSubjects}
+            />
+          </HoverTooltip>
           {/* Custom field filters — binary and dropdown only */}
           {customFieldDefs
             .filter(field => field.type === 'binary' || field.type === 'dropdown')
@@ -767,7 +784,7 @@ export function BillList() {
       </div>
 
       {/* Active filter chips — only rendered when chips are present */}
-      {(f.filterStates.length > 0 || f.filterStatuses.length > 0 || f.filterPositions.length > 0 || f.filterPriorities.length > 0 || f.filterYears.length > 0 || f.selectedTags.length > 0 || f.unvotedOnly || f.newMatches || Object.keys(f.cfFilters).some(k => (f.cfFilters[k]?.length ?? 0) > 0)) && (
+      {(f.filterStates.length > 0 || f.filterStatuses.length > 0 || f.filterPositions.length > 0 || f.filterPriorities.length > 0 || f.filterYears.length > 0 || f.selectedTags.length > 0 || f.selectedSubjects.length > 0 || f.unvotedOnly || f.newMatches || Object.keys(f.cfFilters).some(k => (f.cfFilters[k]?.length ?? 0) > 0)) && (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, alignItems: 'center' }}>
         {f.filterStates.map(s => (
           <ActiveChip key={`state-${s}`} label={s} color="gray" onRemove={() => f.setFilterStates(prev => prev.filter(x => x !== s))} />
@@ -817,6 +834,18 @@ export function BillList() {
         {f.selectedTags.map(tag => (
           <ActiveChip key={`tag-${tag}`} label={tag === FILTER_ANY ? 'Any tag' : tag} color="blue" onRemove={() => f.handleTagClick(tag)} />
         ))}
+        {f.selectedSubjects.map(subject => {
+          const idx = subject.indexOf(':')
+          const label = idx > 0 ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject
+          return (
+            <ActiveChip
+              key={`subject-${subject}`}
+              label={label}
+              color="purple"
+              onRemove={() => f.handleSubjectsChange(f.selectedSubjects.filter(s => s !== subject))}
+            />
+          )
+        })}
         {f.unvotedOnly && (
           <ActiveChip label="Not yet voted" color="blue" onRemove={() => f.setUnvotedOnly(false)} />
         )}
@@ -1001,6 +1030,7 @@ export function BillList() {
           f.setFilterStates([])
           f.setFilterMinRelevance(0)
           f.setMyBills(false)
+          f.handleSubjectsChange([])
           setSearchParams({})
         }}
       />
