@@ -24,7 +24,7 @@ import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './typ
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
-import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
+import { billsApiParams, billsFilterValuesFromSearch, computeStatesWithoutSubjects } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 
 // Module-level cache for instant render when returning from BillDetail
@@ -130,7 +130,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, subjectStates: [], customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -479,9 +479,13 @@ export function BillList() {
   // States visible in the current facet counts that publish no subjects at all —
   // shown as a warning once a subject filter is active, since those states'
   // bills would otherwise silently drop out of the results with no explanation.
+  // Compares against filterCounts.subjectStates (tenant-wide, unscoped by any
+  // active filter) rather than f.subjectGroups (scoped by the current state
+  // filter) — see computeStatesWithoutSubjects for why the scoped facet alone
+  // would misreport this.
   const statesWithoutSubjects = useMemo(
-    () => Object.keys(filterCounts.state).filter(s => !f.subjectGroups.some(g => g.state === s)),
-    [filterCounts.state, f.subjectGroups]
+    () => computeStatesWithoutSubjects(Object.keys(filterCounts.state), filterCounts.subjectStates),
+    [filterCounts.state, filterCounts.subjectStates]
   )
 
   // Server handles sorting; use allBills directly as the display list
@@ -731,14 +735,16 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          <HoverTooltip text="Filter by legislature-assigned subject">
-            <SubjectFilterDropdown
-              subjectGroups={f.subjectGroups}
-              selectedSubjects={f.selectedSubjects}
-              onSubjectChange={f.handleSubjectsChange}
-              statesWithoutSubjects={statesWithoutSubjects}
-            />
-          </HoverTooltip>
+          {f.subjectGroups.length > 0 && (
+            <HoverTooltip text="Filter by legislature-assigned subject">
+              <SubjectFilterDropdown
+                subjectGroups={f.subjectGroups}
+                selectedSubjects={f.selectedSubjects}
+                onSubjectChange={f.handleSubjectsChange}
+                statesWithoutSubjects={statesWithoutSubjects}
+              />
+            </HoverTooltip>
+          )}
           {/* Custom field filters — binary and dropdown only */}
           {customFieldDefs
             .filter(field => field.type === 'binary' || field.type === 'dropdown')
