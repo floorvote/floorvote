@@ -13,7 +13,7 @@ import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListR
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
-import { decodeSubjectFilter, encodeSubjectFilter } from '../../lib/billSubjects'
+import { decodeSubjectFilters, encodeSubjectFilter } from '../../lib/billSubjects'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -31,9 +31,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
-    const subjectFilters = (c.req.queries('subject') ?? [])
-      .map(decodeSubjectFilter)
-      .filter((v): v is { state: string; name: string } => v !== null)
+    const subjectFilters = decodeSubjectFilters(c.req.queries('subject') ?? [])
     const q = c.req.query('q')
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
@@ -265,9 +263,19 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
-    const subjectFilters = (c.req.queries('subject') ?? [])
-      .map(decodeSubjectFilter)
-      .filter((v): v is { state: string; name: string } => v !== null)
+    const subjectFilters = decodeSubjectFilters(c.req.queries('subject') ?? [])
+
+    // Tenant-wide fact — which states publish subjects AT ALL — deliberately
+    // unscoped by any active filter (state, myBills, q, ...). subjectWhere below
+    // includes the state filter (so the subject dropdown reflects the selected
+    // state's own vocabulary), which means the *scoped* subject facet cannot
+    // tell "this state has no subjects" apart from "this state was filtered
+    // out by the user's own state filter". The web client needs the unscoped
+    // fact to render that distinction correctly (see statesWithoutSubjects in
+    // BillList/index.tsx). Cheap: a tiny distinct scan of bill_subjects.state.
+    const subjectStatesAllRows = await db.selectDistinct({ state: billSubjects.state }).from(billSubjects).all()
+    const subjectStates = subjectStatesAllRows.map(r => r.state).sort()
+
     const q = c.req.query('q')
     const minRelevance = c.req.query('minRelevance')
     const myBillsParam = c.req.query('myBills')
@@ -374,7 +382,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 })
+      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0 })
     }
 
     if (unvoted === '1') {
@@ -572,6 +580,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       position: positionCounts,
       tags: tagCounts,
       subjects: subjectCounts,
+      subjectStates,
       customFields,
       myBillsCount,
       newMatchesCount,

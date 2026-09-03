@@ -32,6 +32,7 @@ type ListBody = {
 
 type FacetsBody = {
   subjects: Record<string, number>
+  subjectStates: string[]
 }
 
 describe('GET /bills — subject filtering', () => {
@@ -136,5 +137,35 @@ describe('GET /bills — subject filtering', () => {
     expect(body.subjects['UT:Election Law']).toBe(2)
     expect(body.subjects['UT:Referenda']).toBe(1)
     expect(body.subjects['NJ:Education']).toBe(1)
+  })
+
+  // IMPORTANT 1 regression: subjectMembership binds 2 params per value with no cap,
+  // and a shared/bookmarked URL can carry far more than D1's 100-bound-param limit.
+  // Without a cap, this 500s instead of returning a page.
+  it('does not 500 when the URL carries far more subject filters than D1 can bind', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 's17', state: 'UT' }, ['Election Law'])
+
+    const params = new URLSearchParams()
+    for (let i = 0; i < 60; i++) params.append('subject', `UT:Subject ${i}`)
+    const res = await app.request(`/api/bills?${params}`, { headers: { Cookie: `session=${token}` } }, env)
+
+    expect(res.status).toBe(200)
+  })
+
+  // IMPORTANT 2 regression: subjectStates must be the tenant-wide, unscoped fact —
+  // not derived from the (state-scoped) subjects facet — so a state that publishes
+  // subjects isn't wrongly reported as "does not publish subjects" just because the
+  // user's own state filter excluded it from the current subjects facet.
+  it('reports subjectStates as the unscoped set of every state with any subjects, regardless of the active state filter', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 's18', state: 'UT' }, ['Election Law'])
+    await seedBillWithSubjects(db, { id: 's19', state: 'NJ' }, ['Education'])
+    await seedBillWithSubjects(db, { id: 's20', state: 'CA' }, [])
+
+    const res = await app.request('/api/bills/facets?state=UT', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.subjectStates.sort()).toEqual(['NJ', 'UT'])
   })
 })
