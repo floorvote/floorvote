@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 export const users = sqliteTable('users', {
@@ -73,6 +73,7 @@ export const bills = sqliteTable('bills', {
   lastAction: text('last_action'),
   lastActionDate: text('last_action_date'),
   history: text('history'),
+  subjects: text('subjects'),
   relatedBillIds: text('related_bill_ids'),
   companionBillIds: text('companion_bill_ids'),
   stateLink: text('state_link'),
@@ -103,6 +104,15 @@ export const bills = sqliteTable('bills', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+export const billSubjects = sqliteTable('bill_subjects', {
+  billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  subjectName: text('subject_name').notNull(),
+  state:       text('state').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.subjectName] }),
+  index('idx_bill_subjects_name').on(t.state, t.subjectName),
+])
 
 export const memberVotes = sqliteTable('member_votes', {
   id: text('id').primaryKey(),
