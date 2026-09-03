@@ -58,3 +58,38 @@ export function configChanged(a: ConfigSnapshot, b: ConfigSnapshot): boolean {
     || a.orgNoun !== b.orgNoun
     || a.newMatchMinRelevance !== b.newMatchMinRelevance
 }
+
+/** Result of POST /admin/keyword-resync. */
+export type KeywordResyncResult = {
+  queued: number
+  demoted: number
+  protectedAsManual: number
+  centralEnriched?: number
+  centralTruncated?: boolean
+  centralStatus?: 'ok' | 'rate_limited' | 'failed'
+}
+
+/**
+ * Warning to show after a keyword sync, or null when the sync was fully healthy.
+ *
+ * The tenant-side pass and central's enrichment pass fail independently, and only
+ * central can promote a stub to full analysis. A central failure therefore leaves
+ * precisely the newly-matching stubs unanalyzed while the tenant-side count still
+ * reports a plausible non-zero "queued" — which reads as success. Surfacing it is
+ * the difference between noticing in seconds and auditing the database by hand.
+ *
+ * `centralStatus` is optional so a UI built against an older API (which omitted the
+ * field) stays silent rather than warning on every save.
+ */
+export function centralSyncWarning(r: KeywordResyncResult): string | null {
+  if (r.centralStatus === 'rate_limited') {
+    return 'Central was rate-limited, so bills currently monitored as stubs were not upgraded. Wait a minute and save again.'
+  }
+  if (r.centralStatus === 'failed') {
+    return 'Could not reach central, so bills currently monitored as stubs were not upgraded. Try saving again.'
+  }
+  if (r.centralTruncated) {
+    return 'Too many new matches to process at once — save again to continue upgrading the rest.'
+  }
+  return null
+}

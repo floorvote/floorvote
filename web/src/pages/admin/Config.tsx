@@ -14,7 +14,7 @@ import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
-import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot } from './aiConfig'
+import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
 
@@ -87,7 +87,7 @@ export function Config() {
   const [savingKeywords, setSavingKeywords] = useState(false)
   const [savedKeywords, setSavedKeywords] = useState(false)
   const [saveKeywordsError, setSaveKeywordsError] = useState<string | null>(null)
-  const [syncKeywordsResult, setSyncKeywordsResult] = useState<{ queued: number; demoted: number; protectedAsManual: number } | null>(null)
+  const [syncKeywordsResult, setSyncKeywordsResult] = useState<KeywordResyncResult | null>(null)
 
   const [matchedBillsCount, setMatchedBillsCount] = useState<number | null>(null)
   const [prioritizedBillsCount, setPrioritizedBillsCount] = useState<number | null>(null)
@@ -283,7 +283,7 @@ export function Config() {
         body: JSON.stringify({ keywords: newKeywords }),
       })
       try {
-        const result = await apiFetch<{ queued: number; demoted: number; protectedAsManual: number }>('/admin/keyword-resync', { method: 'POST' })
+        const result = await apiFetch<KeywordResyncResult>('/admin/keyword-resync', { method: 'POST' })
         setSyncKeywordsResult(result)
         // Refresh the matched bill count shown in the AI rerun confirmation
         apiFetch<ConfigData>('/admin/config').then(d => { setMatchedBillsCount(d.matched_bills_count ?? null); setPrioritizedBillsCount(d.prioritized_bills_count ?? null) }).catch(() => {})
@@ -664,6 +664,11 @@ export function Config() {
                         syncKeywordsResult.demoted > 0 ? `${syncKeywordsResult.demoted} downgraded to status monitoring` : '',
                       ].filter(Boolean).join(', ')}`
                     : 'Saved'}
+                </span>
+              )}
+              {savedKeywords && syncKeywordsResult && centralSyncWarning(syncKeywordsResult) && (
+                <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, flexShrink: 1 }}>
+                  {centralSyncWarning(syncKeywordsResult)}
                 </span>
               )}
               {saveKeywordsError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{saveKeywordsError}</span>}
