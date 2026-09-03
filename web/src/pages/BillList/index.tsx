@@ -1001,6 +1001,7 @@ export function BillList() {
         priorities={f.filterPriorities}
         positions={f.filterPositions}
         tags={f.selectedTags}
+        subjects={f.selectedSubjects}
         sessions={f.filterYears.map(String)}
         minRelevance={f.filterMinRelevance}
         myBills={f.myBills}
@@ -1012,12 +1013,15 @@ export function BillList() {
         ]}
         positionOptions={positionVocabulary.map(p => ({ value: p, label: p }))}
         tagOptions={f.allTags}
+        subjectGroups={f.subjectGroups}
+        statesWithoutSubjects={statesWithoutSubjects}
         sessionOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalSessionCount={f.yearFacetKeys.length}
         onStatusChange={f.setFilterStatuses}
         onPriorityChange={f.setFilterPriorities}
         onPositionChange={f.setFilterPositions}
         onTagChange={f.handleTagsChange}
+        onSubjectChange={f.handleSubjectsChange}
         onSessionChange={v => f.setFilterYears(v.map(Number).filter(n => !isNaN(n)))}
         onMinRelevanceChange={f.setFilterMinRelevance}
         onMyBillsChange={f.setMyBills}

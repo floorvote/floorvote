@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -8,6 +9,7 @@ interface FilterSheetProps {
   priorities: string[]
   positions: string[]
   tags: string[]
+  subjects: string[]
   sessions: string[]
   minRelevance: number
   myBills: boolean
@@ -15,12 +17,15 @@ interface FilterSheetProps {
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
+  subjectGroups: SubjectGroup[]
+  statesWithoutSubjects: string[]
   sessionOptions: { value: string; label: string }[]
   totalSessionCount?: number
   onStatusChange: (v: string[]) => void
   onPriorityChange: (v: string[]) => void
   onPositionChange: (v: string[]) => void
   onTagChange: (v: string[]) => void
+  onSubjectChange: (v: string[]) => void
   onSessionChange: (v: string[]) => void
   onMinRelevanceChange: (v: number) => void
   onMyBillsChange: (v: boolean) => void
@@ -87,9 +92,9 @@ function SheetSection({ title, children }: { title: string; children: React.Reac
 
 export function FilterSheet({
   isOpen, onClose,
-  statuses, priorities, positions, tags, sessions, minRelevance, myBills,
-  statusOptions, priorityOptions, positionOptions, tagOptions, sessionOptions, totalSessionCount,
-  onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSessionChange,
+  statuses, priorities, positions, tags, subjects, sessions, minRelevance, myBills,
+  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, statesWithoutSubjects, sessionOptions, totalSessionCount,
+  onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange,
   onMinRelevanceChange, onMyBillsChange,
   onClearAll, counts,
 }: FilterSheetProps) {
@@ -111,7 +116,7 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + sessions.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0)
+  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -276,6 +281,50 @@ export function FilterSheet({
                 />
               ))}
             </SheetSection>
+          )}
+          {/* Subject vocabularies aren't comparable across states (see useBillFilters'
+              subjectGroups), so this section — unlike the flat SheetSection groups
+              above — groups its chips under a state heading whenever more than one
+              state is present, and shows nothing at all when no state in view
+              publishes subjects. */}
+          {subjectGroups.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{
+                fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted,
+                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+              }}>
+                Subject
+              </div>
+              {subjectGroups.map(group => (
+                <div key={group.state} style={{ marginBottom: subjectGroups.length > 1 ? 10 : 0 }}>
+                  {subjectGroups.length > 1 && (
+                    <div style={{
+                      fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
+                      textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
+                    }}>
+                      {group.state}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {group.options.map(opt => (
+                      <SheetChip
+                        key={opt.value}
+                        label={opt.label}
+                        active={subjects.includes(opt.value)}
+                        onClick={() => toggleItem(subjects, opt.value, onSubjectChange)}
+                        count={opt.count}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {subjects.length > 0 && statesWithoutSubjects.length > 0 && (
+                <div style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 10 }}>
+                  Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures
+                  do not publish subjects.
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
