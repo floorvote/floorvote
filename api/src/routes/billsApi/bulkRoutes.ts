@@ -9,6 +9,7 @@ import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
 import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
+import { decodeSubjectFilters } from '../../lib/billSubjects'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -30,6 +31,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         year?: string[]
         state?: string[]
         tag?: string[]
+        subject?: string[]
         q?: string
         minRelevance?: string
         myBills?: string
@@ -83,7 +85,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         years: f.year ?? [],
         states: f.state ?? [],
         tagFilters: f.tag ?? [],
-        subjectFilters: [],
+        subjectFilters: decodeSubjectFilters(f.subject ?? []),
         q: f.q,
         minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
@@ -331,7 +333,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       ids?: string[]
       filter?: {
         status?: string[]; priority?: string[]; position?: string[]; session?: string[]
-        year?: string[]; state?: string[]; tag?: string[]; q?: string; minRelevance?: string
+        year?: string[]; state?: string[]; tag?: string[]; subject?: string[]; q?: string; minRelevance?: string
         myBills?: string; unvoted?: string; newMatches?: string; cf?: Record<string, string[]>
       }
     }
@@ -355,7 +357,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const where = await buildBillsWhere(db, {
         statuses: f.status ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
-        subjectFilters: [],
+        subjectFilters: decodeSubjectFilters(f.subject ?? []),
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
@@ -412,6 +414,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const years = params.getAll('year')
       const states = params.getAll('state')
       const tagFilters = params.getAll('tag')
+      const subjectFilters = decodeSubjectFilters(params.getAll('subject'))
       const q = params.get('q') ?? undefined
       const minRelevance = params.get('minRelevance') ?? undefined
       const myBillsParam = params.get('myBills') ?? undefined
@@ -428,7 +431,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
       const where = await buildBillsWhere(db, {
         statuses, priorities, positionValues, sessions, years, states, tagFilters,
-        subjectFilters: [],
+        subjectFilters,
         q, minRelevance, myBillsParam, unvoted,
         newMatches: newMatchesParam,
         newMatchMinRelevance: (newMatchesParam === '1' || newMatchesParam === 'true') ? await getNewMatchMinRelevance(db) : 0,

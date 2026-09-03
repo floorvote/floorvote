@@ -1675,6 +1675,38 @@ describe('POST /bills/bulk (admin only)', () => {
     expect(rows.every(r => r.priority === 'medium')).toBe(true)
   })
 
+  // CRITICAL 1 regression: a subject filter in a bulk request must narrow the
+  // affected set the same way it narrows the list view. Before the fix, bulkRoutes
+  // passed subjectFilters: [] to buildBillsWhere, so a `filter.subject` the admin
+  // saw narrow the list to one bill silently applied to every bill matching the
+  // rest of the filter — here, all three bills instead of just the one with the
+  // matching subject.
+  it('sets priority using filter with a subject clause, affecting only the matching bill', async () => {
+    const { billSubjects } = await import('../../src/db/schema')
+    const db = getDb(env.DB)
+    await db.insert(billSubjects).values([
+      { billId: billId1, subjectName: 'Election Law', state: 'RI' },
+      { billId: billId2, subjectName: 'Counties', state: 'RI' },
+    ]).run()
+
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { subject: ['RI:Election Law'] }, priority: 'high' }),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { updated: number }
+    expect(body.updated).toBe(1)
+
+    const { bills: billsTable } = await import('../../src/db/schema')
+    const rows = await db.select({ id: billsTable.id, priority: billsTable.priority })
+      .from(billsTable).where(inArray(billsTable.id, [billId1, billId2, billId3])).all()
+    const priorityById = Object.fromEntries(rows.map(r => [r.id, r.priority]))
+    expect(priorityById[billId1]).toBe('high')
+    expect(priorityById[billId2]).toBe(null) // unaffected — no Election Law subject
+    expect(priorityById[billId3]).toBe('high') // pre-existing value untouched
+  })
+
   it('sets official position on explicit ids and writes feed events (≤10)', async () => {
     const res = await SELF.fetch('http://localhost/api/bills/bulk', {
       method: 'POST',

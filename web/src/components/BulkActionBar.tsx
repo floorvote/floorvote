@@ -39,6 +39,7 @@ type FilterState = {
   year: string[]
   state: string[]
   tag: string[]
+  subject: string[]
   q: string
   minRelevance: number
   myBills: boolean
@@ -57,6 +58,7 @@ function buildFilterBody(f: FilterState): Record<string, unknown> {
     ...(f.year.length > 0 && { year: f.year }),
     ...(f.state.length > 0 && { state: f.state }),
     ...(f.tag.length > 0 && { tag: f.tag }),
+    ...(f.subject.length > 0 && { subject: f.subject }),
     ...(f.q && { q: f.q }),
     ...(f.minRelevance > 0 && { minRelevance: String(f.minRelevance) }),
     ...(f.myBills && { myBills: '1' }),
@@ -242,6 +244,7 @@ export function BulkActionBar({
     currentFilters.year.forEach(y => params.append('year', y))
     currentFilters.state.forEach(s => params.append('state', s))
     currentFilters.tag.forEach(t => params.append('tag', t))
+    currentFilters.subject.forEach(s => params.append('subject', s))
     if (currentFilters.q) params.set('q', currentFilters.q)
     if (currentFilters.minRelevance > 0) params.set('minRelevance', String(currentFilters.minRelevance))
     if (currentFilters.myBills) params.set('myBills', '1')
