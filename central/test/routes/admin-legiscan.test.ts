@@ -488,3 +488,169 @@ describe('POST /admin/backfill-stub-actions/:tenantId', () => {
     }
   })
 })
+
+// Shared seed for /refresh-stubs and /refresh-metadata: a tenant tracking bills
+// across two states, both matched (keyword) and unmatched (null match_type).
+async function seedTenantWithStatesAndMatch(tenantId: string) {
+  const db = drizzle(env.DB, { schema })
+  await db.insert(schema.tenants).values({
+    tenantId, name: tenantId, active: true, stateCoverage: '["AZ","RI"]',
+  })
+  await db.insert(schema.sessions).values([
+    { sessionId: 1, state: 'AZ', stateId: 0, yearStart: 2026, yearEnd: 2026,
+      sessionName: '2026', sessionTitle: '2026', sessionTag: '', prefile: 0, sineDie: 0, prior: 0, special: 0 },
+    { sessionId: 2, state: 'RI', stateId: 0, yearStart: 2026, yearEnd: 2026,
+      sessionName: '2026', sessionTitle: '2026', sessionTag: '', prefile: 0, sineDie: 0, prior: 0, special: 0 },
+  ])
+  // 10, 11: AZ, unmatched stubs. 12: RI, unmatched stub.
+  // 20, 21: AZ, matched. 22: RI, matched.
+  await db.insert(schema.bills).values([
+    { billId: 10, sessionId: 1, state: 'AZ', stateId: 0, billNumber: 'H10', title: 'Bill 10', changeHash: 'h', status: 1 },
+    { billId: 11, sessionId: 1, state: 'AZ', stateId: 0, billNumber: 'H11', title: 'Bill 11', changeHash: 'h', status: 1 },
+    { billId: 12, sessionId: 2, state: 'RI', stateId: 0, billNumber: 'H12', title: 'Bill 12', changeHash: 'h', status: 1 },
+    { billId: 20, sessionId: 1, state: 'AZ', stateId: 0, billNumber: 'H20', title: 'Bill 20', changeHash: 'h', status: 1 },
+    { billId: 21, sessionId: 1, state: 'AZ', stateId: 0, billNumber: 'H21', title: 'Bill 21', changeHash: 'h', status: 1 },
+    { billId: 22, sessionId: 2, state: 'RI', stateId: 0, billNumber: 'H22', title: 'Bill 22', changeHash: 'h', status: 1 },
+  ])
+  await db.insert(schema.billTenants).values([
+    { billId: 10, tenantId, matchType: null },
+    { billId: 11, tenantId, matchType: null },
+    { billId: 12, tenantId, matchType: null },
+    { billId: 20, tenantId, matchType: 'keyword' },
+    { billId: 21, tenantId, matchType: 'manual' },
+    { billId: 22, tenantId, matchType: 'keyword' },
+  ])
+}
+
+describe('POST /admin/refresh-stubs/:tenantId', () => {
+  it('returns 401 without admin secret', async () => {
+    const res = await app.request('/api/admin/refresh-stubs/test-tenant', { method: 'POST' }, env)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 404 for unknown tenant', async () => {
+    const res = await app.request(
+      '/api/admin/refresh-stubs/does-not-exist',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      env,
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('with no state param, queues every unmatched bill regardless of state', async () => {
+    await seedTenantWithStatesAndMatch('rs-all')
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = { ...(env as any), TENANT_QUEUE_RS_ALL: { sendBatch: tenantSendBatch, send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/refresh-stubs/rs-all',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, tenantId: 'rs-all', queued: 3, state: null })
+    expect(tenantSendBatch).toHaveBeenCalledTimes(1)
+    const messages = tenantSendBatch.mock.calls[0][0]
+    const ids = messages.map((m: any) => m.body.billId).sort()
+    expect(ids).toEqual(['legiscan:10', 'legiscan:11', 'legiscan:12'])
+    for (const m of messages) {
+      expect(m.body.stubOnly).toBe(true)
+      expect(m.body.metadataOnly).toBeUndefined()
+    }
+  })
+
+  it('with ?state=AZ, queues only unmatched Arizona bills', async () => {
+    await seedTenantWithStatesAndMatch('rs-az')
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = { ...(env as any), TENANT_QUEUE_RS_AZ: { sendBatch: tenantSendBatch, send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/refresh-stubs/rs-az?state=AZ',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, tenantId: 'rs-az', queued: 2, state: 'AZ' })
+    const messages = tenantSendBatch.mock.calls[0][0]
+    const ids = messages.map((m: any) => m.body.billId).sort()
+    expect(ids).toEqual(['legiscan:10', 'legiscan:11'])
+  })
+
+  it('treats a lowercase ?state=az the same as AZ', async () => {
+    await seedTenantWithStatesAndMatch('rs-lc')
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = { ...(env as any), TENANT_QUEUE_RS_LC: { sendBatch: tenantSendBatch, send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/refresh-stubs/rs-lc?state=az',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ tenantId: 'rs-lc', queued: 2, state: 'AZ' })
+  })
+})
+
+describe('POST /admin/refresh-metadata/:tenantId', () => {
+  it('returns 401 without admin secret', async () => {
+    const res = await app.request('/api/admin/refresh-metadata/test-tenant', { method: 'POST' }, env)
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 404 for unknown tenant', async () => {
+    const res = await app.request(
+      '/api/admin/refresh-metadata/does-not-exist',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      env,
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('queues only matched (match_type IS NOT NULL) bills, with metadataOnly set and stubOnly absent', async () => {
+    await seedTenantWithStatesAndMatch('rm-all')
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = { ...(env as any), TENANT_QUEUE_RM_ALL: { sendBatch: tenantSendBatch, send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/refresh-metadata/rm-all',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, tenantId: 'rm-all', queued: 3, state: null })
+    const messages = tenantSendBatch.mock.calls[0][0]
+    const ids = messages.map((m: any) => m.body.billId).sort()
+    expect(ids).toEqual(['legiscan:20', 'legiscan:21', 'legiscan:22'])
+    for (const m of messages) {
+      expect(m.body.metadataOnly).toBe(true)
+      expect(m.body.stubOnly).toBeUndefined()
+    }
+  })
+
+  it('respects ?state=, queuing only matched bills in that state', async () => {
+    await seedTenantWithStatesAndMatch('rm-az')
+    const tenantSendBatch = vi.fn().mockResolvedValue(undefined)
+    const mockEnv = { ...(env as any), TENANT_QUEUE_RM_AZ: { sendBatch: tenantSendBatch, send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/refresh-metadata/rm-az?state=AZ',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, tenantId: 'rm-az', queued: 2, state: 'AZ' })
+    const messages = tenantSendBatch.mock.calls[0][0]
+    const ids = messages.map((m: any) => m.body.billId).sort()
+    expect(ids).toEqual(['legiscan:20', 'legiscan:21'])
+  })
+})
