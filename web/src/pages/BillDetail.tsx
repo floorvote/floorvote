@@ -1452,7 +1452,7 @@ export function BillDetail() {
             if (!grouped.has(key)) grouped.set(key, [])
             grouped.get(key)!.push(r)
           }
-          const hasAny = bodyLabel || typeLabel || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || bill.subjects.length > 0
+          const hasAny = bodyLabel || typeLabel || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
@@ -1487,10 +1487,10 @@ export function BillDetail() {
               <span>{String(cid)}</span>
             </span>
           ))
-          if (bill.subjects.length > 0) metaItems.push(
+          if ((bill.subjects ?? []).length > 0) metaItems.push(
             <SubjectsTrigger
               key="subjects"
-              count={bill.subjects.length}
+              count={(bill.subjects ?? []).length}
               state={bill.state}
               open={subjectsOpen}
               panelId="bill-subjects-panel"
@@ -1527,10 +1527,10 @@ export function BillDetail() {
           )
         })()}
 
-        {bill.subjects.length > 0 && (
+        {(bill.subjects ?? []).length > 0 && (
           <SubjectsPanel
             id="bill-subjects-panel"
-            subjects={bill.subjects}
+            subjects={bill.subjects ?? []}
             open={subjectsOpen}
             onSubjectClick={name =>
               navigate(`/bills?subject=${encodeURIComponent(`${bill.state}:${name}`)}`)}
