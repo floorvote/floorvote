@@ -10,6 +10,7 @@ import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
+import { parseSubjects } from '../../lib/billSubjects'
 
 type CentralBillRich = {
   billType?: string | null
@@ -34,7 +35,6 @@ type CentralBillRich = {
     url: string | null
     stateLink: string | null
   }>
-  subjects?: string[]
 }
 
 export async function buildBillDetail(
@@ -268,7 +268,7 @@ export async function buildBillDetail(
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
     })) ?? undefined,
-    subjects: centralRich?.subjects?.length ? centralRich.subjects : undefined,
+    subjects: parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'
       ? await loadDemoBillCalendar(db, billId)
       : (centralRich?.calendar ?? []),
