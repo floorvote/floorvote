@@ -166,6 +166,14 @@ if [[ $FROM_STEP -le 5 ]]; then
   read -rsp "RESEND_API_KEY (optional): " RESEND_API_KEY; echo
 fi
 
+# Default the tenant URL from APP_DOMAINS (set in scripts/.env.ops) rather than a
+# placeholder: a deployment that has already declared its domain should not need
+# --app-url on every run. Falling back to example.com silently produced a tenant
+# whose route pointed at a zone Cloudflare could not find, failing the deploy
+# AFTER the env block had been committed. --app-url still wins.
+if [[ -z "$APP_URL" && -n "${APP_DOMAINS:-}" ]]; then
+  APP_URL="https://${SLUG}.${APP_DOMAINS%%,*}"
+fi
 APP_URL="${APP_URL:-https://${SLUG}.example.com}"
 WORKER_NAME="${RESOURCE_PREFIX}-${SLUG}"
 WORKER_URL="https://${WORKER_NAME}.${ACCOUNT_SUBDOMAIN}.workers.dev"
@@ -233,6 +241,12 @@ if step "Add env block to api/wrangler.toml"; then
 name = "${WORKER_NAME}"
 routes = [{ pattern = "${APP_URL#https://}", custom_domain = true }]
 
+# wrangler doesn't inherit the top-level [define] into named environments, so
+# each env needs its own or wrangler warns on every command. BUILD_SHA is
+# overridden at deploy; "'dev'" is just the placeholder.
+[env.${SLUG}.define]
+BUILD_SHA = "'dev'"
+
 [env.${SLUG}.vars]
 APP_URL = "${APP_URL}"
 ASSOCIATION_NAME = "${ASSOC_NAME}"
@@ -246,12 +260,13 @@ CF_AIG_GATEWAY = "${CF_AIG_GATEWAY}"
 EMAIL_PROVIDER = "${EMAIL_PROVIDER}"
 APP_DOMAINS = "${APP_DOMAINS:-example.com}"
 EMAIL_FROM = "${EMAIL_FROM:-notifications@example.com}"
+EMAIL_FROM_BULK = "${EMAIL_FROM_BULK:-}"
 ALERT_EMAILS = "${ALERT_EMAILS:-}"
 OPERATOR_NAME = "${OPERATOR_NAME:-}"
 OPERATOR_URL = "${OPERATOR_URL:-}"
 OPERATOR_CONTACT_EMAILS = "${OPERATOR_CONTACT_EMAILS:-}"
 SUPERADMIN_JWT_PUBLIC_KEY='${SUPERADMIN_JWT_PUBLIC_KEY}'
-TURNSTILE_SITE_KEY = "\${TURNSTILE_SITE_KEY:-}"
+TURNSTILE_SITE_KEY = "${TURNSTILE_SITE_KEY:-}"
 
 [[env.${SLUG}.d1_databases]]
 binding = "DB"
