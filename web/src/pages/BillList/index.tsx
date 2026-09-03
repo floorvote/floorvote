@@ -483,11 +483,18 @@ export function BillList() {
     [sorted]
   )
 
+  // Key measured row heights by bill id, not by list index. Without this the
+  // virtualizer caches each row's measured height under its index, so after a
+  // search or filter the bill that lands at index N inherits the height of
+  // whatever bill was at index N before — rows overlap or leave a gap.
+  const getItemKey = useCallback((index: number) => sorted[index]?.id ?? index, [sorted])
+
   const virtualizer = useVirtualizer({
     count: sorted.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 150,
     overscan: 5,
+    getItemKey,
   })
 
   if (loading) return <div style={{ padding: 32, color: color.textMuted }}>Loading…</div>
