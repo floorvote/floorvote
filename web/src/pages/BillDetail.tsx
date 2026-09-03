@@ -35,6 +35,7 @@ import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
+import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
 import { CommentContent } from '../components/CommentContent'
@@ -421,7 +422,7 @@ type BillDetailData = {
   lastActionDate: string | null
   history: { date: string; action: string; chamber: string; importance?: number }[]
   voteSummary?: VoteSummaryEntry[]
-  subjects?: string[]
+  subjects: string[]
   relatedBillIds: RelatedBill[]
   companionBillIds: string[]
   texts: {
@@ -612,6 +613,7 @@ export function BillDetail() {
   const [requestedDocId, setRequestedDocId] = useState<string | null>(null)
   const [showHearings, setShowHearings] = useState(false)
   const [changeLog, setChangeLog] = useState<ChangeRecord[]>([])
+  const [subjectsOpen, setSubjectsOpen] = useState(false)
   // Prev/next bill nav is "pending" while the data router runs the next bill's
   // loader — disable the arrows until it settles (was a local flag the old
   // deferredNavigate toggled).
@@ -655,6 +657,16 @@ export function BillDetail() {
   useEffect(() => {
     billRef.current = bill
   }, [bill])
+
+  // Open by default when there is no AI analysis: subjects are then the page's only
+  // topical signal, and collapsing them would hide the only thing worth seeing. Keyed
+  // on bill.id only, deliberately, so a later in-place bill update (e.g. AI analysis
+  // finishing) doesn't reopen or reclose a panel the reader already toggled.
+  useEffect(() => {
+    if (!bill) return
+    setSubjectsOpen(!(bill.tenantSummary || bill.tags.length > 0 || bill.relevanceScore != null))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bill?.id])
 
   useEffect(() => {
     if (location.hash) return // hash handlers manage their own scroll
@@ -1440,7 +1452,7 @@ export function BillDetail() {
             if (!grouped.has(key)) grouped.set(key, [])
             grouped.get(key)!.push(r)
           }
-          const hasAny = bodyLabel || typeLabel || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl
+          const hasAny = bodyLabel || typeLabel || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || bill.subjects.length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
@@ -1475,6 +1487,16 @@ export function BillDetail() {
               <span>{String(cid)}</span>
             </span>
           ))
+          if (bill.subjects.length > 0) metaItems.push(
+            <SubjectsTrigger
+              key="subjects"
+              count={bill.subjects.length}
+              state={bill.state}
+              open={subjectsOpen}
+              panelId="bill-subjects-panel"
+              onToggle={() => setSubjectsOpen(o => !o)}
+            />,
+          )
           if (bill.stateUrl || bill.stateLink || bill.legiscanUrl) metaItems.push(
             <span key="external-links" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               {(bill.stateUrl || bill.stateLink) && (
@@ -1504,6 +1526,16 @@ export function BillDetail() {
             </div>
           )
         })()}
+
+        {bill.subjects.length > 0 && (
+          <SubjectsPanel
+            id="bill-subjects-panel"
+            subjects={bill.subjects}
+            open={subjectsOpen}
+            onSubjectClick={name =>
+              navigate(`/bills?subject=${encodeURIComponent(`${bill.state}:${name}`)}`)}
+          />
+        )}
 
         {/* Meta row 2: committee / referrals */}
         {(bill.committee || (bill.referrals?.length ?? 0) > 0) && (
