@@ -83,6 +83,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         years: f.year ?? [],
         states: f.state ?? [],
         tagFilters: f.tag ?? [],
+        subjectFilters: [],
         q: f.q,
         minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
@@ -354,6 +355,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const where = await buildBillsWhere(db, {
         statuses: f.status ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
+        subjectFilters: [],
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
@@ -426,6 +428,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
       const where = await buildBillsWhere(db, {
         statuses, priorities, positionValues, sessions, years, states, tagFilters,
+        subjectFilters: [],
         q, minRelevance, myBillsParam, unvoted,
         newMatches: newMatchesParam,
         newMatchMinRelevance: (newMatchesParam === '1' || newMatchesParam === 'true') ? await getNewMatchMinRelevance(db) : 0,

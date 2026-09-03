@@ -37,6 +37,22 @@ export function tagMembership(tagValues: string[]): SQL {
   return sql`EXISTS (SELECT 1 FROM json_each(${bills.tags}) je WHERE je.value IN (${list}))`
 }
 
+/**
+ * Bills carrying any of these (state, subject) pairs. An EXISTS against the join
+ * table rather than a JSON scan of bills.subjects: idx_bill_subjects_name covers
+ * (state, subject_name), so this is an index seek per value.
+ */
+export function subjectMembership(values: Array<{ state: string; name: string }>): SQL {
+  const pairs = sql.join(
+    values.map(v => sql`(${v.state}, ${v.name})`),
+    sql`, `,
+  )
+  return sql`EXISTS (
+    SELECT 1 FROM bill_subjects bs
+    WHERE bs.bill_id = ${bills.id} AND (bs.state, bs.subject_name) IN (${pairs})
+  )`
+}
+
 // Helper: single-value eq or multi-value inArray
 export function multiFilter(column: Parameters<typeof eq>[0], values: string[]): SQL | undefined {
   if (values.length === 0) return undefined
@@ -269,6 +285,7 @@ export type BillFilterParams = {
   years: string[]
   states: string[]
   tagFilters: string[]
+  subjectFilters: Array<{ state: string; name: string }>
   q: string | undefined
   minRelevance: string | undefined
   myBillsParam: string | undefined
@@ -365,6 +382,10 @@ export async function buildBillsWhere(
     if (hasAny) parts.push(sql`json_array_length(${bills.tags}) > 0`) // "Any" = has any tag
     if (realTags.length > 0) parts.push(tagMembership(realTags))
     if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
+  }
+
+  if (p.subjectFilters.length > 0) {
+    conditions.push(subjectMembership(p.subjectFilters))
   }
 
   if (p.positionValues.length > 0) {

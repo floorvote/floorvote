@@ -3,15 +3,17 @@ import { eq, and, or, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-o
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, billCustomFieldValues, customFieldDefinitions,
+  billSubjects,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { sessionToSlug } from '../../lib/sessionSlug'
-import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership } from './query'
+import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
+import { decodeSubjectFilter, encodeSubjectFilter } from '../../lib/billSubjects'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -29,6 +31,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
+    const subjectFilters = (c.req.queries('subject') ?? [])
+      .map(decodeSubjectFilter)
+      .filter((v): v is { state: string; name: string } => v !== null)
     const q = c.req.query('q')
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
@@ -56,6 +61,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       years,
       states,
       tagFilters,
+      subjectFilters,
       q,
       minRelevance,
       myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
@@ -81,6 +87,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const cacheKey = cacheable
       ? cacheKeyFor(c.env, {
           statuses, priorities, positionValues, sessions, years, states, tagFilters,
+          subjectFilters,
           q, minRelevance, cfParamMap, sort: sort ?? 'default', dir: sortDir, page, pageSize,
         })
       : null
@@ -258,6 +265,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
+    const subjectFilters = (c.req.queries('subject') ?? [])
+      .map(decodeSubjectFilter)
+      .filter((v): v is { state: string; name: string } => v !== null)
     const q = c.req.query('q')
     const minRelevance = c.req.query('minRelevance')
     const myBillsParam = c.req.query('myBills')
@@ -306,6 +316,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       if (realTags.length > 0) parts.push(tagMembership(realTags))
       if (parts.length > 0) tagFilter = parts.length === 1 ? parts[0] : or(...parts)!
     }
+
+    const subjectFilter: SQL | undefined = subjectFilters.length > 0 ? subjectMembership(subjectFilters) : undefined
 
     let positionFilter: SQL | undefined
     if (positionValues.length > 0) {
@@ -362,7 +374,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 })
+      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 })
     }
 
     if (unvoted === '1') {
@@ -383,19 +395,20 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       return all.length > 0 ? and(...all) : undefined
     }
 
-    const statusWhere   = buildWhere(undefined, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
-    const priorityWhere = buildWhere(undefined, statusFilter,   yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
-    const yearWhere     = buildWhere(undefined, statusFilter,   priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
-    const stateWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter)
-    const positionWhere = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter)
-    const tagWhere      = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter)
+    const statusWhere   = buildWhere(undefined, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const priorityWhere = buildWhere(undefined, statusFilter,   yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const yearWhere     = buildWhere(undefined, statusFilter,   priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const stateWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter, subjectFilter)
+    const positionWhere = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, subjectFilter)
+    const tagWhere      = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter, subjectFilter)
+    const subjectWhere  = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
     // Full WHERE (all filters) for myBillsCount
-    const finalWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
+    const finalWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
 
     const tagWhereClause = tagWhere ? sql`WHERE ${tagWhere}` : sql``
 
     // Run all dimensional facet queries in parallel
-    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, myInteractionRows, noPositionCountRows, tagSet] = await Promise.all([
+    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, subjectRows, myInteractionRows, noPositionCountRows, tagSet] = await Promise.all([
       db.select({ value: bills.status, count: sql<number>`COUNT(*)` })
         .from(bills).where(statusWhere).groupBy(bills.status).all(),
       db.select({ value: bills.priority, count: sql<number>`COUNT(*)` })
@@ -412,6 +425,16 @@ export function registerListRoutes(router: Hono<AppEnv>) {
         .where(positionWhere)
         .groupBy(officialPositions.position).all(),
       db.all(sql`SELECT jt.value as tag, COUNT(*) as cnt FROM bills, json_each(bills.tags) jt ${tagWhereClause} GROUP BY jt.value`) as Promise<{ tag: string; cnt: number }[]>,
+      db.select({
+        state: billSubjects.state,
+        name: billSubjects.subjectName,
+        cnt: sql<number>`count(*)`,
+      })
+        .from(billSubjects)
+        .innerJoin(bills, eq(bills.id, billSubjects.billId))
+        .where(subjectWhere)
+        .groupBy(billSubjects.state, billSubjects.subjectName)
+        .all(),
       Promise.all([
         db.select({ billId: memberVotes.billId }).from(memberVotes).where(eq(memberVotes.userId, currentUser.id)).all(),
         db.select({ billId: notes.billId }).from(notes).where(and(eq(notes.userId, currentUser.id), ne(notes.content, ''))).all(),
@@ -478,7 +501,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     } else {
       // Per active field, count with that field's own filter excluded (disjunctive).
       const perFieldResults = await Promise.all(
-        cfFieldIds.map(id => cfCounts(buildWhere(id, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter), id))
+        cfFieldIds.map(id => cfCounts(buildWhere(id, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
       )
       for (const rows of perFieldResults) mergeCfRows(rows)
     }
@@ -508,6 +531,10 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const [anyTagRow] = await db.select({ cnt: sql<number>`count(*)` }).from(bills)
       .where(tagWhere ? and(tagWhere, hasTagCond) : hasTagCond).all()
     tagCounts[FILTER_ANY] = Number(anyTagRow?.cnt ?? 0)
+
+    const subjectCounts: Record<string, number> = Object.fromEntries(
+      subjectRows.map(r => [encodeSubjectFilter(r.state, r.name), Number(r.cnt)]),
+    )
 
     // myBillsCount: how many filtered bills this user has interacted with
     const [myVoteRows, myNoteRows, myCommentRows] = myInteractionRows
@@ -544,6 +571,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       state: stateCounts,
       position: positionCounts,
       tags: tagCounts,
+      subjects: subjectCounts,
       customFields,
       myBillsCount,
       newMatchesCount,
