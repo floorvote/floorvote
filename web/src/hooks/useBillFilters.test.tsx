@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react'
 import { MemoryRouter, useLocation, useSearchParams } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
-import type { FacetCounts } from '../pages/BillList/types'
+import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 
 const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
 
@@ -11,14 +11,15 @@ function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills']}>{children}</MemoryRouter>
 }
 
-function useHarness(facetCounts: FacetCounts = emptyFacets, tagTaxonomy: string[] = []) {
+function useHarness(facetCounts: FacetCounts = emptyFacets, tagTaxonomy: string[] = [], customFieldDefs: CustomFieldDef[] = []) {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
-  return useBillFilters({
+  const filters = useBillFilters({
     searchParams, setSearchParams, location,
-    facetCounts, customFieldDefs: [], positionVocabulary: ['Support'], tagTaxonomy,
+    facetCounts, customFieldDefs, positionVocabulary: ['Support'], tagTaxonomy,
     sortCol: 'default', sortDir: 'asc', setSortCol: () => {}, setSortDir: () => {},
   })
+  return { ...filters, urlSearch: location.search }
 }
 
 describe('useBillFilters', () => {
@@ -55,5 +56,29 @@ describe('useBillFilters', () => {
     const facets: FacetCounts = { ...emptyFacets, tags: { Elections: 3, 'Land Records': 1 } }
     const { result } = renderHook(() => useHarness(facets, []), { wrapper })
     expect(result.current.allTags).toEqual(['Elections', 'Land Records'])
+  })
+
+  describe('handleResetFilters', () => {
+    const stage: CustomFieldDef = {
+      id: 'cf-stage', name: 'Review Stage', slug: 'review-stage',
+      type: 'dropdown', options: ['Not started', 'In review'], displayOrder: 1,
+    }
+
+    function cfWrapper({ children }: { children: ReactNode }) {
+      return <MemoryRouter initialEntries={['/bills?cf_review-stage=In+review&status=Introduced']}>{children}</MemoryRouter>
+    }
+
+    it('clears custom field filters, not just the built-in ones', () => {
+      const { result } = renderHook(() => useHarness(emptyFacets, [], [stage]), { wrapper: cfWrapper })
+      expect(result.current.cfFilters['cf-stage']).toEqual(['In review'])
+      expect(result.current.filterStatuses).toEqual(['Introduced'])
+
+      act(() => result.current.handleResetFilters())
+
+      expect(result.current.filterStatuses).toEqual([])
+      expect(result.current.cfFilters).toEqual({})
+      expect(result.current.urlSearch).not.toContain('cf_')
+      expect(result.current.hasActiveFilters).toBe(false)
+    })
   })
 })
