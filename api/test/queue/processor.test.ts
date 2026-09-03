@@ -4,7 +4,8 @@ import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { eq } from 'drizzle-orm'
-import { bills, associationConfig, billTexts, feedEvents } from '../../src/db/schema'
+import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
+import { parseSubjects } from '../../src/lib/billSubjects'
 import type { TenantQueueMessage } from '../../src/types'
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
@@ -603,5 +604,55 @@ describe('processCentralNotification', () => {
     await processCentralNotification(forceMsg, testEnv as any, db)
     const events = await db.select().from(feedEvents).all()
     expect(events.filter(e => e.type === 'bill_updated')).toHaveLength(0)
+  })
+
+  it('writes subjects on the stub path, for a bill that gets no AI analysis', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
+  it('clears subjects when central stops sending them', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, subjects: ['Counties'] }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, subjects: [] }) })
+    }))
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual([])
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toEqual([])
   })
 })

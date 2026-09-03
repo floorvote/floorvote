@@ -1,3 +1,7 @@
+import { eq } from 'drizzle-orm'
+import { billSubjects } from '../db/schema'
+import type { AppDb } from '../types'
+
 /**
  * Subject names as stored in bills.subjects (a JSON array). Deduped with
  * first-occurrence order preserved, mirroring filterTagsToTaxonomy's contract
@@ -36,4 +40,19 @@ export function decodeSubjectFilter(value: string): { state: string; name: strin
   const name = value.slice(idx + 1)
   if (name.length === 0) return null
   return { state, name }
+}
+
+/**
+ * Replace a bill's subject rows. Delete-then-insert rather than a diff: central
+ * does the same on its side, the lists are single digits long, and a diff would
+ * have to reason about a partial write. Safe to call with an empty list.
+ */
+export async function syncBillSubjects(
+  db: AppDb, billInternalId: string, state: string, subjects: string[],
+): Promise<void> {
+  await db.delete(billSubjects).where(eq(billSubjects.billId, billInternalId)).run()
+  if (subjects.length === 0) return
+  await db.insert(billSubjects).values(
+    subjects.map(name => ({ billId: billInternalId, subjectName: name, state })),
+  ).run()
 }

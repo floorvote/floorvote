@@ -154,6 +154,18 @@ export async function applyMigrations(): Promise<void> {
     parseMigration(migrationSql59, '0059_ai_attempt_tracking'),
     parseMigration(migrationSql61, '0061_drop_instance_preset'),
     parseMigration(migrationSql62, '0062_restore_feed_events_indexes'),
+    // 0063 has a semicolon inside a comment ("per refresh; the tenant"), which breaks
+    // parseMigration's naive split. Provide the three statements inline.
+    { name: '0063_bill_subjects', queries: [
+      'ALTER TABLE bills ADD COLUMN subjects TEXT;',
+      `CREATE TABLE IF NOT EXISTS bill_subjects (
+        bill_id      TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+        subject_name TEXT NOT NULL,
+        state        TEXT NOT NULL,
+        PRIMARY KEY (bill_id, subject_name)
+      );`,
+      'CREATE INDEX IF NOT EXISTS idx_bill_subjects_name ON bill_subjects(state, subject_name);',
+    ] },
   ])
 }
 

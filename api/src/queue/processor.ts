@@ -4,6 +4,7 @@ import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../l
 import { centralFetch } from '../lib/centralFetch'
 import { matchesKeywords } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
+import { syncBillSubjects } from '../lib/billSubjects'
 import { nowDb } from '../lib/dbTime'
 import { readConfigString } from '../lib/configValue'
 import {
@@ -131,6 +132,7 @@ type CentralBill = {
   sponsors: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
   votes: Array<unknown>
   relatedBills: Array<{ identifier: string; session: string; relationType: string }>
+  subjects?: string[]
 }
 
 export async function processCentralNotification(
@@ -214,9 +216,11 @@ export async function processCentralNotification(
       centralSyncedAt: nowStub,
       matchType: msg.matchType !== undefined ? msg.matchType : (existing?.matchType ?? null),
       textStatus: centralBill.textStatus ?? null,
+      subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
+    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
+    await syncBillSubjects(db, stubInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
 
@@ -268,9 +272,11 @@ export async function processCentralNotification(
       matchType: msg.matchType !== undefined ? msg.matchType : (existing?.matchType ?? null),
       textR2Key: centralBill.textR2Key,
       textStatus: centralBill.textStatus ?? null,
+      subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd })
+    const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd })
+    await syncBillSubjects(db, metadataInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
 
@@ -347,6 +353,7 @@ export async function processCentralNotification(
     centralSyncedAt: now,
     textR2Key: centralBill.textR2Key,
     textStatus: centralBill.textStatus ?? null,
+    subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
   }
 
   // Determine if AI should run
@@ -548,6 +555,7 @@ export async function processCentralNotification(
   }
 
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
+  await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 
   // bill_texts: upsert from normalized versions
   for (const t of centralBill.texts) {
