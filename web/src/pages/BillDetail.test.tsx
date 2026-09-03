@@ -306,6 +306,32 @@ describe('BillDetail stuck-state repair affordance', () => {
   })
 })
 
+describe('BillDetail subjects disclosure default-open derivation', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  const SUBJECTS = ['Election Law', 'Election Administration']
+
+  it('opens the panel by default on a bill with subjects and no AI analysis', async () => {
+    makeMockApiFetch({ subjects: SUBJECTS, tenantSummary: null, tags: [], relevanceScore: null })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(await screen.findByRole('button', { name: /subjects/i })).toBeInTheDocument()
+    // Panel content visible without any interaction.
+    expect(screen.getByText('Election Law')).toBeInTheDocument()
+    expect(screen.getByText('Election Administration')).toBeInTheDocument()
+  })
+
+  it('collapses the panel by default on a bill with subjects and AI analysis present', async () => {
+    makeMockApiFetch({ subjects: SUBJECTS, tenantSummary: 'This bill does things.', tags: [], relevanceScore: 85 })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    const trigger = await screen.findByRole('button', { name: /subjects/i })
+    expect(trigger).toHaveTextContent('2')
+    expect(screen.queryByText('Election Law')).not.toBeInTheDocument()
+    expect(screen.queryByText('Election Administration')).not.toBeInTheDocument()
+  })
+})
+
 describe('BillDetail deferred-nav via /bills/:id (calendar chips, etc.)', () => {
   beforeEach(() => vi.restoreAllMocks())
 
