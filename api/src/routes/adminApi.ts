@@ -776,10 +776,18 @@ adminApiRouter.post('/keyword-resync', async (c) => {
 
   // Also call central to enrich stub bills that now match the new keyword list.
   // Central will promote match_type='keyword' on bill_tenants and route through the
-  // ingestor (forceAI:true) so text is fetched and AI runs on full text. On any
-  // failure (including 429 rate-limit) we just continue — the tenant-side queueing
-  // above is independent and already happened.
+  // ingestor (forceAI:true) so text is fetched and AI runs on full text.
+  //
+  // This half is NOT redundant with the tenant-side queueing above: that pass can
+  // only re-queue bills the tenant already holds, so a stub — which exists only as a
+  // bill_tenants row at central until it is promoted — can be fixed by this call and
+  // nothing else. A failure here therefore leaves exactly the bills the operator was
+  // trying to pick up untouched, which is why the outcome is reported rather than
+  // swallowed: `centralStatus` distinguishes a real failure (or a 429 from central's
+  // 60s per-tenant cooldown) from an honest "nothing new to enrich", which both
+  // otherwise surface as centralEnriched: 0.
   let centralResult: { newlyMatched: number; truncated: boolean } | null = null
+  let centralStatus: 'ok' | 'rate_limited' | 'failed' = 'failed'
   try {
     const res = await centralFetch(c.env, `/admin/sync-keywords/${c.env.TENANT_ID}`, {
       method: 'POST',
@@ -790,10 +798,13 @@ adminApiRouter.post('/keyword-resync', async (c) => {
         newlyMatched: json.newlyMatched ?? 0,
         truncated: json.truncated ?? false,
       }
+      centralStatus = 'ok'
     } else {
+      centralStatus = res.status === 429 ? 'rate_limited' : 'failed'
       console.warn(`[keyword-resync] central sync-keywords returned ${res.status}`)
     }
   } catch (err) {
+    centralStatus = 'failed'
     console.error('[keyword-resync] central sync-keywords call failed:', err)
   }
 
@@ -862,6 +873,7 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     queued: matching.length,
     centralEnriched: centralResult?.newlyMatched ?? 0,
     centralTruncated: centralResult?.truncated ?? false,
+    centralStatus,
     demoted,
     protectedAsManual,
   })
