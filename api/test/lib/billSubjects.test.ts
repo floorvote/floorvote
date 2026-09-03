@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { parseSubjects, encodeSubjectFilter, decodeSubjectFilter } from '../../src/lib/billSubjects'
+import {
+  parseSubjects, encodeSubjectFilter, decodeSubjectFilter, decodeSubjectFilters,
+  dedupeSubjectNames, MAX_SUBJECT_FILTERS,
+} from '../../src/lib/billSubjects'
 
 describe('parseSubjects', () => {
   it('returns strings from a JSON array, deduped, order preserved', () => {
@@ -30,6 +33,27 @@ describe('subject filter encoding', () => {
   it('returns null for an empty state or empty name', () => {
     expect(decodeSubjectFilter(':Elections')).toBeNull()
     expect(decodeSubjectFilter('UT:')).toBeNull()
+  })
+})
+
+describe('dedupeSubjectNames', () => {
+  it('drops non-strings, empty strings, and duplicates, preserving order', () => {
+    expect(dedupeSubjectNames(['Elections', 3, '', null, 'Counties', 'Elections']))
+      .toEqual(['Elections', 'Counties'])
+  })
+})
+
+describe('decodeSubjectFilters', () => {
+  it('decodes valid values and drops malformed ones', () => {
+    expect(decodeSubjectFilters(['UT:Elections', 'NoColon', 'NJ:Education']))
+      .toEqual([{ state: 'UT', name: 'Elections' }, { state: 'NJ', name: 'Education' }])
+  })
+
+  it('caps the result at MAX_SUBJECT_FILTERS so a huge list cannot blow the D1 param budget', () => {
+    const values = Array.from({ length: MAX_SUBJECT_FILTERS + 20 }, (_, i) => `UT:Subject ${i}`)
+    const decoded = decodeSubjectFilters(values)
+    expect(decoded).toHaveLength(MAX_SUBJECT_FILTERS)
+    expect(decoded[0]).toEqual({ state: 'UT', name: 'Subject 0' })
   })
 })
 
@@ -82,5 +106,32 @@ describe('syncBillSubjects', () => {
     await syncBillSubjects(db, 'b3', 'UT', ['Elections'])
     const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b3')).all()
     expect(rows).toHaveLength(1)
+  })
+
+  // CRITICAL 2 regression: LegiScan can send the same subject name twice (distinct
+  // subject_ids across sessions). Without deduping, the second insert violates the
+  // (bill_id, subject_name) primary key and throws — which upstream (processQueue)
+  // treats as a retryable failure, wedging the message in a permanent retry loop.
+  it('does not throw on a duplicate subject name, and dedupes it', async () => {
+    const db = getDb(env.DB)
+    await seedBill(db, 'b4')
+    await expect(
+      syncBillSubjects(db, 'b4', 'UT', ['Elections', 'Elections', 'Counties'])
+    ).resolves.not.toThrow()
+    const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b4')).all()
+    expect(rows.map(r => r.subjectName).sort()).toEqual(['Counties', 'Elections'])
+  })
+
+  // CRITICAL 3 regression: a multi-row INSERT binds 3 params per subject row. D1
+  // rejects any statement with >100 bound params, so 34+ subjects in one INSERT
+  // (>100 params) would throw — production bills have gone as high as 164 subjects.
+  // syncBillSubjects must chunk the insert so this never happens.
+  it('does not throw when a bill has more subjects than fit in one D1 statement', async () => {
+    const db = getDb(env.DB)
+    await seedBill(db, 'b5')
+    const many = Array.from({ length: 40 }, (_, i) => `Subject ${i}`)
+    await expect(syncBillSubjects(db, 'b5', 'UT', many)).resolves.not.toThrow()
+    const rows = await db.select().from(billSubjects).where(eq(billSubjects.billId, 'b5')).all()
+    expect(rows).toHaveLength(40)
   })
 })
