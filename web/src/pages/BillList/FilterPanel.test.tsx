@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
-import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, SubjectExclusionNotice, type SubjectGroup } from './FilterPanel'
+import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
 
 function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
   const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
@@ -279,28 +279,21 @@ describe('SubjectFilterDropdown', () => {
     expect(screen.getByText('UT')).toBeInTheDocument()
   })
 
-  // The notice lives outside the dropdown on purpose: it describes the whole
-  // result set, and inside the dropdown it was squeezed to the button's width.
-  it('warns that a subject filter excludes states with no subject data', () => {
-    render(<SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={['CA', 'IL']} />)
-    expect(screen.getByText(/CA, IL/)).toBeInTheDocument()
-  })
-
-  it('omits the warning when nothing is selected', () => {
-    render(<SubjectExclusionNotice selectedSubjects={[]} statesWithoutSubjects={['CA', 'IL']} />)
-    expect(screen.queryByText(/CA, IL/)).not.toBeInTheDocument()
-  })
-
-  it('omits the warning when every visible state publishes subjects', () => {
-    render(<SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={[]} />)
+  // The subject-exclusion warning ("Excludes all bills from ... those
+  // legislatures do not publish subjects") was removed entirely, for every
+  // combination of selected subjects and states in view.
+  it('never renders a subject-exclusion notice, with or without a selection, single or multiple states', () => {
+    renderPanel({
+      selectedSubjects: ['UT:Counties'],
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
-  })
-
-  it('renders the notice outside the dropdown, so it is not clipped to the button', () => {
-    const { container } = render(
-      <SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={['CA']} />,
-    )
-    expect(container.querySelector('button')).toBeNull()
+    expect(screen.queryByText(/excludes all bills/i)).not.toBeInTheDocument()
   })
 
   it('toggles a subject on click', () => {

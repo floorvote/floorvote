@@ -67,10 +67,6 @@ export type FacetCounts = {
   position: Record<string, number>
   tags:     Record<string, number>
   subjects: Record<string, number>
-  /** Tenant-wide, unscoped by any active filter: every state that publishes any
-   *  subjects at all. Distinct from `subjects` (scoped by the current filters,
-   *  including state) — see statesWithoutSubjects in BillList/index.tsx. */
-  subjectStates: string[]
   customFields: Record<string, Record<string, number>>
   myBillsCount: number
   newMatchesCount: number

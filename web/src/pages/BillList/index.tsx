@@ -18,13 +18,13 @@ import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
-import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown, SubjectExclusionNotice } from './FilterPanel'
+import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
-import { billsApiParams, billsFilterValuesFromSearch, computeStatesWithoutSubjects } from './billsQuery'
+import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 
 // Module-level cache for instant render when returning from BillDetail
@@ -130,7 +130,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, subjectStates: [], customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -476,18 +476,6 @@ export function BillList() {
 
   const filterCounts = facetCounts
 
-  // States visible in the current facet counts that publish no subjects at all —
-  // shown as a warning once a subject filter is active, since those states'
-  // bills would otherwise silently drop out of the results with no explanation.
-  // Compares against filterCounts.subjectStates (tenant-wide, unscoped by any
-  // active filter) rather than f.subjectGroups (scoped by the current state
-  // filter) — see computeStatesWithoutSubjects for why the scoped facet alone
-  // would misreport this.
-  const statesWithoutSubjects = useMemo(
-    () => computeStatesWithoutSubjects(Object.keys(filterCounts.state), filterCounts.subjectStates),
-    [filterCounts.state, filterCounts.subjectStates]
-  )
-
   // Server handles sorting; use allBills directly as the display list
   const sorted = allBills
   sortedRef.current = sorted
@@ -736,7 +724,10 @@ export function BillList() {
             </HoverTooltip>
           )}
           {f.subjectGroups.length > 0 && (
-            <HoverTooltip text="Filter by legislature-assigned subject">
+            <HoverTooltip
+              maxWidth={280}
+              text="Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)"
+            >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}
                 selectedSubjects={f.selectedSubjects}
@@ -786,10 +777,6 @@ export function BillList() {
             })
           }
         </div>
-        <SubjectExclusionNotice
-          selectedSubjects={f.selectedSubjects}
-          statesWithoutSubjects={statesWithoutSubjects}
-        />
       </div>
 
       {/* Active filter chips — only rendered when chips are present */}
@@ -1023,7 +1010,6 @@ export function BillList() {
         positionOptions={positionVocabulary.map(p => ({ value: p, label: p }))}
         tagOptions={f.allTags}
         subjectGroups={f.subjectGroups}
-        statesWithoutSubjects={statesWithoutSubjects}
         sessionOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalSessionCount={f.yearFacetKeys.length}
         onStatusChange={f.setFilterStatuses}

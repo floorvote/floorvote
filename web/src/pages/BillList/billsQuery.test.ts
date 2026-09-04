@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection,
-  computeStatesWithoutSubjects,
 } from './billsQuery'
 
 describe('billsApiParams', () => {
@@ -53,28 +52,6 @@ describe('billsChipSelection', () => {
     expect(billsChipSelection('/feed', '')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/bills/HB123', '')).toEqual({ allBills: false, newMatches: false })
     expect(billsChipSelection('/calendar', '?newMatches=1')).toEqual({ allBills: false, newMatches: false })
-  })
-})
-
-// IMPORTANT 2 regression: the derivation must compare against the tenant-wide,
-// unscoped "which states publish subjects at all" fact — not the current,
-// filter-scoped subjects facet — or filtering to one state makes every OTHER
-// subject-publishing state look subject-less.
-describe('computeStatesWithoutSubjects', () => {
-  it('excludes a state that has subjects tenant-wide, even when the state filter has scoped it out of view', () => {
-    // Tenant has UT and NJ, both publish subjects. User filtered to state=UT, so
-    // the bills-in-view facet only shows UT — but NJ must NOT be reported as
-    // "does not publish subjects": it does, it was just filtered out by the
-    // user's own state filter.
-    expect(computeStatesWithoutSubjects(['UT'], ['UT', 'NJ'])).toEqual([])
-  })
-
-  it('includes a state that has zero subjects tenant-wide', () => {
-    expect(computeStatesWithoutSubjects(['UT', 'CA'], ['UT'])).toEqual(['CA'])
-  })
-
-  it('returns [] when every visible state publishes subjects', () => {
-    expect(computeStatesWithoutSubjects(['UT', 'NJ'], ['UT', 'NJ', 'AZ'])).toEqual([])
   })
 })
 

@@ -70,6 +70,7 @@ const FACETS = {
   state: { RI: 3 },
   position: {},
   tags: {},
+  subjects: { 'UT:Counties': 1 },
   customFields: {},
   myBillsCount: 0,
   newMatchesCount: 0,
@@ -229,6 +230,21 @@ describe('BillList page', () => {
     // Sort description uses the configured org noun via orgPositionLabel.
     // Default sort shows the full hierarchy including the position label.
     expect(screen.getByText(/Sorted by:/)).toBeInTheDocument()
+  })
+
+  // The Subject filter's tooltip replaced the old under-the-filter-row
+  // "excludes states with no subjects" warning with a caveat baked into the
+  // tooltip copy itself.
+  it('shows the subject-assignment caveat in the Subject filter tooltip', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    const subjectButton = await screen.findByRole('button', { name: 'Subject' })
+    fireEvent.pointerEnter(subjectButton, { pointerType: 'mouse' })
+
+    expect(await screen.findByText(
+      'Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)',
+    )).toBeInTheDocument()
   })
 
   it('re-fetches and narrows the list when a status filter is applied', async () => {

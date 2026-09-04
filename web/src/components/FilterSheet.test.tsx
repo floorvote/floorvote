@@ -21,7 +21,6 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     positionOptions: [{ value: 'support', label: 'Support' }],
     tagOptions: ['Education', 'Health Care'],
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
-    statesWithoutSubjects: [],
     sessionOptions: [{ value: '2026', label: '2026 Session' }],
     totalSessionCount: 1,
     onStatusChange: vi.fn(),
@@ -212,17 +211,25 @@ describe('FilterSheet — Subjects', () => {
     expect(screen.getByText('Counties')).toBeInTheDocument()
   })
 
-  it('shows the statesWithoutSubjects notice only when a subject is selected and some states publish none', () => {
-    const { rerender } = renderSheet({ subjects: [], statesWithoutSubjects: ['CA', 'IL'] })
+  // The subject-exclusion warning ("Excludes all bills from ... those
+  // legislatures do not publish subjects") was removed entirely — it no
+  // longer renders for any combination of selected subjects and states.
+  it('never renders a subject-exclusion notice, regardless of selected subjects', () => {
+    const { rerender } = renderSheet({
+      subjects: [],
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
     fireEvent.click(screen.getByRole('button', { name: /subject/i }))
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties']} statesWithoutSubjects={[]} />)
+    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties']} />)
     expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties']} statesWithoutSubjects={['CA', 'IL']} />)
-    expect(screen.getByText(/CA, IL/)).toBeInTheDocument()
-    expect(screen.getByText(/do not publish subjects/)).toBeInTheDocument()
+    rerender(<FilterSheet {...makeDefaults()} subjects={['UT:Counties', 'NJ:Education']} />)
+    expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
   })
 })
 

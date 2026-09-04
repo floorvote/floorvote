@@ -20,7 +20,6 @@ interface FilterSheetProps {
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
   subjectGroups: SubjectGroup[]
-  statesWithoutSubjects: string[]
   sessionOptions: { value: string; label: string }[]
   totalSessionCount?: number
   onStatusChange: (v: string[]) => void
@@ -172,7 +171,7 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, minRelevance, myBills,
-  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, statesWithoutSubjects, sessionOptions, totalSessionCount,
+  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount,
   onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange,
   onMinRelevanceChange, onMyBillsChange,
   onClearAll, counts,
@@ -429,26 +428,15 @@ export function FilterSheet({
           {/* Subject vocabularies aren't comparable across states (see
               useBillFilters' subjectGroups), so this section groups its
               options under a state heading whenever more than one state is
-              present — handled inside FilterSheetVirtualList — and the
-              statesWithoutSubjects notice below warns that a subject filter
-              silently drops every bill from states whose legislature
-              publishes none. */}
+              present — handled inside FilterSheetVirtualList. */}
           {dimension === 'subjects' && (
-            <>
-              <FilterSheetVirtualList
-                ariaLabel="Subject"
-                searchPlaceholder="Search subjects…"
-                groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
-                selected={subjects}
-                onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
-              />
-              {subjects.length > 0 && statesWithoutSubjects.length > 0 && (
-                <div style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 10 }}>
-                  Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures
-                  do not publish subjects.
-                </div>
-              )}
-            </>
+            <FilterSheetVirtualList
+              ariaLabel="Subject"
+              searchPlaceholder="Search subjects…"
+              groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
+              selected={subjects}
+              onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
+            />
           )}
         </div>
       </div>

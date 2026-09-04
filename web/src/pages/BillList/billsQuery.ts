@@ -81,23 +81,6 @@ export function billsChipSelection(pathname: string, search: string): { allBills
   return { allBills: true, newMatches: false }
 }
 
-// States visible in the current facet counts that publish no subjects AT ALL —
-// used to warn that a subject filter silently drops those states' bills.
-// `subjectStatesTenantWide` must be the UNSCOPED fact (every state that
-// publishes any subject, tenant-wide) rather than the current, filter-scoped
-// subject facet: the subject facet's own WHERE includes the active state
-// filter (see subjectWhere in listRoutes.ts), so filtering to one state would
-// otherwise make every OTHER state look subject-less even when it isn't —
-// it was simply excluded by the user's own state filter, not by lacking
-// subjects. See findings doc "IMPORTANT 3" for the bug this guards against.
-export function computeStatesWithoutSubjects(
-  statesInView: string[],
-  subjectStatesTenantWide: string[],
-): string[] {
-  const withSubjects = new Set(subjectStatesTenantWide)
-  return statesInView.filter(s => !withSubjects.has(s))
-}
-
 const PRIORITY_TIERS = ['high', 'medium', 'low']
 
 // True when the active priority filter is exactly all three tiers — no more,

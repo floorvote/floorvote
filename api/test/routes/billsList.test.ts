@@ -32,7 +32,6 @@ type ListBody = {
 
 type FacetsBody = {
   subjects: Record<string, number>
-  subjectStates: string[]
 }
 
 describe('GET /bills — subject filtering', () => {
@@ -151,21 +150,5 @@ describe('GET /bills — subject filtering', () => {
     const res = await app.request(`/api/bills?${params}`, { headers: { Cookie: `session=${token}` } }, env)
 
     expect(res.status).toBe(200)
-  })
-
-  // IMPORTANT 2 regression: subjectStates must be the tenant-wide, unscoped fact —
-  // not derived from the (state-scoped) subjects facet — so a state that publishes
-  // subjects isn't wrongly reported as "does not publish subjects" just because the
-  // user's own state filter excluded it from the current subjects facet.
-  it('reports subjectStates as the unscoped set of every state with any subjects, regardless of the active state filter', async () => {
-    const db = getDb(env.DB)
-    await seedBillWithSubjects(db, { id: 's18', state: 'UT' }, ['Election Law'])
-    await seedBillWithSubjects(db, { id: 's19', state: 'NJ' }, ['Education'])
-    await seedBillWithSubjects(db, { id: 's20', state: 'CA' }, [])
-
-    const res = await app.request('/api/bills/facets?state=UT', { headers: { Cookie: `session=${token}` } }, env)
-    const body = await res.json() as FacetsBody
-
-    expect(body.subjectStates.sort()).toEqual(['NJ', 'UT'])
   })
 })

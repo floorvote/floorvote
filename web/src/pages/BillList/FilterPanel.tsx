@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { useVirtualizer, defaultRangeExtractor } from '@tanstack/react-virtual'
-import type { Range } from '@tanstack/react-virtual'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { COUNT_BADGE } from '../../lib/chipStyles'
+import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../components/stickyGroupedVirtualList'
+import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -280,13 +280,6 @@ export type SubjectGroup = {
   options: Array<{ value: string; label: string; count: number }>
 }
 
-// Flattened virtualizer row — either a sticky state heading or a single
-// checkbox option. Built fresh from the (possibly search-filtered) groups
-// each render; see `rows` below.
-type SubjectRow =
-  | { type: 'header'; state: string }
-  | { type: 'option'; value: string; label: string; count: number }
-
 // Fixed, explicit row heights (rather than dynamic measurement) so the
 // virtualizer's estimateSize always matches real layout exactly — no gaps or
 // overlaps, and no dependency on ResizeObserver/measureElement in tests.
@@ -310,9 +303,8 @@ const SUBJECT_PANEL_LIST_HEIGHT = 280
  * pinned-then-pushed-by-the-next-header pattern as DateDivider in the feed
  * (there implemented with plain CSS `position: sticky` on in-flow siblings;
  * here the rows are virtualized/absolutely-positioned, so the "push" is
- * reproduced by tracking which header is currently active and rendering only
- * that one with `position: sticky` — see the `rangeExtractor` below, which is
- * TanStack Virtual's documented recipe for sticky rows in a virtualized list).
+ * reproduced by hand — see stickyGroupedVirtualList.ts, shared with
+ * FilterSheetVirtualList's mobile equivalent of this same control).
  */
 export function SubjectFilterDropdown({
   subjectGroups,
@@ -324,7 +316,6 @@ export function SubjectFilterDropdown({
   onSubjectChange: (next: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -337,61 +328,16 @@ export function SubjectFilterDropdown({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  // Search narrows each group's options by label (case-insensitive); a group
-  // with no surviving matches is dropped entirely rather than shown empty.
-  // Headings are then based on *this* filtered group count — a search that
-  // narrows down to a single state's matches drops that state's heading too,
-  // matching the un-searched "single state = flat list" rule, since that's
-  // what's actually visible to the user.
-  const filteredGroups = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return subjectGroups
-    return subjectGroups
-      .map(group => ({ state: group.state, options: group.options.filter(o => o.label.toLowerCase().includes(q)) }))
-      .filter(group => group.options.length > 0)
-  }, [subjectGroups, search])
-
-  const showHeadings = filteredGroups.length > 1
-
-  const rows = useMemo<SubjectRow[]>(() => {
-    const out: SubjectRow[] = []
-    for (const group of filteredGroups) {
-      if (showHeadings) out.push({ type: 'header', state: group.state })
-      for (const opt of group.options) out.push({ type: 'option', value: opt.value, label: opt.label, count: opt.count })
-    }
-    return out
-  }, [filteredGroups, showHeadings])
-
-  const stickyIndexes = useMemo(
-    () => rows.reduce<number[]>((acc, row, i) => { if (row.type === 'header') acc.push(i); return acc }, []),
-    [rows],
+  const groups = useMemo(
+    () => subjectGroups.map(g => ({ key: g.state, heading: g.state, options: g.options })),
+    [subjectGroups],
   )
 
-  // Tracks which header row (if any) is the "currently pinned" one for the
-  // active scroll position — TanStack Virtual's sticky-row recipe. Set inside
-  // rangeExtractor (called during render) rather than via effect/state, so it
-  // stays in sync with the very range it's deciding.
-  const activeStickyIndexRef = useRef(-1)
-
-  const rangeExtractor = useCallback((range: Range) => {
-    activeStickyIndexRef.current = stickyIndexes.length === 0
-      ? -1
-      : [...stickyIndexes].reverse().find(index => range.startIndex >= index) ?? stickyIndexes[0]
-    const next = new Set(defaultRangeExtractor(range))
-    if (activeStickyIndexRef.current >= 0) next.add(activeStickyIndexRef.current)
-    return [...next].sort((a, b) => a - b)
-  }, [stickyIndexes])
-
-  const virtualizer = useVirtualizer({
-    count: rows.length,
+  const { search, setSearch, rows, virtualizer, activeStickyIndex, pushOffset, stuck } = useStickyGroupedVirtualList({
+    groups,
+    headerHeight: SUBJECT_HEADER_ROW_HEIGHT,
+    optionHeight: SUBJECT_OPTION_ROW_HEIGHT,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (i) => rows[i]?.type === 'header' ? SUBJECT_HEADER_ROW_HEIGHT : SUBJECT_OPTION_ROW_HEIGHT,
-    overscan: 8,
-    getItemKey: (i) => {
-      const row = rows[i]
-      return row?.type === 'header' ? `header:${row.state}` : `option:${row?.type === 'option' ? row.value : i}`
-    },
-    rangeExtractor,
   })
 
   if (subjectGroups.length === 0) return null
@@ -455,26 +401,16 @@ export function SubjectFilterDropdown({
             ) : (
               <div
                 ref={scrollRef}
-                style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative', padding: '4px 0' }}
+                style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative' }}
               >
                 <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
                   {virtualizer.getVirtualItems().map(virtualRow => {
                     const row = rows[virtualRow.index]
-                    const sticky = activeStickyIndexRef.current === virtualRow.index
-                    const positionStyle: React.CSSProperties = sticky
-                      ? { position: 'sticky', top: 0, zIndex: 2 }
-                      : { position: 'absolute', top: virtualRow.start, zIndex: 1 }
+                    const sticky = activeStickyIndex === virtualRow.index
                     return (
-                      <div key={virtualRow.key} data-index={virtualRow.index} style={{ ...positionStyle, left: 0, width: '100%' }}>
+                      <div key={virtualRow.key} data-index={virtualRow.index} style={getRowWrapperStyle(virtualRow.start, sticky, pushOffset)}>
                         {row.type === 'header' ? (
-                          <div style={{
-                            height: SUBJECT_HEADER_ROW_HEIGHT, boxSizing: 'border-box', display: 'flex', alignItems: 'center',
-                            fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
-                            textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 12px',
-                            background: color.white,
-                          }}>
-                            {row.state}
-                          </div>
+                          <StickyGroupHeader label={row.label} height={SUBJECT_HEADER_ROW_HEIGHT} stuck={sticky && stuck} pushOffset={pushOffset} />
                         ) : (
                           <label style={{
                             height: SUBJECT_OPTION_ROW_HEIGHT, boxSizing: 'border-box',
@@ -490,7 +426,7 @@ export function SubjectFilterDropdown({
                               style={{ margin: 0, accentColor: color.accentBlue }}
                             />
                             {row.label}
-                            <CountBadge count={row.count} />
+                            <CountBadge count={row.count ?? 0} />
                           </label>
                         )}
                       </div>
@@ -502,27 +438,6 @@ export function SubjectFilterDropdown({
           </div>
         )}
       </div>
-  )
-}
-
-/**
- * The subject filter silently drops every bill from states whose legislature
- * publishes no subjects at all — seven of the fifteen states this fleet covers.
- * That exclusion is a fact about the whole result set, so it belongs under the
- * filter row rather than inside one control, where it was previously squeezed
- * to the width of the Subject button.
- */
-export function SubjectExclusionNotice({
-  selectedSubjects, statesWithoutSubjects,
-}: {
-  selectedSubjects: string[]
-  statesWithoutSubjects: string[]
-}) {
-  if (selectedSubjects.length === 0 || statesWithoutSubjects.length === 0) return null
-  return (
-    <div role="status" style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 6 }}>
-      Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures do not publish subjects.
-    </div>
   )
 }
 
