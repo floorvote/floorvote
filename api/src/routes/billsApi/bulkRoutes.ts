@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { eq, and, inArray, isNull } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
-import { bills, officialPositions, feedEvents, billCustomFieldValues } from '../../db/schema'
+import { bills, officialPositions, feedEvents, billCustomFieldValues, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
@@ -10,6 +10,7 @@ import { nowDb } from '../../lib/dbTime'
 import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { decodeSubjectFilters } from '../../lib/billSubjects'
+import { parseStoredMulti } from '../../../../shared/customFieldValues'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -448,7 +449,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     }
 
     if (billIds.length === 0) {
-      return c.json({ count: 0, priorities: {}, positions: {}, customFields: {}, nullMatchCount: 0, newMatchCount: 0 })
+      return c.json({ count: 0, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0, newMatchCount: 0 })
     }
 
     // Fetch priority + position in chunks for inArray safety
@@ -492,8 +493,21 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       }
     }
 
+    // Multi-select fields store a JSON array per bill, so their counts are tallied
+    // per option (a bill can contribute to several options) and reported separately
+    // from `cfCounts`, whose counts are expected to partition the selection.
+    const multiFieldIds = new Set(
+      (await db
+        .select({ id: customFieldDefinitions.id })
+        .from(customFieldDefinitions)
+        .where(eq(customFieldDefinitions.multiple, true))
+        .all()
+      ).map(r => r.id)
+    )
+
     // Fetch custom field values
     const cfCounts: Record<string, Record<string, number>> = {}
+    const multiCfCounts: Record<string, Record<string, number>> = {}
     for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
       const chunk = billIds.slice(i, i + BULK_CHUNK)
       const cfRows = await db
@@ -509,6 +523,13 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       // Track which fields have a value for each bill in this chunk
       const fieldBillsSeen: Record<string, Set<string>> = {}
       for (const row of cfRows) {
+        if (multiFieldIds.has(row.fieldId)) {
+          if (!multiCfCounts[row.fieldId]) multiCfCounts[row.fieldId] = {}
+          for (const opt of parseStoredMulti(row.value)) {
+            multiCfCounts[row.fieldId][opt] = (multiCfCounts[row.fieldId][opt] ?? 0) + 1
+          }
+          continue
+        }
         if (!cfCounts[row.fieldId]) cfCounts[row.fieldId] = {}
         if (!fieldBillsSeen[row.fieldId]) fieldBillsSeen[row.fieldId] = new Set()
         fieldBillsSeen[row.fieldId].add(row.billId)
@@ -525,7 +546,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     }
 
     // Back-fill null counts for chunks where a field had no rows at all:
-    // sum of all value counts per field must equal billIds.length; any gap = unset bills
+    // sum of all value counts per field must equal billIds.length; any gap = unset bills.
+    // Multi-select fields are exempt — their per-option counts overlap, so the client
+    // compares each option's count against `count` instead.
     for (const fieldId of Object.keys(cfCounts)) {
       const counted = Object.values(cfCounts[fieldId]).reduce((sum, n) => sum + n, 0)
       const missing = billIds.length - counted
@@ -537,6 +560,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       priorities: priorityCounts,
       positions: positionCounts,
       customFields: cfCounts,
+      multiCustomFields: multiCfCounts,
       nullMatchCount,
       newMatchCount,
     })

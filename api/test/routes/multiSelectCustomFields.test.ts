@@ -242,4 +242,85 @@ describe('multi-select custom fields', () => {
     expect(JSON.parse(aRow!.value)).toEqual(['a', 'c'])
     expect(JSON.parse(bRow!.value)).toEqual(['a', 'c'])
   })
+
+  it('bulk-values returns per-option counts for multi-select fields', async () => {
+    const fieldId = await makeMultiField('Tags', ['a', 'b', 'c'])
+    const adminId = await seedUser({ role: 'owner', email: 'bv@example.com' })
+    const token = await seedSession(adminId)
+
+    const billA = await seedBill({ billNumber: 'H20' })
+    const billB = await seedBill({ billNumber: 'H21' })
+    const billC = await seedBill({ billNumber: 'H22' })
+
+    // A: ['a','b']  B: ['a']  C: unset
+    // => 'a' on 2 of 3, 'b' on 1 of 3, 'c' on 0, one bill with no value at all
+    await SELF.fetch(`http://localhost/api/bills/${billA}/custom-fields`, {
+      method: 'PUT', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [fieldId]: ['a', 'b'] }),
+    })
+    await SELF.fetch(`http://localhost/api/bills/${billB}/custom-fields`, {
+      method: 'PUT', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [fieldId]: ['a'] }),
+    })
+
+    const res = await SELF.fetch(
+      `http://localhost/api/bills/bulk-values?ids=${billA}&ids=${billB}&ids=${billC}`,
+      { headers: { Cookie: `session=${token}` } },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as {
+      count: number
+      customFields: Record<string, Record<string, number>>
+      multiCustomFields: Record<string, Record<string, number>>
+    }
+
+    expect(body.count).toBe(3)
+    // Per-option counts, NOT counts of the joined JSON combination strings.
+    expect(body.multiCustomFields[fieldId]).toEqual({ a: 2, b: 1 })
+    // Multi fields must not leak combination strings into the single-select map,
+    // whose counts are expected to partition the selection.
+    expect(body.customFields[fieldId]).toBeUndefined()
+  })
+
+  // The capability the greyed-out ribbon pill used to block: applying multi-select
+  // add/remove deltas to a filter-resolved selection ("Select all N matching")
+  // rather than an explicit id list.
+  it('applies additions and removals to a filter-resolved selection', async () => {
+    const fieldId = await makeMultiField('Tags', ['a', 'b', 'c'])
+    const adminId = await seedUser({ role: 'owner', email: 'flt@example.com' })
+    const token = await seedSession(adminId)
+
+    const billA = await seedBill({ billNumber: 'H30', status: 'In Committee' })
+    const billB = await seedBill({ billNumber: 'H31', status: 'In Committee' })
+    const other = await seedBill({ billNumber: 'H32', status: 'Signed Into Law' })
+
+    for (const [id, vals] of [[billA, ['a', 'b']], [billB, ['b']], [other, ['b']]] as const) {
+      await SELF.fetch(`http://localhost/api/bills/${id}/custom-fields`, {
+        method: 'PUT', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [fieldId]: vals }),
+      })
+    }
+
+    // Add 'c' and drop 'b' across everything matching status=In Committee.
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST', headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filter: { status: ['In Committee'] },
+        customFields: [{ fieldId, additions: ['c'], removals: ['b'] }],
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    const db = getDb(env.DB)
+    const valueFor = async (billId: string) => {
+      const row = await db.select().from(billCustomFieldValues)
+        .where(and(eq(billCustomFieldValues.billId, billId), eq(billCustomFieldValues.fieldId, fieldId))).get()
+      return JSON.parse(row!.value)
+    }
+
+    expect(await valueFor(billA)).toEqual(['a', 'c'])
+    expect(await valueFor(billB)).toEqual(['c'])
+    // Outside the filter — must be untouched.
+    expect(await valueFor(other)).toEqual(['b'])
+  })
 })
