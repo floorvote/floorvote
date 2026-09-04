@@ -51,8 +51,10 @@ export function SaveViewButton({
         onClick={() => setOpen(o => !o)}
         style={{
           fontFamily: 'inherit', fontSize: fontSize.sm, padding: '3px 10px',
-          border: `1px solid ${color.tagBorderBlue}`, borderRadius: radius.md,
-          background: color.bgInfo, color: color.linkBlue, cursor: 'pointer', whiteSpace: 'nowrap',
+          // Amber, not the filter blue's tagBorderBlue/bgInfo/linkBlue: saving a
+          // view is a views-layer action, distinct from "a filter is on."
+          border: `1px solid ${color.borderAmber}`, borderRadius: radius.md,
+          background: color.bgAmberPriority, color: color.textAmberDark, cursor: 'pointer', whiteSpace: 'nowrap',
         }}
       >
         Save as view

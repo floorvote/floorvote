@@ -128,7 +128,10 @@ export function ViewSwitcher({
         style={{
           fontFamily: 'inherit', fontSize: fontSize.base,
           fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-          color: active ? color.textPrimary : color.textSecondary,
+          // Amber, not the filter blue: this trigger's color means "a view is
+          // applied," a distinct signal from "a filter is on." Resting state
+          // stays neutral so a quiet control doesn't imply a view is active.
+          color: active ? color.textAmberDark : color.textSecondary,
           background: 'none', border: 'none', cursor: 'pointer',
           padding: '3px 7px', borderRadius: radius.md,
           display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
@@ -233,8 +236,11 @@ function rowStyle(selected: boolean): React.CSSProperties {
     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
     fontSize: fontSize.sm, width: '100%', textAlign: 'left',
     fontFamily: 'inherit', border: 'none', cursor: 'pointer',
-    background: selected ? color.bgInfo : 'transparent',
-    color: selected ? color.linkBlue : color.textSlate,
+    // Amber, not the filter blue's bgInfo/linkBlue — a selected view row is a
+    // distinct signal from "a filter is on." bgAmberPriority/textAmberDark is
+    // the same sanctioned amber-chip pairing used elsewhere.
+    background: selected ? color.bgAmberPriority : 'transparent',
+    color: selected ? color.textAmberDark : color.textSlate,
   }
 }
 
