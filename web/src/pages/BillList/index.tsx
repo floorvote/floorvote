@@ -852,7 +852,7 @@ export function BillList() {
           <ActiveChip label="Not yet voted" color="blue" onRemove={() => f.setUnvotedOnly(false)} />
         )}
         {f.newMatches && (
-          <ActiveChip label="New matches" color="blue" onRemove={() => f.setNewMatches(false)} />
+          <ActiveChip label={filterDimensionLabel('newMatches')} color="blue" onRemove={() => f.setNewMatches(false)} />
         )}
         {Object.entries(f.cfFilters).flatMap(([fieldId, values]) => {
           const field = customFieldDefs.find(fld => fld.id === fieldId)

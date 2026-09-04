@@ -245,3 +245,97 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     expect(screen.getByRole('button', { name: /new matches/i })).toBeInTheDocument()
   })
 })
+
+// --- General anti-drift sweep ----------------------------------------------
+// The matrix above pins the two conditional dimensions, but it only looks
+// where it already knows to look — which is exactly how a hard-coded
+// `<ActiveChip label="New matches" />` survived it: that chip lives in the
+// active-filter row, OUTSIDE `.desktop-filter-dropdowns`, and renders on both
+// surfaces.
+//
+// These tests enumerate no call sites at all. For each dimension in the
+// registry they rename its label to a sentinel at runtime, render the
+// surface, and assert the OLD label appears NOWHERE in that surface's filter
+// chrome while the sentinel does. Any label rendered from a literal instead
+// of from the registry keeps its old text and fails — wherever it lives,
+// including call sites that don't exist yet.
+//
+// Scope caveat (structural, and deliberately not a list of filter call
+// sites): two regions of the desktop sticky header carry their own SORT
+// vocabulary, which legitimately shares words with filter dimensions
+// ("Status", "Position", "Priority") and is not sourced from this registry —
+// the column-header row (`.bill-list-header-wrapper`, a row of SortHeaders)
+// and the sort-order description (`.bill-list-sort-desc`, built from
+// FilterPanel's own HIERARCHY_LABELS). Both are excluded by structure.
+// Everything else in the sticky header — the filter bar, the active-chip
+// row, and anything either grows later — is asserted on.
+const SENTINEL = 'Zqx Renamed Dimension 9'
+
+// Every dimension active, so the active-filter chip row renders too.
+const ACTIVE_FILTER_SEARCH =
+  '?status=2&priority=none&position=Support&year=2026&tag=Education&subject=RI%3ARoads&state=RI&myBills=1&newMatches=1'
+
+function ActiveFilterWrapper({ children }: { children: ReactNode }) {
+  return (
+    <MemoryRouter initialEntries={[`/bills${ACTIVE_FILTER_SEARCH}`]}>
+      <AuthProvider>
+        <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
+      </AuthProvider>
+    </MemoryRouter>
+  )
+}
+
+function desktopFilterChromeText(): string {
+  const stickies = document.querySelectorAll('.bill-list-sticky-header')
+  if (stickies.length !== 1) throw new Error(`expected exactly one sticky header, found ${stickies.length}`)
+  const clone = stickies[0].cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.bill-list-header-wrapper, .bill-list-sort-desc').forEach(el => el.remove())
+  return clone.textContent ?? ''
+}
+
+// Renames one registry dimension for the duration of `body`, then restores it
+// (the registry is `readonly` to TypeScript but a live object at runtime, and
+// both surfaces read labels through it at render time).
+async function withRenamedDimension(key: string, body: (originalLabel: string) => Promise<void> | void) {
+  const def = FILTER_DIMENSIONS.find(d => d.key === key)!
+  const original = def.label
+  ;(def as { label: string }).label = SENTINEL
+  try {
+    await body(original)
+  } finally {
+    ;(def as { label: string }).label = original
+  }
+}
+
+const EVERY_DIMENSION = FILTER_DIMENSIONS.map(d => ({ key: d.key }))
+
+describe('no dimension label may be rendered from a literal', () => {
+  it.each(EVERY_DIMENSION)(
+    'desktop renders $key from the registry alone — renaming it leaves no stale text in the filter chrome',
+    async ({ key }) => {
+      await withRenamedDimension(key, async (originalLabel) => {
+        authState.role = 'admin'
+        facetState.states = ['RI']
+        render(<BillList />, { wrapper: ActiveFilterWrapper })
+        await screen.findByText('Default bill')
+        const chrome = desktopFilterChromeText()
+        // The dimension really is on screen, under its new name...
+        expect(chrome).toContain(SENTINEL)
+        // ...and nothing anywhere in the filter chrome still says the old one.
+        expect(chrome).not.toContain(originalLabel)
+      })
+    },
+  )
+
+  it.each(EVERY_DIMENSION)(
+    'mobile renders $key from the registry alone — renaming it leaves no stale text in the sheet',
+    async ({ key }) => {
+      await withRenamedDimension(key, (originalLabel) => {
+        const { container } = renderMobile({ uniqueStates: ['RI'], isAdmin: true })
+        const sheetText = container.textContent ?? ''
+        expect(sheetText).toContain(SENTINEL)
+        expect(sheetText).not.toContain(originalLabel)
+      })
+    },
+  )
+})
