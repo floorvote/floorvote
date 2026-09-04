@@ -253,7 +253,9 @@ export const savedViews = sqliteTable('saved_views', {
   // the cost is that a clause can outlive what it references, which the read
   // path tolerates rather than reporting (see the design doc).
   query: text('query').notNull(),
-  createdBy: text('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // Shared org content authored by a user, not user-owned data: it must outlive
+  // its author, so departing admins leave their views behind as authorless.
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   displayOrder: integer('display_order').notNull().default(0),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),

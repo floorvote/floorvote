@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS saved_views (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
   query         TEXT NOT NULL,
-  created_by    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- A view is shared org content authored by a user, not user-owned data: it must
+  -- outlive its author, so a departing admin's views survive with created_by cleared.
+  created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   display_order INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
