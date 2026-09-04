@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { COUNT_BADGE } from '../lib/chipStyles'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
+import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -39,6 +41,12 @@ interface FilterSheetProps {
   }
 }
 
+// The six drill-down dimensions. "My Bills" (a single toggle) and "Min.
+// Relevance" (a slider) aren't included here — neither is a list of options
+// to choose among, so both stay as direct controls on the dimension list
+// (level 1) rather than becoming a drill-down target of their own.
+type DimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects'
+
 function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
   return (
     <button
@@ -74,19 +82,57 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
   )
 }
 
-function SheetSection({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionLabel({ title }: { title: string }) {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{
-        fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted,
-        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
-      }}>
-        {title}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {children}
-      </div>
+    <div style={{
+      fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted,
+      textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
+    }}>
+      {title}
     </div>
+  )
+}
+
+// A level-1 row naming one dimension, with a count of its currently-selected
+// options (so the user can see where their active filters are without
+// opening anything) and a chevron indicating it drills into level 2.
+function DimensionRow({ label, selectedCount, onClick }: { label: string; selectedCount: number; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '14px 0', background: 'none', border: 'none', borderBottom: `1px solid ${color.borderDefault}`,
+        cursor: 'pointer', textAlign: 'left',
+      }}
+    >
+      <span style={{ fontSize: fontSize.base, fontWeight: fontWeight.medium, color: color.textPrimary }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {selectedCount > 0 && (
+          <span style={COUNT_BADGE}>{selectedCount.toLocaleString()}</span>
+        )}
+        <svg width="8" height="14" viewBox="0 0 8 14" fill="none" aria-hidden="true">
+          <path d="M1 1l6 6-6 6" stroke={color.textMuted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </span>
+    </button>
+  )
+}
+
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Back to filters"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+        cursor: 'pointer', padding: 0, color: color.linkBlue, fontSize: fontSize.base, fontWeight: fontWeight.medium,
+      }}
+    >
+      <svg width="8" height="14" viewBox="0 0 8 14" fill="none" aria-hidden="true">
+        <path d="M7 1L1 7l6 6" stroke={color.linkBlue} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
   )
 }
 
@@ -105,6 +151,13 @@ export function FilterSheet({
     return () => { document.body.style.overflow = previous }
   }, [isOpen])
 
+  // The sheet always opens on the dimension list (level 1), never mid-drill —
+  // reset whenever it transitions from closed to open.
+  const [dimension, setDimension] = useState<DimensionKey | null>(null)
+  useEffect(() => {
+    if (isOpen) setDimension(null)
+  }, [isOpen])
+
   // Track the relevance thumb locally so it moves instantly while dragging, but
   // only commit (which drives the bill query) on release — one fetch per drag,
   // not one per step.
@@ -121,6 +174,13 @@ export function FilterSheet({
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
   }
+
+  const DIMENSION_LABELS: Record<DimensionKey, string> = {
+    status: 'Status', priority: 'Priority', position: 'Position',
+    session: 'Session', tags: 'Topics', subjects: 'Subject',
+  }
+
+  const sessionVisible = (totalSessionCount ?? sessionOptions.length) > 0
 
   return (
     <>
@@ -148,7 +208,14 @@ export function FilterSheet({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '12px 20px 8px',
         }}>
-          <span style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>Filter Bills</span>
+          {dimension === null ? (
+            <span style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>Filter Bills</span>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <BackButton onClick={() => setDimension(null)} />
+              <span style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>{DIMENSION_LABELS[dimension]}</span>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
             {totalActive > 0 && (
               <button
@@ -168,18 +235,83 @@ export function FilterSheet({
           </div>
         </div>
         <div style={{ overflowY: 'auto', padding: '8px 20px 32px' }}>
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
-              My Bills
-            </div>
-            <SheetChip
-              label="My voted bills"
-              active={myBills}
-              onClick={() => onMyBillsChange(!myBills)}
-            />
-          </div>
-          {statusOptions.length > 0 && (
-            <SheetSection title="Status">
+          {dimension === null && (
+            <>
+              <div style={{ marginBottom: 20 }}>
+                <SectionLabel title="My Bills" />
+                <SheetChip
+                  label="My voted bills"
+                  active={myBills}
+                  onClick={() => onMyBillsChange(!myBills)}
+                />
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Min. Relevance
+                  </div>
+                  <span style={{ fontSize: fontSize.sm, fontWeight: relevanceDraft > 0 ? fontWeight.semibold : fontWeight.normal, color: relevanceDraft > 0 ? color.linkBlue : color.textMuted }}>
+                    {relevanceDraft === 0 ? 'Any' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}
+                  </span>
+                </div>
+                <style>{`
+                  input[type=range].sheet-relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; width: 100%; }
+                  input[type=range].sheet-relevance-slider::-webkit-slider-runnable-track {
+                    background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
+                    height: 5px; border-radius: 4px;
+                  }
+                  input[type=range].sheet-relevance-slider::-webkit-slider-thumb {
+                    -webkit-appearance: none; width: 20px; height: 20px; background: ${relevanceDraft > 0 ? color.accentAmber : color.borderStrong};
+                    border-radius: 50%; margin-top: -7.5px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+                  }
+                  input[type=range].sheet-relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 5px; border-radius: 4px; }
+                  input[type=range].sheet-relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 5px; border-radius: 4px 0 0 4px; }
+                  input[type=range].sheet-relevance-slider::-moz-range-thumb { background: ${relevanceDraft > 0 ? color.accentAmber : color.borderStrong}; border-radius: 50%; width: 20px; height: 20px; border: none; cursor: pointer; }
+                `}</style>
+                <input
+                  type="range"
+                  className="sheet-relevance-slider"
+                  min={0}
+                  max={10}
+                  step={1}
+                  value={relevanceDraft}
+                  onChange={e => setRelevanceDraft(Number(e.target.value))}
+                  onPointerUp={commitRelevance}
+                  onKeyUp={commitRelevance}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: fontSize.xs, color: color.borderStrong, marginTop: 2 }}>
+                  <span>Any</span>
+                  <span>10</span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <SectionLabel title="Filters" />
+                {statusOptions.length > 0 && (
+                  <DimensionRow label="Status" selectedCount={statuses.length} onClick={() => setDimension('status')} />
+                )}
+                {priorityOptions.length > 0 && (
+                  <DimensionRow label="Priority" selectedCount={priorities.length} onClick={() => setDimension('priority')} />
+                )}
+                {positionOptions.length > 0 && (
+                  <DimensionRow label="Position" selectedCount={positions.length} onClick={() => setDimension('position')} />
+                )}
+                {sessionVisible && (
+                  <DimensionRow label="Session" selectedCount={sessions.length} onClick={() => setDimension('session')} />
+                )}
+                {tagOptions.length > 0 && (
+                  <DimensionRow label="Topics" selectedCount={tags.length} onClick={() => setDimension('tags')} />
+                )}
+                {subjectGroups.length > 0 && (
+                  <DimensionRow label="Subject" selectedCount={subjects.length} onClick={() => setDimension('subjects')} />
+                )}
+              </div>
+            </>
+          )}
+
+          {dimension === 'status' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {statusOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
@@ -189,10 +321,11 @@ export function FilterSheet({
                   count={counts?.status[opt.value] ?? 0}
                 />
               ))}
-            </SheetSection>
+            </div>
           )}
-          {priorityOptions.length > 0 && (
-            <SheetSection title="Priority">
+
+          {dimension === 'priority' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {priorityOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
@@ -202,49 +335,11 @@ export function FilterSheet({
                   count={counts?.priority[opt.value] ?? 0}
                 />
               ))}
-            </SheetSection>
+            </div>
           )}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Min. Relevance
-              </div>
-              <span style={{ fontSize: fontSize.sm, fontWeight: relevanceDraft > 0 ? fontWeight.semibold : fontWeight.normal, color: relevanceDraft > 0 ? color.linkBlue : color.textMuted }}>
-                {relevanceDraft === 0 ? 'Any' : relevanceDraft < 10 ? `${relevanceDraft}+` : '10'}
-              </span>
-            </div>
-            <style>{`
-              input[type=range].sheet-relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; width: 100%; }
-              input[type=range].sheet-relevance-slider::-webkit-slider-runnable-track {
-                background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
-                height: 5px; border-radius: 4px;
-              }
-              input[type=range].sheet-relevance-slider::-webkit-slider-thumb {
-                -webkit-appearance: none; width: 20px; height: 20px; background: ${relevanceDraft > 0 ? color.accentAmber : color.borderStrong};
-                border-radius: 50%; margin-top: -7.5px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-              }
-              input[type=range].sheet-relevance-slider::-moz-range-track { background: ${color.borderDefault}; height: 5px; border-radius: 4px; }
-              input[type=range].sheet-relevance-slider::-moz-range-progress { background: ${color.accentAmber}; height: 5px; border-radius: 4px 0 0 4px; }
-              input[type=range].sheet-relevance-slider::-moz-range-thumb { background: ${relevanceDraft > 0 ? color.accentAmber : color.borderStrong}; border-radius: 50%; width: 20px; height: 20px; border: none; cursor: pointer; }
-            `}</style>
-            <input
-              type="range"
-              className="sheet-relevance-slider"
-              min={0}
-              max={10}
-              step={1}
-              value={relevanceDraft}
-              onChange={e => setRelevanceDraft(Number(e.target.value))}
-              onPointerUp={commitRelevance}
-              onKeyUp={commitRelevance}
-            />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: fontSize.xs, color: color.borderStrong, marginTop: 2 }}>
-              <span>Any</span>
-              <span>10</span>
-            </div>
-          </div>
-          {positionOptions.length > 0 && (
-            <SheetSection title="Position">
+
+          {dimension === 'position' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {positionOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
@@ -254,10 +349,11 @@ export function FilterSheet({
                   count={counts?.position[opt.value] ?? 0}
                 />
               ))}
-            </SheetSection>
+            </div>
           )}
-          {(totalSessionCount ?? sessionOptions.length) > 0 && (
-            <SheetSection title="Session">
+
+          {dimension === 'session' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {sessionOptions.map(opt => (
                 <SheetChip
                   key={opt.value}
@@ -267,64 +363,42 @@ export function FilterSheet({
                   count={counts?.session[opt.value] ?? 0}
                 />
               ))}
-            </SheetSection>
+            </div>
           )}
-          {tagOptions.length > 0 && (
-            <SheetSection title="Topics">
-              {tagOptions.map(tag => (
-                <SheetChip
-                  key={tag}
-                  label={tag}
-                  active={tags.includes(tag)}
-                  onClick={() => toggleItem(tags, tag, onTagChange)}
-                  count={counts?.tags[tag] ?? 0}
-                />
-              ))}
-            </SheetSection>
+
+          {dimension === 'tags' && (
+            <FilterSheetVirtualList
+              ariaLabel="Topics"
+              searchPlaceholder="Search topics…"
+              groups={[{ key: 'tags', options: tagOptions.map(tag => ({ value: tag, label: tag, count: counts?.tags[tag] ?? 0 })) }]}
+              selected={tags}
+              onToggle={(value) => toggleItem(tags, value, onTagChange)}
+            />
           )}
-          {/* Subject vocabularies aren't comparable across states (see useBillFilters'
-              subjectGroups), so this section — unlike the flat SheetSection groups
-              above — groups its chips under a state heading whenever more than one
-              state is present, and shows nothing at all when no state in view
-              publishes subjects. */}
-          {subjectGroups.length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{
-                fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted,
-                textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10,
-              }}>
-                Subject
-              </div>
-              {subjectGroups.map(group => (
-                <div key={group.state} style={{ marginBottom: subjectGroups.length > 1 ? 10 : 0 }}>
-                  {subjectGroups.length > 1 && (
-                    <div style={{
-                      fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
-                      textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
-                    }}>
-                      {group.state}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {group.options.map(opt => (
-                      <SheetChip
-                        key={opt.value}
-                        label={opt.label}
-                        active={subjects.includes(opt.value)}
-                        onClick={() => toggleItem(subjects, opt.value, onSubjectChange)}
-                        count={opt.count}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+
+          {/* Subject vocabularies aren't comparable across states (see
+              useBillFilters' subjectGroups), so this section groups its
+              options under a state heading whenever more than one state is
+              present — handled inside FilterSheetVirtualList — and the
+              statesWithoutSubjects notice below warns that a subject filter
+              silently drops every bill from states whose legislature
+              publishes none. */}
+          {dimension === 'subjects' && (
+            <>
+              <FilterSheetVirtualList
+                ariaLabel="Subject"
+                searchPlaceholder="Search subjects…"
+                groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
+                selected={subjects}
+                onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
+              />
               {subjects.length > 0 && statesWithoutSubjects.length > 0 && (
                 <div style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 10 }}>
                   Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures
                   do not publish subjects.
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
