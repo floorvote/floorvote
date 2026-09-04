@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, fireEvent, screen } from '@testing-library/react'
+import { render, fireEvent, screen, waitFor } from '@testing-library/react'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 
 const VIEWS: SavedView[] = [
@@ -78,6 +78,24 @@ describe('ViewSwitcher', () => {
     fireEvent.change(input, { target: { value: 'County clerk bills' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
     expect(onRename).toHaveBeenCalledWith('v1', 'County clerk bills')
+  })
+
+  it('keeps the rename input open when onRename rejects', async () => {
+    const onRename = vi.fn().mockRejectedValue(new Error('boom'))
+    renderSwitcher({ isAdmin: true, onRename })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
+    fireEvent.click(screen.getAllByRole('button', { name: /rename/i })[0])
+    const input = screen.getByLabelText('View name')
+    fireEvent.change(input, { target: { value: 'County clerk bills' } })
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith('v1', 'County clerk bills'))
+    // The rejection must not close the row as though the rename succeeded —
+    // the input stays open (and keeps the edited draft) so the user can see
+    // the rename didn't take.
+    expect(screen.getByLabelText('View name')).toBeTruthy()
+    expect(screen.getByLabelText('View name')).toHaveValue('County clerk bills')
   })
 
   it('requires a confirm step before deleting, and says it affects everyone', () => {

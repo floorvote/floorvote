@@ -12,8 +12,8 @@ export function ViewSwitcher({
   currentSearch: string
   isAdmin: boolean
   onApply: (view: SavedView | null) => void
-  onRename: (id: string, name: string) => void
-  onDelete: (id: string) => void
+  onRename: (id: string, name: string) => void | Promise<void>
+  onDelete: (id: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -45,10 +45,26 @@ export function ViewSwitcher({
     setDraftName(v.name)
   }
 
-  function commitRename() {
+  async function commitRename() {
     const next = draftName.trim()
-    if (renamingId && next) onRename(renamingId, next)
-    setRenamingId(null)
+    if (!renamingId || !next) return
+    try {
+      await onRename(renamingId, next)
+      setRenamingId(null)
+    } catch {
+      // Leave the row in its editing state so the user can see the rename
+      // didn't take, instead of closing as though it had succeeded.
+    }
+  }
+
+  async function commitDelete(id: string) {
+    try {
+      await onDelete(id)
+      setConfirmingId(null)
+    } catch {
+      // Leave the confirm state open so the user can see the delete didn't
+      // take, instead of closing as though it had succeeded.
+    }
   }
 
   return (
@@ -117,7 +133,7 @@ export function ViewSwitcher({
                 <div key={v.id} style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger }}>
                   <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete for everyone?</span>
                   <button onClick={() => setConfirmingId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
-                  <button onClick={() => { onDelete(v.id); setConfirmingId(null) }} style={smallButtonStyle('danger')}>Delete</button>
+                  <button onClick={() => { void commitDelete(v.id) }} style={smallButtonStyle('danger')}>Delete</button>
                 </div>
               )
             }

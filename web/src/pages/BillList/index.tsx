@@ -315,6 +315,16 @@ export function BillList() {
   }, [])
 
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  // Distinguishes "no views exist yet" from "the /views fetch hasn't resolved
+  // yet". savedViews starts as [] either way, and findActiveView([], ...)
+  // always returns null — so without this flag the stale-slug effect below
+  // would run during the mount commit, before the fetch resolves, conclude a
+  // bookmarked ?view=<id> "doesn't match anything", and clear it permanently
+  // (the effect re-runs once the fetch lands, but activeViewSlug is already
+  // gone by then, so it never gets a second look). Set on both success and
+  // failure so a failed fetch doesn't wedge the slug in "not yet validated"
+  // forever.
+  const [viewsLoaded, setViewsLoaded] = useState(false)
 
   const reloadViews = useCallback(async () => {
     try {
@@ -322,6 +332,8 @@ export function BillList() {
       setSavedViews(data.views ?? [])
     } catch {
       // Non-fatal — the switcher just stays empty/stale until the next reload.
+    } finally {
+      setViewsLoaded(true)
     }
   }, [])
 
@@ -344,11 +356,16 @@ export function BillList() {
   // The switcher's label already falls back to "Views" via findActiveView, but
   // the URL must follow, so a bookmark taken after diverging captures the real
   // filter state rather than a view it no longer matches.
+  //
+  // Gated on viewsLoaded: until the /views fetch resolves, savedViews is still
+  // [] and findActiveView would always report "no match," wrongly clearing a
+  // bookmarked ?view=<id> before it ever gets a chance to validate.
   useEffect(() => {
+    if (!viewsLoaded) return
     if (!f.activeViewSlug) return
     if (findActiveView(location.search, savedViews)) return
     f.clearView()
-  }, [f.activeViewSlug, location.search, savedViews, f])
+  }, [viewsLoaded, f.activeViewSlug, location.search, savedViews, f])
 
   // Fetch bills + facets whenever filters/sort change (search debounced). The
   // relevance slider commits its value only on release (see relevanceDraft), so
@@ -560,15 +577,28 @@ export function BillList() {
           isAdmin={isAdmin}
           onApply={applyView}
           onRename={async (id, name) => {
-            await apiFetch(`/admin/views/${id}`, {
-              method: 'PUT',
-              body: JSON.stringify({ name }),
-            })
-            await reloadViews()
+            try {
+              await apiFetch(`/admin/views/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ name }),
+              })
+              await reloadViews()
+            } catch {
+              // Re-throw so ViewSwitcher's commitRename sees the rejection and
+              // leaves the row in its editing state instead of closing as if
+              // the rename had taken.
+              setError('Failed to rename view.')
+              throw new Error('Failed to rename view.')
+            }
           }}
           onDelete={async (id) => {
-            await apiFetch(`/admin/views/${id}`, { method: 'DELETE' })
-            await reloadViews()
+            try {
+              await apiFetch(`/admin/views/${id}`, { method: 'DELETE' })
+              await reloadViews()
+            } catch {
+              setError('Failed to delete view.')
+              throw new Error('Failed to delete view.')
+            }
           }}
         />
       </div>
@@ -951,11 +981,16 @@ export function BillList() {
           <SaveViewButton
             currentSearch={location.search}
             onSave={async (name) => {
-              await apiFetch('/admin/views', {
-                method: 'POST',
-                body: JSON.stringify({ name, query: normalizeViewQuery(location.search) }),
-              })
-              await reloadViews()
+              try {
+                await apiFetch('/admin/views', {
+                  method: 'POST',
+                  body: JSON.stringify({ name, query: normalizeViewQuery(location.search) }),
+                })
+                await reloadViews()
+              } catch {
+                setError('Failed to save view.')
+                throw new Error('Failed to save view.')
+              }
             }}
           />
         )}

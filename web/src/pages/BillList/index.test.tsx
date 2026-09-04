@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 // click landed (including the #section-* anchor on the bill detail page).
 function LocationProbe() {
   const loc = useLocation()
-  return <div data-testid="loc">{loc.pathname}{loc.hash}</div>
+  return <div data-testid="loc">{loc.pathname}{loc.search}{loc.hash}</div>
 }
 
 // --- Mock the API client ----------------------------------------------------
@@ -26,6 +26,14 @@ const deferred: {
 // Lets a test force the vote endpoint to reject so we can assert the optimistic
 // vote rolls back.
 const voteReject = { value: false }
+
+// Lets a test hold the `/views` fetch open (to simulate it resolving on a
+// later tick than the mount commit) and control what it eventually resolves
+// with. Defaults to an immediate empty list, matching every test that doesn't
+// care about saved views.
+const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string }> } } =
+  { deferred: false, response: { views: [] } }
+let resolveViews: ((v: unknown) => void) | null = null
 
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
@@ -89,6 +97,12 @@ vi.mock('../../lib/api', () => {
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
     if (path === '/config/custom-fields') return [] as T
+    if (path === '/views') {
+      if (viewsState.deferred) {
+        return new Promise<T>(res => { resolveViews = res as (v: unknown) => void })
+      }
+      return viewsState.response as T
+    }
     if (path.startsWith('/bills/facets')) return FACETS as T
     if (path.endsWith('/votes')) {
       // When a test wants the vote to fail, hold the rejection open (deferred) so
@@ -161,6 +175,9 @@ beforeEach(() => {
   deferred.rejectVote = null
   voteReject.value = false
   demoState.demoLocked = false
+  viewsState.deferred = false
+  viewsState.response = { views: [] }
+  resolveViews = null
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -301,6 +318,43 @@ describe('BillList page', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loc').textContent).toContain('#section-note')
     })
+  })
+})
+
+describe('BillList bookmarked view slug', () => {
+  // Regression for: savedViews starts as [] and is populated by an async
+  // /views fetch, so the stale-slug effect used to run during the mount
+  // commit — before that fetch resolved — see no matching view, and clear
+  // the `view` param permanently (it never got a second look once the fetch
+  // landed, because activeViewSlug was already gone). A bookmarked
+  // ?view=<id> URL must survive past that fetch resolving, and once it does,
+  // the switcher must show the matched view as active.
+  it('keeps the view param across a /views fetch that resolves after mount', async () => {
+    const VIEW = { id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' }
+    viewsState.deferred = true
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1&subject=UT%3AElections']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    // The /views fetch is still pending — flush a tick so any effect that
+    // runs before it resolves (the bug) has had its chance.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(screen.getByTestId('loc').textContent).toContain('view=v1')
+
+    // Now let /views resolve with the matching view.
+    resolveViews?.({ views: [VIEW] })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /clerk bills/i })).toBeTruthy()
+    })
+    expect(screen.getByTestId('loc').textContent).toContain('view=v1')
   })
 })
 

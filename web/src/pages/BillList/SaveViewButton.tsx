@@ -29,6 +29,9 @@ export function SaveViewButton({
       await onSave(trimmed)
       setOpen(false)
       setName('')
+    } catch {
+      // Leave the popover open so the user can retry — the error itself is
+      // surfaced through BillList's page-level error state.
     } finally {
       setSaving(false)
     }
