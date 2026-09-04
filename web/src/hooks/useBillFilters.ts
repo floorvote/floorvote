@@ -5,9 +5,14 @@ import type { CustomFieldDef, FacetCounts, SortColumn, SortDir } from '../pages/
 import { STATUS_SEMANTIC_ORDER } from '../pages/BillList/constants'
 import { FILTER_ANY } from '../pages/BillList/FilterPanel'
 import { knownStates, knownStatuses, knownTagsCache } from '../pages/BillList'
+import { normalizeViewQuery } from '../lib/savedViews'
 
 type SearchParams = ReturnType<typeof useSearchParams>[0]
 type SetSearchParams = ReturnType<typeof useSearchParams>[1]
+
+const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
+
+export type ViewLike = { id: string; query: string }
 
 export function useBillFilters(opts: {
   searchParams: SearchParams
@@ -124,6 +129,21 @@ export function useBillFilters(opts: {
   const pendingCfReset = useRef(false)
   const [resetNonce, setResetNonce] = useState(0)
 
+  // Tracks whether the currently-applied filters were put there by applying a
+  // saved view (via applyView, below, or BillList's cold-load hydration of a
+  // bookmarked `?view=<id>`), and if so, which view and what its query
+  // normalizes to.
+  //   - `undefined` (initial): never interacted with via applyView — a `view`
+  //     param already in the URL (a bookmark) is preserved as-is; BillList's
+  //     separate stale-slug guard validates it once the /views fetch resolves.
+  //   - `null`: explicitly not tracking a view (applyView(null), a filter
+  //     edit that diverged from the tracked view, or "Reset filters").
+  //   - a view id: tracking that view; the sync effect below collapses the
+  //     URL to the short `?view=<id>` form as long as the built query keeps
+  //     matching pendingViewQuery, and drops both the moment it stops.
+  const pendingViewId = useRef<string | null | undefined>(undefined)
+  const pendingViewQuery = useRef<string | null>(null)
+
   useEffect(() => {
     const next = new URLSearchParams()
     filterStatuses.forEach(s => next.append('status', s))
@@ -141,12 +161,45 @@ export function useBillFilters(opts: {
       next.set('sort', sortCol)
       next.set('dir', sortDir)
     }
-    // Preserve the `view` slug for the same reason the cf_ params below are
-    // preserved: this effect rewrites the whole query string, so anything it
-    // does not re-append is dropped. Gated on pendingCfReset so "Reset filters"
-    // clears the view too — read here, before the block below consumes the flag.
-    const existingView = searchParams.get('view')
-    if (existingView && !pendingCfReset.current) next.set('view', existingView)
+    // `view` resolution — must run before the pendingCfReset block below,
+    // which consumes that flag; placed after it, "Reset filters" would leave
+    // a stale slug (see the pendingViewId ref comment above `resetNonce` for
+    // the states this switches on).
+    //
+    // A `view` param never touched by applyView (pendingViewId still at its
+    // initial `undefined`) is a bookmark — preserved as-is, unless a reset
+    // just asked for it to go. BillList's separate stale-slug guard is what
+    // validates it once the /views fetch resolves.
+    if (pendingViewId.current === undefined) {
+      const existingView = searchParams.get('view')
+      if (existingView && !pendingCfReset.current) next.set('view', existingView)
+    } else if (pendingViewId.current !== null) {
+      // A view is being tracked: the bookmark stays the short `?view=<id>`
+      // form for as long as the filters applied now still match it. cf_
+      // params live outside this effect's own params, so they're folded into
+      // the comparison from `searchParams` directly (skipped on a pending
+      // reset, same as the preservation below).
+      const cfEntries: Array<[string, string]> = []
+      if (!pendingCfReset.current) {
+        for (const [key, value] of searchParams.entries()) {
+          if (key.startsWith('cf_')) cfEntries.push([key, value])
+        }
+      }
+      const comparison = new URLSearchParams(next.toString())
+      for (const [key, value] of cfEntries) comparison.append(key, value)
+      const nextNormalized = normalizeViewQuery('?' + comparison.toString())
+      if (nextNormalized === pendingViewQuery.current) {
+        const short = new URLSearchParams()
+        short.set('view', pendingViewId.current)
+        lastWrittenSearch.current = '?' + short.toString()
+        setSearchParams(short, { replace: true })
+        return
+      }
+      // Diverged from the tracked view — drop it now and fall through to a
+      // full expanded write, rather than resurrecting it below.
+      pendingViewId.current = null
+      pendingViewQuery.current = null
+    }
     // Preserve cf_ params managed outside this effect — unless a reset has just
     // asked for them to go. This effect is the last writer of the query string,
     // so a delete performed anywhere else is resurrected here from the
@@ -205,6 +258,8 @@ export function useBillFilters(opts: {
   // rather than leaving that to the identity of the fresh [] literals below.
   const handleResetFilters = useCallback(() => {
     pendingCfReset.current = true
+    pendingViewId.current = null
+    pendingViewQuery.current = null
     setResetNonce(n => n + 1)
     setSearch('')
     setFilterStatuses([])
@@ -219,6 +274,52 @@ export function useBillFilters(opts: {
     setSelectedTags([])
     setSelectedSubjects([])
   }, [])
+
+  // Applies a saved view's stored query to filter state — used both when the
+  // user picks a view from the switcher and when BillList hydrates a
+  // bookmarked `?view=<id>` on cold load. Sets filter state and marks the
+  // view as tracked (see the pendingViewId ref comment above); it never calls
+  // setSearchParams itself for the non-cf_ params, leaving the sync effect
+  // above as the sole writer of the query string, per the design doc.
+  const applyView = useCallback((view: ViewLike | null) => {
+    setSearch('')
+    if (!view) {
+      handleResetFilters()
+      return
+    }
+    const params = new URLSearchParams(view.query)
+    pendingViewId.current = view.id
+    pendingViewQuery.current = normalizeViewQuery(view.query)
+    setFilterStatuses(params.getAll('status'))
+    setFilterPriorities(params.getAll('priority'))
+    setFilterPositions(params.getAll('position'))
+    setFilterYears(params.getAll('year').map(Number).filter(n => !isNaN(n)))
+    setFilterStates(params.getAll('state'))
+    const r = params.get('minRelevance')
+    setFilterMinRelevance(r ? Number(r) : 0)
+    setMyBills(params.get('myBills') === '1')
+    setUnvotedOnly(params.get('unvoted') === '1')
+    setNewMatches(params.get('newMatches') === '1')
+    setSelectedTags(params.getAll('tag'))
+    setSelectedSubjects(params.getAll('subject'))
+    const s = params.get('sort')
+    setSortCol(s && SORT_COLS.includes(s as SortColumn) ? (s as SortColumn) : 'default')
+    const d = params.get('dir')
+    setSortDir(d === 'desc' ? 'desc' : 'asc')
+    // cf_ params aren't hook state — they live directly in the URL — so
+    // they're written the same way setCfFilter writes them: outside the sync
+    // effect, which preserves whatever cf_ params are already present.
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      for (const key of [...next.keys()]) {
+        if (key.startsWith('cf_')) next.delete(key)
+      }
+      for (const [key, value] of params.entries()) {
+        if (key.startsWith('cf_')) next.append(key, value)
+      }
+      return next
+    }, { replace: true })
+  }, [handleResetFilters, setSearchParams, setSortCol, setSortDir])
 
   const hasActiveFilters = !!(
     search || filterStatuses.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
@@ -308,8 +409,11 @@ export function useBillFilters(opts: {
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
     yearFacetKeys, statuses, allTags, positionOptions, uniqueStates, isMultiState,
     hasActiveFilters, totalActiveFilters,
+    applyView,
     activeViewSlug: searchParams.get('view'),
     clearView: () => {
+      pendingViewId.current = null
+      pendingViewQuery.current = null
       setSearchParams(prev => {
         const next = new URLSearchParams(prev)
         next.delete('view')

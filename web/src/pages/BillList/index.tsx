@@ -339,19 +339,12 @@ export function BillList() {
 
   useEffect(() => { void reloadViews() }, [reloadViews])
 
-  // Apply a view by writing its query straight into the URL together with its
-  // slug — this is a navigation, not a filter edit, so it goes through
-  // setSearchParams once and the sync effect then reads the params back into
-  // filter state.
-  const applyView = useCallback((view: SavedView | null) => {
-    if (!view) {
-      setSearchParams(new URLSearchParams(), { replace: false })
-      return
-    }
-    const next = new URLSearchParams(view.query)
-    next.set('view', view.id)
-    setSearchParams(next, { replace: false })
-  }, [setSearchParams])
+  // Apply a view: sets filter state from its stored query and lets the sync
+  // effect in useBillFilters serialize it, writing the short `?view=<id>`
+  // bookmark rather than the view's expanded params — that bookmark then
+  // follows later edits to the view instead of snapshotting it. "All bills" is
+  // view=null, which resets every filter (search included).
+  const applyView = f.applyView
 
   // The switcher's label already falls back to "Views" via findActiveView, but
   // the URL must follow, so a bookmark taken after diverging captures the real
@@ -366,6 +359,26 @@ export function BillList() {
     if (findActiveView(location.search, savedViews)) return
     f.clearView()
   }, [viewsLoaded, f.activeViewSlug, location.search, savedViews, f])
+
+  // Cold-load hydration: a bookmarked/shared `?view=<id>` carries none of the
+  // view's filters in the URL by design (that's the point of the short form),
+  // so filter state needs to be populated from the view once it's known.
+  // Runs once views have loaded and only when the URL is still the bare short
+  // form (no expanded filter params) — an already-expanded `?view=<id>&...`
+  // is a pre-fix-3 long-form bookmark or a diverged state, and hydrating over
+  // it would clobber filters the URL already spells out.
+  const hydratedViewOnLoad = useRef(false)
+  useEffect(() => {
+    if (hydratedViewOnLoad.current) return
+    if (!viewsLoaded) return
+    hydratedViewOnLoad.current = true
+    const id = new URLSearchParams(location.search).get('view')
+    if (!id) return
+    if (normalizeViewQuery(location.search) !== '') return
+    const view = savedViews.find(v => v.id === id)
+    if (!view) return
+    applyView(view)
+  }, [viewsLoaded, savedViews, location.search, applyView])
 
   // Fetch bills + facets whenever filters/sort change (search debounced). The
   // relevance slider commits its value only on release (see relevanceDraft), so
@@ -977,7 +990,7 @@ export function BillList() {
             Reset filters
           </button>
         )}
-        {isAdmin && f.hasActiveFilters && (
+        {isAdmin && normalizeViewQuery(location.search) !== '' && (
           <SaveViewButton
             currentSearch={location.search}
             onSave={async (name) => {

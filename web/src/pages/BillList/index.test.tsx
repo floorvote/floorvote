@@ -358,6 +358,120 @@ describe('BillList bookmarked view slug', () => {
   })
 })
 
+describe('BillList saved views — search interaction', () => {
+  it('does not offer "Save as view" when only a search term is active — search never reaches the URL', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'voting' } })
+
+    expect(screen.queryByRole('button', { name: /save as view/i })).toBeNull()
+  })
+
+  it('clears an active search term when a view is applied', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    const search = screen.getByPlaceholderText('Search…') as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'voting' } })
+    expect(search.value).toBe('voting')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.click(await screen.findByText('Passed bills'))
+
+    await waitFor(() => expect(search.value).toBe(''))
+  })
+
+  it('clears an active search term when "All bills" is applied', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    const search = screen.getByPlaceholderText('Search…') as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'voting' } })
+    expect(search.value).toBe('voting')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.click(await screen.findByText('All bills'))
+
+    await waitFor(() => expect(search.value).toBe(''))
+  })
+})
+
+describe('BillList saved views — short URL resolution', () => {
+  it('loading ?view=<id> cold applies that view\'s filters and keeps the URL short', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Early Voting Centers')).toBeNull()
+    })
+    expect(screen.getByText('Election Official Training')).toBeInTheDocument()
+
+    const loc = screen.getByTestId('loc').textContent!
+    expect(loc).toContain('view=v1')
+    expect(loc).not.toContain('status=')
+  })
+
+  it('expands the URL and clears view once a filter changes after applying one', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Status' }))
+    const introducedOption = (await screen.findAllByText('Introduced'))
+      .find(el => el.closest('label') !== null)
+    fireEvent.click(introducedOption!)
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).not.toContain('view=')
+      expect(loc).toContain('status=')
+    })
+    expect(screen.getByRole('button', { name: /^views$/i })).toBeTruthy()
+  })
+
+  it('clears a ?view=<id> naming a nonexistent view once views have loaded', async () => {
+    viewsState.response = { views: [] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=ghost']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loc').textContent).not.toContain('view=')
+    })
+  })
+})
+
 describe('BillList search-term hint', () => {
   it('warns when a search term is too long, and clears it otherwise', async () => {
     render(<Wrapper><BillList /></Wrapper>)
