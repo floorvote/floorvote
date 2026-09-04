@@ -28,6 +28,9 @@ import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
 import { filterableCustomFields } from '../../lib/customFieldFilters'
+import { ViewSwitcher, type SavedView } from './ViewSwitcher'
+import { SaveViewButton } from './SaveViewButton'
+import { findActiveView, normalizeViewQuery } from '../../lib/savedViews'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -311,6 +314,42 @@ export function BillList() {
       .catch(() => setError('Failed to load bills.'))
   }, [])
 
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+
+  const reloadViews = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ views: SavedView[] }>('/views')
+      setSavedViews(data.views ?? [])
+    } catch {
+      // Non-fatal — the switcher just stays empty/stale until the next reload.
+    }
+  }, [])
+
+  useEffect(() => { void reloadViews() }, [reloadViews])
+
+  // Apply a view by writing its query straight into the URL together with its
+  // slug — this is a navigation, not a filter edit, so it goes through
+  // setSearchParams once and the sync effect then reads the params back into
+  // filter state.
+  const applyView = useCallback((view: SavedView | null) => {
+    if (!view) {
+      setSearchParams(new URLSearchParams(), { replace: false })
+      return
+    }
+    const next = new URLSearchParams(view.query)
+    next.set('view', view.id)
+    setSearchParams(next, { replace: false })
+  }, [setSearchParams])
+
+  // The switcher's label already falls back to "Views" via findActiveView, but
+  // the URL must follow, so a bookmark taken after diverging captures the real
+  // filter state rather than a view it no longer matches.
+  useEffect(() => {
+    if (!f.activeViewSlug) return
+    if (findActiveView(location.search, savedViews)) return
+    f.clearView()
+  }, [f.activeViewSlug, location.search, savedViews, f])
+
   // Fetch bills + facets whenever filters/sort change (search debounced). The
   // relevance slider commits its value only on release (see relevanceDraft), so
   // a drag produces a single filterMinRelevance change and one fetch here.
@@ -515,6 +554,23 @@ export function BillList() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 24px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
         <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Bills</h1>
+        <ViewSwitcher
+          views={savedViews}
+          currentSearch={location.search}
+          isAdmin={isAdmin}
+          onApply={applyView}
+          onRename={async (id, name) => {
+            await apiFetch(`/admin/views/${id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ name }),
+            })
+            await reloadViews()
+          }}
+          onDelete={async (id) => {
+            await apiFetch(`/admin/views/${id}`, { method: 'DELETE' })
+            await reloadViews()
+          }}
+        />
       </div>
 
       {/* Search warnings — above the box so they don't collide with the filter
@@ -890,6 +946,18 @@ export function BillList() {
           >
             Reset filters
           </button>
+        )}
+        {isAdmin && f.hasActiveFilters && (
+          <SaveViewButton
+            currentSearch={location.search}
+            onSave={async (name) => {
+              await apiFetch('/admin/views', {
+                method: 'POST',
+                body: JSON.stringify({ name, query: normalizeViewQuery(location.search) }),
+              })
+              await reloadViews()
+            }}
+          />
         )}
         <span className="bill-list-sort-desc">{sortDescription(sortCol, orgPositionLabel(orgNoun), 'Relevance')}</span>
         <button

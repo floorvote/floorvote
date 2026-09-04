@@ -141,6 +141,12 @@ export function useBillFilters(opts: {
       next.set('sort', sortCol)
       next.set('dir', sortDir)
     }
+    // Preserve the `view` slug for the same reason the cf_ params below are
+    // preserved: this effect rewrites the whole query string, so anything it
+    // does not re-append is dropped. Gated on pendingCfReset so "Reset filters"
+    // clears the view too — read here, before the block below consumes the flag.
+    const existingView = searchParams.get('view')
+    if (existingView && !pendingCfReset.current) next.set('view', existingView)
     // Preserve cf_ params managed outside this effect — unless a reset has just
     // asked for them to go. This effect is the last writer of the query string,
     // so a delete performed anywhere else is resurrected here from the
@@ -302,5 +308,13 @@ export function useBillFilters(opts: {
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
     yearFacetKeys, statuses, allTags, positionOptions, uniqueStates, isMultiState,
     hasActiveFilters, totalActiveFilters,
+    activeViewSlug: searchParams.get('view'),
+    clearView: () => {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('view')
+        return next
+      }, { replace: true })
+    },
   }
 }
