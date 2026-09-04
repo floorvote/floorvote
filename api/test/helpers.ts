@@ -265,6 +265,10 @@ export async function seedBill(overrides?: {
   draftText?: string | null
   newMatchAt?: string | null
   triagedAt?: string | null
+  /** Raw `bills.subjects` column value — a JSON-encoded array string (or null),
+   *  not a decoded array. Pass e.g. '["Elections"]' to mirror what LegiScan sync
+   *  actually writes. */
+  subjects?: string | null
 }): Promise<string> {
   const db = getDb(env.DB)
   const id = overrides?.id ?? crypto.randomUUID()
@@ -292,6 +296,7 @@ export async function seedBill(overrides?: {
     relatedBillIds: overrides?.relatedBillIds ? JSON.stringify(overrides.relatedBillIds) : null,
     relevanceScore: overrides?.relevanceScore ?? null,
     aiProcessedAt: overrides?.aiProcessedAt ?? null,
+    subjects: overrides?.subjects ?? null,
     matchType: overrides && 'matchType' in overrides ? overrides.matchType : 'keyword',
     textStatus: overrides?.textStatus ?? null,
     yearStart: overrides?.yearStart ?? null,

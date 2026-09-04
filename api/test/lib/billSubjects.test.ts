@@ -113,6 +113,51 @@ describe('loadSuppressedSubjectStates', () => {
     }).run()
     expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
   })
+
+  // An operator who types a lowercase state code should still get suppression —
+  // the DB always stores state codes uppercase, so a silent case mismatch would
+  // leave the feature fully ON with no indication why.
+  it('normalizes configured state codes to uppercase', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['nj', 'Az']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ', 'AZ']))
+  })
+
+  it('trims whitespace around configured state codes before normalizing', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify([' nj ']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ']))
+  })
+
+  it('leaves the "*" wildcard intact after normalization', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['*']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['*']))
+  })
+
+  // Normalization must not create a new way for a malformed config to be
+  // misread as a real suppression — fail-open has to survive the change.
+  it('still fails open on a mixed valid/garbage array — garbage entries are dropped, not normalized into a match', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['nj', 123, null, '', '   ', {}, ['AZ']]),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ']))
+  })
+
+  it('still fails open on an array of only numbers', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify([1, 2, 3]),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
+  })
 })
 
 describe('syncBillSubjects', () => {

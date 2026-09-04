@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { EXPORT_TABLES } from '../../../shared/exportTables'
+import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 
 vi.mock('../../src/lib/email', () => ({
   sendMagicLink: vi.fn().mockResolvedValue(undefined),
@@ -267,6 +268,93 @@ describe('Export API', () => {
       const body = await res.json() as any
       expect(body.rows.length).toBe(1)
       expect(body.rows[0].billId).toBe(tracked)
+    })
+  })
+
+  describe('bills export honors subjects_suppressed_states', () => {
+    it('redacts subjects for a suppressed state while leaving other states populated', async () => {
+      const njBill = await seedBill({
+        billNumber: 'NJ 1', title: 'NJ Bill', state: 'NJ', matchType: 'keyword',
+        subjects: JSON.stringify(['Education']),
+      })
+      const utBill = await seedBill({
+        billNumber: 'UT 1', title: 'UT Bill', state: 'UT', matchType: 'keyword',
+        subjects: JSON.stringify(['Elections']),
+      })
+      await env.DB.prepare(
+        `INSERT INTO association_config (key, value) VALUES (?, ?)`,
+      ).bind(SUPPRESSED_SUBJECT_STATES_KEY, JSON.stringify(['NJ'])).run()
+
+      const res = await app.request('/api/admin/export/bills', { headers: { Cookie: adminCookie } }, env)
+      expect(res.status).toBe(200)
+      const body = await res.json() as any
+      const nj = body.rows.find((r: any) => r.id === njBill)
+      const ut = body.rows.find((r: any) => r.id === utBill)
+      expect(nj.subjects).toBeFalsy()
+      expect(ut.subjects).toBe(JSON.stringify(['Elections']))
+    })
+
+    it('is case-insensitive on the configured state code', async () => {
+      const njBill = await seedBill({
+        billNumber: 'NJ 1', title: 'NJ Bill', state: 'NJ', matchType: 'keyword',
+        subjects: JSON.stringify(['Education']),
+      })
+      await env.DB.prepare(
+        `INSERT INTO association_config (key, value) VALUES (?, ?)`,
+      ).bind(SUPPRESSED_SUBJECT_STATES_KEY, JSON.stringify(['nj'])).run()
+
+      const res = await app.request('/api/admin/export/bills', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as any
+      const nj = body.rows.find((r: any) => r.id === njBill)
+      expect(nj.subjects).toBeFalsy()
+    })
+
+    it('leaves the export shape and subjects unchanged when nothing is suppressed (no config row)', async () => {
+      const billId = await seedBill({
+        billNumber: 'NJ 1', title: 'NJ Bill', state: 'NJ', matchType: 'keyword',
+        subjects: JSON.stringify(['Education']),
+      })
+      const res = await app.request('/api/admin/export/bills', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as any
+      const row = body.rows.find((r: any) => r.id === billId)
+      expect(row.subjects).toBe(JSON.stringify(['Education']))
+      expect(Object.keys(row)).toContain('subjects')
+    })
+
+    it('leaves subjects populated when the suppression config is malformed (fail open)', async () => {
+      const billId = await seedBill({
+        billNumber: 'NJ 1', title: 'NJ Bill', state: 'NJ', matchType: 'keyword',
+        subjects: JSON.stringify(['Education']),
+      })
+      await env.DB.prepare(
+        `INSERT INTO association_config (key, value) VALUES (?, ?)`,
+      ).bind(SUPPRESSED_SUBJECT_STATES_KEY, '{not json').run()
+
+      const res = await app.request('/api/admin/export/bills', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as any
+      const row = body.rows.find((r: any) => r.id === billId)
+      expect(row.subjects).toBe(JSON.stringify(['Education']))
+    })
+
+    it('the "*" wildcard suppresses subjects for every state', async () => {
+      const njBill = await seedBill({
+        billNumber: 'NJ 1', title: 'NJ Bill', state: 'NJ', matchType: 'keyword',
+        subjects: JSON.stringify(['Education']),
+      })
+      const utBill = await seedBill({
+        billNumber: 'UT 1', title: 'UT Bill', state: 'UT', matchType: 'keyword',
+        subjects: JSON.stringify(['Elections']),
+      })
+      await env.DB.prepare(
+        `INSERT INTO association_config (key, value) VALUES (?, ?)`,
+      ).bind(SUPPRESSED_SUBJECT_STATES_KEY, JSON.stringify(['*'])).run()
+
+      const res = await app.request('/api/admin/export/bills', { headers: { Cookie: adminCookie } }, env)
+      const body = await res.json() as any
+      const nj = body.rows.find((r: any) => r.id === njBill)
+      const ut = body.rows.find((r: any) => r.id === utBill)
+      expect(nj.subjects).toBeFalsy()
+      expect(ut.subjects).toBeFalsy()
     })
   })
 

@@ -135,7 +135,20 @@ export async function loadSuppressedSubjectStates(db: AppDb): Promise<Set<string
   let parsed: unknown
   try { parsed = JSON.parse(row.value) } catch { return new Set() }
   if (!Array.isArray(parsed)) return new Set()
-  return new Set(parsed.filter((v): v is string => typeof v === 'string'))
+  // Stored state codes are always uppercase; normalize configured codes the
+  // same way so `["nj"]` suppresses NJ rather than silently no-op'ing. Only
+  // strings are eligible for normalization — anything else is dropped exactly
+  // as before, so a garbage entry can never be coerced into a match. Trimmed-
+  // then-empty strings are also dropped rather than kept as a stray "" that
+  // could never match a real state but would otherwise pollute the set.
+  const out = new Set<string>()
+  for (const v of parsed) {
+    if (typeof v !== 'string') continue
+    const normalized = v.trim().toUpperCase()
+    if (normalized.length === 0) continue
+    out.add(normalized)
+  }
+  return out
 }
 
 /** Whether `state`'s subjects are suppressed — either named directly or via the "*" wildcard. */
