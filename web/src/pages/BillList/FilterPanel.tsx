@@ -5,6 +5,7 @@ import { COUNT_BADGE } from '../../lib/chipStyles'
 import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../components/stickyGroupedVirtualList'
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
+import { useMenuAlign } from '../../hooks/useMenuAlign'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -117,6 +118,10 @@ export function FilterDropdown({
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  // Flips the menu to right-align when the trigger is near the right edge of
+  // the viewport — see useMenuAlign for why this is shared with
+  // SubjectFilterDropdown rather than duplicated here.
+  const menuAlign = useMenuAlign(open, triggerRef, menuRef)
 
   useEffect(() => {
     if (!open) return
@@ -230,7 +235,8 @@ export function FilterDropdown({
           aria-label={placeholder}
           onKeyDown={handleMenuKeyDown}
           style={{
-            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+            position: 'absolute', top: 'calc(100% + 4px)', zIndex: 300,
+            ...(menuAlign === 'right' ? { right: 0 } : { left: 0 }),
             background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
             padding: '4px 0', minWidth: 180, maxHeight: 300, overflowY: 'auto',
             boxShadow: shadow.md,
@@ -334,6 +340,7 @@ export function SubjectFilterDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   // Panel width is user-adjustable (drag the handle on the right edge) so
@@ -343,6 +350,13 @@ export function SubjectFilterDropdown({
   // for as long as SubjectFilterDropdown itself stays mounted.
   const [panelWidth, setPanelWidth] = useState(SUBJECT_PANEL_DEFAULT_WIDTH)
   const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  // Flips the menu to right-align when the trigger is near the right edge of
+  // the viewport (shared with FilterDropdown — see useMenuAlign). panelWidth
+  // is passed directly rather than measured from the DOM, since it's already
+  // a tracked, controlled value here — that also means a drag-resize (which
+  // changes panelWidth) re-derives the alignment rather than leaving a stale
+  // decision from when the panel first opened.
+  const menuAlign = useMenuAlign(open, triggerRef, undefined, panelWidth)
 
   useEffect(() => {
     if (!open) return
@@ -413,6 +427,7 @@ export function SubjectFilterDropdown({
   return (
     <div ref={ref} style={{ position: 'relative' }}>
         <button
+          ref={triggerRef}
           onClick={() => setOpen(o => !o)}
           style={{
             fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
@@ -433,7 +448,8 @@ export function SubjectFilterDropdown({
             role="group"
             aria-label={subjectLabel}
             style={{
-              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+              position: 'absolute', top: 'calc(100% + 4px)', zIndex: 300,
+              ...(menuAlign === 'right' ? { right: 0 } : { left: 0 }),
               background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
               width: panelWidth, minWidth: SUBJECT_PANEL_MIN_WIDTH, maxWidth: SUBJECT_PANEL_MAX_WIDTH,
               maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,

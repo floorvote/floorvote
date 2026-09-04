@@ -4,6 +4,51 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
 
+// jsdom performs no layout, so every element's real getBoundingClientRect()
+// is all zeros — same limitation as the offsetHeight stub above, same fix:
+// stub the geometry inputs (the real flip arithmetic in useMenuAlign/
+// resolveMenuAlign still runs). Elements are told apart by role/tag, which
+// is enough here since each test renders exactly one dropdown: its trigger
+// (a <button>) and its open menu (role="group"/"radiogroup").
+function rect(r: { left: number; right: number }) {
+  return {
+    left: r.left, right: r.right, top: 0, bottom: 20,
+    width: r.right - r.left, height: 20, x: r.left, y: 0,
+    toJSON() { return this },
+  } as DOMRect
+}
+
+function stubMenuGeometry({
+  innerWidth,
+  triggerRect,
+  menuWidth,
+}: {
+  innerWidth: number
+  triggerRect: { left: number; right: number }
+  menuWidth?: number
+}) {
+  const rectDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect')
+  const widthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      const role = this.getAttribute('role')
+      if (menuWidth !== undefined && (role === 'group' || role === 'radiogroup')) {
+        return rect({ left: 0, right: menuWidth })
+      }
+      if (this.tagName === 'BUTTON') return rect(triggerRect)
+      return rect({ left: 0, right: 0 })
+    },
+  })
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: innerWidth })
+
+  return () => {
+    if (rectDescriptor) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', rectDescriptor)
+    if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor)
+  }
+}
+
 function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
   const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
@@ -511,5 +556,85 @@ describe('SubjectFilterDropdown — virtualization and search', () => {
     expect(screen.queryByText('NJ')).not.toBeInTheDocument()
     expect(screen.queryByText('UT')).not.toBeInTheDocument()
     expect(screen.getByText('Counties')).toBeInTheDocument()
+  })
+})
+
+// Both menus render `position: absolute; left: 0` relative to a wrapper the
+// same width as the trigger button — fine when there's room, but it opens the
+// menu off the right edge of the window for a trigger near it. The fix flips
+// to `right: 0` (aligning the menu's right edge to the trigger's right edge)
+// via the shared useMenuAlign hook (src/hooks/useMenuAlign.ts), so it must be
+// exercised identically for both dropdowns.
+describe('FilterDropdown — viewport edge flip', () => {
+  it('right-aligns the menu when the trigger is near the right edge of the viewport', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 700, right: 740 }, menuWidth: 200 })
+    try {
+      render(<FilterDropdown placeholder="Position" options={[{ value: 'Support' }]} selected={[]} onChange={() => {}} multi />)
+      fireEvent.click(screen.getByText('Position'))
+      const menu = screen.getByRole('group')
+      expect(menu.style.right).toBe('0px')
+      expect(menu.style.left).toBe('')
+    } finally {
+      restore()
+    }
+  })
+
+  it('stays left-aligned when the trigger has room to the right', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 20, right: 60 }, menuWidth: 200 })
+    try {
+      render(<FilterDropdown placeholder="Position" options={[{ value: 'Support' }]} selected={[]} onChange={() => {}} multi />)
+      fireEvent.click(screen.getByText('Position'))
+      const menu = screen.getByRole('group')
+      expect(menu.style.left).toBe('0px')
+      expect(menu.style.right).toBe('')
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('SubjectFilterDropdown — viewport edge flip', () => {
+  it('right-aligns the menu when the trigger is near the right edge of the viewport', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 700, right: 740 } })
+    try {
+      renderPanel({
+        subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+      })
+      fireEvent.click(screen.getByRole('button'))
+      const panel = screen.getByRole('group')
+      expect(panel.style.right).toBe('0px')
+      expect(panel.style.left).toBe('')
+    } finally {
+      restore()
+    }
+  })
+
+  // The flip decision must re-derive from the panel's *current* width, not
+  // cache whatever it decided at mount — SubjectFilterDropdown's width
+  // changes live via the drag-resize handle.
+  it('re-derives the flip after a drag-resize widens the panel past the edge', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 550, right: 590 } })
+    try {
+      renderPanel({
+        subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+      })
+      fireEvent.click(screen.getByRole('button'))
+      // At the default width (220), the trigger at left=550 fits: 550+220=770 <= 792.
+      let panel = screen.getByRole('group')
+      expect(panel.style.left).toBe('0px')
+      expect(panel.style.right).toBe('')
+
+      const handle = screen.getByTestId('subject-panel-resize-handle')
+      fireEvent.mouseDown(handle, { clientX: 100 })
+      // Widens by 180px (220 -> 400): 550+400=950 > 792, must now flip.
+      fireEvent.mouseMove(document, { clientX: 280, buttons: 1 })
+      fireEvent.mouseUp(document)
+
+      panel = screen.getByRole('group')
+      expect(panel.style.right).toBe('0px')
+      expect(panel.style.left).toBe('')
+    } finally {
+      restore()
+    }
   })
 })

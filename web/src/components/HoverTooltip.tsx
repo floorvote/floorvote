@@ -1,4 +1,4 @@
-import { useId, useState, useRef, useEffect, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useId, useState, useRef, useEffect, useLayoutEffect, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
 
@@ -85,6 +85,27 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   const pinnedRef = useRef(false)
   const bubbleId = useId()
 
+  // The clamp math below is expressed in terms of a bubble width — historically
+  // only ever known via the `maxWidth` prop. A single-line, `white-space:
+  // nowrap` bubble (no maxWidth) has no such width up front: its rendered size
+  // depends on the text, so the clamp logic couldn't bound it and the bubble
+  // could spill past the window edge (BillList's filter-row tooltips). This
+  // measures the bubble's real rendered width via a ref, after each render, and
+  // that measurement — not the `maxWidth` prop — is what `position()` clamps
+  // against below. `maxWidth` remains the fallback for the one render where the
+  // bubble exists but hasn't been measured yet.
+  const bubbleRef = useRef<HTMLSpanElement | null>(null)
+  const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (!anchor) { setMeasuredWidth(null); return }
+    const el = bubbleRef.current
+    if (!el) return
+    setMeasuredWidth(el.getBoundingClientRect().width)
+    // Re-measures whenever a new anchor opens the bubble (anchor is a fresh
+    // DOMRect per show()) or the text content changes while already open.
+  }, [anchor, text])
+
   const position = (r: DOMRect) => {
     if (placement === 'right') {
       const fitsRight = !maxWidth || r.right + 8 + maxWidth <= window.innerWidth - 8
@@ -105,13 +126,17 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
       return { position: 'fixed' as const, left: r.right, top: r.top, transform: 'translateX(-100%) translateY(calc(-100% - 6px))' }
     }
     // 'top' — centered above, clamped so a wide bubble can't spill off-screen or
-    // (when boundaryRef is given) past that element's right edge.
+    // (when boundaryRef is given) past that element's right edge. Prefers the
+    // real measured width (see bubbleRef above) over the maxWidth prop, since
+    // that's what's actually rendered; maxWidth is only the pre-measurement
+    // fallback so the very first frame a bubble opens isn't left unclamped.
     let x = r.left + r.width / 2
-    if (maxWidth) {
+    const widthForClamp = measuredWidth ?? maxWidth
+    if (widthForClamp) {
       const rightLimit = boundaryRef?.current
         ? Math.min(window.innerWidth, boundaryRef.current.getBoundingClientRect().right)
         : window.innerWidth
-      x = Math.max(maxWidth / 2 + 8, Math.min(x, rightLimit - maxWidth / 2 - 8))
+      x = Math.max(widthForClamp / 2 + 8, Math.min(x, rightLimit - widthForClamp / 2 - 8))
     }
     return tooltipPosition({ x, y: r.top })
   }
@@ -119,6 +144,7 @@ export function HoverTooltip({ text, children, placement = 'top', maxWidth, port
   const bubble = anchor
     ? (
       <span
+        ref={bubbleRef}
         id={toggletip ? bubbleId : undefined}
         role={toggletip ? 'tooltip' : undefined}
         aria-hidden={toggletip ? undefined : true}
