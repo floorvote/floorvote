@@ -64,6 +64,7 @@ describe('ViewSwitcher', () => {
   it('shows no rename or delete affordance to a member', () => {
     renderSwitcher()
     fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
     expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /delete/i })).toBeNull()
   })

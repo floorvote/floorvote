@@ -79,7 +79,7 @@ export function ViewSwitcher({
           style={{
             position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
             background: color.white, border: `1px solid ${color.borderDefault}`,
-            borderRadius: radius.lg, padding: '4px 0', minWidth: 232,
+            borderRadius: radius.lg, padding: '4px 0', minWidth: 232, maxHeight: 300, overflowY: 'auto',
             boxShadow: shadow.md,
           }}
         >
