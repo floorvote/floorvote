@@ -30,9 +30,31 @@ export function findActiveView<T extends { id: string; query: string }>(
   currentSearch: string,
   views: T[],
 ): T | null {
+  const params = new URLSearchParams(currentSearch.startsWith('?') ? currentSearch.slice(1) : currentSearch)
+  const activeId = params.get('view')
   const current = normalizeViewQuery(currentSearch)
-  // An empty filter state is "All bills", never a view — a view with no filters
-  // is rejected at creation.
-  if (current === '') return null
-  return views.find(v => normalizeViewQuery(v.query) === current) ?? null
+
+  // An empty filter state is "All bills", never a view — a view with no
+  // filters is rejected at creation — UNLESS the URL is carrying the short
+  // `?view=<id>` form, where the filters that describe the view are not
+  // spelled out in the URL at all. In that form, trust the id directly: the
+  // sync effect only ever produces this shape once the applied filters
+  // actually match the named view.
+  if (current === '') {
+    if (!activeId) return null
+    return views.find(v => v.id === activeId) ?? null
+  }
+
+  // Expanded form: filters are spelled out in the URL. Match by (normalized)
+  // query as before, but when several views share the same query, prefer the
+  // one the URL's `view` param actually names — otherwise applying the
+  // second of two identically-filtered views would mislabel itself as the
+  // first.
+  const matches = views.filter(v => normalizeViewQuery(v.query) === current)
+  if (matches.length === 0) return null
+  if (activeId) {
+    const byId = matches.find(v => v.id === activeId)
+    if (byId) return byId
+  }
+  return matches[0]
 }

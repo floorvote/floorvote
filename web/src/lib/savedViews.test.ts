@@ -64,4 +64,29 @@ describe('findActiveView', () => {
   it('returns null for an empty filter state', () => {
     expect(findActiveView('', views)).toBeNull()
   })
+
+  it('resolves the short `?view=<id>` form by id, with no filter params to match against', () => {
+    expect(findActiveView('?view=v2', views)?.id).toBe('v2')
+  })
+
+  it('returns null for a short `?view=<id>` naming a view that does not exist', () => {
+    expect(findActiveView('?view=ghost', views)).toBeNull()
+  })
+
+  it('prefers the view named by `view` when two views share the same query', () => {
+    const dupes = [
+      { id: 'a1', query: 'subject=UT%3AAudits' },
+      { id: 'a2', query: 'subject=UT%3AAudits' },
+    ]
+    expect(findActiveView('?view=a2&subject=UT%3AAudits', dupes)?.id).toBe('a2')
+    expect(findActiveView('?view=a1&subject=UT%3AAudits', dupes)?.id).toBe('a1')
+  })
+
+  it('falls back to the first query match when `view` names neither duplicate', () => {
+    const dupes = [
+      { id: 'a1', query: 'subject=UT%3AAudits' },
+      { id: 'a2', query: 'subject=UT%3AAudits' },
+    ]
+    expect(findActiveView('?subject=UT%3AAudits', dupes)?.id).toBe('a1')
+  })
 })
