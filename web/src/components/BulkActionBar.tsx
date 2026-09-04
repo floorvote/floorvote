@@ -5,6 +5,7 @@ import { Picker } from './Picker'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { promotableCount, bulkConfirmMessage } from './bulkConfirm'
 import { useDemo } from '../context/DemoContext'
+import { parseStoredMulti } from '../../../shared/customFieldValues'
 
 type Priority = 'high' | 'medium' | 'low'
 
@@ -22,15 +23,6 @@ export type CustomFieldDef = {
 }
 
 type MultiStagedDelta = { additions: string[]; removals: string[] }
-
-function parseStoredMulti(raw: string | undefined | null): string[] {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) return parsed
-  } catch { /* fall through */ }
-  return [raw]
-}
 
 type FilterState = {
   status: string[]
@@ -75,6 +67,12 @@ type InitialValues = {
   priority: FieldValue
   position: FieldValue
   customFields: Record<string, FieldValue>
+  /** Multi-select dropdowns only: how many bills in the selection carry each option.
+      Counts overlap (a bill can hold several options), so they are compared against
+      `sampleSize` rather than partitioning it. */
+  multiOptionCounts: Record<string, Record<string, number>>
+  /** Number of bills the counts above were computed over. */
+  sampleSize: number
 }
 
 // A staged value of undefined means "same as initial" (not changing)
@@ -152,32 +150,53 @@ function computeInitialFromBills(
   customFieldDefs: CustomFieldDef[],
 ): InitialValues {
   const n = bills.length
-  if (n === 0) return { priority: null, position: null, customFields: {} }
+  if (n === 0) return { priority: null, position: null, customFields: {}, multiOptionCounts: {}, sampleSize: 0 }
 
   const priority = sharedValue(computeDistribution(bills.map(b => b.priority)), n)
   const position = sharedValue(computeDistribution(bills.map(b => b.position)), n)
 
   const customFields: Record<string, FieldValue> = {}
+  const multiOptionCounts: Record<string, Record<string, number>> = {}
   for (const def of customFieldDefs) {
+    if (def.type === 'dropdown' && def.multiple) {
+      const counts: Record<string, number> = {}
+      for (const b of bills) {
+        for (const opt of parseStoredMulti(b.customFieldValues?.[def.id])) {
+          counts[opt] = (counts[opt] ?? 0) + 1
+        }
+      }
+      multiOptionCounts[def.id] = counts
+      continue
+    }
     const dist = computeDistribution(bills.map(b => b.customFieldValues?.[def.id] ?? null))
     customFields[def.id] = sharedValue(dist, n)
   }
 
-  return { priority, position, customFields }
+  return { priority, position, customFields, multiOptionCounts, sampleSize: n }
 }
 
 function computeInitialFromDistribution(
-  data: { priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>> },
+  data: {
+    priorities: Record<string, number>
+    positions: Record<string, number>
+    customFields: Record<string, Record<string, number>>
+    multiCustomFields?: Record<string, Record<string, number>>
+  },
   count: number,
   customFieldDefs: CustomFieldDef[],
 ): InitialValues {
   const priority = sharedValue(data.priorities, count)
   const position = sharedValue(data.positions, count)
   const customFields: Record<string, FieldValue> = {}
+  const multiOptionCounts: Record<string, Record<string, number>> = {}
   for (const def of customFieldDefs) {
+    if (def.type === 'dropdown' && def.multiple) {
+      multiOptionCounts[def.id] = data.multiCustomFields?.[def.id] ?? {}
+      continue
+    }
     customFields[def.id] = sharedValue(data.customFields[def.id] ?? {}, count)
   }
-  return { priority, position, customFields }
+  return { priority, position, customFields, multiOptionCounts, sampleSize: count }
 }
 
 const SIDEBAR_DEFAULT_WIDTH = 225
@@ -254,7 +273,7 @@ export function BulkActionBar({
       values.forEach(v => params.append(`cf_${fieldId}`, v))
     }
 
-    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
+    apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; multiCustomFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
       `/bills/bulk-values?${params}`
     ).then(data => {
       setInitialValues(computeInitialFromDistribution(data, data.count, customFieldDefs))
@@ -634,37 +653,18 @@ export function BulkActionBar({
 
         {/* Custom field pills */}
         {customFieldDefs.map(field => {
-          // Multi-select dropdown (ids mode only — filter mode would need per-option distribution from the API).
+          // Multi-select dropdown. Works in both selection modes: per-option counts come
+          // from the selected bills (ids mode) or from /bills/bulk-values (filter mode).
           if (field.type === 'dropdown' && field.multiple) {
-            if (selection.mode !== 'ids') {
-              return (
-                <button
-                  key={field.id}
-                  disabled
-                  title="Select bills directly to bulk-edit multi-select fields"
-                  style={{
-                    fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md,
-                    background: color.surfaceSubtle, color: color.textMuted, border: `1px solid ${color.borderDefault}`,
-                    cursor: 'not-allowed', flexShrink: 0,
-                  }}
-                >
-                  {field.name}
-                </button>
-              )
-            }
-
             const options = field.options ?? []
+            const optionCounts = initialValues?.multiOptionCounts[field.id] ?? {}
+            const n = initialValues?.sampleSize ?? 0
             const allHave = new Set<string>()
             const indeterminate = new Set<string>()
-            const n = selectedBills.length
             for (const opt of options) {
-              let count = 0
-              for (const b of selectedBills) {
-                const arr = parseStoredMulti(b.customFieldValues?.[field.id])
-                if (arr.includes(opt)) count++
-              }
-              if (count === n && n > 0) allHave.add(opt)
-              else if (count > 0) indeterminate.add(opt)
+              const held = optionCounts[opt] ?? 0
+              if (held === n && n > 0) allHave.add(opt)
+              else if (held > 0) indeterminate.add(opt)
             }
 
             const delta = staged.multiCustomFields.get(field.id) ?? { additions: [], removals: [] }

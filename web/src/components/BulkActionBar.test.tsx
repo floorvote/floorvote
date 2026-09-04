@@ -246,3 +246,81 @@ describe('BulkActionBar read-only demo', () => {
     expect(screen.getByRole('button', { name: /Apply to 1 bill/i })).toBeEnabled()
   })
 })
+
+// Regression: a multi-select dropdown pill used to render permanently disabled in
+// filter mode ("Select all N matching"), because /bills/bulk-values counted whole
+// JSON-array combination strings rather than individual options. The write path
+// always supported filter mode, so the field was greyed out purely for lack of a
+// per-option distribution. The endpoint now returns `multiCustomFields`.
+describe('BulkActionBar multi-select custom field (filter mode)', () => {
+  const multiDef = {
+    id: 'f1', name: 'Tags', type: 'dropdown' as const, options: ['a', 'b', 'c'], multiple: true,
+  }
+
+  function renderFilterMode(multiCustomFields: Record<string, Record<string, number>>, count: number) {
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({
+          count, priorities: {}, positions: {}, customFields: {}, multiCustomFields, nullMatchCount: 0,
+        })
+      }
+      return Promise.resolve({ dismissed: 0 })
+    })
+    return render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={count}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[multiDef]}
+        currentFilters={noFilters}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+  }
+
+  const tagsPill = () => screen.getByRole('button', { name: /Tags:/i })
+
+  it('renders an enabled picker instead of a disabled button', async () => {
+    renderFilterMode({ f1: { a: 3 } }, 3)
+    await waitFor(() => expect(tagsPill()).toBeEnabled())
+    expect(screen.queryByTitle('Select bills directly to bulk-edit multi-select fields')).not.toBeInTheDocument()
+  })
+
+  it('shows an option held by every matching bill as the current value', async () => {
+    renderFilterMode({ f1: { a: 3 } }, 3)
+    await waitFor(() => expect(tagsPill()).toHaveTextContent(/Tags:\s*a/))
+  })
+
+  it('reports "Multiple values" when an option is held by only some matching bills', async () => {
+    renderFilterMode({ f1: { a: 3, b: 1 } }, 3)
+    await waitFor(() => expect(tagsPill()).toHaveTextContent(/Tags:\s*Multiple values/))
+  })
+
+  it('reports "Not set" when no matching bill holds any option', async () => {
+    renderFilterMode({}, 3)
+    await waitFor(() => expect(tagsPill()).toHaveTextContent(/Tags:\s*Not set/))
+  })
+
+  it('stages an addition and sends it with the filter body', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderFilterMode({ f1: { a: 3 } }, 3)
+    await waitFor(() => expect(tagsPill()).toBeEnabled())
+
+    fireEvent.click(tagsPill())
+    fireEvent.click(screen.getByText('b'))
+    await waitFor(() => expect(tagsPill()).toHaveTextContent(/Tags:\s*Changed/))
+
+    fireEvent.click(screen.getByRole('button', { name: /Apply to 3 bills/i }))
+    await waitFor(() => {
+      const call = vi.mocked(apiFetch).mock.calls.find(c => c[0] === '/bills/bulk')
+      expect(call).toBeDefined()
+      const body = JSON.parse((call![1] as { body: string }).body)
+      expect(body.filter).toBeDefined()
+      expect(body.ids).toBeUndefined()
+      expect(body.customFields).toEqual([{ fieldId: 'f1', additions: ['b'], removals: [] }])
+    })
+  })
+})
