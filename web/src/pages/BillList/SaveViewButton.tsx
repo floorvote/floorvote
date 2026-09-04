@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { normalizeViewQuery } from '../../lib/savedViews'
@@ -13,6 +13,13 @@ export function SaveViewButton({
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const ref = useDismissOnOutsideClick(open, () => setOpen(false))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      inputRef.current?.focus()
+    }
+  }, [open])
 
   // Count what is actually being captured, so the summary can say it. Uses the
   // same normalization the divergence check uses, so the number matches what
@@ -64,8 +71,8 @@ export function SaveViewButton({
             Name this view
           </p>
           <input
+            ref={inputRef}
             aria-label="View name"
-            autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') commit() }}
