@@ -1,7 +1,71 @@
 import { describe, it, expect, vi } from 'vitest'
+import { createRef } from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HoverTooltip } from './HoverTooltip'
+
+// jsdom performs no layout, so every element's real getBoundingClientRect()
+// is all zeros. Same technique as FilterSheet.test.tsx/FilterPanel.test.tsx
+// (stub HTMLElement.prototype geometry, restore the original descriptor
+// afterward) — but keyed per-element here, since a single test needs three
+// different rects at once: the hover anchor, the rendered bubble (measured
+// via HoverTooltip's own ref, not asserted-on logic), and (for the
+// boundaryRef case) a clamp boundary element. Elements are told apart by
+// identity the test controls: the bubble by its exact text, a boundary
+// element by data-testid="boundary", everything else (the anchor wrapper)
+// falls through to the anchor rect. This only stubs geometry inputs — the
+// clamping/flip arithmetic under test still runs for real.
+function rect(r: { left: number; right: number; top?: number; bottom?: number; width?: number; height?: number }): DOMRect {
+  const top = r.top ?? 0
+  const bottom = r.bottom ?? top + 20
+  return {
+    left: r.left,
+    right: r.right,
+    top,
+    bottom,
+    width: r.width ?? r.right - r.left,
+    height: r.height ?? bottom - top,
+    x: r.left,
+    y: top,
+    toJSON() { return this },
+  } as DOMRect
+}
+
+function stubGeometry({
+  innerWidth,
+  anchorRect,
+  bubbleWidth,
+  bubbleText,
+  boundaryRect,
+}: {
+  innerWidth: number
+  anchorRect: { left: number; right: number }
+  bubbleWidth?: number
+  bubbleText?: string
+  boundaryRect?: { left: number; right: number }
+}) {
+  const rectDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect')
+  const widthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      if (bubbleText !== undefined && this.textContent === bubbleText) {
+        return rect({ left: 0, right: bubbleWidth ?? 0, width: bubbleWidth ?? 0 })
+      }
+      if (boundaryRect && this.dataset.testid === 'boundary') {
+        return rect(boundaryRect)
+      }
+      return rect(anchorRect)
+    },
+  })
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: innerWidth })
+
+  return () => {
+    if (rectDescriptor) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', rectDescriptor)
+    if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor)
+  }
+}
 
 describe('HoverTooltip', () => {
   it('hides the bubble until hovered, shows on mouse enter, hides on leave', () => {
@@ -249,6 +313,190 @@ describe('HoverTooltip', () => {
 
       await user.click(trigger) // second click un-pins and closes
       expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+  })
+
+  // Filter buttons near the right edge of the window (BillList's filter row)
+  // render a single-line, nowrap bubble with no maxWidth — the existing
+  // clamp math is expressed entirely in terms of maxWidth, so it never
+  // learns how wide the bubble actually rendered and can't bound it. The fix
+  // measures the real bubble via a ref and clamps against that measurement.
+  describe('viewport-aware clamping for placement="top"', () => {
+    it('keeps a no-maxWidth bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(<HoverTooltip text="A long filter tooltip that runs wide"><button>trigger</button></HoverTooltip>)
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        const left = parseFloat(bubble.style.left)
+        // Bubble is centered via translateX(-50%): its right edge is left + width/2.
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+        // Sanity: the unclamped center (anchor midpoint) would have been 780 —
+        // confirm the fix actually moved it, not just happened to already fit.
+        expect(left).toBeLessThan(780)
+      } finally {
+        restore()
+      }
+    })
+
+    it('still clamps correctly when maxWidth is supplied (no regression)', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'Wraps within maxWidth',
+        bubbleWidth: 300,
+      })
+      try {
+        render(<HoverTooltip text="Wraps within maxWidth" maxWidth={300}><button>trigger</button></HoverTooltip>)
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('Wraps within maxWidth')
+        const left = parseFloat(bubble.style.left)
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(bubble.style.whiteSpace).toBe('normal')
+        expect(bubble.style.maxWidth).toBe('300px')
+      } finally {
+        restore()
+      }
+    })
+
+    it('clamps to a boundaryRef element instead of the viewport when one is given', () => {
+      const boundaryRef = createRef<HTMLDivElement>()
+      const restore = stubGeometry({
+        innerWidth: 1200,
+        anchorRect: { left: 660, right: 700 },
+        bubbleText: 'Boundary-clamped tip',
+        bubbleWidth: 300,
+        boundaryRect: { left: 0, right: 700 },
+      })
+      try {
+        render(
+          <div data-testid="boundary" ref={boundaryRef}>
+            <HoverTooltip text="Boundary-clamped tip" maxWidth={300} boundaryRef={boundaryRef}>
+              <button>trigger</button>
+            </HoverTooltip>
+          </div>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('Boundary-clamped tip')
+        const left = parseFloat(bubble.style.left)
+        // Clamped against the 700px-wide boundary, not the 1200px viewport:
+        // the viewport alone would not have required clamping at all (anchor
+        // midpoint 680 + half-width 150 = 830 <= 1200), so a value at or
+        // below the boundary's limit demonstrates the boundary path ran.
+        expect(left + 300 / 2).toBeLessThanOrEqual(700 - 8 + 0.01)
+      } finally {
+        restore()
+      }
+    })
+  })
+
+  // The 'top' fix above only wired the real measurement into the 'top'
+  // branch. 'bottom' and 'right' still gated their clamp on the `maxWidth`
+  // prop alone — the exact bug the 'top' fix addressed, just untouched in
+  // these branches — and 'top-start'/'top-end' had no clamp at all.
+  describe('viewport-aware clamping for other placements', () => {
+    it('keeps a no-maxWidth "bottom" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="bottom">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        const left = parseFloat(bubble.style.left)
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(left).toBeLessThan(780)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a no-maxWidth "right" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="right">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        // No room to the right of an anchor already at the viewport edge, so
+        // this must have fallen back to the clamped centered-below position
+        // rather than tooltipPositionRight (which would put it further right).
+        expect(bubble.style.transform).toContain('translateX(-50%)')
+        const left = parseFloat(bubble.style.left)
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a "top-end" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 780, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="top-end">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        // top-end's `left` value paired with translateX(-100%) is the bubble's
+        // right edge — assert that edge, not the raw `left` value, stays on screen.
+        const rightEdge = parseFloat(bubble.style.left)
+        expect(rightEdge).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(rightEdge - 300).toBeGreaterThanOrEqual(8 - 0.01)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a "top-start" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="top-start">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        const left = parseFloat(bubble.style.left)
+        // Unclamped, top-start would sit at the anchor's left edge (760) and
+        // extend to 1060 — past the 800px viewport. Confirm it moved.
+        expect(left + 300).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(left).toBeLessThan(760)
+      } finally {
+        restore()
+      }
     })
   })
 })

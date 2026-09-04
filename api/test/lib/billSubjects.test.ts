@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   parseSubjects, encodeSubjectFilter, decodeSubjectFilter, decodeSubjectFilters,
-  dedupeSubjectNames, MAX_SUBJECT_FILTERS,
+  dedupeSubjectNames, MAX_SUBJECT_FILTERS, isSubjectsSuppressedForState,
 } from '../../src/lib/billSubjects'
 
 describe('parseSubjects', () => {
@@ -57,12 +57,108 @@ describe('decodeSubjectFilters', () => {
   })
 })
 
+describe('isSubjectsSuppressedForState', () => {
+  it('is false for an empty suppressed set', () => {
+    expect(isSubjectsSuppressedForState(new Set(), 'NJ')).toBe(false)
+  })
+  it('is true when the state is named directly', () => {
+    expect(isSubjectsSuppressedForState(new Set(['NJ']), 'NJ')).toBe(true)
+    expect(isSubjectsSuppressedForState(new Set(['NJ']), 'UT')).toBe(false)
+  })
+  it('is true for every state when "*" is present', () => {
+    const suppressed = new Set(['*'])
+    expect(isSubjectsSuppressedForState(suppressed, 'NJ')).toBe(true)
+    expect(isSubjectsSuppressedForState(suppressed, 'UT')).toBe(true)
+  })
+})
+
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { bills, billSubjects } from '../../src/db/schema'
-import { syncBillSubjects } from '../../src/lib/billSubjects'
+import { bills, billSubjects, associationConfig } from '../../src/db/schema'
+import { syncBillSubjects, loadSuppressedSubjectStates, SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 import { eq } from 'drizzle-orm'
+
+describe('loadSuppressedSubjectStates', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('is empty when the tenant has no config row — on by default', async () => {
+    const db = getDb(env.DB)
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
+  })
+
+  it('reads the configured state list', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['NJ', 'AZ']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ', 'AZ']))
+  })
+
+  it('treats a malformed value as "nothing suppressed" rather than failing closed', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: '{not json',
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
+  })
+
+  it('treats a non-array JSON value as "nothing suppressed"', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify({ NJ: true }),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
+  })
+
+  // An operator who types a lowercase state code should still get suppression —
+  // the DB always stores state codes uppercase, so a silent case mismatch would
+  // leave the feature fully ON with no indication why.
+  it('normalizes configured state codes to uppercase', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['nj', 'Az']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ', 'AZ']))
+  })
+
+  it('trims whitespace around configured state codes before normalizing', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify([' nj ']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ']))
+  })
+
+  it('leaves the "*" wildcard intact after normalization', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['*']),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['*']))
+  })
+
+  // Normalization must not create a new way for a malformed config to be
+  // misread as a real suppression — fail-open has to survive the change.
+  it('still fails open on a mixed valid/garbage array — garbage entries are dropped, not normalized into a match', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['nj', 123, null, '', '   ', {}, ['AZ']]),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set(['NJ']))
+  })
+
+  it('still fails open on an array of only numbers', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify([1, 2, 3]),
+    }).run()
+    expect(await loadSuppressedSubjectStates(db)).toEqual(new Set())
+  })
+})
 
 describe('syncBillSubjects', () => {
   beforeEach(async () => {

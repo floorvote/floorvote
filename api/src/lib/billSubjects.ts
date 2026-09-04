@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { billSubjects } from '../db/schema'
+import { associationConfig, billSubjects } from '../db/schema'
 import type { AppDb } from '../types'
 
 /**
@@ -102,4 +102,56 @@ export async function syncBillSubjects(
       chunk.map(name => ({ billId: billInternalId, subjectName: name, state })),
     ).run()
   }
+}
+
+// ── Operator suppression switch ──────────────────────────────────────────
+//
+// association_config row, JSON array of state codes to hide the subjects
+// feature for, with "*" meaning the whole tenant. Deliberately NOT modeled as
+// a `modules` entry: isModuleEnabled() treats an absent `modules` row as every
+// module OFF, and at least one production tenant (UT) — the tenant with the
+// best subject data — has no `modules` row at all. A module entry would
+// default the feature off for the tenant that most wants it on. This key's
+// absence means the opposite: enabled everywhere, matching how a tenant with
+// no association_config row sees subjects today. No admin UI writes this key;
+// an operator sets it by hand, mirroring tag_taxonomy's resolution shape
+// (loadEffectiveTaxonomy) — a row, JSON-decoded, empty/malformed treated as
+// "not configured" rather than surfaced as an error.
+export const SUPPRESSED_SUBJECT_STATES_KEY = 'subjects_suppressed_states'
+
+/**
+ * The set of suppressed states (or the literal "*" for the whole tenant).
+ * Absent row, empty array, or malformed JSON all resolve to an empty set —
+ * i.e. nothing suppressed — because this is a display/query filter for a
+ * feature that is ON by default. Failing open (rather than closed, the way
+ * loadEffectiveTaxonomy falls back to DEFAULT_TAXONOMY on a parse error) is
+ * the only choice that can't silently take a working feature away from a
+ * tenant over a typo in the stored JSON.
+ */
+export async function loadSuppressedSubjectStates(db: AppDb): Promise<Set<string>> {
+  const row = await db.select().from(associationConfig)
+    .where(eq(associationConfig.key, SUPPRESSED_SUBJECT_STATES_KEY)).get()
+  if (!row) return new Set()
+  let parsed: unknown
+  try { parsed = JSON.parse(row.value) } catch { return new Set() }
+  if (!Array.isArray(parsed)) return new Set()
+  // Stored state codes are always uppercase; normalize configured codes the
+  // same way so `["nj"]` suppresses NJ rather than silently no-op'ing. Only
+  // strings are eligible for normalization — anything else is dropped exactly
+  // as before, so a garbage entry can never be coerced into a match. Trimmed-
+  // then-empty strings are also dropped rather than kept as a stray "" that
+  // could never match a real state but would otherwise pollute the set.
+  const out = new Set<string>()
+  for (const v of parsed) {
+    if (typeof v !== 'string') continue
+    const normalized = v.trim().toUpperCase()
+    if (normalized.length === 0) continue
+    out.add(normalized)
+  }
+  return out
+}
+
+/** Whether `state`'s subjects are suppressed — either named directly or via the "*" wildcard. */
+export function isSubjectsSuppressedForState(suppressed: ReadonlySet<string>, state: string): boolean {
+  return suppressed.has('*') || suppressed.has(state)
 }

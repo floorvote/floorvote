@@ -10,7 +10,7 @@ import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
-import { parseSubjects } from '../../lib/billSubjects'
+import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 
 type CentralBillRich = {
   billType?: string | null
@@ -47,6 +47,8 @@ export async function buildBillDetail(
   if (!bill) throw new Error('Not found')
 
   const tagSet = await loadTaxonomyTagNameSet(db)
+  const suppressedSubjectStates = await loadSuppressedSubjectStates(db)
+  const subjectsSuppressed = isSubjectsSuppressedForState(suppressedSubjectStates, bill.state)
 
   // Fetch rich supplemental data from central for LegiScan bills (calendar, supplements, votes, etc.)
   // Purely a read — no queue messages, no API calls, no AI.
@@ -268,7 +270,7 @@ export async function buildBillDetail(
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
     })) ?? undefined,
-    subjects: parseSubjects(bill.subjects),
+    subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'
       ? await loadDemoBillCalendar(db, billId)
       : (centralRich?.calendar ?? []),

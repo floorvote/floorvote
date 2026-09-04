@@ -7,6 +7,7 @@ import {
 import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
+import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -42,6 +43,26 @@ export function tagMembership(tagValues: string[]): SQL {
  * table rather than a JSON scan of bills.subjects: idx_bill_subjects_name covers
  * (state, subject_name), so this is an index seek per value.
  */
+/**
+ * Drop any (state, name) filter value naming an operator-suppressed state (or
+ * every state, via "*"). A `subject` query param cannot re-surface a state the
+ * operator turned off — rather than making such a value match zero bills
+ * (which would read to a caller as "that subject truly has no bills," a
+ * confusing and avoidable claim), it is simply ignored, same as a malformed
+ * value from decodeSubjectFilters. If every requested value is suppressed the
+ * remaining list is empty and the caller adds no subject condition at all —
+ * equivalent to the param never having been sent. Shared by buildBillsWhere
+ * and the /bills/facets route so the list, filter, and facet-count paths
+ * can't drift on this decision.
+ */
+export function filterSuppressedSubjects(
+  values: Array<{ state: string; name: string }>,
+  suppressed: ReadonlySet<string>,
+): Array<{ state: string; name: string }> {
+  if (suppressed.size === 0) return values
+  return values.filter(v => !isSubjectsSuppressedForState(suppressed, v.state))
+}
+
 export function subjectMembership(values: Array<{ state: string; name: string }>): SQL {
   const pairs = sql.join(
     values.map(v => sql`(${v.state}, ${v.name})`),
@@ -385,7 +406,9 @@ export async function buildBillsWhere(
   }
 
   if (p.subjectFilters.length > 0) {
-    conditions.push(subjectMembership(p.subjectFilters))
+    const suppressed = await loadSuppressedSubjectStates(db)
+    const allowed = filterSuppressedSubjects(p.subjectFilters, suppressed)
+    if (allowed.length > 0) conditions.push(subjectMembership(allowed))
   }
 
   if (p.positionValues.length > 0) {

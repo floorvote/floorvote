@@ -5,6 +5,7 @@ import { COUNT_BADGE } from '../../lib/chipStyles'
 import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../components/stickyGroupedVirtualList'
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
 import { filterDimensionLabel } from '../../lib/filterDimensions'
+import { useMenuAlign } from '../../hooks/useMenuAlign'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -83,7 +84,10 @@ export function SortHeader({
 
 export function CountBadge({ count }: { count: number }) {
   return (
-    <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
+    // flexShrink: 0 keeps the badge fully visible when it shares a flex row
+    // with a label that truncates (SubjectFilterDropdown) — the label is what
+    // gives up space, never the count.
+    <span style={{ ...COUNT_BADGE, marginLeft: 'auto', flexShrink: 0 }}>
       {count.toLocaleString()}
     </span>
   )
@@ -114,6 +118,10 @@ export function FilterDropdown({
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  // Flips the menu to right-align when the trigger is near the right edge of
+  // the viewport — see useMenuAlign for why this is shared with
+  // SubjectFilterDropdown rather than duplicated here.
+  const menuAlign = useMenuAlign(open, triggerRef, menuRef)
 
   useEffect(() => {
     if (!open) return
@@ -227,7 +235,8 @@ export function FilterDropdown({
           aria-label={placeholder}
           onKeyDown={handleMenuKeyDown}
           style={{
-            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+            position: 'absolute', top: 'calc(100% + 4px)', zIndex: 300,
+            ...(menuAlign === 'right' ? { right: 0 } : { left: 0 }),
             background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
             padding: '4px 0', minWidth: 180, maxHeight: 300, overflowY: 'auto',
             boxShadow: shadow.md,
@@ -284,9 +293,26 @@ export type SubjectGroup = {
 // Fixed, explicit row heights (rather than dynamic measurement) so the
 // virtualizer's estimateSize always matches real layout exactly — no gaps or
 // overlaps, and no dependency on ResizeObserver/measureElement in tests.
-const SUBJECT_OPTION_ROW_HEIGHT = 32
+//
+// A row's rendered height is set from this SAME constant below
+// (`height: SUBJECT_OPTION_ROW_HEIGHT` on the option <label>) rather than a
+// second hard-coded number, so the virtualizer's layout math and the actual
+// DOM can never drift apart — that drift (a row taller than the height the
+// virtualizer allotted it, because a long label wrapped to two lines) was the
+// original bug. Labels are now forced to a single line with an ellipsis (see
+// the option row below), so this height only ever needs to fit one line —
+// smaller than before now that wrapping is no longer a possibility.
+const SUBJECT_OPTION_ROW_HEIGHT = 28
 const SUBJECT_HEADER_ROW_HEIGHT = 24
 const SUBJECT_PANEL_LIST_HEIGHT = 280
+
+const SUBJECT_PANEL_MIN_WIDTH = 220
+const SUBJECT_PANEL_MAX_WIDTH = 480
+const SUBJECT_PANEL_DEFAULT_WIDTH = SUBJECT_PANEL_MIN_WIDTH
+// Keyboard resize step: coarse enough that a handful of presses covers the
+// whole 220–480px range (26 presses end to end), fine enough not to overshoot
+// a comfortable reading width in one keystroke.
+const SUBJECT_PANEL_RESIZE_STEP = 10
 
 /**
  * Subject filter — state-qualified because subject vocabularies aren't
@@ -318,7 +344,23 @@ export function SubjectFilterDropdown({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  // Panel width is user-adjustable (drag the handle on the right edge) so
+  // long subject names can be read in full instead of relying on truncation.
+  // Lives on the always-mounted wrapper component (not the conditionally
+  // rendered menu below), so a drag survives the panel closing and reopening
+  // for as long as SubjectFilterDropdown itself stays mounted.
+  const [panelWidth, setPanelWidth] = useState(SUBJECT_PANEL_DEFAULT_WIDTH)
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  // Flips the menu to right-align when the trigger is near the right edge of
+  // the viewport (shared with FilterDropdown — see useMenuAlign). panelWidth
+  // is passed directly rather than measured from the DOM, since it's already
+  // a tracked, controlled value here — that also means a drag-resize (which
+  // changes panelWidth) re-derives the alignment rather than leaving a stale
+  // decision from when the panel first opened.
+  const menuAlign = useMenuAlign(open, triggerRef, undefined, panelWidth)
 
   useEffect(() => {
     if (!open) return
@@ -328,6 +370,60 @@ export function SubjectFilterDropdown({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  function handleResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    resizeStateRef.current = { startX: e.clientX, startWidth: panelWidth }
+    function onMove(ev: MouseEvent) {
+      const state = resizeStateRef.current
+      if (!state) return
+      // If no button is held, terminate the drag (mouse released outside window)
+      if (ev.buttons === 0) {
+        cleanup()
+        return
+      }
+      const next = state.startWidth + (ev.clientX - state.startX)
+      setPanelWidth(Math.min(SUBJECT_PANEL_MAX_WIDTH, Math.max(SUBJECT_PANEL_MIN_WIDTH, next)))
+    }
+    function onUp() {
+      cleanup()
+    }
+    function onBlur() {
+      cleanup()
+    }
+    function cleanup() {
+      resizeStateRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      window.removeEventListener('blur', onBlur)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onBlur)
+  }
+
+  // Keyboard equivalent of the mouse drag above, per the WAI-ARIA APG
+  // "Window Splitter" pattern: ArrowLeft/ArrowRight move a vertical
+  // separator (a divider whose long axis runs top-to-bottom, orthogonal to
+  // the direction it moves) in the direction that shrinks/grows the region
+  // it borders. Left = narrower, right = wider, matching the panel edge
+  // this handle sits on. Home/End jump to the documented min/max bounds,
+  // same as the drag clamp.
+  function handleResizeKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      setPanelWidth(w => Math.max(SUBJECT_PANEL_MIN_WIDTH, w - SUBJECT_PANEL_RESIZE_STEP))
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      setPanelWidth(w => Math.min(SUBJECT_PANEL_MAX_WIDTH, w + SUBJECT_PANEL_RESIZE_STEP))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setPanelWidth(SUBJECT_PANEL_MIN_WIDTH)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setPanelWidth(SUBJECT_PANEL_MAX_WIDTH)
+    }
+  }
 
   const groups = useMemo(
     () => subjectGroups.map(g => ({ key: g.state, heading: g.state, options: g.options })),
@@ -358,6 +454,7 @@ export function SubjectFilterDropdown({
   return (
     <div ref={ref} style={{ position: 'relative' }}>
         <button
+          ref={triggerRef}
           onClick={() => setOpen(o => !o)}
           style={{
             fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
@@ -378,12 +475,79 @@ export function SubjectFilterDropdown({
             role="group"
             aria-label={subjectLabel}
             style={{
-              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+              position: 'absolute', top: 'calc(100% + 4px)', zIndex: 300,
+              ...(menuAlign === 'right' ? { right: 0 } : { left: 0 }),
               background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
-              minWidth: 220, maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
+              width: panelWidth, minWidth: SUBJECT_PANEL_MIN_WIDTH, maxWidth: SUBJECT_PANEL_MAX_WIDTH,
+              maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
               display: 'flex', flexDirection: 'column',
             }}
           >
+            {/* Drag handle: widens the panel horizontally so long subject
+                names can be read in full instead of relying on truncation.
+                Exploratory per the operator's request — kept desktop-only
+                since it's a mouse-drag affordance; the mobile sheet is
+                full-width already and has no equivalent edge to grab.
+
+                Also keyboard-operable, following the WAI-ARIA APG "Window
+                Splitter" pattern: a focusable divider exposing the current
+                extent via aria-valuenow/min/max, adjustable with the arrow
+                keys along the axis it moves. The APG's literal example role
+                is a focusable `separator`, but aria-query (and therefore
+                eslint-plugin-jsx-a11y, which drives this repo's a11y lint)
+                models `separator` as structure-only with no interactive/
+                widget variant, so a focusable one is flagged as a
+                non-interactive element carrying tabIndex/handlers no matter
+                what — a known static-analysis gap, not a real accessibility
+                problem (suppressing the check would be, so that's not the
+                fix here). `slider` is the APG-recognized widget role for
+                "a value adjustable between a min and max via the keyboard,"
+                which is exactly this control, and both tools and screen
+                readers already understand it as interactive — so it's used
+                here instead of fighting the linter's role model.
+                aria-orientation matches the panel's own resize axis
+                (horizontal) as slider's convention requires (unlike
+                separator, where orientation describes the divider's own
+                axis rather than the direction it moves). The visible grip
+                (three short ticks) and the :focus-visible ring both reuse
+                existing tokens — see the <style> block below — rather than
+                introducing new ones. */}
+            <div
+              data-testid="subject-panel-resize-handle"
+              className="subject-panel-resize-handle"
+              role="slider"
+              aria-orientation="horizontal"
+              aria-label="Resize subject filter panel"
+              aria-valuenow={panelWidth}
+              aria-valuemin={SUBJECT_PANEL_MIN_WIDTH}
+              aria-valuemax={SUBJECT_PANEL_MAX_WIDTH}
+              tabIndex={0}
+              onMouseDown={handleResizeMouseDown}
+              onKeyDown={handleResizeKeyDown}
+              style={{
+                position: 'absolute', top: 0, right: -3, width: 6, height: '100%',
+                cursor: 'ew-resize', zIndex: 301,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {/* Quiet grip affordance — a hairline of three short ticks,
+                  restrained on purpose since this is a small internal
+                  filter control, not a prominent feature. */}
+              <div aria-hidden="true" style={{
+                display: 'flex', flexDirection: 'column', gap: 2,
+                width: 2, alignItems: 'center',
+              }}>
+                {[0, 1, 2].map(i => (
+                  <span key={i} style={{ width: 2, height: 2, borderRadius: '50%', background: color.borderStrong }} />
+                ))}
+              </div>
+            </div>
+            <style>{`
+              .subject-panel-resize-handle:focus-visible {
+                outline: 2px solid ${color.focusRing};
+                outline-offset: 2px;
+              }
+            `}</style>
             <div style={{ padding: '8px 10px', borderBottom: `1px solid ${color.borderDefault}`, flex: '0 0 auto' }}>
               <input
                 type="text"
@@ -425,9 +589,24 @@ export function SubjectFilterDropdown({
                               type="checkbox"
                               checked={selectedSubjects.includes(row.value)}
                               onChange={() => toggle(row.value)}
-                              style={{ margin: 0, accentColor: color.accentBlue }}
+                              style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                             />
-                            {row.label}
+                            {/* One line, truncated with an ellipsis rather than wrapping — a
+                                wrapped label would need more height than the virtualizer's
+                                fixed SUBJECT_OPTION_ROW_HEIGHT allots this row, overflowing
+                                into the row below. `title` surfaces the full name via the
+                                browser's own hover tooltip; minWidth: 0 is required for a
+                                flex child to shrink below its content's natural width, or
+                                the ellipsis never kicks in. */}
+                            <span
+                              title={row.label}
+                              style={{
+                                flex: '1 1 auto', minWidth: 0, overflow: 'hidden',
+                                whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {row.label}
+                            </span>
                             <CountBadge count={row.count ?? 0} />
                           </label>
                         )}

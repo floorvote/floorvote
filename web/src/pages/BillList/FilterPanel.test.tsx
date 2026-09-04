@@ -4,6 +4,51 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
 
+// jsdom performs no layout, so every element's real getBoundingClientRect()
+// is all zeros — same limitation as the offsetHeight stub above, same fix:
+// stub the geometry inputs (the real flip arithmetic in useMenuAlign/
+// resolveMenuAlign still runs). Elements are told apart by role/tag, which
+// is enough here since each test renders exactly one dropdown: its trigger
+// (a <button>) and its open menu (role="group"/"radiogroup").
+function rect(r: { left: number; right: number }) {
+  return {
+    left: r.left, right: r.right, top: 0, bottom: 20,
+    width: r.right - r.left, height: 20, x: r.left, y: 0,
+    toJSON() { return this },
+  } as DOMRect
+}
+
+function stubMenuGeometry({
+  innerWidth,
+  triggerRect,
+  menuWidth,
+}: {
+  innerWidth: number
+  triggerRect: { left: number; right: number }
+  menuWidth?: number
+}) {
+  const rectDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'getBoundingClientRect')
+  const widthDescriptor = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      const role = this.getAttribute('role')
+      if (menuWidth !== undefined && (role === 'group' || role === 'radiogroup')) {
+        return rect({ left: 0, right: menuWidth })
+      }
+      if (this.tagName === 'BUTTON') return rect(triggerRect)
+      return rect({ left: 0, right: 0 })
+    },
+  })
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: innerWidth })
+
+  return () => {
+    if (rectDescriptor) Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', rectDescriptor)
+    if (widthDescriptor) Object.defineProperty(window, 'innerWidth', widthDescriptor)
+  }
+}
+
 function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
   const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
@@ -253,6 +298,164 @@ describe('FilterDropdown — keyboard navigation (R4 follow-up)', () => {
   })
 })
 
+describe('SubjectFilterDropdown — horizontal resize', () => {
+  it('widens the panel in response to a drag on the resize handle, and keeps the new width while the panel stays open', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = panel.getBoundingClientRect().width || parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    fireEvent.mouseDown(handle, { clientX: 100 })
+    fireEvent.mouseMove(document, { clientX: 180, buttons: 1 })
+    fireEvent.mouseUp(document)
+
+    const endWidth = parseInt(getComputedStyle(panel).width, 10)
+    expect(endWidth).toBeGreaterThan(startWidth)
+
+    // Width persists across further interaction while the panel stays open
+    // (e.g. typing into search) rather than snapping back.
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'coun' } })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(endWidth)
+  })
+
+  it('terminates drag when mousemove fires with no button held (buttons: 0), and subsequent movement does not resize', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Start drag
+    fireEvent.mouseDown(handle, { clientX: 100 })
+
+    // Move with button held to widen the panel
+    fireEvent.mouseMove(document, { clientX: 150, buttons: 1 })
+    const widthAfterMove = parseInt(getComputedStyle(panel).width, 10)
+    expect(widthAfterMove).toBeGreaterThan(startWidth)
+
+    // Move with no button held (simulates mouse released outside window)
+    fireEvent.mouseMove(document, { clientX: 200, buttons: 0 })
+
+    // Width should not change from the last valid drag position
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
+
+    // Further mousemove should not resize the panel (listeners should be cleaned up)
+    fireEvent.mouseMove(document, { clientX: 250, buttons: 1 })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
+  })
+
+  it('terminates drag when window loses focus (blur), and subsequent movement does not resize', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Start drag
+    fireEvent.mouseDown(handle, { clientX: 100 })
+
+    // Move to widen the panel
+    fireEvent.mouseMove(document, { clientX: 150, buttons: 1 })
+    const widthAfterMove = parseInt(getComputedStyle(panel).width, 10)
+    expect(widthAfterMove).toBeGreaterThan(startWidth)
+
+    // Window loses focus
+    fireEvent.blur(window)
+
+    // Further mousemove should not resize the panel
+    fireEvent.mouseMove(document, { clientX: 200, buttons: 1 })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
+  })
+})
+
+describe('SubjectFilterDropdown — resize handle keyboard accessibility', () => {
+  it('is reachable by keyboard focus', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    handle.focus()
+    expect(handle).toHaveFocus()
+  })
+
+  it('exposes an interactive ARIA role with aria-orientation and aria-valuenow/min/max', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    // role="slider" (not the APG's literal "separator") because aria-query
+    // models `separator` as structure-only with no focusable/widget variant,
+    // so eslint-plugin-jsx-a11y flags a focusable separator as a
+    // non-interactive element with handlers — a linter-role-model gap, not
+    // a real a11y issue. `slider` is the ARIA widget role for "a value
+    // adjustable between a min and max via the keyboard," which this
+    // control is, and it satisfies the lint rules honestly rather than
+    // suppressing them. See the comment above the handle in FilterPanel.tsx.
+    expect(handle).toHaveAttribute('role', 'slider')
+    expect(handle).toHaveAttribute('aria-orientation', 'horizontal')
+    expect(handle).toHaveAttribute('aria-valuemin', '220')
+    expect(handle).toHaveAttribute('aria-valuemax', '480')
+    expect(handle).toHaveAttribute('aria-valuenow', '220') // default width
+    expect(handle).toHaveAttribute('aria-label')
+  })
+
+  it('ArrowRight widens the panel and ArrowLeft narrows it', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    const widened = parseInt(getComputedStyle(panel).width, 10)
+    expect(widened).toBeGreaterThan(startWidth)
+    expect(handle).toHaveAttribute('aria-valuenow', String(widened))
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    const narrowed = parseInt(getComputedStyle(panel).width, 10)
+    expect(narrowed).toBeLessThan(widened)
+  })
+
+  it('clamps keyboard resizing to the 220–480px bounds', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Starts at the 220px minimum — narrowing further must not go below it.
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(220)
+    expect(handle).toHaveAttribute('aria-valuenow', '220')
+
+    // Home jumps straight to the min; End jumps straight to the max.
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(480)
+    expect(handle).toHaveAttribute('aria-valuenow', '480')
+
+    // Widening past the max must not exceed it.
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(480)
+
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(220)
+    expect(handle).toHaveAttribute('aria-valuenow', '220')
+  })
+})
+
 describe('SubjectFilterDropdown', () => {
   it('hides the subject section entirely when no state publishes subjects', () => {
     renderPanel({ subjectGroups: [] })
@@ -384,6 +587,39 @@ describe('SubjectFilterDropdown — virtualization and search', () => {
     expect(isChecked('Counties')).toBe(true)
   })
 
+  it('truncates a long subject label to a single line instead of wrapping', () => {
+    const longLabel = 'Governor’s Office of Economic Opportunity and Interstate Commerce Regulation'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 3 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const labelEl = screen.getByText(longLabel)
+    const style = getComputedStyle(labelEl)
+    expect(style.whiteSpace).toBe('nowrap')
+    expect(style.overflow).toBe('hidden')
+    expect(style.textOverflow).toBe('ellipsis')
+  })
+
+  it('puts the full, untruncated subject label in the title attribute for the native browser tooltip', () => {
+    const longLabel = 'Department of Health and Human Services, Behavioral Health Division'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 1 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const labelEl = screen.getByText(longLabel)
+    expect(labelEl).toHaveAttribute('title', longLabel)
+  })
+
+  it('still renders the count badge alongside a truncated long label', () => {
+    const longLabel = 'Government Operations (State Issues) and Administrative Rulemaking Oversight'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 42 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText(longLabel)).toBeInTheDocument()
+    expect(screen.getByText('42')).toBeInTheDocument()
+  })
+
   it('shows state headings only for groups with surviving matches after search; hides them when only one group survives', () => {
     renderPanel({
       subjectGroups: [
@@ -401,5 +637,85 @@ describe('SubjectFilterDropdown — virtualization and search', () => {
     expect(screen.queryByText('NJ')).not.toBeInTheDocument()
     expect(screen.queryByText('UT')).not.toBeInTheDocument()
     expect(screen.getByText('Counties')).toBeInTheDocument()
+  })
+})
+
+// Both menus render `position: absolute; left: 0` relative to a wrapper the
+// same width as the trigger button — fine when there's room, but it opens the
+// menu off the right edge of the window for a trigger near it. The fix flips
+// to `right: 0` (aligning the menu's right edge to the trigger's right edge)
+// via the shared useMenuAlign hook (src/hooks/useMenuAlign.ts), so it must be
+// exercised identically for both dropdowns.
+describe('FilterDropdown — viewport edge flip', () => {
+  it('right-aligns the menu when the trigger is near the right edge of the viewport', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 700, right: 740 }, menuWidth: 200 })
+    try {
+      render(<FilterDropdown placeholder="Position" options={[{ value: 'Support' }]} selected={[]} onChange={() => {}} multi />)
+      fireEvent.click(screen.getByText('Position'))
+      const menu = screen.getByRole('group')
+      expect(menu.style.right).toBe('0px')
+      expect(menu.style.left).toBe('')
+    } finally {
+      restore()
+    }
+  })
+
+  it('stays left-aligned when the trigger has room to the right', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 20, right: 60 }, menuWidth: 200 })
+    try {
+      render(<FilterDropdown placeholder="Position" options={[{ value: 'Support' }]} selected={[]} onChange={() => {}} multi />)
+      fireEvent.click(screen.getByText('Position'))
+      const menu = screen.getByRole('group')
+      expect(menu.style.left).toBe('0px')
+      expect(menu.style.right).toBe('')
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('SubjectFilterDropdown — viewport edge flip', () => {
+  it('right-aligns the menu when the trigger is near the right edge of the viewport', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 700, right: 740 } })
+    try {
+      renderPanel({
+        subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+      })
+      fireEvent.click(screen.getByRole('button'))
+      const panel = screen.getByRole('group')
+      expect(panel.style.right).toBe('0px')
+      expect(panel.style.left).toBe('')
+    } finally {
+      restore()
+    }
+  })
+
+  // The flip decision must re-derive from the panel's *current* width, not
+  // cache whatever it decided at mount — SubjectFilterDropdown's width
+  // changes live via the drag-resize handle.
+  it('re-derives the flip after a drag-resize widens the panel past the edge', () => {
+    const restore = stubMenuGeometry({ innerWidth: 800, triggerRect: { left: 550, right: 590 } })
+    try {
+      renderPanel({
+        subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+      })
+      fireEvent.click(screen.getByRole('button'))
+      // At the default width (220), the trigger at left=550 fits: 550+220=770 <= 792.
+      let panel = screen.getByRole('group')
+      expect(panel.style.left).toBe('0px')
+      expect(panel.style.right).toBe('')
+
+      const handle = screen.getByTestId('subject-panel-resize-handle')
+      fireEvent.mouseDown(handle, { clientX: 100 })
+      // Widens by 180px (220 -> 400): 550+400=950 > 792, must now flip.
+      fireEvent.mouseMove(document, { clientX: 280, buttons: 1 })
+      fireEvent.mouseUp(document)
+
+      panel = screen.getByRole('group')
+      expect(panel.style.right).toBe('0px')
+      expect(panel.style.left).toBe('')
+    } finally {
+      restore()
+    }
   })
 })

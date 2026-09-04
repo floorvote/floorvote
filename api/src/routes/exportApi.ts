@@ -10,6 +10,7 @@ import {
 import { gt, and, inArray, sql, type SQL } from 'drizzle-orm'
 import { centralFetch } from '../lib/centralFetch'
 import { EXPORT_TABLES, type ExportTable } from '../../../shared/exportTables'
+import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../lib/billSubjects'
 import type { AppEnv } from '../types'
 
 const tableMap = {
@@ -244,6 +245,23 @@ exportApiRouter.get('/:table', async (c) => {
       }
       return filtered
     }) as any
+  }
+
+  // The operator subjects-suppression switch (subjects_suppressed_states) hides
+  // legislature subjects on bill detail/facets/filter for a given state or the
+  // whole tenant ("*"). The admin export must honor it too, or it becomes a
+  // side door back to data an operator deliberately turned off — but only the
+  // `subjects` column is redacted; rows are kept as-is (including for
+  // suppressed states) so admin auditing use cases (row counts, other columns)
+  // are unaffected. Redacted to null rather than omitted so the column stays
+  // present with the same shape it already has for a bill with no subjects.
+  if (name === 'bills') {
+    const suppressed = await loadSuppressedSubjectStates(db)
+    if (suppressed.size > 0) {
+      rows = rows.map((row: any) =>
+        isSubjectsSuppressedForState(suppressed, row.state) ? { ...row, subjects: null } : row,
+      ) as any
+    }
   }
 
   return c.json({ table: name, rows, nextCursor })

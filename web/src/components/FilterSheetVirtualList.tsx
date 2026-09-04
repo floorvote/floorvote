@@ -16,7 +16,14 @@ export interface FilterSheetVirtualGroup {
   options: Array<{ value: string; label: string; count?: number }>
 }
 
-const OPTION_ROW_HEIGHT = 44
+// The option row's rendered height is set from this SAME constant below
+// (`height: OPTION_ROW_HEIGHT` on the option <label>), not a second
+// hard-coded number, so the virtualizer's layout math and the actual DOM
+// can never drift apart. Labels are forced to a single line with an
+// ellipsis (see the option row below) rather than wrapping, so this only
+// ever needs to fit one line — smaller than before now that wrapping is no
+// longer possible.
+const OPTION_ROW_HEIGHT = 36
 const HEADER_ROW_HEIGHT = 28
 const LIST_HEIGHT = 340
 
@@ -95,11 +102,24 @@ export function FilterSheetVirtualList({
                         type="checkbox"
                         checked={selected.includes(row.value)}
                         onChange={() => onToggle(row.value)}
-                        style={{ margin: 0, accentColor: color.accentBlue }}
+                        style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                       />
-                      {row.label}
+                      {/* One line, truncated with an ellipsis rather than wrapping — see
+                          the matching comment on OPTION_ROW_HEIGHT above for why. `title`
+                          surfaces the full name via the browser's own hover tooltip;
+                          minWidth: 0 lets this flex child shrink below its content's
+                          natural width, which is required for the ellipsis to apply. */}
+                      <span
+                        title={row.label}
+                        style={{
+                          flex: '1 1 auto', minWidth: 0, overflow: 'hidden',
+                          whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {row.label}
+                      </span>
                       {row.count !== undefined && (
-                        <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>{row.count.toLocaleString()}</span>
+                        <span style={{ ...COUNT_BADGE, marginLeft: 'auto', flexShrink: 0 }}>{row.count.toLocaleString()}</span>
                       )}
                     </label>
                   )}
