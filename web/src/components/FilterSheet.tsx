@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { COUNT_BADGE } from '../lib/chipStyles'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
+import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { filterDimensionLabel, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
+import { filterableCustomFields } from '../lib/customFieldFilters'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -33,6 +35,14 @@ interface FilterSheetProps {
   sessionOptions: { value: string; label: string }[]
   totalSessionCount?: number
   stateOptions: { value: string; label: string }[]
+  /** All tenant custom field defs (unfiltered) — same value desktop reads as
+   *  `customFieldDefs`. This component decides filterability itself via
+   *  lib/customFieldFilters.ts, mirroring desktop exactly. */
+  customFieldDefs: CustomFieldDef[]
+  /** Currently-selected values per custom field id — same shape as desktop's
+   *  `f.cfFilters`. */
+  cfFilters: Record<string, string[]>
+  onCfFilterChange: (fieldId: string, values: string[]) => void
   onStatusChange: (v: string[]) => void
   onPriorityChange: (v: string[]) => void
   onPositionChange: (v: string[]) => void
@@ -51,6 +61,7 @@ interface FilterSheetProps {
     session: Record<string, number>
     tags: Record<string, number>
     state?: Record<string, number>
+    customFields?: Record<string, Record<string, number>>
   }
 }
 
@@ -61,7 +72,25 @@ interface FilterSheetProps {
 // target of their own. See lib/filterDimensions.ts for the full registry
 // (including the two toggles) that both this component and the desktop
 // toolbar read their labels and visibility from.
-type DimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
+//
+// Dropdown-type custom fields are drill-down dimensions too, but they're
+// dynamic (tenant-defined, a variable count) rather than fixed registry
+// entries — represented here as `cf:<fieldId>` rather than as one more member
+// of the static union. Binary custom fields, like the two toggles above,
+// never become a `dimension` value at all — they stay direct controls.
+type StaticDimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
+type CustomFieldDimensionKey = `cf:${string}`
+type DimensionKey = StaticDimensionKey | CustomFieldDimensionKey
+
+function isCustomFieldDimension(key: DimensionKey): key is CustomFieldDimensionKey {
+  return key.startsWith('cf:')
+}
+function customFieldDimensionKey(fieldId: string): CustomFieldDimensionKey {
+  return `cf:${fieldId}`
+}
+function customFieldIdFromDimension(key: CustomFieldDimensionKey): string {
+  return key.slice('cf:'.length)
+}
 
 function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
   return (
@@ -190,6 +219,7 @@ export function FilterSheet({
   statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
   isAdmin, newMatches, newMatchesCount, uniqueStates,
   statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
+  customFieldDefs, cfFilters, onCfFilterChange,
   onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange,
   onClearAll, counts,
@@ -232,7 +262,7 @@ export function FilterSheet({
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
 
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0)
+  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -241,7 +271,7 @@ export function FilterSheet({
   // Every drill-down dimension's heading pulls its text from the shared
   // registry (lib/filterDimensions.ts) — this component may not hard-code
   // any of these labels itself.
-  const DIMENSION_LABELS: Record<DimensionKey, string> = {
+  const STATIC_DIMENSION_LABELS: Record<StaticDimensionKey, string> = {
     state: filterDimensionLabel('state'),
     status: filterDimensionLabel('status'),
     priority: filterDimensionLabel('priority'),
@@ -250,6 +280,28 @@ export function FilterSheet({
     tags: filterDimensionLabel('tags'),
     subjects: filterDimensionLabel('subjects'),
   }
+
+  // Which custom field types are filterable, and what control each gets, is
+  // decided once in lib/customFieldFilters.ts and shared with the desktop
+  // toolbar (and the parity test) — this component may not re-derive it.
+  const filterableCFs = filterableCustomFields(customFieldDefs)
+  const toggleCustomFields = filterableCFs.filter(cf => cf.kind === 'toggle')
+  const optionsCustomFields = filterableCFs.filter(cf => cf.kind === 'options')
+
+  // A custom field's name IS its label — unlike the nine static dimensions,
+  // there's no separate registry entry to source it from (custom fields are
+  // tenant-defined, not fixed vocabulary).
+  function dimensionLabel(key: DimensionKey): string {
+    if (isCustomFieldDimension(key)) {
+      const fieldId = customFieldIdFromDimension(key)
+      return filterableCFs.find(cf => cf.def.id === fieldId)?.def.name ?? ''
+    }
+    return STATIC_DIMENSION_LABELS[key]
+  }
+
+  const activeDimensionCustomField = dimension !== null && isCustomFieldDimension(dimension)
+    ? filterableCFs.find(cf => cf.def.id === customFieldIdFromDimension(dimension))
+    : undefined
 
   const sessionVisible = (totalSessionCount ?? sessionOptions.length) > 0
 
@@ -291,7 +343,7 @@ export function FilterSheet({
                   a non-interactive heading focusable programmatically without
                   adding it to the tab order. */}
               <h2 ref={headingRef} tabIndex={-1} style={{ margin: 0, fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary, outline: 'none' }}>
-                {DIMENSION_LABELS[dimension]}
+                {dimensionLabel(dimension)}
               </h2>
             </div>
           )}
@@ -341,6 +393,24 @@ export function FilterSheet({
                 </div>
               )}
 
+              {/* Binary custom fields — a direct toggle, same treatment as
+                  My bills / New matches above (see lib/customFieldFilters.ts).
+                  Zero filterable binary fields renders nothing here at all. */}
+              {toggleCustomFields.map(({ def }) => {
+                const isActive = (cfFilters[def.id] ?? []).includes('1')
+                return (
+                  <div key={def.id} style={{ marginBottom: 20 }}>
+                    <SectionLabel title={def.name} />
+                    <SheetChip
+                      label={def.name}
+                      active={isActive}
+                      count={counts?.customFields?.[def.id]?.['1'] ?? 0}
+                      onClick={() => onCfFilterChange(def.id, isActive ? [] : ['1'])}
+                    />
+                  </div>
+                )
+              })}
+
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -384,26 +454,40 @@ export function FilterSheet({
               <div style={{ marginBottom: 20 }}>
                 <SectionLabel title="Filters" />
                 {stateVisible && (
-                  <DimensionRow label={DIMENSION_LABELS.state} selectedCount={states.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.state} selectedCount={states.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
                 )}
                 {statusOptions.length > 0 && (
-                  <DimensionRow label={DIMENSION_LABELS.status} selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.status} selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
                 )}
                 {priorityOptions.length > 0 && (
-                  <DimensionRow label={DIMENSION_LABELS.priority} selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.priority} selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
                 )}
                 {positionOptions.length > 0 && (
-                  <DimensionRow label={DIMENSION_LABELS.position} selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.position} selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
                 )}
                 {sessionVisible && (
-                  <DimensionRow label={DIMENSION_LABELS.session} selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.session} selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
                 )}
                 {tagOptions.length > 0 && (
-                  <DimensionRow label={DIMENSION_LABELS.tags} selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.tags} selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
                 )}
                 {subjectGroups.length > 0 && (
-                  <DimensionRow label={DIMENSION_LABELS.subjects} selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.subjects} selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
                 )}
+                {/* Dropdown custom fields — a drill-down dimension like Status
+                    or Tags, dynamic per tenant (see lib/customFieldFilters.ts). */}
+                {optionsCustomFields.map(({ def }) => {
+                  const cfDimension = customFieldDimensionKey(def.id)
+                  return (
+                    <DimensionRow
+                      key={def.id}
+                      label={def.name}
+                      selectedCount={(cfFilters[def.id] ?? []).length}
+                      onClick={() => setDimension(cfDimension)}
+                      buttonRef={rowRef(cfDimension)}
+                    />
+                  )
+                })}
               </div>
             </>
           )}
@@ -480,7 +564,7 @@ export function FilterSheet({
 
           {dimension === 'tags' && (
             <FilterSheetVirtualList
-              ariaLabel={DIMENSION_LABELS.tags}
+              ariaLabel={STATIC_DIMENSION_LABELS.tags}
               searchPlaceholder="Search tags…"
               groups={[{ key: 'tags', options: tagOptions.map(tag => ({ value: tag, label: tag, count: counts?.tags[tag] ?? 0 })) }]}
               selected={tags}
@@ -494,12 +578,32 @@ export function FilterSheet({
               present — handled inside FilterSheetVirtualList. */}
           {dimension === 'subjects' && (
             <FilterSheetVirtualList
-              ariaLabel={DIMENSION_LABELS.subjects}
+              ariaLabel={STATIC_DIMENSION_LABELS.subjects}
               searchPlaceholder="Search subjects…"
               groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
               selected={subjects}
               onToggle={(value) => toggleItem(subjects, value, onSubjectChange)}
             />
+          )}
+
+          {/* Dropdown custom field options (level 2) — same chip-list
+              treatment as Status/Priority/Position/Session above, just keyed
+              by the field's id instead of a fixed dimension name. */}
+          {activeDimensionCustomField && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {(activeDimensionCustomField.def.options ?? []).map(opt => {
+                const selected = cfFilters[activeDimensionCustomField.def.id] ?? []
+                return (
+                  <SheetChip
+                    key={opt}
+                    label={opt}
+                    active={selected.includes(opt)}
+                    onClick={() => toggleItem(selected, opt, v => onCfFilterChange(activeDimensionCustomField.def.id, v))}
+                    count={counts?.customFields?.[activeDimensionCustomField.def.id]?.[opt] ?? 0}
+                  />
+                )
+              })}
+            </div>
           )}
         </div>
       </div>

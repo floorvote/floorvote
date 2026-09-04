@@ -27,6 +27,7 @@ import { useBulkActions } from '../../hooks/useBulkActions'
 import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
+import { filterableCustomFields } from '../../lib/customFieldFilters'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -741,12 +742,14 @@ export function BillList() {
               />
             </HoverTooltip>
           )}
-          {/* Custom field filters — binary and dropdown only */}
-          {customFieldDefs
-            .filter(field => field.type === 'binary' || field.type === 'dropdown')
-            .map(field => {
+          {/* Custom field filters — binary and dropdown only. Which types are
+              filterable, and what control each gets, is decided once in
+              lib/customFieldFilters.ts and shared with the mobile FilterSheet
+              (and the parity test) — this surface may not re-derive it. */}
+          {filterableCustomFields(customFieldDefs)
+            .map(({ def: field, kind }) => {
               const selectedValues = f.cfFilters[field.id] ?? []
-              if (field.type === 'binary') {
+              if (kind === 'toggle') {
                 const isActive = selectedValues.includes('1')
                 return (
                   <button
@@ -1024,6 +1027,9 @@ export function BillList() {
         sessionOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalSessionCount={f.yearFacetKeys.length}
         stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}
+        customFieldDefs={customFieldDefs}
+        cfFilters={f.cfFilters}
+        onCfFilterChange={f.setCfFilter}
         onStatusChange={f.setFilterStatuses}
         onPriorityChange={f.setFilterPriorities}
         onPositionChange={f.setFilterPositions}

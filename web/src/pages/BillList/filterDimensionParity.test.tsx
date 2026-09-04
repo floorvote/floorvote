@@ -24,14 +24,20 @@ import { render, screen, fireEvent, within, cleanup } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { FILTER_DIMENSIONS, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
+import { filterableCustomFields, customFieldFilterKind } from '../../lib/customFieldFilters'
 import { FilterSheet } from '../../components/FilterSheet'
 import type { SubjectGroup } from './FilterPanel'
+import type { CustomFieldDef } from './types'
 
 // --- Desktop harness (BillList), adapted from index.test.tsx ---------------
 // Role and known states are mutable so each test can drive the two
 // conditional dimensions without duplicating the mock setup.
 const authState = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin' }))
 const facetState = vi.hoisted(() => ({ states: ['RI'] as string[] }))
+// Custom field defs are dynamic (tenant-defined) — mutable per test the same
+// way authState/facetState are, so the custom-field parity tests below can
+// drive '/config/custom-fields' without a second mock setup.
+const cfDefsState = vi.hoisted(() => ({ defs: [] as CustomFieldDef[] }))
 
 vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: false }),
@@ -63,7 +69,7 @@ vi.mock('../../lib/api', () => {
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
-    if (path === '/config/custom-fields') return [] as T
+    if (path === '/config/custom-fields') return cfDefsState.defs as T
     if (path.startsWith('/bills/facets')) {
       const stateCounts = Object.fromEntries(facetState.states.map(s => [s, 1]))
       return {
@@ -113,6 +119,7 @@ class FakeIntersectionObserver {
 beforeEach(() => {
   authState.role = 'member'
   facetState.states = ['RI']
+  cfDefsState.defs = []
   // knownStates is a module-level cache that only grows (see index.tsx) —
   // clear it so one test's facet response can't leak into the next test's
   // "is State visible" decision.
@@ -133,7 +140,7 @@ async function renderDesktop(opts: { isAdmin: boolean; states: string[] }) {
 
 // --- Mobile harness (FilterSheet) — every dimension gets non-empty options
 // so only the two conditional dimensions vary across the matrix.
-function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number }) {
+function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; customFieldDefs?: CustomFieldDef[] }) {
   const subjectGroups: SubjectGroup[] = [{ state: 'RI', options: [{ value: 'RI:Roads', label: 'Roads', count: 1 }] }]
   return render(
     <FilterSheet
@@ -153,6 +160,9 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number }
       sessionOptions={[{ value: '2026', label: '2026' }]}
       totalSessionCount={1}
       stateOptions={ctx.uniqueStates.map(s => ({ value: s, label: s }))}
+      customFieldDefs={ctx.customFieldDefs ?? []}
+      cfFilters={{}}
+      onCfFilterChange={() => {}}
       onStatusChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
       onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
@@ -338,4 +348,85 @@ describe('no dimension label may be rendered from a literal', () => {
       })
     },
   )
+})
+
+// --- Custom fields — a dynamic dimension --------------------------------
+// State and New matches (the matrix above) are fixed registry entries.
+// Custom fields are tenant-defined and dynamic (a variable count), so they
+// can't live in FILTER_DIMENSIONS — instead both surfaces (and this test)
+// derive "which types are filterable, and how" from the shared helper in
+// lib/customFieldFilters.ts. Nothing below hard-codes a type->filterability
+// mapping: every expectation is computed from `filterableCustomFields`, so a
+// field type made filterable (or unfilterable) on only one surface, or
+// exposed under a different label there, fails this test.
+const CUSTOM_FIELD_DEFS: CustomFieldDef[] = [
+  { id: 'cf-sponsor', name: 'Sponsor Support', slug: 'sponsor-support', type: 'binary', options: null, displayOrder: 0 },
+  { id: 'cf-region', name: 'Region', slug: 'region', type: 'dropdown', options: ['North', 'South'], displayOrder: 1 },
+  { id: 'cf-notes', name: 'Notes', slug: 'notes', type: 'text', options: null, displayOrder: 2 },
+]
+
+const FILTERABLE_CF_NAMES = filterableCustomFields(CUSTOM_FIELD_DEFS).map(({ def }) => def.name)
+const UNFILTERABLE_CF_NAMES = CUSTOM_FIELD_DEFS
+  .filter(def => customFieldFilterKind(def.type) === null)
+  .map(def => def.name)
+
+describe('custom field filter parity', () => {
+  it('desktop exposes exactly the filterable custom fields, by name', async () => {
+    cfDefsState.defs = CUSTOM_FIELD_DEFS
+    await renderDesktop({ isAdmin: false, states: ['RI'] })
+    for (const name of FILTERABLE_CF_NAMES) {
+      expect(screen.getByRole('button', { name: new RegExp(name, 'i') })).toBeInTheDocument()
+    }
+    for (const name of UNFILTERABLE_CF_NAMES) {
+      expect(screen.queryByText(name)).not.toBeInTheDocument()
+    }
+  })
+
+  it('mobile exposes exactly the filterable custom fields, by name', () => {
+    renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: CUSTOM_FIELD_DEFS })
+    for (const name of FILTERABLE_CF_NAMES) {
+      expect(screen.getByRole('button', { name: new RegExp(name, 'i') })).toBeInTheDocument()
+    }
+    for (const name of UNFILTERABLE_CF_NAMES) {
+      expect(screen.queryByText(name)).not.toBeInTheDocument()
+    }
+  })
+
+  it('renders no custom field affordance on either surface when there are zero custom fields', async () => {
+    cfDefsState.defs = []
+    await renderDesktop({ isAdmin: false, states: ['RI'] })
+    for (const name of [...FILTERABLE_CF_NAMES, ...UNFILTERABLE_CF_NAMES]) {
+      expect(screen.queryByText(new RegExp(name, 'i'))).not.toBeInTheDocument()
+    }
+    cleanup()
+
+    const { container } = renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: [] })
+    for (const name of [...FILTERABLE_CF_NAMES, ...UNFILTERABLE_CF_NAMES]) {
+      expect(container.textContent ?? '').not.toMatch(new RegExp(name, 'i'))
+    }
+  })
+
+  // Ties the two surfaces together directly: whatever `filterableCustomFields`
+  // says is filterable must show up on BOTH surfaces under the SAME name. A
+  // field added to only one surface's render (the exact shape of the bug
+  // this task closes) makes one of these two sets diverge from the shared
+  // expected list and fails here — verified by temporarily commenting out
+  // the custom-field block in either surface while developing this test.
+  it('desktop and mobile agree on the set of filterable custom-field labels', async () => {
+    cfDefsState.defs = CUSTOM_FIELD_DEFS
+    await renderDesktop({ isAdmin: false, states: ['RI'] })
+    const desktopNames = FILTERABLE_CF_NAMES.filter(
+      name => screen.queryByRole('button', { name: new RegExp(name, 'i') }) !== null,
+    )
+    cleanup()
+
+    renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: CUSTOM_FIELD_DEFS })
+    const mobileNames = FILTERABLE_CF_NAMES.filter(
+      name => screen.queryByRole('button', { name: new RegExp(name, 'i') }) !== null,
+    )
+
+    expect(desktopNames).toEqual(FILTERABLE_CF_NAMES)
+    expect(mobileNames).toEqual(FILTERABLE_CF_NAMES)
+    expect(mobileNames).toEqual(desktopNames)
+  })
 })

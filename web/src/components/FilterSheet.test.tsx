@@ -3,6 +3,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { FilterSheet } from './FilterSheet'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
+import type { CustomFieldDef } from '../pages/BillList/types'
 
 function makeDefaults(): ComponentProps<typeof FilterSheet> {
   return {
@@ -29,6 +30,9 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     sessionOptions: [{ value: '2026', label: '2026 Session' }],
     totalSessionCount: 1,
     stateOptions: [{ value: 'UT', label: 'UT' }],
+    customFieldDefs: [],
+    cfFilters: {},
+    onCfFilterChange: vi.fn(),
     onStatusChange: vi.fn(),
     onPriorityChange: vi.fn(),
     onPositionChange: vi.fn(),
@@ -41,6 +45,16 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     onNewMatchesChange: vi.fn(),
     onClearAll: vi.fn(),
   }
+}
+
+const BINARY_CF: CustomFieldDef = {
+  id: 'cf-sponsor', name: 'Sponsor Support', slug: 'sponsor-support', type: 'binary', options: null, displayOrder: 0,
+}
+const DROPDOWN_CF: CustomFieldDef = {
+  id: 'cf-region', name: 'Region', slug: 'region', type: 'dropdown', options: ['North', 'South'], displayOrder: 1,
+}
+const TEXT_CF: CustomFieldDef = {
+  id: 'cf-notes', name: 'Notes', slug: 'notes', type: 'text', options: null, displayOrder: 2,
 }
 
 function renderSheet(overrides: Partial<ComponentProps<typeof FilterSheet>> = {}) {
@@ -309,5 +323,74 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
     fireEvent.click(screen.getByRole('button', { name: /tags/i }))
     fireEvent.click(screen.getByText('Education'))
     expect(onTagChange).toHaveBeenCalledWith(['Education'])
+  })
+})
+
+// Custom fields are tenant-defined and dynamic — see lib/customFieldFilters.ts
+// for the shared type-to-control mapping both this sheet and the desktop
+// toolbar use. Only 'binary' (a direct toggle) and 'dropdown' (a drill-down
+// options list) are filterable at all; 'text' and 'date' are not.
+describe('FilterSheet — custom field filters', () => {
+  it('renders a binary custom field as a direct, togglable control on the dimension list', () => {
+    const onCfFilterChange = vi.fn()
+    renderSheet({ customFieldDefs: [BINARY_CF], cfFilters: {}, onCfFilterChange })
+    const toggle = screen.getByRole('button', { name: /sponsor support/i })
+    expect(toggle).toBeInTheDocument()
+    // Direct control, not a drill-down row — no chevron.
+    expect(toggle.querySelector('svg')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+    expect(onCfFilterChange).toHaveBeenCalledWith('cf-sponsor', ['1'])
+  })
+
+  it('reflects an already-active binary custom field and clears it on a second click', () => {
+    const onCfFilterChange = vi.fn()
+    renderSheet({ customFieldDefs: [BINARY_CF], cfFilters: { 'cf-sponsor': ['1'] }, onCfFilterChange })
+    const toggle = screen.getByRole('button', { name: /sponsor support/i })
+    fireEvent.click(toggle)
+    expect(onCfFilterChange).toHaveBeenCalledWith('cf-sponsor', [])
+  })
+
+  it('renders a dropdown custom field as a drill-down row whose level 2 lists its options', () => {
+    const onCfFilterChange = vi.fn()
+    renderSheet({ customFieldDefs: [DROPDOWN_CF], cfFilters: {}, onCfFilterChange })
+    const row = screen.getByRole('button', { name: /^region$/i })
+    expect(row).toBeInTheDocument()
+    // Options aren't rendered until the row is drilled into.
+    expect(screen.queryByText('North')).not.toBeInTheDocument()
+
+    fireEvent.click(row)
+    expect(screen.getByText('North')).toBeInTheDocument()
+    expect(screen.getByText('South')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('North'))
+    expect(onCfFilterChange).toHaveBeenCalledWith('cf-region', ['North'])
+  })
+
+  it('shows the count of currently-selected options on a dropdown custom field row', () => {
+    renderSheet({ customFieldDefs: [DROPDOWN_CF], cfFilters: { 'cf-region': ['North', 'South'] } })
+    const row = screen.getByRole('button', { name: /region/i })
+    expect(within(row).getByText('2')).toBeInTheDocument()
+  })
+
+  it('does not render a custom field of a non-filterable type (text/date)', () => {
+    renderSheet({ customFieldDefs: [TEXT_CF] })
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument()
+  })
+
+  it('renders no custom field affordance at all when there are zero filterable custom fields', () => {
+    const { container } = renderSheet({ customFieldDefs: [] })
+    // Nothing beyond the fixed set of section labels/dimension rows already
+    // covered by other tests — no stray heading or empty section for custom
+    // fields.
+    expect(container.textContent).not.toMatch(/sponsor support/i)
+    expect(container.textContent).not.toMatch(/region/i)
+  })
+
+  it('does not render a custom field affordance when only non-filterable fields are defined', () => {
+    renderSheet({ customFieldDefs: [TEXT_CF] })
+    // Same check as the "zero fields" case — a text-only tenant should look
+    // identical to a tenant with no custom fields at all.
+    expect(screen.queryByText('Notes')).not.toBeInTheDocument()
   })
 })
