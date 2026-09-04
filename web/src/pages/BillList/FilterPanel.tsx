@@ -83,7 +83,10 @@ export function SortHeader({
 
 export function CountBadge({ count }: { count: number }) {
   return (
-    <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
+    // flexShrink: 0 keeps the badge fully visible when it shares a flex row
+    // with a label that truncates (SubjectFilterDropdown) — the label is what
+    // gives up space, never the count.
+    <span style={{ ...COUNT_BADGE, marginLeft: 'auto', flexShrink: 0 }}>
       {count.toLocaleString()}
     </span>
   )
@@ -284,9 +287,22 @@ export type SubjectGroup = {
 // Fixed, explicit row heights (rather than dynamic measurement) so the
 // virtualizer's estimateSize always matches real layout exactly — no gaps or
 // overlaps, and no dependency on ResizeObserver/measureElement in tests.
-const SUBJECT_OPTION_ROW_HEIGHT = 32
+//
+// A row's rendered height is set from this SAME constant below
+// (`height: SUBJECT_OPTION_ROW_HEIGHT` on the option <label>) rather than a
+// second hard-coded number, so the virtualizer's layout math and the actual
+// DOM can never drift apart — that drift (a row taller than the height the
+// virtualizer allotted it, because a long label wrapped to two lines) was the
+// original bug. Labels are now forced to a single line with an ellipsis (see
+// the option row below), so this height only ever needs to fit one line —
+// smaller than before now that wrapping is no longer a possibility.
+const SUBJECT_OPTION_ROW_HEIGHT = 28
 const SUBJECT_HEADER_ROW_HEIGHT = 24
 const SUBJECT_PANEL_LIST_HEIGHT = 280
+
+const SUBJECT_PANEL_MIN_WIDTH = 220
+const SUBJECT_PANEL_MAX_WIDTH = 480
+const SUBJECT_PANEL_DEFAULT_WIDTH = SUBJECT_PANEL_MIN_WIDTH
 
 /**
  * Subject filter — state-qualified because subject vocabularies aren't
@@ -320,6 +336,14 @@ export function SubjectFilterDropdown({
   const ref = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  // Panel width is user-adjustable (drag the handle on the right edge) so
+  // long subject names can be read in full instead of relying on truncation.
+  // Lives on the always-mounted wrapper component (not the conditionally
+  // rendered menu below), so a drag survives the panel closing and reopening
+  // for as long as SubjectFilterDropdown itself stays mounted.
+  const [panelWidth, setPanelWidth] = useState(SUBJECT_PANEL_DEFAULT_WIDTH)
+  const resizeStateRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
   useEffect(() => {
     if (!open) return
     function handler(e: MouseEvent) {
@@ -328,6 +352,24 @@ export function SubjectFilterDropdown({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  function handleResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    resizeStateRef.current = { startX: e.clientX, startWidth: panelWidth }
+    function onMove(ev: MouseEvent) {
+      const state = resizeStateRef.current
+      if (!state) return
+      const next = state.startWidth + (ev.clientX - state.startX)
+      setPanelWidth(Math.min(SUBJECT_PANEL_MAX_WIDTH, Math.max(SUBJECT_PANEL_MIN_WIDTH, next)))
+    }
+    function onUp() {
+      resizeStateRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   const groups = useMemo(
     () => subjectGroups.map(g => ({ key: g.state, heading: g.state, options: g.options })),
@@ -380,10 +422,24 @@ export function SubjectFilterDropdown({
             style={{
               position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
               background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
-              minWidth: 220, maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
+              width: panelWidth, minWidth: SUBJECT_PANEL_MIN_WIDTH, maxWidth: SUBJECT_PANEL_MAX_WIDTH,
+              maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
               display: 'flex', flexDirection: 'column',
             }}
           >
+            {/* Drag handle: widens the panel horizontally so long subject
+                names can be read in full instead of relying on truncation.
+                Exploratory per the operator's request — kept desktop-only
+                since it's a mouse-drag affordance; the mobile sheet is
+                full-width already and has no equivalent edge to grab. */}
+            <div
+              data-testid="subject-panel-resize-handle"
+              onMouseDown={handleResizeMouseDown}
+              style={{
+                position: 'absolute', top: 0, right: -3, width: 6, height: '100%',
+                cursor: 'ew-resize', zIndex: 301,
+              }}
+            />
             <div style={{ padding: '8px 10px', borderBottom: `1px solid ${color.borderDefault}`, flex: '0 0 auto' }}>
               <input
                 type="text"
@@ -425,9 +481,24 @@ export function SubjectFilterDropdown({
                               type="checkbox"
                               checked={selectedSubjects.includes(row.value)}
                               onChange={() => toggle(row.value)}
-                              style={{ margin: 0, accentColor: color.accentBlue }}
+                              style={{ margin: 0, accentColor: color.accentBlue, flexShrink: 0 }}
                             />
-                            {row.label}
+                            {/* One line, truncated with an ellipsis rather than wrapping — a
+                                wrapped label would need more height than the virtualizer's
+                                fixed SUBJECT_OPTION_ROW_HEIGHT allots this row, overflowing
+                                into the row below. `title` surfaces the full name via the
+                                browser's own hover tooltip; minWidth: 0 is required for a
+                                flex child to shrink below its content's natural width, or
+                                the ellipsis never kicks in. */}
+                            <span
+                              title={row.label}
+                              style={{
+                                flex: '1 1 auto', minWidth: 0, overflow: 'hidden',
+                                whiteSpace: 'nowrap', textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {row.label}
+                            </span>
                             <CountBadge count={row.count ?? 0} />
                           </label>
                         )}

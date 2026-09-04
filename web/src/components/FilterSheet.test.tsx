@@ -317,6 +317,51 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
     expect(screen.queryByText('Education')).not.toBeInTheDocument()
   })
 
+  it('truncates a long subject label to a single line instead of wrapping', () => {
+    const longLabel = 'Governor’s Office of Economic Opportunity and Interstate Commerce Regulation'
+    renderSheet({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 3 }] }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: /subject/i }))
+    const labelEl = screen.getByText(longLabel)
+    const style = getComputedStyle(labelEl)
+    expect(style.whiteSpace).toBe('nowrap')
+    expect(style.overflow).toBe('hidden')
+    expect(style.textOverflow).toBe('ellipsis')
+  })
+
+  it('puts the full, untruncated subject label in the title attribute for the native browser tooltip', () => {
+    const longLabel = 'Department of Health and Human Services, Behavioral Health Division'
+    renderSheet({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 1 }] }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: /subject/i }))
+    const labelEl = screen.getByText(longLabel)
+    expect(labelEl).toHaveAttribute('title', longLabel)
+  })
+
+  it('still renders the count badge alongside a truncated long subject label', () => {
+    const longLabel = 'Government Operations (State Issues) and Administrative Rulemaking Oversight'
+    renderSheet({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 42 }] }],
+    })
+    fireEvent.click(screen.getByRole('button', { name: /subject/i }))
+    expect(screen.getByText(longLabel)).toBeInTheDocument()
+    expect(screen.getByText('42')).toBeInTheDocument()
+  })
+
+  it('truncates a long tag label to a single line and exposes it via title', () => {
+    const longLabel = 'A Very Long Tag Name That Would Otherwise Wrap Onto Multiple Lines'
+    renderSheet({ tagOptions: [longLabel] })
+    fireEvent.click(screen.getByRole('button', { name: /tags/i }))
+    const labelEl = screen.getByText(longLabel)
+    const style = getComputedStyle(labelEl)
+    expect(style.whiteSpace).toBe('nowrap')
+    expect(style.overflow).toBe('hidden')
+    expect(style.textOverflow).toBe('ellipsis')
+    expect(labelEl).toHaveAttribute('title', longLabel)
+  })
+
   it('propagates a Tags selection through the existing change callback', () => {
     const onTagChange = vi.fn()
     renderSheet({ tagOptions: ['Education', 'Health Care'], onTagChange })

@@ -253,6 +253,30 @@ describe('FilterDropdown — keyboard navigation (R4 follow-up)', () => {
   })
 })
 
+describe('SubjectFilterDropdown — horizontal resize', () => {
+  it('widens the panel in response to a drag on the resize handle, and keeps the new width while the panel stays open', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = panel.getBoundingClientRect().width || parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    fireEvent.mouseDown(handle, { clientX: 100 })
+    fireEvent.mouseMove(document, { clientX: 180 })
+    fireEvent.mouseUp(document)
+
+    const endWidth = parseInt(getComputedStyle(panel).width, 10)
+    expect(endWidth).toBeGreaterThan(startWidth)
+
+    // Width persists across further interaction while the panel stays open
+    // (e.g. typing into search) rather than snapping back.
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'coun' } })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(endWidth)
+  })
+})
+
 describe('SubjectFilterDropdown', () => {
   it('hides the subject section entirely when no state publishes subjects', () => {
     renderPanel({ subjectGroups: [] })
@@ -382,6 +406,39 @@ describe('SubjectFilterDropdown — virtualization and search', () => {
 
     fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: '' } })
     expect(isChecked('Counties')).toBe(true)
+  })
+
+  it('truncates a long subject label to a single line instead of wrapping', () => {
+    const longLabel = 'Governor’s Office of Economic Opportunity and Interstate Commerce Regulation'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 3 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const labelEl = screen.getByText(longLabel)
+    const style = getComputedStyle(labelEl)
+    expect(style.whiteSpace).toBe('nowrap')
+    expect(style.overflow).toBe('hidden')
+    expect(style.textOverflow).toBe('ellipsis')
+  })
+
+  it('puts the full, untruncated subject label in the title attribute for the native browser tooltip', () => {
+    const longLabel = 'Department of Health and Human Services, Behavioral Health Division'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 1 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const labelEl = screen.getByText(longLabel)
+    expect(labelEl).toHaveAttribute('title', longLabel)
+  })
+
+  it('still renders the count badge alongside a truncated long label', () => {
+    const longLabel = 'Government Operations (State Issues) and Administrative Rulemaking Oversight'
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Long', label: longLabel, count: 42 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText(longLabel)).toBeInTheDocument()
+    expect(screen.getByText('42')).toBeInTheDocument()
   })
 
   it('shows state headings only for groups with surviving matches after search; hides them when only one group survives', () => {
