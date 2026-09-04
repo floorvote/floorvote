@@ -14,8 +14,13 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     tags: [],
     subjects: [],
     sessions: [],
+    states: [],
     minRelevance: 0,
     myBills: false,
+    isAdmin: false,
+    newMatches: false,
+    newMatchesCount: 0,
+    uniqueStates: ['UT'],
     statusOptions: [{ value: 'active', label: 'Active' }, { value: 'dead', label: 'Dead' }],
     priorityOptions: [{ value: 'high', label: 'High' }],
     positionOptions: [{ value: 'support', label: 'Support' }],
@@ -23,14 +28,17 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
     sessionOptions: [{ value: '2026', label: '2026 Session' }],
     totalSessionCount: 1,
+    stateOptions: [{ value: 'UT', label: 'UT' }],
     onStatusChange: vi.fn(),
     onPriorityChange: vi.fn(),
     onPositionChange: vi.fn(),
     onTagChange: vi.fn(),
     onSubjectChange: vi.fn(),
     onSessionChange: vi.fn(),
+    onStateChange: vi.fn(),
     onMinRelevanceChange: vi.fn(),
     onMyBillsChange: vi.fn(),
+    onNewMatchesChange: vi.fn(),
     onClearAll: vi.fn(),
   }
 }
@@ -83,7 +91,7 @@ describe('FilterSheet — dimension list (level 1)', () => {
 
   it('shows a dimension row for each rendered dimension', () => {
     renderSheet()
-    for (const name of [/status/i, /priority/i, /position/i, /session/i, /topics/i, /subject/i]) {
+    for (const name of [/status/i, /priority/i, /position/i, /session/i, /tags/i, /subject/i]) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
     }
   })
@@ -94,7 +102,7 @@ describe('FilterSheet — dimension list (level 1)', () => {
       subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
     })
     // The row itself is present as a button...
-    expect(screen.getByRole('button', { name: /topics/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /tags/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /subject/i })).toBeInTheDocument()
     // ...but its options are not rendered inline on the dimension list — that
     // would be the old, pre-drill-down behavior this task replaces.
@@ -102,7 +110,7 @@ describe('FilterSheet — dimension list (level 1)', () => {
     expect(screen.queryByText('Counties')).not.toBeInTheDocument()
 
     rerender(<FilterSheet {...makeDefaults()} tagOptions={[]} subjectGroups={[]} />)
-    expect(screen.queryByRole('button', { name: /topics/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /tags/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /subject/i })).not.toBeInTheDocument()
   })
 
@@ -114,11 +122,32 @@ describe('FilterSheet — dimension list (level 1)', () => {
     expect(within(priorityRow).queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('keeps My Bills and Min. Relevance as direct controls on the dimension list, not drill-down rows', () => {
+  it('keeps My bills and Min. Relevance as direct controls on the dimension list, not drill-down rows', () => {
     renderSheet()
-    expect(screen.getByText('My voted bills')).toBeInTheDocument()
+    // The "My bills" toggle chip has no drill-down chevron and doesn't
+    // appear a second time as a DimensionRow.
+    const myBillsButtons = screen.getAllByRole('button', { name: 'My bills' })
+    expect(myBillsButtons).toHaveLength(1)
+    expect(myBillsButtons[0].querySelector('svg')).not.toBeInTheDocument()
     expect(screen.getByText('Min. Relevance')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /my bills/i })).not.toBeInTheDocument()
+  })
+
+  it('shows New matches as a direct toggle (with a count), admin-only, not a drill-down row', () => {
+    const { rerender } = renderSheet({ isAdmin: false })
+    expect(screen.queryByText('New matches')).not.toBeInTheDocument()
+
+    rerender(<FilterSheet {...makeDefaults()} isAdmin newMatchesCount={7} />)
+    const newMatchesButton = screen.getByRole('button', { name: /new matches/i })
+    expect(within(newMatchesButton).getByText('7')).toBeInTheDocument()
+    expect(newMatchesButton.querySelector('svg')).not.toBeInTheDocument()
+  })
+
+  it('shows State only when the tenant has known states, using the same values as its options', () => {
+    const { rerender } = renderSheet({ uniqueStates: [] })
+    expect(screen.queryByRole('button', { name: /^state/i })).not.toBeInTheDocument()
+
+    rerender(<FilterSheet {...makeDefaults()} uniqueStates={['UT', 'NJ']} stateOptions={[{ value: 'UT', label: 'UT' }, { value: 'NJ', label: 'NJ' }]} />)
+    expect(screen.getByRole('button', { name: /^state/i })).toBeInTheDocument()
   })
 })
 
@@ -244,7 +273,7 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
 
   it('mounts only a small subset of option nodes for a large Tags dimension', () => {
     renderSheet({ tagOptions: makeTagOptions(2000) })
-    fireEvent.click(screen.getByRole('button', { name: /topics/i }))
+    fireEvent.click(screen.getByRole('button', { name: /tags/i }))
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes.length).toBeGreaterThan(0)
     expect(checkboxes.length).toBeLessThan(100)
@@ -268,8 +297,8 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
 
   it('narrows Tags options by search, case-insensitively', () => {
     renderSheet({ tagOptions: ['Education', 'Health Care', 'Transportation'] })
-    fireEvent.click(screen.getByRole('button', { name: /topics/i }))
-    fireEvent.change(screen.getByPlaceholderText(/search topics/i), { target: { value: 'health' } })
+    fireEvent.click(screen.getByRole('button', { name: /tags/i }))
+    fireEvent.change(screen.getByPlaceholderText(/search tags/i), { target: { value: 'health' } })
     expect(screen.getByText('Health Care')).toBeInTheDocument()
     expect(screen.queryByText('Education')).not.toBeInTheDocument()
   })
@@ -277,7 +306,7 @@ describe('FilterSheet — long dimensions (virtualized + search)', () => {
   it('propagates a Tags selection through the existing change callback', () => {
     const onTagChange = vi.fn()
     renderSheet({ tagOptions: ['Education', 'Health Care'], onTagChange })
-    fireEvent.click(screen.getByRole('button', { name: /topics/i }))
+    fireEvent.click(screen.getByRole('button', { name: /tags/i }))
     fireEvent.click(screen.getByText('Education'))
     expect(onTagChange).toHaveBeenCalledWith(['Education'])
   })

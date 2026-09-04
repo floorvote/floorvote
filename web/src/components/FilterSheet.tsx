@@ -3,6 +3,7 @@ import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { COUNT_BADGE } from '../lib/chipStyles'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
+import { filterDimensionLabel, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -13,8 +14,17 @@ interface FilterSheetProps {
   tags: string[]
   subjects: string[]
   sessions: string[]
+  states: string[]
   minRelevance: number
   myBills: boolean
+  /** Admin-gates the New matches toggle — same check as desktop's `isAdmin`. */
+  isAdmin: boolean
+  newMatches: boolean
+  newMatchesCount?: number
+  /** Distinct states the tenant's bills span — same value desktop passes as
+   *  `f.uniqueStates`, used only to decide whether the State dimension
+   *  appears (see lib/filterDimensions.ts). */
+  uniqueStates: string[]
   statusOptions: { value: string; label: string }[]
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
@@ -22,14 +32,17 @@ interface FilterSheetProps {
   subjectGroups: SubjectGroup[]
   sessionOptions: { value: string; label: string }[]
   totalSessionCount?: number
+  stateOptions: { value: string; label: string }[]
   onStatusChange: (v: string[]) => void
   onPriorityChange: (v: string[]) => void
   onPositionChange: (v: string[]) => void
   onTagChange: (v: string[]) => void
   onSubjectChange: (v: string[]) => void
   onSessionChange: (v: string[]) => void
+  onStateChange: (v: string[]) => void
   onMinRelevanceChange: (v: number) => void
   onMyBillsChange: (v: boolean) => void
+  onNewMatchesChange: (v: boolean) => void
   onClearAll: () => void
   counts?: {
     status: Record<string, number>
@@ -37,14 +50,18 @@ interface FilterSheetProps {
     position: Record<string, number>
     session: Record<string, number>
     tags: Record<string, number>
+    state?: Record<string, number>
   }
 }
 
-// The six drill-down dimensions. "My Bills" (a single toggle) and "Min.
-// Relevance" (a slider) aren't included here — neither is a list of options
-// to choose among, so both stay as direct controls on the dimension list
-// (level 1) rather than becoming a drill-down target of their own.
-type DimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects'
+// The drill-down (options-list) dimensions. "My bills" and "New matches"
+// (single toggles) and "Min. Relevance" (a slider) aren't included here —
+// none is a list of options to choose among, so all three stay as direct
+// controls on the dimension list (level 1) rather than becoming a drill-down
+// target of their own. See lib/filterDimensions.ts for the full registry
+// (including the two toggles) that both this component and the desktop
+// toolbar read their labels and visibility from.
+type DimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
 
 function SheetChip({ label, active, onClick, count }: { label: string; active: boolean; onClick: () => void; count?: number }) {
   return (
@@ -170,10 +187,11 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 
 export function FilterSheet({
   isOpen, onClose,
-  statuses, priorities, positions, tags, subjects, sessions, minRelevance, myBills,
-  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount,
-  onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange,
-  onMinRelevanceChange, onMyBillsChange,
+  statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
+  isAdmin, newMatches, newMatchesCount, uniqueStates,
+  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
+  onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
+  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange,
   onClearAll, counts,
 }: FilterSheetProps) {
   useEffect(() => {
@@ -210,15 +228,27 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0)
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin }
+  const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
+  const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
+
+  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
   }
 
+  // Every drill-down dimension's heading pulls its text from the shared
+  // registry (lib/filterDimensions.ts) — this component may not hard-code
+  // any of these labels itself.
   const DIMENSION_LABELS: Record<DimensionKey, string> = {
-    status: 'Status', priority: 'Priority', position: 'Position',
-    session: 'Session', tags: 'Topics', subjects: 'Subject',
+    state: filterDimensionLabel('state'),
+    status: filterDimensionLabel('status'),
+    priority: filterDimensionLabel('priority'),
+    position: filterDimensionLabel('position'),
+    session: filterDimensionLabel('session'),
+    tags: filterDimensionLabel('tags'),
+    subjects: filterDimensionLabel('subjects'),
   }
 
   const sessionVisible = (totalSessionCount ?? sessionOptions.length) > 0
@@ -287,13 +317,29 @@ export function FilterSheet({
           {dimension === null && (
             <>
               <div style={{ marginBottom: 20 }}>
-                <SectionLabel title="My Bills" />
+                <SectionLabel title={filterDimensionLabel('myBills')} />
                 <SheetChip
-                  label="My voted bills"
+                  label={filterDimensionLabel('myBills')}
                   active={myBills}
                   onClick={() => onMyBillsChange(!myBills)}
                 />
               </div>
+
+              {/* Admin-only, same gate as desktop's "New matches" toggle
+                  (see lib/filterDimensions.ts) — a toggle, not a list of
+                  options, so it stays a direct control here too rather than
+                  becoming a drill-down target. */}
+              {newMatchesVisible && (
+                <div style={{ marginBottom: 20 }}>
+                  <SectionLabel title={filterDimensionLabel('newMatches')} />
+                  <SheetChip
+                    label={filterDimensionLabel('newMatches')}
+                    active={newMatches}
+                    count={newMatchesCount ?? 0}
+                    onClick={() => onNewMatchesChange(!newMatches)}
+                  />
+                </div>
+              )}
 
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -337,26 +383,43 @@ export function FilterSheet({
 
               <div style={{ marginBottom: 20 }}>
                 <SectionLabel title="Filters" />
+                {stateVisible && (
+                  <DimensionRow label={DIMENSION_LABELS.state} selectedCount={states.length} onClick={() => setDimension('state')} buttonRef={rowRef('state')} />
+                )}
                 {statusOptions.length > 0 && (
-                  <DimensionRow label="Status" selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
+                  <DimensionRow label={DIMENSION_LABELS.status} selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
                 )}
                 {priorityOptions.length > 0 && (
-                  <DimensionRow label="Priority" selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
+                  <DimensionRow label={DIMENSION_LABELS.priority} selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
                 )}
                 {positionOptions.length > 0 && (
-                  <DimensionRow label="Position" selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
+                  <DimensionRow label={DIMENSION_LABELS.position} selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
                 )}
                 {sessionVisible && (
-                  <DimensionRow label="Session" selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
+                  <DimensionRow label={DIMENSION_LABELS.session} selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
                 )}
                 {tagOptions.length > 0 && (
-                  <DimensionRow label="Topics" selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
+                  <DimensionRow label={DIMENSION_LABELS.tags} selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
                 )}
                 {subjectGroups.length > 0 && (
-                  <DimensionRow label="Subject" selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
+                  <DimensionRow label={DIMENSION_LABELS.subjects} selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
                 )}
               </div>
             </>
+          )}
+
+          {dimension === 'state' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {stateOptions.map(opt => (
+                <SheetChip
+                  key={opt.value}
+                  label={opt.label}
+                  active={states.includes(opt.value)}
+                  onClick={() => toggleItem(states, opt.value, onStateChange)}
+                  count={counts?.state?.[opt.value] ?? 0}
+                />
+              ))}
+            </div>
           )}
 
           {dimension === 'status' && (
@@ -417,8 +480,8 @@ export function FilterSheet({
 
           {dimension === 'tags' && (
             <FilterSheetVirtualList
-              ariaLabel="Topics"
-              searchPlaceholder="Search topics…"
+              ariaLabel={DIMENSION_LABELS.tags}
+              searchPlaceholder="Search tags…"
               groups={[{ key: 'tags', options: tagOptions.map(tag => ({ value: tag, label: tag, count: counts?.tags[tag] ?? 0 })) }]}
               selected={tags}
               onToggle={(value) => toggleItem(tags, value, onTagChange)}
@@ -431,7 +494,7 @@ export function FilterSheet({
               present — handled inside FilterSheetVirtualList. */}
           {dimension === 'subjects' && (
             <FilterSheetVirtualList
-              ariaLabel="Subject"
+              ariaLabel={DIMENSION_LABELS.subjects}
               searchPlaceholder="Search subjects…"
               groups={subjectGroups.map(group => ({ key: group.state, heading: group.state, options: group.options }))}
               selected={subjects}

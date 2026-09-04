@@ -4,6 +4,7 @@ import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens
 import { COUNT_BADGE } from '../../lib/chipStyles'
 import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../components/stickyGroupedVirtualList'
 import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
+import { filterDimensionLabel } from '../../lib/filterDimensions'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -351,7 +352,8 @@ export function SubjectFilterDropdown({
   }
 
   const hasSelection = selectedSubjects.length > 0
-  const buttonLabel = hasSelection ? `Subject (${selectedSubjects.length})` : 'Subject'
+  const subjectLabel = filterDimensionLabel('subjects')
+  const buttonLabel = hasSelection ? `${subjectLabel} (${selectedSubjects.length})` : subjectLabel
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -374,7 +376,7 @@ export function SubjectFilterDropdown({
         {open && (
           <div
             role="group"
-            aria-label="Subject"
+            aria-label={subjectLabel}
             style={{
               position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
               background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,

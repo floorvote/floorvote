@@ -26,6 +26,7 @@ import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
 import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
+import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -158,6 +159,11 @@ export function BillList() {
     sortCol, sortDir, setSortCol, setSortDir,
   })
   const searchWarn = searchWarnings(f.search)
+
+  // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
+  // surfaces gate State (multi-state) and New matches (admin-only) through
+  // this same context so they can't drift on which dimensions appear.
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -570,10 +576,10 @@ export function BillList() {
         </button>
         {/* Desktop filter dropdowns — hidden on mobile via CSS */}
         <div className="desktop-filter-dropdowns">
-          {f.uniqueStates.length > 0 && (
+          {isFilterDimensionVisible('state', filterDimensionCtx) && (
             <HoverTooltip text="Filter by state">
               <FilterDropdown
-                placeholder="State"
+                placeholder={filterDimensionLabel('state')}
                 options={f.uniqueStates.map(s => ({ value: s }))}
                 selected={f.filterStates}
                 onChange={f.setFilterStates}
@@ -597,11 +603,11 @@ export function BillList() {
                 whiteSpace: 'nowrap',
               }}
             >
-              My Bills
+              {filterDimensionLabel('myBills')}
               <span style={{ ...COUNT_BADGE, marginLeft: 4 }}>{filterCounts.myBillsCount.toLocaleString()}</span>
             </button>
           </HoverTooltip>
-          {isAdmin && (
+          {isFilterDimensionVisible('newMatches', filterDimensionCtx) && (
             <HoverTooltip text="Newly keyword-matched bills awaiting a priority decision">
               <button
                 onClick={() => f.setNewMatches(v => !v)}
@@ -617,14 +623,14 @@ export function BillList() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                New matches
+                {filterDimensionLabel('newMatches')}
                 <span style={{ ...COUNT_BADGE, marginLeft: 4 }}>{filterCounts.newMatchesCount.toLocaleString()}</span>
               </button>
             </HoverTooltip>
           )}
           <HoverTooltip text="Filter by current legislative status">
             <FilterDropdown
-              placeholder="Status"
+              placeholder={filterDimensionLabel('status')}
               options={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
               selected={f.filterStatuses}
               onChange={f.setFilterStatuses}
@@ -635,7 +641,7 @@ export function BillList() {
           {f.yearFacetKeys.length > 0 && (
             <HoverTooltip text="Filter by legislative session year">
               <FilterDropdown
-                placeholder="Session year"
+                placeholder={filterDimensionLabel('session')}
                 options={f.yearFacetKeys.map(y => ({ value: y }))}
                 selected={f.filterYears.map(String)}
                 onChange={v => f.setFilterYears(v.map(Number).filter(n => !isNaN(n)))}
@@ -685,7 +691,7 @@ export function BillList() {
           </HoverTooltip>
           <HoverTooltip text={`Filter by your ${orgNoun}'s official position`}>
             <FilterDropdown
-              placeholder="Position"
+              placeholder={filterDimensionLabel('position')}
               options={f.positionOptions}
               selected={f.filterPositions}
               onChange={f.setFilterPositions}
@@ -696,7 +702,7 @@ export function BillList() {
           </HoverTooltip>
           <HoverTooltip text={`Filter by your ${orgNoun}'s priority level`}>
             <FilterDropdown
-              placeholder="Priority"
+              placeholder={filterDimensionLabel('priority')}
               options={[
                 { value: 'high', label: 'High Priority' },
                 { value: 'medium', label: 'Medium Priority' },
@@ -713,7 +719,7 @@ export function BillList() {
           {f.allTags.length > 0 && (
             <HoverTooltip text="Filter by your team's AI-generated tags">
               <FilterDropdown
-                placeholder="Tag"
+                placeholder={filterDimensionLabel('tags')}
                 options={f.allTags.map(t => ({ value: t }))}
                 selected={f.selectedTags}
                 onChange={f.handleTagsChange}
@@ -1001,6 +1007,11 @@ export function BillList() {
         sessions={f.filterYears.map(String)}
         minRelevance={f.filterMinRelevance}
         myBills={f.myBills}
+        states={f.filterStates}
+        isAdmin={isAdmin}
+        newMatches={f.newMatches}
+        newMatchesCount={filterCounts.newMatchesCount}
+        uniqueStates={f.uniqueStates}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
         priorityOptions={[
           { value: 'high', label: 'High' },
@@ -1012,14 +1023,17 @@ export function BillList() {
         subjectGroups={f.subjectGroups}
         sessionOptions={f.yearFacetKeys.map(y => ({ value: y, label: y }))}
         totalSessionCount={f.yearFacetKeys.length}
+        stateOptions={f.uniqueStates.map(s => ({ value: s, label: s }))}
         onStatusChange={f.setFilterStatuses}
         onPriorityChange={f.setFilterPriorities}
         onPositionChange={f.setFilterPositions}
         onTagChange={f.handleTagsChange}
         onSubjectChange={f.handleSubjectsChange}
         onSessionChange={v => f.setFilterYears(v.map(Number).filter(n => !isNaN(n)))}
+        onStateChange={f.setFilterStates}
         onMinRelevanceChange={f.setFilterMinRelevance}
         onMyBillsChange={f.setMyBills}
+        onNewMatchesChange={f.setNewMatches}
         counts={{ ...filterCounts, session: filterCounts.year }}
         onClearAll={() => {
           f.setFilterStatuses([])
@@ -1029,6 +1043,7 @@ export function BillList() {
           f.setFilterStates([])
           f.setFilterMinRelevance(0)
           f.setMyBills(false)
+          f.setNewMatches(false)
           f.handleSubjectsChange([])
           setSearchParams({})
         }}
