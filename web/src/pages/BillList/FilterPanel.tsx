@@ -1,7 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { COUNT_BADGE } from '../../lib/chipStyles'
+import { useStickyGroupedVirtualList, getRowWrapperStyle } from '../../components/stickyGroupedVirtualList'
+import { StickyGroupHeader } from '../../components/ui/StickyGroupHeader'
+import { filterDimensionLabel } from '../../lib/filterDimensions'
 import type { SortColumn, SortDir } from './types'
 
 // Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
@@ -270,6 +273,173 @@ export function FilterDropdown({
         </div>
       )}
     </div>
+  )
+}
+
+export type SubjectGroup = {
+  state: string
+  options: Array<{ value: string; label: string; count: number }>
+}
+
+// Fixed, explicit row heights (rather than dynamic measurement) so the
+// virtualizer's estimateSize always matches real layout exactly — no gaps or
+// overlaps, and no dependency on ResizeObserver/measureElement in tests.
+const SUBJECT_OPTION_ROW_HEIGHT = 32
+const SUBJECT_HEADER_ROW_HEIGHT = 24
+const SUBJECT_PANEL_LIST_HEIGHT = 280
+
+/**
+ * Subject filter — state-qualified because subject vocabularies aren't
+ * comparable across states (see useBillFilters' subjectGroups). Renders
+ * nothing when no state in view publishes subjects: absence here must read
+ * as "this state does not do that," never as an empty control. Group
+ * headings appear only with more than one state present; a single state
+ * gets a flat list since the heading would be noise.
+ *
+ * The option list is virtualized (@tanstack/react-virtual, same convention as
+ * BillList/index.tsx) because a state's subject vocabulary can run into the
+ * thousands of terms — opening the panel must stay instant regardless of
+ * option count. A persistent search field narrows options by label; state
+ * headings stay sticky while scrolling, following the same
+ * pinned-then-pushed-by-the-next-header pattern as DateDivider in the feed
+ * (there implemented with plain CSS `position: sticky` on in-flow siblings;
+ * here the rows are virtualized/absolutely-positioned, so the "push" is
+ * reproduced by hand — see stickyGroupedVirtualList.ts, shared with
+ * FilterSheetVirtualList's mobile equivalent of this same control).
+ */
+export function SubjectFilterDropdown({
+  subjectGroups,
+  selectedSubjects,
+  onSubjectChange,
+}: {
+  subjectGroups: SubjectGroup[]
+  selectedSubjects: string[]
+  onSubjectChange: (next: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const groups = useMemo(
+    () => subjectGroups.map(g => ({ key: g.state, heading: g.state, options: g.options })),
+    [subjectGroups],
+  )
+
+  const { search, setSearch, rows, virtualizer, activeStickyIndex, pushOffset, stuck } = useStickyGroupedVirtualList({
+    groups,
+    headerHeight: SUBJECT_HEADER_ROW_HEIGHT,
+    optionHeight: SUBJECT_OPTION_ROW_HEIGHT,
+    getScrollElement: () => scrollRef.current,
+  })
+
+  if (subjectGroups.length === 0) return null
+
+  function toggle(value: string) {
+    onSubjectChange(
+      selectedSubjects.includes(value)
+        ? selectedSubjects.filter(v => v !== value)
+        : [...selectedSubjects, value],
+    )
+  }
+
+  const hasSelection = selectedSubjects.length > 0
+  const subjectLabel = filterDimensionLabel('subjects')
+  const buttonLabel = hasSelection ? `${subjectLabel} (${selectedSubjects.length})` : subjectLabel
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{
+            fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+            background: hasSelection ? color.bgInfo : color.white,
+            color: hasSelection ? color.linkBlue : color.textSlate,
+            border: `1px solid ${hasSelection ? color.tagBorderBlue : color.borderDefault}`,
+            fontWeight: hasSelection ? fontWeight.medium : fontWeight.normal,
+          }}
+        >
+          {buttonLabel}
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+            <path d={open ? 'M1 5l4-4 4 4' : 'M1 1l4 4 4-4'} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        {open && (
+          <div
+            role="group"
+            aria-label={subjectLabel}
+            style={{
+              position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
+              background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
+              minWidth: 220, maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
+              display: 'flex', flexDirection: 'column',
+            }}
+          >
+            <div style={{ padding: '8px 10px', borderBottom: `1px solid ${color.borderDefault}`, flex: '0 0 auto' }}>
+              <input
+                type="text"
+                placeholder="Search subjects…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  width: '100%', boxSizing: 'border-box', fontSize: fontSize.sm, padding: '6px 10px',
+                  border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                }}
+              />
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+                No subjects match &ldquo;{search.trim()}&rdquo;.
+              </div>
+            ) : (
+              <div
+                ref={scrollRef}
+                style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative' }}
+              >
+                <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                  {virtualizer.getVirtualItems().map(virtualRow => {
+                    const row = rows[virtualRow.index]
+                    const sticky = activeStickyIndex === virtualRow.index
+                    return (
+                      <div key={virtualRow.key} data-index={virtualRow.index} style={getRowWrapperStyle(virtualRow.start, sticky, pushOffset)}>
+                        {row.type === 'header' ? (
+                          <StickyGroupHeader label={row.label} height={SUBJECT_HEADER_ROW_HEIGHT} stuck={sticky && stuck} pushOffset={pushOffset} />
+                        ) : (
+                          <label style={{
+                            height: SUBJECT_OPTION_ROW_HEIGHT, boxSizing: 'border-box',
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
+                            cursor: 'pointer', fontSize: fontSize.sm,
+                            color: selectedSubjects.includes(row.value) ? color.linkBlue : color.textSlate,
+                            background: selectedSubjects.includes(row.value) ? color.bgInfo : color.white,
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedSubjects.includes(row.value)}
+                              onChange={() => toggle(row.value)}
+                              style={{ margin: 0, accentColor: color.accentBlue }}
+                            />
+                            {row.label}
+                            <CountBadge count={row.count ?? 0} />
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
   )
 }
 

@@ -39,7 +39,7 @@ function makeList(tenantId: string) {
 describe('listCache helper (direct put/get)', () => {
   const baseParams = {
     statuses: [], priorities: [], positionValues: [], sessions: [], years: [],
-    states: [], tagFilters: [], q: undefined, minRelevance: undefined,
+    states: [], tagFilters: [], subjectFilters: [], q: undefined, minRelevance: undefined,
     cfParamMap: {}, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
   }
 

@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, isNotNull, inArray } from 'drizzle-orm'
 import * as schema from '../db/schema-legiscan'
@@ -337,29 +337,43 @@ adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   return c.json({ ok: true, tenantId, queued, total: rows.length })
 })
 
-// One-time catch-up for stale stub data. For every bill_tenants row with
-// match_type IS NULL for the given tenant, send a stubOnly queue message
-// so the tenant refreshes its metadata from central's bills table.
-// No LegiScan calls, no AI runs.
-adminLsRoutes.post('/refresh-stubs/:tenantId', async (c) => {
+// Shared body for /refresh-stubs and /refresh-metadata: both queue a batch of
+// LegiScan-free notification messages for a tenant's bill_tenants rows, scoped
+// by match_type (stub vs. matched) and optionally by state, differing only in
+// which notification flag they set. No LegiScan calls, no AI runs either way.
+async function refreshTenantLinks(
+  c: Context<{ Bindings: LsEnv }>,
+  // tenantId is passed in rather than read from `c` here: this helper takes a
+  // generic Context, so Hono cannot narrow `c.req.param('tenantId')` to string
+  // the way it does inside a route handler that declares the path.
+  opts: { tenantId: string; matched: boolean; flag: 'stubOnly' | 'metadataOnly' },
+) {
   const db = drizzle(c.env.DB, { schema })
-  const tenantId = c.req.param('tenantId')
+  const { tenantId } = opts
+  const state = c.req.query('state')?.toUpperCase()
 
   const tenant = await db.select().from(tenants).where(eq(tenants.tenantId, tenantId)).get()
   if (!tenant) return c.json({ error: 'tenant not found' }, 404)
 
-  const stubLinks = await db.select({ billId: billTenants.billId })
-    .from(billTenants)
-    .where(and(
-      eq(billTenants.tenantId, tenantId),
-      isNull(billTenants.matchType),
-    ))
-    .all()
+  const matchTypeCond = opts.matched ? isNotNull(billTenants.matchType) : isNull(billTenants.matchType)
 
-  const bodies = stubLinks.map(l => ({
+  // bill_tenants has no state column, so only join to bills when a state filter
+  // is requested — the unscoped query stays identical to the pre-filter query.
+  const links = state
+    ? await db.select({ billId: billTenants.billId })
+      .from(billTenants)
+      .innerJoin(bills, eq(bills.billId, billTenants.billId))
+      .where(and(eq(billTenants.tenantId, tenantId), matchTypeCond, eq(bills.state, state)))
+      .all()
+    : await db.select({ billId: billTenants.billId })
+      .from(billTenants)
+      .where(and(eq(billTenants.tenantId, tenantId), matchTypeCond))
+      .all()
+
+  const bodies = links.map(l => ({
     tenantId,
     billId: `legiscan:${l.billId}`,
-    stubOnly: true,
+    [opts.flag]: true,
   } as LsNotificationMessage))
 
   // Binding-first, HTTP fallback by queue_id for tenants without a static binding.
@@ -368,7 +382,23 @@ adminLsRoutes.post('/refresh-stubs/:tenantId', async (c) => {
     return c.json({ error: `no delivery path for tenant ${tenantId} (no binding, no queue_id)` }, 400)
   }
 
-  return c.json({ ok: true, tenantId, queued: bodies.length, via: outcome })
+  return c.json({ ok: true, tenantId, queued: bodies.length, via: outcome, state: state ?? null })
+}
+
+// One-time catch-up for stale stub data. For every bill_tenants row with
+// match_type IS NULL for the given tenant, send a stubOnly queue message
+// so the tenant refreshes its metadata from central's bills table.
+// No LegiScan calls, no AI runs. Optional ?state=<two-letter state> scopes
+// the sweep to one state instead of all of the tenant's unmatched bills.
+adminLsRoutes.post('/refresh-stubs/:tenantId', async (c) => {
+  return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: false, flag: 'stubOnly' })
+})
+
+// Sibling of /refresh-stubs for already-matched bills: sends metadataOnly
+// (refresh from central, skip text fetch + AI) instead of stubOnly. Same
+// LegiScan-free guarantee, same optional ?state= filter.
+adminLsRoutes.post('/refresh-metadata/:tenantId', async (c) => {
+  return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: true, flag: 'metadataOnly' })
 })
 
 // POST /admin/backfill-stub-actions/:tenantId

@@ -1,7 +1,48 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { FilterDropdown, ActiveChip, FILTER_ANY } from './FilterPanel'
+import type { ComponentProps } from 'react'
+import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
+
+function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
+  const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
+    subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    selectedSubjects: [],
+    onSubjectChange: () => {},
+  }
+  return render(<SubjectFilterDropdown {...defaults} {...props} />)
+}
+
+// SubjectFilterDropdown's option list is virtualized (@tanstack/react-virtual):
+// with staging heading toward ~13k subject terms, an unvirtualized list hangs
+// the UI. jsdom performs no layout, so the scroll container's real offsetHeight
+// is 0 and the virtualizer would compute a 0-row viewport and render nothing —
+// not just for the large synthetic lists below, but for every existing small
+// list in this describe block too. Rather than mocking the virtualizer away
+// (which would make it impossible to assert that a 2000-option panel renders
+// only a handful of row nodes), stub offsetHeight on HTMLElement.prototype to a
+// realistic pixel value so the real virtualizer computes a real, bounded range
+// — the same technique used in TanStack Virtual's own jsdom tests.
+function makeSubjectGroups(spec: Record<string, number>): SubjectGroup[] {
+  return Object.entries(spec).map(([state, count]) => ({
+    state,
+    options: Array.from({ length: count }, (_, i) => ({
+      value: `${state}:Subject ${i}`,
+      label: `Subject ${i}`,
+      count: count - i,
+    })),
+  }))
+}
+
+let restoreOffsetHeight: (() => void) | undefined
+beforeAll(() => {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 600 })
+  restoreOffsetHeight = () => {
+    if (descriptor) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', descriptor)
+  }
+})
+afterAll(() => { restoreOffsetHeight?.() })
 
 describe('FilterPanel primitives', () => {
   it('always-present dropdown has no top row — just options, nothing pre-checked', () => {
@@ -209,5 +250,156 @@ describe('FilterDropdown — keyboard navigation (R4 follow-up)', () => {
     expect(screen.getByRole('checkbox')).toBeInTheDocument()
     fireEvent.mouseDown(screen.getByTestId('outside'))
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+})
+
+describe('SubjectFilterDropdown', () => {
+  it('hides the subject section entirely when no state publishes subjects', () => {
+    renderPanel({ subjectGroups: [] })
+    expect(screen.queryByText(/subjects/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('renders a flat list with no state heading when only one state is present', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByText('UT')).not.toBeInTheDocument()
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+  })
+
+  it('groups options under state headings when more than one state is present', () => {
+    renderPanel({
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('NJ')).toBeInTheDocument()
+    expect(screen.getByText('UT')).toBeInTheDocument()
+  })
+
+  // The subject-exclusion warning ("Excludes all bills from ... those
+  // legislatures do not publish subjects") was removed entirely, for every
+  // combination of selected subjects and states in view.
+  it('never renders a subject-exclusion notice, with or without a selection, single or multiple states', () => {
+    renderPanel({
+      selectedSubjects: ['UT:Counties'],
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Education', label: 'Education', count: 4 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/excludes all bills/i)).not.toBeInTheDocument()
+  })
+
+  it('toggles a subject on click', () => {
+    const onSubjectChange = vi.fn()
+    renderPanel({ onSubjectChange })
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Counties'))
+    expect(onSubjectChange).toHaveBeenCalledWith(['UT:Counties'])
+  })
+})
+
+// Staging has ~7,000 distinct subject terms today, heading toward ~13,400.
+// Opening the panel must stay instant regardless of option count, so the
+// option list is virtualized and gets a persistent, always-on search field.
+describe('SubjectFilterDropdown — virtualization and search', () => {
+  it('renders only a small subset of row DOM nodes for a large option list', () => {
+    const groups = makeSubjectGroups({ CA: 1000, TX: 1000 }) // 2000 options total
+    renderPanel({ subjectGroups: groups })
+    fireEvent.click(screen.getByRole('button'))
+    const checkboxes = screen.getAllByRole('checkbox')
+    // A 320px-tall panel with ~30px rows fits a few dozen rows at most, even
+    // with virtualizer overscan — nowhere near all 2000 options.
+    expect(checkboxes.length).toBeGreaterThan(0)
+    expect(checkboxes.length).toBeLessThan(100)
+  })
+
+  it('narrows visible options by label, case-insensitively', () => {
+    renderPanel({
+      subjectGroups: [{
+        state: 'UT',
+        options: [
+          { value: 'UT:Counties', label: 'Counties', count: 2 },
+          { value: 'UT:Education', label: 'Education', count: 5 },
+        ],
+      }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'COUN' } })
+    expect(screen.getByText('Counties')).toBeInTheDocument()
+    expect(screen.queryByText('Education')).not.toBeInTheDocument()
+  })
+
+  it('shows an empty-state message when the search matches nothing', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'zzz-no-match' } })
+    expect(screen.queryByText('Counties')).not.toBeInTheDocument()
+    expect(screen.getByText(/no subjects match/i)).toBeInTheDocument()
+  })
+
+  it('selecting an option still toggles it, and selection survives typing into and clearing the search field', () => {
+    const groups: SubjectGroup[] = [{
+      state: 'UT',
+      options: [
+        { value: 'UT:Counties', label: 'Counties', count: 2 },
+        { value: 'UT:Education', label: 'Education', count: 5 },
+      ],
+    }]
+    const onSubjectChange = vi.fn()
+    const { rerender } = render(
+      <SubjectFilterDropdown
+        subjectGroups={groups}
+        selectedSubjects={[]}
+        onSubjectChange={onSubjectChange}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Counties'))
+    expect(onSubjectChange).toHaveBeenCalledWith(['UT:Counties'])
+
+    // Simulate the parent applying the change (this component is controlled).
+    rerender(
+      <SubjectFilterDropdown
+        subjectGroups={groups}
+        selectedSubjects={['UT:Counties']}
+        onSubjectChange={onSubjectChange}
+      />,
+    )
+    const isChecked = (label: string) =>
+      (screen.getByText(label).closest('label')?.querySelector('input') as HTMLInputElement).checked
+
+    expect(isChecked('Counties')).toBe(true)
+
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'edu' } })
+    expect(screen.queryByText('Counties')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: '' } })
+    expect(isChecked('Counties')).toBe(true)
+  })
+
+  it('shows state headings only for groups with surviving matches after search; hides them when only one group survives', () => {
+    renderPanel({
+      subjectGroups: [
+        { state: 'NJ', options: [{ value: 'NJ:Roads', label: 'Roads', count: 3 }] },
+        { state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] },
+      ],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByText('NJ')).toBeInTheDocument()
+    expect(screen.getByText('UT')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'coun' } })
+    // Only UT's group has a surviving match — heading noise for a single group
+    // is dropped, matching the un-searched "single state, flat list" rule.
+    expect(screen.queryByText('NJ')).not.toBeInTheDocument()
+    expect(screen.queryByText('UT')).not.toBeInTheDocument()
+    expect(screen.getByText('Counties')).toBeInTheDocument()
   })
 })

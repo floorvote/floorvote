@@ -4,7 +4,8 @@ import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { eq } from 'drizzle-orm'
-import { bills, associationConfig, billTexts, feedEvents } from '../../src/db/schema'
+import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
+import { parseSubjects } from '../../src/lib/billSubjects'
 import type { TenantQueueMessage } from '../../src/types'
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
@@ -603,5 +604,159 @@ describe('processCentralNotification', () => {
     await processCentralNotification(forceMsg, testEnv as any, db)
     const events = await db.select().from(feedEvents).all()
     expect(events.filter(e => e.type === 'bill_updated')).toHaveLength(0)
+  })
+
+  it('writes subjects on the stub path, for a bill that gets no AI analysis', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
+  it('writes subjects on the metadata-only path', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, metadataOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
+  it('writes subjects on the full ingest path, alongside AI analysis', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    // Confirms this actually went through the full path (AI ran), not a stub/metadata shortcut.
+    expect(row!.aiProcessedAt).not.toBeNull()
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+  })
+
+  it('clears subjects when central stops sending them', async () => {
+    const db = getDb(env.DB)
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, subjects: ['Counties'] }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, subjects: [] }) })
+    }))
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(parseSubjects(row!.subjects)).toEqual([])
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toEqual([])
+  })
+
+  // Regression test for the stub-path subject gap found in the staging backfill:
+  // a bill with ai_processed_at set but match_type NULL (analyzed in the past,
+  // no longer keyword-matched) is exactly what the operator's "queue stub
+  // refreshes" route selects, so it always arrives here as a stubOnly message.
+  // The guard above correctly refuses to downgrade it back to a stub, but that
+  // must not also skip writing subjects — recording subjects isn't a downgrade.
+  it('writes subjects for an already-tracked bill on the stub path, without re-running the stub upsert', async () => {
+    const db = getDb(env.DB)
+
+    const aiTimestamp = '2026-05-20T12:00:00Z'
+    await db.insert(bills).values({
+      id: 'b-tracked-no-match',
+      externalId: BILL_ID,
+      billNumber: 'HB 100',
+      title: 'Sentinel title — must not change',
+      state: 'RI',
+      status: 'introduced',
+      session: '2026',
+      matchType: null,
+      aiProcessedAt: aiTimestamp,
+      tenantSummary: 'Existing AI summary',
+    })
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        title: 'Title from a stub upsert that must not run',
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+
+    // Subjects were written despite the guard.
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+
+    // The guard still held: the stub metadata upsert did not run.
+    expect(row!.title).toBe('Sentinel title — must not change')
+    expect(row!.aiProcessedAt).toBe(aiTimestamp)
   })
 })

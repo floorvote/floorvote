@@ -14,7 +14,7 @@ vi.mock('../context/DemoContext', () => ({
 }))
 
 const noFilters = {
-  status: [], priority: [], position: [], year: [], state: [], tag: [],
+  status: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
   q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, cf: {},
 }
 
@@ -152,6 +152,40 @@ describe('BulkActionBar new-match dismiss (filter mode)', () => {
         expect.objectContaining({
           method: 'POST',
           body: expect.stringContaining('"newMatches":"1"'),
+        }),
+      )
+    })
+  })
+
+  // CRITICAL 1 regression: buildFilterBody previously dropped `subject` entirely,
+  // so a bulk action taken while a subject filter was active would silently
+  // resolve against every bill matching the other filters — not just the ones
+  // the admin saw and confirmed. The request body must carry the active subject
+  // filter the same way it carries every other active filter.
+  it('serializes the active subject filter into the bulk-dismiss request body', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const selection: Selection = { mode: 'filter' }
+    render(
+      <BulkActionBar
+        selection={selection}
+        total={12}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[]}
+        currentFilters={{ ...noFilters, newMatches: true, subject: ['UT:Election Law'] }}
+        filterNewMatchCount={12}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+    const dismissBtn = await screen.findByRole('button', { name: /Dismiss new matches \(12\)/i })
+    fireEvent.click(dismissBtn)
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith(
+        '/bills/bulk-dismiss',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"subject":["UT:Election Law"]'),
         }),
       )
     })

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection } from './billsQuery'
+import {
+  billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection,
+} from './billsQuery'
 
 describe('billsApiParams', () => {
   it('emits params in the canonical order matching fetchBills', () => {

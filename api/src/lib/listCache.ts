@@ -31,6 +31,7 @@ export type ListCacheParams = {
   years: string[]
   states: string[]
   tagFilters: string[]
+  subjectFilters: Array<{ state: string; name: string }>
   q: string | undefined
   minRelevance: string | undefined
   cfParamMap: Record<string, string[]>
@@ -73,6 +74,7 @@ function serializeParams(p: ListCacheParams): string {
     years: sortedArr(p.years),
     states: sortedArr(p.states),
     tagFilters: sortedArr(p.tagFilters),
+    subjectFilters: sortedArr(p.subjectFilters.map(v => `${v.state}:${v.name}`)),
     q: p.q ?? null,
     minRelevance: p.minRelevance ?? null,
     cf,
