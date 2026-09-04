@@ -12,7 +12,7 @@ describe('0064_saved_views', () => {
     const { results } = await env.DB.prepare(`PRAGMA table_info(saved_views)`).all()
     const names = (results as { name: string }[]).map(r => r.name).sort()
     expect(names).toEqual(
-      ['created_at', 'created_by', 'display_order', 'id', 'name', 'query', 'updated_at'].sort(),
+      ['created_at', 'created_by', 'display_order', 'id', 'name', 'previous_slug', 'query', 'slug', 'updated_at'].sort(),
     )
   })
 

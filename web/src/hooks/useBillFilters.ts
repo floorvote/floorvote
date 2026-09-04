@@ -12,7 +12,7 @@ type SetSearchParams = ReturnType<typeof useSearchParams>[1]
 
 const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']
 
-export type ViewLike = { id: string; query: string }
+export type ViewLike = { id: string; slug?: string; query: string }
 
 export function useBillFilters(opts: {
   searchParams: SearchParams
@@ -122,16 +122,17 @@ export function useBillFilters(opts: {
 
   // Tracks whether the currently-applied filters were put there by applying a
   // saved view (via applyView, below, or BillList's cold-load hydration of a
-  // bookmarked `?view=<id>`), and if so, which view and what its query
-  // normalizes to.
+  // bookmarked `?view=<slug-or-id>`), and if so, which view (by the identifier
+  // that belongs in the URL) and what its query normalizes to.
   //   - `undefined` (initial): never interacted with via applyView — a `view`
   //     param already in the URL (a bookmark) is preserved as-is; BillList's
   //     separate stale-slug guard validates it once the /views fetch resolves.
   //   - `null`: explicitly not tracking a view (applyView(null), a filter
   //     edit that diverged from the tracked view, or "Reset filters").
-  //   - a view id: tracking that view; the sync effect below collapses the
-  //     URL to the short `?view=<id>` form as long as the built query keeps
-  //     matching pendingViewQuery, and drops both the moment it stops.
+  //   - a view's slug (or its id, if it has no slug yet): tracking that view;
+  //     the sync effect below collapses the URL to the short `?view=<slug>`
+  //     form as long as the built query keeps matching pendingViewQuery, and
+  //     drops both the moment it stops.
   const pendingViewId = useRef<string | null | undefined>(undefined)
   const pendingViewQuery = useRef<string | null>(null)
 
@@ -252,7 +253,11 @@ export function useBillFilters(opts: {
       return
     }
     const params = new URLSearchParams(view.query)
-    pendingViewId.current = view.id
+    // Prefer the slug for the URL — falling back to the id only covers a view
+    // that predates the slug backfill reaching it (the /views response should
+    // always carry one by the time this runs, but the fallback keeps this
+    // safe rather than writing `?view=undefined`).
+    pendingViewId.current = view.slug ?? view.id
     pendingViewQuery.current = normalizeViewQuery(view.query)
     setFilterStatuses(params.getAll('status'))
     setFilterPriorities(params.getAll('priority'))

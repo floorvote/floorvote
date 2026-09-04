@@ -5,7 +5,7 @@ import { findActiveView } from '../../lib/savedViews'
 import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
 
-export type SavedView = { id: string; name: string; query: string }
+export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
 
 // Sentinel key for the "All bills" row's count, distinct from any view id.
 const ALL_BILLS_KEY = '__all_bills__'

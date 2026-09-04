@@ -30,7 +30,7 @@ import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filter
 import { filterableCustomFields } from '../../lib/customFieldFilters'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import { SaveViewButton } from './SaveViewButton'
-import { findActiveView, normalizeViewQuery } from '../../lib/savedViews'
+import { findActiveView, normalizeViewQuery, matchesUrlIdentifier } from '../../lib/savedViews'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -360,22 +360,26 @@ export function BillList() {
     f.clearView()
   }, [viewsLoaded, f.activeViewSlug, location.search, savedViews, f])
 
-  // Cold-load hydration: a bookmarked/shared `?view=<id>` carries none of the
-  // view's filters in the URL by design (that's the point of the short form),
-  // so filter state needs to be populated from the view once it's known.
-  // Runs once views have loaded and only when the URL is still the bare short
-  // form (no expanded filter params) — an already-expanded `?view=<id>&...`
-  // is a pre-fix-3 long-form bookmark or a diverged state, and hydrating over
-  // it would clobber filters the URL already spells out.
+  // Cold-load hydration: a bookmarked/shared `?view=<slug-or-id>` carries none
+  // of the view's filters in the URL by design (that's the point of the short
+  // form), so filter state needs to be populated from the view once it's
+  // known. Runs once views have loaded and only when the URL is still the
+  // bare short form (no expanded filter params) — an already-expanded
+  // `?view=<id>&...` is a pre-fix-3 long-form bookmark or a diverged state,
+  // and hydrating over it would clobber filters the URL already spells out.
+  //
+  // The identifier is matched against slug, id, or previousSlug (see
+  // matchesUrlIdentifier) so a legacy UUID bookmark from before slugs
+  // existed, and a bookmark taken just before a rename, both keep resolving.
   const hydratedViewOnLoad = useRef(false)
   useEffect(() => {
     if (hydratedViewOnLoad.current) return
     if (!viewsLoaded) return
     hydratedViewOnLoad.current = true
-    const id = new URLSearchParams(location.search).get('view')
-    if (!id) return
+    const identifier = new URLSearchParams(location.search).get('view')
+    if (!identifier) return
     if (normalizeViewQuery(location.search) !== '') return
-    const view = savedViews.find(v => v.id === id)
+    const view = savedViews.find(v => matchesUrlIdentifier(v, identifier))
     if (!view) return
     applyView(view)
   }, [viewsLoaded, savedViews, location.search, applyView])

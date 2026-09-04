@@ -89,4 +89,19 @@ describe('findActiveView', () => {
     ]
     expect(findActiveView('?subject=UT%3AAudits', dupes)?.id).toBe('a1')
   })
+
+  it('resolves the short `?view=<slug>` form by slug', () => {
+    const withSlugs = [{ id: 'uuid-1', slug: 'clerk-bills', query: 'subject=UT%3AElections' }]
+    expect(findActiveView('?view=clerk-bills', withSlugs)?.id).toBe('uuid-1')
+  })
+
+  it('resolves a legacy `?view=<uuid>` bookmark by id even when the view now also has a slug', () => {
+    const withSlugs = [{ id: 'uuid-1', slug: 'clerk-bills', query: 'subject=UT%3AElections' }]
+    expect(findActiveView('?view=uuid-1', withSlugs)?.id).toBe('uuid-1')
+  })
+
+  it('resolves a bookmark taken under a view\'s pre-rename slug via previousSlug', () => {
+    const renamed = [{ id: 'uuid-1', slug: 'county-clerk-bills', previousSlug: 'clerk-bills', query: 'subject=UT%3AElections' }]
+    expect(findActiveView('?view=clerk-bills', renamed)?.id).toBe('uuid-1')
+  })
 })
