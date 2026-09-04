@@ -245,6 +245,20 @@ export const billCustomFieldValues = sqliteTable('bill_custom_field_values', {
   pk: primaryKey({ columns: [t.billId, t.fieldId] }),
 }))
 
+export const savedViews = sqliteTable('saved_views', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  // Serialized filter params, exactly as the bill list's URL carries them.
+  // Stored opaque so any filter added later is covered with no schema change —
+  // the cost is that a clause can outlive what it references, which the read
+  // path tolerates rather than reporting (see the design doc).
+  query: text('query').notNull(),
+  createdBy: text('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  displayOrder: integer('display_order').notNull().default(0),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
+
 export const calendarEvents = sqliteTable('calendar_events', {
   id: text('id').primaryKey(),
   uid: text('uid').notNull().unique(),
