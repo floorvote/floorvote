@@ -51,7 +51,7 @@ interface SubjectsTriggerProps {
  */
 export function SubjectsTrigger({ count, state, open, panelId, onToggle }: SubjectsTriggerProps) {
   const descId = useId()
-  const tooltipText = `Subject terms assigned by the legislature (${state}) and published through LegiScan.`
+  const tooltipText = `Subject terms assigned by the legislature (${state}).`
 
   return (
     <HoverTooltip text={tooltipText} maxWidth={240} placement="top-start">

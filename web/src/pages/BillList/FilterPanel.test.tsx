@@ -2,14 +2,13 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
-import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
+import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, SubjectExclusionNotice } from './FilterPanel'
 
 function renderPanel(props: Partial<ComponentProps<typeof SubjectFilterDropdown>> = {}) {
   const defaults: ComponentProps<typeof SubjectFilterDropdown> = {
     subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
     selectedSubjects: [],
     onSubjectChange: () => {},
-    statesWithoutSubjects: [],
   }
   return render(<SubjectFilterDropdown {...defaults} {...props} />)
 }
@@ -249,20 +248,28 @@ describe('SubjectFilterDropdown', () => {
     expect(screen.getByText('UT')).toBeInTheDocument()
   })
 
+  // The notice lives outside the dropdown on purpose: it describes the whole
+  // result set, and inside the dropdown it was squeezed to the button's width.
   it('warns that a subject filter excludes states with no subject data', () => {
-    renderPanel({
-      selectedSubjects: ['UT:Counties'],
-      statesWithoutSubjects: ['CA', 'IL'],
-    })
+    render(<SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={['CA', 'IL']} />)
     expect(screen.getByText(/CA, IL/)).toBeInTheDocument()
   })
 
   it('omits the warning when nothing is selected', () => {
-    renderPanel({
-      selectedSubjects: [],
-      statesWithoutSubjects: ['CA', 'IL'],
-    })
+    render(<SubjectExclusionNotice selectedSubjects={[]} statesWithoutSubjects={['CA', 'IL']} />)
     expect(screen.queryByText(/CA, IL/)).not.toBeInTheDocument()
+  })
+
+  it('omits the warning when every visible state publishes subjects', () => {
+    render(<SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={[]} />)
+    expect(screen.queryByText(/do not publish subjects/)).not.toBeInTheDocument()
+  })
+
+  it('renders the notice outside the dropdown, so it is not clipped to the button', () => {
+    const { container } = render(
+      <SubjectExclusionNotice selectedSubjects={['UT:Counties']} statesWithoutSubjects={['CA']} />,
+    )
+    expect(container.querySelector('button')).toBeNull()
   })
 
   it('toggles a subject on click', () => {

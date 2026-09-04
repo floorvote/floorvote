@@ -18,7 +18,7 @@ import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
-import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
+import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown, SubjectExclusionNotice } from './FilterPanel'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
@@ -723,7 +723,7 @@ export function BillList() {
             />
           </HoverTooltip>
           {f.allTags.length > 0 && (
-            <HoverTooltip text="Filter by topic tags">
+            <HoverTooltip text="Filter by your team's AI-generated tags">
               <FilterDropdown
                 placeholder="Tag"
                 options={f.allTags.map(t => ({ value: t }))}
@@ -741,7 +741,6 @@ export function BillList() {
                 subjectGroups={f.subjectGroups}
                 selectedSubjects={f.selectedSubjects}
                 onSubjectChange={f.handleSubjectsChange}
-                statesWithoutSubjects={statesWithoutSubjects}
               />
             </HoverTooltip>
           )}
@@ -787,6 +786,10 @@ export function BillList() {
             })
           }
         </div>
+        <SubjectExclusionNotice
+          selectedSubjects={f.selectedSubjects}
+          statesWithoutSubjects={statesWithoutSubjects}
+        />
       </div>
 
       {/* Active filter chips — only rendered when chips are present */}

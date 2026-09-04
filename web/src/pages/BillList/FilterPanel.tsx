@@ -290,12 +290,10 @@ export function SubjectFilterDropdown({
   subjectGroups,
   selectedSubjects,
   onSubjectChange,
-  statesWithoutSubjects,
 }: {
   subjectGroups: SubjectGroup[]
   selectedSubjects: string[]
   onSubjectChange: (next: string[]) => void
-  statesWithoutSubjects: string[]
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -324,8 +322,7 @@ export function SubjectFilterDropdown({
   const showHeadings = subjectGroups.length > 1
 
   return (
-    <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
-      <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative' }}>
         <button
           onClick={() => setOpen(o => !o)}
           style={{
@@ -388,12 +385,26 @@ export function SubjectFilterDropdown({
           </div>
         )}
       </div>
-      {selectedSubjects.length > 0 && statesWithoutSubjects.length > 0 && (
-        <div style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 6 }}>
-          Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures
-          do not publish subjects.
-        </div>
-      )}
+  )
+}
+
+/**
+ * The subject filter silently drops every bill from states whose legislature
+ * publishes no subjects at all — seven of the fifteen states this fleet covers.
+ * That exclusion is a fact about the whole result set, so it belongs under the
+ * filter row rather than inside one control, where it was previously squeezed
+ * to the width of the Subject button.
+ */
+export function SubjectExclusionNotice({
+  selectedSubjects, statesWithoutSubjects,
+}: {
+  selectedSubjects: string[]
+  statesWithoutSubjects: string[]
+}) {
+  if (selectedSubjects.length === 0 || statesWithoutSubjects.length === 0) return null
+  return (
+    <div role="status" style={{ fontSize: fontSize.sm, color: color.textAmberWarning, marginTop: 6 }}>
+      Excludes all bills from {statesWithoutSubjects.join(', ')} — those legislatures do not publish subjects.
     </div>
   )
 }
