@@ -4,6 +4,7 @@ import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { findActiveView } from '../../lib/savedViews'
 import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
+import { VIEW_STYLE } from '../../../../shared/viewStyle'
 
 export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
 
@@ -128,10 +129,10 @@ export function ViewSwitcher({
         style={{
           fontFamily: 'inherit', fontSize: fontSize.base,
           fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-          // Amber, not the filter blue: this trigger's color means "a view is
-          // applied," a distinct signal from "a filter is on." Resting state
+          // VIEW_STYLE, not the filter blue: this trigger's color means "a view
+          // is applied," a distinct signal from "a filter is on." Resting state
           // stays neutral so a quiet control doesn't imply a view is active.
-          color: active ? color.textAmberDark : color.textSecondary,
+          color: active ? VIEW_STYLE.text : color.textSecondary,
           background: 'none', border: 'none', cursor: 'pointer',
           padding: '3px 7px', borderRadius: radius.md,
           display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
@@ -236,11 +237,10 @@ function rowStyle(selected: boolean): React.CSSProperties {
     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
     fontSize: fontSize.sm, width: '100%', textAlign: 'left',
     fontFamily: 'inherit', border: 'none', cursor: 'pointer',
-    // Amber, not the filter blue's bgInfo/linkBlue — a selected view row is a
-    // distinct signal from "a filter is on." bgAmberPriority/textAmberDark is
-    // the same sanctioned amber-chip pairing used elsewhere.
-    background: selected ? color.bgAmberPriority : 'transparent',
-    color: selected ? color.textAmberDark : color.textSlate,
+    // VIEW_STYLE, not the filter blue's bgInfo/linkBlue — a selected view row
+    // is a distinct signal from "a filter is on."
+    background: selected ? VIEW_STYLE.bg : 'transparent',
+    color: selected ? VIEW_STYLE.text : color.textSlate,
   }
 }
 
