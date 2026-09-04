@@ -170,6 +170,18 @@ export async function processCentralNotification(
     //   - a manually-added bill being downgraded to a stub
     if (existing?.aiProcessedAt || existing?.matchType === 'manual') {
       console.log(`[processor] skipping stub upsert for ${msg.billId}: already tracked or manual`)
+      // Recording subjects is not a downgrade — only the stub metadata upsert
+      // (and its matchType write) is what the guard above exists to prevent.
+      // Without this, a bill with ai_processed_at set and match_type NULL
+      // (analyzed in the past, no longer keyword-matched) never gets subjects
+      // on any path: the operator's stub-refresh route selects exactly these
+      // bills and only ever sends them stubOnly messages.
+      if (existing) {
+        await db.update(bills)
+          .set({ subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null })
+          .where(eq(bills.id, existing.id))
+        await syncBillSubjects(db, existing.id, centralBill.state, centralBill.subjects ?? [])
+      }
       return
     }
     const primarySponsorStub = centralBill.sponsors.find(s => s.primary) ?? centralBill.sponsors[0] ?? null

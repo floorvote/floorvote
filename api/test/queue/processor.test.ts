@@ -706,4 +706,57 @@ describe('processCentralNotification', () => {
       .where(eq(billSubjects.billId, row!.id)).all()
     expect(joinRows).toEqual([])
   })
+
+  // Regression test for the stub-path subject gap found in the staging backfill:
+  // a bill with ai_processed_at set but match_type NULL (analyzed in the past,
+  // no longer keyword-matched) is exactly what the operator's "queue stub
+  // refreshes" route selects, so it always arrives here as a stubOnly message.
+  // The guard above correctly refuses to downgrade it back to a stub, but that
+  // must not also skip writing subjects — recording subjects isn't a downgrade.
+  it('writes subjects for an already-tracked bill on the stub path, without re-running the stub upsert', async () => {
+    const db = getDb(env.DB)
+
+    const aiTimestamp = '2026-05-20T12:00:00Z'
+    await db.insert(bills).values({
+      id: 'b-tracked-no-match',
+      externalId: BILL_ID,
+      billNumber: 'HB 100',
+      title: 'Sentinel title — must not change',
+      state: 'RI',
+      status: 'introduced',
+      session: '2026',
+      matchType: null,
+      aiProcessedAt: aiTimestamp,
+      tenantSummary: 'Existing AI summary',
+    })
+
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        title: 'Title from a stub upsert that must not run',
+        subjects: ['Election Law', 'Election Administration', 'Referenda'],
+      }) })
+    }))
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID, stubOnly: true }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+
+    // Subjects were written despite the guard.
+    expect(parseSubjects(row!.subjects)).toEqual(
+      ['Election Law', 'Election Administration', 'Referenda'],
+    )
+    const joinRows = await db.select().from(billSubjects)
+      .where(eq(billSubjects.billId, row!.id)).all()
+    expect(joinRows).toHaveLength(3)
+    expect(joinRows.every(r => r.state === 'RI')).toBe(true)
+
+    // The guard still held: the stub metadata upsert did not run.
+    expect(row!.title).toBe('Sentinel title — must not change')
+    expect(row!.aiProcessedAt).toBe(aiTimestamp)
+  })
 })
