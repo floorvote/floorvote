@@ -7,7 +7,7 @@ import type { ReactNode } from 'react'
 // click landed (including the #section-* anchor on the bill detail page).
 function LocationProbe() {
   const loc = useLocation()
-  return <div data-testid="loc">{loc.pathname}{loc.hash}</div>
+  return <div data-testid="loc">{loc.pathname}{loc.search}{loc.hash}</div>
 }
 
 // --- Mock the API client ----------------------------------------------------
@@ -26,6 +26,14 @@ const deferred: {
 // Lets a test force the vote endpoint to reject so we can assert the optimistic
 // vote rolls back.
 const voteReject = { value: false }
+
+// Lets a test hold the `/views` fetch open (to simulate it resolving on a
+// later tick than the mount commit) and control what it eventually resolves
+// with. Defaults to an immediate empty list, matching every test that doesn't
+// care about saved views.
+const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string }> } } =
+  { deferred: false, response: { views: [] } }
+let resolveViews: ((v: unknown) => void) | null = null
 
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
@@ -89,6 +97,12 @@ vi.mock('../../lib/api', () => {
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
     if (path === '/config/custom-fields') return [] as T
+    if (path === '/views') {
+      if (viewsState.deferred) {
+        return new Promise<T>(res => { resolveViews = res as (v: unknown) => void })
+      }
+      return viewsState.response as T
+    }
     if (path.startsWith('/bills/facets')) return FACETS as T
     if (path.endsWith('/votes')) {
       // When a test wants the vote to fail, hold the rejection open (deferred) so
@@ -161,6 +175,9 @@ beforeEach(() => {
   deferred.rejectVote = null
   voteReject.value = false
   demoState.demoLocked = false
+  viewsState.deferred = false
+  viewsState.response = { views: [] }
+  resolveViews = null
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -300,6 +317,157 @@ describe('BillList page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('loc').textContent).toContain('#section-note')
+    })
+  })
+})
+
+describe('BillList bookmarked view slug', () => {
+  // Regression for: savedViews starts as [] and is populated by an async
+  // /views fetch, so the stale-slug effect used to run during the mount
+  // commit — before that fetch resolved — see no matching view, and clear
+  // the `view` param permanently (it never got a second look once the fetch
+  // landed, because activeViewSlug was already gone). A bookmarked
+  // ?view=<id> URL must survive past that fetch resolving, and once it does,
+  // the switcher must show the matched view as active.
+  it('keeps the view param across a /views fetch that resolves after mount', async () => {
+    const VIEW = { id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' }
+    viewsState.deferred = true
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1&subject=UT%3AElections']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    // The /views fetch is still pending — flush a tick so any effect that
+    // runs before it resolves (the bug) has had its chance.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(screen.getByTestId('loc').textContent).toContain('view=v1')
+
+    // Now let /views resolve with the matching view.
+    resolveViews?.({ views: [VIEW] })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /clerk bills/i })).toBeTruthy()
+    })
+    expect(screen.getByTestId('loc').textContent).toContain('view=v1')
+  })
+})
+
+describe('BillList saved views — search interaction', () => {
+  it('does not offer "Save as view" when only a search term is active — search never reaches the URL', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'voting' } })
+
+    expect(screen.queryByRole('button', { name: /save as view/i })).toBeNull()
+  })
+
+  it('clears an active search term when a view is applied', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    const search = screen.getByPlaceholderText('Search…') as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'voting' } })
+    expect(search.value).toBe('voting')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.click(await screen.findByText('Passed bills'))
+
+    await waitFor(() => expect(search.value).toBe(''))
+  })
+
+  it('clears an active search term when "All bills" is applied', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    const search = screen.getByPlaceholderText('Search…') as HTMLInputElement
+    fireEvent.change(search, { target: { value: 'voting' } })
+    expect(search.value).toBe('voting')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.click(await screen.findByText('All bills'))
+
+    await waitFor(() => expect(search.value).toBe(''))
+  })
+})
+
+describe('BillList saved views — short URL resolution', () => {
+  it('loading ?view=<id> cold applies that view\'s filters and keeps the URL short', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Early Voting Centers')).toBeNull()
+    })
+    expect(screen.getByText('Election Official Training')).toBeInTheDocument()
+
+    const loc = screen.getByTestId('loc').textContent!
+    expect(loc).toContain('view=v1')
+    expect(loc).not.toContain('status=')
+  })
+
+  it('expands the URL and clears view once a filter changes after applying one', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=v1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Status' }))
+    const introducedOption = (await screen.findAllByText('Introduced'))
+      .find(el => el.closest('label') !== null)
+    fireEvent.click(introducedOption!)
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).not.toContain('view=')
+      expect(loc).toContain('status=')
+    })
+    expect(screen.getByRole('button', { name: /^views$/i })).toBeTruthy()
+  })
+
+  it('clears a ?view=<id> naming a nonexistent view once views have loaded', async () => {
+    viewsState.response = { views: [] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills?view=ghost']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loc').textContent).not.toContain('view=')
     })
   })
 })

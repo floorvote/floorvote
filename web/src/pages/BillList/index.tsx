@@ -28,6 +28,9 @@ import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
 import { filterableCustomFields } from '../../lib/customFieldFilters'
+import { ViewSwitcher, type SavedView } from './ViewSwitcher'
+import { SaveViewButton } from './SaveViewButton'
+import { findActiveView, normalizeViewQuery } from '../../lib/savedViews'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -311,6 +314,72 @@ export function BillList() {
       .catch(() => setError('Failed to load bills.'))
   }, [])
 
+  const [savedViews, setSavedViews] = useState<SavedView[]>([])
+  // Distinguishes "no views exist yet" from "the /views fetch hasn't resolved
+  // yet". savedViews starts as [] either way, and findActiveView([], ...)
+  // always returns null — so without this flag the stale-slug effect below
+  // would run during the mount commit, before the fetch resolves, conclude a
+  // bookmarked ?view=<id> "doesn't match anything", and clear it permanently
+  // (the effect re-runs once the fetch lands, but activeViewSlug is already
+  // gone by then, so it never gets a second look). Set on both success and
+  // failure so a failed fetch doesn't wedge the slug in "not yet validated"
+  // forever.
+  const [viewsLoaded, setViewsLoaded] = useState(false)
+
+  const reloadViews = useCallback(async () => {
+    try {
+      const data = await apiFetch<{ views: SavedView[] }>('/views')
+      setSavedViews(data.views ?? [])
+    } catch {
+      // Non-fatal — the switcher just stays empty/stale until the next reload.
+    } finally {
+      setViewsLoaded(true)
+    }
+  }, [])
+
+  useEffect(() => { void reloadViews() }, [reloadViews])
+
+  // Apply a view: sets filter state from its stored query and lets the sync
+  // effect in useBillFilters serialize it, writing the short `?view=<id>`
+  // bookmark rather than the view's expanded params — that bookmark then
+  // follows later edits to the view instead of snapshotting it. "All bills" is
+  // view=null, which resets every filter (search included).
+  const applyView = f.applyView
+
+  // The switcher's label already falls back to "Views" via findActiveView, but
+  // the URL must follow, so a bookmark taken after diverging captures the real
+  // filter state rather than a view it no longer matches.
+  //
+  // Gated on viewsLoaded: until the /views fetch resolves, savedViews is still
+  // [] and findActiveView would always report "no match," wrongly clearing a
+  // bookmarked ?view=<id> before it ever gets a chance to validate.
+  useEffect(() => {
+    if (!viewsLoaded) return
+    if (!f.activeViewSlug) return
+    if (findActiveView(location.search, savedViews)) return
+    f.clearView()
+  }, [viewsLoaded, f.activeViewSlug, location.search, savedViews, f])
+
+  // Cold-load hydration: a bookmarked/shared `?view=<id>` carries none of the
+  // view's filters in the URL by design (that's the point of the short form),
+  // so filter state needs to be populated from the view once it's known.
+  // Runs once views have loaded and only when the URL is still the bare short
+  // form (no expanded filter params) — an already-expanded `?view=<id>&...`
+  // is a pre-fix-3 long-form bookmark or a diverged state, and hydrating over
+  // it would clobber filters the URL already spells out.
+  const hydratedViewOnLoad = useRef(false)
+  useEffect(() => {
+    if (hydratedViewOnLoad.current) return
+    if (!viewsLoaded) return
+    hydratedViewOnLoad.current = true
+    const id = new URLSearchParams(location.search).get('view')
+    if (!id) return
+    if (normalizeViewQuery(location.search) !== '') return
+    const view = savedViews.find(v => v.id === id)
+    if (!view) return
+    applyView(view)
+  }, [viewsLoaded, savedViews, location.search, applyView])
+
   // Fetch bills + facets whenever filters/sort change (search debounced). The
   // relevance slider commits its value only on release (see relevanceDraft), so
   // a drag produces a single filterMinRelevance change and one fetch here.
@@ -515,6 +584,36 @@ export function BillList() {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 24px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
         <h1 style={{ fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: color.textPrimary, margin: 0 }}>Bills</h1>
+        <ViewSwitcher
+          views={savedViews}
+          currentSearch={location.search}
+          isAdmin={isAdmin}
+          onApply={applyView}
+          onRename={async (id, name) => {
+            try {
+              await apiFetch(`/admin/views/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ name }),
+              })
+              await reloadViews()
+            } catch {
+              // Re-throw so ViewSwitcher's commitRename sees the rejection and
+              // leaves the row in its editing state instead of closing as if
+              // the rename had taken.
+              setError('Failed to rename view.')
+              throw new Error('Failed to rename view.')
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              await apiFetch(`/admin/views/${id}`, { method: 'DELETE' })
+              await reloadViews()
+            } catch {
+              setError('Failed to delete view.')
+              throw new Error('Failed to delete view.')
+            }
+          }}
+        />
       </div>
 
       {/* Search warnings — above the box so they don't collide with the filter
@@ -890,6 +989,23 @@ export function BillList() {
           >
             Reset filters
           </button>
+        )}
+        {isAdmin && normalizeViewQuery(location.search) !== '' && (
+          <SaveViewButton
+            currentSearch={location.search}
+            onSave={async (name) => {
+              try {
+                await apiFetch('/admin/views', {
+                  method: 'POST',
+                  body: JSON.stringify({ name, query: normalizeViewQuery(location.search) }),
+                })
+                await reloadViews()
+              } catch {
+                setError('Failed to save view.')
+                throw new Error('Failed to save view.')
+              }
+            }}
+          />
         )}
         <span className="bill-list-sort-desc">{sortDescription(sortCol, orgPositionLabel(orgNoun), 'Relevance')}</span>
         <button

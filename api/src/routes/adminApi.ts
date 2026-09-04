@@ -17,6 +17,7 @@ import { getAccountDeletionEnabled, ACCOUNT_DELETION_KEY } from '../lib/accountD
 import { countActiveOwners } from '../lib/owners'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
+import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppEnv } from '../types'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -25,6 +26,7 @@ adminApiRouter.use('*', requireAuth, requireAdmin)
 
 adminApiRouter.route('/export', exportApiRouter)
 adminApiRouter.route('/custom-fields', customFieldsApiRouter)
+adminApiRouter.route('/views', adminSavedViewsRouter)
 
 // GET /admin/members
 adminApiRouter.get('/members', async (c) => {

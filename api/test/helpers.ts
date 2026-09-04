@@ -60,6 +60,7 @@ import migrationSql58 from '../migrations/0058_triaged_at_rename.sql?raw'
 import migrationSql59 from '../migrations/0059_ai_attempt_tracking.sql?raw'
 import migrationSql61 from '../migrations/0061_drop_instance_preset.sql?raw'
 import migrationSql62 from '../migrations/0062_restore_feed_events_indexes.sql?raw'
+import migrationSql64 from '../migrations/0064_saved_views.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -166,6 +167,7 @@ export async function applyMigrations(): Promise<void> {
       );`,
       'CREATE INDEX IF NOT EXISTS idx_bill_subjects_name ON bill_subjects(state, subject_name);',
     ] },
+    parseMigration(migrationSql64, '0064_saved_views'),
   ])
 }
 

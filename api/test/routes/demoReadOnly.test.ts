@@ -232,6 +232,7 @@ const DENIED = new Set([
   'DELETE /api/admin/custom-fields/:id',
   'DELETE /api/admin/members/:id',
   'DELETE /api/admin/roles/:id',
+  'DELETE /api/admin/views/:id',
   'DELETE /api/bills/:id',
   'DELETE /api/calendar/events/:id',
   'DELETE /api/comments/:id',
@@ -253,6 +254,7 @@ const DENIED = new Set([
   'POST /api/admin/reprocess-bill/:externalId',
   'POST /api/admin/reprocess-llm-all',
   'POST /api/admin/roles',
+  'POST /api/admin/views',
   'POST /api/auth/logout',
   'POST /api/auth/magic-link',
   'POST /api/auth/verify',
@@ -271,6 +273,7 @@ const DENIED = new Set([
   'PUT /api/admin/custom-fields/reorder',
   'PUT /api/admin/deletion-policy',
   'PUT /api/admin/members/:id/roles',
+  'PUT /api/admin/views/:id',
   'PUT /api/calendar/events/:id',
 ])
 
@@ -314,8 +317,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(43)
-    expect(registered().length).toBe(67)
+    expect(DENIED.size).toBe(46)
+    expect(registered().length).toBe(70)
   })
 
   it('refuses every denied route with the read-only message', async () => {
