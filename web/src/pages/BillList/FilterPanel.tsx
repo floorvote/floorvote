@@ -359,16 +359,29 @@ export function SubjectFilterDropdown({
     function onMove(ev: MouseEvent) {
       const state = resizeStateRef.current
       if (!state) return
+      // If no button is held, terminate the drag (mouse released outside window)
+      if (ev.buttons === 0) {
+        cleanup()
+        return
+      }
       const next = state.startWidth + (ev.clientX - state.startX)
       setPanelWidth(Math.min(SUBJECT_PANEL_MAX_WIDTH, Math.max(SUBJECT_PANEL_MIN_WIDTH, next)))
     }
     function onUp() {
+      cleanup()
+    }
+    function onBlur() {
+      cleanup()
+    }
+    function cleanup() {
       resizeStateRef.current = null
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
+      window.removeEventListener('blur', onBlur)
     }
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
+    window.addEventListener('blur', onBlur)
   }
 
   const groups = useMemo(

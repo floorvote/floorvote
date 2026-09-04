@@ -264,7 +264,7 @@ describe('SubjectFilterDropdown — horizontal resize', () => {
     const handle = screen.getByTestId('subject-panel-resize-handle')
 
     fireEvent.mouseDown(handle, { clientX: 100 })
-    fireEvent.mouseMove(document, { clientX: 180 })
+    fireEvent.mouseMove(document, { clientX: 180, buttons: 1 })
     fireEvent.mouseUp(document)
 
     const endWidth = parseInt(getComputedStyle(panel).width, 10)
@@ -274,6 +274,59 @@ describe('SubjectFilterDropdown — horizontal resize', () => {
     // (e.g. typing into search) rather than snapping back.
     fireEvent.change(screen.getByPlaceholderText(/search subjects/i), { target: { value: 'coun' } })
     expect(parseInt(getComputedStyle(panel).width, 10)).toBe(endWidth)
+  })
+
+  it('terminates drag when mousemove fires with no button held (buttons: 0), and subsequent movement does not resize', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Start drag
+    fireEvent.mouseDown(handle, { clientX: 100 })
+
+    // Move with button held to widen the panel
+    fireEvent.mouseMove(document, { clientX: 150, buttons: 1 })
+    const widthAfterMove = parseInt(getComputedStyle(panel).width, 10)
+    expect(widthAfterMove).toBeGreaterThan(startWidth)
+
+    // Move with no button held (simulates mouse released outside window)
+    fireEvent.mouseMove(document, { clientX: 200, buttons: 0 })
+
+    // Width should not change from the last valid drag position
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
+
+    // Further mousemove should not resize the panel (listeners should be cleaned up)
+    fireEvent.mouseMove(document, { clientX: 250, buttons: 1 })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
+  })
+
+  it('terminates drag when window loses focus (blur), and subsequent movement does not resize', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Start drag
+    fireEvent.mouseDown(handle, { clientX: 100 })
+
+    // Move to widen the panel
+    fireEvent.mouseMove(document, { clientX: 150, buttons: 1 })
+    const widthAfterMove = parseInt(getComputedStyle(panel).width, 10)
+    expect(widthAfterMove).toBeGreaterThan(startWidth)
+
+    // Window loses focus
+    fireEvent.blur(window)
+
+    // Further mousemove should not resize the panel
+    fireEvent.mouseMove(document, { clientX: 200, buttons: 1 })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(widthAfterMove)
   })
 })
 
