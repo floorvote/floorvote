@@ -13,6 +13,7 @@ import { adminApiRouter } from './routes/adminApi'
 import { notificationsRouter } from './routes/notificationsApi'
 import { configRouter } from './routes/configApi'
 import { calendarRouter } from './routes/calendarApi'
+import { savedViewsRouter } from './routes/savedViewsApi'
 import { registerWithCentral } from './cron/sync'
 import { runDemoReset } from './lib/demoReset'
 import { resolveDemoSeed } from './lib/demoSeeds'
@@ -129,6 +130,7 @@ app.route('/api/config', configRouter)
 app.route('/api/feed', feedRouter)
 app.route('/api/users', usersRouter)
 app.route('/api/roles', rolesRouter)
+app.route('/api/views', savedViewsRouter)
 app.route('/api/stats', statsRouter)
 app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
