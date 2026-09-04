@@ -7,13 +7,13 @@ import {
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { sessionToSlug } from '../../lib/sessionSlug'
-import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership } from './query'
+import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
-import { decodeSubjectFilters, encodeSubjectFilter } from '../../lib/billSubjects'
+import { decodeSubjectFilters, encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -314,7 +314,13 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       if (parts.length > 0) tagFilter = parts.length === 1 ? parts[0] : or(...parts)!
     }
 
-    const subjectFilter: SQL | undefined = subjectFilters.length > 0 ? subjectMembership(subjectFilters) : undefined
+    // Loaded unconditionally (not just when a `subject` param is present): the
+    // subjects facet's own counts must omit suppressed states even with no
+    // active subject filter, and a suppressed value in the filter must not
+    // narrow the other dimensions' counts either (see filterSuppressedSubjects).
+    const suppressedSubjectStates = await loadSuppressedSubjectStates(db)
+    const allowedSubjectFilters = filterSuppressedSubjects(subjectFilters, suppressedSubjectStates)
+    const subjectFilter: SQL | undefined = allowedSubjectFilters.length > 0 ? subjectMembership(allowedSubjectFilters) : undefined
 
     let positionFilter: SQL | undefined
     if (positionValues.length > 0) {
@@ -530,7 +536,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     tagCounts[FILTER_ANY] = Number(anyTagRow?.cnt ?? 0)
 
     const subjectCounts: Record<string, number> = Object.fromEntries(
-      subjectRows.map(r => [encodeSubjectFilter(r.state, r.name), Number(r.cnt)]),
+      subjectRows
+        .filter(r => !isSubjectsSuppressedForState(suppressedSubjectStates, r.state))
+        .map(r => [encodeSubjectFilter(r.state, r.name), Number(r.cnt)]),
     )
 
     // myBillsCount: how many filtered bills this user has interacted with

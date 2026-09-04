@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { billSubjects } from '../../src/db/schema'
+import { billSubjects, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
+import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 
 // Seeds a bill plus its bill_subjects rows (one per subject, tagged with the bill's state).
 // Mirrors seedBill's override shape; `tags` here takes the same string[] shape seedBill uses.
@@ -150,5 +151,74 @@ describe('GET /bills — subject filtering', () => {
     const res = await app.request(`/api/bills?${params}`, { headers: { Cookie: `session=${token}` } }, env)
 
     expect(res.status).toBe(200)
+  })
+})
+
+describe('GET /bills — subject suppression', () => {
+  let token: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const userId = await seedUser()
+    token = await seedSession(userId)
+  })
+
+  it('facet counts omit a suppressed state entirely', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 'sup1', state: 'NJ' }, ['State and Local Government'])
+    await seedBillWithSubjects(db, { id: 'sup2', state: 'UT' }, ['Election Administration'])
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['NJ']),
+    }).run()
+
+    const res = await app.request('/api/bills/facets', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.subjects['NJ:State and Local Government']).toBeUndefined()
+    expect(body.subjects['UT:Election Administration']).toBe(1)
+  })
+
+  it('a subject filter naming a suppressed state is ignored, not treated as matching nothing', async () => {
+    const db = getDb(env.DB)
+    // s1 carries the suppressed NJ subject AND an unsuppressed UT one, so we can
+    // tell "the NJ value was dropped from the filter" apart from "it matched
+    // nothing": if dropped, s1 still shows up via nothing else filtering it out.
+    await seedBillWithSubjects(db, { id: 'sup3', state: 'NJ' }, ['State and Local Government'])
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['NJ']),
+    }).run()
+
+    const res = await app.request(
+      '/api/bills?subject=NJ%3AState%20and%20Local%20Government',
+      { headers: { Cookie: `session=${token}` } },
+      env,
+    )
+    const body = await res.json() as ListBody
+
+    // Ignored (not "match nothing"): with no other filter active, the suppressed
+    // subject param has no narrowing effect, so the bill still comes back — it is
+    // NOT excluded as if the filter had matched zero bills.
+    expect(body.bills.map(b => b.id)).toEqual(['sup3'])
+  })
+
+  it('a suppressed-state subject filter does not leak other suppressed bills in via OR', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 'sup4', state: 'NJ' }, ['State and Local Government'])
+    await seedBillWithSubjects(db, { id: 'sup5', state: 'UT' }, ['Election Administration'])
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['NJ']),
+    }).run()
+
+    // Only the (allowed) UT value should have any filtering effect; the NJ value
+    // is dropped, so this must behave exactly like `?subject=UT:...` alone.
+    const res = await app.request(
+      '/api/bills?subject=NJ%3AState%20and%20Local%20Government&subject=UT%3AElection%20Administration',
+      { headers: { Cookie: `session=${token}` } },
+      env,
+    )
+    const body = await res.json() as ListBody
+
+    expect(body.bills.map(b => b.id)).toEqual(['sup5'])
   })
 })
