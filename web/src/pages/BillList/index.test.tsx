@@ -494,3 +494,45 @@ describe('BillList search-term hint', () => {
     expect(screen.getByText(/first 12 terms/i)).toBeInTheDocument()
   })
 })
+
+// Regression: a view whose query contains a cf_ (custom field) filter used to be
+// dropped on apply. cf_ params live in the URL rather than in hook state, so
+// applyView wrote them through a second setSearchParams call that raced the sync
+// effect — the view's cf_ constraint never reached the bills query, and the
+// self-comparison then failed, so the view was judged "diverged" instantly.
+describe('BillList saved views — applying a view from the switcher', () => {
+  it('applies a cf_ filter from the view, collapses the URL, and labels the switcher', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'cf_acet_is_tracking=1&state=NJ&subject=NJ%3AState+Government%2C+Wagering%2C+Tourism+%26+Historic+Preservation' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    // Switcher is present (views loaded) and resting.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^views$/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^views$/i }))
+    fireEvent.click(await screen.findByText('Passed bills'))
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).toContain('view=v1')
+    })
+    expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+
+    // The point of the fix isn't just a tidy URL — the view's cf_ filter must
+    // actually reach the bills query. Assert on the recorded /bills? request
+    // (same style as the status=4 assertion above) rather than the URL, since
+    // the URL legitimately collapses to the short ?view=v1 form.
+    await waitFor(() => {
+      expect(apiCalls.some(c => c.startsWith('/bills?') && c.includes('cf_acet_is_tracking=1'))).toBe(true)
+    })
+  })
+})
