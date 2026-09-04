@@ -69,6 +69,16 @@ describe('ViewSwitcher', () => {
     expect(screen.queryByRole('button', { name: /delete/i })).toBeNull()
   })
 
+  it('reaches Rename via focus alone, with no mouseEnter — keyboard/touch users have no other path', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+    fireEvent.focus(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.getAllByRole('button', { name: /rename/i })[0]).toBeTruthy()
+    fireEvent.blur(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+  })
+
   it('renames through an inline input for an admin', () => {
     const { onRename } = renderSwitcher({ isAdmin: true })
     fireEvent.click(screen.getByRole('button', { name: /views/i }))

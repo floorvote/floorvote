@@ -20,6 +20,11 @@ export function ViewSwitcher({
   const [draftName, setDraftName] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  // Rename/Delete must also be reachable without a mouse — mouseenter never
+  // fires on touch, and tabbing to a row doesn't set hoveredId. onFocus/onBlur
+  // on the row wrapper catch focus landing on (or leaving) any descendant,
+  // since React's focus events bubble.
+  const [focusedId, setFocusedId] = useState<string | null>(null)
   const ref = useDismissOnOutsideClick(open, () => setOpen(false))
 
   // Closing the menu abandons any in-progress rename or delete confirm, so
@@ -143,6 +148,8 @@ export function ViewSwitcher({
                 key={v.id}
                 onMouseEnter={() => setHoveredId(v.id)}
                 onMouseLeave={() => setHoveredId(null)}
+                onFocus={() => setFocusedId(v.id)}
+                onBlur={() => setFocusedId(null)}
                 style={{ ...rowStyle(isActive), cursor: 'default' }}
               >
                 <button
@@ -155,7 +162,7 @@ export function ViewSwitcher({
                 >
                   {v.name}
                 </button>
-                {isAdmin && hoveredId === v.id && (
+                {isAdmin && (hoveredId === v.id || focusedId === v.id) && (
                   <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
                     <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
                     <button onClick={() => { setRenamingId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
