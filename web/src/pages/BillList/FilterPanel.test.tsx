@@ -375,6 +375,87 @@ describe('SubjectFilterDropdown — horizontal resize', () => {
   })
 })
 
+describe('SubjectFilterDropdown — resize handle keyboard accessibility', () => {
+  it('is reachable by keyboard focus', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    handle.focus()
+    expect(handle).toHaveFocus()
+  })
+
+  it('exposes an interactive ARIA role with aria-orientation and aria-valuenow/min/max', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    // role="slider" (not the APG's literal "separator") because aria-query
+    // models `separator` as structure-only with no focusable/widget variant,
+    // so eslint-plugin-jsx-a11y flags a focusable separator as a
+    // non-interactive element with handlers — a linter-role-model gap, not
+    // a real a11y issue. `slider` is the ARIA widget role for "a value
+    // adjustable between a min and max via the keyboard," which this
+    // control is, and it satisfies the lint rules honestly rather than
+    // suppressing them. See the comment above the handle in FilterPanel.tsx.
+    expect(handle).toHaveAttribute('role', 'slider')
+    expect(handle).toHaveAttribute('aria-orientation', 'horizontal')
+    expect(handle).toHaveAttribute('aria-valuemin', '220')
+    expect(handle).toHaveAttribute('aria-valuemax', '480')
+    expect(handle).toHaveAttribute('aria-valuenow', '220') // default width
+    expect(handle).toHaveAttribute('aria-label')
+  })
+
+  it('ArrowRight widens the panel and ArrowLeft narrows it', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+    const startWidth = parseInt(getComputedStyle(panel).width, 10)
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    const widened = parseInt(getComputedStyle(panel).width, 10)
+    expect(widened).toBeGreaterThan(startWidth)
+    expect(handle).toHaveAttribute('aria-valuenow', String(widened))
+
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    const narrowed = parseInt(getComputedStyle(panel).width, 10)
+    expect(narrowed).toBeLessThan(widened)
+  })
+
+  it('clamps keyboard resizing to the 220–480px bounds', () => {
+    renderPanel({
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    fireEvent.click(screen.getByRole('button'))
+    const panel = screen.getByRole('group')
+    const handle = screen.getByTestId('subject-panel-resize-handle')
+
+    // Starts at the 220px minimum — narrowing further must not go below it.
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: 'ArrowLeft' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(220)
+    expect(handle).toHaveAttribute('aria-valuenow', '220')
+
+    // Home jumps straight to the min; End jumps straight to the max.
+    fireEvent.keyDown(handle, { key: 'End' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(480)
+    expect(handle).toHaveAttribute('aria-valuenow', '480')
+
+    // Widening past the max must not exceed it.
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(480)
+
+    fireEvent.keyDown(handle, { key: 'Home' })
+    expect(parseInt(getComputedStyle(panel).width, 10)).toBe(220)
+    expect(handle).toHaveAttribute('aria-valuenow', '220')
+  })
+})
+
 describe('SubjectFilterDropdown', () => {
   it('hides the subject section entirely when no state publishes subjects', () => {
     renderPanel({ subjectGroups: [] })

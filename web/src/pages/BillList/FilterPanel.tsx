@@ -309,6 +309,10 @@ const SUBJECT_PANEL_LIST_HEIGHT = 280
 const SUBJECT_PANEL_MIN_WIDTH = 220
 const SUBJECT_PANEL_MAX_WIDTH = 480
 const SUBJECT_PANEL_DEFAULT_WIDTH = SUBJECT_PANEL_MIN_WIDTH
+// Keyboard resize step: coarse enough that a handful of presses covers the
+// whole 220–480px range (26 presses end to end), fine enough not to overshoot
+// a comfortable reading width in one keystroke.
+const SUBJECT_PANEL_RESIZE_STEP = 10
 
 /**
  * Subject filter — state-qualified because subject vocabularies aren't
@@ -398,6 +402,29 @@ export function SubjectFilterDropdown({
     window.addEventListener('blur', onBlur)
   }
 
+  // Keyboard equivalent of the mouse drag above, per the WAI-ARIA APG
+  // "Window Splitter" pattern: ArrowLeft/ArrowRight move a vertical
+  // separator (a divider whose long axis runs top-to-bottom, orthogonal to
+  // the direction it moves) in the direction that shrinks/grows the region
+  // it borders. Left = narrower, right = wider, matching the panel edge
+  // this handle sits on. Home/End jump to the documented min/max bounds,
+  // same as the drag clamp.
+  function handleResizeKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      setPanelWidth(w => Math.max(SUBJECT_PANEL_MIN_WIDTH, w - SUBJECT_PANEL_RESIZE_STEP))
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      setPanelWidth(w => Math.min(SUBJECT_PANEL_MAX_WIDTH, w + SUBJECT_PANEL_RESIZE_STEP))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      setPanelWidth(SUBJECT_PANEL_MIN_WIDTH)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      setPanelWidth(SUBJECT_PANEL_MAX_WIDTH)
+    }
+  }
+
   const groups = useMemo(
     () => subjectGroups.map(g => ({ key: g.state, heading: g.state, options: g.options })),
     [subjectGroups],
@@ -460,15 +487,67 @@ export function SubjectFilterDropdown({
                 names can be read in full instead of relying on truncation.
                 Exploratory per the operator's request — kept desktop-only
                 since it's a mouse-drag affordance; the mobile sheet is
-                full-width already and has no equivalent edge to grab. */}
+                full-width already and has no equivalent edge to grab.
+
+                Also keyboard-operable, following the WAI-ARIA APG "Window
+                Splitter" pattern: a focusable divider exposing the current
+                extent via aria-valuenow/min/max, adjustable with the arrow
+                keys along the axis it moves. The APG's literal example role
+                is a focusable `separator`, but aria-query (and therefore
+                eslint-plugin-jsx-a11y, which drives this repo's a11y lint)
+                models `separator` as structure-only with no interactive/
+                widget variant, so a focusable one is flagged as a
+                non-interactive element carrying tabIndex/handlers no matter
+                what — a known static-analysis gap, not a real accessibility
+                problem (suppressing the check would be, so that's not the
+                fix here). `slider` is the APG-recognized widget role for
+                "a value adjustable between a min and max via the keyboard,"
+                which is exactly this control, and both tools and screen
+                readers already understand it as interactive — so it's used
+                here instead of fighting the linter's role model.
+                aria-orientation matches the panel's own resize axis
+                (horizontal) as slider's convention requires (unlike
+                separator, where orientation describes the divider's own
+                axis rather than the direction it moves). The visible grip
+                (three short ticks) and the :focus-visible ring both reuse
+                existing tokens — see the <style> block below — rather than
+                introducing new ones. */}
             <div
               data-testid="subject-panel-resize-handle"
+              className="subject-panel-resize-handle"
+              role="slider"
+              aria-orientation="horizontal"
+              aria-label="Resize subject filter panel"
+              aria-valuenow={panelWidth}
+              aria-valuemin={SUBJECT_PANEL_MIN_WIDTH}
+              aria-valuemax={SUBJECT_PANEL_MAX_WIDTH}
+              tabIndex={0}
               onMouseDown={handleResizeMouseDown}
+              onKeyDown={handleResizeKeyDown}
               style={{
                 position: 'absolute', top: 0, right: -3, width: 6, height: '100%',
                 cursor: 'ew-resize', zIndex: 301,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
-            />
+            >
+              {/* Quiet grip affordance — a hairline of three short ticks,
+                  restrained on purpose since this is a small internal
+                  filter control, not a prominent feature. */}
+              <div aria-hidden="true" style={{
+                display: 'flex', flexDirection: 'column', gap: 2,
+                width: 2, alignItems: 'center',
+              }}>
+                {[0, 1, 2].map(i => (
+                  <span key={i} style={{ width: 2, height: 2, borderRadius: '50%', background: color.borderStrong }} />
+                ))}
+              </div>
+            </div>
+            <style>{`
+              .subject-panel-resize-handle:focus-visible {
+                outline: 2px solid ${color.focusRing};
+                outline-offset: 2px;
+              }
+            `}</style>
             <div style={{ padding: '8px 10px', borderBottom: `1px solid ${color.borderDefault}`, flex: '0 0 auto' }}>
               <input
                 type="text"
