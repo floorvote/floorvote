@@ -36,6 +36,8 @@ adminSavedViewsRouter.post('/', async (c) => {
   const name = typeof body?.name === 'string' ? body.name.trim() : ''
   const query = typeof body?.query === 'string' ? body.query.trim() : ''
   if (!name) return c.json({ error: 'name is required' }, 400)
+  // Renders straight into the page's h1 row — an unbounded name would break that layout.
+  if (name.length > 120) return c.json({ error: 'name must be 120 characters or fewer' }, 400)
   // A view with no filters would be indistinguishable from "All bills".
   if (!query) return c.json({ error: 'query is required' }, 400)
 

@@ -44,4 +44,17 @@ describe('GET /api/views', () => {
       ],
     })
   })
+
+  it('lets an admin/owner read views too — requireAuth is role-agnostic here, not accidentally admin-gated', async () => {
+    await env.DB.prepare(
+      `INSERT INTO saved_views (id, name, query, created_by, display_order) VALUES
+        ('v1', 'Clerk bills', 'subject=UT%3AElections', ?, 0)`,
+    ).bind(adminId).run()
+
+    const res = await app.request('/api/views', { headers: { Cookie: adminCookie } }, env)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      views: [{ id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' }],
+    })
+  })
 })
