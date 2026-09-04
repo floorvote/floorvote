@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import { useVirtualizer, defaultRangeExtractor } from '@tanstack/react-virtual'
+import type { Range } from '@tanstack/react-virtual'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { COUNT_BADGE } from '../../lib/chipStyles'
 import type { SortColumn, SortDir } from './types'
@@ -278,6 +280,20 @@ export type SubjectGroup = {
   options: Array<{ value: string; label: string; count: number }>
 }
 
+// Flattened virtualizer row — either a sticky state heading or a single
+// checkbox option. Built fresh from the (possibly search-filtered) groups
+// each render; see `rows` below.
+type SubjectRow =
+  | { type: 'header'; state: string }
+  | { type: 'option'; value: string; label: string; count: number }
+
+// Fixed, explicit row heights (rather than dynamic measurement) so the
+// virtualizer's estimateSize always matches real layout exactly — no gaps or
+// overlaps, and no dependency on ResizeObserver/measureElement in tests.
+const SUBJECT_OPTION_ROW_HEIGHT = 32
+const SUBJECT_HEADER_ROW_HEIGHT = 24
+const SUBJECT_PANEL_LIST_HEIGHT = 280
+
 /**
  * Subject filter — state-qualified because subject vocabularies aren't
  * comparable across states (see useBillFilters' subjectGroups). Renders
@@ -285,6 +301,18 @@ export type SubjectGroup = {
  * as "this state does not do that," never as an empty control. Group
  * headings appear only with more than one state present; a single state
  * gets a flat list since the heading would be noise.
+ *
+ * The option list is virtualized (@tanstack/react-virtual, same convention as
+ * BillList/index.tsx) because a state's subject vocabulary can run into the
+ * thousands of terms — opening the panel must stay instant regardless of
+ * option count. A persistent search field narrows options by label; state
+ * headings stay sticky while scrolling, following the same
+ * pinned-then-pushed-by-the-next-header pattern as DateDivider in the feed
+ * (there implemented with plain CSS `position: sticky` on in-flow siblings;
+ * here the rows are virtualized/absolutely-positioned, so the "push" is
+ * reproduced by tracking which header is currently active and rendering only
+ * that one with `position: sticky` — see the `rangeExtractor` below, which is
+ * TanStack Virtual's documented recipe for sticky rows in a virtualized list).
  */
 export function SubjectFilterDropdown({
   subjectGroups,
@@ -296,7 +324,9 @@ export function SubjectFilterDropdown({
   onSubjectChange: (next: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -306,6 +336,63 @@ export function SubjectFilterDropdown({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
+
+  // Search narrows each group's options by label (case-insensitive); a group
+  // with no surviving matches is dropped entirely rather than shown empty.
+  // Headings are then based on *this* filtered group count — a search that
+  // narrows down to a single state's matches drops that state's heading too,
+  // matching the un-searched "single state = flat list" rule, since that's
+  // what's actually visible to the user.
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return subjectGroups
+    return subjectGroups
+      .map(group => ({ state: group.state, options: group.options.filter(o => o.label.toLowerCase().includes(q)) }))
+      .filter(group => group.options.length > 0)
+  }, [subjectGroups, search])
+
+  const showHeadings = filteredGroups.length > 1
+
+  const rows = useMemo<SubjectRow[]>(() => {
+    const out: SubjectRow[] = []
+    for (const group of filteredGroups) {
+      if (showHeadings) out.push({ type: 'header', state: group.state })
+      for (const opt of group.options) out.push({ type: 'option', value: opt.value, label: opt.label, count: opt.count })
+    }
+    return out
+  }, [filteredGroups, showHeadings])
+
+  const stickyIndexes = useMemo(
+    () => rows.reduce<number[]>((acc, row, i) => { if (row.type === 'header') acc.push(i); return acc }, []),
+    [rows],
+  )
+
+  // Tracks which header row (if any) is the "currently pinned" one for the
+  // active scroll position — TanStack Virtual's sticky-row recipe. Set inside
+  // rangeExtractor (called during render) rather than via effect/state, so it
+  // stays in sync with the very range it's deciding.
+  const activeStickyIndexRef = useRef(-1)
+
+  const rangeExtractor = useCallback((range: Range) => {
+    activeStickyIndexRef.current = stickyIndexes.length === 0
+      ? -1
+      : [...stickyIndexes].reverse().find(index => range.startIndex >= index) ?? stickyIndexes[0]
+    const next = new Set(defaultRangeExtractor(range))
+    if (activeStickyIndexRef.current >= 0) next.add(activeStickyIndexRef.current)
+    return [...next].sort((a, b) => a - b)
+  }, [stickyIndexes])
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => rows[i]?.type === 'header' ? SUBJECT_HEADER_ROW_HEIGHT : SUBJECT_OPTION_ROW_HEIGHT,
+    overscan: 8,
+    getItemKey: (i) => {
+      const row = rows[i]
+      return row?.type === 'header' ? `header:${row.state}` : `option:${row?.type === 'option' ? row.value : i}`
+    },
+    rangeExtractor,
+  })
 
   if (subjectGroups.length === 0) return null
 
@@ -319,7 +406,6 @@ export function SubjectFilterDropdown({
 
   const hasSelection = selectedSubjects.length > 0
   const buttonLabel = hasSelection ? `Subject (${selectedSubjects.length})` : 'Subject'
-  const showHeadings = subjectGroups.length > 1
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -346,42 +432,73 @@ export function SubjectFilterDropdown({
             style={{
               position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
               background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg,
-              padding: '4px 0', minWidth: 220, maxHeight: 320, overflowY: 'auto',
-              boxShadow: shadow.md,
+              minWidth: 220, maxHeight: SUBJECT_PANEL_LIST_HEIGHT + 48, boxShadow: shadow.md,
+              display: 'flex', flexDirection: 'column',
             }}
           >
-            {subjectGroups.map(group => (
-              <div key={group.state}>
-                {showHeadings && (
-                  <div style={{
-                    fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
-                    textTransform: 'uppercase', letterSpacing: '0.05em', padding: '6px 12px 2px',
-                  }}>
-                    {group.state}
-                  </div>
-                )}
-                {group.options.map(opt => {
-                  const checked = selectedSubjects.includes(opt.value)
-                  return (
-                    <label key={opt.value} style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
-                      cursor: 'pointer', fontSize: fontSize.sm,
-                      color: checked ? color.linkBlue : color.textSlate,
-                      background: checked ? color.bgInfo : 'transparent',
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggle(opt.value)}
-                        style={{ margin: 0, accentColor: color.accentBlue }}
-                      />
-                      {opt.label}
-                      <CountBadge count={opt.count} />
-                    </label>
-                  )
-                })}
+            <div style={{ padding: '8px 10px', borderBottom: `1px solid ${color.borderDefault}`, flex: '0 0 auto' }}>
+              <input
+                type="text"
+                placeholder="Search subjects…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  width: '100%', boxSizing: 'border-box', fontSize: fontSize.sm, padding: '6px 10px',
+                  border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                }}
+              />
+            </div>
+            {rows.length === 0 ? (
+              <div style={{ padding: '16px 12px', fontSize: fontSize.sm, color: color.textMuted }}>
+                No subjects match &ldquo;{search.trim()}&rdquo;.
               </div>
-            ))}
+            ) : (
+              <div
+                ref={scrollRef}
+                style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', position: 'relative', padding: '4px 0' }}
+              >
+                <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                  {virtualizer.getVirtualItems().map(virtualRow => {
+                    const row = rows[virtualRow.index]
+                    const sticky = activeStickyIndexRef.current === virtualRow.index
+                    const positionStyle: React.CSSProperties = sticky
+                      ? { position: 'sticky', top: 0, zIndex: 2 }
+                      : { position: 'absolute', top: virtualRow.start, zIndex: 1 }
+                    return (
+                      <div key={virtualRow.key} data-index={virtualRow.index} style={{ ...positionStyle, left: 0, width: '100%' }}>
+                        {row.type === 'header' ? (
+                          <div style={{
+                            height: SUBJECT_HEADER_ROW_HEIGHT, boxSizing: 'border-box', display: 'flex', alignItems: 'center',
+                            fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textMuted,
+                            textTransform: 'uppercase', letterSpacing: '0.05em', padding: '0 12px',
+                            background: color.white,
+                          }}>
+                            {row.state}
+                          </div>
+                        ) : (
+                          <label style={{
+                            height: SUBJECT_OPTION_ROW_HEIGHT, boxSizing: 'border-box',
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
+                            cursor: 'pointer', fontSize: fontSize.sm,
+                            color: selectedSubjects.includes(row.value) ? color.linkBlue : color.textSlate,
+                            background: selectedSubjects.includes(row.value) ? color.bgInfo : color.white,
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedSubjects.includes(row.value)}
+                              onChange={() => toggle(row.value)}
+                              style={{ margin: 0, accentColor: color.accentBlue }}
+                            />
+                            {row.label}
+                            <CountBadge count={row.count} />
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
