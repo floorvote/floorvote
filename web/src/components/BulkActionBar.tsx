@@ -118,9 +118,22 @@ interface BulkActionBarProps {
 }
 
 const MIXED = 'mixed'
+/** Sentinel for "the current value was never loaded" — distinct from `null`,
+ *  which asserts that no bill in the selection has a value. Reporting `null`
+ *  for unloaded data is a claim we have not earned: a silent /bulk-values
+ *  failure would tell an admin that hundreds of bills have no position, which
+ *  is exactly the premise that invites a bulk overwrite of real data.
+ *  NUL-prefixed so it can never collide with a real dropdown option. */
+const UNKNOWN = '\u0000unknown'
+
+/** Why `initialValues` is null, so the ribbon can say which it is instead of
+ *  collapsing loading, failure, and over-the-cap into a bare "Not set". */
+type ValuesStatus = 'ready' | 'loading' | 'error' | 'over-limit'
+
 const PRIORITY_DISPLAY: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 function fmtFieldVal(val: string | null | 'mixed', isPriority = false): string {
+  if (val === UNKNOWN) return '—'
   if (val === null) return 'Not set'
   if (val === MIXED) return 'Multiple values'
   if (isPriority) return PRIORITY_DISPLAY[val] ?? val
@@ -229,6 +242,7 @@ export function BulkActionBar({
   const [error, setError] = useState<string | null>(null)
   const [visible, setVisible] = useState(false)
   const [nullMatchCount, setNullMatchCount] = useState<number | null>(null)
+  const [valuesStatus, setValuesStatus] = useState<ValuesStatus>('ready')
   const prevModeRef = useRef(selection.mode)
 
   const count = selection.mode === 'ids' ? selection.ids.size
@@ -249,12 +263,20 @@ export function BulkActionBar({
   useEffect(() => {
     if (selection.mode !== 'ids') return
     setInitialValues(computeInitialFromBills(selectedBills, customFieldDefs))
+    setValuesStatus('ready')
   }, [selection.mode, selectedBills, customFieldDefs])
 
   // Pre-populate from API (filter mode, count ≤ 1000)
   useEffect(() => {
     if (selection.mode !== 'filter') return
-    if (total > 1000) { setInitialValues(null); setNullMatchCount(null); return }
+    if (total > 1000) {
+      setInitialValues(null); setNullMatchCount(null); setValuesStatus('over-limit')
+      return
+    }
+    // Clear first: the values still held are the previous selection's, and
+    // showing those would be a different wrong answer than showing "Not set".
+    setInitialValues(null)
+    setValuesStatus('loading')
 
     const params = new URLSearchParams()
     currentFilters.status.forEach(s => params.append('status', s))
@@ -278,7 +300,12 @@ export function BulkActionBar({
     ).then(data => {
       setInitialValues(computeInitialFromDistribution(data, data.count, customFieldDefs))
       setNullMatchCount(data.nullMatchCount)
-    }).catch(() => { setInitialValues(null); setNullMatchCount(null) })
+      setValuesStatus('ready')
+    }).catch(() => {
+      // Previously swallowed outright, which left every pill reading "Not set"
+      // with nothing to indicate the values had failed to load.
+      setInitialValues(null); setNullMatchCount(null); setValuesStatus('error')
+    })
   }, [selection.mode, total, currentFilters, customFieldDefs])
 
   // Reset staged values when selection changes mode
@@ -314,7 +341,9 @@ export function BulkActionBar({
   // Effective display value for a field: staged overrides initial
   function effVal(stagedV: string | null | undefined, initial: FieldValue | undefined): string | null | 'mixed' {
     if (stagedV !== undefined) return stagedV
-    return initial ?? null
+    // undefined = never loaded; null = loaded and genuinely unset. Keep them apart.
+    if (initial === undefined) return UNKNOWN
+    return initial
   }
 
   function setStagedField(
@@ -322,6 +351,13 @@ export function BulkActionBar({
     newVal: string | null,
     initial: FieldValue | undefined,
   ) {
+    // With the initial value unknown, a pick cannot be classified as an undo:
+    // treating unknown as null would silently swallow a deliberate "Not set",
+    // making it the one value the operator cannot choose.
+    if (initial === undefined) {
+      setStaged(prev => ({ ...prev, [field]: newVal }))
+      return
+    }
     const effectiveInitial = initial === MIXED ? MIXED : (initial ?? null)
     const isUndo = newVal === effectiveInitial || (newVal === null && effectiveInitial === null)
     setStaged(prev => ({ ...prev, [field]: isUndo ? undefined : newVal }))
@@ -346,10 +382,15 @@ export function BulkActionBar({
         next.delete(fieldId)
       } else {
         const initial = initialValues?.customFields[fieldId]
-        const effectiveInitial = initial === MIXED ? MIXED : (initial ?? null)
-        const isUndo = newVal === effectiveInitial || (newVal === null && effectiveInitial === null)
-        if (isUndo) next.delete(fieldId)
-        else next.set(fieldId, newVal)
+        // See setStagedField: unknown initial cannot be compared against.
+        if (initial === undefined) {
+          next.set(fieldId, newVal)
+        } else {
+          const effectiveInitial = initial === MIXED ? MIXED : (initial ?? null)
+          const isUndo = newVal === effectiveInitial || (newVal === null && effectiveInitial === null)
+          if (isUndo) next.delete(fieldId)
+          else next.set(fieldId, newVal)
+        }
       }
       return { ...prev, customFields: next }
     })
@@ -592,6 +633,17 @@ export function BulkActionBar({
               : `Apply to ${count.toLocaleString()} bill${count !== 1 ? 's' : ''}`}
           </button>
 
+          {valuesStatus !== 'ready' && (
+            <span style={{
+              fontSize: fontSize.xs, lineHeight: 1.3,
+              color: valuesStatus === 'error' ? color.textErrorRed : color.textMuted,
+            }}>
+              {valuesStatus === 'loading' ? 'Loading current values…'
+                : valuesStatus === 'error' ? 'Could not load current values'
+                : 'Current values not shown above 1,000 bills'}
+            </span>
+          )}
+
           {error && <span style={{ fontSize: fontSize.xs, color: color.textErrorRed, lineHeight: 1.3 }}>{error}</span>}
         </div>
 
@@ -659,12 +711,22 @@ export function BulkActionBar({
             const options = field.options ?? []
             const optionCounts = initialValues?.multiOptionCounts[field.id] ?? {}
             const n = initialValues?.sampleSize ?? 0
+            const valuesKnown = valuesStatus === 'ready' && initialValues !== null
             const allHave = new Set<string>()
             const indeterminate = new Set<string>()
-            for (const opt of options) {
-              const held = optionCounts[opt] ?? 0
-              if (held === n && n > 0) allHave.add(opt)
-              else if (held > 0) indeterminate.add(opt)
+            if (!valuesKnown) {
+              // Unknown current state: mark every option indeterminate so the
+              // picker asserts neither on nor off. This also routes each click
+              // through the force-on/force-off transition below, instead of the
+              // "revert to the original ∅" branch — which would be reverting to
+              // an original we never read.
+              for (const opt of options) indeterminate.add(opt)
+            } else {
+              for (const opt of options) {
+                const held = optionCounts[opt] ?? 0
+                if (held === n && n > 0) allHave.add(opt)
+                else if (held > 0) indeterminate.add(opt)
+              }
             }
 
             const delta = staged.multiCustomFields.get(field.id) ?? { additions: [], removals: [] }
@@ -749,6 +811,7 @@ export function BulkActionBar({
 
             const triggerLabel = (() => {
               if (isStaged) return `${field.name}: Changed`
+              if (!valuesKnown) return `${field.name}: —`
               if (indeterminate.size > 0) return `${field.name}: Multiple values`
               if (allHave.size > 0) return `${field.name}: ${[...allHave].join(', ')}`
               return `${field.name}: Not set`
@@ -817,7 +880,9 @@ export function BulkActionBar({
 
           if (field.type === 'binary') {
             const isChecked = eff === '1'
-            const isMixed = eff === MIXED
+            // Unknown reads as indeterminate: an unchecked box would assert that
+            // no bill in the selection has the flag set.
+            const isMixed = eff === MIXED || eff === UNKNOWN
             return (
               <label
                 key={field.id}

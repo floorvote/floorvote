@@ -324,3 +324,119 @@ describe('BulkActionBar multi-select custom field (filter mode)', () => {
     })
   })
 })
+
+// Every one of these states used to render as "Not set" — a claim about data
+// that was never fetched. The silent-failure case is the consequential one: it
+// told an admin that no bill in the selection had a value, which is exactly the
+// premise that invites bulk-overwriting real data.
+describe('BulkActionBar unknown current values', () => {
+  const multiDef = {
+    id: 'f1', name: 'Tags', type: 'dropdown' as const, options: ['a', 'b'], multiple: true,
+  }
+  const singleDef = {
+    id: 'f2', name: 'Stage', type: 'dropdown' as const, options: ['x', 'y'], multiple: false,
+  }
+  const binaryDef = { id: 'f3', name: 'Flag', type: 'binary' as const, options: null, multiple: false }
+
+  function renderFilterMode(opts: { count?: number; fail?: boolean; hang?: boolean } = {}) {
+    const { count = 5, fail = false, hang = false } = opts
+    // Calls accumulate across tests in this file, and the assertions below look
+    // up '/bills/bulk' by path — without this they can match an earlier test's.
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        if (fail) return Promise.reject(new Error('boom'))
+        if (hang) return new Promise(() => {})
+        return Promise.resolve({
+          count, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0,
+        })
+      }
+      return Promise.resolve({ dismissed: 0 })
+    })
+    return render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={count}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[multiDef, singleDef, binaryDef]}
+        currentFilters={noFilters}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+  }
+
+  it('reports a failed load instead of claiming every field is "Not set"', async () => {
+    renderFilterMode({ fail: true })
+    await waitFor(() => expect(screen.getByText('Could not load current values')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Stage:/i })).toHaveTextContent(/Stage:\s*—/)
+    expect(screen.getByRole('button', { name: /Tags:/i })).toHaveTextContent(/Tags:\s*—/)
+    expect(screen.getByRole('button', { name: /Priority:/i })).toHaveTextContent(/Priority:\s*—/)
+    expect(screen.queryByText(/Not set/)).not.toBeInTheDocument()
+  })
+
+  it('says values are unavailable over the 1,000-bill cap', async () => {
+    renderFilterMode({ count: 5000 })
+    await waitFor(() =>
+      expect(screen.getByText('Current values not shown above 1,000 bills')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Stage:/i })).toHaveTextContent(/Stage:\s*—/)
+  })
+
+  it('shows a loading note while the distribution is in flight', async () => {
+    renderFilterMode({ hang: true })
+    await waitFor(() => expect(screen.getByText('Loading current values…')).toBeInTheDocument())
+  })
+
+  it('clears the note and shows real values once loaded', async () => {
+    renderFilterMode({ count: 5 })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Stage:/i })).toHaveTextContent(/Stage:\s*Not set/))
+    expect(screen.queryByText('Loading current values…')).not.toBeInTheDocument()
+    expect(screen.queryByText('Could not load current values')).not.toBeInTheDocument()
+  })
+
+  it('renders a binary field as indeterminate rather than unchecked when unknown', async () => {
+    renderFilterMode({ fail: true })
+    await waitFor(() => expect(screen.getByText('Could not load current values')).toBeInTheDocument())
+    const box = screen.getByRole('checkbox', { name: /Flag/i }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    expect(box.indeterminate).toBe(true)
+  })
+
+  it('lets "Not set" be staged deliberately when the initial value is unknown', async () => {
+    renderFilterMode({ fail: true })
+    await waitFor(() => expect(screen.getByText('Could not load current values')).toBeInTheDocument())
+
+    const stagePill = () => screen.getByRole('button', { name: /Stage:/i })
+    fireEvent.click(stagePill())
+    fireEvent.click(screen.getByText('Not set'))
+    // Previously this was classified as an undo against a guessed null initial
+    // and silently dropped, making "Not set" unselectable.
+    await waitFor(() => expect(stagePill()).toHaveTextContent(/Stage:\s*Not set/))
+    expect(screen.getByTitle('Undo Stage change')).toBeInTheDocument()
+  })
+
+  it('stages an explicit removal for a multi option when the original is unknown', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderFilterMode({ fail: true })
+    await waitFor(() => expect(screen.getByText('Could not load current values')).toBeInTheDocument())
+
+    const tagsPill = () => screen.getByRole('button', { name: /Tags:/i })
+    fireEvent.click(tagsPill())
+    // Options start indeterminate, so the first click forces on and the second
+    // forces off — never "reverting" to an original we never read.
+    fireEvent.click(screen.getByText('a'))
+    await waitFor(() => expect(tagsPill()).toHaveTextContent(/Tags:\s*Changed/))
+    // The multi panel stays open across picks, so click the same option again.
+    fireEvent.click(screen.getByText('a'))
+
+    fireEvent.click(screen.getByRole('button', { name: /Apply to 5 bills/i }))
+    await waitFor(() => {
+      const call = vi.mocked(apiFetch).mock.calls.find(c => c[0] === '/bills/bulk')
+      expect(call).toBeDefined()
+      const body = JSON.parse((call![1] as { body: string }).body)
+      expect(body.customFields).toEqual([{ fieldId: 'f1', additions: [], removals: ['a'] }])
+    })
+  })
+})
