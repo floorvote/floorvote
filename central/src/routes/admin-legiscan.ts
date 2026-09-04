@@ -343,10 +343,13 @@ adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
 // which notification flag they set. No LegiScan calls, no AI runs either way.
 async function refreshTenantLinks(
   c: Context<{ Bindings: LsEnv }>,
-  opts: { matched: boolean; flag: 'stubOnly' | 'metadataOnly' },
+  // tenantId is passed in rather than read from `c` here: this helper takes a
+  // generic Context, so Hono cannot narrow `c.req.param('tenantId')` to string
+  // the way it does inside a route handler that declares the path.
+  opts: { tenantId: string; matched: boolean; flag: 'stubOnly' | 'metadataOnly' },
 ) {
   const db = drizzle(c.env.DB, { schema })
-  const tenantId = c.req.param('tenantId')
+  const { tenantId } = opts
   const state = c.req.query('state')?.toUpperCase()
 
   const tenant = await db.select().from(tenants).where(eq(tenants.tenantId, tenantId)).get()
@@ -388,14 +391,14 @@ async function refreshTenantLinks(
 // No LegiScan calls, no AI runs. Optional ?state=<two-letter state> scopes
 // the sweep to one state instead of all of the tenant's unmatched bills.
 adminLsRoutes.post('/refresh-stubs/:tenantId', async (c) => {
-  return refreshTenantLinks(c, { matched: false, flag: 'stubOnly' })
+  return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: false, flag: 'stubOnly' })
 })
 
 // Sibling of /refresh-stubs for already-matched bills: sends metadataOnly
 // (refresh from central, skip text fetch + AI) instead of stubOnly. Same
 // LegiScan-free guarantee, same optional ?state= filter.
 adminLsRoutes.post('/refresh-metadata/:tenantId', async (c) => {
-  return refreshTenantLinks(c, { matched: true, flag: 'metadataOnly' })
+  return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: true, flag: 'metadataOnly' })
 })
 
 // POST /admin/backfill-stub-actions/:tenantId
