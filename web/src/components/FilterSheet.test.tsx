@@ -89,8 +89,20 @@ describe('FilterSheet — dimension list (level 1)', () => {
     }
   })
 
-  it('omits a dimension row when that dimension has no options', () => {
-    renderSheet({ tagOptions: [], subjectGroups: [] })
+  it('shows a drill-down row (not the options themselves) when a dimension has options, and omits the row when it has none', () => {
+    const { rerender } = renderSheet({
+      tagOptions: ['Education'],
+      subjectGroups: [{ state: 'UT', options: [{ value: 'UT:Counties', label: 'Counties', count: 2 }] }],
+    })
+    // The row itself is present as a button...
+    expect(screen.getByRole('button', { name: /topics/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /subject/i })).toBeInTheDocument()
+    // ...but its options are not rendered inline on the dimension list — that
+    // would be the old, pre-drill-down behavior this task replaces.
+    expect(screen.queryByText('Education')).not.toBeInTheDocument()
+    expect(screen.queryByText('Counties')).not.toBeInTheDocument()
+
+    rerender(<FilterSheet {...makeDefaults()} tagOptions={[]} subjectGroups={[]} />)
     expect(screen.queryByRole('button', { name: /topics/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /subject/i })).not.toBeInTheDocument()
   })
@@ -148,6 +160,38 @@ describe('FilterSheet — drilling into a dimension', () => {
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
     fireEvent.click(screen.getByText('Clear all'))
     expect(onClearAll).toHaveBeenCalled()
+  })
+
+  // Level 1 <-> level 2 replaces the sheet's content in place with no page
+  // navigation to carry a keyboard/screen-reader user's position, so focus
+  // has to be moved by hand on both sides of the transition.
+  it('moves focus onto the dimension heading on drill-in, so it is announced to a screen reader', () => {
+    renderSheet()
+    fireEvent.click(screen.getByRole('button', { name: /status/i }))
+    const heading = screen.getByRole('heading', { name: /status/i })
+    expect(document.activeElement).toBe(heading)
+  })
+
+  it('moves focus back to the originating dimension row on drill-out', () => {
+    renderSheet()
+    fireEvent.click(screen.getByRole('button', { name: /status/i }))
+    fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
+    const statusRow = screen.getByRole('button', { name: /status/i })
+    expect(document.activeElement).toBe(statusRow)
+  })
+
+  it('does not steal focus back to a row on the next open after a stale drill-in/out history', () => {
+    const { rerender } = renderSheet({ isOpen: true })
+    fireEvent.click(screen.getByRole('button', { name: /status/i }))
+    fireEvent.click(screen.getByRole('button', { name: /back to filters/i }))
+
+    // Close and reopen — a leftover "last drilled dimension" from the
+    // previous session must not yank focus onto that row again now that the
+    // sheet has reset to level 1.
+    rerender(<FilterSheet {...makeDefaults()} isOpen={false} />)
+    rerender(<FilterSheet {...makeDefaults()} isOpen={true} />)
+    const statusRow = screen.getByRole('button', { name: /status/i })
+    expect(document.activeElement).not.toBe(statusRow)
   })
 })
 

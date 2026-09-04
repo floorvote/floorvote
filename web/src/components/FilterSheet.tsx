@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { COUNT_BADGE } from '../lib/chipStyles'
 import type { SubjectGroup } from '../pages/BillList/FilterPanel'
@@ -96,9 +96,10 @@ function SectionLabel({ title }: { title: string }) {
 // A level-1 row naming one dimension, with a count of its currently-selected
 // options (so the user can see where their active filters are without
 // opening anything) and a chevron indicating it drills into level 2.
-function DimensionRow({ label, selectedCount, onClick }: { label: string; selectedCount: number; onClick: () => void }) {
+function DimensionRow({ label, selectedCount, onClick, buttonRef }: { label: string; selectedCount: number; onClick: () => void; buttonRef?: (el: HTMLButtonElement | null) => void }) {
   return (
     <button
+      ref={buttonRef}
       onClick={onClick}
       style={{
         width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -136,6 +137,38 @@ function BackButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+// Level 1 <-> level 2 replaces the sheet's content in place — there's no page
+// navigation, browser history entry, or route change to carry a keyboard or
+// screen-reader user's position across the transition, so it has to be done
+// by hand. Mirrors the desktop FilterDropdown's "move focus into what just
+// opened" convention (FilterPanel.tsx): drilling in moves focus onto the
+// level-2 heading (a real <h2>, focusable via tabIndex={-1}), so a screen
+// reader announces the dimension you just entered; drilling out moves focus
+// back onto the row you drilled in from, so tabbing/arrowing resumes exactly
+// where it left off instead of resetting to the top of the list.
+function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  const rowRefs = useRef<Partial<Record<DimensionKey, HTMLButtonElement | null>>>({})
+  const lastDimensionRef = useRef<DimensionKey | null>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    if (dimension !== null) {
+      lastDimensionRef.current = dimension
+      headingRef.current?.focus()
+    } else if (lastDimensionRef.current !== null) {
+      rowRefs.current[lastDimensionRef.current]?.focus()
+      lastDimensionRef.current = null
+    }
+  }, [dimension, isOpen])
+
+  return {
+    headingRef,
+    rowRef: (key: DimensionKey) => (el: HTMLButtonElement | null) => { rowRefs.current[key] = el },
+    clearHistory: () => { lastDimensionRef.current = null },
+  }
+}
+
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, minRelevance, myBills,
@@ -154,8 +187,17 @@ export function FilterSheet({
   // The sheet always opens on the dimension list (level 1), never mid-drill —
   // reset whenever it transitions from closed to open.
   const [dimension, setDimension] = useState<DimensionKey | null>(null)
+  const { headingRef, rowRef, clearHistory } = useDrilldownFocus(dimension, isOpen)
   useEffect(() => {
-    if (isOpen) setDimension(null)
+    if (isOpen) {
+      setDimension(null)
+      // A stale "drilled in from X" record from a previous open must not
+      // steal focus back to row X the moment this one lands on level 1.
+      clearHistory()
+    }
+    // clearHistory is stable (from a ref-backed hook) and intentionally
+    // excluded so this only reacts to isOpen transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   // Track the relevance thumb locally so it moves instantly while dragging, but
@@ -209,11 +251,19 @@ export function FilterSheet({
           padding: '12px 20px 8px',
         }}>
           {dimension === null ? (
-            <span style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>Filter Bills</span>
+            <h2 style={{ margin: 0, fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>Filter Bills</h2>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <BackButton onClick={() => setDimension(null)} />
-              <span style={{ fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary }}>{DIMENSION_LABELS[dimension]}</span>
+              {/* Focus lands here on drill-in (see useDrilldownFocus) so a
+                  screen reader announces the dimension by name — the only
+                  other change on screen is which options are listed below,
+                  which nothing would otherwise surface. tabIndex={-1} makes
+                  a non-interactive heading focusable programmatically without
+                  adding it to the tab order. */}
+              <h2 ref={headingRef} tabIndex={-1} style={{ margin: 0, fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.textPrimary, outline: 'none' }}>
+                {DIMENSION_LABELS[dimension]}
+              </h2>
             </div>
           )}
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -289,22 +339,22 @@ export function FilterSheet({
               <div style={{ marginBottom: 20 }}>
                 <SectionLabel title="Filters" />
                 {statusOptions.length > 0 && (
-                  <DimensionRow label="Status" selectedCount={statuses.length} onClick={() => setDimension('status')} />
+                  <DimensionRow label="Status" selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
                 )}
                 {priorityOptions.length > 0 && (
-                  <DimensionRow label="Priority" selectedCount={priorities.length} onClick={() => setDimension('priority')} />
+                  <DimensionRow label="Priority" selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
                 )}
                 {positionOptions.length > 0 && (
-                  <DimensionRow label="Position" selectedCount={positions.length} onClick={() => setDimension('position')} />
+                  <DimensionRow label="Position" selectedCount={positions.length} onClick={() => setDimension('position')} buttonRef={rowRef('position')} />
                 )}
                 {sessionVisible && (
-                  <DimensionRow label="Session" selectedCount={sessions.length} onClick={() => setDimension('session')} />
+                  <DimensionRow label="Session" selectedCount={sessions.length} onClick={() => setDimension('session')} buttonRef={rowRef('session')} />
                 )}
                 {tagOptions.length > 0 && (
-                  <DimensionRow label="Topics" selectedCount={tags.length} onClick={() => setDimension('tags')} />
+                  <DimensionRow label="Topics" selectedCount={tags.length} onClick={() => setDimension('tags')} buttonRef={rowRef('tags')} />
                 )}
                 {subjectGroups.length > 0 && (
-                  <DimensionRow label="Subject" selectedCount={subjects.length} onClick={() => setDimension('subjects')} />
+                  <DimensionRow label="Subject" selectedCount={subjects.length} onClick={() => setDimension('subjects')} buttonRef={rowRef('subjects')} />
                 )}
               </div>
             </>
