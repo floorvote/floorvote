@@ -22,11 +22,12 @@ export function SaveViewButton({
   }, [open])
 
   // Count what is actually being captured, so the summary can say it. Uses the
-  // same normalization the divergence check uses, so the number matches what
-  // will be stored — view and page params are excluded from both.
-  const filterCount = normalizeViewQuery(currentSearch)
-    ? [...new URLSearchParams(normalizeViewQuery(currentSearch))].length
-    : 0
+  // same normalization the divergence check uses (view and page params are
+  // excluded from both), but additionally drops sort/dir from the count only —
+  // they're stored with the view but aren't filters, so they shouldn't inflate
+  // "Saves the N filters applied now."
+  const filterCount = [...new URLSearchParams(normalizeViewQuery(currentSearch))]
+    .filter(([key]) => key !== 'sort' && key !== 'dir').length
 
   async function commit() {
     const trimmed = name.trim()

@@ -10,6 +10,12 @@ describe('SaveViewButton', () => {
     expect(screen.getByText(/2 filters/i)).toBeTruthy()
   })
 
+  it('excludes sort and dir from the count, though they stay in the stored query', () => {
+    render(<SaveViewButton currentSearch="?subject=UT%3AElections&sort=priority&dir=desc" onSave={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /save as view/i }))
+    expect(screen.getByText(/1 filter\b/i)).toBeTruthy()
+  })
+
   it('saves the trimmed name', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     render(<SaveViewButton currentSearch="?status=1" onSave={onSave} />)
