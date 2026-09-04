@@ -394,4 +394,109 @@ describe('HoverTooltip', () => {
       }
     })
   })
+
+  // The 'top' fix above only wired the real measurement into the 'top'
+  // branch. 'bottom' and 'right' still gated their clamp on the `maxWidth`
+  // prop alone — the exact bug the 'top' fix addressed, just untouched in
+  // these branches — and 'top-start'/'top-end' had no clamp at all.
+  describe('viewport-aware clamping for other placements', () => {
+    it('keeps a no-maxWidth "bottom" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="bottom">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        const left = parseFloat(bubble.style.left)
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(left).toBeLessThan(780)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a no-maxWidth "right" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="right">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        // No room to the right of an anchor already at the viewport edge, so
+        // this must have fallen back to the clamped centered-below position
+        // rather than tooltipPositionRight (which would put it further right).
+        expect(bubble.style.transform).toContain('translateX(-50%)')
+        const left = parseFloat(bubble.style.left)
+        expect(left + 300 / 2).toBeLessThanOrEqual(800 - 8 + 0.01)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a "top-end" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 780, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="top-end">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        // top-end's `left` value paired with translateX(-100%) is the bubble's
+        // right edge — assert that edge, not the raw `left` value, stays on screen.
+        const rightEdge = parseFloat(bubble.style.left)
+        expect(rightEdge).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(rightEdge - 300).toBeGreaterThanOrEqual(8 - 0.01)
+      } finally {
+        restore()
+      }
+    })
+
+    it('keeps a "top-start" bubble within the right edge of the viewport', () => {
+      const restore = stubGeometry({
+        innerWidth: 800,
+        anchorRect: { left: 760, right: 800 },
+        bubbleText: 'A long filter tooltip that runs wide',
+        bubbleWidth: 300,
+      })
+      try {
+        render(
+          <HoverTooltip text="A long filter tooltip that runs wide" placement="top-start">
+            <button>trigger</button>
+          </HoverTooltip>,
+        )
+        fireEvent.pointerEnter(screen.getByText('trigger'), { pointerType: 'mouse' })
+        const bubble = screen.getByText('A long filter tooltip that runs wide')
+        const left = parseFloat(bubble.style.left)
+        // Unclamped, top-start would sit at the anchor's left edge (760) and
+        // extend to 1060 — past the 800px viewport. Confirm it moved.
+        expect(left + 300).toBeLessThanOrEqual(800 - 8 + 0.01)
+        expect(left).toBeLessThan(760)
+      } finally {
+        restore()
+      }
+    })
+  })
 })
