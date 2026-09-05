@@ -3,13 +3,19 @@
  *
  * central/src/lib/keywords.ts (matchesUnion) and api/src/lib/keywords.ts
  * (matchesKeywords) are hand-mirrored: two separate Workers with no shared
- * module between them. Nothing enforces that they stay in sync, and a
- * divergence is silent and serious — central decides which bills to link and
- * fetch, the tenant decides which to analyze, so disagreement means the tenant
- * analyzes a different set than central delivered.
+ * matching module between them. Nothing enforces that the logic stays in sync,
+ * and a divergence is silent and serious — central decides which bills to link
+ * and fetch, the tenant decides which to analyze, so disagreement means the
+ * tenant analyzes a different set than central delivered.
  *
  * Each package's test suite asserts ITS OWN matcher against this one table, so
  * a change to either side that is not mirrored fails that side's tests.
+ *
+ * There are further hand-copies of the same logic in one-off scripts, which no
+ * test covers — keep them in step by hand when the matcher changes:
+ *   scripts/openstates/load-history.ts
+ *   scripts/openstates/openstates-eval.ts
+ *   scripts/openstates/openstates-deep-eval.ts
  */
 export type KeywordMatchCase = { text: string; keywords: string[]; expected: boolean }
 

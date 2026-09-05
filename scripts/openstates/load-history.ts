@@ -126,7 +126,13 @@ function d1ExecuteFile(sqlFile: string): void {
 
 const WORD_BOUNDARY_KEYWORDS = new Set(['election'])
 
+// Mirror of central/src/lib/keywords.ts matchesUnion — must stay in sync.
+// See that file for why the wildcard is checked by membership before the loop
+// and why an EMPTY list still means match-nothing.
+const WILDCARD_KEYWORD = '*'
+
 function matchesUnion(text: string, keywords: string[]): { matched: boolean; keyword: string } {
+  if (keywords.includes(WILDCARD_KEYWORD)) return { matched: true, keyword: WILDCARD_KEYWORD }
   const lower = text.toLowerCase()
   for (const kw of keywords) {
     if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
