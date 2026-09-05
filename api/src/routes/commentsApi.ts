@@ -7,6 +7,7 @@ import { extractAndNotifyMentions } from '../lib/mentions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
 import { isReactionEmoji } from '../../../shared/reactionEmojis'
+import { COMMENT_PREVIEW_MAX, stripHtml, truncateWithEllipsis } from '../../../shared/feedUtils'
 import type { AppEnv } from '../types'
 
 export const commentsApiRouter = new Hono<AppEnv>()
@@ -50,7 +51,30 @@ commentsApiRouter.patch('/:id', async (c) => {
   await db.update(comments).set({ content }).where(eq(comments.id, id))
 
   await db.delete(commentMentions).where(eq(commentMentions.commentId, id))
-  await extractAndNotifyMentions(id, content, currentUser.id, currentUser.role, comment.billId, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
+  const mentionedUserIds = await extractAndNotifyMentions(id, content, currentUser.id, currentUser.role, comment.billId, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
+
+  // The feed renders a snapshot of the comment taken at creation (metadata.preview),
+  // not a join back to `comments` — so without this the edit is invisible on the
+  // feed forever. Rebuild the same fields the create path writes, preserving any
+  // other keys the event carries.
+  const events = await db.select({ id: feedEvents.id, metadata: feedEvents.metadata })
+    .from(feedEvents)
+    .where(and(
+      eq(feedEvents.type, 'comment_added'),
+      eq(feedEvents.billId, comment.billId),
+      sql`json_extract(${feedEvents.metadata}, '$.commentId') = ${id}`,
+    ))
+    .all()
+  for (const event of events) {
+    const parsed = JSON.parse(event.metadata) as Record<string, unknown>
+    delete parsed.mentionedUserIds
+    const metadata = JSON.stringify({
+      ...parsed,
+      preview: truncateWithEllipsis(stripHtml(content), COMMENT_PREVIEW_MAX),
+      ...(mentionedUserIds.length > 0 ? { mentionedUserIds } : {}),
+    })
+    await db.update(feedEvents).set({ metadata }).where(eq(feedEvents.id, event.id))
+  }
 
   return c.json({ ok: true })
 })
