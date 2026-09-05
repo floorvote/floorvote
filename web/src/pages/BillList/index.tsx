@@ -12,6 +12,7 @@ import { useScrolledUnder } from '../../hooks/useScrolledUnder'
 import { FilterSheet } from '../../components/FilterSheet'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
+import { useDemo } from '../../context/DemoContext'
 import { CARD } from '../../lib/cardStyle'
 import { PRIORITY_COLORS, POSITION_COLORS, POSITION_FALLBACK, COUNT_BADGE } from '../../lib/chipStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
@@ -153,6 +154,12 @@ export function BillList() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
   const refreshSidebar = useSidebarRefresh()
+  const { demoMode, settled } = useDemo()
+  // "Save as view" writes a view, so it must be hidden until we positively
+  // know this tenant is not a demo — demoMode === false is ambiguous before
+  // `settled` (see DemoContext's header comment), and a naive `!demoMode`
+  // would flash the button at a demo visitor before the config request lands.
+  const isNotDemo = settled && !demoMode
 
   // --- sort (hook) ---
   const { sortCol, sortDir, setSortCol, setSortDir, handleSort, handleReset } = useBillSort(searchParams)
@@ -994,7 +1001,7 @@ export function BillList() {
             Reset filters
           </button>
         )}
-        {isAdmin && normalizeViewQuery(location.search) !== '' && (
+        {isAdmin && isNotDemo && normalizeViewQuery(location.search) !== '' && (
           <SaveViewButton
             currentSearch={location.search}
             onSave={async (name) => {

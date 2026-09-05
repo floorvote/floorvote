@@ -3,6 +3,13 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/react'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import * as api from '../../lib/api'
 
+// Mutable so a test can opt into a demo tenant. Defaults match a settled,
+// non-demo tenant — the common case for every other test in this file.
+const demoState = vi.hoisted(() => ({ demoMode: false, settled: true }))
+vi.mock('../../context/DemoContext', () => ({
+  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: false, settled: demoState.settled }),
+}))
+
 const VIEWS: SavedView[] = [
   { id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' },
   { id: 'v2', name: 'Auditor bills', query: 'subject=UT%3AAudits' },
@@ -27,7 +34,11 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
 }
 
 describe('ViewSwitcher', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    demoState.demoMode = false
+    demoState.settled = true
+  })
 
   it('does not fetch match counts before the menu is opened', () => {
     const spy = vi.spyOn(api, 'apiFetch')
@@ -159,5 +170,87 @@ describe('ViewSwitcher', () => {
     expect(screen.getByText(/delete for everyone/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     expect(onDelete).toHaveBeenCalledWith('v1')
+  })
+
+  it('places Rename and Delete before the count chip in the row', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    const row = screen.getByText('Clerk bills').closest('div')!
+    fireEvent.mouseEnter(row)
+    const rename = screen.getAllByRole('button', { name: /rename/i })[0]
+    // The count badge renders '…' until its fetch resolves — this test never
+    // awaits it, so the placeholder span is what DOM order is checked
+    // against. It's the last <span> in the row; the buttons' wrapper <span>
+    // comes first.
+    const spans = row.querySelectorAll('span')
+    const count = spans[spans.length - 1]
+    expect(count.textContent).toBe('…')
+    expect(rename.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('gives the menu a fixed width so revealing the buttons cannot widen it', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    const menu = screen.getByRole('group', { name: /saved views/i })
+    const widthBefore = menu.style.width
+    expect(widthBefore).not.toBe('')
+    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
+    expect(menu.style.width).toBe(widthBefore)
+  })
+
+  it('clears a stale hovered/focused row when the menu is reopened after applying a view', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Auditor bills').closest('div')!)
+    expect(screen.getAllByRole('button', { name: /rename/i }).length).toBeGreaterThan(0)
+
+    // Applying the view closes the menu. In a real browser, focus on the
+    // Rename button that unmounts underneath the click doesn't reliably blur
+    // — this asserts the close-effect clears focusedId regardless, so a
+    // reopen never inherits it.
+    fireEvent.click(screen.getByText('Auditor bills'))
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+  })
+
+  it('clears a stale hovered/focused row when the menu is reopened after choosing "All bills"', () => {
+    renderSwitcher({ isAdmin: true, currentSearch: '?subject=UT%3AElections' })
+    fireEvent.click(screen.getByRole('button', { name: /clerk bills/i }))
+    // "Clerk bills" now appears twice — the trigger button (labeled with the
+    // active view's name) and the row inside the open menu; the row is the
+    // last match.
+    const clerkTexts = screen.getAllByText('Clerk bills')
+    fireEvent.focus(clerkTexts[clerkTexts.length - 1].closest('div')!)
+    expect(screen.getAllByRole('button', { name: /rename/i }).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByText('All bills'))
+    // onApply is mocked, so currentSearch (and thus the trigger's label)
+    // doesn't change — reopen via the still-labeled "Clerk bills" trigger.
+    fireEvent.click(screen.getByRole('button', { name: /clerk bills/i }))
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+  })
+
+  it('hides Rename and Delete on a demo tenant even for an admin', () => {
+    demoState.demoMode = true
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete/i })).toBeNull()
+  })
+
+  it('hides Rename and Delete before the demo config request settles', () => {
+    demoState.settled = false
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+  })
+
+  it('still shows Rename and Delete to an admin on a settled non-demo tenant', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.getAllByRole('button', { name: /rename/i }).length).toBeGreaterThan(0)
   })
 })

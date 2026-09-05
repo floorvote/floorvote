@@ -38,9 +38,9 @@ let resolveViews: ((v: unknown) => void) | null = null
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
 // "list-page votes on a locked demo tenant" describe below.
-const demoState = vi.hoisted(() => ({ demoLocked: false }))
+const demoState = vi.hoisted(() => ({ demoLocked: false, demoMode: false, settled: true }))
 vi.mock('../../context/DemoContext', () => ({
-  useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
+  useDemo: () => ({ demoMode: demoState.demoMode, demoLocked: demoState.demoLocked, settled: demoState.settled }),
 }))
 
 const CONFIG = {
@@ -175,6 +175,8 @@ beforeEach(() => {
   deferred.rejectVote = null
   voteReject.value = false
   demoState.demoLocked = false
+  demoState.demoMode = false
+  demoState.settled = true
   viewsState.deferred = false
   viewsState.response = { views: [] }
   resolveViews = null
@@ -396,6 +398,53 @@ describe('BillList saved views — search interaction', () => {
     fireEvent.click(await screen.findByText('All bills'))
 
     await waitFor(() => expect(search.value).toBe(''))
+  })
+})
+
+describe('BillList saved views — demo tenants', () => {
+  function renderWithFilter() {
+    return render(
+      <MemoryRouter initialEntries={['/bills?status=2']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  it('does not render "Save as view" on a demo tenant, even with filters active', async () => {
+    demoState.demoMode = true
+    renderWithFilter()
+    await screen.findByText('Early Voting Centers')
+    expect(screen.queryByRole('button', { name: /save as view/i })).toBeNull()
+  })
+
+  it('does not render Rename or Delete on a demo tenant', async () => {
+    demoState.demoMode = true
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Passed bills').closest('div')!)
+    expect(screen.queryByRole('button', { name: /rename/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete/i })).toBeNull()
+  })
+
+  it('still renders "Save as view" on a non-demo tenant with filters active — guards against too-broad a gate', async () => {
+    renderWithFilter()
+    await screen.findByText('Early Voting Centers')
+    expect(await screen.findByRole('button', { name: /save as view/i })).toBeTruthy()
+  })
+
+  it('still renders Rename and Delete on a settled non-demo tenant', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'status=4' }] }
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.click(await screen.findByRole('button', { name: /views/i }))
+    fireEvent.focus(screen.getByText('Passed bills').closest('div')!)
+    expect(screen.getAllByRole('button', { name: /rename/i }).length).toBeGreaterThan(0)
   })
 })
 
