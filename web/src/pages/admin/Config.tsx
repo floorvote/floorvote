@@ -773,9 +773,11 @@ export function Config() {
                       <span style={{ ...hintStyle, marginTop: 0 }}>
                         {parsed.value.length === 1 ? '1 tag' : `${parsed.value.length} tags`}
                       </span>
-                      {parsed.value.map(t => (
+                      {parsed.value.map((t, i) => (
                         <span
-                          key={t.name}
+                          // parseTagTaxonomy does not dedupe (the save path relies on
+                          // that), so two tags can share a name — index-suffix the key.
+                          key={`${t.name}:${i}`}
                           style={{
                             background: color.surfaceMuted,
                             borderRadius: radius.sm,
