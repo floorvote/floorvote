@@ -19,6 +19,7 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
   const onApply = vi.fn()
   const onRename = vi.fn()
   const onDelete = vi.fn()
+  const onReorder = vi.fn()
   const utils = render(
     <ViewSwitcher
       views={VIEWS}
@@ -27,10 +28,34 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
       onApply={onApply}
       onRename={onRename}
       onDelete={onDelete}
+      onReorder={onReorder}
       {...over}
     />,
   )
-  return { ...utils, onApply, onRename, onDelete }
+  return { ...utils, onApply, onRename, onDelete, onReorder }
+}
+
+// Fires a native-drag-event sequence (dragstart on the handle, dragover +
+// drop on the target row) the way jsdom's fireEvent expects: a real browser
+// drag populates DataTransfer automatically, jsdom does not, so a bare
+// object standing in for it is passed through and read back by the
+// component's own handlers.
+function fakeDataTransfer() {
+  let stored = ''
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    setData: (_type: string, value: string) => { stored = value },
+    getData: () => stored,
+  }
+}
+
+function dragRow(fromEl: Element, toEl: Element) {
+  const dataTransfer = fakeDataTransfer()
+  fireEvent.dragStart(fromEl, { dataTransfer })
+  fireEvent.dragOver(toEl, { dataTransfer })
+  fireEvent.drop(toEl, { dataTransfer })
+  fireEvent.dragEnd(fromEl, { dataTransfer })
 }
 
 describe('ViewSwitcher', () => {
@@ -252,5 +277,63 @@ describe('ViewSwitcher', () => {
     fireEvent.click(screen.getByRole('button', { name: /views/i }))
     fireEvent.focus(screen.getByText('Clerk bills').closest('div')!)
     expect(screen.getAllByRole('button', { name: /rename/i }).length).toBeGreaterThan(0)
+  })
+
+  describe('drag-to-reorder', () => {
+    it('does not render a grip for a member', () => {
+      renderSwitcher({ isAdmin: false })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      expect(screen.queryByLabelText(/reorder/i)).toBeNull()
+    })
+
+    it('does not render a grip on a demo tenant even for an admin', () => {
+      demoState.demoMode = true
+      renderSwitcher({ isAdmin: true })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      expect(screen.queryByLabelText(/reorder/i)).toBeNull()
+    })
+
+    it('renders no grip on the "All bills" row', () => {
+      renderSwitcher({ isAdmin: true })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      const allBillsRow = screen.getByText('All bills').closest('button')!
+      expect(allBillsRow.querySelector('[aria-label^="Reorder"]')).toBeNull()
+    })
+
+    it('does not render a grip for a row being renamed', () => {
+      renderSwitcher({ isAdmin: true })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
+      fireEvent.click(screen.getAllByRole('button', { name: /rename/i })[0])
+      expect(screen.queryByLabelText('Reorder Clerk bills')).toBeNull()
+      // The other row, not being renamed, still has its grip.
+      expect(screen.getByLabelText('Reorder Auditor bills')).toBeTruthy()
+    })
+
+    it('reorders a view via drag and calls onReorder with the new id order', () => {
+      const { onReorder } = renderSwitcher({ isAdmin: true })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      const fromGrip = screen.getByLabelText('Reorder Auditor bills')
+      const toRow = screen.getByText('Clerk bills').closest('div')!
+      dragRow(fromGrip, toRow)
+      expect(onReorder).toHaveBeenCalledWith(['v2', 'v1'])
+    })
+
+    it('reverts the visible order when the reorder request fails', async () => {
+      const onReorder = vi.fn().mockRejectedValue(new Error('boom'))
+      renderSwitcher({ isAdmin: true, onReorder })
+      fireEvent.click(screen.getByRole('button', { name: /views/i }))
+      const fromGrip = screen.getByLabelText('Reorder Auditor bills')
+      const toRow = screen.getByText('Clerk bills').closest('div')!
+      dragRow(fromGrip, toRow)
+
+      await waitFor(() => expect(onReorder).toHaveBeenCalled())
+      // Reverted: original order (Clerk bills before Auditor bills) restored.
+      await waitFor(() => {
+        const clerk = screen.getByRole('button', { name: 'Clerk bills' })
+        const auditor = screen.getByRole('button', { name: 'Auditor bills' })
+        expect(clerk.compareDocumentPosition(auditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      })
+    })
   })
 })

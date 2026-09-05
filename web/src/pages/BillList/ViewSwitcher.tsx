@@ -36,7 +36,7 @@ function ViewCountBadge({ count, failed }: { count: number | undefined; failed: 
 }
 
 export function ViewSwitcher({
-  views, currentSearch, isAdmin, onApply, onRename, onDelete,
+  views, currentSearch, isAdmin, onApply, onRename, onDelete, onReorder,
 }: {
   views: SavedView[]
   currentSearch: string
@@ -44,12 +44,22 @@ export function ViewSwitcher({
   onApply: (view: SavedView | null) => void
   onRename: (id: string, name: string) => void | Promise<void>
   onDelete: (id: string) => void | Promise<void>
+  onReorder: (order: string[]) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  // Local, optimistic ordering of `views` — reordered immediately on drop and
+  // reverted if onReorder rejects. Reset from props whenever the incoming
+  // views identity/order changes (a fresh fetch, a rename/delete reload).
+  const [orderedViews, setOrderedViews] = useState<SavedView[]>(views)
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
+  useEffect(() => {
+    setOrderedViews(views)
+  }, [views])
   // Rename/Delete must also be reachable without a mouse — mouseenter never
   // fires on touch, and tabbing to a row doesn't set hoveredId. onFocus/onBlur
   // on the row wrapper catch focus landing on (or leaving) any descendant,
@@ -92,7 +102,7 @@ export function ViewSwitcher({
     if (!open) return
     const targets: Array<{ key: string; query: string }> = [
       { key: ALL_BILLS_KEY, query: '' },
-      ...views.map(v => ({ key: v.id, query: v.query })),
+      ...orderedViews.map(v => ({ key: v.id, query: v.query })),
     ]
     for (const { key, query } of targets) {
       if (fetchedKeysRef.current.has(key)) continue
@@ -106,12 +116,12 @@ export function ViewSwitcher({
         .then(data => setViewCounts(prev => ({ ...prev, [key]: data.pagination.total })))
         .catch(() => setFailedCounts(prev => new Set(prev).add(key)))
     }
-  }, [open, views])
+  }, [open, orderedViews])
 
   // A tenant with no views gets no control at all — the h1 row is unchanged.
   if (views.length === 0) return null
 
-  const active = findActiveView(currentSearch, views)
+  const active = findActiveView(currentSearch, orderedViews)
 
   // "Views", never "All bills": in the diverged state filters are applied and no
   // view matches, and "All bills" would misdescribe what is on screen.
@@ -142,6 +152,28 @@ export function ViewSwitcher({
     } catch {
       // Leave the confirm state open so the user can see the delete didn't
       // take, instead of closing as though it had succeeded.
+    }
+  }
+
+  // Reorder is a write, gated the same as Rename/Delete: an admin, on a tenant
+  // positively known not to be a demo.
+  const canReorder = isAdmin && isNotDemo
+
+  async function commitReorder(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return
+    const previous = orderedViews
+    const reordered = [...previous]
+    const [moved] = reordered.splice(fromIdx, 1)
+    reordered.splice(toIdx, 0, moved)
+    // Optimistic: apply immediately so the drag feels instant.
+    setOrderedViews(reordered)
+    try {
+      await onReorder(reordered.map(v => v.id))
+    } catch {
+      // Revert to the pre-drag order — a silent revert with no message would
+      // look like the drag simply didn't take, so onReorder's caller is
+      // expected to surface the error itself (mirroring onRename/onDelete).
+      setOrderedViews(previous)
     }
   }
 
@@ -188,67 +220,138 @@ export function ViewSwitcher({
             <ViewCountBadge count={viewCounts[ALL_BILLS_KEY]} failed={failedCounts.has(ALL_BILLS_KEY)} />
           </button>
           <div style={{ height: 1, background: color.borderDefault, margin: '4px 0' }} />
-          {views.map(v => {
+          {orderedViews.map((v, i) => {
+            // Drop-indicator line before this row while dragging over it. The
+            // dragFrom !== i / i - 1 guard (same as Config.tsx's custom-fields
+            // reorder) keeps a pointless line from appearing right at the drag
+            // source, where a drop would be a no-op.
+            const showIndicator = dragOver === i && dragFrom !== null && dragFrom !== i && dragFrom !== i - 1
+            const indicator = showIndicator && (
+              <div style={{ height: 2, background: VIEW_STYLE.border, margin: '0 12px' }} />
+            )
+            // Any row can be a drop target regardless of its state, but only a
+            // row that is neither being renamed nor confirming delete may be
+            // the drag *source* — mirrors Config.tsx's cfEditing !== field.id.
+            const dropHandlers = canReorder ? {
+              onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(i) },
+              onDrop: (e: React.DragEvent) => {
+                e.preventDefault()
+                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
+                setDragFrom(null)
+                setDragOver(null)
+                if (Number.isNaN(fromIdx)) return
+                void commitReorder(fromIdx, i)
+              },
+            } : {}
             if (renamingId === v.id) {
               return (
-                <div key={v.id} style={{ ...rowStyle(false), cursor: 'default', gap: 6 }}>
-                  <input
-                    aria-label="View name"
-                    value={draftName}
-                    onChange={e => setDraftName(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') commitRename()
-                      if (e.key === 'Escape') setRenamingId(null)
-                    }}
-                    style={{
-                      flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: fontSize.sm,
-                      padding: '3px 7px', border: `1px solid ${color.accentBlue}`,
-                      borderRadius: radius.sm, color: color.textPrimary,
-                    }}
-                  />
-                  <button onClick={commitRename} style={smallButtonStyle('primary')}>Save</button>
+                <div key={v.id}>
+                  {indicator}
+                  <div style={{ ...rowStyle(false), cursor: 'default', gap: 6 }} {...dropHandlers}>
+                    <input
+                      aria-label="View name"
+                      value={draftName}
+                      onChange={e => setDraftName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') commitRename()
+                        if (e.key === 'Escape') setRenamingId(null)
+                      }}
+                      style={{
+                        flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: fontSize.sm,
+                        padding: '3px 7px', border: `1px solid ${color.accentBlue}`,
+                        borderRadius: radius.sm, color: color.textPrimary,
+                      }}
+                    />
+                    <button onClick={commitRename} style={smallButtonStyle('primary')}>Save</button>
+                  </div>
                 </div>
               )
             }
             if (confirmingId === v.id) {
               return (
-                <div key={v.id} style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger }}>
-                  <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete for everyone?</span>
-                  <button onClick={() => setConfirmingId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
-                  <button onClick={() => { void commitDelete(v.id) }} style={smallButtonStyle('danger')}>Delete</button>
+                <div key={v.id}>
+                  {indicator}
+                  <div style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger }} {...dropHandlers}>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete for everyone?</span>
+                    <button onClick={() => setConfirmingId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
+                    <button onClick={() => { void commitDelete(v.id) }} style={smallButtonStyle('danger')}>Delete</button>
+                  </div>
                 </div>
               )
             }
             const isActive = active?.id === v.id
+            // Only draggable via this handle, not the whole row: the row's
+            // name button applies the view and closes the menu on click, so
+            // making the entire row draggable would risk that click firing
+            // mid-drag and closing the popup out from under the interaction.
+            const grip = canReorder && (
+              <span
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', String(i))
+                  setDragFrom(i)
+                }}
+                onDragEnd={() => { setDragFrom(null); setDragOver(null) }}
+                style={{
+                  fontSize: fontSize.base, color: color.borderStrong, cursor: 'grab',
+                  userSelect: 'none', flexShrink: 0, lineHeight: 1,
+                  opacity: dragFrom === i ? 0.4 : 1,
+                }}
+                aria-label={`Reorder ${v.name}`}
+              >⠿</span>
+            )
             return (
-              <div
-                key={v.id}
-                onMouseEnter={() => setHoveredId(v.id)}
-                onMouseLeave={() => setHoveredId(null)}
-                onFocus={() => setFocusedId(v.id)}
-                onBlur={() => setFocusedId(null)}
-                style={{ ...rowStyle(isActive), cursor: 'default' }}
-              >
-                <button
-                  onClick={() => { onApply(v); setOpen(false) }}
-                  style={{
-                    flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none',
-                    border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
-                    color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}
+              <div key={v.id}>
+                {indicator}
+                <div
+                  onMouseEnter={() => setHoveredId(v.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onFocus={() => setFocusedId(v.id)}
+                  onBlur={() => setFocusedId(null)}
+                  style={{ ...rowStyle(isActive), cursor: 'default', opacity: dragFrom === i ? 0.4 : 1 }}
+                  {...dropHandlers}
                 >
-                  {v.name}
-                </button>
-                {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
-                  <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
-                    <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
-                    <button onClick={() => { setRenamingId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
-                  </span>
-                )}
-                <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
+                  {grip}
+                  <button
+                    onClick={() => { onApply(v); setOpen(false) }}
+                    style={{
+                      flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none',
+                      border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
+                      color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {v.name}
+                  </button>
+                  {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
+                    <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
+                      <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
+                      <button onClick={() => { setRenamingId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
+                    </span>
+                  )}
+                  <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
+                </div>
               </div>
             )
           })}
+          {canReorder && (
+            <div
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(orderedViews.length) }}
+              onDrop={e => {
+                e.preventDefault()
+                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
+                setDragFrom(null)
+                setDragOver(null)
+                if (Number.isNaN(fromIdx)) return
+                void commitReorder(fromIdx, orderedViews.length)
+              }}
+              style={{ minHeight: 6 }}
+            >
+              {dragOver === orderedViews.length && dragFrom !== null && dragFrom !== orderedViews.length - 1 && (
+                <div style={{ height: 2, background: VIEW_STYLE.border, margin: '0 12px' }} />
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

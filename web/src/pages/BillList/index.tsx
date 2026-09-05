@@ -624,6 +624,21 @@ export function BillList() {
               throw new Error('Failed to delete view.')
             }
           }}
+          onReorder={async (order) => {
+            try {
+              await apiFetch('/admin/views/reorder', {
+                method: 'PUT',
+                body: JSON.stringify({ order }),
+              })
+              await reloadViews()
+            } catch {
+              // Re-throw so ViewSwitcher's commitReorder sees the rejection
+              // and reverts the optimistic order instead of leaving it as
+              // though the drag had persisted.
+              setError('Failed to reorder views.')
+              throw new Error('Failed to reorder views.')
+            }
+          }}
         />
       </div>
 
