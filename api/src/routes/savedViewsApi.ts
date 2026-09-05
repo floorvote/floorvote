@@ -6,6 +6,19 @@ import { nowDb } from '../lib/dbTime'
 import { requireAuth } from '../middleware/auth'
 import type { AppEnv } from '../types'
 
+const MAX_VIEW_NAME_LENGTH = 120
+
+function validateViewName(input: unknown): { value: string } | { error: string } {
+  const name = typeof input === 'string' ? input.trim() : ''
+  if (!name) {
+    return { error: 'name is required' }
+  }
+  if (name.length > MAX_VIEW_NAME_LENGTH) {
+    return { error: `name must be ${MAX_VIEW_NAME_LENGTH} characters or fewer` }
+  }
+  return { value: name }
+}
+
 export type SavedViewDto = { id: string; name: string; query: string; slug: string; previousSlug: string | null }
 
 // Reads are member-accessible: every member can see and apply every view.
@@ -74,11 +87,10 @@ export const adminSavedViewsRouter = new Hono<AppEnv>()
 // POST /admin/views — capture the caller's current filter state under a name.
 adminSavedViewsRouter.post('/', async (c) => {
   const body = await c.req.json().catch(() => null) as { name?: unknown; query?: unknown } | null
-  const name = typeof body?.name === 'string' ? body.name.trim() : ''
+  const nameValidation = validateViewName(body?.name)
+  if ('error' in nameValidation) return c.json({ error: nameValidation.error }, 400)
+  const name = nameValidation.value
   const query = typeof body?.query === 'string' ? body.query.trim() : ''
-  if (!name) return c.json({ error: 'name is required' }, 400)
-  // Renders straight into the page's h1 row — an unbounded name would break that layout.
-  if (name.length > 120) return c.json({ error: 'name must be 120 characters or fewer' }, 400)
   // A view with no filters would be indistinguishable from "All bills".
   if (!query) return c.json({ error: 'query is required' }, 400)
 
@@ -101,8 +113,9 @@ adminSavedViewsRouter.post('/', async (c) => {
 // stored query traceable to filter state someone actually looked at.
 adminSavedViewsRouter.put('/:id', async (c) => {
   const body = await c.req.json().catch(() => null) as { name?: unknown } | null
-  const name = typeof body?.name === 'string' ? body.name.trim() : ''
-  if (!name) return c.json({ error: 'name is required' }, 400)
+  const nameValidation = validateViewName(body?.name)
+  if ('error' in nameValidation) return c.json({ error: nameValidation.error }, 400)
+  const name = nameValidation.value
 
   const db = getDb(c.env.DB)
   const id = c.req.param('id')

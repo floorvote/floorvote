@@ -64,6 +64,22 @@ describe('/api/admin/views', () => {
     expect(views.map(v => v.name)).toEqual(['First', 'Second'])
   })
 
+  it('rejects a 121-character name on create', async () => {
+    const longName = 'a'.repeat(121)
+    const res = await post(adminCookie, { name: longName, query: 'status=1' })
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('120 characters or fewer')
+  })
+
+  it('accepts a 120-character name on create', async () => {
+    const maxName = 'a'.repeat(120)
+    const res = await post(adminCookie, { name: maxName, query: 'status=1' })
+    expect(res.status).toBe(201)
+    const body = await res.json() as { name: string }
+    expect(body.name).toBe(maxName)
+  })
+
   it('renames a view without touching its query', async () => {
     const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
     const res = await app.request(
@@ -113,6 +129,44 @@ describe('/api/admin/views', () => {
     const listRes = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
     const { views } = await listRes.json() as { views: { previousSlug: string | null }[] }
     expect(views[0].previousSlug).toBeNull()
+  })
+
+  it('rejects a 121-character name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const longName = 'a'.repeat(121)
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: longName }) },
+      env,
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('120 characters or fewer')
+  })
+
+  it('accepts a 120-character name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const maxName = 'a'.repeat(120)
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: maxName }) },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { name: string }
+    expect(body.name).toBe(maxName)
+  })
+
+  it('still rejects a blank name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '   ' }) },
+      env,
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toBe('name is required')
   })
 
   it('404s renaming an unknown id', async () => {
