@@ -12,10 +12,19 @@
  * a change to either side that is not mirrored fails that side's tests.
  *
  * There are further hand-copies of the same logic in one-off scripts, which no
- * test covers — keep them in step by hand when the matcher changes:
- *   scripts/openstates/load-history.ts
- *   scripts/openstates/openstates-eval.ts
- *   scripts/openstates/openstates-deep-eval.ts
+ * test covers — keep them in step by hand when the matcher changes. The full
+ * inventory, verified by grepping for WORD_BOUNDARY_KEYWORDS across the repo:
+ *   scripts/openstates/load-history.ts      (matchesUnion — has the wildcard)
+ *   scripts/openstates/seed-from-bulk.ts    (kwMatch — has the wildcard;
+ *                                            takes operator --keywords)
+ *   scripts/openstates/openstates-eval.ts   (matchesKeywords — no wildcard,
+ *                                            hard-coded ELECTION_KEYWORDS list,
+ *                                            takes no operator keywords)
+ *   scripts/openstates/openstates-deep-eval.ts  (same as openstates-eval.ts)
+ *
+ * The two eval scripts deliberately omit the wildcard: they match against their
+ * own hard-coded keyword list and never see an operator-supplied one, so the
+ * sentinel can never reach them.
  */
 import { WORD_BOUNDARY_KEYWORDS } from './wordBoundaryKeywords'
 
