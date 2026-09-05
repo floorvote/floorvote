@@ -983,7 +983,11 @@ export function BillList() {
           <ActiveChip label={filterDimensionLabel('newMatches')} color="blue" onRemove={() => f.setNewMatches(false)} />
         )}
         {Object.entries(f.cfFilters).flatMap(([fieldId, values]) => {
-          const field = customFieldDefs.find(fld => fld.id === fieldId)
+          // fieldId here is normally the def's real id, but it can still be the raw
+          // slug for a render or two after mount (useBillFilters resolves it against
+          // customFieldDefs once those load, but that's async) — match by either so
+          // the chip never falls back to printing the raw key.
+          const field = customFieldDefs.find(fld => fld.id === fieldId || fld.slug === fieldId)
           return values.map(v => (
             <ActiveChip
               key={`cf-${fieldId}-${v}`}

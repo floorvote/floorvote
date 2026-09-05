@@ -62,6 +62,31 @@ export function useBillFilters(opts: {
     }
     return filters
   })
+  // cf_ keys are parsed against customFieldDefs at the moment they're read (mount,
+  // the location.search sync effect, or applyView) — but customFieldDefs loads
+  // asynchronously and can still be [] at that moment, in which case the lookup
+  // falls back to the raw slug as a bogus "fieldId". Because cfFilters is now
+  // lifted state (no longer re-derived from searchParams on every render), that
+  // wrong key would otherwise freeze forever once set. Re-resolve it here instead,
+  // keyed only off customFieldDefs — not off location.search or searchParams — so
+  // this never becomes a second writer of the query string (the sync effect below
+  // stays the sole writer); it only ever corrects cfFilters' own keys in place.
+  useEffect(() => {
+    if (customFieldDefs.length === 0) return
+    setCfFilters(prev => {
+      let changed = false
+      const next: Record<string, string[]> = {}
+      for (const [key, values] of Object.entries(prev)) {
+        const def = customFieldDefs.find(d => d.slug === key || d.id === key)
+        const resolvedId = def?.id ?? key
+        if (resolvedId !== key) changed = true
+        const bucket = next[resolvedId] ?? (next[resolvedId] = [])
+        for (const v of values) if (!bucket.includes(v)) bucket.push(v)
+      }
+      return changed ? next : prev
+    })
+  }, [customFieldDefs])
+
   const lastWrittenSearch = useRef(location.search)
   useEffect(() => {
     if (location.search === lastWrittenSearch.current) return
