@@ -61,6 +61,15 @@ const DEFAULT_TAXONOMY = [
 
 const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
 
+// One typographic treatment for all three AI-instruction editors. They are the
+// same kind of field and must read as a set; they previously drifted (the tag
+// box was monospace, none set a line-height, so each inherited a different
+// family-dependent default). Height is the only thing that varies per field.
+const aiTextareaStyle: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  lineHeight: 1.5,
+}
+
 export function Config() {
   usePageTitle('Settings')
   const { user } = useAuth()
@@ -702,9 +711,9 @@ export function Config() {
                   id="config-ai-context"
                   value={aiContext}
                   onChange={(e) => editField('aiContext', setAiContext)(e.target.value)}
-                  initialHeight={160}
+                  initialHeight={200}
                   minHeight={60}
-                  style={{ fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={buildDefaultAiContext(associationName)}
                 />
                 <div style={hintStyle}>System instructions sent to the AI for every bill. Controls the summary style and framing.</div>
@@ -724,9 +733,9 @@ export function Config() {
                   id="config-relevance-question"
                   value={relevanceQuestion}
                   onChange={(e) => editField('relevanceQuestion', setRelevanceQuestion)(e.target.value)}
-                  initialHeight={100}
+                  initialHeight={120}
                   minHeight={60}
-                  style={{ fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={buildDefaultRelevanceQuestion(associationName)}
                 />
                 <div style={hintStyle}>Prompt sent to guide the AI in scoring each bill's relevance from 1–10.</div>
@@ -746,9 +755,9 @@ export function Config() {
                   id="config-tag-taxonomy"
                   value={tagTaxonomy}
                   onChange={(e) => editField('tagTaxonomy', setTagTaxonomy)(e.target.value)}
-                  initialHeight={200}
+                  initialHeight={240}
                   minHeight={60}
-                  style={{ fontFamily: 'monospace', fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={DEFAULT_TAXONOMY}
                 />
                 <div style={hintStyle}>

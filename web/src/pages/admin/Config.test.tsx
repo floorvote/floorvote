@@ -558,3 +558,21 @@ describe('Config — tag taxonomy formatting', () => {
     await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
   })
 })
+
+describe('Config — AI textarea typography', () => {
+  it('gives the three AI instruction editors one typographic treatment', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const boxes = [
+      await screen.findByLabelText('Bill summary'),
+      await screen.findByLabelText('Relevance score'),
+      await screen.findByLabelText('Tags'),
+    ] as HTMLTextAreaElement[]
+    for (const box of boxes) {
+      expect(box.style.fontSize).toBe('12px')
+      expect(box.style.lineHeight).toBe('1.5')
+      // The Tags box used to be monospace; all three now share the page face.
+      expect(box.style.fontFamily).toBe('')
+    }
+  })
+})
