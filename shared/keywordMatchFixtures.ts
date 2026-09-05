@@ -17,6 +17,8 @@
  *   scripts/openstates/openstates-eval.ts
  *   scripts/openstates/openstates-deep-eval.ts
  */
+import { WORD_BOUNDARY_KEYWORDS } from './wordBoundaryKeywords'
+
 export type KeywordMatchCase = { text: string; keywords: string[]; expected: boolean }
 
 export const KEYWORD_MATCH_CASES: KeywordMatchCase[] = [
@@ -30,4 +32,11 @@ export const KEYWORD_MATCH_CASES: KeywordMatchCase[] = [
   { text: 'Selection of a provider', keywords: ['election'], expected: false },
   { text: 'Election Law Amendments', keywords: ['election'], expected: true },
   { text: 'Vehicle registration fee increase', keywords: ['ballot'], expected: false },
+  // One pair per WORD_BOUNDARY_KEYWORDS member, generated so that adding a
+  // member to the shared set automatically extends both suites: preceded by a
+  // letter it must NOT match, standing alone it MUST match.
+  ...[...WORD_BOUNDARY_KEYWORDS].flatMap((kw): KeywordMatchCase[] => [
+    { text: `A bill on the pre${kw} process`, keywords: [kw], expected: false },
+    { text: `A bill on the ${kw} process`, keywords: [kw], expected: true },
+  ]),
 ]

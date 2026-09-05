@@ -1,10 +1,11 @@
+import { WORD_BOUNDARY_KEYWORDS } from '../../../shared/wordBoundaryKeywords'
+
 export function matchesWordBoundary(text: string, keyword: string): boolean {
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const re = new RegExp(`(?<![a-zA-Z])${escaped}`, 'i')
   return re.test(text)
 }
 
-const WORD_BOUNDARY_KEYWORDS = new Set(['election'])
 
 /**
  * The wildcard sentinel: a keyword list containing exactly the string "*" means
