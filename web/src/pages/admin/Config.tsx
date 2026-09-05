@@ -301,7 +301,7 @@ export function Config() {
       return
     }
 
-    const current = { aiContext, relevanceQuestion, tagTaxonomy }
+    const current = { aiContext, relevanceQuestion, tagTaxonomy, associationName }
     const changed = configSnapshot.current == null || aiInstructionsChanged(configSnapshot.current, current)
 
     setSavingAi(true)

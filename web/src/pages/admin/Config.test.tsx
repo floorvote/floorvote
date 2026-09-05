@@ -49,10 +49,13 @@ vi.mock('../../components/BillBadge', () => ({
 vi.mock('../admin/aiConfig', async () => {
   const actual = await vi.importActual<typeof import('./aiConfig')>('../admin/aiConfig')
   return {
-    // Real parser: Config now renders a live parsed-tag readout from this, so
+    // Real parser: Config renders a live parsed-tag readout from this, so
     // tests need actual parsing behavior rather than an always-empty stub.
     parseTagTaxonomy: actual.parseTagTaxonomy,
-    aiInstructionsChanged: () => false,
+    // Real comparison: the seed control's whole contract is that seeding a
+    // blank field does NOT read as a change. A stubbed constant would make
+    // every test of that behavior pass without exercising it.
+    aiInstructionsChanged: actual.aiInstructionsChanged,
     configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
       Object.keys(a).some((k) => a[k] !== b[k]),
   }

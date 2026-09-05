@@ -1,3 +1,6 @@
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
+
 export type TaxonomyEntry = { name: string; description?: string }
 
 export type ParseResult =
@@ -18,14 +21,42 @@ export function parseTagTaxonomy(text: string): ParseResult {
   return { ok: true, value }
 }
 
-/** True if any of the three AI-instruction editor fields differ from the snapshot. */
-export function aiInstructionsChanged(
-  a: { aiContext: string; relevanceQuestion: string; tagTaxonomy: string },
-  b: { aiContext: string; relevanceQuestion: string; tagTaxonomy: string },
-): boolean {
-  return a.aiContext !== b.aiContext
-    || a.relevanceQuestion !== b.relevanceQuestion
-    || a.tagTaxonomy !== b.tagTaxonomy
+export type AiInstructionFields = {
+  aiContext: string
+  relevanceQuestion: string
+  tagTaxonomy: string
+  associationName: string
+}
+
+/**
+ * Resolve the three AI-instruction fields to the text the model will actually
+ * receive: a blank field falls back to its generic default, interpolated with
+ * the association name that was in force alongside it.
+ */
+function resolveAiFields(f: AiInstructionFields) {
+  return {
+    aiContext: f.aiContext.trim() || buildDefaultAiContext(f.associationName),
+    relevanceQuestion: f.relevanceQuestion.trim() || buildDefaultRelevanceQuestion(f.associationName),
+    tagTaxonomy: f.tagTaxonomy.trim() || serializeTaxonomy(DEFAULT_TAXONOMY),
+  }
+}
+
+/**
+ * True if the EFFECTIVE AI instructions differ — the resolved prompt text, not
+ * the raw editor contents. A true result offers the tenant a reprocess of every
+ * bill, so raw comparison is wrong in both directions: seeding a blank field
+ * with its own default changes the editor but not the prompt, and renaming the
+ * association changes the prompt without touching any editor field.
+ *
+ * Each side resolves against the association name that accompanied it, which is
+ * why the name is part of the compared shape rather than a separate argument.
+ */
+export function aiInstructionsChanged(a: AiInstructionFields, b: AiInstructionFields): boolean {
+  const ra = resolveAiFields(a)
+  const rb = resolveAiFields(b)
+  return ra.aiContext !== rb.aiContext
+    || ra.relevanceQuestion !== rb.relevanceQuestion
+    || ra.tagTaxonomy !== rb.tagTaxonomy
 }
 
 /**

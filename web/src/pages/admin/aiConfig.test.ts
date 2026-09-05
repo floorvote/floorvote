@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseTagTaxonomy, aiInstructionsChanged, centralSyncWarning } from './aiConfig'
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
 
 describe('parseTagTaxonomy', () => {
   it('parses name-only lines', () => {
@@ -43,9 +45,14 @@ describe('parseTagTaxonomy', () => {
 })
 
 describe('aiInstructionsChanged', () => {
-  const base = { aiContext: 'a', relevanceQuestion: 'b', tagTaxonomy: 'c' }
+  const base = {
+    aiContext: 'a',
+    relevanceQuestion: 'b',
+    tagTaxonomy: 'c',
+    associationName: 'Test Org',
+  }
 
-  it('is false when all three fields are identical', () => {
+  it('is false when all fields are identical', () => {
     expect(aiInstructionsChanged(base, { ...base })).toBe(false)
   })
 
@@ -59,6 +66,27 @@ describe('aiInstructionsChanged', () => {
 
   it('is true when tagTaxonomy differs', () => {
     expect(aiInstructionsChanged(base, { ...base, tagTaxonomy: 'x' })).toBe(true)
+  })
+
+  it('is false when a blank field is replaced by its own resolved default', () => {
+    const blank = { ...base, aiContext: '', relevanceQuestion: '', tagTaxonomy: '' }
+    const seeded = {
+      ...base,
+      aiContext: buildDefaultAiContext('Test Org'),
+      relevanceQuestion: buildDefaultRelevanceQuestion('Test Org'),
+      tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
+    }
+    expect(aiInstructionsChanged(blank, seeded)).toBe(false)
+    expect(aiInstructionsChanged(seeded, blank)).toBe(false)
+  })
+
+  it('is true when the association name changes while fields are blank', () => {
+    const blank = { aiContext: '', relevanceQuestion: '', tagTaxonomy: '', associationName: 'Test Org' }
+    expect(aiInstructionsChanged(blank, { ...blank, associationName: 'Other Org' })).toBe(true)
+  })
+
+  it('ignores surrounding whitespace', () => {
+    expect(aiInstructionsChanged(base, { ...base, aiContext: '  a  ' })).toBe(false)
   })
 })
 
