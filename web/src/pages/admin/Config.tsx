@@ -212,6 +212,19 @@ export function Config() {
     clearUndoValue(field)
   }
 
+  // The outbound half of resetToDefault: puts the resolved default text INTO
+  // the editor so a tenant can edit it, rather than retyping it from the
+  // placeholder — which, being a placeholder, cannot even be selected. This is
+  // an ordinary unsaved edit; nothing is stored until the tenant saves, and a
+  // tenant who never clicks this keeps the blank-means-default behavior, so a
+  // later association rename still flows through untouched.
+  function seedFromDefault(field: ResettableField) {
+    if (field === 'aiContext') setAiContext(buildDefaultAiContext(associationName))
+    if (field === 'relevanceQuestion') setRelevanceQuestion(buildDefaultRelevanceQuestion(associationName))
+    if (field === 'tagTaxonomy') setTagTaxonomy(serializeTaxonomy(DEFAULT_TAXONOMY))
+    clearUndoValue(field)
+  }
+
   // Wraps a field's onChange so any manual edit (as opposed to the undoReset
   // restore above) drops that field's undo affordance.
   function editField(field: ResettableField, setter: (v: string) => void) {
@@ -574,7 +587,16 @@ export function Config() {
         </button>
       )
     }
-    if (!hasValue) return null
+    if (!hasValue) {
+      // Keywords has no default to start from — only the three AI-instruction
+      // fields reach this branch with a seeder.
+      if (field === 'keywords') return null
+      return (
+        <button type='button' onClick={() => seedFromDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
+          Start from default
+        </button>
+      )
+    }
     return (
       <button type='button' onClick={() => resetToDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
         {label}

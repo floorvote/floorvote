@@ -61,7 +61,8 @@ vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
 }))
 
-import { buildDefaultAiContext } from '../../../../shared/aiDefaults'
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
 
 import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
@@ -636,5 +637,72 @@ describe('Config — reprocess-scope modal on saving AI instructions', () => {
     // "No, just future bill texts" is the cancel-equivalent control (never one
     // of the destructive "Yes, reprocess..." actions), per ReprocessScopeModal.
     expect(screen.getByRole('button', { name: 'No, just future bill texts' })).toBeInTheDocument()
+  })
+})
+
+describe('Config — start from default', () => {
+  it('offers the seed only while a field is blank', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Bill summary') as HTMLTextAreaElement
+    expect(box.value).toBe('')
+
+    const seeds = screen.getAllByRole('button', { name: 'Start from default' })
+    expect(seeds.length).toBe(3)
+  })
+
+  it('fills the editor with the resolved default and flips to Reset', async () => {
+    mockConfig({ association_name: 'Prairie Policy Alliance' })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Bill summary') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[0])
+
+    expect(box.value).toBe(buildDefaultAiContext('Prairie Policy Alliance'))
+    expect(box.value).toContain('Prairie Policy Alliance')
+    expect(screen.getAllByRole('button', { name: 'Reset to default' }).length).toBe(1)
+  })
+
+  it('seeds the taxonomy in the editor’s own serialization', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+
+    expect(box.value).toBe(serializeTaxonomy(DEFAULT_TAXONOMY))
+    expect(box.value).toContain('\n\n')
+  })
+
+  it('falls back to the placeholder name when none is configured', async () => {
+    mockConfig({ association_name: '' })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Relevance score') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[1])
+
+    expect(box.value).toBe(buildDefaultRelevanceQuestion(''))
+  })
+
+  it('does not offer the seed on a demo tenant', async () => {
+    demo.demoLocked = true
+    mockConfig({})
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    for (const btn of screen.queryAllByRole('button', { name: 'Start from default' })) {
+      expect((btn as HTMLButtonElement).disabled).toBe(true)
+    }
+  })
+
+  it('shows Undo rather than the seed straight after a reset', async () => {
+    mockConfig({ ai_context: 'custom instructions' })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reset to default' })[0])
+
+    expect(screen.getAllByRole('button', { name: 'Undo' }).length).toBe(1)
+    expect(screen.queryAllByRole('button', { name: 'Start from default' }).length).toBe(2)
   })
 })
