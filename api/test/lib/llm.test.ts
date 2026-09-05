@@ -119,15 +119,19 @@ describe('processBill — Gemini provider (default)', () => {
   })
 
   it('uses one model for both text and PDF (no model switching)', async () => {
-    geminiGenerateMock.mockResolvedValueOnce({
-      text: JSON.stringify({ summary: 'PDF.', tags: [], relevanceScore: 5 }),
-    })
+    // Asserts the two paths agree, not which model they agree on — the model is
+    // a configurable default now, and pinning its name here would make every
+    // future upgrade fail a test about something else.
+    await processBill(
+      { billNumber: 'HB 7', title: 'T', text: 't', taxonomy: [] },
+      makeEnv(),
+    )
     await processBill(
       { billNumber: 'HB 7', title: 'T', text: 't', pdfBase64: btoa('%PDF fake'), taxonomy: [] },
       makeEnv(),
     )
-    const model = geminiGenerateMock.mock.calls[0][0].model
-    expect(model).toBe('gemini-2.5-flash')
+    const [textCall, pdfCall] = geminiGenerateMock.mock.calls
+    expect(pdfCall[0].model).toBe(textCall[0].model)
   })
 
   it('constrains tags to the taxonomy with a responseSchema enum', async () => {
@@ -163,5 +167,78 @@ describe('provider factory', () => {
       )
     )
     await expect(promise).rejects.toThrow('AI_GATEWAY_ENABLED is true but CF_ACCOUNT_ID, CF_AIG_GATEWAY, or CF_AIG_TOKEN is missing')
+  })
+})
+
+describe('analysis model and thinking budget are per-environment', () => {
+  beforeEach(() => {
+    geminiGenerateMock.mockClear()
+    geminiGenerateMock.mockResolvedValue({
+      text: JSON.stringify({ affectedCitations: [], summary: 's', tags: [], relevanceScore: 5 }),
+    })
+  })
+
+  const call = (env: Env) => processBill(
+    { billNumber: 'HB 1', title: 'T', text: 'x', taxonomy: [{ name: 'voting' }] },
+    env,
+  )
+  const lastCall = () => geminiGenerateMock.mock.calls[0][0]
+
+  it('uses a current-generation model with thinking enabled by default', async () => {
+    await call(makeEnv())
+    expect(lastCall().model).toBe('gemini-3.5-flash')
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(-1)
+  })
+
+  it('honours a per-environment model override', async () => {
+    await call(makeEnv({ GEMINI_MODEL: 'gemini-3.8-flash' }))
+    expect(lastCall().model).toBe('gemini-3.8-flash')
+  })
+
+  it('honours a per-environment thinking budget, including disabling it', async () => {
+    await call(makeEnv({ GEMINI_THINKING_BUDGET: '0' }))
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(0)
+  })
+
+  it('falls back to the defaults when overrides are blank or unparseable', async () => {
+    await call(makeEnv({ GEMINI_MODEL: '   ', GEMINI_THINKING_BUDGET: 'lots' }))
+    expect(lastCall().model).toBe('gemini-3.5-flash')
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(-1)
+  })
+})
+
+describe('affectedCitations extraction', () => {
+  beforeEach(() => { geminiGenerateMock.mockClear() })
+
+  const run = async (payload: Record<string, unknown>) => {
+    geminiGenerateMock.mockResolvedValue({ text: JSON.stringify(payload) })
+    return processBill(
+      { billNumber: 'HB 1', title: 'T', text: 'x', taxonomy: [{ name: 'voting' }] },
+      makeEnv(),
+    )
+  }
+
+  it('returns the citations the model reported, verbatim', async () => {
+    const r = await run({ affectedCitations: ['17-70-401', '10-3-301'], summary: 's', tags: [], relevanceScore: 5 })
+    expect(r.affectedCitations).toEqual(['17-70-401', '10-3-301'])
+  })
+
+  it('is generated before the fields that may depend on it', async () => {
+    await run({ affectedCitations: [], summary: 's', tags: [], relevanceScore: 5 })
+    const schema = geminiGenerateMock.mock.calls[0][0].config.responseSchema
+    expect(schema.propertyOrdering[0]).toBe('affectedCitations')
+    expect(schema.required).toContain('affectedCitations')
+  })
+
+  it('degrades to empty rather than discarding an otherwise good analysis', async () => {
+    const r = await run({ affectedCitations: 'not-an-array', summary: 's', tags: ['voting'], relevanceScore: 6 })
+    expect(r.affectedCitations).toEqual([])
+    expect(r.summary).toBe('s')
+    expect(r.relevanceScore).toBe(6)
+  })
+
+  it('drops blank and non-string entries', async () => {
+    const r = await run({ affectedCitations: ['17-70-401', '', '   ', 42, null], summary: 's', tags: [], relevanceScore: 5 })
+    expect(r.affectedCitations).toEqual(['17-70-401'])
   })
 })

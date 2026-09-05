@@ -65,6 +65,9 @@ export const bills = sqliteTable('bills', {
   textR2Key: text('text_r2_key'),
   tenantSummary: text('tenant_summary'),
   tags: text('tags').notNull().default('[]'),
+  // Statutory citations the bill affects, verbatim as printed. See
+  // migrations/0066_affected_citations.sql for why these are not normalised.
+  affectedCitations: text('affected_citations').notNull().default('[]'),
   priority: text('priority', { enum: ['high', 'medium', 'low'] }),
   sponsor: text('sponsor'),
   sponsorParty: text('sponsor_party'),

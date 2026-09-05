@@ -242,6 +242,27 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 ```
 
 > [!TIP]
+### Choosing the analysis model
+
+The bill analysis model and its thinking budget both have built-in defaults, so
+you do not need to set either. Two optional vars override them per tenant, which
+is how you move one tenant to a new model before the rest:
+
+```toml
+GEMINI_MODEL = "gemini-3.5-flash"     # unset = built-in default
+GEMINI_THINKING_BUDGET = "-1"         # "-1" lets Gemini size it, "0" disables thinking
+```
+
+These are operator settings rather than tenant-editable config: the model is a
+cost-and-quality decision, and a cheaper model is not a preference a team should
+be able to pick for itself.
+
+Thinking is on by default because turning it off measurably degrades tag
+accuracy on tags whose criterion is mechanical rather than topical — for
+instance "the bill amends a section of chapter X". Thinking tokens bill as
+output tokens, so disabling thinking is a real saving on a large corpus and a
+real accuracy cost; measure on your own bills before changing it.
+
 > **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
 ## Step 7: Bind the tenant on central

@@ -18,6 +18,8 @@ interface ProcessBillResult {
   summary: string
   tags: string[]
   relevanceScore: number
+  /** Statutory citations the bill affects, verbatim as printed in the bill. */
+  affectedCitations: string[]
 }
 
 // ── Shared constants ──────────────────────────────────────────────────────────
@@ -47,14 +49,32 @@ export function buildAnalysisSchema(taxonomy: TaxonomyItem[]) {
   const tagItems = names.length > 0
     ? { type: 'string', format: 'enum', enum: names }
     : { type: 'string' }
+  // affectedCitations is generated FIRST — see propertyOrdering below.
+  const ordering = ['affectedCitations', 'summary', 'tags', 'relevanceScore']
   return {
     type: 'object',
     properties: {
+      affectedCitations: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Statutory citations this bill affects, exactly as printed in the bill.',
+      },
       summary: { type: 'string' },
       tags: { type: 'array', items: tagItems },
       relevanceScore: { type: 'integer', description: 'An integer from 1 to 10 inclusive.' },
     },
-    required: ['summary', 'tags', 'relevanceScore'],
+    // Generation is autoregressive, so field order is the order the model commits
+    // to answers. Citations come first so the extraction is in context before the
+    // tag and relevance judgements that may depend on it. Every field is required,
+    // which Google's own troubleshooting guidance pairs with a defined order to
+    // stop the model drifting out of it.
+    //
+    // Measured 2026-09-05: ordering is honoured (citations arrived first in 12/12
+    // calls). Ordering alone does NOT fix tag accuracy — an older model extracted
+    // correctly and still tagged on subject matter. It is the extraction that is
+    // worth having here, not a claim about judgement.
+    propertyOrdering: ordering,
+    required: ordering,
     additionalProperties: false,
   }
 }
@@ -105,10 +125,11 @@ function buildPrompt(
 Title: ${title}
 
 Your task:
-1. Write a summary of this bill following your system instructions.
-2. Assign every tag whose topic the bill substantively addresses — changes, regulates, funds, or establishes it. Apply a tag for genuine subject matter, not an incidental mention or shared procedure. Assigning no tags is correct only if none genuinely apply. Select only from this list:
+1. List every statutory citation this bill affects, exactly as printed in the bill — the "Sections Affected" list near the top is usually the quickest place to find them. Do this before assigning tags.
+2. Write a summary of this bill following your system instructions.
+3. Assign tags from the list below. Where a tag carries a description, that description defines the test for that tag and overrides the general guidance in this step. For a tag with no description, assign it when the bill substantively addresses its topic — changes, regulates, funds, or establishes it — not for an incidental mention or shared procedure. Assigning no tags is correct only if none apply. Select only from this list:
 ${taxonomyLines}
-3. ${relevanceQuestion} Give an integer 1–10. Anchor: 1 = no genuine connection to this subject (an incidental mention or shared procedure is not a connection); 5 = partially or indirectly bears on it; 10 = squarely and substantially about it. Judge by what the bill does, not surface keywords.`
+4. ${relevanceQuestion} Give an integer 1–10. Anchor: 1 = no genuine connection to this subject (an incidental mention or shared procedure is not a connection); 5 = partially or indirectly bears on it; 10 = squarely and substantially about it. Judge by what the bill does, not surface keywords.`
 }
 
 function validateAndClamp(parsed: unknown): ProcessBillResult {
@@ -120,12 +141,56 @@ function validateAndClamp(parsed: unknown): ProcessBillResult {
     summary: p.summary,
     tags: p.tags,
     relevanceScore: Math.min(10, Math.max(1, p.relevanceScore)),
+    // Absent or malformed citations are not a failed analysis: the summary,
+    // tags and score are the contract, and this field is supplementary. A
+    // non-array degrades to empty rather than throwing away a good analysis.
+    affectedCitations: Array.isArray(p.affectedCitations)
+      ? p.affectedCitations.filter((c: unknown): c is string => typeof c === 'string' && c.trim().length > 0)
+      : [],
   }
 }
 
 // ── Gateway-routed Gemini ─────────────────────────────────────────────────────
 
-const GEMINI_MODEL = 'gemini-2.5-flash'
+/**
+ * Analysis model and thinking budget.
+ *
+ * Both are overridable per environment (see `resolveModel`/`resolveThinkingBudget`)
+ * so a single tenant can be moved to a new model ahead of the fleet — the model is
+ * an operator decision about cost and quality, so it lives in wrangler vars rather
+ * than in tenant-editable config.
+ *
+ * The defaults were chosen from a measured comparison on 103 bills with known
+ * ground truth (2026-09-05), scoring tags whose criterion is mechanical:
+ *
+ *   gemini-2.5-flash, no thinking   25% precision   <- the previous default
+ *   gemini-2.5-flash, thinking      33% precision
+ *   gemini-3.5-flash, no thinking   75% precision
+ *   gemini-3.5-flash, thinking     100% precision
+ *
+ * Two things that read as surprising and are not: thinking on the older model is
+ * not a fix, and model generation matters more than thinking. Do not "optimise"
+ * this back to a cheaper configuration without re-running that comparison — an
+ * earlier 12-bill screen put the old model at 100%, which the 103-bill run showed
+ * was luck.
+ */
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
+
+/** -1 asks Gemini to size the thinking budget itself; 0 disables thinking. */
+const DEFAULT_THINKING_BUDGET = -1
+
+function resolveModel(env: Env): string {
+  const configured = (env.GEMINI_MODEL ?? '').trim()
+  return configured.length > 0 ? configured : DEFAULT_GEMINI_MODEL
+}
+
+/** Blank or unparseable falls back to the default rather than silently disabling thinking. */
+function resolveThinkingBudget(env: Env): number {
+  const raw = (env.GEMINI_THINKING_BUDGET ?? '').trim()
+  if (raw.length === 0) return DEFAULT_THINKING_BUDGET
+  const n = Number(raw)
+  return Number.isInteger(n) ? n : DEFAULT_THINKING_BUDGET
+}
 
 async function callGemini(
   params: ProcessBillParams,
@@ -166,13 +231,13 @@ async function callGemini(
     : [{ text: `${promptText}\n\nFull text:\n${params.text}` }]
 
   const response = await client.models.generateContent({
-    model: GEMINI_MODEL,
+    model: resolveModel(env),
     contents: [{ role: 'user', parts }],
     config: {
       systemInstruction: composeSystemInstruction(params.aiContext),
       responseMimeType: 'application/json',
       responseSchema: buildAnalysisSchema(params.taxonomy),
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: { thinkingBudget: resolveThinkingBudget(env) },
       serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
     },
   })

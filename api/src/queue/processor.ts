@@ -423,7 +423,7 @@ export async function processCentralNotification(
   // bill the reader had just prioritized. Only forceAI forces the model.
   const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
-  let aiResult: { summary: string; tags: string[]; relevanceScore: number } | null = null
+  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[] } | null = null
   let aiSkipReason: AiSkipReason | null = null
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
@@ -543,6 +543,10 @@ export async function processCentralNotification(
       tenantSummary: aiResult.summary,
       tags: JSON.stringify(aiResult.tags),
       relevanceScore: aiResult.relevanceScore,
+      // Stored but not yet surfaced anywhere: this is the first pass at a parsed
+      // layer over bill text, kept verbatim so a later consumer can decide what
+      // structure it needs.
+      affectedCitations: JSON.stringify(aiResult.affectedCitations),
       // Clear any prior permanent skip — AI ran successfully on this text version.
       aiSkipReason: null,
       // …and any prior transient failure, for the same reason.
