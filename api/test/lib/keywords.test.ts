@@ -28,3 +28,46 @@ describe('matchesKeywords — word boundary enforcement for "election"', () => {
     expect(matchesKeywords('mail-in ballot application form', ['ballot'])).toBe(true)
   })
 })
+
+describe('matchesKeywords — wildcard sentinel', () => {
+  it('matches any text when the list contains "*"', () => {
+    expect(matchesKeywords('Tobacco Amendments', ['*'])).toBe(true)
+  })
+
+  it('matches empty text when the list contains "*"', () => {
+    expect(matchesKeywords('', ['*'])).toBe(true)
+  })
+
+  it('is unaffected by other keywords alongside "*"', () => {
+    expect(matchesKeywords('Water Usage Modifications', ['county', '*'])).toBe(true)
+  })
+
+  it('still matches nothing for an empty list', () => {
+    expect(matchesKeywords('Election Law Amendments', [])).toBe(false)
+  })
+
+  it('treats "*extra" as an ordinary substring keyword, not the sentinel', () => {
+    expect(matchesKeywords('Tobacco Amendments', ['*extra'])).toBe(false)
+  })
+})
+
+// The two packages must agree bill-for-bill: central decides what to link and
+// fetch, the tenant decides what to analyze. A divergence would silently
+// analyze a different set than central delivered.
+describe('matchesKeywords — parity with central matchesUnion', () => {
+  const CASES: Array<{ text: string; keywords: string[]; expected: boolean }> = [
+    { text: 'Tobacco Amendments', keywords: ['*'], expected: true },
+    { text: '', keywords: ['*'], expected: true },
+    { text: 'Tobacco Amendments', keywords: [], expected: false },
+    { text: 'Tobacco Amendments', keywords: ['*extra'], expected: false },
+    { text: 'County Budget Amendments', keywords: ['county'], expected: true },
+    { text: 'Selection of a provider', keywords: ['election'], expected: false },
+    { text: 'Election Law Amendments', keywords: ['election'], expected: true },
+  ]
+
+  for (const { text, keywords, expected } of CASES) {
+    it(`${JSON.stringify(keywords)} vs ${JSON.stringify(text)} → ${expected}`, () => {
+      expect(matchesKeywords(text, keywords)).toBe(expected)
+    })
+  }
+})
