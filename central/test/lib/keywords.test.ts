@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { matchesWordBoundary, matchesUnion } from '../../src/lib/keywords'
+import { KEYWORD_MATCH_CASES } from '../../../shared/keywordMatchFixtures'
 
 describe('matchesWordBoundary', () => {
   it('matches "election" in "election law"', () => {
@@ -56,4 +57,15 @@ describe('matchesUnion — wildcard sentinel', () => {
   it('does not let a literal asterisk in the text trigger the sentinel', () => {
     expect(matchesUnion('Budget * Amendments', ['county'])).toEqual({ matched: false, keyword: '' })
   })
+})
+
+// Both packages' test suites assert their OWN matcher against this one shared
+// table (see shared/keywordMatchFixtures.ts), so a change to either matcher
+// that is not mirrored on the other side fails that side's tests here.
+describe('matchesKeywords — shared cross-matcher fixtures', () => {
+  for (const { text, keywords, expected } of KEYWORD_MATCH_CASES) {
+    it(`${JSON.stringify(keywords)} vs ${JSON.stringify(text)} → ${expected}`, () => {
+      expect(matchesUnion(text, keywords).matched).toBe(expected)
+    })
+  }
 })

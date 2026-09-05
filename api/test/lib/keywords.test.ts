@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { matchesKeywords } from '../../src/lib/keywords'
+import { KEYWORD_MATCH_CASES } from '../../../shared/keywordMatchFixtures'
 
 describe('matchesKeywords — word boundary enforcement for "election"', () => {
   // "election" is in WORD_BOUNDARY_KEYWORDS: must not match mid-word occurrences.
@@ -51,21 +52,11 @@ describe('matchesKeywords — wildcard sentinel', () => {
   })
 })
 
-// The two packages must agree bill-for-bill: central decides what to link and
-// fetch, the tenant decides what to analyze. A divergence would silently
-// analyze a different set than central delivered.
-describe('matchesKeywords — parity with central matchesUnion', () => {
-  const CASES: Array<{ text: string; keywords: string[]; expected: boolean }> = [
-    { text: 'Tobacco Amendments', keywords: ['*'], expected: true },
-    { text: '', keywords: ['*'], expected: true },
-    { text: 'Tobacco Amendments', keywords: [], expected: false },
-    { text: 'Tobacco Amendments', keywords: ['*extra'], expected: false },
-    { text: 'County Budget Amendments', keywords: ['county'], expected: true },
-    { text: 'Selection of a provider', keywords: ['election'], expected: false },
-    { text: 'Election Law Amendments', keywords: ['election'], expected: true },
-  ]
-
-  for (const { text, keywords, expected } of CASES) {
+// Both packages' test suites assert their OWN matcher against this one shared
+// table (see shared/keywordMatchFixtures.ts), so a change to either matcher
+// that is not mirrored on the other side fails that side's tests here.
+describe('matchesKeywords — shared cross-matcher fixtures', () => {
+  for (const { text, keywords, expected } of KEYWORD_MATCH_CASES) {
     it(`${JSON.stringify(keywords)} vs ${JSON.stringify(text)} → ${expected}`, () => {
       expect(matchesKeywords(text, keywords)).toBe(expected)
     })
