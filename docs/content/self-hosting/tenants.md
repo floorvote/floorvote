@@ -327,15 +327,9 @@ wrangler d1 execute floorvote-[slug] --remote --env [slug] \
     ('state_coverage', '[\"NJ\"]')"
 ```
 
-**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync.
+**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync. To widen what gets analyzed, write broader keywords covering your real scope, or manually promote specific bills once they are in view as stubs. Bear in mind that keyword matching runs on a bill's title plus its abstract, and many states copy the title into the abstract verbatim — so in practice you are often matching against six or seven words, and broad keywords buy less coverage than they appear to.
 
 While you're here, set the **org noun** (team / association / coalition / custom) — it drives the labels on the positions section. (**Rerun AI on all bills** is for later — after bills are in — if you re-tune your instructions and want to regenerate existing summaries.)
-
-### Getting AI on every bill
-
-Blank keywords match the whole corpus, which raises the obvious next question: how do you get AI analysis on *everything*, not just keyword matches? There's no match-all keyword mode — `["*"]` works for `state_coverage` (all states) but has no equivalent for `keywords`. The reason is concrete: `LEGISCAN_API_KEY` is a single secret held by central (see [Step 6](#step-6-set-the-tenant-secret) above — tenants never hold one), so every tenant on a deployment draws against **one shared monthly API quota**. A tenant that matched every bill by default could exhaust that quota for every other tenant on the same central, with the symptom landing on *them* — their bills quietly stop arriving with summaries.
-
-What works instead: write broad keywords that cover your real scope, or manually promote the specific bills you care about once they're in view as stubs.
 
 ## Step 12: Seed the active session(s)
 
