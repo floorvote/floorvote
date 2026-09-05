@@ -96,7 +96,7 @@ export async function runSync(env: Env, db: CentralDb, provider: BillProvider): 
       if (!shouldSyncState(session.lastSyncedAt, freqHours)) continue
 
       try {
-        await syncSession(state, session, stateKeywords, stateTenants, env, db, provider)
+        await syncSession(state, session, keywordsByTenant, stateTenants, env, db, provider)
         await db.update(sessions)
           .set({ lastSyncedAt: nowDb() })
           .where(eq(sessions.sessionId, session.sessionId))
@@ -144,7 +144,12 @@ async function refreshSessions(state: string, db: CentralDb, provider: BillProvi
 async function syncSession(
   state: string,
   session: { sessionId: string; identifier: string; lastSyncedAt: string | null },
-  stateKeywords: string[],
+  // Per-tenant keyword lists. The state-level UNION governs whether we fetch this
+  // state from the provider at all (fetching once per state is the point of that
+  // union), but linking must use each tenant's OWN list — otherwise one tenant's
+  // keywords, and especially a wildcard, leak into every other tenant covering
+  // the same state. Mirrors sync-legiscan.ts.
+  keywordsByTenant: Map<string, string[]>,
   stateTenants: { tenantId: string; stateCoverage: string; ingestionMode: string }[],
   env: Env,
   db: CentralDb,
@@ -224,7 +229,8 @@ async function syncSession(
           .onConflictDoNothing()
         linkedToAnyTenant = true
       } else {
-        const tenantKws = stateKeywords
+        const tenantKws = keywordsByTenant.get(tenant.tenantId) ?? []
+        if (tenantKws.length === 0) continue
         const { matched, keyword } = matchesUnion(text, tenantKws)
         if (matched) {
           await db.insert(billTenants)
