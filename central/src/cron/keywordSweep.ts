@@ -1,6 +1,7 @@
 import { eq, and } from 'drizzle-orm'
 import { sessions, bills, billTenants, tenants, keywordRegistry } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
+import { WILDCARD_KEYWORD } from '../lib/keywords'
 import type { BillProvider } from '../providers/types'
 import type { Env, CentralDb, IngestorQueueMessage } from '../types'
 
@@ -42,6 +43,11 @@ export async function runKeywordSweep(env: Env, db: CentralDb, provider: BillPro
       if (!hasWildcard && !coverage.includes(session.state)) continue
 
       for (const keyword of keywords) {
+        // The wildcard sentinel is not a provider query — sending it would become
+        // a literal `q=*` and 400 the whole sweep. A wildcard tenant already
+        // receives every bill through the normal sync path, so it needs no sweep.
+        if (keyword === WILDCARD_KEYWORD) continue
+
         for await (const stub of provider.fetchKeywordMatches(session.state, session.identifier, keyword, since24h)) {
           if (linkedIds.has(stub.id)) continue
           linkedIds.add(stub.id)
