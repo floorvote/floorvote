@@ -46,12 +46,17 @@ vi.mock('../../components/ReprocessScopeModal', () => ({
 vi.mock('../../components/BillBadge', () => ({
   BillBadge: () => null,
 }))
-vi.mock('../admin/aiConfig', () => ({
-  parseTagTaxonomy: (_v: string) => ({ ok: true, value: [], error: null }),
-  aiInstructionsChanged: () => false,
-  configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
-    Object.keys(a).some((k) => a[k] !== b[k]),
-}))
+vi.mock('../admin/aiConfig', async () => {
+  const actual = await vi.importActual<typeof import('./aiConfig')>('../admin/aiConfig')
+  return {
+    // Real parser: Config now renders a live parsed-tag readout from this, so
+    // tests need actual parsing behavior rather than an always-empty stub.
+    parseTagTaxonomy: actual.parseTagTaxonomy,
+    aiInstructionsChanged: () => false,
+    configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
+      Object.keys(a).some((k) => a[k] !== b[k]),
+  }
+})
 vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
 }))
@@ -73,7 +78,7 @@ const BASE_CONFIG = {
   association_name: 'Test Org',
   ai_context: '',
   relevance_question: '',
-  tag_taxonomy: [],
+  tag_taxonomy: [] as { name: string; description?: string }[],
   matched_bills_count: 0,
   prioritized_bills_count: 0,
 }
@@ -88,6 +93,16 @@ beforeEach(() => {
     throw new Error('unexpected path: ' + path)
   })
 })
+
+// Override just the fields a test cares about on top of BASE_CONFIG.
+function mockConfig(overrides: Partial<typeof BASE_CONFIG>) {
+  mockFetch.mockImplementation(async (path: string) => {
+    if (path === '/admin/config') return { ...BASE_CONFIG, ...overrides }
+    if (path === '/admin/custom-fields') return []
+    if (path === '/bills/drafts') return { drafts: [] }
+    throw new Error('unexpected path: ' + path)
+  })
+}
 
 // Helper: find the noun <select> by its unique option "Custom…"
 function getNounSelect(): HTMLSelectElement {
@@ -520,5 +535,68 @@ describe('Config — unsaved-changes guard', () => {
 
     expect(input.value).toBe('Original Org')
     expect(reg.hasUnsaved()).toBe(false)
+  })
+})
+
+describe('Config — tag taxonomy formatting', () => {
+  it('renders saved tags separated by a blank line', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+    expect(box.value).toBe('Elections: voting and registration\n\nGovernment Records')
+  })
+
+  it('does not read as an unsaved change immediately after load', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tags')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+  })
+
+  it('shows how many tags the editor text parses into', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    renderInRegistry(<Config />)
+    expect(await screen.findByText('2 tags')).toBeTruthy()
+    expect(screen.getByText('Elections')).toBeTruthy()
+    expect(screen.getByText('Government Records')).toBeTruthy()
+  })
+
+  it('counts a single tag in the singular', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    expect(await screen.findByText('1 tag')).toBeTruthy()
+  })
+})
+
+describe('Config — AI textarea typography', () => {
+  it('gives the three AI instruction editors one typographic treatment', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const boxes = [
+      await screen.findByLabelText('Bill summary'),
+      await screen.findByLabelText('Relevance score'),
+      await screen.findByLabelText('Tags'),
+    ] as HTMLTextAreaElement[]
+    for (const box of boxes) {
+      expect(box.style.fontSize).toBe('12px')
+      expect(box.style.lineHeight).toBe('1.5')
+      // The Tags box used to be monospace; all three now share the page face.
+      expect(box.style.fontFamily).toBe('')
+    }
   })
 })

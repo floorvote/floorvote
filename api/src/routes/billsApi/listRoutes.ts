@@ -107,6 +107,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // regardless, so the fast path buys little here; bypass it whenever q is set.
       const optimize = canOptimize(sortCol, sortDir) && !q
 
+      // ── Pagination fast path via matchType ────────────────────────────────
+      // isNotNull(bills.matchType) is not a scope filter—it optimizes pagination.
+      // The list shows every bill, including untracked stubs, which sort last.
+      // total uses finalWhere alone with no matchType condition. trackedCount
+      // is: "how many tracked bills sort ahead of stubs." Misreading it as a
+      // scope filter produces wrong conclusions about the visible set.
       // Phase 1: counts — always get total; get trackedCount when optimizing
       const totalPromise = db.select({ total: sql<number>`count(*)` }).from(bills).where(finalWhere).all()
       const trackedPromise = optimize

@@ -61,6 +61,15 @@ const DEFAULT_TAXONOMY = [
 
 const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
 
+// One typographic treatment for all three AI-instruction editors. They are the
+// same kind of field and must read as a set; they previously drifted (the tag
+// box was monospace, none set a line-height, so each inherited a different
+// family-dependent default). Height is the only thing that varies per field.
+const aiTextareaStyle: React.CSSProperties = {
+  fontSize: fontSize.sm,
+  lineHeight: 1.5,
+}
+
 export function Config() {
   usePageTitle('Settings')
   const { user } = useAuth()
@@ -164,7 +173,11 @@ export function Config() {
         const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
           ? data.tag_taxonomy
               .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
-              .join('\n')
+              // Blank line between tags: descriptions soft-wrap, so single-newline
+              // separation makes a long list unreadable. parseTagTaxonomy discards
+              // blank lines, so this round-trips and never reaches the model — the
+              // save sends the parsed array, not this text.
+              .join('\n\n')
           : '')
         setTagTaxonomy(taxonomyString)
         setMatchedBillsCount(data.matched_bills_count ?? null)
@@ -698,9 +711,9 @@ export function Config() {
                   id="config-ai-context"
                   value={aiContext}
                   onChange={(e) => editField('aiContext', setAiContext)(e.target.value)}
-                  initialHeight={160}
+                  initialHeight={200}
                   minHeight={60}
-                  style={{ fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={buildDefaultAiContext(associationName)}
                 />
                 <div style={hintStyle}>System instructions sent to the AI for every bill. Controls the summary style and framing.</div>
@@ -720,9 +733,9 @@ export function Config() {
                   id="config-relevance-question"
                   value={relevanceQuestion}
                   onChange={(e) => editField('relevanceQuestion', setRelevanceQuestion)(e.target.value)}
-                  initialHeight={100}
+                  initialHeight={120}
                   minHeight={60}
-                  style={{ fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={buildDefaultRelevanceQuestion(associationName)}
                 />
                 <div style={hintStyle}>Prompt sent to guide the AI in scoring each bill's relevance from 1–10.</div>
@@ -742,9 +755,9 @@ export function Config() {
                   id="config-tag-taxonomy"
                   value={tagTaxonomy}
                   onChange={(e) => editField('tagTaxonomy', setTagTaxonomy)(e.target.value)}
-                  initialHeight={200}
+                  initialHeight={240}
                   minHeight={60}
-                  style={{ fontFamily: 'monospace', fontSize: fontSize.sm }}
+                  style={aiTextareaStyle}
                   placeholder={DEFAULT_TAXONOMY}
                 />
                 <div style={hintStyle}>
@@ -752,6 +765,32 @@ export function Config() {
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Municipal Court</code><br />
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Elections: Local election administration, voting rights, voter registration, voting equipment, etc.</code>
                 </div>
+                {(() => {
+                  const parsed = parseTagTaxonomy(tagTaxonomy)
+                  if (!parsed.ok || parsed.value.length === 0) return null
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginTop: 6 }}>
+                      <span style={{ ...hintStyle, marginTop: 0 }}>
+                        {parsed.value.length === 1 ? '1 tag' : `${parsed.value.length} tags`}
+                      </span>
+                      {parsed.value.map((t, i) => (
+                        <span
+                          // parseTagTaxonomy does not dedupe (the save path relies on
+                          // that), so two tags can share a name — index-suffix the key.
+                          key={`${t.name}:${i}`}
+                          style={{
+                            background: color.surfaceMuted,
+                            borderRadius: radius.sm,
+                            padding: '1px 6px',
+                            fontSize: fontSize.xs,
+                          }}
+                        >
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )
+                })()}
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
                     Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your {orgNoun}'s own priorities and issue areas.

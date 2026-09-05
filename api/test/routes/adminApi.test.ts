@@ -1700,6 +1700,47 @@ describe('POST /admin/keyword-resync-preview — priority protection', () => {
   })
 })
 
+describe('POST /admin/keyword-resync-preview — wildcard keyword', () => {
+  let adminCookie: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    await getDb(env.DB).delete(associationConfig)
+    const adminId = await seedUser({ role: 'admin', email: 'admin@example.com', name: 'Admin User' })
+    adminCookie = `session=${await seedSession(adminId)}`
+  })
+
+  async function preview(keywords: string[]) {
+    const res = await app.request('/api/admin/keyword-resync-preview', {
+      method: 'POST', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords }),
+    }, env)
+    expect(res.status).toBe(200)
+    return await res.json() as { wouldAdd: number; wouldDemote: number; wouldProtect: number }
+  }
+
+  it('counts every unmatched, unanalyzed bill under wouldAdd for ["*"]', async () => {
+    // Neither title contains any plausible keyword — only the wildcard can match them.
+    // matchType: null is what makes these "lightweight unprocessed" bills — seedBill
+    // otherwise defaults matchType to 'keyword', which wouldAdd deliberately excludes.
+    await seedBill({ externalId: 'legiscan:wc-1', title: 'Tobacco Amendments', billNumber: 'HB 1', matchType: null })
+    await seedBill({ externalId: 'legiscan:wc-2', title: 'Water Usage Modifications', billNumber: 'HB 2', matchType: null })
+
+    expect((await preview(['*'])).wouldAdd).toBe(2)
+  })
+
+  it('matches nothing for those same bills with an ordinary keyword list', async () => {
+    await seedBill({ externalId: 'legiscan:wc-3', title: 'Tobacco Amendments', billNumber: 'HB 3', matchType: null })
+
+    expect((await preview(['election'])).wouldAdd).toBe(0)
+  })
+
+  it('still previews all zeros for an empty keyword list', async () => {
+    await seedBill({ externalId: 'legiscan:wc-4', title: 'Tobacco Amendments', billNumber: 'HB 4', matchType: null })
+
+    expect(await preview([])).toEqual({ wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
+  })
+})
+
 describe('POST /admin/reprocess-llm-all — scope', () => {
   let adminCookie: string
 
