@@ -15,6 +15,11 @@
  *
  *   npx tsx scripts/openstates/seed-from-bulk.ts --dir ... --state RI --dry-run
  *
+ * --keywords / --keywords-file is REQUIRED whenever --tenant-id is given: an empty
+ * keyword list means "match nothing" here, the same as everywhere else in the system.
+ * To link every bill in the dump to the tenant, pass the wildcard explicitly:
+ *   --keywords "*"
+ *
  * Reads ADMIN_SECRET from central/.dev.vars or environment.
  * Requires: wrangler authenticated (npx wrangler login)
  */
@@ -80,13 +85,31 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 if (!dir && !zipPath) {
-  console.error('Usage: npx tsx scripts/seed-from-bulk.ts --dir DIR [--state XX] [--tenant-id ID] [--keywords kw1,kw2] [--dry-run]')
-  console.error('       npx tsx scripts/seed-from-bulk.ts --zip FILE.zip [--state XX] [--tenant-id ID] [--keywords kw1,kw2]')
+  console.error('Usage: npx tsx scripts/seed-from-bulk.ts --dir DIR [--state XX] [--tenant-id ID --keywords kw1,kw2] [--dry-run]')
+  console.error('       npx tsx scripts/seed-from-bulk.ts --zip FILE.zip [--state XX] [--tenant-id ID --keywords kw1,kw2]')
+  console.error('       --keywords is required with --tenant-id; use --keywords "*" to link every bill.')
   process.exit(1)
 }
 
 if (keywordsFile) {
   keywords = readFileSync(keywordsFile, 'utf-8').split('\n').map(s => s.trim()).filter(Boolean)
+}
+
+// An empty keyword list means MATCH NOTHING — that is the invariant every other
+// matcher call site enforces (central/src/routes/tenants-legiscan.ts,
+// central/src/cron/sync.ts, api/src/queue/processor.ts all guard on
+// `keywords.length === 0` and match no bills), and it is the documented setup state
+// for a brand-new tenant. This script used to do the opposite and link EVERY bill
+// when no keywords were given. Rather than silently invert that — which would
+// quietly seed nothing for anyone relying on the old behavior — refuse the
+// ambiguous case outright and make "link everything" an explicit wildcard.
+if (tenantId && keywords.length === 0) {
+  console.error('Error: --tenant-id was given but no keywords were provided.')
+  console.error('  An empty keyword list now means "match nothing" here, consistent with the rest of')
+  console.error('  the system. This script used to link every bill in the dump to the tenant instead.')
+  console.error('  Pass --keywords "kw1,kw2" or --keywords-file FILE to select bills, or')
+  console.error('  pass --keywords "*" to link every bill to the tenant on purpose.')
+  process.exit(1)
 }
 
 // ── Bulk JSON types ───────────────────────────────────────────────────────────
@@ -263,7 +286,7 @@ async function main() {
 
     const year = parseInt(sessionIdentifier, 10) || new Date().getFullYear()
 
-    console.error(`Matching keywords (${keywords.length > 0 ? keywords.length + ' provided' : 'none — all bills get bill_tenants if tenant-id set'})...`)
+    console.error(`Matching keywords (${keywords.length} provided${keywords.includes(WILDCARD_KEYWORD) ? ', wildcard — every bill matches' : ''})...`)
 
     const statements: string[] = []
     const textsToUpload: Array<{ billId: string; url: string; mediaType: string } | { billId: string; rawText: string }> = []
@@ -320,9 +343,8 @@ async function main() {
 
       if (tenantId) {
         const text = `${bill.title} ${abstract ?? ''}`
-        const result = keywords.length > 0
-          ? kwMatch(text, keywords)
-          : { matched: true, keyword: '' }
+        // Guarded above: keywords is non-empty whenever tenantId is set.
+        const result = kwMatch(text, keywords)
 
         if (result.matched) {
           kwMatchCount++
