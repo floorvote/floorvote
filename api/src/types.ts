@@ -20,6 +20,8 @@ export type Env = {
   AI_GATEWAY_ENABLED?: string  // "true" to route through gateway; unset = rollback to direct key
   // Rollback key — keep set for one release after gateway is confirmed stable, then remove
   GEMINI_API_KEY?: string
+  GEMINI_MODEL?: string            // analysis model override; unset = built-in default
+  GEMINI_THINKING_BUDGET?: string  // thinking tokens; "-1" lets Gemini size it, "0" disables. Unset = built-in default
   APP_URL: string
   APP_DOMAINS?: string      // comma-separated registrable domains served; drives CORS apex + superadmin cookie scope. Empty/unset = same-origin only + host-only cookie.
   EMAIL_FROM?: string       // full sender address; defaults to notifications@example.com

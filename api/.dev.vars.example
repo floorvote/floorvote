@@ -49,3 +49,11 @@
 # Force demo auto-login under a plain `npm run dev`. `npm run dev:local` sets
 # this for you, so you rarely need it here.
 # DEMO_MODE=true
+
+# Analysis model overrides. Both optional — unset uses the built-in defaults.
+# GEMINI_MODEL selects the Gemini model used for bill analysis.
+# GEMINI_THINKING_BUDGET is thinking tokens: "-1" lets Gemini size the budget,
+# "0" disables thinking. Thinking bills as output tokens, and turning it off
+# measurably degrades tags whose criterion is mechanical rather than topical.
+# GEMINI_MODEL=
+# GEMINI_THINKING_BUDGET=
