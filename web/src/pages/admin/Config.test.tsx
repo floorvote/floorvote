@@ -652,6 +652,17 @@ describe('Config — start from default', () => {
     expect(seeds.length).toBe(3)
   })
 
+  it('does not offer the seed once the field has a value', async () => {
+    mockConfig({ ai_context: 'custom instructions' })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    // Bill summary already has a value, so it shows Reset rather than the
+    // seed trigger — only the other two (still-blank) fields offer to seed.
+    expect(screen.getAllByRole('button', { name: 'Reset to default' }).length).toBe(1)
+    expect(screen.getAllByRole('button', { name: 'Start from default' }).length).toBe(2)
+  })
+
   it('fills the editor with the resolved default and flips to Reset', async () => {
     mockConfig({ association_name: 'Prairie Policy Alliance' })
     renderInRegistry(<Config />)
@@ -685,7 +696,7 @@ describe('Config — start from default', () => {
     expect(box.value).toBe(buildDefaultRelevanceQuestion(''))
   })
 
-  it('does not offer the seed on a demo tenant', async () => {
+  it('renders the seed disabled on a demo tenant', async () => {
     demo.demoLocked = true
     mockConfig({})
     renderInRegistry(<Config />)
@@ -737,15 +748,13 @@ describe('Config — seeded defaults round-trip', () => {
       aiContext: '',
       relevanceQuestion: '',
       tagTaxonomy: '',
-      associationName: 'Test Org',
     }
     const seeded = {
       aiContext: buildDefaultAiContext('Test Org'),
       relevanceQuestion: buildDefaultRelevanceQuestion('Test Org'),
       tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
-      associationName: 'Test Org',
     }
-    expect(actualAiInstructionsChanged(blank, seeded)).toBe(false)
+    expect(actualAiInstructionsChanged(blank, seeded, 'Test Org')).toBe(false)
   })
 
   it('still treats an edit to seeded text as a change', () => {
@@ -753,9 +762,8 @@ describe('Config — seeded defaults round-trip', () => {
       aiContext: buildDefaultAiContext('Test Org'),
       relevanceQuestion: '',
       tagTaxonomy: '',
-      associationName: 'Test Org',
     }
     const edited = { ...seeded, aiContext: seeded.aiContext + '\n\nAlways mention rural impact.' }
-    expect(actualAiInstructionsChanged(seeded, edited)).toBe(true)
+    expect(actualAiInstructionsChanged(seeded, edited, 'Test Org')).toBe(true)
   })
 })

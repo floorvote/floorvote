@@ -10,11 +10,12 @@
  * config, so the copies were collapsed into this module.
  *
  * serializeTaxonomy is the single statement of the editor's wire format.
- * Three callers depend on it agreeing with itself — the Config page's loader,
- * its seed control, and the change-detection that decides whether saving
- * should offer to reprocess every bill. If the separator were restated at any
- * of those sites, a seeded-but-unedited field would compare unequal to its own
- * default and every save would trigger a full-corpus reprocess.
+ * Four callers depend on it agreeing with itself — the Config page's loader,
+ * its placeholder text, its seed control, and the change-detection that
+ * decides whether saving should offer to reprocess every bill. If the
+ * separator were restated at any of those sites, a seeded-but-unedited field
+ * would compare unequal to its own default and every save would trigger a
+ * full-corpus reprocess.
  */
 export type TaxonomyItem = { name: string; description?: string }
 

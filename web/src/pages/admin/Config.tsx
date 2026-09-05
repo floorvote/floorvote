@@ -318,8 +318,12 @@ export function Config() {
       return
     }
 
-    const current = { aiContext, relevanceQuestion, tagTaxonomy, associationName }
-    const changed = configSnapshot.current == null || aiInstructionsChanged(configSnapshot.current, current)
+    const current = { aiContext, relevanceQuestion, tagTaxonomy }
+    // Resolve both sides against the snapshot's association name (the last
+    // saved name), not the live associationName state: an unsaved edit to the
+    // Labels field is not yet in force, so it must not affect this comparison.
+    const changed = configSnapshot.current == null
+      || aiInstructionsChanged(configSnapshot.current, current, configSnapshot.current.associationName)
 
     setSavingAi(true)
     setSavedAi(false)
@@ -592,9 +596,12 @@ export function Config() {
       )
     }
     if (!hasValue) {
-      // Keywords has no default to start from — only the three AI-instruction
-      // fields reach this branch with a seeder.
-      if (field === 'keywords') return null
+      // Allowlist rather than exclude: only these three fields have a seeder
+      // wired up in seedFromDefault. A future ResettableField member falls
+      // through to the disabled branch below instead of silently rendering a
+      // seed button that does nothing when clicked.
+      const seedable: ResettableField[] = ['aiContext', 'relevanceQuestion', 'tagTaxonomy']
+      if (!seedable.includes(field)) return null
       return (
         <button type='button' onClick={() => seedFromDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
           Start from default

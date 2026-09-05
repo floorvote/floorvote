@@ -25,35 +25,54 @@ export type AiInstructionFields = {
   aiContext: string
   relevanceQuestion: string
   tagTaxonomy: string
-  associationName: string
 }
 
 /**
  * Resolve the three AI-instruction fields to the text the model will actually
  * receive: a blank field falls back to its generic default, interpolated with
- * the association name that was in force alongside it.
+ * the given association name.
+ *
+ * The tag-taxonomy side compares the PARSED taxonomy (what is actually stored
+ * and sent to the model), not the editor string — reformatting an existing tag
+ * list (different line spacing, reordered whitespace) can change the editor
+ * text without changing the array it parses to, and that must not read as a
+ * change. A malformed taxonomy (parseTagTaxonomy returns ok: false) falls back
+ * to comparing the raw trimmed text, which is conservative but never throws.
  */
-function resolveAiFields(f: AiInstructionFields) {
+function resolveAiFields(f: AiInstructionFields, associationName: string) {
+  const taxonomyText = f.tagTaxonomy.trim() || serializeTaxonomy(DEFAULT_TAXONOMY)
+  const parsed = parseTagTaxonomy(taxonomyText)
   return {
-    aiContext: f.aiContext.trim() || buildDefaultAiContext(f.associationName),
-    relevanceQuestion: f.relevanceQuestion.trim() || buildDefaultRelevanceQuestion(f.associationName),
-    tagTaxonomy: f.tagTaxonomy.trim() || serializeTaxonomy(DEFAULT_TAXONOMY),
+    aiContext: f.aiContext.trim() || buildDefaultAiContext(associationName),
+    relevanceQuestion: f.relevanceQuestion.trim() || buildDefaultRelevanceQuestion(associationName),
+    tagTaxonomy: parsed.ok ? JSON.stringify(parsed.value) : taxonomyText,
   }
 }
 
 /**
- * True if the EFFECTIVE AI instructions differ — the resolved prompt text, not
- * the raw editor contents. A true result offers the tenant a reprocess of every
- * bill, so raw comparison is wrong in both directions: seeding a blank field
- * with its own default changes the editor but not the prompt, and renaming the
- * association changes the prompt without touching any editor field.
+ * True if the EFFECTIVE AI instructions differ — the resolved prompt content,
+ * not the raw editor contents. A true result offers the tenant a reprocess of
+ * every bill, so raw comparison is wrong: seeding a blank field with its own
+ * default changes the editor text but not the prompt, and reformatting the tag
+ * list without changing any tag changes the editor text but not the parsed
+ * array actually sent to the model.
  *
- * Each side resolves against the association name that accompanied it, which is
- * why the name is part of the compared shape rather than a separate argument.
+ * Both sides resolve against the SAME associationName — the one currently in
+ * force, i.e. the last-saved name, not a live-but-unsaved edit to the Labels
+ * field. An unsaved name change is not yet in force for either side, so
+ * comparing each side against a different name (or against an edit neither
+ * side has actually saved) would produce false positives and false negatives
+ * that have nothing to do with the AI-instruction fields this function is
+ * meant to guard. A genuine rename is handled entirely by handleSaveLabels,
+ * which never calls this function and never offers a reprocess.
  */
-export function aiInstructionsChanged(a: AiInstructionFields, b: AiInstructionFields): boolean {
-  const ra = resolveAiFields(a)
-  const rb = resolveAiFields(b)
+export function aiInstructionsChanged(
+  a: AiInstructionFields,
+  b: AiInstructionFields,
+  associationName: string,
+): boolean {
+  const ra = resolveAiFields(a, associationName)
+  const rb = resolveAiFields(b, associationName)
   return ra.aiContext !== rb.aiContext
     || ra.relevanceQuestion !== rb.relevanceQuestion
     || ra.tagTaxonomy !== rb.tagTaxonomy
