@@ -222,6 +222,10 @@ export function Config() {
     if (field === 'aiContext') setAiContext(buildDefaultAiContext(associationName))
     if (field === 'relevanceQuestion') setRelevanceQuestion(buildDefaultRelevanceQuestion(associationName))
     if (field === 'tagTaxonomy') setTagTaxonomy(serializeTaxonomy(DEFAULT_TAXONOMY))
+    // Unreachable through the current UI: renderResetControl only renders the
+    // seed button when undoValues[field] is already undefined, so this call
+    // never has anything to clear today. Kept anyway so that seeding can
+    // never strand a stale undo value if that render ordering ever changes.
     clearUndoValue(field)
   }
 

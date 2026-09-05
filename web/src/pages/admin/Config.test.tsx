@@ -690,7 +690,9 @@ describe('Config — start from default', () => {
     renderInRegistry(<Config />)
     await screen.findByLabelText('Bill summary')
 
-    for (const btn of screen.queryAllByRole('button', { name: 'Start from default' })) {
+    const seeds = screen.queryAllByRole('button', { name: 'Start from default' })
+    expect(seeds.length).toBe(3)
+    for (const btn of seeds) {
       expect((btn as HTMLButtonElement).disabled).toBe(true)
     }
   })
