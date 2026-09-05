@@ -89,6 +89,16 @@ beforeEach(() => {
   })
 })
 
+// Override just the fields a test cares about on top of BASE_CONFIG.
+function mockConfig(overrides: Partial<typeof BASE_CONFIG>) {
+  mockFetch.mockImplementation(async (path: string) => {
+    if (path === '/admin/config') return { ...BASE_CONFIG, ...overrides }
+    if (path === '/admin/custom-fields') return []
+    if (path === '/bills/drafts') return { drafts: [] }
+    throw new Error('unexpected path: ' + path)
+  })
+}
+
 // Helper: find the noun <select> by its unique option "Custom…"
 function getNounSelect(): HTMLSelectElement {
   // The noun select has a unique option value "custom" with text "Custom…"
@@ -520,5 +530,31 @@ describe('Config — unsaved-changes guard', () => {
 
     expect(input.value).toBe('Original Org')
     expect(reg.hasUnsaved()).toBe(false)
+  })
+})
+
+describe('Config — tag taxonomy formatting', () => {
+  it('renders saved tags separated by a blank line', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+    expect(box.value).toBe('Elections: voting and registration\n\nGovernment Records')
+  })
+
+  it('does not read as an unsaved change immediately after load', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tags')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
   })
 })

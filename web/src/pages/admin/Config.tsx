@@ -164,7 +164,11 @@ export function Config() {
         const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
           ? data.tag_taxonomy
               .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
-              .join('\n')
+              // Blank line between tags: descriptions soft-wrap, so single-newline
+              // separation makes a long list unreadable. parseTagTaxonomy discards
+              // blank lines, so this round-trips and never reaches the model — the
+              // save sends the parsed array, not this text.
+              .join('\n\n')
           : '')
         setTagTaxonomy(taxonomyString)
         setMatchedBillsCount(data.matched_bills_count ?? null)
