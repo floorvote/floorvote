@@ -46,12 +46,17 @@ vi.mock('../../components/ReprocessScopeModal', () => ({
 vi.mock('../../components/BillBadge', () => ({
   BillBadge: () => null,
 }))
-vi.mock('../admin/aiConfig', () => ({
-  parseTagTaxonomy: (_v: string) => ({ ok: true, value: [], error: null }),
-  aiInstructionsChanged: () => false,
-  configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
-    Object.keys(a).some((k) => a[k] !== b[k]),
-}))
+vi.mock('../admin/aiConfig', async () => {
+  const actual = await vi.importActual<typeof import('./aiConfig')>('../admin/aiConfig')
+  return {
+    // Real parser: Config now renders a live parsed-tag readout from this, so
+    // tests need actual parsing behavior rather than an always-empty stub.
+    parseTagTaxonomy: actual.parseTagTaxonomy,
+    aiInstructionsChanged: () => false,
+    configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
+      Object.keys(a).some((k) => a[k] !== b[k]),
+  }
+})
 vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
 }))
@@ -73,7 +78,7 @@ const BASE_CONFIG = {
   association_name: 'Test Org',
   ai_context: '',
   relevance_question: '',
-  tag_taxonomy: [],
+  tag_taxonomy: [] as { name: string; description?: string }[],
   matched_bills_count: 0,
   prioritized_bills_count: 0,
 }
@@ -556,6 +561,25 @@ describe('Config — tag taxonomy formatting', () => {
     const reg = renderInRegistry(<Config />)
     await screen.findByLabelText('Tags')
     await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+  })
+
+  it('shows how many tags the editor text parses into', async () => {
+    mockConfig({
+      tag_taxonomy: [
+        { name: 'Elections', description: 'voting and registration' },
+        { name: 'Government Records' },
+      ],
+    })
+    renderInRegistry(<Config />)
+    expect(await screen.findByText('2 tags')).toBeTruthy()
+    expect(screen.getByText('Elections')).toBeTruthy()
+    expect(screen.getByText('Government Records')).toBeTruthy()
+  })
+
+  it('counts a single tag in the singular', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    expect(await screen.findByText('1 tag')).toBeTruthy()
   })
 })
 

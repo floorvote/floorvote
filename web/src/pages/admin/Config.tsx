@@ -765,6 +765,30 @@ export function Config() {
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Municipal Court</code><br />
                   <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Elections: Local election administration, voting rights, voter registration, voting equipment, etc.</code>
                 </div>
+                {(() => {
+                  const parsed = parseTagTaxonomy(tagTaxonomy)
+                  if (!parsed.ok || parsed.value.length === 0) return null
+                  return (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginTop: 6 }}>
+                      <span style={{ ...hintStyle, marginTop: 0 }}>
+                        {parsed.value.length === 1 ? '1 tag' : `${parsed.value.length} tags`}
+                      </span>
+                      {parsed.value.map(t => (
+                        <span
+                          key={t.name}
+                          style={{
+                            background: color.surfaceMuted,
+                            borderRadius: radius.sm,
+                            padding: '1px 6px',
+                            fontSize: fontSize.xs,
+                          }}
+                        >
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )
+                })()}
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
                     Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your {orgNoun}'s own priorities and issue areas.
