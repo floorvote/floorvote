@@ -31,3 +31,29 @@ describe('matchesUnion', () => {
     expect(matchesUnion('Election law amendment', ['election']).matched).toBe(true)
   })
 })
+
+describe('matchesUnion — wildcard sentinel', () => {
+  it('matches any text when the list contains "*"', () => {
+    expect(matchesUnion('Tobacco Amendments', ['*'])).toEqual({ matched: true, keyword: '*' })
+  })
+
+  it('matches empty text when the list contains "*"', () => {
+    expect(matchesUnion('', ['*'])).toEqual({ matched: true, keyword: '*' })
+  })
+
+  it('is unaffected by other keywords alongside "*"', () => {
+    expect(matchesUnion('Water Usage Modifications', ['county', '*'])).toEqual({ matched: true, keyword: '*' })
+  })
+
+  it('still matches nothing for an empty list', () => {
+    expect(matchesUnion('Election Law Amendments', [])).toEqual({ matched: false, keyword: '' })
+  })
+
+  it('treats "*extra" as an ordinary substring keyword, not the sentinel', () => {
+    expect(matchesUnion('Tobacco Amendments', ['*extra'])).toEqual({ matched: false, keyword: '' })
+  })
+
+  it('does not let a literal asterisk in the text trigger the sentinel', () => {
+    expect(matchesUnion('Budget * Amendments', ['county'])).toEqual({ matched: false, keyword: '' })
+  })
+})
