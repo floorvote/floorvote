@@ -190,4 +190,45 @@ describe('/api/admin/views', () => {
     const res = await app.request('/api/admin/views/nope', { method: 'DELETE', headers: { Cookie: adminCookie } }, env)
     expect(res.status).toBe(404)
   })
+
+  describe('PUT /admin/views/reorder', () => {
+    function reorder(cookie: string, order: unknown) {
+      return app.request(
+        '/api/admin/views/reorder',
+        { method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ order }) },
+        env,
+      )
+    }
+
+    it('sets display_order by array index', async () => {
+      const first = await (await post(adminCookie, { name: 'First', query: 'status=1' })).json() as { id: string }
+      const second = await (await post(adminCookie, { name: 'Second', query: 'status=2' })).json() as { id: string }
+      const third = await (await post(adminCookie, { name: 'Third', query: 'status=3' })).json() as { id: string }
+
+      const res = await reorder(adminCookie, [third.id, first.id, second.id])
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
+      const { views } = await listRes.json() as { views: { id: string }[] }
+      expect(views.map(v => v.id)).toEqual([third.id, first.id, second.id])
+    })
+
+    it('refuses a member with 403', async () => {
+      const res = await reorder(memberCookie, ['v1', 'v2'])
+      expect(res.status).toBe(403)
+    })
+
+    it('rejects a non-array body with 400', async () => {
+      const res = await reorder(adminCookie, 'not-an-array')
+      expect(res.status).toBe(400)
+    })
+
+    it('is reachable and not shadowed by PUT /:id', async () => {
+      // A route-ordering regression would route this request to PUT /:id
+      // instead, whose handler 404s on an id of "reorder". Assert directly
+      // against that failure mode rather than just checking success.
+      const res = await reorder(adminCookie, [])
+      expect(res.status).not.toBe(404)
+    })
+  })
 })
