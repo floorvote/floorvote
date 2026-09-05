@@ -5,6 +5,16 @@ import { findActiveView } from '../../lib/savedViews'
 import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
 import { VIEW_STYLE } from '../../../../shared/viewStyle'
+import { useDemo } from '../../context/DemoContext'
+
+// Fixed dropdown width (FIX 2): the menu used to be content-sized off a
+// `minWidth: 232` floor, so revealing Rename/Delete on hover widened the whole
+// menu. Fixing the width instead makes the name column shrink (it already
+// carries flex/minWidth/textOverflow) so the row layout never jumps. 272px is
+// 232 (the old floor, comfortable for name + count alone) plus room for the
+// Rename and Delete buttons (~2-3 chars + padding each) so the two-button row
+// still shows a readable slice of the name rather than truncating it away.
+const MENU_WIDTH = 272
 
 export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
 
@@ -46,13 +56,26 @@ export function ViewSwitcher({
   // since React's focus events bubble.
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const ref = useDismissOnOutsideClick(open, () => setOpen(false))
+  const { demoMode, settled } = useDemo()
+  // Hide any control that writes until we positively know this tenant is not
+  // a demo — demoMode === false is ambiguous before `settled`, and a naive
+  // `!demoMode` would flash Rename/Delete at a demo visitor on first render.
+  const isNotDemo = settled && !demoMode
 
   // Closing the menu abandons any in-progress rename or delete confirm, so
-  // reopening never resumes a half-finished destructive action.
+  // reopening never resumes a half-finished destructive action. It also drops
+  // hover/focus row state: clicking a row's Rename/Delete sets focusedId via
+  // the row's onFocus, and when the menu closes that button unmounts — an
+  // unmounting element doesn't reliably fire blur, so focusedId (and, if the
+  // pointer left via the menu vanishing rather than a mouseleave, hoveredId)
+  // could otherwise survive to the next open and show buttons on a row no
+  // one is touching.
   useEffect(() => {
     if (open) return
     setRenamingId(null)
     setConfirmingId(null)
+    setHoveredId(null)
+    setFocusedId(null)
   }, [open])
 
   // Match counts, keyed by view id (or ALL_BILLS_KEY for "All bills"). Fetched
@@ -153,7 +176,7 @@ export function ViewSwitcher({
           style={{
             position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300,
             background: color.white, border: `1px solid ${color.borderDefault}`,
-            borderRadius: radius.lg, padding: '4px 0', minWidth: 232, maxHeight: 300, overflowY: 'auto',
+            borderRadius: radius.lg, padding: '4px 0', width: MENU_WIDTH, maxHeight: 300, overflowY: 'auto',
             boxShadow: shadow.md,
           }}
         >
@@ -216,13 +239,13 @@ export function ViewSwitcher({
                 >
                   {v.name}
                 </button>
-                <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
-                {isAdmin && (hoveredId === v.id || focusedId === v.id) && (
+                {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
                   <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
                     <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
                     <button onClick={() => { setRenamingId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
                   </span>
                 )}
+                <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
               </div>
             )
           })}
