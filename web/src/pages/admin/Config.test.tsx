@@ -40,9 +40,6 @@ vi.mock('../../components/HintText', () => ({
 vi.mock('../../components/RichTextEditor', () => ({
   RichTextEditor: () => React.createElement('div', { 'data-testid': 'rich-text-editor' }),
 }))
-vi.mock('../../components/ReprocessScopeModal', () => ({
-  ReprocessScopeModal: () => null,
-}))
 vi.mock('../../components/BillBadge', () => ({
   BillBadge: () => null,
 }))
@@ -63,6 +60,8 @@ vi.mock('../admin/aiConfig', async () => {
 vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
 }))
+
+import { buildDefaultAiContext } from '../../../../shared/aiDefaults'
 
 import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
@@ -601,5 +600,41 @@ describe('Config — AI textarea typography', () => {
       // The Tags box used to be monospace; all three now share the page face.
       expect(box.style.fontFamily).toBe('')
     }
+  })
+})
+
+describe('Config — reprocess-scope modal on saving AI instructions', () => {
+  // Both cases need matched_bills_count > 0 — the modal only ever shows when
+  // aiInstructionsChanged() is true AND there are matched bills to reprocess.
+  // With zero matched bills the decision short-circuits before the comparison
+  // even runs, which would make either case pass vacuously.
+
+  it('does NOT open the reprocess modal when the typed text is just the resolved default', async () => {
+    mockConfig({ matched_bills_count: 5 })
+    render(<Config />)
+
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: buildDefaultAiContext('Test Org') } })
+
+    fireEvent.click(await screen.findByRole('button', { name: /save ai instructions/i }))
+
+    await screen.findByText('Saved')
+    expect(screen.queryByRole('dialog', { name: 'Instructions saved' })).toBeNull()
+  })
+
+  it('DOES open the reprocess modal when the typed text genuinely differs', async () => {
+    mockConfig({ matched_bills_count: 5 })
+    render(<Config />)
+
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'Focus only on bills affecting rural broadband access.' } })
+
+    fireEvent.click(await screen.findByRole('button', { name: /save ai instructions/i }))
+
+    await screen.findByText('Saved')
+    expect(await screen.findByRole('dialog', { name: 'Instructions saved' })).toBeInTheDocument()
+    // "No, just future bill texts" is the cancel-equivalent control (never one
+    // of the destructive "Yes, reprocess..." actions), per ReprocessScopeModal.
+    expect(screen.getByRole('button', { name: 'No, just future bill texts' })).toBeInTheDocument()
   })
 })
