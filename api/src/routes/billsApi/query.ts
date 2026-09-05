@@ -358,15 +358,33 @@ export async function buildBillsWhere(
   if (p.minRelevance) conditions.push(sql`${bills.relevanceScore} >= ${parseInt(p.minRelevance, 10)}`)
 
   if (Object.keys(p.cfParamMap).length > 0) {
-    const fieldIds = Object.keys(p.cfParamMap)
+    const cfKeys = Object.keys(p.cfParamMap)
+    // `cf_` keys arrive as either the field's id or its slug: the URL (and every
+    // stored view's query, since views persist the URL's own search string) always
+    // uses the slug for readability, but bill_custom_field_values is keyed by id
+    // only. Resolve against both columns here — the one place every /bills-shaped
+    // request funnels through — so a slug-form key still reaches the right field.
     const fieldDefs = await db
-      .select({ id: customFieldDefinitions.id, multiple: customFieldDefinitions.multiple })
+      .select({ id: customFieldDefinitions.id, slug: customFieldDefinitions.slug, multiple: customFieldDefinitions.multiple })
       .from(customFieldDefinitions)
-      .where(inArray(customFieldDefinitions.id, fieldIds))
+      .where(or(inArray(customFieldDefinitions.id, cfKeys), inArray(customFieldDefinitions.slug, cfKeys)))
       .all()
+
+    // Re-key cfParamMap by the real field id. A key that matches no def (a
+    // deleted field, or a garbled/stale key) is kept under a sentinel id that
+    // can never equal a real field_id, rather than being dropped — dropping it
+    // would remove the constraint entirely and silently return every bill
+    // instead of the zero bills that filter should produce.
+    const resolvedParamMap: Record<string, string[]> = {}
+    for (const [key, values] of Object.entries(p.cfParamMap)) {
+      const def = fieldDefs.find(f => f.id === key || f.slug === key)
+      const realId = def?.id ?? `__unresolved_cf__:${key}`
+      ;(resolvedParamMap[realId] ??= []).push(...values)
+    }
+
     const multipleById = new Map(fieldDefs.map(f => [f.id, f.multiple]))
 
-    for (const [fieldId, values] of Object.entries(p.cfParamMap)) {
+    for (const [fieldId, values] of Object.entries(resolvedParamMap)) {
       const realValues = values.filter(v => v !== FILTER_ANY)
       const parts: SQL[] = []
       // "Any" = the bill has any value for this field.

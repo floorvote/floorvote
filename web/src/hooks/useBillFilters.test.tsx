@@ -120,4 +120,41 @@ describe('useBillFilters', () => {
       expect(result.current.hasActiveFilters).toBe(false)
     })
   })
+
+  // Regression: cfFilters is lifted state, parsed once against customFieldDefs
+  // at the moment a `cf_` key is first read. customFieldDefs loads async, so a
+  // mount that beats that fetch used to freeze the key under the raw slug
+  // forever (it used to self-heal because cfFilters was re-derived from
+  // searchParams every render — lifting it into state, for good reason
+  // (see the "applies a cf_ filter from the view" regression), removed that).
+  // customFieldDefs arriving later must still correct it in place.
+  describe('deferred customFieldDefs resolution', () => {
+    const acet: CustomFieldDef = {
+      id: 'cf-acet-uuid', name: 'ACET is tracking', slug: 'acet_is_tracking',
+      type: 'binary', options: null, displayOrder: 1,
+    }
+
+    function cfViewWrapper({ children }: { children: ReactNode }) {
+      return <MemoryRouter initialEntries={['/bills?cf_acet_is_tracking=1']}>{children}</MemoryRouter>
+    }
+
+    it('mounting before customFieldDefs resolves ends with the correct field id in state', () => {
+      const { result, rerender } = renderHook(
+        (defs: CustomFieldDef[]) => useHarness(emptyFacets, [], defs),
+        { wrapper: cfViewWrapper, initialProps: [] as CustomFieldDef[] },
+      )
+
+      // Before defs load: the key is the raw slug (the same fallback the URL
+      // sync effect writes back out under, so nothing is lost yet).
+      expect(result.current.cfFilters).toEqual({ acet_is_tracking: ['1'] })
+
+      // customFieldDefs resolves.
+      rerender([acet])
+
+      // The freeze is gone — the state re-keys itself to the real field id
+      // without needing another location.search change.
+      expect(result.current.cfFilters).toEqual({ 'cf-acet-uuid': ['1'] })
+      expect(result.current.cfFilters['acet_is_tracking']).toBeUndefined()
+    })
+  })
 })

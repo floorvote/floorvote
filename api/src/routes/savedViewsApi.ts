@@ -108,6 +108,28 @@ adminSavedViewsRouter.post('/', async (c) => {
   return c.json({ id, name, query, slug }, 201)
 })
 
+// PUT /admin/views/reorder — bulk update displayOrder by array index.
+// IMPORTANT: must be declared BEFORE /:id — Hono matches route registration
+// order, so a /:id declared first would swallow "reorder" as an id.
+adminSavedViewsRouter.put('/reorder', async (c) => {
+  const body = await c.req.json<{ order: string[] }>().catch(() => ({ order: [] as string[] }))
+  if (!Array.isArray(body.order)) {
+    return c.json({ error: 'order must be an array of IDs' }, 400)
+  }
+
+  const db = getDb(c.env.DB)
+  const now = nowDb()
+
+  for (let i = 0; i < body.order.length; i++) {
+    await db
+      .update(savedViews)
+      .set({ displayOrder: i, updatedAt: now })
+      .where(eq(savedViews.id, body.order[i]))
+  }
+
+  return c.json({ ok: true })
+})
+
 // PUT /admin/views/:id — rename only. A view's query is never edited in place:
 // re-saving from the list is the way to change what it matches, which keeps the
 // stored query traceable to filter state someone actually looked at.

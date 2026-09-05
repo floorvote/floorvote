@@ -35,6 +35,14 @@ const viewsState: { deferred: boolean; response: { views: Array<{ id: string; na
   { deferred: false, response: { views: [] } }
 let resolveViews: ((v: unknown) => void) | null = null
 
+// Lets a test hold the `/config/custom-fields` fetch open, so a `cf_` filter
+// or view can be active in the URL before customFieldDefs resolves — the
+// scenario the chip-label and useBillFilters re-resolution fixes are for.
+// Defaults to an immediate empty list, matching every test that doesn't care.
+type CustomFieldDefFixture = { id: string; name: string; slug: string | null; type: 'binary' | 'dropdown' | 'text' | 'date'; options: string[] | null; displayOrder: number }
+const customFieldsState: { deferred: boolean; response: CustomFieldDefFixture[] } = { deferred: false, response: [] }
+let resolveCustomFields: ((v: unknown) => void) | null = null
+
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
 // "list-page votes on a locked demo tenant" describe below.
@@ -96,7 +104,12 @@ vi.mock('../../lib/api', () => {
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
-    if (path === '/config/custom-fields') return [] as T
+    if (path === '/config/custom-fields') {
+      if (customFieldsState.deferred) {
+        return new Promise<T>(res => { resolveCustomFields = res as (v: unknown) => void })
+      }
+      return customFieldsState.response as T
+    }
     if (path === '/views') {
       if (viewsState.deferred) {
         return new Promise<T>(res => { resolveViews = res as (v: unknown) => void })
@@ -180,6 +193,9 @@ beforeEach(() => {
   viewsState.deferred = false
   viewsState.response = { views: [] }
   resolveViews = null
+  customFieldsState.deferred = false
+  customFieldsState.response = []
+  resolveCustomFields = null
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -637,5 +653,40 @@ describe('BillList saved views — legacy UUID bookmark', () => {
       expect(screen.queryByText('Early Voting Centers')).toBeNull()
     })
     expect(screen.getByText('Election Official Training')).toBeInTheDocument()
+  })
+})
+
+// Regression: the active-filter chip for a cf_ filter resolved its custom field
+// def by id only, so a cf_ key that was still the raw slug (the URL/view form —
+// see useBillFilters' cf_ resolution) rendered as a raw chip like
+// "acet_is_tracking: 1" instead of the field's display name. This covers both
+// the immediate case and customFieldDefs resolving after the chip has already
+// rendered once.
+describe('BillList active filter chips — custom fields', () => {
+  it('labels a cf_ chip with the field display name, including when defs arrive late', async () => {
+    customFieldsState.deferred = true
+
+    render(
+      <MemoryRouter initialEntries={['/bills?cf_acet_is_tracking=1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    // customFieldDefs hasn't resolved yet — the chip must not be missing, and
+    // once defs land it must never be stuck on the raw key.
+    resolveCustomFields?.([
+      { id: 'cf-acet-uuid', name: 'ACET is tracking', slug: 'acet_is_tracking', type: 'binary', options: null, displayOrder: 1 },
+    ])
+
+    await waitFor(() => {
+      expect(screen.getByText('ACET is tracking')).toBeInTheDocument()
+    })
+    // The raw-key chip text must be gone, not merely joined by a correct one.
+    expect(screen.queryByText('acet_is_tracking: 1')).toBeNull()
+    expect(screen.queryByText('acet_is_tracking')).toBeNull()
   })
 })

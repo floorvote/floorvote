@@ -274,6 +274,7 @@ const DENIED = new Set([
   'PUT /api/admin/deletion-policy',
   'PUT /api/admin/members/:id/roles',
   'PUT /api/admin/views/:id',
+  'PUT /api/admin/views/reorder',
   'PUT /api/calendar/events/:id',
 ])
 
@@ -317,8 +318,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(46)
-    expect(registered().length).toBe(70)
+    expect(DENIED.size).toBe(47)
+    expect(registered().length).toBe(71)
   })
 
   it('refuses every denied route with the read-only message', async () => {
