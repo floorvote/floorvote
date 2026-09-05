@@ -99,6 +99,90 @@ describe('runSync', () => {
     expect(tenantBills).toHaveLength(1)
   })
 
+  it('links each tenant by its OWN keywords, not the state-wide union', async () => {
+    // Regression guard for cd29443. syncSession used to hand every covering
+    // tenant the state-level UNION of all their keywords, so tenant B's "*"
+    // leaked into tenant A. The union still gates the provider fetch; only the
+    // linking decision is per tenant. Three tenants on one state:
+    //   nj-a: ['election'] — must get the election bill ONLY
+    //   nj-b: ['*']        — must get BOTH bills
+    //   nj-c: []           — must get NOTHING (empty means match-nothing)
+    const db = drizzle(env.DB, { schema })
+
+    await db.insert(schema.sessions).values({
+      sessionId: 'nj:222', state: 'NJ', identifier: '222',
+      yearStart: 2026, yearEnd: 2027, sessionName: '2026 Session',
+      isCurrent: true, sineDie: false, lastSyncedAt: null,
+    })
+    await db.insert(schema.keywordRegistry).values([
+      { tenantId: 'nj-a', keyword: 'election' },
+      { tenantId: 'nj-b', keyword: '*' },
+    ])
+    await db.insert(schema.tenants).values([
+      {
+        tenantId: 'nj-a', name: 'Narrow NJ', stateCoverage: JSON.stringify(['NJ']),
+        ingestionMode: 'keyword-filtered', active: true,
+      },
+      {
+        tenantId: 'nj-b', name: 'Wildcard NJ', stateCoverage: JSON.stringify(['NJ']),
+        ingestionMode: 'keyword-filtered', active: true,
+      },
+      {
+        tenantId: 'nj-c', name: 'Unconfigured NJ', stateCoverage: JSON.stringify(['NJ']),
+        ingestionMode: 'keyword-filtered', active: true,
+      },
+    ])
+
+    const queued: unknown[] = []
+    const mockProvider = {
+      fetchSessions: vi.fn().mockResolvedValue([
+        { identifier: '222', name: '2026 Session', classification: 'primary', startDate: '2026-01-07', endDate: '' },
+      ]),
+      fetchBillDetail: vi.fn(),
+      fetchKeywordMatches: vi.fn(),
+      fetchUpdatedBills: vi.fn().mockImplementation(async function* () {
+        yield {
+          id: 'ocd-bill/aaa', state: 'NJ', session: '222', number: 'A1',
+          title: 'Election Law Reform', abstract: null, status: 'introduced',
+          statusDate: null, lastAction: 'Introduced', lastActionDate: '2026-01-15',
+          url: 'https://openstates.org/nj/bills/222/A1/', stateUrl: null,
+          sponsors: [], versions: [], updatedAt: '2026-01-15T00:00:00Z',
+        }
+        yield {
+          id: 'ocd-bill/bbb', state: 'NJ', session: '222', number: 'A2',
+          title: 'Tobacco Amendments', abstract: null, status: 'introduced',
+          statusDate: null, lastAction: 'Introduced', lastActionDate: '2026-01-15',
+          url: 'https://openstates.org/nj/bills/222/A2/', stateUrl: null,
+          sponsors: [], versions: [], updatedAt: '2026-01-15T00:00:00Z',
+        }
+      }),
+    }
+
+    const mockEnv = {
+      ...env,
+      INGESTOR_QUEUE: { sendBatch: async (msgs: unknown[]) => { queued.push(...msgs) } },
+    } as any
+
+    await runSync(mockEnv, db, mockProvider)
+
+    const rows = await db.select().from(schema.billTenants).all()
+    const billsFor = (tenantId: string) =>
+      rows.filter(r => r.tenantId === tenantId).map(r => r.billId).sort()
+
+    // The wildcard tenant sees everything in its state.
+    expect(billsFor('nj-b')).toEqual(['ocd-bill/aaa', 'ocd-bill/bbb'])
+    // The pinning assertion: under the old union behavior nj-a would also have
+    // been linked to the tobacco bill via nj-b's wildcard.
+    expect(billsFor('nj-a')).toEqual(['ocd-bill/aaa'])
+    // An empty keyword list still means match-nothing.
+    expect(billsFor('nj-c')).toEqual([])
+    expect(rows).toHaveLength(3)
+
+    // Both bills reach the ingestor, because nj-b matched both.
+    expect((queued as any[]).map(m => m.body.billId).sort())
+      .toEqual(['ocd-bill/aaa', 'ocd-bill/bbb'])
+  })
+
   it('queues all bills for ingestionMode=all tenants regardless of keywords', async () => {
     const db = drizzle(env.DB, { schema })
 
