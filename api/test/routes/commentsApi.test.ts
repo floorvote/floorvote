@@ -6,6 +6,7 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../he
 import { getDb } from '../../src/db/client'
 import { comments, commentReactions, feedEvents } from '../../src/db/schema'
 import { REACTION_EMOJIS } from '../../../shared/reactionEmojis'
+import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../shared/feedUtils'
 
 async function postComment(billId: string, token: string, content = 'Test comment') {
   return SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
@@ -160,6 +161,63 @@ describe('PATCH /comments/:id (sanitization, H5)', () => {
     expect(stored).not.toMatch(/<script/i)
     expect(stored).not.toContain('alert(1)')
     expect(stored).toContain('<strong>bold</strong>')
+  })
+})
+
+describe('PATCH /comments/:id (feed preview)', () => {
+  let memberId: string
+  let memberToken: string
+  let billId: string
+  let commentId: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+    billId = await seedBill()
+    const res = await postComment(billId, memberToken, '<p>Ferry funding looks thin.</p>')
+    const body = await res.json() as { id: string }
+    commentId = body.id
+  })
+
+  async function patch(content: string) {
+    return SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+      method: 'PATCH',
+      headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+  }
+
+  async function previewOf(id: string) {
+    const db = getDb(env.DB)
+    const events = await db.select().from(feedEvents).where(eq(feedEvents.type, 'comment_added')).all()
+    const ev = events.find((e) => (JSON.parse(e.metadata) as { commentId?: string }).commentId === id)
+    return ev ? (JSON.parse(ev.metadata) as { preview?: string }).preview : undefined
+  }
+
+  // The feed renders a denormalized snapshot of the comment, so an edit that
+  // doesn't refresh it leaves the original text on the feed permanently.
+  it('refreshes the feed event preview when the comment is edited', async () => {
+    expect(await previewOf(commentId)).toBe('Ferry funding looks thin.')
+    const res = await patch('<p>Ferry funding looks thin for the third year running.</p>')
+    expect(res.status).toBe(200)
+    expect(await previewOf(commentId)).toBe('Ferry funding looks thin for the third year running.')
+  })
+
+  it('truncates a long edit the same way the create path does', async () => {
+    const long = 'x'.repeat(COMMENT_PREVIEW_MAX + 40)
+    const res = await patch(`<p>${long}</p>`)
+    expect(res.status).toBe(200)
+    const preview = await previewOf(commentId)
+    expect(preview).toBe(truncateWithEllipsis(long, COMMENT_PREVIEW_MAX))
+  })
+
+  it('leaves other comments\' feed events untouched', async () => {
+    const otherRes = await postComment(billId, memberToken, '<p>Second thought on the same bill.</p>')
+    const other = await otherRes.json() as { id: string }
+    await patch('<p>Edited first comment.</p>')
+    expect(await previewOf(other.id)).toBe('Second thought on the same bill.')
   })
 })
 
