@@ -16,6 +16,7 @@ import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
 
 type ConfigData = {
@@ -40,24 +41,6 @@ type CustomFieldDef = {
   displayOrder: number
   pinned: boolean
 }
-
-// Mirrors DEFAULT_TAXONOMY in api/src/lib/taxonomy.ts — the actual runtime
-// fallback the API uses when tag_taxonomy is unset/empty/malformed. Kept as a
-// hand-maintained duplicate rather than a shared import because importing api
-// code into web would cross an existing package boundary, and a shared
-// taxonomy module was ruled out of scope for this change. This copy only
-// drives the UI (the ghost placeholder text and the "generic tag list" hint
-// above) and does not stay in sync automatically: update it whenever
-// api/src/lib/taxonomy.ts's DEFAULT_TAXONOMY changes, or this placeholder will
-// silently start lying about what the AI actually does.
-const DEFAULT_TAXONOMY = [
-  'Health & Healthcare', 'Education', 'Elections & Voting', 'Housing & Land Use',
-  'Transportation & Infrastructure', 'Environment & Natural Resources',
-  'Criminal Justice & Public Safety', 'Taxation & Revenue', 'Labor & Employment',
-  'Business & Economic Development', 'Social Services & Human Services',
-  'Courts & Civil Procedure', 'State Government & Administration',
-  'Local Government', 'Agriculture & Rural Affairs',
-].join('\n')
 
 const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
 
@@ -170,15 +153,9 @@ export function Config() {
         setRelevanceQuestion(relevanceQuestionValue)
         const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
-        const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
-          ? data.tag_taxonomy
-              .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
-              // Blank line between tags: descriptions soft-wrap, so single-newline
-              // separation makes a long list unreadable. parseTagTaxonomy discards
-              // blank lines, so this round-trips and never reaches the model — the
-              // save sends the parsed array, not this text.
-              .join('\n\n')
-          : '')
+        const taxonomyString = Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
+          ? serializeTaxonomy(data.tag_taxonomy as TaxonomyItem[])
+          : ''
         setTagTaxonomy(taxonomyString)
         setMatchedBillsCount(data.matched_bills_count ?? null)
         setPrioritizedBillsCount(data.prioritized_bills_count ?? null)
@@ -758,7 +735,7 @@ export function Config() {
                   initialHeight={240}
                   minHeight={60}
                   style={aiTextareaStyle}
-                  placeholder={DEFAULT_TAXONOMY}
+                  placeholder={serializeTaxonomy(DEFAULT_TAXONOMY)}
                 />
                 <div style={hintStyle}>
                   One tag per line. The AI will only assign tags from this list. Tags can stand alone or include an optional description (after a colon) to provide additional context. For example:<br />
