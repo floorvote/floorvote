@@ -62,7 +62,7 @@ describe('matchesUnion — wildcard sentinel', () => {
 // Both packages' test suites assert their OWN matcher against this one shared
 // table (see shared/keywordMatchFixtures.ts), so a change to either matcher
 // that is not mirrored on the other side fails that side's tests here.
-describe('matchesKeywords — shared cross-matcher fixtures', () => {
+describe('matchesUnion — shared cross-matcher fixtures', () => {
   for (const { text, keywords, expected } of KEYWORD_MATCH_CASES) {
     it(`${JSON.stringify(keywords)} vs ${JSON.stringify(text)} → ${expected}`, () => {
       expect(matchesUnion(text, keywords).matched).toBe(expected)
