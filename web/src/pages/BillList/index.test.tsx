@@ -31,7 +31,7 @@ const voteReject = { value: false }
 // later tick than the mount commit) and control what it eventually resolves
 // with. Defaults to an immediate empty list, matching every test that doesn't
 // care about saved views.
-const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string }> } } =
+const viewsState: { deferred: boolean; response: { views: Array<{ id: string; name: string; query: string; slug?: string; previousSlug?: string | null }> } } =
   { deferred: false, response: { views: [] } }
 let resolveViews: ((v: unknown) => void) | null = null
 
@@ -440,7 +440,10 @@ describe('BillList saved views — short URL resolution', () => {
       expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Status' }))
+    // findByRole (not getByRole): the Status dropdown mounts once facets load,
+    // a separate fetch from the /views one the waitFor above is gated on —
+    // under load the two don't always resolve on the same tick.
+    fireEvent.click(await screen.findByRole('button', { name: 'Status' }))
     const introducedOption = (await screen.findAllByText('Introduced'))
       .find(el => el.closest('label') !== null)
     fireEvent.click(introducedOption!)
@@ -492,5 +495,98 @@ describe('BillList search-term hint', () => {
 
     fireEvent.change(search, { target: { value: Array.from({ length: 16 }, (_, i) => `w${i}`).join(' ') } })
     expect(screen.getByText(/first 12 terms/i)).toBeInTheDocument()
+  })
+})
+
+// Regression: a view whose query contains a cf_ (custom field) filter used to be
+// dropped on apply. cf_ params live in the URL rather than in hook state, so
+// applyView wrote them through a second setSearchParams call that raced the sync
+// effect — the view's cf_ constraint never reached the bills query, and the
+// self-comparison then failed, so the view was judged "diverged" instantly.
+describe('BillList saved views — applying a view from the switcher', () => {
+  it('applies a cf_ filter from the view, collapses the URL, and labels the switcher', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Passed bills', query: 'cf_acet_is_tracking=1&state=NJ&subject=NJ%3AState+Government%2C+Wagering%2C+Tourism+%26+Historic+Preservation' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    // Switcher is present (views loaded) and resting.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^views$/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^views$/i }))
+    fireEvent.click(await screen.findByText('Passed bills'))
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).toContain('view=v1')
+    })
+    expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+
+    // The point of the fix isn't just a tidy URL — the view's cf_ filter must
+    // actually reach the bills query. Assert on the recorded /bills? request
+    // (same style as the status=4 assertion above) rather than the URL, since
+    // the URL legitimately collapses to the short ?view=v1 form.
+    await waitFor(() => {
+      expect(apiCalls.some(c => c.startsWith('/bills?') && c.includes('cf_acet_is_tracking=1'))).toBe(true)
+    })
+  })
+
+  // The bookmark URL should carry the human-readable slug, not the view's
+  // internal UUID — that's the whole point of adding slugs.
+  it('puts the slug, not the UUID, in the URL when a view with both is applied', async () => {
+    viewsState.response = { views: [{ id: '3f6a1c2e-9b3d-4c1a-8e2f-2a5b6c7d8e9f', name: 'Passed bills', slug: 'passed-bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /^views$/i }))
+    fireEvent.click(await screen.findByText('Passed bills'))
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).toContain('view=passed-bills')
+      expect(loc).not.toContain('3f6a1c2e-9b3d-4c1a-8e2f-2a5b6c7d8e9f')
+    })
+  })
+})
+
+// A view's bookmark URL used to be the raw UUID before slugs existed, and
+// staging already has those links out in the wild — they must keep resolving
+// even though the switcher now always writes the slug going forward.
+describe('BillList saved views — legacy UUID bookmark', () => {
+  it('resolves a ?view=<uuid> URL to the matching view even though the view now has a slug', async () => {
+    const UUID = '3f6a1c2e-9b3d-4c1a-8e2f-2a5b6c7d8e9f'
+    viewsState.response = { views: [{ id: UUID, name: 'Passed bills', slug: 'passed-bills', query: 'status=4' }] }
+
+    render(
+      <MemoryRouter initialEntries={[`/bills?view=${UUID}`]}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /passed bills/i })).toBeTruthy()
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Early Voting Centers')).toBeNull()
+    })
+    expect(screen.getByText('Election Official Training')).toBeInTheDocument()
   })
 })

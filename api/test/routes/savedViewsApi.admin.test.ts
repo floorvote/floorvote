@@ -32,10 +32,18 @@ describe('/api/admin/views', () => {
   it('creates a view and returns it', async () => {
     const res = await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })
     expect(res.status).toBe(201)
-    const body = await res.json() as { id: string; name: string; query: string }
+    const body = await res.json() as { id: string; name: string; query: string; slug: string }
     expect(body.name).toBe('Clerk bills')
     expect(body.query).toBe('subject=UT%3AElections')
     expect(body.id).toBeTruthy()
+    expect(body.slug).toBe('clerk-bills')
+  })
+
+  it('gives a second view with the same name a distinct, suffixed slug', async () => {
+    const first = await (await post(adminCookie, { name: 'Clerk bills', query: 'status=1' })).json() as { slug: string }
+    const second = await (await post(adminCookie, { name: 'Clerk bills', query: 'status=2' })).json() as { slug: string }
+    expect(first.slug).toBe('clerk-bills')
+    expect(second.slug).toBe('clerk-bills-2')
   })
 
   it('rejects a blank name', async () => {
@@ -56,6 +64,22 @@ describe('/api/admin/views', () => {
     expect(views.map(v => v.name)).toEqual(['First', 'Second'])
   })
 
+  it('rejects a 121-character name on create', async () => {
+    const longName = 'a'.repeat(121)
+    const res = await post(adminCookie, { name: longName, query: 'status=1' })
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('120 characters or fewer')
+  })
+
+  it('accepts a 120-character name on create', async () => {
+    const maxName = 'a'.repeat(120)
+    const res = await post(adminCookie, { name: maxName, query: 'status=1' })
+    expect(res.status).toBe(201)
+    const body = await res.json() as { name: string }
+    expect(body.name).toBe(maxName)
+  })
+
   it('renames a view without touching its query', async () => {
     const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
     const res = await app.request(
@@ -65,6 +89,84 @@ describe('/api/admin/views', () => {
     )
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ name: 'County clerk bills', query: 'subject=UT%3AElections' })
+  })
+
+  // Rename decision: the slug regenerates to match the new name (mirroring
+  // customFieldsApi), but the slug it replaces is kept as `previousSlug` for
+  // one generation of back-compat, so a bookmark taken under the old name
+  // does not silently stop resolving. GET /api/views exposes previousSlug so
+  // the frontend can match either.
+  it('regenerates the slug on rename but keeps the old one resolvable as previousSlug', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string; slug: string }
+    expect(created.slug).toBe('clerk-bills')
+
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'County clerk bills' }) },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { slug: string }
+    expect(body.slug).toBe('county-clerk-bills')
+
+    const listRes = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
+    const { views } = await listRes.json() as { views: { id: string; slug: string; previousSlug: string | null }[] }
+    const view = views.find(v => v.id === created.id)
+    expect(view?.slug).toBe('county-clerk-bills')
+    expect(view?.previousSlug).toBe('clerk-bills')
+  })
+
+  it('does not churn previousSlug on a no-op rename (same name re-submitted)', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Clerk bills' }) },
+      env,
+    )
+    const body = await res.json() as { slug: string }
+    expect(body.slug).toBe('clerk-bills')
+
+    const listRes = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
+    const { views } = await listRes.json() as { views: { previousSlug: string | null }[] }
+    expect(views[0].previousSlug).toBeNull()
+  })
+
+  it('rejects a 121-character name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const longName = 'a'.repeat(121)
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: longName }) },
+      env,
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('120 characters or fewer')
+  })
+
+  it('accepts a 120-character name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const maxName = 'a'.repeat(120)
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: maxName }) },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { name: string }
+    expect(body.name).toBe(maxName)
+  })
+
+  it('still rejects a blank name on rename', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '   ' }) },
+      env,
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as { error: string }
+    expect(body.error).toBe('name is required')
   })
 
   it('404s renaming an unknown id', async () => {

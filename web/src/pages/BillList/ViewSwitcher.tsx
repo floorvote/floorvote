@@ -1,9 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { findActiveView } from '../../lib/savedViews'
+import { apiFetch } from '../../lib/api'
+import { countBadge } from '../../lib/chipStyles'
+import { VIEW_STYLE } from '../../../../shared/viewStyle'
 
-export type SavedView = { id: string; name: string; query: string }
+export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
+
+// Sentinel key for the "All bills" row's count, distinct from any view id.
+const ALL_BILLS_KEY = '__all_bills__'
+
+// Count badge for a view row — same COUNT_BADGE treatment FilterDropdown uses
+// (see chipStyles' countBadge()), but with three states instead of one: a
+// loaded count (a number), an in-flight count (renders a neutral placeholder,
+// never 0 — a wrong zero reads as "no matches"), or a failed count (renders
+// nothing at all, rather than a misleading number).
+function ViewCountBadge({ count, failed }: { count: number | undefined; failed: boolean }) {
+  if (failed) return null
+  return (
+    <span style={{ ...countBadge(), marginLeft: 'auto', flexShrink: 0 }}>
+      {count === undefined ? '…' : count.toLocaleString()}
+    </span>
+  )
+}
 
 export function ViewSwitcher({
   views, currentSearch, isAdmin, onApply, onRename, onDelete,
@@ -34,6 +54,36 @@ export function ViewSwitcher({
     setRenamingId(null)
     setConfirmingId(null)
   }, [open])
+
+  // Match counts, keyed by view id (or ALL_BILLS_KEY for "All bills"). Fetched
+  // lazily on menu-open rather than on page load: most page loads never open
+  // this menu, and each count is its own /bills query, so the cost should only
+  // land when someone actually looks. fetchedKeysRef persists for the life of
+  // the component, so reopening the menu never refetches an already-resolved
+  // (or already-failed) count.
+  const [viewCounts, setViewCounts] = useState<Record<string, number>>({})
+  const [failedCounts, setFailedCounts] = useState<Set<string>>(new Set())
+  const fetchedKeysRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!open) return
+    const targets: Array<{ key: string; query: string }> = [
+      { key: ALL_BILLS_KEY, query: '' },
+      ...views.map(v => ({ key: v.id, query: v.query })),
+    ]
+    for (const { key, query } of targets) {
+      if (fetchedKeysRef.current.has(key)) continue
+      fetchedKeysRef.current.add(key)
+      // pageSize=1 so this costs a count, not a page of rows — each view's
+      // stored query is already a valid /bills filter string.
+      const params = new URLSearchParams(query)
+      params.set('page', '1')
+      params.set('pageSize', '1')
+      apiFetch<{ pagination: { total: number } }>(`/bills?${params.toString()}`)
+        .then(data => setViewCounts(prev => ({ ...prev, [key]: data.pagination.total })))
+        .catch(() => setFailedCounts(prev => new Set(prev).add(key)))
+    }
+  }, [open, views])
 
   // A tenant with no views gets no control at all — the h1 row is unchanged.
   if (views.length === 0) return null
@@ -79,7 +129,10 @@ export function ViewSwitcher({
         style={{
           fontFamily: 'inherit', fontSize: fontSize.base,
           fontWeight: active ? fontWeight.semibold : fontWeight.medium,
-          color: active ? color.textPrimary : color.textSecondary,
+          // VIEW_STYLE, not the filter blue: this trigger's color means "a view
+          // is applied," a distinct signal from "a filter is on." Resting state
+          // stays neutral so a quiet control doesn't imply a view is active.
+          color: active ? VIEW_STYLE.text : color.textSecondary,
           background: 'none', border: 'none', cursor: 'pointer',
           padding: '3px 7px', borderRadius: radius.md,
           display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
@@ -109,6 +162,7 @@ export function ViewSwitcher({
             style={rowStyle(!active)}
           >
             All bills
+            <ViewCountBadge count={viewCounts[ALL_BILLS_KEY]} failed={failedCounts.has(ALL_BILLS_KEY)} />
           </button>
           <div style={{ height: 1, background: color.borderDefault, margin: '4px 0' }} />
           {views.map(v => {
@@ -162,6 +216,7 @@ export function ViewSwitcher({
                 >
                   {v.name}
                 </button>
+                <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
                 {isAdmin && (hoveredId === v.id || focusedId === v.id) && (
                   <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
                     <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
@@ -182,8 +237,10 @@ function rowStyle(selected: boolean): React.CSSProperties {
     display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
     fontSize: fontSize.sm, width: '100%', textAlign: 'left',
     fontFamily: 'inherit', border: 'none', cursor: 'pointer',
-    background: selected ? color.bgInfo : 'transparent',
-    color: selected ? color.linkBlue : color.textSlate,
+    // VIEW_STYLE, not the filter blue's bgInfo/linkBlue — a selected view row
+    // is a distinct signal from "a filter is on."
+    background: selected ? VIEW_STYLE.bg : 'transparent',
+    color: selected ? VIEW_STYLE.text : color.textSlate,
   }
 }
 

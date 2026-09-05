@@ -253,6 +253,13 @@ export const savedViews = sqliteTable('saved_views', {
   // the cost is that a clause can outlive what it references, which the read
   // path tolerates rather than reporting (see the design doc).
   query: text('query').notNull(),
+  // Human-readable identifier for the bookmark URL (?view=clerk-bills). Nullable
+  // because rows created before this column existed have none yet; savedViewsApi's
+  // GET / backfills them on read, the same way customFieldsApi backfills field slugs.
+  slug: text('slug'),
+  // The slug this view had before its most recent rename, kept so a bookmark taken
+  // under the old name still resolves. See the PUT /admin/views/:id handler.
+  previousSlug: text('previous_slug'),
   // Shared org content authored by a user, not user-owned data: it must outlive
   // its author, so departing admins leave their views behind as authorless.
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),

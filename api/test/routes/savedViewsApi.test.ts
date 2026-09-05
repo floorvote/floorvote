@@ -39,8 +39,8 @@ describe('GET /api/views', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       views: [
-        { id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' },
-        { id: 'v2', name: 'Auditor bills', query: 'subject=UT%3AAudits' },
+        { id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections', slug: 'clerk-bills', previousSlug: null },
+        { id: 'v2', name: 'Auditor bills', query: 'subject=UT%3AAudits', slug: 'auditor-bills', previousSlug: null },
       ],
     })
   })
@@ -54,7 +54,22 @@ describe('GET /api/views', () => {
     const res = await app.request('/api/views', { headers: { Cookie: adminCookie } }, env)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      views: [{ id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections' }],
+      views: [{ id: 'v1', name: 'Clerk bills', query: 'subject=UT%3AElections', slug: 'clerk-bills', previousSlug: null }],
     })
+  })
+
+  it('backfills a null slug for a view inserted before the slug column existed', async () => {
+    await env.DB.prepare(
+      `INSERT INTO saved_views (id, name, query, created_by, display_order) VALUES
+        ('v1', 'Clerk bills', 'subject=UT%3AElections', ?, 0)`,
+    ).bind(adminId).run()
+
+    const res = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
+    const { views } = await res.json() as { views: { slug: string }[] }
+    expect(views[0].slug).toBe('clerk-bills')
+
+    // The backfill wrote the slug back to the row, not just into the response.
+    const { results } = await env.DB.prepare(`SELECT slug FROM saved_views WHERE id = 'v1'`).all()
+    expect(results).toEqual([{ slug: 'clerk-bills' }])
   })
 })

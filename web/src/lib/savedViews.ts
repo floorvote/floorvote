@@ -26,7 +26,22 @@ export function normalizeViewQuery(search: string): string {
   return out.toString()
 }
 
-export function findActiveView<T extends { id: string; query: string }>(
+/**
+ * The `view` URL param can carry a view's slug (the normal, human-readable
+ * form), its raw id (a legacy bookmark from before slugs existed, or a
+ * still-live UUID a member typed/shared), or its previousSlug (a bookmark
+ * taken just before the view's most recent rename — see the
+ * PUT /admin/views/:id handler on the API for why only one generation back is
+ * covered). All three must resolve to the same view.
+ */
+export function matchesUrlIdentifier<T extends { id: string; slug?: string; previousSlug?: string | null }>(
+  view: T,
+  identifier: string,
+): boolean {
+  return view.id === identifier || view.slug === identifier || view.previousSlug === identifier
+}
+
+export function findActiveView<T extends { id: string; slug?: string; previousSlug?: string | null; query: string }>(
   currentSearch: string,
   views: T[],
 ): T | null {
@@ -36,13 +51,13 @@ export function findActiveView<T extends { id: string; query: string }>(
 
   // An empty filter state is "All bills", never a view — a view with no
   // filters is rejected at creation — UNLESS the URL is carrying the short
-  // `?view=<id>` form, where the filters that describe the view are not
-  // spelled out in the URL at all. In that form, trust the id directly: the
-  // sync effect only ever produces this shape once the applied filters
-  // actually match the named view.
+  // `?view=<slug-or-id>` form, where the filters that describe the view are
+  // not spelled out in the URL at all. In that form, trust the identifier
+  // directly: the sync effect only ever produces this shape once the applied
+  // filters actually match the named view.
   if (current === '') {
     if (!activeId) return null
-    return views.find(v => v.id === activeId) ?? null
+    return views.find(v => matchesUrlIdentifier(v, activeId)) ?? null
   }
 
   // Expanded form: filters are spelled out in the URL. Match by (normalized)
@@ -53,7 +68,7 @@ export function findActiveView<T extends { id: string; query: string }>(
   const matches = views.filter(v => normalizeViewQuery(v.query) === current)
   if (matches.length === 0) return null
   if (activeId) {
-    const byId = matches.find(v => v.id === activeId)
+    const byId = matches.find(v => matchesUrlIdentifier(v, activeId))
     if (byId) return byId
   }
   return matches[0]

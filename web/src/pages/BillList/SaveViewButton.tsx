@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { normalizeViewQuery } from '../../lib/savedViews'
+import { VIEW_STYLE } from '../../../../shared/viewStyle'
 
 export function SaveViewButton({
   currentSearch, onSave,
@@ -51,8 +52,10 @@ export function SaveViewButton({
         onClick={() => setOpen(o => !o)}
         style={{
           fontFamily: 'inherit', fontSize: fontSize.sm, padding: '3px 10px',
-          border: `1px solid ${color.tagBorderBlue}`, borderRadius: radius.md,
-          background: color.bgInfo, color: color.linkBlue, cursor: 'pointer', whiteSpace: 'nowrap',
+          // VIEW_STYLE, not the filter blue's tagBorderBlue/bgInfo/linkBlue:
+          // saving a view is a views-layer action, distinct from "a filter is on."
+          border: `1px solid ${VIEW_STYLE.border}`, borderRadius: radius.md,
+          background: VIEW_STYLE.bg, color: VIEW_STYLE.text, cursor: 'pointer', whiteSpace: 'nowrap',
         }}
       >
         Save as view

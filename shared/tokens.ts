@@ -62,6 +62,7 @@ export const color = {
   bgSuccessChip:     '#dcfce7', // green chip background
   bgSuccessFaint:    '#f8fefa', // vote button resting bg (support)
   bgTeal:            '#f0fdfa', // teal status background
+  bgTealChip:        '#ccfbf1', // teal chip fill (views layer selected row) — same relationship to bgTeal that bgSuccessChip has to bgSuccess
   bgVioletSoft:      '#f5f3ff', // violet status background
   bgVioletChip:      '#ede9fe', // absorbs #f3e8ff — violet chip background
   bgDangerSoft:      '#fff5f5', // absorbs #fef2f2 — pale red
@@ -83,6 +84,7 @@ export const color = {
   borderVioletSoft:  '#c4b5fd',
   borderPurpleChip:  '#e9d5ff',
   borderAmber:       '#fde68a',
+  borderTealChip:    '#99f6e4', // teal chip border (views layer)
   borderYellow:      '#fde047',
   borderBlueDash:    '#bad7fd', // H214 dashed blue border / disabled role-chip dismiss (retinted from #bae6fd, H201)
   tagBorderBlue:     '#bfdbfe', // tag chip border
