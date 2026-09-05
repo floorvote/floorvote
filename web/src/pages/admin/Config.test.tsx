@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, act, within, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, act, within, fireEvent, cleanup } from '@testing-library/react'
 import React from 'react'
 
 // Mock heavy dependencies before importing Config
@@ -63,6 +63,7 @@ vi.mock('../../lib/exportData', () => ({
 
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
+import { parseTagTaxonomy, aiInstructionsChanged as actualAiInstructionsChanged } from './aiConfig'
 
 import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
@@ -706,5 +707,55 @@ describe('Config — start from default', () => {
 
     expect(screen.getAllByRole('button', { name: 'Undo' }).length).toBe(1)
     expect(screen.queryAllByRole('button', { name: 'Start from default' }).length).toBe(2)
+  })
+})
+
+describe('Config — seeded defaults round-trip', () => {
+  it('reloads seeded tags byte-identically and reports no change', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+    const seeded = box.value
+
+    // What the save sends, and what the API would hand back on the next load.
+    const parsed = parseTagTaxonomy(seeded)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) throw new Error('unreachable')
+
+    cleanup()
+    mockConfig({ tag_taxonomy: parsed.value })
+    renderInRegistry(<Config />)
+    const reloaded = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    expect(reloaded.value).toBe(seeded)
+  })
+
+  it('does not treat a seeded-but-unedited field as a change', () => {
+    const blank = {
+      aiContext: '',
+      relevanceQuestion: '',
+      tagTaxonomy: '',
+      associationName: 'Test Org',
+    }
+    const seeded = {
+      aiContext: buildDefaultAiContext('Test Org'),
+      relevanceQuestion: buildDefaultRelevanceQuestion('Test Org'),
+      tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
+      associationName: 'Test Org',
+    }
+    expect(actualAiInstructionsChanged(blank, seeded)).toBe(false)
+  })
+
+  it('still treats an edit to seeded text as a change', () => {
+    const seeded = {
+      aiContext: buildDefaultAiContext('Test Org'),
+      relevanceQuestion: '',
+      tagTaxonomy: '',
+      associationName: 'Test Org',
+    }
+    const edited = { ...seeded, aiContext: seeded.aiContext + '\n\nAlways mention rural impact.' }
+    expect(actualAiInstructionsChanged(seeded, edited)).toBe(true)
   })
 })
