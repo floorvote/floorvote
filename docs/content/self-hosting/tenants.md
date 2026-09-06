@@ -246,7 +246,7 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 
 The bill analysis model and its thinking budget both have built-in defaults, so
 you do not need to set either. Two optional vars override them per tenant, which
-is how you move one tenant to a new model before the rest:
+is how you move one tenant to a different model before the rest:
 
 ```toml
 GEMINI_MODEL = "gemini-3.5-flash"     # unset = built-in default
@@ -257,11 +257,24 @@ These are operator settings rather than tenant-editable config: the model is a
 cost-and-quality decision, and a cheaper model is not a preference a team should
 be able to pick for itself.
 
-Thinking is on by default because turning it off measurably degrades tag
-accuracy on tags whose criterion is mechanical rather than topical — for
-instance "the bill amends a section of chapter X". Thinking tokens bill as
-output tokens, so disabling thinking is a real saving on a large corpus and a
-real accuracy cost; measure on your own bills before changing it.
+**When a newer model is worth the money.** A newer model with thinking enabled
+is markedly better at tags whose criterion is *mechanical* rather than topical —
+"the bill amends a section of chapter X" as opposed to "the bill is about
+housing". Measured on 103 bills with known answers, an older model without
+thinking assigned such tags at 25% precision and a current one with thinking at
+100%. Thinking on the older model did not close the gap.
+
+That accuracy is not free, but it is cheaper than the obvious choice. Newer
+models tokenised the same bill PDFs at roughly double the input tokens, and
+thinking tokens bill as output tokens. Every current-generation model tested
+reached 100%, so among them the difference is price rather than capability —
+the cheapest ran about 2.3x the default's cost per bill and the largest 13.7x,
+for identical scores. Do not reach for the biggest model.
+
+If your tags are ordinary topical ones, the default is probably fine. If any tag
+is a mechanical test, measure on your own bills before deciding, and use at
+least ~100 of them — a 12-bill sample put the *older* model at 100% purely by
+chance.
 
 > **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
