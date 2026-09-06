@@ -462,6 +462,27 @@ describe('processCentralNotification', () => {
     // No bill row is written — the upsert happens after AI, so the message will be re-delivered in full
   })
 
+  it('carries the upstream status and body on the shed, so a dead-lettered bill is diagnosable', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    const { processBill } = await import('../../src/lib/llm')
+    // A 429 has two very different causes — transient load shedding, where
+    // retrying is right, and a hard quota wall, where every retry is another
+    // guaranteed failure. Only the body distinguishes them, and a shed writes
+    // no ai_error, so the error itself has to carry the evidence.
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(new Error('Your prepayment credits are depleted.'), { status: 429 })
+    )
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await expect(processCentralNotification(msg, testEnv as any, db)).rejects.toMatchObject({
+      delaySeconds: 60,
+      status: 429,
+      detail: expect.stringContaining('prepayment credits are depleted'),
+    })
+  })
+
   it('skips re-processing on next message when ai_skip_reason is set (early-return dedup)', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
