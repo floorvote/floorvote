@@ -16,7 +16,13 @@ import {
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
-  constructor(public readonly delaySeconds: number) {
+  constructor(
+    public readonly delaySeconds: number,
+    /** Upstream HTTP status that caused the shed — 429 or 503. */
+    public readonly status?: number,
+    /** Short excerpt of the upstream body, which is what tells the two 429s apart. */
+    public readonly detail?: string,
+  ) {
     super('AI gateway shed — will redeliver')
   }
 }
@@ -24,6 +30,25 @@ class AiShedError extends Error {
 function isGeminiShed(err: unknown): boolean {
   const e = err as { status?: number } | undefined
   return e?.status === 429 || e?.status === 503
+}
+
+/**
+ * Pull the status and a short body excerpt off a provider error.
+ *
+ * A 429 is ambiguous, and the two causes want opposite responses: transient
+ * load shedding, where retrying with backoff is exactly right, and a hard quota
+ * or credit wall, where every retry is another guaranteed failure and backoff
+ * only delays the discovery. The status alone cannot separate them — the body
+ * does ("prepayment credits are depleted" versus a rate-limit message) — so
+ * capture enough of it to tell them apart while the incident is still live.
+ *
+ * This matters more than it looks: a shed writes no ai_error, so without this
+ * a dead-lettered bill leaves no record anywhere of why it failed.
+ */
+function shedDetail(err: unknown): { status?: number; detail?: string } {
+  const e = err as { status?: number; message?: unknown } | undefined
+  const raw = typeof e?.message === 'string' ? e.message : String(err ?? '')
+  return { status: e?.status, detail: raw.slice(0, 200) }
 }
 
 // AiSkipReason values mirror the column in api/migrations/0039_ai_skip_reason.sql.
@@ -93,7 +118,12 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
-        console.warn(`[processor] AI gateway shed for ${message.body.billId}${err.delaySeconds > 0 ? `, requeing in ${err.delaySeconds}s` : ', requeing immediately'}`)
+        console.warn(
+          `[processor] AI gateway shed for ${message.body.billId}`
+          + ` (status ${err.status ?? 'unknown'})`
+          + `${err.delaySeconds > 0 ? `, requeing in ${err.delaySeconds}s` : ', requeing immediately'}`
+          + `${err.detail ? ` — ${err.detail}` : ''}`,
+        )
         if (err.delaySeconds > 0) {
           message.retry({ delaySeconds: err.delaySeconds })
         } else {
@@ -488,7 +518,8 @@ export async function processCentralNotification(
             )
           } catch (retryErr) {
             if (isGeminiShed(retryErr)) {
-              throw new AiShedError(0)
+              const shed = shedDetail(retryErr)
+              throw new AiShedError(0, shed.status, shed.detail)
             }
             aiSkipReason = classifyAiError(retryErr)
             if (aiSkipReason) {
@@ -499,7 +530,8 @@ export async function processCentralNotification(
             }
           }
         } else {
-          throw new AiShedError(60)
+          const shed = shedDetail(err)
+          throw new AiShedError(60, shed.status, shed.detail)
         }
       } else {
         aiSkipReason = classifyAiError(err)
