@@ -184,8 +184,14 @@ describe('analysis model and thinking budget are per-environment', () => {
   )
   const lastCall = () => geminiGenerateMock.mock.calls[0][0]
 
-  it('uses a current-generation model with thinking enabled by default', async () => {
+  it('defaults to the incumbent configuration, so a deploy changes no tenant', async () => {
     await call(makeEnv())
+    expect(lastCall().model).toBe('gemini-2.5-flash')
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(0)
+  })
+
+  it('opts a single environment into a newer model and thinking', async () => {
+    await call(makeEnv({ GEMINI_MODEL: 'gemini-3.5-flash', GEMINI_THINKING_BUDGET: '-1' }))
     expect(lastCall().model).toBe('gemini-3.5-flash')
     expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(-1)
   })
@@ -195,15 +201,15 @@ describe('analysis model and thinking budget are per-environment', () => {
     expect(lastCall().model).toBe('gemini-3.8-flash')
   })
 
-  it('honours a per-environment thinking budget, including disabling it', async () => {
-    await call(makeEnv({ GEMINI_THINKING_BUDGET: '0' }))
-    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(0)
+  it('honours a per-environment thinking budget', async () => {
+    await call(makeEnv({ GEMINI_THINKING_BUDGET: '512' }))
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(512)
   })
 
   it('falls back to the defaults when overrides are blank or unparseable', async () => {
     await call(makeEnv({ GEMINI_MODEL: '   ', GEMINI_THINKING_BUDGET: 'lots' }))
-    expect(lastCall().model).toBe('gemini-3.5-flash')
-    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(-1)
+    expect(lastCall().model).toBe('gemini-2.5-flash')
+    expect(lastCall().config.thinkingConfig.thinkingBudget).toBe(0)
   })
 })
 

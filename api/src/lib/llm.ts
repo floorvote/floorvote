@@ -155,29 +155,45 @@ function validateAndClamp(parsed: unknown): ProcessBillResult {
 /**
  * Analysis model and thinking budget.
  *
- * Both are overridable per environment (see `resolveModel`/`resolveThinkingBudget`)
- * so a single tenant can be moved to a new model ahead of the fleet — the model is
- * an operator decision about cost and quality, so it lives in wrangler vars rather
- * than in tenant-editable config.
+ * Both are overridable per environment so one tenant can move ahead of the
+ * fleet. The model is an operator decision about cost and quality, so it lives
+ * in wrangler vars rather than in tenant-editable config.
  *
- * The defaults were chosen from a measured comparison on 103 bills with known
- * ground truth (2026-09-05), scoring tags whose criterion is mechanical:
+ * The DEFAULTS ARE THE INCUMBENT CONFIGURATION, deliberately. A measured
+ * comparison on 103 bills with ground truth (2026-09-05) scoring tags whose
+ * criterion is mechanical rather than topical:
  *
- *   gemini-2.5-flash, no thinking   25% precision   <- the previous default
- *   gemini-2.5-flash, thinking      33% precision
- *   gemini-3.5-flash, no thinking   75% precision
- *   gemini-3.5-flash, thinking     100% precision
+ *   gemini-2.5-flash, no thinking    25% precision  1.0x cost  <- this default
+ *   gemini-2.5-flash, thinking       33% precision  2.5x
+ *   gemini-3.5-flash, no thinking    75% precision  7.8x
+ *   gemini-3.1-flash-lite, thinking 100% precision  2.3x
+ *   gemini-3.5-flash-lite, thinking 100% precision  3.4x
+ *   gemini-3.8-flash, thinking      100% precision  6.9x
+ *   gemini-3.5-flash, thinking      100% precision 13.7x
  *
- * Two things that read as surprising and are not: thinking on the older model is
- * not a fix, and model generation matters more than thinking. Do not "optimise"
- * this back to a cheaper configuration without re-running that comparison — an
- * earlier 12-bill screen put the old model at 100%, which the 103-bill run showed
- * was luck.
+ * Every current-generation model tested reaches 100%, so among those the choice
+ * is price, not capability — do not reach for the biggest one. Cost multiples
+ * are per bill against this default; the 3.x models tokenise the same PDF at
+ * roughly double the input tokens, and thinking tokens bill as output.
+ *
+ * The default is still the old model because the failure this fixes has only
+ * been observed on mechanical tags, which one tenant uses. Raising the cost of
+ * every tenant's every bill to fix a problem one tenant has is not a trade this
+ * default gets to make silently.
+ *
+ * Flip this once the cost question is settled — it is one line, and the tenant
+ * already running the newer model is the evidence for whether it regresses
+ * ordinary topical tagging.
+ *
+ * Two results that read as surprising and are not: thinking on the older model
+ * is not a fix, and model generation matters more than thinking does. Do not
+ * re-tune either default from a small sample — a 12-bill screen put the old
+ * model at 100%, and the 103-bill run put the same configuration at 33%.
  */
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
 
 /** -1 asks Gemini to size the thinking budget itself; 0 disables thinking. */
-const DEFAULT_THINKING_BUDGET = -1
+const DEFAULT_THINKING_BUDGET = 0
 
 function resolveModel(env: Env): string {
   const configured = (env.GEMINI_MODEL ?? '').trim()

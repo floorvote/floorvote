@@ -55,5 +55,6 @@
 # GEMINI_THINKING_BUDGET is thinking tokens: "-1" lets Gemini size the budget,
 # "0" disables thinking. Thinking bills as output tokens, and turning it off
 # measurably degrades tags whose criterion is mechanical rather than topical.
+# Defaults are the incumbent configuration; setting these opts into a newer model.
 # GEMINI_MODEL=
 # GEMINI_THINKING_BUDGET=
