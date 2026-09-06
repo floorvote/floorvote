@@ -68,6 +68,15 @@ queue = "floorvote-dev-queue"
 queue = "floorvote-dev-queue"
 max_batch_size = 10
 max_batch_timeout = 30
+# Cloudflare defaults max_retries to 3, which is too few here. The bill
+# processor treats an upstream 429/503 from the model provider as backpressure
+# and requeues with a delay (AiShedError in api/src/queue/processor.ts) -- a
+# shed is not a failure, so it writes no ai_error. With only three retries, a
+# provider shedding load during a bulk reprocess silently dead-letters bills:
+# the bills table looks untouched and nothing surfaces an error. Give the queue
+# enough retries to ride out a shedding window, and make sure something
+# actually consumes your dead_letter_queue -- an unconsumed DLQ is a black hole.
+max_retries = 10
 
 [[env.dev.send_email]]
 name = "EMAIL"
@@ -132,6 +141,9 @@ queue = "floorvote-example-queue"
 queue = "floorvote-example-queue"
 max_batch_size = 10
 max_batch_timeout = 30
+# See the note on the dev consumer above: 3 is too few when the model provider
+# sheds load, and a shed dead-letters silently.
+max_retries = 10
 
 [[env.example.services]]
 binding = "CENTRAL"
