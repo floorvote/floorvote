@@ -22,12 +22,22 @@ type Props = {
 
 // Shared by the header row and every body row so the two grids can never
 // drift out of sync with each other. The narrow-screen override in
-// mobile.css (.tag-table > div > div) targets this same grid, collapsing it
-// to two tracks and dropping the grip/ordinal column.
+// mobile.css (.tag-table .tag-table-row) targets this same grid, collapsing
+// it to two tracks and dropping the grip/ordinal column.
 const GRID_TEMPLATE_COLUMNS = '34px minmax(0,1fr) minmax(0,1.6fr) 34px'
 
 /** Which editable column an interaction came from, so a move can return to it. */
 type Column = 'name' | 'description'
+
+// A custom MIME type, not 'text/plain': the reorder grip's payload is just a
+// row index, and 'text/plain' makes that digit a legitimate native drop
+// target for any textarea/input on the page. A user who grabs the grip and
+// releases over, say, the description field of another row (or the Config
+// page's custom-fields text areas) would get the raw digit inserted at the
+// caret by the browser's own text-drop handling. No native target accepts
+// this type, so a reorder drag that lands somewhere other than a tag row
+// silently does nothing instead of leaking a digit into a field.
+const DRAG_MIME = 'application/x-floorvote-tag-row'
 
 /**
  * The tag taxonomy editor: one row per tag, name and optional description.
@@ -322,17 +332,32 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                   // Read the source index back from dataTransfer rather than
                   // trusting state alone, matching both existing
                   // implementations of this pattern.
-                  const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
+                  const fromIdx = parseInt(e.dataTransfer.getData(DRAG_MIME), 10)
                   setDragFrom(null)
                   setDragOver(null)
                   if (Number.isNaN(fromIdx)) return
-                  // Insert-before-i semantics everywhere except the trailing
-                  // blank: dropping on it is the tail drop zone, since
-                  // insert-before cannot otherwise reach the final position.
-                  // It moves the dragged row to the LAST REAL position —
-                  // reorder() itself refuses `to === lastIndex` (the blank's
-                  // own slot), so the target is one before it.
-                  reorder(fromIdx, isTrailingBlank ? displayed.length - 2 : i)
+                  // The indicator promises insert-BEFORE row i, but moveRow
+                  // splices the source out before inserting at the target —
+                  // so on a downward drag (fromIdx < i), removing the source
+                  // shifts row i (and everything between) up by one first.
+                  // Landing before row i's ORIGINAL position therefore means
+                  // targeting i - 1 in the post-removal array, not i, or the
+                  // dragged row ends up one slot too far (after row i rather
+                  // than before it). An upward drag (fromIdx > i) has no such
+                  // shift below the target, so i is already correct there.
+                  //
+                  // The tail zone (dropping on the trailing blank) is not an
+                  // insert-before-i case at all: it means "move to the last
+                  // real position", i.e. target the last real index directly
+                  // — reorder() itself refuses `to === lastIndex` (the
+                  // blank's own slot). That target needs no fromIdx < i
+                  // adjustment: moveRow's own from === to no-op guard already
+                  // covers dragging the last real row onto the blank.
+                  const lastRealIndex = displayed.length - 2
+                  const to = isTrailingBlank
+                    ? lastRealIndex
+                    : fromIdx < i ? i - 1 : i
+                  reorder(fromIdx, to)
                 }}
               >
                 {isTrailingBlank ? (
@@ -352,7 +377,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                     draggable
                     onDragStart={e => {
                       e.dataTransfer.effectAllowed = 'move'
-                      e.dataTransfer.setData('text/plain', String(i))
+                      e.dataTransfer.setData(DRAG_MIME, String(i))
                       setDragFrom(i)
                     }}
                   >

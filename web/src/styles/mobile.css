@@ -535,20 +535,23 @@ body.nav-pending * { cursor: wait !important; }
   /* Row-specific (.tag-table-row) rather than positional (the old
      `.tag-table > div`): the drag-drop indicator is rendered as a sibling of
      the rows, and a bare `> div` selector would match that 2px indicator
-     div too, stacking it under this rule as if it were a row. */
-  .tag-table-row { grid-template-columns: minmax(0, 1fr) 34px !important; }
+     div too, stacking it under this rule as if it were a row. Scoped under
+     `.tag-table` (rather than a bare `.tag-table-row`) so these are
+     contained to this component's markup, not global rules that would also
+     match any future `.tag-table-row`/`.tag-table-reorder` reuse elsewhere. */
+  .tag-table .tag-table-row { grid-template-columns: minmax(0, 1fr) 34px !important; }
   /* The Tag column (2nd child in the header row and every body/trailing
      row) spans the full stacked width. It carries no border, so nothing to
      null here. */
-  .tag-table-row > :nth-child(2) { grid-column: 1 / -1; }
+  .tag-table .tag-table-row > :nth-child(2) { grid-column: 1 / -1; }
   /* The Description column (3rd child) is the one with an inline
      border-left; once it drops to its own line at the row's left edge, that
      border would render as a stray vertical line if left in place. */
-  .tag-table-row > :nth-child(3) { border-left: none !important; }
+  .tag-table .tag-table-row > :nth-child(3) { border-left: none !important; }
   /* Hides the drag grip (real rows), and the header's and the trailing
      blank row's matching leading placeholder — all three carry this class
      so display:none removes each from grid placement identically; without
      it on the header/trailing placeholders they'd keep claiming column 1 of
      row 1 and break the two-row stack into three. */
-  .tag-table-reorder { display: none !important; }
+  .tag-table .tag-table-reorder { display: none !important; }
 }
