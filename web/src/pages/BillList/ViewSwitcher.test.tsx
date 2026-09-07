@@ -40,6 +40,13 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
 // drag populates DataTransfer automatically, jsdom does not, so a bare
 // object standing in for it is passed through and read back by the
 // component's own handlers.
+// The grip's accessible name names the view and then the shortcut it offers
+// ("Reorder Alpha view. Press Alt with the up or down arrow keys."), so it is
+// matched by prefix rather than by the bare exact name it used to carry.
+function gripFor(name: string) {
+  return screen.getByLabelText(new RegExp(`^Reorder ${name}\\.`))
+}
+
 function fakeDataTransfer() {
   let stored = ''
   return {
@@ -305,15 +312,15 @@ describe('ViewSwitcher', () => {
       fireEvent.click(screen.getByRole('button', { name: /views/i }))
       fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
       fireEvent.click(screen.getAllByRole('button', { name: /rename/i })[0])
-      expect(screen.queryByLabelText('Reorder Clerk bills')).toBeNull()
+      expect(screen.queryByLabelText(/^Reorder Clerk bills\./)).toBeNull()
       // The other row, not being renamed, still has its grip.
-      expect(screen.getByLabelText('Reorder Auditor bills')).toBeTruthy()
+      expect(gripFor('Auditor bills')).toBeTruthy()
     })
 
     it('reorders a view via drag and calls onReorder with the new id order', () => {
       const { onReorder } = renderSwitcher({ isAdmin: true })
       fireEvent.click(screen.getByRole('button', { name: /views/i }))
-      const fromGrip = screen.getByLabelText('Reorder Auditor bills')
+      const fromGrip = gripFor('Auditor bills')
       const toRow = screen.getByText('Clerk bills').closest('div')!
       dragRow(fromGrip, toRow)
       expect(onReorder).toHaveBeenCalledWith(['v2', 'v1'])
@@ -362,7 +369,7 @@ describe('ViewSwitcher', () => {
       function drag(from: string, to: string | 'tail') {
         const dataTransfer = fakeDataTransfer()
         const target = to === 'tail' ? tail() : row(to)
-        fireEvent.dragStart(screen.getByLabelText(`Reorder ${from}`), { dataTransfer })
+        fireEvent.dragStart(gripFor(from), { dataTransfer })
         fireEvent.dragOver(target, { dataTransfer })
         fireEvent.drop(target, { dataTransfer })
         fireEvent.dragEnd(target, { dataTransfer })
@@ -406,18 +413,138 @@ describe('ViewSwitcher', () => {
       it('dims the whole source row, not just its grip', () => {
         open3()
         const dataTransfer = fakeDataTransfer()
-        fireEvent.dragStart(screen.getByLabelText('Reorder Bravo view'), { dataTransfer })
+        fireEvent.dragStart(gripFor('Bravo view'), { dataTransfer })
         expect(row('Bravo view')).toHaveStyle({ opacity: '0.4' })
         expect(row('Alpha view')).toHaveStyle({ opacity: '1' })
-        expect(screen.getByLabelText('Reorder Bravo view')).toHaveStyle({ opacity: '1' })
+        expect(gripFor('Bravo view')).toHaveStyle({ opacity: '1' })
       })
+
+      // Dragging needs a pointer, and a pointer is the only thing that can
+      // drag — so before this the saved views could not be reordered by keyboard
+      // at all. Same matrix as the other two lists, because it is one shared
+      // implementation, plus the two questions only a popup raises.
+      describe('by keyboard', () => {
+        const status = () => screen.getByRole('status')
+
+        function press(name: string, key: 'ArrowUp' | 'ArrowDown') {
+          const target = gripFor(name)
+          target.focus()
+          fireEvent.keyDown(target, { key, altKey: true })
+        }
+
+        it('Alt+ArrowDown on the first view moves it down, announces it and persists', () => {
+          const { onReorder } = open3()
+          press('Alpha view', 'ArrowDown')
+          expect(order()).toEqual(['Bravo view', 'Alpha view', 'Charlie view'])
+          expect(status()).toHaveTextContent('Alpha view moved to position 2 of 3')
+          expect(onReorder).toHaveBeenCalledWith(['b', 'a', 'c'])
+        })
+
+        it('Alt+ArrowUp on the last view moves it to position 2', () => {
+          const { onReorder } = open3()
+          press('Charlie view', 'ArrowUp')
+          expect(order()).toEqual(['Alpha view', 'Charlie view', 'Bravo view'])
+          expect(status()).toHaveTextContent('Charlie view moved to position 2 of 3')
+          expect(onReorder).toHaveBeenCalledWith(['a', 'c', 'b'])
+        })
+
+        it('Alt+ArrowUp on the first view does nothing, announces nothing, persists nothing', () => {
+          const { onReorder } = open3()
+          press('Alpha view', 'ArrowUp')
+          expect(order()).toEqual(['Alpha view', 'Bravo view', 'Charlie view'])
+          expect(status()).toHaveTextContent('')
+          expect(onReorder).not.toHaveBeenCalled()
+        })
+
+        it('Alt+ArrowDown on the last view does nothing, announces nothing, persists nothing', () => {
+          const { onReorder } = open3()
+          press('Charlie view', 'ArrowDown')
+          expect(order()).toEqual(['Alpha view', 'Bravo view', 'Charlie view'])
+          expect(status()).toHaveTextContent('')
+          expect(onReorder).not.toHaveBeenCalled()
+        })
+
+        it('leaves focus on the view it moved, so a second press moves the same view', async () => {
+          open3()
+          press('Alpha view', 'ArrowDown')
+          await waitFor(() => expect(gripFor('Alpha view')).toHaveFocus())
+          fireEvent.keyDown(gripFor('Alpha view'), { key: 'ArrowDown', altKey: true })
+          expect(order()).toEqual(['Bravo view', 'Charlie view', 'Alpha view'])
+        })
+
+        // The row's name button applies the view and closes the menu. A reorder
+        // shortcut that did either would make the list unusable by keyboard: the
+        // menu would vanish mid-reorder, taking the rest of the list with it.
+        it('neither applies a view nor closes the popup', async () => {
+          const onApply = vi.fn()
+          render(
+            <ViewSwitcher
+              views={THREE}
+              currentSearch=""
+              isAdmin
+              onApply={onApply}
+              onRename={vi.fn()}
+              onDelete={vi.fn()}
+              onReorder={vi.fn()}
+            />,
+          )
+          fireEvent.click(screen.getByRole('button', { name: /views/i }))
+          press('Alpha view', 'ArrowDown')
+          expect(onApply).not.toHaveBeenCalled()
+          expect(menu()).toBeInTheDocument()
+          // And focus landing on the moved grip does not dismiss it either.
+          await waitFor(() => expect(gripFor('Alpha view')).toHaveFocus())
+          expect(menu()).toBeInTheDocument()
+          expect(onApply).not.toHaveBeenCalled()
+        })
+
+        it('makes the grip a Tab stop that names the view and the shortcut', () => {
+          open3()
+          expect(gripFor('Alpha view')).toHaveAttribute('tabindex', '0')
+          expect(gripFor('Alpha view')).toHaveAccessibleName(
+            'Reorder Alpha view. Press Alt with the up or down arrow keys.',
+          )
+        })
+
+        it('reverts the visible order when a keyboard move fails to persist', async () => {
+          const onReorder = vi.fn().mockRejectedValue(new Error('boom'))
+          renderSwitcher({ isAdmin: true, onReorder })
+          fireEvent.click(screen.getByRole('button', { name: /views/i }))
+          press('Auditor bills', 'ArrowUp')
+          await waitFor(() => expect(onReorder).toHaveBeenCalledWith(['v2', 'v1']))
+          await waitFor(() => {
+            const clerk = screen.getByRole('button', { name: 'Clerk bills' })
+            const auditor = screen.getByRole('button', { name: 'Auditor bills' })
+            expect(clerk.compareDocumentPosition(auditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+          })
+          // And the announcement reverts with it: the optimistic "moved to
+          // position 1 of 2" would otherwise be left standing over a list that
+          // has snapped back, telling the user the opposite of what happened.
+          expect(status()).not.toHaveTextContent('moved to position')
+          expect(status()).toHaveTextContent('Auditor bills could not be moved. The list is unchanged.')
+        })
+
+        it('is no keyboard target for a member, who has no grip at all', () => {
+          renderSwitcher({ isAdmin: false })
+          fireEvent.click(screen.getByRole('button', { name: /views/i }))
+          expect(screen.queryByLabelText(/reorder/i)).toBeNull()
+        })
+
+        it('is no keyboard target on a demo tenant, even for an admin', () => {
+          demoState.demoMode = true
+          renderSwitcher({ isAdmin: true })
+          fireEvent.click(screen.getByRole('button', { name: /views/i }))
+          expect(screen.queryByLabelText(/reorder/i)).toBeNull()
+        })
+      })
+
     })
 
     it('reverts the visible order when the reorder request fails', async () => {
       const onReorder = vi.fn().mockRejectedValue(new Error('boom'))
       renderSwitcher({ isAdmin: true, onReorder })
       fireEvent.click(screen.getByRole('button', { name: /views/i }))
-      const fromGrip = screen.getByLabelText('Reorder Auditor bills')
+      const fromGrip = gripFor('Auditor bills')
       const toRow = screen.getByText('Clerk bills').closest('div')!
       dragRow(fromGrip, toRow)
 
@@ -428,6 +555,7 @@ describe('ViewSwitcher', () => {
         const auditor = screen.getByRole('button', { name: 'Auditor bills' })
         expect(clerk.compareDocumentPosition(auditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       })
+      expect(screen.getByRole('status')).not.toHaveTextContent('moved to position')
     })
   })
 })

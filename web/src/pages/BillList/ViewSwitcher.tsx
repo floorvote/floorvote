@@ -6,7 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
 import { VIEW_STYLE } from '../../../../shared/viewStyle'
 import { useDemo } from '../../context/DemoContext'
-import { DropIndicator, useDragReorder } from '../../components/dragReorder'
+import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
 
 // Fixed dropdown width (FIX 2): the menu used to be content-sized off a
 // `minWidth: 232` floor, so revealing Rename/Delete on hover widened the whole
@@ -74,18 +74,28 @@ export function ViewSwitcher({
   // positively known not to be a demo.
   const canReorder = isAdmin && isNotDemo
 
-  // Drag-to-reorder, shared with the tag table (admin/TagTaxonomyTable.tsx) and
-  // custom fields (admin/Config.tsx) — see components/dragReorder.tsx. Declared
-  // up here, above the `views.length === 0` early return below, because it is a
-  // hook. Persistence stays at this call site: commitReorder is optimistic and
-  // reverts on failure, which neither of the other two lists does.
+  // Drag- and keyboard-reorder, shared with the tag table
+  // (admin/TagTaxonomyTable.tsx) and custom fields (admin/Config.tsx) — see
+  // components/dragReorder.tsx. Declared up here, above the
+  // `views.length === 0` early return below, because it is a hook. Persistence
+  // stays at this call site: commitReorder is optimistic and reverts on
+  // failure, which neither of the other two lists does — and it does so for a
+  // keyboard move exactly as for a drop, there being one route through the
+  // primitive and not two.
   //
-  // `to` arrives already adjusted for the splice-out shift, and only for a drop
-  // the indicator promised, so commitReorder needs neither the arithmetic nor a
+  // `to` arrives already adjusted for the splice-out shift, and only for a move
+  // the primitive accepted, so commitReorder needs neither the arithmetic nor a
   // no-op guard it used to carry.
+  //
+  // The grip is the only keyboard route into this list, so it is a Tab stop —
+  // the primitive's default. `disabled` covers the gate this list has always
+  // had (an admin, on a tenant positively known not to be a demo); a disabled
+  // grip is neither focusable nor labelled with a shortcut it cannot honour,
+  // and this list renders no grip at all in that case anyway.
   const dnd = useDragReorder({
     count: orderedViews.length,
     disabled: !canReorder,
+    label: i => orderedViews[i].name,
     onReorder: (from, to) => { void commitReorder(from, to) },
   })
 
@@ -186,6 +196,12 @@ export function ViewSwitcher({
       // look like the drag simply didn't take, so onReorder's caller is
       // expected to surface the error itself (mirroring onRename/onDelete).
       setOrderedViews(previous)
+      // And correct the live region, which the primitive already set to
+      // "...moved to position n of m" on the optimistic move. Leaving that
+      // standing tells a screen-reader user the move succeeded at the exact
+      // moment the list snaps back — the announcement has to revert with the
+      // order it was describing.
+      dnd.announce(`${moved.name} could not be moved. The list is unchanged.`)
     }
   }
 
@@ -281,6 +297,10 @@ export function ViewSwitcher({
             // name button applies the view and closes the menu on click, so
             // making the entire row draggable would risk that click firing
             // mid-drag and closing the popup out from under the interaction.
+            // The accessible name comes from the primitive (it names the view
+            // and the Alt+Arrow shortcut), not from a local aria-label: a grip
+            // that says "Reorder Alpha" and nothing else tells a keyboard user
+            // what it is for but not how to use it.
             const grip = canReorder && (
               <span
                 {...dnd.gripProps(i)}
@@ -288,7 +308,6 @@ export function ViewSwitcher({
                   fontSize: fontSize.base, color: color.borderStrong, cursor: 'grab',
                   userSelect: 'none', flexShrink: 0, lineHeight: 1,
                 }}
-                aria-label={`Reorder ${v.name}`}
               >⠿</span>
             )
             return (
@@ -334,6 +353,10 @@ export function ViewSwitcher({
           )}
         </div>
       )}
+      {/* Outside the popup, so an announcement is not torn out of the
+          accessibility tree the moment the menu closes, and inside this
+          wrapper, which is the relative ancestor SR_ONLY needs. */}
+      <ReorderLiveRegion announcement={dnd.announcement} />
     </div>
   )
 }

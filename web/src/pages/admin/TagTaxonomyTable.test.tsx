@@ -134,9 +134,11 @@ describe('TagTaxonomyTable', () => {
       { name: 'Elections', description: '' },
       { name: 'Elections', description: '' },
     ]} />)
-    const describedBy = tagFields()[0].getAttribute('aria-describedby')
-    expect(describedBy).toBeTruthy()
-    expect(document.getElementById(describedBy!)).toHaveTextContent('Duplicate')
+    // A token list, not a single id: every reorderable row's fields also point
+    // at the shared reorder-shortcut hint, and a flagged row points at both.
+    const describedBy = tagFields()[0].getAttribute('aria-describedby')?.split(' ') ?? []
+    const texts = describedBy.map(id => document.getElementById(id)?.textContent ?? '')
+    expect(texts.some(t => t.includes('Duplicate'))).toBe(true)
   })
 
   it('raises "Needs a name" when a description is typed into a nameless row', async () => {
@@ -869,5 +871,101 @@ describe('TagTaxonomyTable — paste', () => {
     const { container } = render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
     const wrapper = container.firstElementChild as HTMLElement
     expect(wrapper.style.position).toBe('relative')
+  })
+})
+
+describe('TagTaxonomyTable — the grip as a keyboard control', () => {
+  const grips = () => screen.getAllByRole('button', { name: /^Reorder / })
+
+  it('names the tag and the shortcut, so the grip is not a mystery to a screen reader', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    // One per REAL row: the trailing blank is not a tag and gets no grip.
+    expect(grips()).toHaveLength(2)
+    expect(grips()[0]).toHaveAccessibleName('Reorder Elections. Press Alt with the up or down arrow keys.')
+  })
+
+  it('names a nameless row rather than announcing an empty string', () => {
+    render(<Harness initial={[
+      { name: '', description: 'voting' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    expect(grips()[0]).toHaveAccessibleName('Reorder Untitled tag. Press Alt with the up or down arrow keys.')
+  })
+
+  it('keeps the grip out of the tab order, since both fields in the row already reorder', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    expect(grips()[0]).toHaveAttribute('tabindex', '-1')
+    // Tabbing out of row 1 reaches row 2's tag field, not a third stop in
+    // between — the order the whole table is navigated in is unchanged.
+    await user.click(tagFields()[0])
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(tagFields()[1]).toHaveFocus()
+  })
+
+  // The grip is deliberately not a Tab stop here, so its accessible name —
+  // otherwise the only statement of the shortcut — is never reached by
+  // tabbing a row. The shortcut still has to be discoverable from the fields:
+  // aria-keyshortcuts on every real row (cheap, ignored by readers that don't
+  // support it) plus the prose hint recited once, on the first row only, so
+  // tabbing a 30-tag taxonomy doesn't speak the sentence sixty times.
+  it('tells the first real row about the shortcut in prose, and every real row via aria-keyshortcuts', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    const hintOf = (el: HTMLElement) =>
+      (el.getAttribute('aria-describedby') ?? '').split(' ')
+        .map(id => document.getElementById(id)?.textContent ?? '').join(' ')
+    const names = tagFields()
+    const descriptions = screen.getAllByLabelText(/^Description, row/)
+
+    // First real row: the prose recital, plus the shortcut attribute.
+    expect(hintOf(names[0])).toContain('Press Alt with the up or down arrow keys.')
+    expect(hintOf(descriptions[0])).toContain('Press Alt with the up or down arrow keys.')
+    expect(names[0]).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+    expect(descriptions[0]).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+
+    // Second real row: no repeated recital, but still the shortcut attribute
+    // — the row is not left without any statement of the shortcut.
+    expect(hintOf(names[1])).not.toContain('Press Alt with the up or down arrow keys.')
+    expect(hintOf(descriptions[1])).not.toContain('Press Alt with the up or down arrow keys.')
+    expect(names[1]).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+    expect(descriptions[1]).toHaveAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown')
+  })
+
+  it('does not promise the shortcut on the trailing blank, which cannot be reordered', () => {
+    render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
+    const fields = tagFields()
+    const blank = fields[fields.length - 1]
+    expect(blank).not.toHaveAttribute('aria-describedby')
+    expect(blank).not.toHaveAttribute('aria-keyshortcuts')
+    const blankDescription = screen.getAllByLabelText(/^Description, row/).pop()
+    expect(blankDescription).not.toHaveAttribute('aria-describedby')
+    expect(blankDescription).not.toHaveAttribute('aria-keyshortcuts')
+  })
+
+  it('reorders from the grip itself, and focus follows the row it moved', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    grips()[0].focus()
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(tagFields()[0]).toHaveValue('Housing')
+    expect(tagFields()[1]).toHaveValue('Elections')
+    expect(screen.getByRole('status')).toHaveTextContent('Elections moved to position 2 of 2')
+    // Focus is on Elections' grip in its new position, so a second press moves
+    // Elections again rather than whatever slid under the old focus.
+    expect(grips()[1]).toHaveFocus()
   })
 })
