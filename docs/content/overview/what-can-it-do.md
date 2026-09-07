@@ -52,13 +52,27 @@ For anyone who'd rather not check FloorVote constantly, periodic email digests r
 
 A single feed shows everything happening across your tracked bills and your team—new bills, comments, votes, and position changes—so anyone can catch up on what happened without having to ask around.
 
-## Bill search
+## Working the bills page
 
-Every bill in your tracked session is searchable, with fast filtering by tag and priority, so you can find the one bill you're after immediately instead of scrolling through a long list.
+Everything your team tracks lives on one page, and most of the day-to-day work happens there rather than on individual bills.
 
-## Bill triage
+### Search and filter
 
-When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. That one small step keeps new matches from piling up untouched, so your tracked-bills list stays a list of bills your team has actually looked at.
+Search covers bill numbers, titles, abstracts, and the AI summaries, so you can find a bill by what it does even when you can't remember what it's called. Separate several terms with commas to look up a batch of bills at once—paste in a list of bill numbers and you get that whole batch in one result, with the bill-number matches at the top.
+
+Filters narrow the list by state, session year, status, tag, priority, and your team's official position, plus any custom fields you've defined. You can also filter by the subject terms the legislature itself publishes, alongside your own tags—two vocabularies for the same bill, one the legislature's and one yours. Subject terms are grouped by state, because each legislature keeps its own list and no two are alike: New Jersey publishes a few dozen broad terms while Arizona publishes thousands of narrow ones.
+
+### Saved views
+
+Any set of filters your team returns to can be saved as a named view, and views are shared—an admin sets one up and every member sees it in the switcher. That turns a filter combination somebody worked out once into a permanent part of the team's setup: a view per committee, per issue area, or per staffer's beat, ready in one click instead of rebuilt from scratch each time. Admins can rename views and drag them into whatever order makes sense for the team.
+
+### Change many bills at once
+
+Admins can select bills and edit them together—set a priority, record the team's position, or fill in custom fields across the whole selection in one step. The selection can be every bill matching the filters currently applied, not just the rows you've checked, so "set the position on all 200 bills tagged Elections" is one action rather than 200.
+
+### Triage new matches
+
+When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Admins get a New matches filter that shows exactly the bills still waiting on that decision, and dismissing in bulk clears a big batch quickly. That one small step keeps new matches from piling up untouched, so your tracked-bills list stays a list of bills your team has actually looked at.
 
 ## Shared calendar
 
