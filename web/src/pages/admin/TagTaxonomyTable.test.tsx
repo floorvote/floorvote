@@ -19,6 +19,21 @@ function Harness({ initial, onRows }: { initial: TaxonomyRow[]; onRows?: (r: Tax
 
 const tagFields = () => screen.getAllByLabelText(/^Tag name, row/)
 
+// jsdom does not populate DataTransfer the way a real browser drag does, so a
+// bare object standing in for it is passed through and read back by the
+// component's own handlers — same helper ViewSwitcher.test.tsx uses for its
+// saved-views reorder, since both components now read the source index back
+// from dataTransfer rather than trusting state alone.
+function fakeDataTransfer() {
+  let stored = ''
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    setData: (_type: string, value: string) => { stored = value },
+    getData: () => stored,
+  }
+}
+
 describe('TagTaxonomyTable', () => {
   it('renders a field per row plus one trailing blank', () => {
     render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
@@ -237,10 +252,13 @@ describe('TagTaxonomyTable — narrow layout', () => {
     const table = document.querySelector('.tag-table')
     expect(table).toBeInTheDocument()
 
-    // `.tag-table > div` must match one row per grid row (header + each
-    // displayed row, including the trailing blank) — the selector the
+    // `.tag-table-row` must match one row per grid row (header + each
+    // displayed row, including the trailing blank) — the class the
     // narrow-width rule uses to collapse each row's grid-template-columns.
-    const rows = table!.querySelectorAll(':scope > div')
+    // Row-specific rather than positional (the old `.tag-table > div`) so
+    // that a drop indicator inserted as a sibling of the rows is never
+    // mistaken for one.
+    const rows = document.querySelectorAll('.tag-table-row')
     expect(rows.length).toBe(3) // header + Elections row + trailing blank
 
     // `.tag-table > div > :nth-child(2)` must land on the Tag column in
@@ -343,21 +361,22 @@ describe('TagTaxonomyTable — reordering', () => {
       { name: 'Housing', description: '' },
       { name: 'Courts', description: '' },
     ]} />)
-    // .tag-table > div is the header followed by one div per displayed row.
-    const gridRows = document.querySelectorAll('.tag-table > div')
+    // .tag-table-row is the header followed by one row per displayed row.
+    const gridRows = document.querySelectorAll('.tag-table-row')
     const courtsGrip = gridRows[3].children[0]
+    const dataTransfer = fakeDataTransfer()
 
-    fireEvent.dragStart(courtsGrip)
+    fireEvent.dragStart(courtsGrip, { dataTransfer })
 
     // The whole row must advertise itself as a drop target: without a
     // preventDefault on dragover the browser shows "no drop allowed" over the
     // ~90% of the row that is not the grip. fireEvent returns false when the
     // event was cancelled.
-    expect(fireEvent.dragOver(tagFields()[0])).toBe(false)
+    expect(fireEvent.dragOver(tagFields()[0], { dataTransfer })).toBe(false)
 
     // Release over row 1's NAME FIELD — the visible bulk of the row — rather
     // than its grip.
-    fireEvent.drop(tagFields()[0])
+    fireEvent.drop(tagFields()[0], { dataTransfer })
 
     expect(tagFields().map(f => (f as HTMLInputElement).value))
       .toEqual(['Courts', 'Elections', 'Housing', ''])
@@ -375,6 +394,81 @@ describe('TagTaxonomyTable — reordering', () => {
     // browser's native "insert at caret" drop behavior breaks. fireEvent
     // returns true when the event was NOT cancelled.
     expect(fireEvent.dragOver(tagFields()[0])).toBe(true)
+  })
+
+  it('shows the drop indicator before the hovered row, but not at the drag source or the row right after it (the no-op positions)', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+      { name: 'Courts', description: '' },
+    ]} />)
+    const rows = () => document.querySelectorAll('.tag-table-row')
+    const dataTransfer = fakeDataTransfer()
+    // Drag "Elections" (displayed index 0, the first body row).
+    fireEvent.dragStart(rows()[1].children[0], { dataTransfer })
+
+    // Hovering row C (Courts, displayed index 2) shows the indicator
+    // immediately before it.
+    fireEvent.dragOver(rows()[3], { dataTransfer })
+    expect(document.querySelectorAll('.tag-table-drop-indicator')).toHaveLength(1)
+
+    // Hovering the drag source itself is a no-op position: no indicator.
+    fireEvent.dragOver(rows()[1], { dataTransfer })
+    expect(document.querySelector('.tag-table-drop-indicator')).not.toBeInTheDocument()
+
+    // Hovering the row right after the source (Housing) is also a no-op
+    // position — dropping there would just swap the two rows right back.
+    fireEvent.dragOver(rows()[2], { dataTransfer })
+    expect(document.querySelector('.tag-table-drop-indicator')).not.toBeInTheDocument()
+  })
+
+  it('dropping on a row inserts the dragged row before it', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+      { name: 'Courts', description: '' },
+    ]} />)
+    const rows = () => document.querySelectorAll('.tag-table-row')
+    const dataTransfer = fakeDataTransfer()
+    // Drag Courts (displayed index 2) and drop it on Elections (index 0).
+    fireEvent.dragStart(rows()[3].children[0], { dataTransfer })
+    fireEvent.dragOver(rows()[1], { dataTransfer })
+    fireEvent.drop(rows()[1], { dataTransfer })
+
+    expect(tagFields().map(f => (f as HTMLInputElement).value))
+      .toEqual(['Courts', 'Elections', 'Housing', ''])
+  })
+
+  it('hovering the trailing blank shows the indicator above it, and dropping there moves the dragged row to the last real position', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+      { name: 'Courts', description: '' },
+    ]} />)
+    const rows = () => document.querySelectorAll('.tag-table-row')
+    const dataTransfer = fakeDataTransfer()
+    // Drag Elections (displayed index 0) over the trailing blank row.
+    fireEvent.dragStart(rows()[1].children[0], { dataTransfer })
+    fireEvent.dragOver(rows()[4], { dataTransfer })
+    expect(document.querySelectorAll('.tag-table-drop-indicator')).toHaveLength(1)
+
+    fireEvent.drop(rows()[4], { dataTransfer })
+
+    // Elections lands at the last REAL position — immediately before the
+    // trailing blank, not after it (the blank stays last).
+    expect(tagFields().map(f => (f as HTMLInputElement).value))
+      .toEqual(['Housing', 'Courts', 'Elections', ''])
+  })
+
+  it('the trailing blank cannot be dragged and is never itself moved', () => {
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+    const rows = () => document.querySelectorAll('.tag-table-row')
+    // displayed is [Elections, Housing, <blank>] — the blank is the 4th grid row.
+    const blankRow = rows()[3]
+    expect(blankRow.querySelector('[draggable="true"]')).not.toBeInTheDocument()
   })
 
   it('numbers every row', () => {
