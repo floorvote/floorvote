@@ -8,6 +8,12 @@ export default withMermaid(
     base: '/docs/',
     srcDir: 'content',
     outDir: '.vitepress/dist/docs',
+    // Cloudflare's asset server already treats the extensionless path as
+    // canonical: it 307s /x.html to /x. Without this, VitePress emitted the
+    // .html form into the sitemap, so every non-index page Google fetched was
+    // a redirect rather than the page. Now the links and the sitemap agree
+    // with what the host serves.
+    cleanUrls: true,
     // The marketing sitemap lists only the apex on purpose, so the docs URLs
     // have to be published here. The hostname carries the base path: without
     // it the generated <loc> values would drop /docs and point at pages the
