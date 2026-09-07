@@ -7,17 +7,19 @@ import { exportAllData } from '../../lib/exportData'
 import { SettingsNav } from '../../components/SettingsNav'
 import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT, SR_ONLY } from '../../lib/textStyles'
-import { TOOLTIP_STYLE, tooltipPosition } from '../../lib/chipStyles'
+import { TOOLTIP_STYLE, tooltipPosition, COUNT_BADGE } from '../../lib/chipStyles'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useAuth } from '../../hooks/useAuth'
 import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
-import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
+import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
+import TagTaxonomyTable from './TagTaxonomyTable'
+import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
 type ConfigData = {
   keywords?: string[]
@@ -65,7 +67,11 @@ export function Config() {
   // click can be undone. Cleared for a field when: the field is edited manually
   // (resurrecting stale text would be worse than no undo), Undo is clicked, or a
   // save that covers that field succeeds.
-  const [undoValues, setUndoValues] = useState<Partial<Record<ResettableField, string>>>({})
+  // undoValues[field] is a string for the three text fields and TaxonomyRow[]
+  // for the taxonomy, because a row with a description and no name has no
+  // string form — round-tripping it through one would delete what is being typed.
+  const [undoValues, setUndoValues] =
+    useState<Partial<Record<ResettableField, string | TaxonomyRow[]>>>({})
 
   const [keywords, setKeywords] = useState('')
   const [associationName, setAssociationName] = useState('')
@@ -74,7 +80,12 @@ export function Config() {
   const [customNoun, setCustomNoun] = useState<string>('')
   const [aiContext, setAiContext] = useState('')
   const [relevanceQuestion, setRelevanceQuestion] = useState('')
-  const [tagTaxonomy, setTagTaxonomy] = useState('')
+  const [taxonomyRows, setTaxonomyRows] = useState<TaxonomyRow[]>([])
+  // The snapshot and the reprocess check both take strings. The rows are
+  // canonical; this is their projection, and it is order-preserving on
+  // purpose — see aiConfig.ts on why configChanged stays order-sensitive
+  // while aiInstructionsChanged deliberately is not.
+  const tagTaxonomy = serializeTaxonomy(rowsToTaxonomy(taxonomyRows))
 
   const [savingKeywords, setSavingKeywords] = useState(false)
   const [savedKeywords, setSavedKeywords] = useState(false)
@@ -93,6 +104,10 @@ export function Config() {
   // aiInstructionsChanged, ai-fields subset) and the page's unsaved-changes
   // dirty check (all fields) below.
   const configSnapshot = useRef<ConfigSnapshot | null>(null)
+  // The rows as last loaded or saved. The snapshot's string cannot stand in
+  // for this: reverting the unsaved-changes guard through it would flatten a
+  // multi-line description and drop a row that has one but no name yet.
+  const savedTaxonomyRows = useRef<TaxonomyRow[]>([])
 
   const [newMatchMinRelevance, setNewMatchMinRelevance] = useState(0)
   const [savingNewMatch, setSavingNewMatch] = useState(false)
@@ -153,10 +168,18 @@ export function Config() {
         setRelevanceQuestion(relevanceQuestionValue)
         const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
-        const taxonomyString = Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
-          ? serializeTaxonomy(data.tag_taxonomy as TaxonomyItem[])
-          : ''
-        setTagTaxonomy(taxonomyString)
+        const loadedRows = rowsFromTaxonomy(
+          Array.isArray(data.tag_taxonomy) ? data.tag_taxonomy as TaxonomyItem[] : [],
+        )
+        // Built from the same expression the page derives (rows -> rowsToTaxonomy
+        // -> serializeTaxonomy), so the snapshot is definitionally equal to what
+        // it will be compared against. Building this from the raw API array
+        // instead would make configChanged permanently true whenever a stored
+        // row has untrimmed data (an empty name, or whitespace-only fields) —
+        // reachable via a direct API write even though not through this UI.
+        const taxonomyString = serializeTaxonomy(rowsToTaxonomy(loadedRows))
+        setTaxonomyRows(loadedRows)
+        savedTaxonomyRows.current = loadedRows
         setMatchedBillsCount(data.matched_bills_count ?? null)
         setPrioritizedBillsCount(data.prioritized_bills_count ?? null)
         configSnapshot.current = {
@@ -194,21 +217,25 @@ export function Config() {
   }
 
   function resetToDefault(field: ResettableField) {
-    const current = { aiContext, relevanceQuestion, tagTaxonomy, keywords }[field]
+    // The taxonomy captures its rows rather than the derived string, so Undo
+    // restores exactly what was on screen.
+    const current: string | TaxonomyRow[] = field === 'tagTaxonomy'
+      ? taxonomyRows
+      : { aiContext, relevanceQuestion, keywords }[field]
     setUndoValues(prev => ({ ...prev, [field]: current }))
     if (field === 'aiContext') setAiContext('')
     if (field === 'relevanceQuestion') setRelevanceQuestion('')
-    if (field === 'tagTaxonomy') setTagTaxonomy('')
+    if (field === 'tagTaxonomy') setTaxonomyRows([])
     if (field === 'keywords') setKeywords('')
   }
 
   function undoReset(field: ResettableField) {
     const previous = undoValues[field]
     if (previous === undefined) return
-    if (field === 'aiContext') setAiContext(previous)
-    if (field === 'relevanceQuestion') setRelevanceQuestion(previous)
-    if (field === 'tagTaxonomy') setTagTaxonomy(previous)
-    if (field === 'keywords') setKeywords(previous)
+    if (field === 'aiContext') setAiContext(previous as string)
+    if (field === 'relevanceQuestion') setRelevanceQuestion(previous as string)
+    if (field === 'tagTaxonomy') setTaxonomyRows(previous as TaxonomyRow[])
+    if (field === 'keywords') setKeywords(previous as string)
     clearUndoValue(field)
   }
 
@@ -221,11 +248,21 @@ export function Config() {
   function seedFromDefault(field: ResettableField) {
     if (field === 'aiContext') setAiContext(buildDefaultAiContext(associationName))
     if (field === 'relevanceQuestion') setRelevanceQuestion(buildDefaultRelevanceQuestion(associationName))
-    if (field === 'tagTaxonomy') setTagTaxonomy(serializeTaxonomy(DEFAULT_TAXONOMY))
-    // Unreachable through the current UI: renderResetControl only renders the
-    // seed button when undoValues[field] is already undefined, so this call
-    // never has anything to clear today. Kept anyway so that seeding can
-    // never strand a stale undo value if that render ordering ever changes.
+    if (field === 'tagTaxonomy') {
+      // Capture before overwriting, exactly as resetToDefault does. The seed
+      // control shows whenever no row has a NAME, but a row can hold a typed
+      // description with no name yet — the state the table is at that moment
+      // flagging in red — and overwriting it with the default list would
+      // destroy that text with nothing to get it back.
+      setUndoValues(prev => ({ ...prev, tagTaxonomy: taxonomyRows }))
+      setTaxonomyRows(rowsFromTaxonomy(DEFAULT_TAXONOMY))
+      return
+    }
+    // Unreachable through the current UI for the two text fields:
+    // renderResetControl only renders the seed button when undoValues[field]
+    // is already undefined, so this call never has anything to clear today.
+    // Kept anyway so that seeding can never strand a stale undo value if that
+    // render ordering ever changes.
     clearUndoValue(field)
   }
 
@@ -312,11 +349,10 @@ export function Config() {
     setSaveAiError(null)
     setSaveAiResult(null)
 
-    const parsed = parseTagTaxonomy(tagTaxonomy)
-    if (!parsed.ok) {
-      setSaveAiError(parsed.error)
-      return
-    }
+    // Blank means default: a table with no named rows saves null, so a tenant
+    // who empties it goes back to inheriting DEFAULT_TAXONOMY rather than
+    // storing an empty list.
+    const taxonomy = rowsToTaxonomy(taxonomyRows)
 
     const current = { aiContext, relevanceQuestion, tagTaxonomy }
     // Resolve both sides against the snapshot's association name (the last
@@ -333,10 +369,11 @@ export function Config() {
         body: JSON.stringify({
           ai_context: aiContext.trim() || null,
           relevance_question: relevanceQuestion.trim() || null,
-          tag_taxonomy: parsed.value,
+          tag_taxonomy: taxonomy.length > 0 ? taxonomy : null,
         }),
       })
       updateSnapshot({ aiContext, relevanceQuestion, tagTaxonomy })
+      savedTaxonomyRows.current = taxonomyRows
       setUndoValues(prev => {
         const next = { ...prev }
         delete next.aiContext
@@ -567,7 +604,7 @@ export function Config() {
       setKeywords(snap.keywords)
       setAiContext(snap.aiContext)
       setRelevanceQuestion(snap.relevanceQuestion)
-      setTagTaxonomy(snap.tagTaxonomy)
+      setTaxonomyRows(savedTaxonomyRows.current)
       setAssociationName(snap.associationName)
       setOrgNoun(snap.orgNoun)
       if ((PRESET_NOUNS as readonly string[]).includes(snap.orgNoun)) { setNounChoice(snap.orgNoun); setCustomNoun('') }
@@ -757,53 +794,30 @@ export function Config() {
               </div>
 
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <label htmlFor="config-tag-taxonomy" style={{ ...labelStyle, marginBottom: 0 }}>Tags</label>
-                  {renderResetControl('tagTaxonomy', !!tagTaxonomy.trim(), 'Reset to default')}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                  <span id="config-tags-label" style={{ ...labelStyle, marginBottom: 0 }}>
+                    Tags
+                    <span data-testid="tag-count" style={{ ...COUNT_BADGE, marginLeft: 6 }}>
+                      {rowsToTaxonomy(taxonomyRows).length}
+                    </span>
+                  </span>
+                  {renderResetControl('tagTaxonomy', rowsToTaxonomy(taxonomyRows).length > 0, 'Reset to default')}
                 </div>
-                <ResizableTextarea
-                  id="config-tag-taxonomy"
-                  value={tagTaxonomy}
-                  onChange={(e) => editField('tagTaxonomy', setTagTaxonomy)(e.target.value)}
-                  initialHeight={240}
-                  minHeight={60}
-                  style={aiTextareaStyle}
-                  placeholder={serializeTaxonomy(DEFAULT_TAXONOMY)}
-                />
+                <div role="group" aria-labelledby="config-tags-label">
+                  <TagTaxonomyTable
+                    rows={taxonomyRows}
+                    idPrefix="config-tags"
+                    onChange={rows => { setTaxonomyRows(rows); clearUndoValue('tagTaxonomy') }}
+                  />
+                </div>
                 <div style={hintStyle}>
-                  One tag per line. The AI will only assign tags from this list. Tags can stand alone or include an optional description (after a colon) to provide additional context. For example:<br />
-                  <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Municipal Court</code><br />
-                  <code style={{ fontFamily: 'monospace', fontSize: fontSize.sm, background: color.surfaceMuted, borderRadius: radius.sm, padding: '0 4px' }}>Elections: Local election administration, voting rights, voter registration, voting equipment, etc.</code>
+                  The AI will only assign tags from this list. A description is optional
+                  context for the model — it never appears in the app.
                 </div>
-                {(() => {
-                  const parsed = parseTagTaxonomy(tagTaxonomy)
-                  if (!parsed.ok || parsed.value.length === 0) return null
-                  return (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginTop: 6 }}>
-                      <span style={{ ...hintStyle, marginTop: 0 }}>
-                        {parsed.value.length === 1 ? '1 tag' : `${parsed.value.length} tags`}
-                      </span>
-                      {parsed.value.map((t, i) => (
-                        <span
-                          // parseTagTaxonomy does not dedupe (the save path relies on
-                          // that), so two tags can share a name — index-suffix the key.
-                          key={`${t.name}:${i}`}
-                          style={{
-                            background: color.surfaceMuted,
-                            borderRadius: radius.sm,
-                            padding: '1px 6px',
-                            fontSize: fontSize.xs,
-                          }}
-                        >
-                          {t.name}
-                        </span>
-                      ))}
-                    </div>
-                  )
-                })()}
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
-                    Leaving this blank uses the generic tag list shown above. Personalizing it keeps tags meaningful to your {orgNoun}'s own priorities and issue areas.
+                    Leaving this blank uses the generic tag list. Personalizing it keeps tags
+                    meaningful to your {orgNoun}'s own priorities and issue areas.
                   </div>
                 )}
               </div>

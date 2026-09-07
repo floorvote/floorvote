@@ -521,3 +521,30 @@ body.nav-pending * { cursor: wait !important; }
     border-bottom: 1px solid #f5f8fc !important;
   }
 }
+
+/* Tag taxonomy table (admin Config page): below the narrow breakpoint each
+   row stacks (name above description) and the drag grip is dropped — not
+   reordering itself. The grip is a tidiness affordance that costs horizontal
+   room a phone doesn't have; Alt+Arrow (see onFieldKeyDown in
+   TagTaxonomyTable.tsx) is the accessible route to the same reorder and
+   needs no room, so it deliberately keeps working at every width. This page
+   does not establish its own containment context (unlike the bill list
+   above), so a @container query here would silently never match — @media is
+   required. */
+@media (max-width: 620px) {
+  .tag-table > div { grid-template-columns: minmax(0, 1fr) 34px !important; }
+  /* The Tag column (2nd child in the header row and every body/trailing
+     row) spans the full stacked width. It carries no border, so nothing to
+     null here. */
+  .tag-table > div > :nth-child(2) { grid-column: 1 / -1; }
+  /* The Description column (3rd child) is the one with an inline
+     border-left; once it drops to its own line at the row's left edge, that
+     border would render as a stray vertical line if left in place. */
+  .tag-table > div > :nth-child(3) { border-left: none !important; }
+  /* Hides the drag grip (real rows), and the header's and the trailing
+     blank row's matching leading placeholder — all three carry this class
+     so display:none removes each from grid placement identically; without
+     it on the header/trailing placeholders they'd keep claiming column 1 of
+     row 1 and break the two-row stack into three. */
+  .tag-table-reorder { display: none !important; }
+}
