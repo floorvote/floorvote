@@ -202,7 +202,7 @@ npx tsx scripts/seed-legiscan.ts \
   --remote
 ```
 
-This loads the bills into central only. Linking them to a team and running AI summaries happens when you [add the tenant](/self-hosting/tenants#step-8-seed-the-active-session-s).
+This loads the bills into central only. Linking them to a team and running AI summaries happens when you [add the tenant](/self-hosting/tenants#step-12-seed-the-active-session-s).
 
 > [!CAUTION]
 > **Speed:** about 1,000 bills per minute against the remote database, so a typical state session (500–3,000 bills) takes 1–5 minutes. There's a `--from-api` option that downloads the dataset for you, but it can run out of memory on very large states (16,000+ bills) — use the manual download with `--from-dir` for those.
