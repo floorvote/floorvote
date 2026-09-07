@@ -7,7 +7,15 @@ export type ParseResult =
   | { ok: true; value: TaxonomyEntry[] }
   | { ok: false; error: string }
 
-/** Parse the newline-delimited "Name" / "Name: description" taxonomy editor text. */
+/**
+ * Parse newline-delimited "Name" / "Name: description" taxonomy text — the
+ * format serializeTaxonomy renders stored taxonomy into. Its single
+ * production caller is resolveAiFields below, which parses that serialized
+ * string back apart to compare the taxonomy actually sent to the model.
+ * Nothing hand-writes or pastes taxonomy text through this function: the
+ * table editor's paste path goes through parsePastedRows in taxonomyRows.ts
+ * instead, and rows never round-trip through a string on their way in.
+ */
 export function parseTagTaxonomy(text: string): ParseResult {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   const value: TaxonomyEntry[] = []
@@ -33,11 +41,12 @@ export type AiInstructionFields = {
  * the given association name.
  *
  * The tag-taxonomy side compares the PARSED taxonomy (what is actually stored
- * and sent to the model), not the editor string — reformatting an existing tag
- * list (different line spacing, reordered whitespace) can change the editor
- * text without changing the array it parses to, and that must not read as a
- * change. A malformed taxonomy (parseTagTaxonomy returns ok: false) falls back
- * to comparing the raw trimmed text, which is conservative but never throws.
+ * and sent to the model), not the serialized string it arrives as —
+ * reformatting a tag list (different line spacing, stray whitespace) changes
+ * the string without changing the array it parses to, and that must not read
+ * as a change. A malformed taxonomy (parseTagTaxonomy returns ok: false) falls
+ * back to comparing the raw trimmed text, which is conservative but never
+ * throws.
  */
 function resolveAiFields(f: AiInstructionFields, associationName: string) {
   const taxonomyText = f.tagTaxonomy.trim() || serializeTaxonomy(DEFAULT_TAXONOMY)
@@ -45,8 +54,37 @@ function resolveAiFields(f: AiInstructionFields, associationName: string) {
   return {
     aiContext: f.aiContext.trim() || buildDefaultAiContext(associationName),
     relevanceQuestion: f.relevanceQuestion.trim() || buildDefaultRelevanceQuestion(associationName),
-    tagTaxonomy: parsed.ok ? JSON.stringify(parsed.value) : taxonomyText,
+    tagTaxonomy: parsed.ok ? taxonomyKey(parsed.value) : taxonomyText,
   }
+}
+
+/**
+ * Comparison key for a parsed taxonomy: entries sorted by lowercased name
+ * (then by description as a tiebreaker), so two lists holding the same tags
+ * compare equal regardless of row order.
+ *
+ * Order is deliberately excluded. The taxonomy reaches the model as the `enum`
+ * of the `tags` property under constrained decoding (buildAnalysisSchema), so
+ * list position does not steer which tag it picks — reordering rows in the
+ * editor is a tidiness affordance. Comparing order-sensitively here would make
+ * a drag of the reorder grip offer to reprocess every bill in the tenant.
+ *
+ * The description takes part in the sort key because duplicate tag names are
+ * permitted by design (the editor warns but does not block save), so the key
+ * has to distinguish two entries that share a name — sorting on name alone
+ * would let a stable sort preserve their original relative order, making a
+ * mere swap of two same-named rows register as a change.
+ *
+ * Storage keeps editor order; only this comparison ignores it.
+ */
+function taxonomyKey(entries: TaxonomyEntry[]): string {
+  return JSON.stringify(
+    [...entries].sort((a, b) => {
+      const byName = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+      if (byName !== 0) return byName
+      return (a.description ?? '').localeCompare(b.description ?? '')
+    }),
+  )
 }
 
 /**

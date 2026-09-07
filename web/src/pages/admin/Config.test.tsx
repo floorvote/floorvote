@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, act, within, fireEvent, cleanup } from '@testing-library/react'
 import React from 'react'
+import userEvent from '@testing-library/user-event'
 
 // Mock heavy dependencies before importing Config
 
@@ -46,8 +47,8 @@ vi.mock('../../components/BillBadge', () => ({
 vi.mock('../admin/aiConfig', async () => {
   const actual = await vi.importActual<typeof import('./aiConfig')>('../admin/aiConfig')
   return {
-    // Real parser: Config renders a live parsed-tag readout from this, so
-    // tests need actual parsing behavior rather than an always-empty stub.
+    // Real parser: still used off the paste path (parsePastedRows' sibling),
+    // so tests need actual parsing behavior rather than an always-empty stub.
     parseTagTaxonomy: actual.parseTagTaxonomy,
     // Real comparison: the seed control's whole contract is that seeding a
     // blank field does NOT read as a change. A stubbed constant would make
@@ -63,7 +64,7 @@ vi.mock('../../lib/exportData', () => ({
 
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
-import { parseTagTaxonomy, aiInstructionsChanged as actualAiInstructionsChanged } from './aiConfig'
+import { aiInstructionsChanged as actualAiInstructionsChanged } from './aiConfig'
 
 import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
@@ -97,6 +98,24 @@ beforeEach(() => {
     throw new Error('unexpected path: ' + path)
   })
 })
+
+/**
+ * Every row currently on screen in the tag table, including the trailing blank
+ * the table always keeps at the end.
+ */
+function readTagRows(): { name: string; description: string }[] {
+  const names = screen.getAllByLabelText(/^Tag name, row /) as HTMLInputElement[]
+  const descriptions = screen.getAllByLabelText(/^Description, row /) as HTMLTextAreaElement[]
+  return names.map((n, i) => ({ name: n.value, description: descriptions[i].value }))
+}
+
+/** The body of the last PUT to a path, parsed. */
+function lastPutBody(path: string) {
+  const call = [...mockFetch.mock.calls].reverse()
+    .find(([p, init]) => p === path && (init as RequestInit | undefined)?.method === 'PUT')
+  if (!call) throw new Error(`no PUT to ${path}`)
+  return JSON.parse((call[1] as RequestInit).body as string)
+}
 
 // Override just the fields a test cares about on top of BASE_CONFIG.
 function mockConfig(overrides: Partial<typeof BASE_CONFIG>) {
@@ -543,7 +562,10 @@ describe('Config — unsaved-changes guard', () => {
 })
 
 describe('Config — tag taxonomy formatting', () => {
-  it('renders saved tags separated by a blank line', async () => {
+  // Same behaviour as the old blank-line-separated textarea assertion: a
+  // stored tag reaches the editor with its description attached to it, and a
+  // tag without one reaches it with an empty description.
+  it('renders each saved tag, with its description, in its own row', async () => {
     mockConfig({
       tag_taxonomy: [
         { name: 'Elections', description: 'voting and registration' },
@@ -551,8 +573,10 @@ describe('Config — tag taxonomy formatting', () => {
       ],
     })
     renderInRegistry(<Config />)
-    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
-    expect(box.value).toBe('Elections: voting and registration\n\nGovernment Records')
+    expect(await screen.findByLabelText('Tag name, row 1')).toHaveValue('Elections')
+    expect(screen.getByLabelText('Description, row 1')).toHaveValue('voting and registration')
+    expect(screen.getByLabelText('Tag name, row 2')).toHaveValue('Government Records')
+    expect(screen.getByLabelText('Description, row 2')).toHaveValue('')
   })
 
   it('does not read as an unsaved change immediately after load', async () => {
@@ -563,11 +587,13 @@ describe('Config — tag taxonomy formatting', () => {
       ],
     })
     const reg = renderInRegistry(<Config />)
-    await screen.findByLabelText('Tags')
+    await screen.findByLabelText('Tag name, row 1')
     await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
   })
 
-  it('shows how many tags the editor text parses into', async () => {
+  // Same behaviour as the deleted chip row: how many tags there are, and which
+  // ones — the names now live in input values rather than in chip text.
+  it('shows how many tags the editor holds, and which', async () => {
     mockConfig({
       tag_taxonomy: [
         { name: 'Elections', description: 'voting and registration' },
@@ -575,31 +601,43 @@ describe('Config — tag taxonomy formatting', () => {
       ],
     })
     renderInRegistry(<Config />)
-    expect(await screen.findByText('2 tags')).toBeTruthy()
-    expect(screen.getByText('Elections')).toBeTruthy()
-    expect(screen.getByText('Government Records')).toBeTruthy()
+    expect(await screen.findByTestId('tag-count')).toHaveTextContent('2')
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Elections')
+    expect(screen.getByLabelText('Tag name, row 2')).toHaveValue('Government Records')
   })
 
-  it('counts a single tag in the singular', async () => {
+  it('counts a single tag as one', async () => {
     mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
     renderInRegistry(<Config />)
-    expect(await screen.findByText('1 tag')).toBeTruthy()
+    expect(await screen.findByTestId('tag-count')).toHaveTextContent('1')
+  })
+
+  // Untrimmed stored data (reachable via a direct API write, a restored
+  // export, or hand-set config — never through this UI) must not make the
+  // snapshot disagree with the derived projection it is compared against.
+  it('does not read as an unsaved change immediately after load, given untrimmed stored data', async () => {
+    mockConfig({
+      tag_taxonomy: [{ name: 'Elections ' }, { name: 'X', description: '   ' }],
+    })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
   })
 })
 
 describe('Config — AI textarea typography', () => {
-  it('gives the three AI instruction editors one typographic treatment', async () => {
+  it('gives the two AI instruction editors one typographic treatment', async () => {
     mockConfig({})
     renderInRegistry(<Config />)
+    // Tags is a table now, not a textarea, so it is no longer part of this set;
+    // the two remaining prose editors must still match each other.
     const boxes = [
       await screen.findByLabelText('Bill summary'),
       await screen.findByLabelText('Relevance score'),
-      await screen.findByLabelText('Tags'),
     ] as HTMLTextAreaElement[]
     for (const box of boxes) {
       expect(box.style.fontSize).toBe('12px')
       expect(box.style.lineHeight).toBe('1.5')
-      // The Tags box used to be monospace; all three now share the page face.
       expect(box.style.fontFamily).toBe('')
     }
   })
@@ -675,15 +713,21 @@ describe('Config — start from default', () => {
     expect(screen.getAllByRole('button', { name: 'Reset to default' }).length).toBe(1)
   })
 
-  it('seeds the taxonomy in the editor’s own serialization', async () => {
+  // Same behaviour as the old "seeds in the editor's own serialization": the
+  // seed puts the canonical default list into the editor, entry for entry.
+  it('seeds the taxonomy one row per default tag', async () => {
     mockConfig({})
     renderInRegistry(<Config />)
-    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+    await screen.findByLabelText('Tag name, row 1')
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
 
-    expect(box.value).toBe(serializeTaxonomy(DEFAULT_TAXONOMY))
-    expect(box.value).toContain('\n\n')
+    expect(screen.getByTestId('tag-count')).toHaveTextContent(String(DEFAULT_TAXONOMY.length))
+    // Plus the trailing blank the table always keeps at the end to type into.
+    expect(readTagRows()).toEqual([
+      ...DEFAULT_TAXONOMY.map(t => ({ name: t.name, description: t.description ?? '' })),
+      { name: '', description: '' },
+    ])
   })
 
   it('falls back to the placeholder name when none is configured', async () => {
@@ -722,25 +766,29 @@ describe('Config — start from default', () => {
 })
 
 describe('Config — seeded defaults round-trip', () => {
-  it('reloads seeded tags byte-identically and reports no change', async () => {
+  it('reloads seeded tags identically and reports no change', async () => {
+    const user = userEvent.setup()
     mockConfig({})
     renderInRegistry(<Config />)
-    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+    await screen.findByLabelText('Tag name, row 1')
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
-    const seeded = box.value
+    const seeded = readTagRows()
 
-    // What the save sends, and what the API would hand back on the next load.
-    const parsed = parseTagTaxonomy(seeded)
-    expect(parsed.ok).toBe(true)
-    if (!parsed.ok) throw new Error('unreachable')
+    // What the save actually sends — read from the real PUT body, not a
+    // reimplementation of rowsToTaxonomy's filter/trim/map — and what the API
+    // would hand back on the next load.
+    await user.click(screen.getByRole('button', { name: 'Save AI instructions' }))
+    const sent = lastPutBody('/admin/config').tag_taxonomy
+    expect(sent).toEqual(DEFAULT_TAXONOMY)
 
     cleanup()
-    mockConfig({ tag_taxonomy: parsed.value })
-    renderInRegistry(<Config />)
-    const reloaded = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+    mockConfig({ tag_taxonomy: sent })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
 
-    expect(reloaded.value).toBe(seeded)
+    expect(readTagRows()).toEqual(seeded)
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
   })
 
   it('does not treat a seeded-but-unedited field as a change', () => {
@@ -765,5 +813,220 @@ describe('Config — seeded defaults round-trip', () => {
     }
     const edited = { ...seeded, aiContext: seeded.aiContext + '\n\nAlways mention rural impact.' }
     expect(actualAiInstructionsChanged(seeded, edited, 'Test Org')).toBe(true)
+  })
+})
+
+describe('Config — tag taxonomy table', () => {
+  async function saveAi(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Save AI instructions' }))
+  }
+
+  it('renders stored tags as table rows, not a textarea', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections', description: 'voting' }] })
+    renderInRegistry(<Config />)
+    expect(await screen.findByLabelText('Tag name, row 1')).toHaveValue('Elections')
+    expect(screen.getByLabelText('Description, row 1')).toHaveValue('voting')
+  })
+
+  it('shows the tag count in a pill beside the label', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }, { name: 'Housing' }] })
+    renderInRegistry(<Config />)
+    expect(await screen.findByTestId('tag-count')).toHaveTextContent('2')
+  })
+
+  it('does not count the trailing blank row', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    expect(await screen.findByTestId('tag-count')).toHaveTextContent('1')
+  })
+
+  it('saves a taxonomy with the nameless rows dropped', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    await user.type(await screen.findByLabelText('Description, row 2'), 'orphaned')
+    await saveAi(user)
+    expect(lastPutBody('/admin/config').tag_taxonomy).toEqual([{ name: 'Elections' }])
+  })
+
+  it('saves null when every row is blank', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    await user.clear(await screen.findByLabelText('Tag name, row 1'))
+    await saveAi(user)
+    expect(lastPutBody('/admin/config').tag_taxonomy).toBeNull()
+  })
+
+  it('does not offer a reprocess after a pure reorder', async () => {
+    const user = userEvent.setup()
+    mockConfig({
+      tag_taxonomy: [{ name: 'Elections' }, { name: 'Housing' }],
+      matched_bills_count: 12,
+    })
+    renderInRegistry(<Config />)
+    await user.click(await screen.findByLabelText('Tag name, row 1'))
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await saveAi(user)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // Warn, don't block: the spec's central decision about tag problems. A
+  // duplicate cannot corrupt the prompt (the taxonomy reaches the model as an
+  // enum), so a warning must never stand between an admin and their save.
+  it('leaves Save enabled while a duplicate-tag warning is showing', async () => {
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }, { name: 'elections' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    expect(screen.getAllByText('Duplicate')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Save AI instructions' })).not.toBeDisabled()
+  })
+
+  // The mirror image of "a pure reorder offers no reprocess": storage keeps
+  // editor order, so a reorder IS an unsaved change and must not be silently
+  // discarded by a navigation away. Only aiInstructionsChanged ignores order.
+  it('marks the page dirty after a pure reorder', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }, { name: 'Housing' }] })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+
+    await user.click(screen.getByLabelText('Tag name, row 1'))
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Housing')
+    expect(reg.hasUnsaved()).toBe(true)
+  })
+
+  // The seed control shows whenever no row has a name — including when a row
+  // holds a typed description the table is flagging "Needs a name". Seeding
+  // overwrites every row, so it has to be undoable.
+  it('Undo restores a typed orphan description destroyed by the seed', async () => {
+    const user = userEvent.setup()
+    mockConfig({})
+    renderInRegistry(<Config />)
+    await user.type(await screen.findByLabelText('Description, row 1'), 'municipal broadband')
+    expect(screen.getByText('Needs a name')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+    expect(screen.getByTestId('tag-count')).toHaveTextContent(String(DEFAULT_TAXONOMY.length))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByLabelText('Description, row 1')).toHaveValue('municipal broadband')
+  })
+
+  it('still offers a reprocess when a description actually changes', async () => {
+    const user = userEvent.setup()
+    mockConfig({
+      tag_taxonomy: [{ name: 'Elections', description: 'voting' }],
+      matched_bills_count: 12,
+    })
+    renderInRegistry(<Config />)
+    await user.type(await screen.findByLabelText('Description, row 1'), ' and canvassing')
+    await saveAi(user)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+})
+
+describe('Config — tag taxonomy header sort', () => {
+  function sortButton() {
+    // Accessible name now leads with the visible "Tag" text — see
+    // TagTaxonomyTable's Label-in-Name fix.
+    return screen.getByRole('button', { name: /^Tag,/i })
+  }
+
+  async function saveAi(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Save AI instructions' }))
+  }
+
+  // This proves the wiring — that a sort reaches configChanged's dirty
+  // check at all — not the comparator's order-sensitivity itself. That's
+  // pinned separately, and more directly, by the "configChanged — taxonomy
+  // order" block in aiConfig.test.ts; do not mistake this test for proof of
+  // the comparator.
+  it('marks the page dirty', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }] })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+
+    await user.click(sortButton())
+
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Elections')
+    expect(reg.hasUnsaved()).toBe(true)
+  })
+
+  it('does not open the reprocess dialog on save — the payoff of the order-insensitive comparison', async () => {
+    const user = userEvent.setup()
+    mockConfig({
+      tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }],
+      matched_bills_count: 12,
+    })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton())
+    await saveAi(user)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers Undo after sorting, and clicking it restores the pre-sort order', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton())
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Elections')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Zoning')
+  })
+
+  // A second header click has no gate on it the way "Start from default" and
+  // "Reset to default" do (renderResetControl swaps them for Undo once a
+  // value is captured, so those two can never fire twice in a row) — the
+  // sort button stays on screen and clickable after it fires. Capturing the
+  // undo value unconditionally on every sort would let a second click
+  // overwrite the hand-curated original order with the already-sorted one.
+  it('two consecutive header clicks then Undo restores the ORIGINAL order, not the first sort', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Mango' }, { name: 'Apple' }, { name: 'Zebra' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton()) // -> Apple, Mango, Zebra (ascending)
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Apple')
+    await user.click(sortButton()) // -> Zebra, Mango, Apple (descending)
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Zebra')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    // Must be the hand-curated original, not the first (ascending) sort.
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Mango')
+    expect(screen.getByLabelText('Tag name, row 2')).toHaveValue('Apple')
+    expect(screen.getByLabelText('Tag name, row 3')).toHaveValue('Zebra')
+  })
+
+  // The same unconditional-capture bug also destroys a "Start from default"
+  // undo value — including a half-typed orphan description — the moment a
+  // sort runs afterward, since both write into the same undoValues.tagTaxonomy
+  // slot.
+  it('"Start from default" then a header click then Undo restores what the seed replaced', async () => {
+    const user = userEvent.setup()
+    mockConfig({})
+    renderInRegistry(<Config />)
+    await user.type(await screen.findByLabelText('Description, row 1'), 'municipal broadband')
+    expect(screen.getByText('Needs a name')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+    expect(screen.getByTestId('tag-count')).toHaveTextContent(String(DEFAULT_TAXONOMY.length))
+
+    await user.click(sortButton())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByLabelText('Description, row 1')).toHaveValue('municipal broadband')
   })
 })

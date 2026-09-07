@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseTagTaxonomy, aiInstructionsChanged, centralSyncWarning } from './aiConfig'
+import { parseTagTaxonomy, aiInstructionsChanged, configChanged, centralSyncWarning } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
 
@@ -132,5 +132,67 @@ describe('centralSyncWarning', () => {
 
   it('stays silent when the API omits centralStatus (older backend)', () => {
     expect(centralSyncWarning(base)).toBeNull()
+  })
+})
+
+describe('aiInstructionsChanged — taxonomy order', () => {
+  const base = { aiContext: 'ctx', relevanceQuestion: 'q' }
+
+  it('does not report a change when only the tag order differs', () => {
+    const a = { ...base, tagTaxonomy: 'Elections: voting\n\nHousing\n\nCourts' }
+    const b = { ...base, tagTaxonomy: 'Courts\n\nElections: voting\n\nHousing' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(false)
+  })
+
+  it('still reports a change when a description differs at the same position', () => {
+    const a = { ...base, tagTaxonomy: 'Elections: voting' }
+    const b = { ...base, tagTaxonomy: 'Elections: local admin' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(true)
+  })
+
+  it('still reports a change when a tag is added', () => {
+    const a = { ...base, tagTaxonomy: 'Elections\n\nHousing' }
+    const b = { ...base, tagTaxonomy: 'Elections\n\nHousing\n\nCourts' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(true)
+  })
+
+  it('still reports a change when a tag is removed', () => {
+    const a = { ...base, tagTaxonomy: 'Elections\n\nHousing' }
+    const b = { ...base, tagTaxonomy: 'Elections' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(true)
+  })
+
+  it('ignores order even when two entries share a name', () => {
+    // Duplicate names are permitted by design (the editor warns but does not
+    // block), so the comparison key must distinguish them by description
+    // rather than relying on a stable sort to hold their relative order.
+    const a = { ...base, tagTaxonomy: 'Elections: voting\n\nElections: local admin' }
+    const b = { ...base, tagTaxonomy: 'Elections: local admin\n\nElections: voting' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(false)
+  })
+
+  it('still reports a change when one of two same-named descriptions changes', () => {
+    const a = { ...base, tagTaxonomy: 'Elections: voting\n\nElections: local admin' }
+    const b = { ...base, tagTaxonomy: 'Elections: voting\n\nElections: county admin' }
+    expect(aiInstructionsChanged(a, b, 'Acme')).toBe(true)
+  })
+})
+
+describe('configChanged — taxonomy order', () => {
+  // The two comparisons deliberately diverge, and this pins it. configChanged
+  // guards navigating away from unsaved work, so a reorder IS a change; only
+  // aiInstructionsChanged, which gates the reprocess-everything offer, ignores
+  // order. Collapsing them would either lose a reorder on navigate-away or
+  // reprocess a whole corpus over a drag.
+  const snap = {
+    keywords: '', aiContext: '', relevanceQuestion: '',
+    associationName: 'Acme', orgNoun: 'team', newMatchMinRelevance: 0,
+  }
+
+  it('reports a change when only the tag order differs', () => {
+    expect(configChanged(
+      { ...snap, tagTaxonomy: 'Elections\n\nHousing' },
+      { ...snap, tagTaxonomy: 'Housing\n\nElections' },
+    )).toBe(true)
   })
 })
