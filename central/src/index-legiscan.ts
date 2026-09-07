@@ -5,6 +5,7 @@ import * as schema from './db/schema-legiscan'
 import { runLsSync } from './cron/sync-legiscan'
 import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
 import { processLsIngestorQueue } from './queue/processor-legiscan'
+import { processDeadLetterQueue } from './queue/deadLetters'
 import { billsLsRoutes } from './routes/bills-legiscan'
 import { tenantsLsRoutes } from './routes/tenants-legiscan'
 import { adminLsRoutes } from './routes/admin-legiscan'
@@ -63,6 +64,14 @@ export default {
   fetch: app.fetch,
 
   async queue(batch: MessageBatch, env: LsEnv): Promise<void> {
+    // Central consumes two queues: its own ingestor, and the tenants' shared
+    // dead-letter queue. Dispatch on the queue name rather than assuming, so a
+    // dead letter is never handed to the ingestor as if it were a bill to fetch.
+    if (env.DEAD_LETTER_QUEUE && batch.queue === env.DEAD_LETTER_QUEUE) {
+      processDeadLetterQueue(batch)
+      return
+    }
+
     const db = drizzle(env.DB, { schema })
     await processLsIngestorQueue(
       batch as MessageBatch<LsIngestorMessage>,

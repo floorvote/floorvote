@@ -6,6 +6,12 @@ export type LsEnv = {
   DB: D1Database
   BILLS_BUCKET: R2Bucket
   INGESTOR_QUEUE: Queue
+  /**
+   * Name of the tenants' shared dead-letter queue, when central is configured to
+   * drain it. Unset means no dead-letter consumer is attached, and the queue
+   * handler treats every batch as ingestor work.
+   */
+  DEAD_LETTER_QUEUE?: string
   LEGISCAN_API_KEY: string
   ADMIN_SECRET: string
   OPERATOR_NAME: string

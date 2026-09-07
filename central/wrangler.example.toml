@@ -37,10 +37,29 @@ queue = "central-ingestor"
 max_batch_size = 5
 max_batch_timeout = 30
 
+# Optional: drain the tenants' shared dead-letter queue.
+#
+# Tenant consumers name a dead_letter_queue so a message that exhausts its retry
+# budget lands somewhere instead of vanishing. That only helps if something reads
+# it — an unread dead-letter queue grows without bound and its depth stops being
+# a usable signal. Point this at whatever queue your tenants dead-letter into and
+# set DEAD_LETTER_QUEUE below to the same name; central will log each message and
+# acknowledge it. Leave both unset and central ignores the queue entirely.
+#
+# The consumer only logs: the queue is shared across tenants while a worker binds
+# one database, so it cannot mark the right bill. Tenants already record the
+# failure on the bill before the message dead-letters.
+#
+# [[queues.consumers]]
+# queue = "your-tenant-dlq"
+# max_batch_size = 10
+# max_batch_timeout = 30
+
 [triggers]
 crons = ["0 * * * *"]
 
 [vars]
+# DEAD_LETTER_QUEUE = "your-tenant-dlq"   # must match the consumer above
 OPERATOR_NAME = "Your Org"
 BILL_PROVIDER = "openstates"
 EMAIL_PROVIDER = "cloudflare"
