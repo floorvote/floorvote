@@ -51,6 +51,51 @@ function shedDetail(err: unknown): { status?: number; detail?: string } {
   return { status: e?.status, detail: raw.slice(0, 200) }
 }
 
+/**
+ * Record a shed on the bill itself, so exhausting the retry budget is visible.
+ *
+ * A shed throws before the upsert, so it writes no bill row at all. That makes a
+ * dead-lettered bill indistinguishable from one that was never queued: the table
+ * looks untouched, no bill records a reason, and the only trace is a log line on
+ * a queue-consumer invocation, which `wrangler tail` does not surface. A 116-bill
+ * reprocess lost 56 bills that way without anything in the database changing.
+ *
+ * Writing on EVERY shed rather than only the last one is deliberate. A consumer
+ * cannot see its own `max_retries` — it is wrangler config, and it varies per
+ * tenant — so there is no reliable way to know which attempt is the final one.
+ * Recording each attempt means the last one to run is the one that survives if
+ * the message never comes back, which is the diagnostic we actually want.
+ *
+ * This is bookkeeping, not control flow: a failure here must never interfere with
+ * the retry it is describing.
+ *
+ * LIMITATION: a shed throws before the upsert, so a bill with no row yet — a
+ * first-time match that sheds on its very first analysis — has nothing to write
+ * to, and the update matches zero rows. Those are still only visible in the logs.
+ * The case this covers is the reprocess of bills that already exist, which is
+ * where bills were actually being lost.
+ */
+async function recordShedAttempt(
+  db: AppDb,
+  billId: string,
+  attempts: number,
+  err: AiShedError,
+): Promise<void> {
+  const detail = err.detail ? ` — ${err.detail}` : ''
+  const note = `AI provider shed (attempt ${attempts}, status ${err.status ?? 'unknown'}); will retry${detail}`
+  try {
+    // Deliberately does NOT touch lastAiTextHash, matching the transient-failure
+    // branch of the upsert: the next pass must retry rather than dedup itself
+    // into permanent silence. A later success clears aiError.
+    await db.update(bills)
+      .set({ aiAttemptedAt: nowDb(), aiError: note.slice(0, 300) })
+      .where(eq(bills.externalId, billId))
+      .run()
+  } catch (recordErr) {
+    console.error(`[processor] could not record shed for ${billId}:`, recordErr)
+  }
+}
+
 // AiSkipReason values mirror the column in api/migrations/0039_ai_skip_reason.sql.
 // Add new reasons here and document them in the migration when new permanent-failure
 // modes are discovered.
@@ -118,6 +163,7 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
+        await recordShedAttempt(db, message.body.billId, message.attempts, err)
         console.warn(
           `[processor] AI gateway shed for ${message.body.billId}`
           + ` (status ${err.status ?? 'unknown'})`
