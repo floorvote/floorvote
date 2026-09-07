@@ -139,7 +139,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -177,7 +177,7 @@ export function BillList() {
   // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin }
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -650,6 +650,34 @@ export function BillList() {
               throw new Error('Failed to delete view.')
             }
           }}
+          onOverwrite={async (id) => {
+            try {
+              // Same current-filter string SaveViewButton's onSave captures below
+              // — except location.search collapses to the bare `?view=<slug>`
+              // form for as long as the on-screen filters keep matching the
+              // applied view (see useBillFilters' sync effect), and in that
+              // form normalizeViewQuery(location.search) is '' rather than the
+              // filters actually being shown. Resolve the collapsed form back
+              // to the applied view's own stored query — unambiguous, because
+              // the sync effect only collapses the URL while the two are known
+              // to match — rather than sending '' and 400ing on the server.
+              const normalized = normalizeViewQuery(location.search)
+              const query = normalized !== ''
+                ? normalized
+                : normalizeViewQuery(findActiveView(location.search, savedViews)?.query ?? '')
+              await apiFetch(`/admin/views/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ query }),
+              })
+              await reloadViews()
+            } catch {
+              // Re-throw so ViewSwitcher's commitOverwrite sees the rejection
+              // and leaves the confirm row open instead of closing as though
+              // the overwrite had taken.
+              setError('Failed to update view.')
+              throw new Error('Failed to update view.')
+            }
+          }}
           onReorder={async (order) => {
             try {
               await apiFetch('/admin/views/reorder', {
@@ -693,7 +721,7 @@ export function BillList() {
           placement="right"
           text={
             <>
-              Searches bill number, title, and summary.
+              Show only bills matching your search terms. Searches bill number, title, and summary.
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 <li>Quotes match an exact phrase (e.g., <i>"voting rights act"</i>).</li>
                 <li>Spaces act as ANDs — every word must match (e.g., <i>ballot military overseas</i> finds bills mentioning all three).</li>
@@ -755,7 +783,7 @@ export function BillList() {
             />
           </HoverTooltip>
           {isFilterDimensionVisible('newMatches', filterDimensionCtx) && (
-            <HoverTooltip text="Newly keyword-matched bills awaiting a priority decision">
+            <HoverTooltip text="Show only newly keyword-matched bills awaiting a priority decision">
               <FilterToggle
                 label={filterDimensionLabel('newMatches')}
                 active={f.newMatches}
@@ -769,6 +797,7 @@ export function BillList() {
               label={filterDimensionLabel('unvoted')}
               active={f.unvotedOnly}
               onToggle={() => f.setUnvotedOnly(!f.unvotedOnly)}
+              count={filterCounts.unvotedCount}
             />
           </HoverTooltip>
           <div
@@ -1114,9 +1143,11 @@ export function BillList() {
         newMatches={f.newMatches}
         newMatchesCount={filterCounts.newMatchesCount}
         unvotedOnly={f.unvotedOnly}
+        unvotedCount={filterCounts.unvotedCount}
         matchAny={f.matchAny}
         onMatchAnyChange={f.setMatchAny}
         uniqueStates={f.uniqueStates}
+        isMultiState={f.isMultiState}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
         priorityOptions={[
           { value: 'high', label: 'High' },
@@ -1144,18 +1175,11 @@ export function BillList() {
         onNewMatchesChange={f.setNewMatches}
         onUnvotedOnlyChange={f.setUnvotedOnly}
         counts={{ ...filterCounts, session: filterCounts.year }}
-        onClearAll={() => {
-          f.setFilterStatuses([])
-          f.setFilterPriorities([])
-          f.setFilterPositions([])
-          f.setFilterYears([])
-          f.setFilterStates([])
-          f.setFilterMinRelevance(0)
-          f.setMyBills(false)
-          f.setNewMatches(false)
-          f.handleSubjectsChange([])
-          setSearchParams({})
-        }}
+        // Mobile's reset is the SAME operation as desktop's — calling the shared
+        // handler rather than re-listing setters. The previous inline copy had
+        // drifted (it missed search, unvoted, tags, matchAny, and custom fields)
+        // and its trailing setSearchParams({}) raced the setters it did call.
+        onClearAll={f.handleResetFilters}
       />
       {isAdmin && (
         <BulkActionBar

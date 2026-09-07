@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 
-const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 }
+const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 }
 
 function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills']}>{children}</MemoryRouter>

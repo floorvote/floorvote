@@ -19,6 +19,15 @@ function validateViewName(input: unknown): { value: string } | { error: string }
   return { value: name }
 }
 
+// Shared by POST / (create) and PUT /:id (overwrite) so the two paths can't
+// drift on what counts as a valid query.
+function validateViewQuery(input: unknown): { value: string } | { error: string } {
+  const query = typeof input === 'string' ? input.trim() : ''
+  // A view with no filters would be indistinguishable from "All bills".
+  if (!query) return { error: 'query is required' }
+  return { value: query }
+}
+
 export type SavedViewDto = { id: string; name: string; query: string; slug: string; previousSlug: string | null }
 
 // Reads are member-accessible: every member can see and apply every view.
@@ -90,9 +99,9 @@ adminSavedViewsRouter.post('/', async (c) => {
   const nameValidation = validateViewName(body?.name)
   if ('error' in nameValidation) return c.json({ error: nameValidation.error }, 400)
   const name = nameValidation.value
-  const query = typeof body?.query === 'string' ? body.query.trim() : ''
-  // A view with no filters would be indistinguishable from "All bills".
-  if (!query) return c.json({ error: 'query is required' }, 400)
+  const queryValidation = validateViewQuery(body?.query)
+  if ('error' in queryValidation) return c.json({ error: queryValidation.error }, 400)
+  const query = queryValidation.value
 
   const db = getDb(c.env.DB)
   const [{ next }] = await db
@@ -130,14 +139,29 @@ adminSavedViewsRouter.put('/reorder', async (c) => {
   return c.json({ ok: true })
 })
 
-// PUT /admin/views/:id — rename only. A view's query is never edited in place:
-// re-saving from the list is the way to change what it matches, which keeps the
-// stored query traceable to filter state someone actually looked at.
+// PUT /admin/views/:id — rename, overwrite the query, or both. Name-only,
+// query-only, and both-at-once are all valid: `name` and `query` are each
+// applied only when present in the body.
 adminSavedViewsRouter.put('/:id', async (c) => {
-  const body = await c.req.json().catch(() => null) as { name?: unknown } | null
-  const nameValidation = validateViewName(body?.name)
-  if ('error' in nameValidation) return c.json({ error: nameValidation.error }, 400)
-  const name = nameValidation.value
+  const body = await c.req.json().catch(() => null) as { name?: unknown; query?: unknown } | null
+
+  const hasName = typeof body?.name !== 'undefined'
+  const hasQuery = typeof body?.query !== 'undefined'
+  if (!hasName && !hasQuery) return c.json({ error: 'name or query is required' }, 400)
+
+  let name: string | undefined
+  if (hasName) {
+    const nameValidation = validateViewName(body?.name)
+    if ('error' in nameValidation) return c.json({ error: nameValidation.error }, 400)
+    name = nameValidation.value
+  }
+
+  let query: string | undefined
+  if (hasQuery) {
+    const queryValidation = validateViewQuery(body?.query)
+    if ('error' in queryValidation) return c.json({ error: queryValidation.error }, 400)
+    query = queryValidation.value
+  }
 
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
@@ -148,28 +172,45 @@ adminSavedViewsRouter.put('/:id', async (c) => {
     .get()
   if (!existing) return c.json({ error: 'not found' }, 404)
 
-  // Renaming regenerates the slug (mirroring customFieldsApi's uniqueSlug-on-
-  // rename), so the bookmark URL matches what the view is now called. But a
-  // bookmark taken under the OLD name must not silently stop resolving — the
-  // just-superseded slug is carried into `previous_slug` and is still treated
-  // as resolvable by the /views consumers (see savedViews.ts on the frontend).
-  // This is one generation of back-compat, not a full rename history: a
-  // second rename shifts previous_slug again, and the slug from two renames
-  // ago stops resolving. That tradeoff is judged worth it here rather than
-  // building out slug-history storage for a feature this size. If the name
-  // is unchanged (or only differs in a way toSlug collapses away), the slug
-  // — computed excluding this row from the uniqueness check — comes back
-  // identical to the existing one, so previous_slug is left untouched rather
-  // than being churned on every no-op rename.
-  const newSlug = await uniqueSlug(db, name, id)
-  const updates: Partial<typeof savedViews.$inferInsert> = { name, updatedAt: nowDb() }
-  if (newSlug !== existing.slug) {
-    updates.previousSlug = existing.slug
-    updates.slug = newSlug
+  const updates: Partial<typeof savedViews.$inferInsert> = { updatedAt: nowDb() }
+
+  if (hasName && name !== undefined) {
+    // Renaming regenerates the slug (mirroring customFieldsApi's uniqueSlug-on-
+    // rename), so the bookmark URL matches what the view is now called. But a
+    // bookmark taken under the OLD name must not silently stop resolving — the
+    // just-superseded slug is carried into `previous_slug` and is still treated
+    // as resolvable by the /views consumers (see savedViews.ts on the frontend).
+    // This is one generation of back-compat, not a full rename history: a
+    // second rename shifts previous_slug again, and the slug from two renames
+    // ago stops resolving. That tradeoff is judged worth it here rather than
+    // building out slug-history storage for a feature this size. If the name
+    // is unchanged (or only differs in a way toSlug collapses away), the slug
+    // — computed excluding this row from the uniqueness check — comes back
+    // identical to the existing one, so previous_slug is left untouched rather
+    // than being churned on every no-op rename.
+    updates.name = name
+    const newSlug = await uniqueSlug(db, name, id)
+    if (newSlug !== existing.slug) {
+      updates.previousSlug = existing.slug
+      updates.slug = newSlug
+    }
+  }
+
+  if (hasQuery && query !== undefined) {
+    // Overwriting a view's filters is NOT a rename: the view's identity
+    // hasn't changed, only what it matches, so the slug (and previousSlug)
+    // are left completely alone here — churning them on a filter change
+    // would break every bookmark to this view for no reason.
+    updates.query = query
   }
 
   await db.update(savedViews).set(updates).where(eq(savedViews.id, id))
-  return c.json({ id, name, query: existing.query, slug: updates.slug ?? existing.slug })
+  return c.json({
+    id,
+    name: updates.name ?? existing.name,
+    query: updates.query ?? existing.query,
+    slug: updates.slug ?? existing.slug,
+  })
 })
 
 // DELETE /admin/views/:id — removes it for every member, which the UI confirms.

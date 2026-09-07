@@ -399,25 +399,34 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0 })
+      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 })
     }
 
+    // Shared by the `unvoted` scope filter above and unvotedCount below, so
+    // there's exactly one definition of "not yet voted" in this file.
+    const unvotedPredicate = sql`${bills.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${currentUser.id})`
+
     if (unvoted === '1') {
-      baseConditions.push(sql`${bills.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${currentUser.id})`)
+      baseConditions.push(unvotedPredicate)
     }
 
     // When the worklist filter is active, every dimensional facet respects it too
     // (mirrors how myBills/unvoted scope the facets above).
     if (newMatchesActive) baseConditions.push(newMatchWhere(newMatchMinRelevance))
 
-    // excludeCfFieldId omits that CF field's condition (for CF disjunctive counts)
+    // excludeCfFieldId omits that CF field's condition (for CF disjunctive counts).
+    // Accepts one id or several — the "other unfiltered fields" facet query needs
+    // to drop more than one at once (see the CF facet block below).
     // Bill-fact dimensions (dimFilters, cfParts, minRelevanceFilter) combine via the
     // group operator (OR under match=any, AND otherwise); baseConditions (search,
     // myBills, unvoted, newMatches — viewer scope) always AND on top, mirroring
     // buildBillsWhere in query.ts so facet counts never disagree with the list.
-    function buildWhere(excludeCfFieldId?: string, ...dimFilters: (SQL | undefined)[]): SQL | undefined {
+    function buildWhere(excludeCfFieldId?: string | string[], ...dimFilters: (SQL | undefined)[]): SQL | undefined {
+      const excludeSet = excludeCfFieldId === undefined
+        ? undefined
+        : new Set(Array.isArray(excludeCfFieldId) ? excludeCfFieldId : [excludeCfFieldId])
       const cfParts = Object.entries(cfSqlMap)
-        .filter(([id]) => id !== excludeCfFieldId)
+        .filter(([id]) => !excludeSet?.has(id))
         .map(([, s]) => s)
       const factParts = [...(dimFilters.filter(Boolean) as SQL[]), ...cfParts, ...(minRelevanceFilter ? [minRelevanceFilter] : [])]
       const factCond = factParts.length === 0
@@ -429,6 +438,16 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       return all.length > 0 ? and(...all) : undefined
     }
 
+    // Whether any bill-fact filter is actually set. The OR identity below only
+    // holds when there is an existing OR to add a value to: with nothing selected,
+    // picking a value NARROWS the list rather than widening it, so counts stay
+    // absolute (which is also exactly what AND mode does).
+    const factFiltersActive = [
+      statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter,
+      tagFilter, positionFilter, subjectFilter, minRelevanceFilter,
+      ...Object.values(cfSqlMap),
+    ].some(Boolean)
+
     // Per-dimension facet WHERE. Under AND, disjunctive faceting omits only the
     // dimension's own filter (dropping a term from an AND widens the set, which is
     // what we want for "how many would there be if I picked something else here").
@@ -439,7 +458,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // not be scoped down to subject-matching bills only). So under match=any every
     // dimensional facet query counts over baseConditions alone, with no bill-fact
     // filters at all — each dimension is evaluated independently of the others.
-    function buildFacetWhere(excludeCfFieldId?: string, ...dimFilters: (SQL | undefined)[]): SQL | undefined {
+    function buildFacetWhere(excludeCfFieldId?: string | string[], ...dimFilters: (SQL | undefined)[]): SQL | undefined {
       if (matchAny) return baseConditions.length > 0 ? and(...baseConditions) : undefined
       return buildWhere(excludeCfFieldId, ...dimFilters)
     }
@@ -456,30 +475,62 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // this one must reflect the actual list, not a per-dimension facet count.
     const finalWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
 
+    // Under match=any a facet count is the RESULTING TOTAL — what the list will
+    // show if you pick this value — which is what AND mode's disjunctive faceting
+    // has always meant. Counting the value's whole population instead made one
+    // label answer a different question in each mode, and the arithmetic visibly
+    // failed for operators (see the 2026-09-07 spec).
+    //
+    //   resultingTotal(v) = currentTotal + |{v} ∩ scope ∩ NOT currentResult|
+    //
+    // The delta is shared across dimensions: under OR, adding v yields
+    // currentResult ∪ {v} whichever dimension v came from, so there is no
+    // own-dimension term to exclude. It is a conditional aggregate rather than a
+    // WHERE term on purpose: filtering the rows by NOT (finalWhere) would drop a
+    // value whose bills are ALL already showing out of the GROUP BY entirely, so
+    // it would vanish from the dropdown instead of reading "picking this changes
+    // nothing". COALESCE guards the three-valued case — finalWhere is NULL, not
+    // false, for a row with a NULL column, and such a row is not in the list.
+    const shiftFacets = matchAny && factFiltersActive
+    // shiftFacets implies at least one bill-fact filter, hence a defined finalWhere;
+    // the guard is only so the unused expression is still constructible.
+    const notCurrent = finalWhere ? sql`COALESCE((${finalWhere}), 0) = 0` : sql`0`
+    const facetCountExpr = shiftFacets
+      ? sql<number>`COALESCE(SUM(CASE WHEN ${notCurrent} THEN 1 ELSE 0 END), 0)`
+      : sql<number>`COUNT(*)`
+    // Distinct-bill variant for the CF "Any" row, which counts bills, not rows.
+    const distinctBillCountExpr = shiftFacets
+      ? sql`COUNT(DISTINCT CASE WHEN ${notCurrent} THEN bcfv.bill_id END)`
+      : sql`COUNT(DISTINCT bcfv.bill_id)`
+
     const tagWhereClause = tagWhere ? sql`WHERE ${tagWhere}` : sql``
 
-    // Run all dimensional facet queries in parallel
-    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, subjectRows, myInteractionRows, noPositionCountRows, tagSet] = await Promise.all([
-      db.select({ value: bills.status, count: sql<number>`COUNT(*)` })
+    // Run all dimensional facet queries in parallel — currentTotal joins the
+    // same batch rather than being awaited serially ahead of it, and is only
+    // queried at all when shiftFacets is active: under AND mode (or with no
+    // bill-fact filter active) asResultingTotal is the identity and the value
+    // is thrown away, so there is nothing worth a query for.
+    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, subjectRows, myInteractionRows, noPositionCountRows, tagSet, currentTotalRows] = await Promise.all([
+      db.select({ value: bills.status, count: facetCountExpr })
         .from(bills).where(statusWhere).groupBy(bills.status).all(),
-      db.select({ value: bills.priority, count: sql<number>`COUNT(*)` })
+      db.select({ value: bills.priority, count: facetCountExpr })
         .from(bills).where(priorityWhere).groupBy(bills.priority).all(),
-      db.select({ value: bills.session, count: sql<number>`COUNT(*)` })
+      db.select({ value: bills.session, count: facetCountExpr })
         .from(bills).where(yearWhere).groupBy(bills.session).all(),
-      db.select({ value: bills.yearStart, count: sql<number>`COUNT(*)` })
+      db.select({ value: bills.yearStart, count: facetCountExpr })
         .from(bills).where(yearWhere).groupBy(bills.yearStart).all(),
-      db.select({ value: bills.state, count: sql<number>`COUNT(*)` })
+      db.select({ value: bills.state, count: facetCountExpr })
         .from(bills).where(stateWhere).groupBy(bills.state).all(),
-      db.select({ value: officialPositions.position, count: sql<number>`COUNT(*)` })
+      db.select({ value: officialPositions.position, count: facetCountExpr })
         .from(officialPositions)
         .innerJoin(bills, eq(officialPositions.billId, bills.id))
         .where(positionWhere)
         .groupBy(officialPositions.position).all(),
-      db.all(sql`SELECT jt.value as tag, COUNT(*) as cnt FROM bills, json_each(bills.tags) jt ${tagWhereClause} GROUP BY jt.value`) as Promise<{ tag: string; cnt: number }[]>,
+      db.all(sql`SELECT jt.value as tag, ${facetCountExpr} as cnt FROM bills, json_each(bills.tags) jt ${tagWhereClause} GROUP BY jt.value`) as Promise<{ tag: string; cnt: number }[]>,
       db.select({
         state: billSubjects.state,
         name: billSubjects.subjectName,
-        cnt: sql<number>`count(*)`,
+        cnt: facetCountExpr,
       })
         .from(billSubjects)
         .innerJoin(bills, eq(bills.id, billSubjects.billId))
@@ -491,14 +542,24 @@ export function registerListRoutes(router: Hono<AppEnv>) {
         db.select({ billId: notes.billId }).from(notes).where(and(eq(notes.userId, currentUser.id), ne(notes.content, ''))).all(),
         db.select({ billId: comments.billId }).from(comments).where(and(eq(comments.userId, currentUser.id), isNull(comments.deletedAt))).all(),
       ]),
-      db.select({ noPositionCount: sql<number>`COUNT(*)` })
+      db.select({ noPositionCount: facetCountExpr })
         .from(bills)
         .where(positionWhere
           ? and(positionWhere, sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
           : sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
         .all(),
       loadTaxonomyTagNameSet(db),
+      shiftFacets
+        ? db.select({ count: sql<number>`COUNT(*)` }).from(bills).where(finalWhere).all()
+        : Promise.resolve([{ count: 0 }]),
     ])
+    const currentTotal = Number(currentTotalRows[0].count)
+
+    // AND-mode counts are already absolute and pass through untouched.
+    const asResultingTotal = (counts: Record<string, number>): Record<string, number> =>
+      shiftFacets
+        ? Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v + currentTotal]))
+        : counts
 
     // CF facets — disjunctive: each field's counts exclude that field's own active filter.
     // Fields with no active filter are counted together under finalWhere; active-filter fields
@@ -512,6 +573,16 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // field ids in a subquery before json_each so it never sees a non-array scalar.
     const cfDefs = await db.select({ id: customFieldDefinitions.id, multiple: customFieldDefinitions.multiple }).from(customFieldDefinitions).all()
     const multiIds = new Set(cfDefs.filter(d => d.multiple).map(d => d.id))
+
+    // An active `cf_` param that resolves to no real field (deleted field, garbled
+    // key — see query.ts's `__unresolved_cf__` sentinel) still lands in cfSqlMap as
+    // a condition that matches zero bills. It is not a real facet dimension, so it
+    // must never be allowed to narrow (i.e. zero out) any OTHER field's facet WHERE
+    // — only its own now-defunct "facet" would ever legitimately exclude it, and
+    // nothing queries that. Excluding it explicitly, everywhere its exclusion
+    // matters, keeps a stale saved view from blanking every custom-field dropdown.
+    const validCfFieldIdSet = new Set(cfDefs.map(d => d.id))
+    const unresolvedCfFieldIds = Object.keys(cfSqlMap).filter(id => !validCfFieldIdSet.has(id))
     const idList = (ids: string[]) => sql.join(ids.map(id => sql`${id}`), sql`, `)
     const whereOf = (parts: (SQL | undefined)[]) => {
       const ps = parts.filter(Boolean) as SQL[]
@@ -527,51 +598,94 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     }
     // Count one slice: single fields group raw; multi fields json_each-expand. When
     // restrictFieldId is set (a field's own disjunctive query), only that field runs.
-    const cfCounts = async (where: SQL | undefined, restrictFieldId?: string): Promise<CfRow[]> => {
+    // When excludeFieldIds is set instead (the "everyone else" query), every field
+    // in that set is excluded from all three statements below — it must cover the
+    // single-value GROUP BY, the multi-select json_each expansion, AND the __any__
+    // distinct-bill count, or one of those three would leak the excluded fields'
+    // rows back in (with the wrong, own-filter-inclusive, WHERE).
+    const cfCounts = async (where: SQL | undefined, restrictFieldId?: string, excludeFieldIds?: string[]): Promise<CfRow[]> => {
       const out: CfRow[] = []
       const restrictIsMulti = restrictFieldId ? multiIds.has(restrictFieldId) : undefined
+      const excludeCond = excludeFieldIds?.length ? sql`bcfv.field_id NOT IN (${idList(excludeFieldIds)})` : undefined
       if (!restrictFieldId || restrictIsMulti === false) {
         const extra: (SQL | undefined)[] = [where]
         if (restrictFieldId) extra.push(sql`bcfv.field_id = ${restrictFieldId}`)
         else if (multiIds.size) extra.push(sql`bcfv.field_id NOT IN (${idList([...multiIds])})`)
-        out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, bcfv.value AS opt, COUNT(*) AS cnt FROM bill_custom_field_values bcfv INNER JOIN bills ON bills.id = bcfv.bill_id ${whereOf(extra)} GROUP BY bcfv.field_id, bcfv.value`) as CfRow[])
+        if (excludeCond) extra.push(excludeCond)
+        out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, bcfv.value AS opt, ${facetCountExpr} AS cnt FROM bill_custom_field_values bcfv INNER JOIN bills ON bills.id = bcfv.bill_id ${whereOf(extra)} GROUP BY bcfv.field_id, bcfv.value`) as CfRow[])
       }
       if ((!restrictFieldId && multiIds.size > 0) || restrictIsMulti === true) {
         const idCond = restrictFieldId ? sql`field_id = ${restrictFieldId}` : sql`field_id IN (${idList([...multiIds])})`
-        out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, je.value AS opt, COUNT(*) AS cnt FROM (SELECT bill_id, field_id, value FROM bill_custom_field_values WHERE ${idCond} AND json_valid(value) = 1) bcfv INNER JOIN bills ON bills.id = bcfv.bill_id INNER JOIN json_each(bcfv.value) je ${whereOf([where])} GROUP BY bcfv.field_id, je.value`) as CfRow[])
+        const multiExtra: (SQL | undefined)[] = [where]
+        if (excludeCond) multiExtra.push(excludeCond)
+        out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, je.value AS opt, ${facetCountExpr} AS cnt FROM (SELECT bill_id, field_id, value FROM bill_custom_field_values WHERE ${idCond} AND json_valid(value) = 1) bcfv INNER JOIN bills ON bills.id = bcfv.bill_id INNER JOIN json_each(bcfv.value) je ${whereOf(multiExtra)} GROUP BY bcfv.field_id, je.value`) as CfRow[])
       }
       // "Any" = distinct bills with any value for the field (honest count for the top row).
       const anyExtra: (SQL | undefined)[] = [where]
       if (restrictFieldId) anyExtra.push(sql`bcfv.field_id = ${restrictFieldId}`)
-      out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, ${FILTER_ANY} AS opt, COUNT(DISTINCT bcfv.bill_id) AS cnt FROM bill_custom_field_values bcfv INNER JOIN bills ON bills.id = bcfv.bill_id ${whereOf(anyExtra)} GROUP BY bcfv.field_id`) as CfRow[])
+      if (excludeCond) anyExtra.push(excludeCond)
+      out.push(...await db.all(sql`SELECT bcfv.field_id AS field_id, ${FILTER_ANY} AS opt, ${distinctBillCountExpr} AS cnt FROM bill_custom_field_values bcfv INNER JOIN bills ON bills.id = bcfv.bill_id ${whereOf(anyExtra)} GROUP BY bcfv.field_id`) as CfRow[])
       return out
     }
 
     if (cfFieldIds.length === 0) {
-      mergeCfRows(await cfCounts(finalWhere))
+      // Route through buildFacetWhere, NOT finalWhere. Under AND the two are
+      // identical (buildFacetWhere delegates to buildWhere with the same
+      // arguments finalWhere was built from), so AND mode is untouched. Under
+      // match=any finalWhere would be fatal: every surviving row satisfies it,
+      // so the conditional aggregate's NOT-current test is false for all of
+      // them, every option collapses to exactly currentTotal ("picking this
+      // changes nothing" for every value), and an option carried only by bills
+      // outside the current result produces no row and vanishes from the
+      // dropdown. buildFacetWhere keeps the WHERE at the scope, which is what
+      // every other dimension does and what the conditional aggregate needs.
+      mergeCfRows(await cfCounts(buildFacetWhere(undefined, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)))
     } else {
       // Per active field, count with that field's own filter excluded (disjunctive).
+      // Also exclude any unresolved (non-existent) cf field ids: they aren't a real
+      // dimension, so their always-false condition must never narrow a real field's
+      // own disjunctive count either.
       const perFieldResults = await Promise.all(
-        cfFieldIds.map(id => cfCounts(buildFacetWhere(id, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
+        cfFieldIds.map(id => cfCounts(buildFacetWhere([id, ...unresolvedCfFieldIds], statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
       )
       for (const rows of perFieldResults) mergeCfRows(rows)
+
+      // Fields with no active filter of their own all share the same WHERE (none
+      // of them has a filter to exclude), so they can be counted in ONE extra
+      // call rather than one per field. Excluding cfFieldIds (as excludeFieldIds,
+      // the 3rd arg) from the OUTPUT keeps this call from clobbering the per-field
+      // results just merged above with counts that wrongly include each filtered
+      // field's own condition — exclusion, not merge order, is what keeps that
+      // correct. Separately, excluding unresolvedCfFieldIds from the WHERE itself
+      // (the 1st arg) keeps a stale/garbled cf_ key from zeroing out every real
+      // field's count — see the unresolvedCfFieldIds comment above.
+      mergeCfRows(await cfCounts(
+        buildFacetWhere(unresolvedCfFieldIds.length ? unresolvedCfFieldIds : undefined, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter),
+        undefined,
+        cfFieldIds,
+      ))
     }
 
     // Build dimensional facet count maps
-    const statusCounts = Object.fromEntries(statusRows.filter(r => r.value).map(r => [r.value!, Number(r.count)]))
+    // Each *Counts map is built from raw per-value numbers (deltas under
+    // match=any), any derived sentinel is summed from those, and asResultingTotal
+    // shifts the finished map exactly once at the end.
+    const statusCounts = asResultingTotal(Object.fromEntries(statusRows.filter(r => r.value).map(r => [r.value!, Number(r.count)])))
     const priorityCounts: Record<string, number> = Object.fromEntries(priorityRows.filter(r => r.value).map(r => [r.value!, Number(r.count)]))
     // Priority is sparse: "Not set" = null priority; "Any" = has a priority.
     priorityCounts['none'] = Number(priorityRows.find(r => r.value == null)?.count ?? 0)
     priorityCounts[FILTER_ANY] = (priorityCounts['high'] ?? 0) + (priorityCounts['medium'] ?? 0) + (priorityCounts['low'] ?? 0)
-    const sessionCounts = Object.fromEntries(sessionRows.filter(r => r.value).map(r => [r.value!, Number(r.count)]))
-    const yearCounts = Object.fromEntries(
+    const priorityCountsOut = asResultingTotal(priorityCounts)
+    const sessionCounts = asResultingTotal(Object.fromEntries(sessionRows.filter(r => r.value).map(r => [r.value!, Number(r.count)])))
+    const yearCounts = asResultingTotal(Object.fromEntries(
       yearRows.filter(r => r.value != null).map(r => [String(r.value!), Number(r.count)])
-    )
-    const stateCounts = Object.fromEntries(stateRows.filter(r => r.value).map(r => [r.value!, Number(r.count)]))
+    ))
+    const stateCounts = asResultingTotal(Object.fromEntries(stateRows.filter(r => r.value).map(r => [r.value!, Number(r.count)])))
     const positionCounts: Record<string, number> = Object.fromEntries(setPositionRows.map(r => [r.value, Number(r.count)]))
     positionCounts['none'] = Number(noPositionCountRows[0].noPositionCount)
     // "Any position" = bills with any position set (one position per bill, so summing is safe).
     positionCounts[FILTER_ANY] = setPositionRows.reduce((a, r) => a + Number(r.count), 0)
+    const positionCountsOut = asResultingTotal(positionCounts)
     const tagCounts: Record<string, number> = Object.fromEntries(
       tagRows.filter(r => tagSet.has(r.tag)).map(r => [r.tag, Number(r.cnt)]),
     )
@@ -579,15 +693,23 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const hasTagCond = tagSet.size > 0
       ? tagMembership([...tagSet])
       : sql`json_array_length(${bills.tags}) > 0`
-    const [anyTagRow] = await db.select({ cnt: sql<number>`count(*)` }).from(bills)
+    const [anyTagRow] = await db.select({ cnt: facetCountExpr }).from(bills)
       .where(tagWhere ? and(tagWhere, hasTagCond) : hasTagCond).all()
     tagCounts[FILTER_ANY] = Number(anyTagRow?.cnt ?? 0)
+    const tagCountsOut = asResultingTotal(tagCounts)
 
-    const subjectCounts: Record<string, number> = Object.fromEntries(
+    const subjectCounts: Record<string, number> = asResultingTotal(Object.fromEntries(
       subjectRows
         .filter(r => !isSubjectsSuppressedForState(suppressedSubjectStates, r.state))
         .map(r => [encodeSubjectFilter(r.state, r.name), Number(r.cnt)]),
-    )
+    ))
+
+    // Custom-field options are selectable values like any other, so each field's
+    // map shifts too (myBillsCount/newMatchesCount/unvotedCount below do NOT —
+    // they describe the current result rather than naming a value you can pick).
+    for (const fieldId of Object.keys(customFields)) {
+      customFields[fieldId] = asResultingTotal(customFields[fieldId])
+    }
 
     // myBillsCount: how many filtered bills this user has interacted with
     const [myVoteRows, myNoteRows, myCommentRows] = myInteractionRows
@@ -616,18 +738,28 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       newMatchesCount = Number(nmc)
     }
 
+    // unvotedCount: how many filtered bills this user has not voted on yet.
+    // Mirrors myBillsCount — same finalWhere, so the badge agrees with the
+    // list — and reuses unvotedPredicate rather than a second definition.
+    const [{ count: uvc }] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(bills)
+      .where(finalWhere ? and(finalWhere, unvotedPredicate) : unvotedPredicate)
+      .all()
+    const unvotedCount = Number(uvc)
+
     return c.json({
       status: statusCounts,
-      priority: priorityCounts,
+      priority: priorityCountsOut,
       year: yearCounts,
       session: sessionCounts,
       state: stateCounts,
-      position: positionCounts,
-      tags: tagCounts,
+      position: positionCountsOut,
+      tags: tagCountsOut,
       subjects: subjectCounts,
       customFields,
       myBillsCount,
       newMatchesCount,
+      unvotedCount,
     })
   })
 }

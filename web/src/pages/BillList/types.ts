@@ -70,4 +70,5 @@ export type FacetCounts = {
   customFields: Record<string, Record<string, number>>
   myBillsCount: number
   newMatchesCount: number
+  unvotedCount: number
 }

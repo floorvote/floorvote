@@ -47,6 +47,12 @@ type CustomFieldDefFixture = { id: string; name: string; slug: string | null; ty
 const customFieldsState: { deferred: boolean; response: CustomFieldDefFixture[] } = { deferred: false, response: [] }
 let resolveCustomFields: ((v: unknown) => void) | null = null
 
+// Records every PUT /admin/views/:id body so a test can assert on the exact
+// query the overwrite handler sent. Mirrors the server's validateViewQuery
+// (savedViewsApi.ts) closely enough to reproduce the 400 an empty query
+// causes for real, rather than only checking a button was clicked.
+const overwriteCalls: Array<{ id: string; query: string | undefined }> = []
+
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
 // "list-page votes on a locked demo tenant" describe below.
@@ -100,8 +106,19 @@ vi.mock('../../lib/api', () => {
   class ApiError extends Error {
     constructor(public status: number, message: string) { super(message); this.name = 'ApiError' }
   }
-  async function apiFetch<T>(path: string): Promise<T> {
+  async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     apiCalls.push(path)
+    const putViewMatch = init?.method === 'PUT' && path.match(/^\/admin\/views\/([^/]+)$/)
+    if (putViewMatch) {
+      const body = init?.body ? JSON.parse(init.body as string) : {}
+      overwriteCalls.push({ id: putViewMatch[1], query: body.query })
+      // Same validation the real server applies (savedViewsApi.ts
+      // validateViewQuery): a falsy/empty query 400s with this message.
+      if ('query' in body && !body.query) {
+        throw new ApiError(400, 'query is required')
+      }
+      return {} as T
+    }
     if (path === '/auth/me') {
       return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: 'owner',
         subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
@@ -189,6 +206,7 @@ class FakeIntersectionObserver {
 
 beforeEach(() => {
   apiCalls.length = 0
+  overwriteCalls.length = 0
   deferred.resolveBillDetail = null
   deferred.rejectVote = null
   voteReject.value = false
@@ -445,6 +463,64 @@ describe('BillList saved views — search interaction', () => {
   })
 })
 
+// Task 2: the mobile filter sheet's "Reset filters" button used to call a
+// hand-duplicated copy of useBillFilters' handleResetFilters that had
+// drifted — it missed setSearch, setUnvotedOnly, setSelectedTags,
+// setMatchAny, and setCfFilters, then raced its own setters with a trailing
+// setSearchParams({}). This is the test that actually proves the fix: it
+// drives the real sheet (not a mock) and asserts every URL param the old
+// copy left behind is gone, plus the search box the old copy never touched.
+describe('BillList mobile filter sheet — reset', () => {
+  it('mobile reset clears unvoted, tags, the operator, status, and the search box', async () => {
+    render(
+      <MemoryRouter initialEntries={['/bills?unvoted=1&tag=Clerk&status=1&match=any']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Voter Identification Requirements')
+
+    // `search` (the `q` param) is never hydrated from, or written to, the
+    // URL by useBillFilters — see the "search never reaches the URL" test
+    // above — so it can't be asserted on the URL. It's still part of the
+    // drift the old copy had (no setSearch call), so set it here and assert
+    // the input clears, which is the only observable surface for it.
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'election' } })
+
+    // Anchored so it matches only the mobile filter button ("Filters", plus
+    // its active-count badge) and not the sheet's own clear-all button, which
+    // also contains the substring "filters" once its label matches desktop's.
+    fireEvent.click(await screen.findByRole('button', { name: /^filters/i }))
+
+    // BillList's bill-count row has its OWN "Reset filters" link, already
+    // wired straight to f.handleResetFilters and unaffected by this bug —
+    // it exists regardless of viewport in this jsdom harness (the mobile/
+    // desktop split is CSS-only). A bare findByRole('reset filters') would
+    // match it instead of the sheet's own button and pass whether or not the
+    // sheet's onClearAll is fixed. Scope to the sheet itself, via its "Filter
+    // Bills" heading's row (a sibling of the clear-all/close button pair —
+    // see FilterSheet.tsx), so this test exercises the control it claims to.
+    const sheetHeading = await screen.findByRole('heading', { name: 'Filter Bills' })
+    const sheetHeaderRow = sheetHeading.parentElement as HTMLElement
+    fireEvent.click(within(sheetHeaderRow).getByRole('button', { name: /reset filters/i }))
+
+    // MemoryRouter doesn't touch window.location — LocationProbe (rendered
+    // via useLocation) is what exposes the router's current URL in this
+    // harness (see the "keeps the view param" test above for the pattern).
+    await waitFor(() => {
+      const search = screen.getByTestId('loc').textContent ?? ''
+      const url = new URLSearchParams(search.split('?')[1] ?? '')
+      expect(url.get('unvoted')).toBeNull()
+      expect(url.get('tag')).toBeNull()
+      expect(url.get('match')).toBeNull()
+      expect(url.get('status')).toBeNull()
+    })
+    expect((screen.getByPlaceholderText('Search…') as HTMLInputElement).value).toBe('')
+  })
+})
+
 describe('BillList saved views — demo tenants', () => {
   function renderWithFilter() {
     return render(
@@ -654,6 +730,60 @@ describe('BillList saved views — applying a view from the switcher', () => {
       expect(loc).toContain('view=passed-bills')
       expect(loc).not.toContain('3f6a1c2e-9b3d-4c1a-8e2f-2a5b6c7d8e9f')
     })
+  })
+})
+
+// Regression for the bug this branch's final review flagged: as soon as ANY
+// view is applied, the URL collapses to the short `?view=<slug>` form (see
+// useBillFilters' sync effect), at which point normalizeViewQuery(location.search)
+// is '' — not the filters on screen. onOverwrite used to send that raw '' straight
+// to the server, which 400s ("query is required"), leaving the confirm row stuck
+// open and a generic error banner up. This drives the real handler (ViewSwitcher's
+// onOverwrite prop is mocked in ViewSwitcher.test.tsx, so nothing there could catch
+// this) through exactly that state: a view applied, then overwriting a *different*
+// row.
+describe('BillList saved views — overwriting while a view is applied', () => {
+  it('sends the applied view\'s filters, not an empty query, when overwriting another view', async () => {
+    viewsState.response = {
+      views: [
+        { id: 'clerk-id', name: 'Clerk bills', slug: 'clerk-bills', query: 'status=4' },
+        { id: 'auditor-id', name: 'Auditor bills', slug: 'auditor-bills', query: 'status=1' },
+      ],
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    // Apply "Clerk bills" — the URL collapses to the short `?view=clerk-bills`
+    // form once the on-screen filters match its stored query.
+    fireEvent.click(await screen.findByRole('button', { name: /^views$/i }))
+    fireEvent.click(await screen.findByText('Clerk bills'))
+    await waitFor(() => {
+      expect(screen.getByTestId('loc').textContent).toContain('view=clerk-bills')
+    })
+
+    // Reopen Views (its label is now "Clerk bills"), hover "Auditor bills",
+    // and click its Replace (save) glyph, then confirm Replace.
+    fireEvent.click(screen.getByRole('button', { name: /clerk bills/i }))
+    const auditorButton = await screen.findByText('Auditor bills')
+    const auditorRow = auditorButton.closest('div')!
+    fireEvent.mouseEnter(auditorRow)
+    fireEvent.click(await screen.findByRole('button', { name: /replace this view's filters with the current ones/i }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace' }))
+
+    await waitFor(() => {
+      expect(overwriteCalls.length).toBeGreaterThan(0)
+    })
+    // The applied view's filters (Clerk bills: status=4), saved onto the
+    // Auditor bills row — not the collapsed URL's empty query.
+    expect(overwriteCalls[0]).toEqual({ id: 'auditor-id', query: 'status=4' })
+    expect(screen.queryByText(/failed to update view/i)).not.toBeInTheDocument()
   })
 })
 

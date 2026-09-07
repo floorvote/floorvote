@@ -43,17 +43,20 @@ export type FilterDimensionScope = 'bill' | 'viewer'
 /**
  * Everything a dimension's visibility can depend on. Both surfaces build
  * this from data they already compute (BillList's `f.uniqueStates` /
- * `isAdmin`) — nothing here is new state.
+ * `isAdmin` / `f.isMultiState`) — nothing here is new state.
  */
 export interface FilterDimensionContext {
   /** Distinct states the tenant's bills span (BillList's `f.uniqueStates`).
-   *  Mirrors desktop's original gate on the State dropdown exactly:
-   *  `f.uniqueStates.length > 0` — i.e. "at least one state is known", not
-   *  "more than one". A tenant with no state data yet (uniqueStates empty)
-   *  is the only case that hides it. */
+   *  Used only by custom field visibility checks and subject-group
+   *  organization — not by the State dimension itself, which gates on
+   *  `isMultiState` instead. */
   uniqueStates: string[]
   /** Current user is an admin or owner (BillList's `isAdmin`). */
   isAdmin: boolean
+  /** The tenant's bills span more than one state (`useBillFilters`'s
+   *  `isMultiState`, i.e. `knownStates.size > 1`). A single-state instance
+   *  offers a choice of one, so State is hidden there. */
+  isMultiState: boolean
 }
 
 export interface FilterDimensionDef {
@@ -76,7 +79,7 @@ export interface FilterDimensionDef {
 }
 
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
-  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.uniqueStates.length > 0 },
+  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState },
   { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'viewer', isVisible: () => true },
   { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'viewer', isVisible: ctx => ctx.isAdmin },
   { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'viewer', isVisible: () => true },
