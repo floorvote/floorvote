@@ -250,47 +250,6 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 > [!TIP]
 > **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
-### Choosing the analysis model
-
-The bill analysis model and its thinking budget both have built-in defaults, so
-you do not need to set either. Two optional vars override them per tenant, which
-is how you move one tenant to a different model before the rest:
-
-```toml
-GEMINI_MODEL = "gemini-3.5-flash"     # unset = built-in default
-GEMINI_THINKING_BUDGET = "-1"         # "-1" lets Gemini size it, "0" disables thinking
-```
-
-`GEMINI_MODEL` takes Google's own model name, not the `google/...` form
-Cloudflare's model catalog shows — FloorVote calls Gemini through the gateway's
-pass-through endpoint, so the name goes to Google as written. Google publishes
-[the model names](https://ai.google.dev/gemini-api/docs/models), and Cloudflare's
-[model catalog](https://developers.cloudflare.com/ai/models/) lists which ones
-you can reach through the AI Gateway and what each costs.
-
-These are operator settings rather than tenant-editable config: the model is a
-cost-and-quality decision, and a cheaper model is not a preference a team should
-be able to pick for itself.
-
-**When a newer model is worth the money.** A newer model with thinking enabled
-is markedly better at tags whose criterion is *mechanical* rather than topical —
-"the bill amends a section of chapter X" as opposed to "the bill is about
-housing". Measured on 103 bills with known answers, an older model without
-thinking assigned such tags at 25% precision and a current one with thinking at
-100%. Thinking on the older model did not close the gap.
-
-That accuracy is not free, but it is cheaper than the obvious choice. Newer
-models tokenised the same bill PDFs at roughly double the input tokens, and
-thinking tokens bill as output tokens. Every current-generation model tested
-reached 100%, so among them the difference is price rather than capability —
-the cheapest ran about 2.3x the default's cost per bill and the largest 13.7x,
-for identical scores. Do not reach for the biggest model.
-
-If your tags are ordinary topical ones, the default is probably fine. If any tag
-is a mechanical test, measure on your own bills before deciding, and use at
-least ~100 of them — a 12-bill sample put the *older* model at 100% purely by
-chance.
-
 ## Step 7: Bind the tenant on central
 
 Central-to-tenant calls (engagement stats, force-register, digests) run over a per-tenant binding. Because the tenant worker must exist first, do this **after** the first deploy. Add the binding to `central/wrangler.toml` (the name is `TENANT_` + the slug uppercased, hyphens becoming underscores):
@@ -502,3 +461,44 @@ Registration stores the team's keywords and state coverage and provisions its qu
 - **Want bills immediately:** run the seed in Step 12.
 
 Non-keyword bills arrive as lightweight monitor stubs; keyword and manually-added bills get full AI summaries.
+
+## Choosing the analysis model
+
+The bill analysis model and its thinking budget both have built-in defaults, so
+you do not need to set either. Two optional vars override them per tenant, which
+is how you move one tenant to a different model before the rest:
+
+```toml
+GEMINI_MODEL = "gemini-3.5-flash"     # unset = built-in default
+GEMINI_THINKING_BUDGET = "-1"         # "-1" lets Gemini size it, "0" disables thinking
+```
+
+`GEMINI_MODEL` takes Google's own model name, not the `google/...` form
+Cloudflare's model catalog shows — FloorVote calls Gemini through the gateway's
+pass-through endpoint, so the name goes to Google as written. Google publishes
+[the model names](https://ai.google.dev/gemini-api/docs/models), and Cloudflare's
+[model catalog](https://developers.cloudflare.com/ai/models/) lists which ones
+you can reach through the AI Gateway and what each costs.
+
+These are operator settings rather than tenant-editable config: the model is a
+cost-and-quality decision, and a cheaper model is not a preference a team should
+be able to pick for itself.
+
+**When a newer model is worth the money.** A newer model with thinking enabled
+is markedly better at tags whose criterion is *mechanical* rather than topical —
+"the bill amends a section of chapter X" as opposed to "the bill is about
+housing". Measured on 103 bills with known answers, an older model without
+thinking assigned such tags at 25% precision and a current one with thinking at
+100%. Thinking on the older model did not close the gap.
+
+That accuracy is not free, but it is cheaper than the obvious choice. Newer
+models tokenised the same bill PDFs at roughly double the input tokens, and
+thinking tokens bill as output tokens. Every current-generation model tested
+reached 100%, so among them the difference is price rather than capability —
+the cheapest ran about 2.3x the default's cost per bill and the largest 13.7x,
+for identical scores. Do not reach for the biggest model.
+
+If your tags are ordinary topical ones, the default is probably fine. If any tag
+is a mechanical test, measure on your own bills before deciding, and use at
+least ~100 of them — a 12-bill sample put the *older* model at 100% purely by
+chance.
