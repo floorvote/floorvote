@@ -928,3 +928,105 @@ describe('Config — tag taxonomy table', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 })
+
+describe('Config — tag taxonomy header sort', () => {
+  function sortButton() {
+    // Accessible name now leads with the visible "Tag" text — see
+    // TagTaxonomyTable's Label-in-Name fix.
+    return screen.getByRole('button', { name: /^Tag,/i })
+  }
+
+  async function saveAi(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Save AI instructions' }))
+  }
+
+  // This proves the wiring — that a sort reaches configChanged's dirty
+  // check at all — not the comparator's order-sensitivity itself. That's
+  // pinned separately, and more directly, by the "configChanged — taxonomy
+  // order" block in aiConfig.test.ts; do not mistake this test for proof of
+  // the comparator.
+  it('marks the page dirty', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }] })
+    const reg = renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    await waitFor(() => expect(reg.hasUnsaved()).toBe(false))
+
+    await user.click(sortButton())
+
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Elections')
+    expect(reg.hasUnsaved()).toBe(true)
+  })
+
+  it('does not open the reprocess dialog on save — the payoff of the order-insensitive comparison', async () => {
+    const user = userEvent.setup()
+    mockConfig({
+      tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }],
+      matched_bills_count: 12,
+    })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton())
+    await saveAi(user)
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('offers Undo after sorting, and clicking it restores the pre-sort order', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Zoning' }, { name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton())
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Elections')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Zoning')
+  })
+
+  // A second header click has no gate on it the way "Start from default" and
+  // "Reset to default" do (renderResetControl swaps them for Undo once a
+  // value is captured, so those two can never fire twice in a row) — the
+  // sort button stays on screen and clickable after it fires. Capturing the
+  // undo value unconditionally on every sort would let a second click
+  // overwrite the hand-curated original order with the already-sorted one.
+  it('two consecutive header clicks then Undo restores the ORIGINAL order, not the first sort', async () => {
+    const user = userEvent.setup()
+    mockConfig({ tag_taxonomy: [{ name: 'Mango' }, { name: 'Apple' }, { name: 'Zebra' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+
+    await user.click(sortButton()) // -> Apple, Mango, Zebra (ascending)
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Apple')
+    await user.click(sortButton()) // -> Zebra, Mango, Apple (descending)
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Zebra')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    // Must be the hand-curated original, not the first (ascending) sort.
+    expect(screen.getByLabelText('Tag name, row 1')).toHaveValue('Mango')
+    expect(screen.getByLabelText('Tag name, row 2')).toHaveValue('Apple')
+    expect(screen.getByLabelText('Tag name, row 3')).toHaveValue('Zebra')
+  })
+
+  // The same unconditional-capture bug also destroys a "Start from default"
+  // undo value — including a half-typed orphan description — the moment a
+  // sort runs afterward, since both write into the same undoValues.tagTaxonomy
+  // slot.
+  it('"Start from default" then a header click then Undo restores what the seed replaced', async () => {
+    const user = userEvent.setup()
+    mockConfig({})
+    renderInRegistry(<Config />)
+    await user.type(await screen.findByLabelText('Description, row 1'), 'municipal broadband')
+    expect(screen.getByText('Needs a name')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+    expect(screen.getByTestId('tag-count')).toHaveTextContent(String(DEFAULT_TAXONOMY.length))
+
+    await user.click(sortButton())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByLabelText('Description, row 1')).toHaveValue('municipal broadband')
+  })
+})

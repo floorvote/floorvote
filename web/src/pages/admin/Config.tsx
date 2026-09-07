@@ -808,6 +808,28 @@ export function Config() {
                     rows={taxonomyRows}
                     idPrefix="config-tags"
                     onChange={rows => { setTaxonomyRows(rows); clearUndoValue('tagTaxonomy') }}
+                    onSort={rows => {
+                      // A sort discards a hand-curated order, so it must be
+                      // undoable through the Tags field's existing Undo
+                      // affordance — the same capture-before-overwrite
+                      // resetToDefault and seedFromDefault already use.
+                      //
+                      // Unlike those two, the sort trigger stays on screen
+                      // after it fires, so nothing stops a second click.
+                      // Capturing unconditionally would let that second
+                      // click overwrite the captured value with the
+                      // already-sorted rows, silently replacing "undo back
+                      // to my hand-curated order" with "undo back to my
+                      // first sort." Capturing only when nothing is captured
+                      // yet keeps Undo meaning "back to before I started
+                      // sorting" no matter how many times the header is
+                      // clicked in a row. handleSaveAi deletes
+                      // undoValues.tagTaxonomy on a successful save, and
+                      // undoReset clears it too, so this guard can never
+                      // strand a stale value.
+                      setUndoValues(prev => 'tagTaxonomy' in prev ? prev : { ...prev, tagTaxonomy: taxonomyRows })
+                      setTaxonomyRows(rows)
+                    }}
                   />
                 </div>
                 <div style={hintStyle}>

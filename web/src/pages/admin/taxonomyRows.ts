@@ -99,6 +99,83 @@ export function withTrailingBlank(rows: TaxonomyRow[]): TaxonomyRow[] {
   return [...rows, { name: '', description: '' }]
 }
 
+export type SortDirection = 'asc' | 'desc'
+
+/** Whether a row is wholly empty: no name and no description. */
+function isBlank(row: TaxonomyRow): boolean {
+  return !row.name.trim() && !row.description.trim()
+}
+
+/**
+ * Sort `displayed` (including its trailing blank, if it has one) by name.
+ *
+ * Case-insensitive, comparing lowercased names with localeCompare — matching
+ * how rowProblems already matches duplicates, so `elections` and `Elections`
+ * sort together and land adjacent when they collide. Stable, so two rows
+ * sharing a name keep their relative order.
+ *
+ * The last row is pinned out of the sort ONLY when it is actually blank (no
+ * name and no description) — that is the trailing blank withTrailingBlank
+ * adds, which is never a tag and always stays last. A real tag that happens
+ * to be last is sorted like any other row; nothing about position alone
+ * exempts it. Nameless-but-not-blank rows (no trailing blank, but no name
+ * either — e.g. an orphaned description) sink to just above the pinned
+ * blank rather than sorting to the top on an empty string, so a row flagged
+ * "Needs a name" isn't catapulted to position 1.
+ *
+ * Returns the SAME array reference when the sort is a no-op, mirroring the
+ * contract moveRow already uses, so a caller can skip onChange/dirtying.
+ */
+export function sortRows(rows: TaxonomyRow[], direction: SortDirection): TaxonomyRow[] {
+  if (rows.length === 0) return rows
+  const lastIndex = rows.length - 1
+  const lastRow = rows[lastIndex]
+  const pinBlank = isBlank(lastRow)
+  const blank = pinBlank ? lastRow : null
+  const rest = pinBlank ? rows.slice(0, lastIndex) : rows
+
+  const indexed = rest.map((row, i) => ({ row, i }))
+  indexed.sort((a, b) => {
+    const aName = a.row.name.trim()
+    const bName = b.row.name.trim()
+    // Nameless rows sink to the bottom (just above the pinned trailing
+    // blank, if any), regardless of direction, rather than sorting to the
+    // top on ''.
+    if (!aName && !bName) return a.i - b.i
+    if (!aName) return 1
+    if (!bName) return -1
+    const cmp = aName.toLowerCase().localeCompare(bName.toLowerCase())
+    if (cmp !== 0) return direction === 'asc' ? cmp : -cmp
+    return a.i - b.i
+  })
+
+  const sorted = indexed.map(({ row }) => row)
+  const next = blank ? [...sorted, blank] : sorted
+  const unchanged = next.every((row, i) => row === rows[i])
+  return unchanged ? rows : next
+}
+
+/**
+ * The sort direction the given rows are ALREADY in, derived from the rows
+ * themselves rather than tracked as separate state — so it can never go
+ * stale after an Undo, a Reset, or rows handed in fresh from a reload.
+ *
+ * Counts "real" rows the same way sortRows does: every row is real except a
+ * genuinely blank last row (no name, no description), which is never a tag.
+ * This does NOT assume a trailing blank is present — a caller (or a unit
+ * test) that hands in rows with no trailing blank at all still gets every
+ * row counted. With fewer than two real rows the order is ambiguous, so the
+ * result is 'none'.
+ */
+export function deriveSortDirection(displayed: TaxonomyRow[]): 'none' | SortDirection {
+  const last = displayed[displayed.length - 1]
+  const realRowCount = last && isBlank(last) ? displayed.length - 1 : displayed.length
+  if (realRowCount < 2) return 'none'
+  if (sortRows(displayed, 'asc') === displayed) return 'asc'
+  if (sortRows(displayed, 'desc') === displayed) return 'desc'
+  return 'none'
+}
+
 export function moveRow(rows: TaxonomyRow[], from: number, to: number): TaxonomyRow[] {
   if (from < 0 || to < 0 || from >= rows.length || to >= rows.length || from === to) return rows
   const next = [...rows]

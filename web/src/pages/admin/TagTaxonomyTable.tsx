@@ -1,14 +1,23 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../../../shared/tokens'
 import {
-  moveRow, parsePastedRows, rowProblems, withTrailingBlank,
-  type TaxonomyRow,
+  deriveSortDirection, moveRow, parsePastedRows, rowProblems, sortRows, withTrailingBlank,
+  type SortDirection, type TaxonomyRow,
 } from './taxonomyRows'
 
 type Props = {
   rows: TaxonomyRow[]
   onChange: (rows: TaxonomyRow[]) => void
   idPrefix: string
+  /**
+   * Called instead of onChange when the reorder came from clicking the Tag
+   * header. Config.tsx wires this to capture the pre-sort rows as the
+   * taxonomy field's undo value before setting the sorted rows — a plain
+   * onChange there deliberately clears that undo value on any manual edit,
+   * which a sort must not do. Falls back to onChange when absent, so the
+   * table stays usable on its own.
+   */
+  onSort?: (rows: TaxonomyRow[]) => void
 }
 
 // Shared by the header row and every body row so the two grids can never
@@ -28,13 +37,36 @@ type Column = 'name' | 'description'
  * summary indicator anywhere else, because a count elsewhere is a second thing
  * to keep in step and it says a problem exists without saying where.
  */
-export default function TagTaxonomyTable({ rows, onChange, idPrefix }: Props) {
+export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: Props) {
   const displayed = withTrailingBlank(rows)
   const problems = rowProblems(displayed)
   const nameRefs = useRef<Array<HTMLInputElement | null>>([])
   const descRefs = useRef<Array<HTMLTextAreaElement | null>>([])
   const [dragFrom, setDragFrom] = useState<number | null>(null)
   const [announcement, setAnnouncement] = useState('')
+  // Derived from `displayed` itself rather than tracked as its own state, so
+  // it can never claim a direction the rows are no longer actually in — e.g.
+  // after an Undo, a Reset, or rows handed in fresh from a reload. A click
+  // always sorts to the opposite of whatever this reports, defaulting to
+  // ascending from 'none'.
+  const sortDirection = deriveSortDirection(displayed)
+  // True unless every real row is equal under the name comparator — i.e.
+  // unless NEITHER an ascending nor a descending sort would reorder
+  // `displayed` at all (a table of only ties, like "Elections"/"elections",
+  // or of only nameless rows). In that case the header must not claim a
+  // sort is available: handleHeaderSort's own no-op guard already skips the
+  // callback for this data (nothing here changes that), so this is purely
+  // about not lying to the user or to assistive tech about what the click
+  // will do.
+  const canReorder = sortRows(displayed, 'asc') !== displayed || sortRows(displayed, 'desc') !== displayed
+
+  function handleHeaderSort() {
+    const next: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc'
+    const sorted = sortRows(displayed, next)
+    if (sorted === displayed) return
+    if (onSort) onSort(sorted)
+    else onChange(sorted)
+  }
 
   // Auto-grow is a function of the rendered value, not of the input event: this
   // runs on mount and on every re-render where a description changed (typed,
@@ -182,7 +214,49 @@ export default function TagTaxonomyTable({ rows, onChange, idPrefix }: Props) {
               claiming column 1 of row 1 and push the header into a broken
               three-row stack instead of matching the body rows' two-row shape. */}
           <span className="tag-table-reorder" style={headStyle} />
-          <span style={headStyle}>Tag</span>
+          {/* aria-sort deliberately isn't used here: this grid is div/span
+              throughout with no table/row/columnheader semantics, so a
+              `role="columnheader"` (the only role aria-sort is supported on)
+              would need adding just to carry it — a bigger change to how the
+              whole editor is navigated than this header deserves. Instead the
+              button's own accessible name carries both the current state and
+              what the next click will do, so nothing here goes silent for
+              assistive tech. */}
+          <span style={headStyle}>
+            <button
+              type="button"
+              onClick={handleHeaderSort}
+              // Not the native `disabled` attribute: that would drop the
+              // button from the tab order and stop clicks from reaching
+              // handleHeaderSort at all, when the reason nothing happens is
+              // already enforced there (sortRows returns the same reference
+              // for this data in both directions, so the no-op guard skips
+              // the callback regardless). aria-disabled reports the state to
+              // assistive tech without changing focusability or behaviour.
+              aria-disabled={canReorder ? undefined : true}
+              style={{ ...sortHeaderBtnStyle, cursor: canReorder ? 'pointer' : 'default' }}
+            >
+              Tag
+              {/* Kept as real content inside the button (not an aria-label,
+                  which would replace "Tag" and drop it from the accessible
+                  name entirely — a WCAG 2.5.3 Label in Name failure for
+                  anyone using voice control to say "click Tag"). Visually
+                  hidden with the same clip-rect pattern the live region below
+                  already uses. */}
+              <span style={srOnlyStyle}>
+                {!canReorder
+                  ? ', rows cannot be reordered by name.'
+                  : sortDirection === 'none'
+                    ? ', unsorted. Click to sort A to Z.'
+                    : sortDirection === 'asc'
+                      ? ', sorted A to Z. Click to sort Z to A.'
+                      : ', sorted Z to A. Click to sort A to Z.'}
+              </span>
+              <span aria-hidden="true" style={{ marginLeft: 4 }}>
+                {sortDirection === 'none' ? '↕' : sortDirection === 'asc' ? '▲' : '▼'}
+              </span>
+            </button>
+          </span>
           <span style={{ ...headStyle, borderLeft: `1px solid ${color.borderDefault}` }}>Description (optional)</span>
           <span style={headStyle} />
         </div>
@@ -317,6 +391,19 @@ export default function TagTaxonomyTable({ rows, onChange, idPrefix }: Props) {
 function resizeTextarea(ta: HTMLTextAreaElement) {
   ta.style.height = 'auto'
   ta.style.height = `${Math.max(ta.scrollHeight, 34)}px`
+}
+
+// Same clip-rect incantation as the aria-live region below, so the two
+// visually-hidden techniques in this component don't drift apart.
+const srOnlyStyle: React.CSSProperties = {
+  position: 'absolute', width: 1, height: 1, overflow: 'hidden',
+  clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+}
+
+const sortHeaderBtnStyle: React.CSSProperties = {
+  font: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', letterSpacing: 'inherit',
+  textTransform: 'inherit', color: 'inherit', background: 'none', border: 'none',
+  padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
 }
 
 const headStyle: React.CSSProperties = {

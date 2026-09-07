@@ -423,6 +423,196 @@ describe('TagTaxonomyTable — reordering', () => {
   })
 })
 
+describe('TagTaxonomyTable — header sort', () => {
+  function sortButton() {
+    // The accessible name now leads with the visible "Tag" text (see the
+    // Label-in-Name fix below), rather than an aria-label that hid it.
+    return screen.getByRole('button', { name: /^Tag,/i })
+  }
+
+  it('clicking the Tag header sorts the rows and reports them through the callback', async () => {
+    const user = userEvent.setup()
+    const onRows = vi.fn()
+    render(<Harness initial={[
+      { name: 'Zoning', description: '' },
+      { name: 'Elections', description: '' },
+    ]} onRows={onRows} />)
+    await user.click(sortButton())
+    expect(tagFields().map(f => (f as HTMLInputElement).value)).toEqual(['Elections', 'Zoning', ''])
+    // Assert the actual payload, not just that the callback fired, so the
+    // callback's contract (it is handed the sorted array) is explicit.
+    expect(onRows).toHaveBeenCalledWith([
+      { name: 'Elections', description: '' },
+      { name: 'Zoning', description: '' },
+      { name: '', description: '' },
+    ])
+  })
+
+  it('clicking again reverses the direction', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[
+      { name: 'Zoning', description: '' },
+      { name: 'Elections', description: '' },
+    ]} />)
+    await user.click(sortButton())
+    await user.click(sortButton())
+    expect(tagFields().map(f => (f as HTMLInputElement).value)).toEqual(['Zoning', 'Elections', ''])
+  })
+
+  it('is not aria-sort (which this table-less grid cannot support) but the button name, that carries state — unsorted, then ascending, then descending', async () => {
+    const user = userEvent.setup()
+    // Zoning > Mango is descending, but Mango > Elections is ALSO
+    // descending... use a genuinely mixed order instead: Mango < Zoning
+    // (ascending) but Zoning > Elections (descending) — neither direction's
+    // sort leaves this order unchanged, so it starts out truly unsorted.
+    render(<Harness initial={[
+      { name: 'Mango', description: '' },
+      { name: 'Zoning', description: '' },
+      { name: 'Elections', description: '' },
+    ]} />)
+    // No table/columnheader semantics anywhere — aria-sort would be inert.
+    expect(document.querySelector('[aria-sort]')).toBeNull()
+    expect(sortButton()).toHaveAccessibleName(/^Tag, unsorted\. Click to sort A to Z\.$/i)
+    await user.click(sortButton())
+    expect(sortButton()).toHaveAccessibleName(/^Tag, sorted A to Z\. Click to sort Z to A\.$/i)
+    await user.click(sortButton())
+    expect(sortButton()).toHaveAccessibleName(/^Tag, sorted Z to A\. Click to sort A to Z\.$/i)
+  })
+
+  it('the header is a real button whose accessible name contains the visible "Tag" label and the direction', () => {
+    // A single real row can never be reordered either (nothing to compare
+    // it against), so it now hits Finding 1's "cannot be reordered" state
+    // rather than "unsorted" — two differently-named rows in a mixed order
+    // are used here instead, so this test still exercises the "unsorted"
+    // wording it is named for.
+    render(<Harness initial={[
+      { name: 'Zoning', description: '' },
+      { name: 'Elections', description: '' },
+      { name: 'Mango', description: '' },
+    ]} />)
+    expect(sortButton().tagName).toBe('BUTTON')
+    expect(sortButton()).toHaveAccessibleName(/^Tag,/)
+    expect(sortButton()).toHaveAccessibleName(/unsorted/i)
+  })
+
+  it('a no-op sort does not fire the callback at all', async () => {
+    const user = userEvent.setup()
+    const onRows = vi.fn()
+    // Two DIFFERENT row objects that tie under the name comparator
+    // ("Housing"/"housing", case-insensitively equal, with distinct
+    // descriptions so they are not literally the same row duplicated) plus
+    // the trailing blank. This is a genuine, non-trivial no-op: with a
+    // single real row, reordering is arithmetically impossible (nothing to
+    // compare), which would pass even against a component that always
+    // fired. Here there ARE two real rows to compare, and the reason
+    // neither an ascending nor a descending sort changes anything is that
+    // they tie under the comparator (the index tiebreaker keeps them in
+    // their original relative order regardless of direction) — a logical
+    // impossibility, not an arithmetic one. This input is also the one
+    // Finding 1 disables (aria-disabled), but NOT via the native `disabled`
+    // attribute, so the click still reaches handleHeaderSort and this test
+    // still exercises its own "sorted === displayed, skip the callback"
+    // guard rather than merely a browser refusing to dispatch the click.
+    render(<Harness initial={[
+      { name: 'Housing', description: 'zoning' },
+      { name: 'housing', description: 'permits' },
+    ]} onRows={onRows} />)
+    await user.click(sortButton())
+    expect(onRows).not.toHaveBeenCalled()
+  })
+
+  it('calls onSort instead of onChange when onSort is supplied', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const onSort = vi.fn()
+    render(
+      <TagTaxonomyTable
+        rows={[{ name: 'Zoning', description: '' }, { name: 'Elections', description: '' }]}
+        onChange={onChange}
+        onSort={onSort}
+        idPrefix="t"
+      />,
+    )
+    await user.click(sortButton())
+    expect(onSort).toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('reports itself unsorted after rows come back in a different order (e.g. an Undo), rather than still claiming a direction', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <TagTaxonomyTable
+        rows={[{ name: 'Elections', description: '' }, { name: 'Zoning', description: '' }]}
+        onChange={onChange}
+        idPrefix="t"
+      />,
+    )
+    // Already ascending, with no click needed — the direction is derived
+    // straight from the rows, not tracked as separate state.
+    expect(sortButton()).toHaveAccessibleName(/sorted A to Z/i)
+
+    // Rows come back in an order that is neither ascending nor descending —
+    // as an Undo, a Reset, or a fresh load would hand them in, without going
+    // through this component's own sort at all. (Zoning > Mango is
+    // descending, but Mango < Elections is ascending — mixed.)
+    rerender(
+      <TagTaxonomyTable
+        rows={[
+          { name: 'Mango', description: '' },
+          { name: 'Zoning', description: '' },
+          { name: 'Elections', description: '' },
+        ]}
+        onChange={onChange}
+        idPrefix="t"
+      />,
+    )
+    expect(sortButton()).toHaveAccessibleName(/^Tag, unsorted\./i)
+  })
+
+  it('reports itself unavailable, rather than promising a sort, when every real row ties under the comparator', async () => {
+    const user = userEvent.setup()
+    const onRows = vi.fn()
+    // Elections/elections tie case-insensitively, so neither an ascending
+    // nor a descending sort would reorder these rows — the concrete case
+    // this feature exists to surface. The button must not claim a
+    // direction is available (which would be a promise the click can never
+    // keep) and clicking it must fire no callback.
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'elections', description: '' },
+    ]} onRows={onRows} />)
+    const button = sortButton()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(button).toHaveAccessibleName(/^Tag, rows cannot be reordered by name\.$/i)
+    expect(button).not.toHaveAccessibleName(/click to sort/i)
+    await user.click(button)
+    expect(onRows).not.toHaveBeenCalled()
+  })
+
+  it('reports itself unavailable for a table of only nameless, description-only rows', () => {
+    render(<Harness initial={[
+      { name: '', description: 'municipal broadband' },
+      { name: '', description: 'zoning appeals' },
+    ]} />)
+    expect(sortButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(sortButton()).toHaveAccessibleName(/rows cannot be reordered by name/i)
+  })
+
+  it('falls back to onChange when onSort is absent', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <TagTaxonomyTable
+        rows={[{ name: 'Zoning', description: '' }, { name: 'Elections', description: '' }]}
+        onChange={onChange}
+        idPrefix="t"
+      />,
+    )
+    await user.click(sortButton())
+    expect(onChange).toHaveBeenCalled()
+  })
+})
+
 describe('TagTaxonomyTable — paste', () => {
   it('fills the table from a pasted two-column list, replacing the empty row', async () => {
     const user = userEvent.setup()
