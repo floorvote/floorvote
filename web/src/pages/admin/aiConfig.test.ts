@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseTagTaxonomy, aiInstructionsChanged, centralSyncWarning } from './aiConfig'
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
 
 describe('parseTagTaxonomy', () => {
   it('parses name-only lines', () => {
@@ -43,22 +45,60 @@ describe('parseTagTaxonomy', () => {
 })
 
 describe('aiInstructionsChanged', () => {
-  const base = { aiContext: 'a', relevanceQuestion: 'b', tagTaxonomy: 'c' }
+  const base = {
+    aiContext: 'a',
+    relevanceQuestion: 'b',
+    tagTaxonomy: 'c',
+  }
+  const ORG = 'Test Org'
 
-  it('is false when all three fields are identical', () => {
-    expect(aiInstructionsChanged(base, { ...base })).toBe(false)
+  it('is false when all fields are identical', () => {
+    expect(aiInstructionsChanged(base, { ...base }, ORG)).toBe(false)
   })
 
   it('is true when aiContext differs', () => {
-    expect(aiInstructionsChanged(base, { ...base, aiContext: 'x' })).toBe(true)
+    expect(aiInstructionsChanged(base, { ...base, aiContext: 'x' }, ORG)).toBe(true)
   })
 
   it('is true when relevanceQuestion differs', () => {
-    expect(aiInstructionsChanged(base, { ...base, relevanceQuestion: 'x' })).toBe(true)
+    expect(aiInstructionsChanged(base, { ...base, relevanceQuestion: 'x' }, ORG)).toBe(true)
   })
 
   it('is true when tagTaxonomy differs', () => {
-    expect(aiInstructionsChanged(base, { ...base, tagTaxonomy: 'x' })).toBe(true)
+    expect(aiInstructionsChanged(base, { ...base, tagTaxonomy: 'x' }, ORG)).toBe(true)
+  })
+
+  it('is false when a blank field is replaced by its own resolved default', () => {
+    const blank = { ...base, aiContext: '', relevanceQuestion: '', tagTaxonomy: '' }
+    const seeded = {
+      ...base,
+      aiContext: buildDefaultAiContext(ORG),
+      relevanceQuestion: buildDefaultRelevanceQuestion(ORG),
+      tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
+    }
+    expect(aiInstructionsChanged(blank, seeded, ORG)).toBe(false)
+    expect(aiInstructionsChanged(seeded, blank, ORG)).toBe(false)
+  })
+
+  it('is false for a blank field and its resolved default under a non-fixture name', () => {
+    const blank = { aiContext: '', relevanceQuestion: '', tagTaxonomy: '' }
+    const seeded = {
+      aiContext: buildDefaultAiContext('Other Org'),
+      relevanceQuestion: buildDefaultRelevanceQuestion('Other Org'),
+      tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
+    }
+    expect(aiInstructionsChanged(blank, seeded, 'Other Org')).toBe(false)
+    expect(aiInstructionsChanged(seeded, blank, 'Other Org')).toBe(false)
+  })
+
+  it('ignores surrounding whitespace', () => {
+    expect(aiInstructionsChanged(base, { ...base, aiContext: '  a  ' }, ORG)).toBe(false)
+  })
+
+  it('ignores tag-list reformatting that does not change the parsed taxonomy', () => {
+    const a = { ...base, tagTaxonomy: 'Elections\nFunding' }
+    const b = { ...base, tagTaxonomy: '  Elections  \n\n  Funding  ' }
+    expect(aiInstructionsChanged(a, b, ORG)).toBe(false)
   })
 })
 

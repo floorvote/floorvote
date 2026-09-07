@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, act, within, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, act, within, fireEvent, cleanup } from '@testing-library/react'
 import React from 'react'
 
 // Mock heavy dependencies before importing Config
@@ -40,19 +40,19 @@ vi.mock('../../components/HintText', () => ({
 vi.mock('../../components/RichTextEditor', () => ({
   RichTextEditor: () => React.createElement('div', { 'data-testid': 'rich-text-editor' }),
 }))
-vi.mock('../../components/ReprocessScopeModal', () => ({
-  ReprocessScopeModal: () => null,
-}))
 vi.mock('../../components/BillBadge', () => ({
   BillBadge: () => null,
 }))
 vi.mock('../admin/aiConfig', async () => {
   const actual = await vi.importActual<typeof import('./aiConfig')>('../admin/aiConfig')
   return {
-    // Real parser: Config now renders a live parsed-tag readout from this, so
+    // Real parser: Config renders a live parsed-tag readout from this, so
     // tests need actual parsing behavior rather than an always-empty stub.
     parseTagTaxonomy: actual.parseTagTaxonomy,
-    aiInstructionsChanged: () => false,
+    // Real comparison: the seed control's whole contract is that seeding a
+    // blank field does NOT read as a change. A stubbed constant would make
+    // every test of that behavior pass without exercising it.
+    aiInstructionsChanged: actual.aiInstructionsChanged,
     configChanged: (a: Record<string, unknown>, b: Record<string, unknown>) =>
       Object.keys(a).some((k) => a[k] !== b[k]),
   }
@@ -60,6 +60,10 @@ vi.mock('../admin/aiConfig', async () => {
 vi.mock('../../lib/exportData', () => ({
   exportAllData: vi.fn(),
 }))
+
+import { buildDefaultAiContext, buildDefaultRelevanceQuestion } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy } from '../../../../shared/taxonomy'
+import { parseTagTaxonomy, aiInstructionsChanged as actualAiInstructionsChanged } from './aiConfig'
 
 import { apiFetch } from '../../lib/api'
 const mockFetch = vi.mocked(apiFetch)
@@ -598,5 +602,168 @@ describe('Config — AI textarea typography', () => {
       // The Tags box used to be monospace; all three now share the page face.
       expect(box.style.fontFamily).toBe('')
     }
+  })
+})
+
+describe('Config — reprocess-scope modal on saving AI instructions', () => {
+  // Both cases need matched_bills_count > 0 — the modal only ever shows when
+  // aiInstructionsChanged() is true AND there are matched bills to reprocess.
+  // With zero matched bills the decision short-circuits before the comparison
+  // even runs, which would make either case pass vacuously.
+
+  it('does NOT open the reprocess modal when the typed text is just the resolved default', async () => {
+    mockConfig({ matched_bills_count: 5 })
+    render(<Config />)
+
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: buildDefaultAiContext('Test Org') } })
+
+    fireEvent.click(await screen.findByRole('button', { name: /save ai instructions/i }))
+
+    await screen.findByText('Saved')
+    expect(screen.queryByRole('dialog', { name: 'Instructions saved' })).toBeNull()
+  })
+
+  it('DOES open the reprocess modal when the typed text genuinely differs', async () => {
+    mockConfig({ matched_bills_count: 5 })
+    render(<Config />)
+
+    const textarea = (await screen.findByLabelText('Bill summary')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'Focus only on bills affecting rural broadband access.' } })
+
+    fireEvent.click(await screen.findByRole('button', { name: /save ai instructions/i }))
+
+    await screen.findByText('Saved')
+    expect(await screen.findByRole('dialog', { name: 'Instructions saved' })).toBeInTheDocument()
+    // "No, just future bill texts" is the cancel-equivalent control (never one
+    // of the destructive "Yes, reprocess..." actions), per ReprocessScopeModal.
+    expect(screen.getByRole('button', { name: 'No, just future bill texts' })).toBeInTheDocument()
+  })
+})
+
+describe('Config — start from default', () => {
+  it('offers the seed only while a field is blank', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Bill summary') as HTMLTextAreaElement
+    expect(box.value).toBe('')
+
+    const seeds = screen.getAllByRole('button', { name: 'Start from default' })
+    expect(seeds.length).toBe(3)
+  })
+
+  it('does not offer the seed once the field has a value', async () => {
+    mockConfig({ ai_context: 'custom instructions' })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    // Bill summary already has a value, so it shows Reset rather than the
+    // seed trigger — only the other two (still-blank) fields offer to seed.
+    expect(screen.getAllByRole('button', { name: 'Reset to default' }).length).toBe(1)
+    expect(screen.getAllByRole('button', { name: 'Start from default' }).length).toBe(2)
+  })
+
+  it('fills the editor with the resolved default and flips to Reset', async () => {
+    mockConfig({ association_name: 'Prairie Policy Alliance' })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Bill summary') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[0])
+
+    expect(box.value).toBe(buildDefaultAiContext('Prairie Policy Alliance'))
+    expect(box.value).toContain('Prairie Policy Alliance')
+    expect(screen.getAllByRole('button', { name: 'Reset to default' }).length).toBe(1)
+  })
+
+  it('seeds the taxonomy in the editor’s own serialization', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+
+    expect(box.value).toBe(serializeTaxonomy(DEFAULT_TAXONOMY))
+    expect(box.value).toContain('\n\n')
+  })
+
+  it('falls back to the placeholder name when none is configured', async () => {
+    mockConfig({ association_name: '' })
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Relevance score') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[1])
+
+    expect(box.value).toBe(buildDefaultRelevanceQuestion(''))
+  })
+
+  it('renders the seed disabled on a demo tenant', async () => {
+    demo.demoLocked = true
+    mockConfig({})
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    const seeds = screen.queryAllByRole('button', { name: 'Start from default' })
+    expect(seeds.length).toBe(3)
+    for (const btn of seeds) {
+      expect((btn as HTMLButtonElement).disabled).toBe(true)
+    }
+  })
+
+  it('shows Undo rather than the seed straight after a reset', async () => {
+    mockConfig({ ai_context: 'custom instructions' })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Bill summary')
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reset to default' })[0])
+
+    expect(screen.getAllByRole('button', { name: 'Undo' }).length).toBe(1)
+    expect(screen.queryAllByRole('button', { name: 'Start from default' }).length).toBe(2)
+  })
+})
+
+describe('Config — seeded defaults round-trip', () => {
+  it('reloads seeded tags byte-identically and reports no change', async () => {
+    mockConfig({})
+    renderInRegistry(<Config />)
+    const box = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Start from default' })[2])
+    const seeded = box.value
+
+    // What the save sends, and what the API would hand back on the next load.
+    const parsed = parseTagTaxonomy(seeded)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) throw new Error('unreachable')
+
+    cleanup()
+    mockConfig({ tag_taxonomy: parsed.value })
+    renderInRegistry(<Config />)
+    const reloaded = await screen.findByLabelText('Tags') as HTMLTextAreaElement
+
+    expect(reloaded.value).toBe(seeded)
+  })
+
+  it('does not treat a seeded-but-unedited field as a change', () => {
+    const blank = {
+      aiContext: '',
+      relevanceQuestion: '',
+      tagTaxonomy: '',
+    }
+    const seeded = {
+      aiContext: buildDefaultAiContext('Test Org'),
+      relevanceQuestion: buildDefaultRelevanceQuestion('Test Org'),
+      tagTaxonomy: serializeTaxonomy(DEFAULT_TAXONOMY),
+    }
+    expect(actualAiInstructionsChanged(blank, seeded, 'Test Org')).toBe(false)
+  })
+
+  it('still treats an edit to seeded text as a change', () => {
+    const seeded = {
+      aiContext: buildDefaultAiContext('Test Org'),
+      relevanceQuestion: '',
+      tagTaxonomy: '',
+    }
+    const edited = { ...seeded, aiContext: seeded.aiContext + '\n\nAlways mention rural impact.' }
+    expect(actualAiInstructionsChanged(seeded, edited, 'Test Org')).toBe(true)
   })
 })

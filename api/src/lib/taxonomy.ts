@@ -1,8 +1,10 @@
 import { eq } from 'drizzle-orm'
 import { associationConfig } from '../db/schema'
 import type { AppDb } from '../types'
+import { DEFAULT_TAXONOMY, type TaxonomyItem } from '../../../shared/taxonomy'
 
-export type TaxonomyItem = { name: string; description?: string }
+export { DEFAULT_TAXONOMY }
+export type { TaxonomyItem }
 
 export function parseTaxonomyItems(raw: unknown): TaxonomyItem[] {
   if (!Array.isArray(raw)) return []
@@ -15,24 +17,6 @@ export function parseTaxonomyItems(raw: unknown): TaxonomyItem[] {
     return []
   })
 }
-
-export const DEFAULT_TAXONOMY: TaxonomyItem[] = [
-  { name: 'Health & Healthcare' },
-  { name: 'Education' },
-  { name: 'Elections & Voting' },
-  { name: 'Housing & Land Use' },
-  { name: 'Transportation & Infrastructure' },
-  { name: 'Environment & Natural Resources' },
-  { name: 'Criminal Justice & Public Safety' },
-  { name: 'Taxation & Revenue' },
-  { name: 'Labor & Employment' },
-  { name: 'Business & Economic Development' },
-  { name: 'Social Services & Human Services' },
-  { name: 'Courts & Civil Procedure' },
-  { name: 'State Government & Administration' },
-  { name: 'Local Government' },
-  { name: 'Agriculture & Rural Affairs' },
-]
 
 /**
  * The tenant's effective tag taxonomy: the configured list, or DEFAULT_TAXONOMY when

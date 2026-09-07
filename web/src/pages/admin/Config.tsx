@@ -16,6 +16,7 @@ import { HintText } from '../../components/HintText'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { parseTagTaxonomy, aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
+import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
 
 type ConfigData = {
@@ -40,24 +41,6 @@ type CustomFieldDef = {
   displayOrder: number
   pinned: boolean
 }
-
-// Mirrors DEFAULT_TAXONOMY in api/src/lib/taxonomy.ts — the actual runtime
-// fallback the API uses when tag_taxonomy is unset/empty/malformed. Kept as a
-// hand-maintained duplicate rather than a shared import because importing api
-// code into web would cross an existing package boundary, and a shared
-// taxonomy module was ruled out of scope for this change. This copy only
-// drives the UI (the ghost placeholder text and the "generic tag list" hint
-// above) and does not stay in sync automatically: update it whenever
-// api/src/lib/taxonomy.ts's DEFAULT_TAXONOMY changes, or this placeholder will
-// silently start lying about what the AI actually does.
-const DEFAULT_TAXONOMY = [
-  'Health & Healthcare', 'Education', 'Elections & Voting', 'Housing & Land Use',
-  'Transportation & Infrastructure', 'Environment & Natural Resources',
-  'Criminal Justice & Public Safety', 'Taxation & Revenue', 'Labor & Employment',
-  'Business & Economic Development', 'Social Services & Human Services',
-  'Courts & Civil Procedure', 'State Government & Administration',
-  'Local Government', 'Agriculture & Rural Affairs',
-].join('\n')
 
 const PRESET_NOUNS = ['team', 'association', 'coalition'] as const
 
@@ -170,15 +153,9 @@ export function Config() {
         setRelevanceQuestion(relevanceQuestionValue)
         const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
-        const taxonomyString = (Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
-          ? data.tag_taxonomy
-              .map((t: { name: string; description?: string }) => t.description ? `${t.name}: ${t.description}` : t.name)
-              // Blank line between tags: descriptions soft-wrap, so single-newline
-              // separation makes a long list unreadable. parseTagTaxonomy discards
-              // blank lines, so this round-trips and never reaches the model — the
-              // save sends the parsed array, not this text.
-              .join('\n\n')
-          : '')
+        const taxonomyString = Array.isArray(data.tag_taxonomy) && data.tag_taxonomy.length > 0
+          ? serializeTaxonomy(data.tag_taxonomy as TaxonomyItem[])
+          : ''
         setTagTaxonomy(taxonomyString)
         setMatchedBillsCount(data.matched_bills_count ?? null)
         setPrioritizedBillsCount(data.prioritized_bills_count ?? null)
@@ -232,6 +209,23 @@ export function Config() {
     if (field === 'relevanceQuestion') setRelevanceQuestion(previous)
     if (field === 'tagTaxonomy') setTagTaxonomy(previous)
     if (field === 'keywords') setKeywords(previous)
+    clearUndoValue(field)
+  }
+
+  // The outbound half of resetToDefault: puts the resolved default text INTO
+  // the editor so a tenant can edit it, rather than retyping it from the
+  // placeholder — which, being a placeholder, cannot even be selected. This is
+  // an ordinary unsaved edit; nothing is stored until the tenant saves, and a
+  // tenant who never clicks this keeps the blank-means-default behavior, so a
+  // later association rename still flows through untouched.
+  function seedFromDefault(field: ResettableField) {
+    if (field === 'aiContext') setAiContext(buildDefaultAiContext(associationName))
+    if (field === 'relevanceQuestion') setRelevanceQuestion(buildDefaultRelevanceQuestion(associationName))
+    if (field === 'tagTaxonomy') setTagTaxonomy(serializeTaxonomy(DEFAULT_TAXONOMY))
+    // Unreachable through the current UI: renderResetControl only renders the
+    // seed button when undoValues[field] is already undefined, so this call
+    // never has anything to clear today. Kept anyway so that seeding can
+    // never strand a stale undo value if that render ordering ever changes.
     clearUndoValue(field)
   }
 
@@ -325,7 +319,11 @@ export function Config() {
     }
 
     const current = { aiContext, relevanceQuestion, tagTaxonomy }
-    const changed = configSnapshot.current == null || aiInstructionsChanged(configSnapshot.current, current)
+    // Resolve both sides against the snapshot's association name (the last
+    // saved name), not the live associationName state: an unsaved edit to the
+    // Labels field is not yet in force, so it must not affect this comparison.
+    const changed = configSnapshot.current == null
+      || aiInstructionsChanged(configSnapshot.current, current, configSnapshot.current.associationName)
 
     setSavingAi(true)
     setSavedAi(false)
@@ -597,7 +595,19 @@ export function Config() {
         </button>
       )
     }
-    if (!hasValue) return null
+    if (!hasValue) {
+      // Allowlist rather than exclude: only these three fields have a seeder
+      // wired up in seedFromDefault. A future ResettableField member falls
+      // through to the disabled branch below instead of silently rendering a
+      // seed button that does nothing when clicked.
+      const seedable: ResettableField[] = ['aiContext', 'relevanceQuestion', 'tagTaxonomy']
+      if (!seedable.includes(field)) return null
+      return (
+        <button type='button' onClick={() => seedFromDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
+          Start from default
+        </button>
+      )
+    }
     return (
       <button type='button' onClick={() => resetToDefault(field)} disabled={demoLocked} style={resetBtnStyle}>
         {label}
@@ -758,7 +768,7 @@ export function Config() {
                   initialHeight={240}
                   minHeight={60}
                   style={aiTextareaStyle}
-                  placeholder={DEFAULT_TAXONOMY}
+                  placeholder={serializeTaxonomy(DEFAULT_TAXONOMY)}
                 />
                 <div style={hintStyle}>
                   One tag per line. The AI will only assign tags from this list. Tags can stand alone or include an optional description (after a colon) to provide additional context. For example:<br />
