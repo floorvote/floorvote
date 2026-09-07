@@ -1,6 +1,6 @@
-import { Fragment, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useLayoutEffect, useRef } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../../../shared/tokens'
-import { DropIndicator, useDragReorder } from '../../components/dragReorder'
+import { DropIndicator, REORDER_KEY_HINT, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
 import { SR_ONLY } from '../../lib/textStyles'
 import {
   deriveSortDirection, moveRow, parsePastedRows, rowProblems, sortRows, withTrailingBlank,
@@ -40,11 +40,14 @@ type Column = 'name' | 'description'
  * to keep in step and it says a problem exists without saying where.
  */
 export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: Props) {
+  // Referenced by every row's name input and description textarea — the
+  // focusable things in a row — because the grip that would otherwise carry
+  // the shortcut is deliberately not a Tab stop here.
+  const hintId = `${idPrefix}-reorder-hint`
   const displayed = withTrailingBlank(rows)
   const problems = rowProblems(displayed)
   const nameRefs = useRef<Array<HTMLInputElement | null>>([])
   const descRefs = useRef<Array<HTMLTextAreaElement | null>>([])
-  const [announcement, setAnnouncement] = useState('')
   // Derived from `displayed` itself rather than tracked as its own state, so
   // it can never claim a direction the rows are no longer actually in — e.g.
   // after an Undo, a Reset, or rows handed in fresh from a reload. A click
@@ -131,42 +134,42 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     })
   }
 
-  function reorder(from: number, to: number, focusColumn: Column = 'name') {
-    // The trailing blank (last index of `displayed`) is a rendering
-    // convenience, not a tag: it can never be dragged, and nothing may be
-    // dropped or moved onto its slot, or a real row would end up after it
-    // and the blank would get stranded mid-list on the next render.
-    const lastIndex = displayed.length - 1
-    if (from === lastIndex || to === lastIndex) return
-    const next = moveRow(displayed, from, to)
-    if (next === displayed) return
-    onChange(next)
-    // Count the REAL rows, not `displayed`: the trailing blank is not a tag,
-    // carries no ordinal, and `to === lastIndex` is refused above, so counting
-    // it would announce a position the sighted ordinals never show and that
-    // nothing can ever be moved to.
-    setAnnouncement(`${displayed[from].name || 'Untitled tag'} moved to position ${to + 1} of ${displayed.length - 1}`)
-    // Return to the column the move was initiated from, so reordering while
-    // editing descriptions does not cost a Tab after every keystroke.
-    queueMicrotask(() => {
-      const refs = focusColumn === 'description' ? descRefs.current : nameRefs.current
-      refs[to]?.focus()
-    })
-  }
-
-  // Drag-to-reorder, shared with custom fields (Config.tsx) and saved views
-  // (BillList/ViewSwitcher.tsx) — see components/dragReorder.tsx. `count` is
-  // the number of REAL rows: the trailing blank (the last index of `displayed`)
-  // is a rendering convenience, not a tag, so it is never a drag source and
-  // never gets an item index. It serves instead as the primitive's
-  // append-at-end zone, which is exactly what dropping on it has always meant
-  // ("move to the last real position").
+  // Drag- and keyboard-reorder, shared with custom fields (Config.tsx) and
+  // saved views (BillList/ViewSwitcher.tsx) — see components/dragReorder.tsx.
+  // `count` is the number of REAL rows: the trailing blank (the last index of
+  // `displayed`) is a rendering convenience, not a tag, so it is never a drag
+  // source, never a keyboard target, and never gets an item index. It serves
+  // instead as the primitive's append-at-end zone, which is exactly what
+  // dropping on it has always meant ("move to the last real position") — and
+  // because `count` excludes it, it is also excluded from the announced total
+  // and unreachable as a keyboard destination, with no guard of its own here.
   //
-  // `to` arrives already adjusted for the splice-out shift, so reorder() moves
-  // the row and does no arithmetic of its own.
-  const dnd = useDragReorder({
+  // `to` arrives already adjusted for the splice-out shift, so onReorder moves
+  // the row and does no arithmetic. The announcement and the Alt+Arrow binding
+  // now live in the primitive too; what stays here is the two things only this
+  // table knows — what names a row, and which column a move came from.
+  const dnd = useDragReorder<Column>({
     count: displayed.length - 1,
-    onReorder: (from, to) => reorder(from, to),
+    onReorder: (from, to) => onChange(moveRow(displayed, from, to)),
+    label: i => displayed[i].name || 'Untitled tag',
+    // Return to the column the move was initiated from, so reordering while
+    // editing descriptions does not cost a Tab after every keystroke. A move
+    // started from the grip has no column and falls through to the primitive's
+    // default of focusing the moved row's own grip.
+    focusAfterMove: (to, column) => {
+      if (!column) return false
+      const refs = column === 'description' ? descRefs.current : nameRefs.current
+      refs[to]?.focus()
+      return true
+    },
+    // Every row here is already two tab stops — the name input and the
+    // description textarea — and both carry Alt+Arrow, so a third stop per row
+    // would double the cost of tabbing through a taxonomy without adding
+    // anything reachable. (mobile.css hides the grip entirely at narrow widths
+    // for the same reason of space; Alt+Arrow keeps working at every width.)
+    // The grip keeps its accessible name and stays focusable programmatically,
+    // so a keyboard move initiated from it still lands on it.
+    gripTabStop: false,
   })
 
   function onFieldPaste(e: React.ClipboardEvent, i: number) {
@@ -186,16 +189,17 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   }
 
   function onFieldKeyDown(e: React.KeyboardEvent, i: number, column: Column) {
-    // Deliberately not gated on viewport width. Below the narrow breakpoint
-    // mobile.css hides the drag grip for space, but Alt+Arrow is the
-    // accessible route to reordering and costs no horizontal room, so it
-    // keeps working at every width — hiding it there would strip the
-    // accessible path while leaving nothing in its place.
-    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-      e.preventDefault()
-      reorder(i, e.key === 'ArrowUp' ? i - 1 : i + 1, column)
-      return
-    }
+    // Alt+Arrow reorders from inside the fields as well as from the grip —
+    // convenient while typing, and the only route at narrow widths, where
+    // mobile.css hides the grip for space. Deliberately not gated on viewport
+    // width: hiding the grip there would otherwise strip the accessible path
+    // and leave nothing in its place.
+    //
+    // The primitive owns the binding, the bounds and the announcement; it
+    // consumes the press whether or not a move was possible, so an Alt+Arrow
+    // in the trailing blank (which is not an item, so `i` is outside its
+    // range) is refused there rather than guarded here.
+    if (dnd.moveByKey(e, i, column)) return
     const row = displayed[i]
     const empty = isBlankRow(row)
     if (e.key === 'Enter') {
@@ -229,6 +233,19 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     // whatever distant positioned ancestor happens to exist, or the initial
     // containing block. Do not remove this as redundant.
     <div style={{ position: 'relative' }}>
+      {/* The shortcut, once, for aria-describedby to point at. Rendered here,
+          immediately before the table it describes, rather than after the
+          "+ Add tag" button below — a screen-reader user browsing linearly
+          used to hit this sentence as a stray orphan at the very end of the
+          whole control, attached (via aria-describedby) to fields far above
+          it. It stays in the DOM regardless of scroll position, and its id is
+          unchanged, so every aria-describedby reference above still resolves.
+          Not a live region and not per row: it is a static description of the
+          first row's fields (see hintFor above), so it says the sentence once,
+          not once per row. The wording comes from the primitive's own
+          constant so it cannot drift from the grip's accessible name. */}
+      <span id={hintId} style={SR_ONLY}>{`To reorder this tag: ${REORDER_KEY_HINT}`}</span>
+
       <div className="tag-table" style={{ border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, overflow: 'hidden' }}>
         <div className="tag-table-row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceMuted, borderBottom: `1px solid ${color.borderStrong}` }}>
           {/* Shares the grip cell's class hook so the narrow-width rule removes
@@ -286,7 +303,30 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
         {displayed.map((row, i) => {
           const problem = problems[i]
           const msgId = `${idPrefix}-tag-problem-${i}`
+          // This table's grip is not a Tab stop (see gripTabStop above), so
+          // its accessible name — otherwise the only place the shortcut is
+          // stated — is never reached by tabbing a row. The shortcut still
+          // has to be discoverable from the fields themselves; see the two
+          // mechanisms below (aria-keyshortcuts on every real row, the prose
+          // hint on the first).
           const isTrailingBlank = i === displayed.length - 1
+          // The prose hint is recited only once, on the first real row: every
+          // real row's fields already carry aria-keyshortcuts (below), and
+          // pointing all thirty rows' worth of fields at the same
+          // aria-describedby text made tabbing a 30-tag taxonomy speak "To
+          // reorder this tag: Press Alt with the up or down arrow keys." on
+          // every focus — sixty times, on top of the visible hint already
+          // shown above the table. One recital per traversal is enough.
+          const hintFor = isTrailingBlank || i !== 0 ? undefined : hintId
+          const describedBy = [problem ? msgId : undefined, hintFor].filter(Boolean).join(' ') || undefined
+          // aria-keyshortcuts is the attribute built for exactly this: it
+          // costs no speech in readers that ignore it, unlike a describedby
+          // hint repeated on every row. It goes on every REAL row's fields
+          // (not just the first) so the shortcut is still discoverable from
+          // any row, not only the one that gets the prose recital. The
+          // trailing blank isn't a tag and can't be reordered, so it gets
+          // neither.
+          const shortcutsFor = isTrailingBlank ? undefined : 'Alt+ArrowUp Alt+ArrowDown'
           // The trailing blank is the primitive's append-at-end slot, not an
           // item — it is a valid hover/drop target but never a drag source, and
           // it carries no item index.
@@ -347,7 +387,8 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                     value={row.name}
                     aria-label={`Tag name, row ${i + 1}`}
                     aria-invalid={problem ? true : undefined}
-                    aria-describedby={problem ? msgId : undefined}
+                    aria-describedby={describedBy}
+                    aria-keyshortcuts={shortcutsFor}
                     placeholder={isTrailingBlank ? 'Add a tag…' : undefined}
                     onChange={e => setRow(i, { name: e.target.value })}
                     onKeyDown={e => onFieldKeyDown(e, i, 'name')}
@@ -363,6 +404,8 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                     rows={1}
                     value={row.description}
                     aria-label={`Description, row ${i + 1}`}
+                    aria-describedby={hintFor}
+                    aria-keyshortcuts={shortcutsFor}
                     placeholder="Optional context for the AI"
                     onChange={e => setRow(i, { description: e.target.value })}
                     onKeyDown={e => onFieldKeyDown(e, i, 'description')}
@@ -398,7 +441,9 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
         </button>
       </div>
 
-      <div role="status" aria-live="polite" style={SR_ONLY}>{announcement}</div>
+      {/* The polite live region for reorder announcements, absolutely
+          positioned (SR_ONLY), which is why the wrapper above is relative. */}
+      <ReorderLiveRegion announcement={dnd.announcement} />
     </div>
   )
 }

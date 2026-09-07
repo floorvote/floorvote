@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useState } from 'react'
+import userEvent from '@testing-library/user-event'
 import {
-  DRAG_REORDER_MIME, DragReorder, DropIndicator, destinationFor, useDragReorder,
+  DRAG_REORDER_MIME, DragReorder, DropIndicator, ReorderLiveRegion, destinationFor, useDragReorder,
 } from './dragReorder'
 
 // jsdom does not populate DataTransfer the way a real browser drag does, so a
@@ -25,17 +26,22 @@ function fakeDataTransfer() {
  * the indicator is drawn wherever the primitive says.
  */
 function List({
-  items, onOrder, disabled, onReorderSpy,
+  items, onOrder, disabled, onReorderSpy, unlabelled, gripTabStop,
 }: {
   items: string[]
   onOrder?: (next: string[]) => void
   disabled?: boolean
   onReorderSpy?: (from: number, to: number) => void
+  /** Drops the `label` option, to pin what an unlabelled list falls back to. */
+  unlabelled?: boolean
+  gripTabStop?: boolean
 }) {
   const [order, setOrder] = useState(items)
   const dnd: DragReorder = useDragReorder({
     count: order.length,
     disabled,
+    gripTabStop,
+    label: unlabelled ? undefined : i => order[i],
     onReorder: (from, to) => {
       onReorderSpy?.(from, to)
       const next = [...order]
@@ -49,7 +55,12 @@ function List({
     <div>
       <div data-testid="order">{order.join(',')}</div>
       {order.map((name, i) => (
-        <div key={name}>
+        // Keyed by INDEX, like the tag table (TagTaxonomyTable.tsx), which is
+        // the harder case for focus: React then keeps each DOM node at its
+        // position and reassigns identities across it, so a focused grip
+        // silently comes to stand for a different item after a move. Keying by
+        // a stable id would move the nodes instead and hide that entirely.
+        <div key={i}>
           {dnd.indicatorBefore(i) && <DropIndicator className={`ind-${i}`} />}
           <div data-testid={`row-${name}`} style={dnd.sourceStyle(i)} {...dnd.dropProps(i)}>
             <span data-testid={`grip-${name}`} {...dnd.gripProps(i)}>grip</span>
@@ -64,6 +75,7 @@ function List({
         {order.map((_, i) => (dnd.canDropBefore(i) ? `before-${i} ` : '')).join('')}
         {dnd.canDropAtEnd() ? 'tail' : ''}
       </div>
+      <ReorderLiveRegion announcement={dnd.announcement} />
     </div>
   )
 }
@@ -296,5 +308,244 @@ describe('useDragReorder — plumbing', () => {
       return <div {...dnd.dropProps(2)} />
     }
     expect(() => render(<Bad />)).toThrow(/outside 0\.\.1/)
+  })
+})
+
+describe('useDragReorder — keyboard reordering', () => {
+  const status = () => screen.getByRole('status').textContent
+  const grip = (name: string) => screen.getByTestId(`grip-${name}`)
+
+  async function press(name: string, key: 'ArrowUp' | 'ArrowDown') {
+    const user = userEvent.setup()
+    await user.click(grip(name))
+    await user.keyboard(`{Alt>}{${key}}{/Alt}`)
+  }
+
+  it('Alt+ArrowDown on the first item moves it to position 2 and announces it', async () => {
+    render(<List items={['A', 'B', 'C']} />)
+    await press('A', 'ArrowDown')
+    expect(order()).toBe('B,A,C')
+    expect(status()).toBe('A moved to position 2 of 3')
+  })
+
+  it('Alt+ArrowUp on the last item moves it to position 2', async () => {
+    render(<List items={['A', 'B', 'C']} />)
+    await press('C', 'ArrowUp')
+    expect(order()).toBe('A,C,B')
+    expect(status()).toBe('C moved to position 2 of 3')
+  })
+
+  it('Alt+ArrowUp on the first item does nothing and announces nothing', async () => {
+    const spy = vi.fn()
+    render(<List items={['A', 'B', 'C']} onReorderSpy={spy} />)
+    await press('A', 'ArrowUp')
+    expect(order()).toBe('A,B,C')
+    expect(spy).not.toHaveBeenCalled()
+    expect(status()).toBe('')
+  })
+
+  it('Alt+ArrowDown on the last item does nothing and announces nothing', async () => {
+    const spy = vi.fn()
+    render(<List items={['A', 'B', 'C']} onReorderSpy={spy} />)
+    await press('C', 'ArrowDown')
+    expect(order()).toBe('A,B,C')
+    expect(spy).not.toHaveBeenCalled()
+    expect(status()).toBe('')
+  })
+
+  it('hands onReorder an already-adjusted destination, in both directions', async () => {
+    // What this pins is the pair the call site actually receives, in both
+    // directions — a call site that had to do its own arithmetic would be
+    // free to get it wrong. It does NOT discriminate destinationFor from a
+    // parallel single-step sum: for a one-place keyboard move those agree on
+    // every (from, to), and the slot in between is not visible to the spy.
+    // The slot arithmetic itself is pinned by the destinationFor tests above
+    // and by the multi-row drop tests.
+    const spy = vi.fn()
+    render(<List items={['A', 'B', 'C']} onReorderSpy={spy} />)
+    await press('A', 'ArrowDown')
+    expect(spy).toHaveBeenCalledWith(0, 1)
+    spy.mockClear()
+    // And upward from the last item: slot 1, destination 1, no shift.
+    await press('C', 'ArrowUp')
+    expect(spy).toHaveBeenCalledWith(2, 1)
+  })
+
+  it('moves repeatedly on repeated presses, following the item as it goes', async () => {
+    const user = userEvent.setup()
+    render(<List items={['A', 'B', 'C']} />)
+    await user.click(grip('A'))
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    // Focus is on the moved item now, so the second press acts on A again
+    // rather than on whatever row slid under the old focus.
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(order()).toBe('B,C,A')
+    expect(status()).toBe('A moved to position 3 of 3')
+  })
+
+  it('puts focus on the moved item', async () => {
+    render(<List items={['A', 'B', 'C']} />)
+    await press('A', 'ArrowDown')
+    await waitFor(() => expect(grip('A')).toHaveFocus())
+  })
+
+  it('lets the call site take over where focus lands', async () => {
+    const user = userEvent.setup()
+    function WithOwnFocus() {
+      const [order, setOrder] = useState(['A', 'B'])
+      const dnd = useDragReorder<string>({
+        count: order.length,
+        label: i => order[i],
+        focusAfterMove: (to, context) => {
+          document.getElementById(`field-${context}-${to}`)?.focus()
+          return true
+        },
+        onReorder: (from, to) => {
+          const next = [...order]
+          const [moved] = next.splice(from, 1)
+          next.splice(to, 0, moved)
+          setOrder(next)
+        },
+      })
+      return (
+        <div>
+          {order.map((name, i) => (
+            <div key={name}>
+              <span data-testid={`grip-${name}`} {...dnd.gripProps(i)}>grip</span>
+              <input id={`field-x-${i}`} onKeyDown={e => dnd.moveByKey(e, i, 'x')} />
+            </div>
+          ))}
+        </div>
+      )
+    }
+    render(<WithOwnFocus />)
+    const first = document.getElementById('field-x-0') as HTMLInputElement
+    await user.click(first)
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    await waitFor(() => expect(document.getElementById('field-x-1')).toHaveFocus())
+  })
+
+  it('derives the total from `count`, so a row that is not an item is never counted', async () => {
+    // The tag table's trailing blank: rendered, focusable, offered as the
+    // tail drop slot — but not a tag. A site passing its own total is how it
+    // came to announce "of 3" for two tags, so the total is not the site's to
+    // pass, and a key press on the non-item is refused rather than throwing.
+    const spy = vi.fn()
+    function WithTrailingBlank() {
+      const dnd = useDragReorder({ count: 2, label: i => ['A', 'B'][i], onReorder: spy })
+      return (
+        <div>
+          <span data-testid="grip-A" {...dnd.gripProps(0)}>grip</span>
+          <span data-testid="grip-B" {...dnd.gripProps(1)}>grip</span>
+          <input data-testid="blank" onKeyDown={e => dnd.moveByKey(e, 2)} />
+          <ReorderLiveRegion announcement={dnd.announcement} />
+        </div>
+      )
+    }
+    const user = userEvent.setup()
+    render(<WithTrailingBlank />)
+    await user.click(screen.getByTestId('grip-A'))
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}')
+    expect(status()).toBe('A moved to position 2 of 2')
+
+    // The non-item asks about slot 1, which acceptsSlot refuses because
+    // index 2 is outside 0..count-1 — no move, no announcement, no throw.
+    spy.mockClear()
+    await user.click(screen.getByTestId('blank'))
+    await user.keyboard('{Alt>}{ArrowUp}{/Alt}')
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('falls back to a positional label when the site supplies none', async () => {
+    render(<List items={['A', 'B', 'C']} unlabelled />)
+    expect(grip('A')).toHaveAttribute('aria-label', 'Reorder item 1. Press Alt with the up or down arrow keys.')
+    await press('A', 'ArrowDown')
+    expect(status()).toBe('Item 1 moved to position 2 of 3')
+  })
+
+  it('makes the grip a labelled, focusable button that says what the shortcut is', () => {
+    render(<List items={['A', 'B']} />)
+    expect(grip('A')).toHaveAttribute('role', 'button')
+    expect(grip('A')).toHaveAttribute('tabindex', '0')
+    expect(grip('A')).toHaveAccessibleName('Reorder A. Press Alt with the up or down arrow keys.')
+  })
+
+  it('keeps the grip out of the tab order, but still operable, when the site opts out', async () => {
+    render(<List items={['A', 'B']} gripTabStop={false} />)
+    expect(grip('A')).toHaveAttribute('tabindex', '-1')
+    await press('A', 'ArrowDown')
+    expect(order()).toBe('B,A')
+  })
+
+  it('ignores an arrow press without Alt, leaving the key to the browser', () => {
+    const spy = vi.fn()
+    render(<List items={['A', 'B', 'C']} onReorderSpy={spy} />)
+    // fireEvent returns true when the event was NOT cancelled: a bare arrow
+    // must still move the caret inside a text field the handler sits on.
+    expect(fireEvent.keyDown(grip('A'), { key: 'ArrowDown' })).toBe(true)
+    expect(spy).not.toHaveBeenCalled()
+    expect(order()).toBe('A,B,C')
+  })
+
+  it('consumes Alt+Arrow even at the ends, so the caret does not jump on the end rows alone', () => {
+    render(<List items={['A', 'B']} />)
+    expect(fireEvent.keyDown(grip('A'), { key: 'ArrowUp', altKey: true })).toBe(false)
+    expect(order()).toBe('A,B')
+  })
+
+  it('when disabled: the grip is not focusable, claims no role, and promises no shortcut', async () => {
+    const spy = vi.fn()
+    render(<List items={['A', 'B', 'C']} disabled onReorderSpy={spy} />)
+    expect(grip('A')).not.toHaveAttribute('tabindex')
+    expect(grip('A')).not.toHaveAttribute('role')
+    expect(grip('A')).not.toHaveAttribute('aria-label')
+    fireEvent.keyDown(grip('A'), { key: 'ArrowDown', altKey: true })
+    expect(spy).not.toHaveBeenCalled()
+    expect(order()).toBe('A,B,C')
+    expect(status()).toBe('')
+  })
+
+  // Focus, when a drop moves it, moves inside a queueMicrotask, so NOTHING can
+  // be asserted about post-drop focus from a synchronous test body: the
+  // assertion would pass whatever the component does. Draining the task queue
+  // once is what makes the two tests below able to fail.
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+
+  it('announces a pointer drop, and follows the moved item when the drop came off its grip', async () => {
+    render(<List items={['A', 'B', 'C']} />)
+    const dataTransfer = fakeDataTransfer()
+    // The ordinary mouse drag: grips carry a tabIndex, so the mousedown that
+    // starts the drag focuses the grip, and focus is still there on drop.
+    grip('A').focus()
+    fireEvent.dragStart(grip('A'), { dataTransfer })
+    fireEvent.dragOver(screen.getByTestId('row-C'), { dataTransfer })
+    fireEvent.drop(screen.getByTestId('row-C'), { dataTransfer })
+    expect(order()).toBe('B,A,C')
+    expect(status()).toBe('A moved to position 2 of 3')
+    await settle()
+    // Not merely "some grip is focused": the grip at the SOURCE index now
+    // belongs to B, and leaving focus there would make the next Alt+Arrow
+    // move B and undo the drop.
+    expect(grip('A')).toHaveFocus()
+  })
+
+  it('leaves focus alone for a drop released with focus outside the interaction', async () => {
+    render(
+      <div>
+        <button data-testid="elsewhere">elsewhere</button>
+        <List items={['A', 'B', 'C']} />
+      </div>,
+    )
+    const elsewhere = screen.getByTestId('elsewhere')
+    const dataTransfer = fakeDataTransfer()
+    fireEvent.dragStart(grip('A'), { dataTransfer })
+    elsewhere.focus()
+    fireEvent.dragOver(screen.getByTestId('row-C'), { dataTransfer })
+    fireEvent.drop(screen.getByTestId('row-C'), { dataTransfer })
+    expect(order()).toBe('B,A,C')
+    await settle()
+    // Nothing stale to fix here, and yanking focus across the page on drop is
+    // a jolt, so the drop leaves it where the user left it.
+    expect(elsewhere).toHaveFocus()
   })
 })

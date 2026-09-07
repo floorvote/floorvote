@@ -13,7 +13,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
-import { DropIndicator, useDragReorder } from '../../components/dragReorder'
+import { DropIndicator, REORDER_KEY_HINT, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
@@ -144,15 +144,26 @@ export function Config() {
   const [cfEditOptions, setCfEditOptions] = useState('')
   const [cfEditMultiple, setCfEditMultiple] = useState(false)
   const [cfEditError, setCfEditError] = useState<string | null>(null)
-  // Drag-to-reorder, shared with the tag table (TagTaxonomyTable.tsx) and
-  // saved views (BillList/ViewSwitcher.tsx) — see components/dragReorder.tsx.
-  // Persistence stays here, because it is this list's own: a fire-and-forget
-  // PUT on drop. `to` arrives already adjusted for the splice-out shift, so
-  // this is a plain remove-then-insert with no arithmetic of its own — the
-  // downward-drag off-by-one that used to live here is now unrepresentable.
+  // Drag- and keyboard-reorder, shared with the tag table
+  // (TagTaxonomyTable.tsx) and saved views (BillList/ViewSwitcher.tsx) — see
+  // components/dragReorder.tsx. Persistence stays here, because it is this
+  // list's own: a fire-and-forget PUT on the move. `to` arrives already
+  // adjusted for the splice-out shift, so this is a plain remove-then-insert
+  // with no arithmetic of its own — the downward-drag off-by-one that used to
+  // live here is now unrepresentable.
+  //
+  // A pointer was the only way into this list before: dragging cannot be done
+  // without one, so the grip is where the keyboard route has to live. It is
+  // the ONLY keyboard route here (unlike the tag table, whose fields carry the
+  // shortcut too), so the grip is a Tab stop — which the primitive makes it by
+  // default. On a demo tenant the whole interaction is disabled, and a
+  // disabled grip is neither focusable nor labelled with a shortcut it has
+  // not got. A row being edited renders no grip at all (below), so it is no
+  // more a keyboard target than it is a drag source.
   const cfDnd = useDragReorder({
     count: customFields.length,
     disabled: demoLocked,
+    label: i => customFields[i].name,
     onReorder: (from, to) => {
       const reordered = [...customFields]
       const [moved] = reordered.splice(from, 1)
@@ -822,6 +833,14 @@ export function Config() {
                   </span>
                   {renderResetControl('tagTaxonomy', rowsToTaxonomy(taxonomyRows).length > 0, 'Clear all')}
                 </div>
+                {/* The tag table's grip is not a Tab stop, so unlike custom
+                    fields nothing focusable advertises the shortcut on screen
+                    — and at narrow widths mobile.css hides the grip outright.
+                    Same sentence as custom fields, from the same constant, so
+                    the two cannot come to describe the shortcut differently. */}
+                <div style={{ ...hintStyle, marginBottom: 6 }}>
+                  Drag a handle to reorder, or focus a tag's name or description. {REORDER_KEY_HINT}
+                </div>
                 <div role="group" aria-labelledby="config-tags-label">
                   <TagTaxonomyTable
                     rows={taxonomyRows}
@@ -940,12 +959,17 @@ export function Config() {
         <h2 style={sectionTitle}>Custom fields</h2>
         <div style={sectionIntro}>
           Define fields that appear on every bill detail page. Admins and owners can set values per bill.
-          Fields are hidden from members until at least one value is set. Drag to reorder.
+          Fields are hidden from members until at least one value is set. Drag a handle to
+          reorder, or focus one. {REORDER_KEY_HINT}
         </div>
 
         {/* Field list */}
         {customFields.length > 0 && (
           <div style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', marginBottom: 14, position: 'relative' }}>
+            {/* First child, not last: the tail drop zone below has to stay
+                the last thing in this container. SR_ONLY is absolutely
+                positioned, and this container is the nearest relative one. */}
+            <ReorderLiveRegion announcement={cfDnd.announcement} />
             {customFields.map((field, i) => (
               <div key={field.id}>
                 {cfDnd.indicatorBefore(i) && <DropIndicator />}

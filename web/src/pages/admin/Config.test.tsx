@@ -1199,4 +1199,97 @@ describe('Config — custom fields drag-to-reorder', () => {
     expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
     expect(reorderCalls()).toHaveLength(0)
   })
+
+  // Dragging is the only way to reorder this list with a pointer, and a
+  // pointer is the only way to drag — so without these the list simply cannot
+  // be reordered by anyone using a keyboard. The matrix mirrors the tag
+  // table's and the saved views', because it is one shared implementation.
+  describe('by keyboard', () => {
+    // Scoped to the custom-fields list: the same page also renders the tag
+    // table, which has a reorder live region of its own, and an unscoped
+    // getByRole('status') would find whichever it liked.
+    const status = () => within(row('Alpha').parentElement!.parentElement!).getByRole('status')
+
+    async function press(name: string, key: 'ArrowUp' | 'ArrowDown') {
+      const target = grip(name)
+      target.focus()
+      await act(async () => { fireEvent.keyDown(target, { key, altKey: true }) })
+    }
+
+    it('Alt+ArrowDown on the first field moves it down, announces it and persists', async () => {
+      await setup()
+      await press('Alpha', 'ArrowDown')
+      expect(order()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+      expect(status()).toHaveTextContent('Alpha moved to position 2 of 3')
+      expect(JSON.parse(String(reorderCalls()[0][1]!.body)).order).toEqual(['b', 'a', 'c'])
+    })
+
+    it('Alt+ArrowUp on the last field moves it to position 2', async () => {
+      await setup()
+      await press('Charlie', 'ArrowUp')
+      expect(order()).toEqual(['Alpha', 'Charlie', 'Bravo'])
+      expect(status()).toHaveTextContent('Charlie moved to position 2 of 3')
+      expect(JSON.parse(String(reorderCalls()[0][1]!.body)).order).toEqual(['a', 'c', 'b'])
+    })
+
+    it('Alt+ArrowUp on the first field does nothing, announces nothing, persists nothing', async () => {
+      await setup()
+      await press('Alpha', 'ArrowUp')
+      expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+      expect(status()).toHaveTextContent('')
+      expect(reorderCalls()).toHaveLength(0)
+    })
+
+    it('Alt+ArrowDown on the last field does nothing, announces nothing, persists nothing', async () => {
+      await setup()
+      await press('Charlie', 'ArrowDown')
+      expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+      expect(status()).toHaveTextContent('')
+      expect(reorderCalls()).toHaveLength(0)
+    })
+
+    it('leaves focus on the field it moved, so a second press moves the same field', async () => {
+      await setup()
+      await press('Alpha', 'ArrowDown')
+      expect(grip('Alpha')).toHaveFocus()
+      await act(async () => { fireEvent.keyDown(grip('Alpha'), { key: 'ArrowDown', altKey: true }) })
+      expect(order()).toEqual(['Bravo', 'Charlie', 'Alpha'])
+    })
+
+    it('makes the grip a Tab stop that names the field and the shortcut', async () => {
+      await setup()
+      // The only keyboard route into this list, so unlike the tag table's grip
+      // it has to be reachable by Tab.
+      expect(grip('Alpha')).toHaveAttribute('tabindex', '0')
+      expect(grip('Alpha')).toHaveAccessibleName('Reorder Alpha. Press Alt with the up or down arrow keys.')
+    })
+
+    it('states the shortcut on screen for both reorderable lists, in the same words', async () => {
+      await setup()
+      // A sighted keyboard-only user cannot discover Alt+Arrow from a grip
+      // glyph, and at the tag table the grip is not even a Tab stop — so both
+      // sections say it in prose, from the primitive's one constant.
+      expect(screen.getByText(/Drag a handle to\s+reorder, or focus one\. Press Alt with the up or down arrow keys\./))
+        .toBeInTheDocument()
+      expect(screen.getByText(/Drag a handle to reorder, or focus a tag's name or description\. Press Alt with the up or down arrow keys\./))
+        .toBeInTheDocument()
+    })
+
+    it('is no keyboard target at all on a demo-locked tenant', async () => {
+      demo.demoLocked = true
+      await setup()
+      expect(grip('Alpha')).not.toHaveAttribute('tabindex')
+      expect(grip('Alpha')).not.toHaveAttribute('aria-label')
+      await press('Alpha', 'ArrowDown')
+      expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+      expect(reorderCalls()).toHaveLength(0)
+    })
+
+    it('is no keyboard target for a row being edited, which renders no grip', async () => {
+      await setup()
+      await act(async () => { fireEvent.click(within(row('Bravo')).getByText('edit').closest('button')!) })
+      expect(screen.queryByLabelText(/^Reorder Bravo/)).toBeNull()
+      expect(reorderCalls()).toHaveLength(0)
+    })
+  })
 })
