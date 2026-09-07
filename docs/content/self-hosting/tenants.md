@@ -130,6 +130,23 @@ CENTRAL_API_URL = "https://<your-central>.workers.dev"
 AI_GATEWAY_ENABLED = "true"
 CF_ACCOUNT_ID = "<your-account-id>"
 CF_AIG_GATEWAY = "<your-gateway-slug>"
+
+# optional — the model that summarizes, scores, and tags bills. Defaults to
+# gemini-2.5-flash, which handles both HTML and long PDFs well and is cheap.
+# Use Google's own model name, not the "google/..." form Cloudflare's catalog
+# shows: FloorVote calls Gemini through the gateway's pass-through endpoint.
+# Model names: https://ai.google.dev/gemini-api/docs/models
+# What's available through the gateway, and what each costs:
+# https://developers.cloudflare.com/ai/models/
+GEMINI_MODEL = "gemini-2.5-flash"
+
+# optional — thinking budget in tokens. Defaults to 0 (thinking off), which is
+# right for ordinary topical tagging. -1 lets Gemini size the budget itself;
+# it costs more and is worth trying only if your tags are mechanical rather
+# than topical (e.g. "amends chapter 17-69 of the state code") and the default
+# model is getting them wrong. Anything unparseable falls back to 0.
+GEMINI_THINKING_BUDGET = "0"
+
 EMAIL_PROVIDER = "cloudflare"
 
 # who gets cron-failure alerts
