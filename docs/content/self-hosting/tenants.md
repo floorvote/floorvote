@@ -131,20 +131,9 @@ AI_GATEWAY_ENABLED = "true"
 CF_ACCOUNT_ID = "<your-account-id>"
 CF_AIG_GATEWAY = "<your-gateway-slug>"
 
-# optional — the model that summarizes, scores, and tags bills. Defaults to
-# gemini-2.5-flash, which handles both HTML and long PDFs well and is cheap.
-# Use Google's own model name, not the "google/..." form Cloudflare's catalog
-# shows: FloorVote calls Gemini through the gateway's pass-through endpoint.
-# Model names: https://ai.google.dev/gemini-api/docs/models
-# What's available through the gateway, and what each costs:
-# https://developers.cloudflare.com/ai/models/
+# optional — the analysis model and its thinking budget. Both have built-in
+# defaults; see "Choosing the analysis model" below before setting either.
 GEMINI_MODEL = "gemini-2.5-flash"
-
-# optional — thinking budget in tokens. Defaults to 0 (thinking off), which is
-# right for ordinary topical tagging. -1 lets Gemini size the budget itself;
-# it costs more and is worth trying only if your tags are mechanical rather
-# than topical (e.g. "amends chapter 17-69 of the state code") and the default
-# model is getting them wrong. Anything unparseable falls back to 0.
 GEMINI_THINKING_BUDGET = "0"
 
 EMAIL_PROVIDER = "cloudflare"
@@ -259,6 +248,8 @@ npx wrangler secret put CF_AIG_TOKEN --env [slug]
 ```
 
 > [!TIP]
+> **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
+
 ### Choosing the analysis model
 
 The bill analysis model and its thinking budget both have built-in defaults, so
@@ -269,6 +260,13 @@ is how you move one tenant to a different model before the rest:
 GEMINI_MODEL = "gemini-3.5-flash"     # unset = built-in default
 GEMINI_THINKING_BUDGET = "-1"         # "-1" lets Gemini size it, "0" disables thinking
 ```
+
+`GEMINI_MODEL` takes Google's own model name, not the `google/...` form
+Cloudflare's model catalog shows — FloorVote calls Gemini through the gateway's
+pass-through endpoint, so the name goes to Google as written. Google publishes
+[the model names](https://ai.google.dev/gemini-api/docs/models), and Cloudflare's
+[model catalog](https://developers.cloudflare.com/ai/models/) lists which ones
+you can reach through the AI Gateway and what each costs.
 
 These are operator settings rather than tenant-editable config: the model is a
 cost-and-quality decision, and a cheaper model is not a preference a team should
@@ -292,8 +290,6 @@ If your tags are ordinary topical ones, the default is probably fine. If any tag
 is a mechanical test, measure on your own bills before deciding, and use at
 least ~100 of them — a 12-bill sample put the *older* model at 100% purely by
 chance.
-
-> **Optional fallbacks**, not used on the normal path: `GEMINI_API_KEY` (only read if you flip `AI_GATEWAY_ENABLED` to `"false"`) and `RESEND_API_KEY` (only if you set `EMAIL_PROVIDER="resend"` instead of Cloudflare Email Service). You don't set `LEGISCAN_API_KEY` on a tenant — only central calls LegiScan.
 
 ## Step 7: Bind the tenant on central
 
