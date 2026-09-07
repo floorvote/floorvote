@@ -24,7 +24,7 @@ export type CustomFieldDef = {
 
 type MultiStagedDelta = { additions: string[]; removals: string[] }
 
-type FilterState = {
+export type FilterState = {
   status: string[]
   priority: string[]
   position: string[]
@@ -37,12 +37,19 @@ type FilterState = {
   myBills: boolean
   unvoted: boolean
   newMatches: boolean
+  matchAny: boolean
   cf: Record<string, string[]>
 }
 
 // Builds the `filter` request body from the active filter state (shared by the
 // bulk-edit apply and bulk-dismiss flows so the two stay byte-identical).
-function buildFilterBody(f: FilterState): Record<string, unknown> {
+//
+// `match` is emitted only when the operator is set to OR — omitted otherwise,
+// so an unset operator serialises byte-identically to before this field
+// existed. The server (bulkRoutes.ts) reads it with the same `=== 'any'` test
+// GET /bills and GET /bills/facets use, so the surfaces cannot drift on what
+// the param means.
+export function buildFilterBody(f: FilterState): Record<string, unknown> {
   return {
     ...(f.status.length > 0 && { status: f.status }),
     ...(f.priority.length > 0 && { priority: f.priority }),
@@ -56,8 +63,37 @@ function buildFilterBody(f: FilterState): Record<string, unknown> {
     ...(f.myBills && { myBills: '1' }),
     ...(f.unvoted && { unvoted: '1' }),
     ...(f.newMatches && { newMatches: '1' }),
+    ...(f.matchAny && { match: 'any' }),
     ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
   }
+}
+
+// Builds the query string for GET /bills/bulk-values — the read that
+// pre-populates the bulk-edit form's initial values ("Not set", "mixed", the
+// null-match count). Kept alongside buildFilterBody (rather than reusing it)
+// because this is a URLSearchParams for a GET, not a JSON POST body, but the
+// two must agree on every field, `match` included: a wrong read here would
+// show initial values for the AND set immediately before a write to the OR
+// set, with no error.
+export function buildBulkValuesParams(f: FilterState): URLSearchParams {
+  const params = new URLSearchParams()
+  f.status.forEach(s => params.append('status', s))
+  f.priority.forEach(p => params.append('priority', p))
+  f.position.forEach(p => params.append('position', p))
+  f.year.forEach(y => params.append('year', y))
+  f.state.forEach(s => params.append('state', s))
+  f.tag.forEach(t => params.append('tag', t))
+  f.subject.forEach(s => params.append('subject', s))
+  if (f.q) params.set('q', f.q)
+  if (f.minRelevance > 0) params.set('minRelevance', String(f.minRelevance))
+  if (f.myBills) params.set('myBills', '1')
+  if (f.unvoted) params.set('unvoted', '1')
+  if (f.newMatches) params.set('newMatches', '1')
+  if (f.matchAny) params.set('match', 'any')
+  for (const [fieldId, values] of Object.entries(f.cf)) {
+    values.forEach(v => params.append(`cf_${fieldId}`, v))
+  }
+  return params
 }
 
 // 'mixed' means selected bills have different values for this field
@@ -278,22 +314,7 @@ export function BulkActionBar({
     setInitialValues(null)
     setValuesStatus('loading')
 
-    const params = new URLSearchParams()
-    currentFilters.status.forEach(s => params.append('status', s))
-    currentFilters.priority.forEach(p => params.append('priority', p))
-    currentFilters.position.forEach(p => params.append('position', p))
-    currentFilters.year.forEach(y => params.append('year', y))
-    currentFilters.state.forEach(s => params.append('state', s))
-    currentFilters.tag.forEach(t => params.append('tag', t))
-    currentFilters.subject.forEach(s => params.append('subject', s))
-    if (currentFilters.q) params.set('q', currentFilters.q)
-    if (currentFilters.minRelevance > 0) params.set('minRelevance', String(currentFilters.minRelevance))
-    if (currentFilters.myBills) params.set('myBills', '1')
-    if (currentFilters.unvoted) params.set('unvoted', '1')
-    if (currentFilters.newMatches) params.set('newMatches', '1')
-    for (const [fieldId, values] of Object.entries(currentFilters.cf)) {
-      values.forEach(v => params.append(`cf_${fieldId}`, v))
-    }
+    const params = buildBulkValuesParams(currentFilters)
 
     apiFetch<{ count: number; priorities: Record<string, number>; positions: Record<string, number>; customFields: Record<string, Record<string, number>>; multiCustomFields: Record<string, Record<string, number>>; nullMatchCount: number }>(
       `/bills/bulk-values?${params}`

@@ -39,6 +39,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         unvoted?: string
         newMatches?: string
         cf?: Record<string, string[]>
+        match?: string
       }
       priority?: string | null
       position?: string | null
@@ -86,6 +87,13 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         years: f.year ?? [],
         states: f.state ?? [],
         tagFilters: f.tag ?? [],
+        // Stays on the truncating decodeSubjectFilters (not decodeSubjectFiltersChecked).
+        // Truncating an AND widens the set (dropped terms stop narrowing it), and under
+        // match=any it narrows the set (a dropped OR arm stops contributing bills) — so
+        // either way the written set can differ from the filter the admin actually chose,
+        // not just "under-select." This is a deliberate open decision, left as-is here
+        // because GET /bills 400s on an over-cap selection before a bulk action can ever
+        // be issued against one, so the truncation isn't reachable in practice today.
         subjectFilters: decodeSubjectFilters(f.subject ?? []),
         q: f.q,
         minRelevance: f.minRelevance,
@@ -95,6 +103,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap: f.cf ?? {},
         userId: currentUser.id,
+        // Same `=== 'any'` test as GET /bills and GET /bills/facets (listRoutes.ts),
+        // so the surfaces cannot drift on what the param means. The filter payload
+        // here is the client's serialised currentFilters (Task 6), which now carries
+        // match=any when the admin has the OR operator active — the bulk write must
+        // resolve against the same set the admin sees on screen, not silently AND it.
+        matchAny: f.match === 'any',
       })
       const rows = await db.select({ id: bills.id }).from(bills).where(where).all()
       billIds = rows.map(r => r.id)
@@ -336,6 +350,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         status?: string[]; priority?: string[]; position?: string[]; session?: string[]
         year?: string[]; state?: string[]; tag?: string[]; subject?: string[]; q?: string; minRelevance?: string
         myBills?: string; unvoted?: string; newMatches?: string; cf?: Record<string, string[]>
+        match?: string
       }
     }
 
@@ -358,12 +373,19 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const where = await buildBillsWhere(db, {
         statuses: f.status ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
+        // Same truncation tradeoff as the other bulk call site above: it can widen the
+        // written set under AND or narrow it under match=any, either way diverging from
+        // what the admin picked, but that's unreachable today since GET /bills 400s on
+        // an over-cap selection before this endpoint is ever reached with one.
         subjectFilters: decodeSubjectFilters(f.subject ?? []),
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? min : 0,
         cfParamMap: f.cf ?? {}, userId: currentUser.id,
+        // Same `=== 'any'` test as GET /bills / GET /bills/facets and the /bulk
+        // route above, so the three surfaces cannot drift on what the param means.
+        matchAny: f.match === 'any',
       })
       const rows = await db.select({ id: bills.id }).from(bills).where(and(where, newMatchWhere(min))).all()
       billIds = rows.map(r => r.id)
@@ -415,6 +437,10 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const years = params.getAll('year')
       const states = params.getAll('state')
       const tagFilters = params.getAll('tag')
+      // Same tradeoff as the other bulk call sites: truncation widens the written
+      // set under AND, narrows it under match=any, and either way can differ from
+      // the filter the admin chose — left as-is because GET /bills 400s on an
+      // over-cap selection first, so it isn't reachable in practice today.
       const subjectFilters = decodeSubjectFilters(params.getAll('subject'))
       const q = params.get('q') ?? undefined
       const minRelevance = params.get('minRelevance') ?? undefined
@@ -437,6 +463,11 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         newMatches: newMatchesParam,
         newMatchMinRelevance: (newMatchesParam === '1' || newMatchesParam === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap, userId: currentUser.id,
+        // Same `=== 'any'` test as GET /bills / GET /bills/facets and the other
+        // two bulk call sites, so the surfaces cannot drift on what the param
+        // means. This is the read that pre-populates the bulk-edit form's
+        // initial values, and it must agree with the write that follows it.
+        matchAny: params.get('match') === 'any',
       })
 
       const rows = await db

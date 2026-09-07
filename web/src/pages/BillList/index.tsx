@@ -3,7 +3,7 @@ import React from 'react'
 import { useLocation, useNavigate, useSearchParams, type LoaderFunctionArgs } from 'react-router-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { BulkActionBar } from '../../components/BulkActionBar'
-import { apiFetch } from '../../lib/api'
+import { apiFetch, ApiError } from '../../lib/api'
 import { apiFetchForLoader, UNBLOCK_AT_MS } from '../../lib/loaderFetch'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { usePageTitle } from '../../hooks/usePageTitle'
@@ -14,12 +14,11 @@ import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
 import { CARD } from '../../lib/cardStyle'
-import { PRIORITY_COLORS, POSITION_COLORS, POSITION_FALLBACK, COUNT_BADGE } from '../../lib/chipStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
 import { orgPositionLabel, DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { BillRow } from './BillRow'
-import { FilterDropdown, ActiveChip, SortHeader, sortDescription, FILTER_ANY, SubjectFilterDropdown } from './FilterPanel'
+import { FilterDropdown, SortHeader, sortDescription, SubjectFilterDropdown } from './FilterPanel'
 import { PAGE_SIZE, OUTER_GRID, CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP } from './constants'
 import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './types'
 import { useBillSort } from '../../hooks/useBillSort'
@@ -31,7 +30,11 @@ import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filter
 import { filterableCustomFields } from '../../lib/customFieldFilters'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import { SaveViewButton } from './SaveViewButton'
+import { SearchClearButton } from './SearchClearButton'
 import { findActiveView, normalizeViewQuery, matchesUrlIdentifier } from '../../lib/savedViews'
+import { buildActiveFilterGroups } from './activeFilterGroups'
+import { GroupOperator } from './GroupOperator'
+import { FilterToggle } from '../../components/ui/FilterToggle'
 
 // Module-level cache for instant render when returning from BillDetail
 type BillsListPage = { bills: Bill[]; total: number; totalPages: number }
@@ -202,14 +205,14 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
+    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
     const paramsStr = billsApiParams({
       statuses: f.filterStatuses, priorities: f.filterPriorities, positions: f.filterPositions,
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
-      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches,
+      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, matchAny: f.matchAny,
       tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
     }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
@@ -240,13 +243,13 @@ export function BillList() {
       setTotal(data.pagination.total)
       setHasMore(nextPage < data.pagination.totalPages)
       setPage(nextPage)
-    } catch {
-      setError('Failed to load bills.')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to load bills.')
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
@@ -259,6 +262,7 @@ export function BillList() {
     if (f.myBills) params.set('myBills', '1')
     if (f.unvotedOnly) params.set('unvoted', '1')
     if (f.newMatches) params.set('newMatches', '1')
+    if (f.matchAny) params.set('match', 'any')
     f.selectedTags.forEach(t => params.append('tag', t))
     f.selectedSubjects.forEach(s => params.append('subject', s))
     if (f.search) params.set('q', f.search)
@@ -273,7 +277,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -586,7 +590,29 @@ export function BillList() {
   })
 
   if (loading) return <div style={{ padding: 32, color: color.textMuted }}>Loading…</div>
-  if (error) return <div style={{ padding: 32, color: color.textErrorRed }}>{error}</div>
+
+  const activeFilterGroups = buildActiveFilterGroups({
+    filterStates: f.filterStates,
+    filterStatuses: f.filterStatuses,
+    filterPositions: f.filterPositions,
+    filterPriorities: f.filterPriorities,
+    filterYears: f.filterYears,
+    selectedTags: f.selectedTags,
+    selectedSubjects: f.selectedSubjects,
+    cfFilters: f.cfFilters,
+    filterMinRelevance: f.filterMinRelevance,
+    positionOptions: f.positionOptions,
+    customFieldDefs,
+    onRemoveState: s => f.setFilterStates(prev => prev.filter(x => x !== s)),
+    onRemoveStatus: s => f.setFilterStatuses(prev => prev.filter(x => x !== s)),
+    onRemovePosition: p => f.setFilterPositions(prev => prev.filter(x => x !== p)),
+    onRemovePriority: p => f.setFilterPriorities(prev => prev.filter(x => x !== p)),
+    onRemoveYear: y => f.setFilterYears(prev => prev.filter(x => x !== y)),
+    onRemoveTag: tag => f.handleTagClick(tag),
+    onRemoveSubject: subject => f.handleSubjectsChange(f.selectedSubjects.filter(s => s !== subject)),
+    onRemoveCf: (fieldId, v) => f.setCfFilter(fieldId, (f.cfFilters[fieldId] ?? []).filter(x => x !== v)),
+    onRemoveMinRelevance: () => f.setFilterMinRelevance(0),
+  })
 
   return (
     <>
@@ -642,6 +668,17 @@ export function BillList() {
         />
       </div>
 
+      {/* List-fetch error — rendered inline, above the toolbar and chip row (not
+          in place of them), so a 400 from an over-cap filter selection still
+          leaves every control needed to remove the offending filter. A bare
+          replacement page here was a recoverability regression: the old
+          truncating behaviour returned wrong results but left a usable page. */}
+      {error && (
+        <div role="alert" style={{ padding: '10px 12px', marginBottom: 12, color: color.textErrorRed, background: color.surfaceMuted, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontSize: fontSize.sm }}>
+          {error}
+        </div>
+      )}
+
       {/* Search warnings — above the box so they don't collide with the filter
           chips/dropdowns below. Composed from searchWarnings() (0, 1, or 2 lines). */}
       {searchWarn.length > 0 && (
@@ -665,12 +702,15 @@ export function BillList() {
             </>
           }
         >
-          <input
-            placeholder="Search…"
-            value={f.search}
-            onChange={(e) => f.setSearch(e.target.value)}
-            style={{ fontSize: fontSize.sm, padding: '6px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, minWidth: 200 }}
-          />
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            <input
+              placeholder="Search…"
+              value={f.search}
+              onChange={(e) => f.setSearch(e.target.value)}
+              style={{ fontSize: fontSize.sm, padding: '6px 26px 6px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, minWidth: 200 }}
+            />
+            {f.search !== '' && <SearchClearButton onClear={() => f.setSearch('')} />}
+          </div>
         </HoverTooltip>
         {/* Mobile filter button — hidden on desktop via CSS */}
         <button
@@ -702,6 +742,40 @@ export function BillList() {
         </button>
         {/* Desktop filter dropdowns — hidden on mobile via CSS */}
         <div className="desktop-filter-dropdowns">
+          {/* Scope cluster — viewer-relative filters (My bills, New matches,
+              Not yet voted). These always narrow and never join the chip
+              row's AND/OR group operator, so they're clustered here, ahead
+              of every bill-fact dimension, and separated visually below. */}
+          <HoverTooltip text="Show only bills you've voted on, commented on, or noted">
+            <FilterToggle
+              label={filterDimensionLabel('myBills')}
+              active={f.myBills}
+              onToggle={() => f.setMyBills(v => !v)}
+              count={filterCounts.myBillsCount}
+            />
+          </HoverTooltip>
+          {isFilterDimensionVisible('newMatches', filterDimensionCtx) && (
+            <HoverTooltip text="Newly keyword-matched bills awaiting a priority decision">
+              <FilterToggle
+                label={filterDimensionLabel('newMatches')}
+                active={f.newMatches}
+                onToggle={() => f.setNewMatches(v => !v)}
+                count={filterCounts.newMatchesCount}
+              />
+            </HoverTooltip>
+          )}
+          <HoverTooltip text="Show only bills you haven't voted on yet">
+            <FilterToggle
+              label={filterDimensionLabel('unvoted')}
+              active={f.unvotedOnly}
+              onToggle={() => f.setUnvotedOnly(!f.unvotedOnly)}
+            />
+          </HoverTooltip>
+          <div
+            data-testid="scope-separator"
+            aria-hidden="true"
+            style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: color.borderDefault }}
+          />
           {isFilterDimensionVisible('state', filterDimensionCtx) && (
             <HoverTooltip text="Filter by state">
               <FilterDropdown
@@ -712,46 +786,6 @@ export function BillList() {
                 multi
                 counts={filterCounts.state}
               />
-            </HoverTooltip>
-          )}
-          <HoverTooltip text="Show only bills you've voted on, commented on, or noted">
-            <button
-              onClick={() => f.setMyBills(v => !v)}
-              style={{
-                fontSize: fontSize.sm,
-                padding: '6px 12px',
-                borderRadius: radius.md,
-                border: `1px solid ${f.myBills ? color.tagBorderBlue : color.borderDefault}`,
-                background: f.myBills ? color.bgInfo : color.white,
-                color: f.myBills ? color.linkBlue : color.textSlate,
-                fontWeight: f.myBills ? fontWeight.medium : fontWeight.normal,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {filterDimensionLabel('myBills')}
-              <span style={{ ...COUNT_BADGE, marginLeft: 4 }}>{filterCounts.myBillsCount.toLocaleString()}</span>
-            </button>
-          </HoverTooltip>
-          {isFilterDimensionVisible('newMatches', filterDimensionCtx) && (
-            <HoverTooltip text="Newly keyword-matched bills awaiting a priority decision">
-              <button
-                onClick={() => f.setNewMatches(v => !v)}
-                style={{
-                  fontSize: fontSize.sm,
-                  padding: '6px 12px',
-                  borderRadius: radius.md,
-                  border: `1px solid ${f.newMatches ? color.tagBorderBlue : color.borderDefault}`,
-                  background: f.newMatches ? color.bgInfo : color.white,
-                  color: f.newMatches ? color.linkBlue : color.textSlate,
-                  fontWeight: f.newMatches ? fontWeight.medium : fontWeight.normal,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {filterDimensionLabel('newMatches')}
-                <span style={{ ...COUNT_BADGE, marginLeft: 4 }}>{filterCounts.newMatchesCount.toLocaleString()}</span>
-              </button>
             </HoverTooltip>
           )}
           <HoverTooltip text="Filter by current legislative status">
@@ -877,21 +911,14 @@ export function BillList() {
               if (kind === 'toggle') {
                 const isActive = selectedValues.includes('1')
                 return (
-                  <button
+                  <FilterToggle
                     key={field.id}
-                    onClick={() => f.setCfFilter(field.id, isActive ? [] : ['1'])}
-                    style={{
-                      fontSize: fontSize.sm, padding: '6px 10px', borderRadius: radius.md, cursor: 'pointer',
-                      whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4,
-                      background: isActive ? color.bgInfo : color.white,
-                      color: isActive ? color.linkBlue : color.textSlate,
-                      border: `1px solid ${isActive ? color.tagBorderBlue : color.borderDefault}`,
-                      fontWeight: isActive ? fontWeight.medium : fontWeight.normal,
-                    }}
-                  >
-                    {field.name}{isActive ? ' ✓' : ''}
-                    <span style={{ ...COUNT_BADGE, marginLeft: 4 }}>{(filterCounts.customFields[field.id]?.['1'] ?? 0).toLocaleString()}</span>
-                  </button>
+                    label={field.name}
+                    active={isActive}
+                    onToggle={() => f.setCfFilter(field.id, isActive ? [] : ['1'])}
+                    count={filterCounts.customFields[field.id]?.['1'] ?? 0}
+                    showCheck
+                  />
                 )
               }
               // Dropdown — reuse FilterDropdown
@@ -913,90 +940,16 @@ export function BillList() {
         </div>
       </div>
 
-      {/* Active filter chips — only rendered when chips are present */}
-      {(f.filterStates.length > 0 || f.filterStatuses.length > 0 || f.filterPositions.length > 0 || f.filterPriorities.length > 0 || f.filterYears.length > 0 || f.selectedTags.length > 0 || f.selectedSubjects.length > 0 || f.unvotedOnly || f.newMatches || Object.keys(f.cfFilters).some(k => (f.cfFilters[k]?.length ?? 0) > 0)) && (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, alignItems: 'center' }}>
-        {f.filterStates.map(s => (
-          <ActiveChip key={`state-${s}`} label={s} color="gray" onRemove={() => f.setFilterStates(prev => prev.filter(x => x !== s))} />
-        ))}
-        {f.filterStatuses.map(s => (
-          <ActiveChip key={`status-${s}`} label={decodeStatus(s) ?? s} color="gray" onRemove={() => f.setFilterStatuses(prev => prev.filter(x => x !== s))} />
-        ))}
-        {f.filterPositions.map(p => {
-          const posLabel = p === FILTER_ANY ? 'Any position' : ((f.positionOptions.find(o => o.value === p) as { value: string; label?: string } | undefined)?.label ?? p)
-          const posColor = POSITION_COLORS[p] ?? POSITION_FALLBACK
-          return (
-            <span key={`pos-${p}`} style={{
-              fontSize: fontSize.sm, padding: '2px 4px 2px 8px', borderRadius: radius.sm,
-              background: posColor.bg, color: posColor.color, border: `1px solid ${posColor.border}`,
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-            }}>
-              {posLabel}
-              <button
-                onClick={() => f.setFilterPositions(prev => prev.filter(x => x !== p))}
-                style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: posColor.color, lineHeight: 1, fontSize: fontSize.base, display: 'flex', alignItems: 'center' }}
-              >×</button>
-            </span>
-          )
-        })}
-        {f.filterPriorities.map(p => {
-          if (p === FILTER_ANY || p === 'none') {
-            return <ActiveChip key={`pri-${p}`} label={p === FILTER_ANY ? 'Any priority' : 'No priority'} color="gray" onRemove={() => f.setFilterPriorities(prev => prev.filter(x => x !== p))} />
-          }
-          const pc = PRIORITY_COLORS[p] ?? PRIORITY_COLORS['medium']
-          return (
-            <span key={`pri-${p}`} style={{
-              fontSize: fontSize.sm, padding: '2px 4px 2px 8px', borderRadius: radius.sm,
-              background: pc.fill, color: pc.text,
-              display: 'inline-flex', alignItems: 'center', gap: 3,
-            }}>
-              {pc.label ?? p}
-              <button
-                onClick={() => f.setFilterPriorities(prev => prev.filter(x => x !== p))}
-                style={{ background: 'none', border: 'none', padding: '0 2px', cursor: 'pointer', color: pc.text, lineHeight: 1, fontSize: fontSize.base, display: 'flex', alignItems: 'center' }}
-              >×</button>
-            </span>
-          )
-        })}
-        {f.filterYears.map(y => (
-          <ActiveChip key={`year-${y}`} label={`Year: ${y}`} color="gray" onRemove={() => f.setFilterYears(prev => prev.filter(x => x !== y))} />
-        ))}
-        {f.selectedTags.map(tag => (
-          <ActiveChip key={`tag-${tag}`} label={tag === FILTER_ANY ? 'Any tag' : tag} color="blue" onRemove={() => f.handleTagClick(tag)} />
-        ))}
-        {f.selectedSubjects.map(subject => {
-          const idx = subject.indexOf(':')
-          const label = idx > 0 ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject
-          return (
-            <ActiveChip
-              key={`subject-${subject}`}
-              label={label}
-              color="purple"
-              onRemove={() => f.handleSubjectsChange(f.selectedSubjects.filter(s => s !== subject))}
-            />
-          )
-        })}
-        {f.unvotedOnly && (
-          <ActiveChip label="Not yet voted" color="blue" onRemove={() => f.setUnvotedOnly(false)} />
-        )}
-        {f.newMatches && (
-          <ActiveChip label={filterDimensionLabel('newMatches')} color="blue" onRemove={() => f.setNewMatches(false)} />
-        )}
-        {Object.entries(f.cfFilters).flatMap(([fieldId, values]) => {
-          // fieldId here is normally the def's real id, but it can still be the raw
-          // slug for a render or two after mount (useBillFilters resolves it against
-          // customFieldDefs once those load, but that's async) — match by either so
-          // the chip never falls back to printing the raw key.
-          const field = customFieldDefs.find(fld => fld.id === fieldId || fld.slug === fieldId)
-          return values.map(v => (
-            <ActiveChip
-              key={`cf-${fieldId}-${v}`}
-              label={field?.type === 'binary' ? (field?.name ?? fieldId) : `${field?.name ?? fieldId}: ${v === FILTER_ANY ? 'Any' : v}`}
-              color="blue"
-              onRemove={() => f.setCfFilter(fieldId, values.filter(x => x !== v))}
-            />
-          ))
-        })}
+      {/* Active filter chips — only rendered when chips are present. Gated on
+          activeFilterGroups itself (not a hand-rolled OR chain) so a scope-only
+          filter state (My bills / New matches / Not yet voted with nothing
+          else active) never opens an empty chip row — those are viewer scope,
+          rendered as pills in the cluster above, and never chips here. */}
+      {activeFilterGroups.length > 0 && (
+      <div data-testid="active-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, alignItems: 'center' }}>
+        {activeFilterGroups.flatMap((g, i) => i === 0
+          ? g.chips
+          : [<GroupOperator key={`op-${g.key}`} matchAny={f.matchAny} onToggle={() => f.setMatchAny(!f.matchAny)} />, ...g.chips])}
       </div>
       )}
 
@@ -1160,6 +1113,9 @@ export function BillList() {
         isAdmin={isAdmin}
         newMatches={f.newMatches}
         newMatchesCount={filterCounts.newMatchesCount}
+        unvotedOnly={f.unvotedOnly}
+        matchAny={f.matchAny}
+        onMatchAnyChange={f.setMatchAny}
         uniqueStates={f.uniqueStates}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
         priorityOptions={[
@@ -1186,6 +1142,7 @@ export function BillList() {
         onMinRelevanceChange={f.setFilterMinRelevance}
         onMyBillsChange={f.setMyBills}
         onNewMatchesChange={f.setNewMatches}
+        onUnvotedOnlyChange={f.setUnvotedOnly}
         counts={{ ...filterCounts, session: filterCounts.year }}
         onClearAll={() => {
           f.setFilterStatuses([])

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   parseSubjects, encodeSubjectFilter, decodeSubjectFilter, decodeSubjectFilters,
-  dedupeSubjectNames, MAX_SUBJECT_FILTERS, isSubjectsSuppressedForState,
+  decodeSubjectFiltersChecked, dedupeSubjectNames, MAX_SUBJECT_FILTERS, isSubjectsSuppressedForState,
 } from '../../src/lib/billSubjects'
 
 describe('parseSubjects', () => {
@@ -54,6 +54,26 @@ describe('decodeSubjectFilters', () => {
     const decoded = decodeSubjectFilters(values)
     expect(decoded).toHaveLength(MAX_SUBJECT_FILTERS)
     expect(decoded[0]).toEqual({ state: 'UT', name: 'Subject 0' })
+  })
+})
+
+describe('decodeSubjectFiltersChecked', () => {
+  it('reports no overflow at the cap', () => {
+    const values = Array.from({ length: MAX_SUBJECT_FILTERS }, (_, i) => `UT:S${i}`)
+    const out = decodeSubjectFiltersChecked(values)
+    expect(out.overflow).toBe(false)
+    expect(out.filters).toHaveLength(MAX_SUBJECT_FILTERS)
+  })
+
+  it('reports overflow one past the cap rather than truncating silently', () => {
+    const values = Array.from({ length: MAX_SUBJECT_FILTERS + 1 }, (_, i) => `UT:S${i}`)
+    expect(decodeSubjectFiltersChecked(values).overflow).toBe(true)
+  })
+
+  it('does not count malformed values toward the cap', () => {
+    const out = decodeSubjectFiltersChecked(['NoColon', 'UT:A'])
+    expect(out.overflow).toBe(false)
+    expect(out.filters).toEqual([{ state: 'UT', name: 'A' }])
   })
 })
 

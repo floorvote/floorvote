@@ -27,6 +27,10 @@ const deferred: {
 // vote rolls back.
 const voteReject = { value: false }
 
+// Lets a test force the `/bills?` list fetch to fail (e.g. an over-cap filter
+// selection returning 400), so we can assert the toolbar/chip row survive it.
+const billsListError = vi.hoisted(() => ({ value: null as string | null }))
+
 // Lets a test hold the `/views` fetch open (to simulate it resolving on a
 // later tick than the mount commit) and control what it eventually resolves
 // with. Defaults to an immediate empty list, matching every test that doesn't
@@ -132,6 +136,7 @@ vi.mock('../../lib/api', () => {
       return new Promise<T>(res => { deferred.resolveBillDetail = res as (v: unknown) => void })
     }
     if (path.startsWith('/bills?')) {
+      if (billsListError.value) throw new ApiError(400, billsListError.value)
       // Honor a status filter so the test can observe the list responding.
       const qs = new URLSearchParams(path.split('?')[1])
       const statuses = qs.getAll('status')
@@ -187,6 +192,7 @@ beforeEach(() => {
   deferred.resolveBillDetail = null
   deferred.rejectVote = null
   voteReject.value = false
+  billsListError.value = null
   demoState.demoLocked = false
   demoState.demoMode = false
   demoState.settled = true
@@ -336,6 +342,28 @@ describe('BillList page', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loc').textContent).toContain('#section-note')
     })
+  })
+})
+
+// Regression for a whole-branch review finding: an over-cap filter selection
+// (e.g. a 41st subject) makes /bills 400, and the old `if (error) return
+// <div>...</div>` gate rendered that message in place of the ENTIRE page —
+// including the toolbar and chip row, so there was no control left capable of
+// removing the offending filter. The error must render inline, above a still-
+// functional toolbar/chip row, so the selection that caused it can be undone.
+describe('BillList list-fetch failure', () => {
+  it('keeps the toolbar and chip row on screen, with the server error inline', async () => {
+    billsListError.value = 'Too many subject filters. The maximum is 40.'
+    render(<BillList />, { wrapper: Wrapper })
+
+    // The server's own message is surfaced, not a generic fallback.
+    expect(await screen.findByText('Too many subject filters. The maximum is 40.')).toBeInTheDocument()
+
+    // The search box (part of the toolbar) is still present and usable.
+    expect(screen.getByPlaceholderText('Search…')).toBeInTheDocument()
+    // Filter dropdowns (part of the toolbar) are still present and clickable.
+    expect(screen.getByRole('button', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Subject' })).toBeInTheDocument()
   })
 })
 
@@ -688,5 +716,90 @@ describe('BillList active filter chips — custom fields', () => {
     // The raw-key chip text must be gone, not merely joined by a correct one.
     expect(screen.queryByText('acet_is_tracking: 1')).toBeNull()
     expect(screen.queryByText('acet_is_tracking')).toBeNull()
+  })
+})
+
+describe('BillList active filter chips — group operator interleaving', () => {
+  it('renders zero operators with exactly one active filter group', async () => {
+    render(
+      <MemoryRouter initialEntries={['/bills?status=2']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+    expect(screen.queryAllByText('AND')).toHaveLength(0)
+    expect(screen.queryAllByText('OR')).toHaveLength(0)
+  })
+
+  it('renders n-1 operators for n active filter groups, and keeps the viewer-scope toggle out of the chip row', async () => {
+    // state + status = 2 groups -> exactly 1 operator. unvoted=1 activates the
+    // Not yet voted scope toggle — Task 7 moved it into the cluster beside
+    // search, above the chip row, so it never renders as a chip and never
+    // interleaves with the operator or the groups it doesn't govern.
+    render(
+      <MemoryRouter initialEntries={['/bills?status=2&state=RI&unvoted=1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+
+    expect(screen.queryAllByText('AND')).toHaveLength(1)
+    expect(screen.queryAllByText('OR')).toHaveLength(0)
+
+    // The scope cluster sits above the chip row, so the toggle precedes the
+    // operator in DOM order.
+    const operator = screen.getByText('AND')
+    const unvotedToggle = screen.getByRole('button', { name: 'Not yet voted' })
+    expect(unvotedToggle.compareDocumentPosition(operator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    const chipRow = screen.getByTestId('active-filter-chips')
+    expect(chipRow).not.toHaveTextContent('Not yet voted')
+  })
+
+  it('does not clear match=any when a filter dimension drops the group count to one', async () => {
+    render(
+      <MemoryRouter initialEntries={['/bills?status=2&state=RI&match=any']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+    expect(screen.queryAllByText('OR')).toHaveLength(1)
+
+    // Remove the state chip so only the status group remains — the operator
+    // itself stops rendering (only one group), but matchAny must persist.
+    const stateChip = screen.getByText('RI')
+    const removeButton = within(stateChip.closest('span') as HTMLElement).getByRole('button')
+    fireEvent.click(removeButton)
+
+    await waitFor(() => expect(screen.queryAllByText('OR')).toHaveLength(0))
+    expect(screen.getByTestId('loc').textContent).toContain('match=any')
+  })
+})
+
+describe('BillList active filter chips — relevance threshold alone', () => {
+  it('renders the relevance chip when minRelevance is the only active filter', async () => {
+    // Regression test: the chip-row render gate (index.tsx) is a separate
+    // condition from buildActiveFilterGroups, and previously had no
+    // `filterMinRelevance > 0` term — so with no other filter active, the
+    // whole row (and this chip) failed to render at all, even though
+    // buildActiveFilterGroups correctly produced a minRelevance group.
+    render(
+      <MemoryRouter initialEntries={['/bills?minRelevance=5']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Relevance 5+')
   })
 })

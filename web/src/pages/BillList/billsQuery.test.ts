@@ -10,6 +10,26 @@ describe('billsApiParams', () => {
     expect(s).toBe('page=1&pageSize=100&status=2&priority=high&newMatches=1&tag=elections')
   })
 
+  // Regression guard for the bill LIST honouring the group operator: the
+  // facets endpoint and the bulk-action routes both read `matchAny` off
+  // client state independently, so this is the one place that pins the
+  // client's actual GET /bills query string. If this silently stops emitting
+  // `match=any`, the list disagrees with the facet counts and the row
+  // highlighting they drive, with no error.
+  it('emits match=any when the operator is set, hydrated from the URL', () => {
+    const v = billsFilterValuesFromSearch(new URLSearchParams('status=2&priority=high&newMatches=1&match=any&tag=elections'))
+    expect(v.matchAny).toBe(true)
+    const s = billsApiParams(v, 1, 100)
+    expect(s).toBe('page=1&pageSize=100&status=2&priority=high&newMatches=1&match=any&tag=elections')
+  })
+
+  it('omits match when the operator is not set', () => {
+    const v = billsFilterValuesFromSearch(new URLSearchParams('status=2'))
+    expect(v.matchAny).toBe(false)
+    const s = billsApiParams(v, 1, 100)
+    expect(s).not.toContain('match=')
+  })
+
   it('parses a bare /bills URL to an empty (page-1) query', () => {
     const v = billsFilterValuesFromSearch(new URLSearchParams(''))
     expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100')

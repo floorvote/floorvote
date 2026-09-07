@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { BulkActionBar, type Selection } from './BulkActionBar'
+import { BulkActionBar, buildFilterBody, buildBulkValuesParams, type Selection } from './BulkActionBar'
 
 vi.mock('../lib/api', () => ({ apiFetch: vi.fn(() => Promise.resolve({ dismissed: 1 })) }))
 import { apiFetch } from '../lib/api'
@@ -15,7 +15,7 @@ vi.mock('../context/DemoContext', () => ({
 
 const noFilters = {
   status: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
-  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, cf: {},
+  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, matchAny: false, cf: {},
 }
 
 function Harness({
@@ -438,5 +438,35 @@ describe('BulkActionBar unknown current values', () => {
       const body = JSON.parse((call![1] as { body: string }).body)
       expect(body.customFields).toEqual([{ fieldId: 'f1', additions: [], removals: ['a'] }])
     })
+  })
+})
+
+describe('BulkActionBar — match=any (Task 6b)', () => {
+  // Task 6 made the list view's group operator settable (match=any). Task 2
+  // hardcoded the bulk routes to AND-only because no client could set it then.
+  // These lock in that both bulk call paths — the write (buildFilterBody) and
+  // the read that pre-populates the bulk-edit form (buildBulkValuesParams) —
+  // now carry the operator, and that an unset operator still serialises
+  // exactly as it did before this field existed.
+  const baseFilters = noFilters
+
+  it('sends match=any in the bulk-values query when the operator is set', () => {
+    const params = buildBulkValuesParams({ ...baseFilters, matchAny: true })
+    expect(params.get('match')).toBe('any')
+  })
+
+  it('omits match from the bulk-values query when the operator is not set', () => {
+    const params = buildBulkValuesParams({ ...baseFilters, matchAny: false })
+    expect(params.get('match')).toBeNull()
+  })
+
+  it('sends match=any in the filter body when the operator is set', () => {
+    const body = buildFilterBody({ ...baseFilters, matchAny: true })
+    expect(body.match).toBe('any')
+  })
+
+  it('omits match from the filter body when the operator is not set', () => {
+    const body = buildFilterBody({ ...baseFilters, matchAny: false })
+    expect(body.match).toBeUndefined()
   })
 })

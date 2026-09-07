@@ -25,6 +25,22 @@
 export type FilterDimensionKind = 'options' | 'toggle'
 
 /**
+ * Which side of the group operator a dimension falls on.
+ *
+ *   'bill'   — a fact about the BILL. Renders in the chip row as a group and
+ *              participates in the all-of/any-of operator.
+ *   'viewer' — a fact about the VIEWER or the query. Renders in the scope
+ *              cluster beside the search box and ALWAYS narrows.
+ *
+ * Deliberately independent of `kind`, which is a rendering concern. A binary
+ * custom field renders as a toggle byte-identical to the My bills pill and is
+ * nonetheless a bill fact — so control shape can never be used to derive this.
+ * Any future "binary status read off a bill" lands on the correct side here
+ * automatically.
+ */
+export type FilterDimensionScope = 'bill' | 'viewer'
+
+/**
  * Everything a dimension's visibility can depend on. Both surfaces build
  * this from data they already compute (BillList's `f.uniqueStates` /
  * `isAdmin`) — nothing here is new state.
@@ -47,6 +63,9 @@ export interface FilterDimensionDef {
   /** User-facing label. The ONLY place either surface may source this text. */
   label: string
   kind: FilterDimensionKind
+  /** Which side of the group operator this dimension falls on. See
+   *  `FilterDimensionScope` for the full semantics. */
+  scope: FilterDimensionScope
   /** Whether this dimension appears at all, independent of whether it
    *  happens to have any options loaded yet. Each surface still applies its
    *  own "no options loaded yet" check for options-kind dimensions on top of
@@ -57,15 +76,16 @@ export interface FilterDimensionDef {
 }
 
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
-  { key: 'state', label: 'State', kind: 'options', isVisible: ctx => ctx.uniqueStates.length > 0 },
-  { key: 'myBills', label: 'My bills', kind: 'toggle', isVisible: () => true },
-  { key: 'newMatches', label: 'New matches', kind: 'toggle', isVisible: ctx => ctx.isAdmin },
-  { key: 'status', label: 'Status', kind: 'options', isVisible: () => true },
-  { key: 'session', label: 'Session year', kind: 'options', isVisible: () => true },
-  { key: 'position', label: 'Position', kind: 'options', isVisible: () => true },
-  { key: 'priority', label: 'Priority', kind: 'options', isVisible: () => true },
-  { key: 'tags', label: 'Tags', kind: 'options', isVisible: () => true },
-  { key: 'subjects', label: 'Subject', kind: 'options', isVisible: () => true },
+  { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.uniqueStates.length > 0 },
+  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'viewer', isVisible: () => true },
+  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'viewer', isVisible: ctx => ctx.isAdmin },
+  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'viewer', isVisible: () => true },
+  { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'tags',       label: 'Tags',          kind: 'options', scope: 'bill',   isVisible: () => true },
+  { key: 'subjects',   label: 'Subject',       kind: 'options', scope: 'bill',   isVisible: () => true },
 ] as const
 
 export type FilterDimensionKey = (typeof FILTER_DIMENSIONS)[number]['key']

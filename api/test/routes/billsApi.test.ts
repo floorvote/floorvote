@@ -1826,6 +1826,88 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 })
 
+describe('POST /bills/bulk — match=any', () => {
+  // Same fixtures as the list-view match=any suite (searchParams.test.ts):
+  // HB0001 has subject Elections, no tags. HB0002 has tag Clerk, no subjects.
+  // Task 2 hardcoded matchAny: false at the bulk call sites because no client
+  // could set it; Task 6 made the operator settable from the list view, which
+  // means a bulk write computed under AND can silently diverge from the OR set
+  // the admin is looking at. These lock in that the bulk route honours it.
+  let adminToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin' })
+    adminToken = await seedSession(adminId)
+
+    const { billSubjects } = await import('../../src/db/schema')
+    const db = getDb(env.DB)
+    const hb1 = await seedBill({ billNumber: 'HB0001', title: 'Election Reform Act', status: 'Introduced', tags: [] })
+    await seedBill({ billNumber: 'HB0002', title: 'Clerk Staffing Bill', status: 'Introduced', tags: ['Clerk'] })
+    await db.insert(billSubjects).values({ billId: hb1, subjectName: 'Elections', state: 'UT' })
+  })
+
+  it('applies to the OR set when the filter carries match=any', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' }, priority: 'high' }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { updated: number }).updated).toBe(2)
+  })
+
+  it('applies to the AND set without it, unchanged from today', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] }, priority: 'high' }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { updated: number }).updated).toBe(0)
+  })
+})
+
+describe('POST /bills/bulk-dismiss — match=any', () => {
+  // Same reasoning and fixtures as the /bulk match=any suite above.
+  let adminToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin' })
+    adminToken = await seedSession(adminId)
+
+    const { billSubjects } = await import('../../src/db/schema')
+    const db = getDb(env.DB)
+    const newMatchAt = new Date().toISOString()
+    const hb1 = await seedBill({ billNumber: 'HB0001', title: 'Election Reform Act', status: 'Introduced', tags: [], matchType: 'keyword', newMatchAt })
+    await seedBill({ billNumber: 'HB0002', title: 'Clerk Staffing Bill', status: 'Introduced', tags: ['Clerk'], matchType: 'keyword', newMatchAt })
+    await db.insert(billSubjects).values({ billId: hb1, subjectName: 'Elections', state: 'UT' })
+  })
+
+  it('applies to the OR set when the filter carries match=any', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' } }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { dismissed: number }).dismissed).toBe(2)
+  })
+
+  it('applies to the AND set without it, unchanged from today', async () => {
+    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] } }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { dismissed: number }).dismissed).toBe(0)
+  })
+})
+
 describe('POST /bills/bulk — priority promotion', () => {
   let adminToken: string
 
@@ -1988,6 +2070,49 @@ describe('GET /bills/bulk-values (admin only)', () => {
     const body = await res.json() as { customFields: Record<string, Record<string, number>> }
     expect(body.customFields[fieldId]['1']).toBe(1)
     expect(body.customFields[fieldId]['null']).toBe(2)
+  })
+})
+
+describe('GET /bills/bulk-values — match=any', () => {
+  // Same fixtures and reasoning as the /bulk match=any suite: this is the read
+  // that pre-populates the bulk-edit form's initial values, and it must agree
+  // with the write that follows it. Before this fix it silently disagreed —
+  // "Not set" shown for the AND set, immediately before a write to the OR set.
+  let adminToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin' })
+    adminToken = await seedSession(adminId)
+
+    const { billSubjects } = await import('../../src/db/schema')
+    const db = getDb(env.DB)
+    const hb1 = await seedBill({ billNumber: 'HB0001', title: 'Election Reform Act', status: 'Introduced', tags: [] })
+    await seedBill({ billNumber: 'HB0002', title: 'Clerk Staffing Bill', status: 'Introduced', tags: ['Clerk'] })
+    await db.insert(billSubjects).values({ billId: hb1, subjectName: 'Elections', state: 'UT' })
+  })
+
+  it('counts the OR set when the filter carries match=any', async () => {
+    const params = new URLSearchParams({ match: 'any' })
+    params.append('subject', 'UT:Elections')
+    params.append('tag', 'Clerk')
+    const res = await SELF.fetch(`http://localhost/api/bills/bulk-values?${params}`, {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { count: number }).count).toBe(2)
+  })
+
+  it('counts the AND set without it, unchanged from today', async () => {
+    const params = new URLSearchParams()
+    params.append('subject', 'UT:Elections')
+    params.append('tag', 'Clerk')
+    const res = await SELF.fetch(`http://localhost/api/bills/bulk-values?${params}`, {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { count: number }).count).toBe(0)
   })
 })
 

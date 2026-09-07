@@ -151,6 +151,9 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
       isAdmin={ctx.isAdmin}
       newMatches={false}
       newMatchesCount={ctx.newMatchesCount ?? 3}
+      unvotedOnly={false}
+      matchAny={false}
+      onMatchAnyChange={() => {}}
       uniqueStates={ctx.uniqueStates}
       statusOptions={[{ value: 'active', label: 'Active' }]}
       priorityOptions={[{ value: 'high', label: 'High' }]}
@@ -166,6 +169,7 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
       onStatusChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
       onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
+      onUnvotedOnlyChange={() => {}}
       onClearAll={() => {}}
     />,
   )
@@ -174,8 +178,21 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
 // The always-visible options-kind dimensions, asserted on both surfaces in
 // every context. State and New matches are handled separately since their
 // presence itself is the thing under test.
+// 'myBills' and 'unvoted' are excluded too: both are toggle-kind, not
+// options-kind, so neither renders via FilterDropdown/DimensionRow — this
+// loop is specifically about the options-kind dimensions, and it runs on
+// both surfaces with one query per key, so a toggle needs its own assertion
+// either way. Each is asserted separately below instead (mirroring the
+// existing myBills special-case).
+// 'myBills' has a second, independent reason to stay out of this loop: on
+// desktop its accessible name is a compound (label + count badge), not a
+// bare exact match. 'unvoted' has no count badge on either surface, so its
+// accessible name IS the exact label — which is exactly why the direct
+// assertions below use `getByRole` with an exact name, on both desktop and
+// mobile (Task 7 wired it into the desktop FilterToggle cluster; the
+// Critical-1 fix wired the matching control into FilterSheet).
 const ALWAYS_VISIBLE_OPTION_KEYS = FILTER_DIMENSIONS
-  .filter(d => d.key !== 'state' && d.key !== 'newMatches' && d.key !== 'myBills')
+  .filter(d => d.key !== 'state' && d.key !== 'newMatches' && d.key !== 'myBills' && d.key !== 'unvoted')
   .map(d => d.key)
 
 describe('filter dimension parity — registry-driven visibility and labels', () => {
@@ -184,8 +201,10 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     for (const key of ALWAYS_VISIBLE_OPTION_KEYS) {
       expect(screen.getByRole('button', { name: filterDimensionLabel(key) })).toBeInTheDocument()
     }
-    // My bills (a toggle) is always visible too, just not via FilterDropdown.
+    // My bills and Not yet voted (toggles) are always visible too, just not
+    // via FilterDropdown.
     expect(screen.getByText(filterDimensionLabel('myBills'))).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: filterDimensionLabel('unvoted') })).toBeInTheDocument()
     cleanup()
 
     renderMobile({ uniqueStates: ['RI'], isAdmin: false })
@@ -193,6 +212,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
       expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel(key)}$`) })).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: filterDimensionLabel('myBills') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: filterDimensionLabel('unvoted') })).toBeInTheDocument()
   })
 
   describe.each([
@@ -317,6 +337,13 @@ async function withRenamedDimension(key: string, body: (originalLabel: string) =
   }
 }
 
+// 'unvoted' now has a rendered affordance on both surfaces (Task 7's desktop
+// scope cluster, and the Critical-1 fix's matching FilterSheet control), so
+// both sweeps cover every dimension with no exclusion. Keep it that way: an
+// exclusion here is exactly the stale-scaffolding risk this sweep exists to
+// catch (see Task 1's original review) — if a dimension is ever added to a
+// surface without wiring it into that surface's chrome, this sweep should
+// fail for it, not silently skip it.
 const EVERY_DIMENSION = FILTER_DIMENSIONS.map(d => ({ key: d.key }))
 
 describe('no dimension label may be rendered from a literal', () => {
@@ -428,5 +455,44 @@ describe('custom field filter parity', () => {
     expect(desktopNames).toEqual(FILTERABLE_CF_NAMES)
     expect(mobileNames).toEqual(FILTERABLE_CF_NAMES)
     expect(mobileNames).toEqual(desktopNames)
+  })
+})
+
+describe('dimension scope classification', () => {
+  it('classifies every dimension as a bill fact or viewer scope', () => {
+    for (const d of FILTER_DIMENSIONS) {
+      expect(['bill', 'viewer']).toContain(d.scope)
+    }
+  })
+
+  it('treats the viewer-relative dimensions as scope', () => {
+    const viewer = FILTER_DIMENSIONS.filter(d => d.scope === 'viewer').map(d => d.key).sort()
+    expect(viewer).toEqual(['myBills', 'newMatches', 'unvoted'])
+  })
+
+  it('treats every value dimension as a bill fact', () => {
+    const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
+    expect(bill).toEqual(['position', 'priority', 'session', 'state', 'status', 'subjects', 'tags'])
+  })
+
+  it('registers unvoted so the bills page can set it, not only clear it', () => {
+    // Previously settable only via the Sidebar's "N unvoted" chip
+    // (?priority=…&unvoted=1) — see Sidebar.prioritizedChips.test.tsx.
+    const d = FILTER_DIMENSIONS.find(x => x.key === 'unvoted')
+    expect(d).toBeDefined()
+    expect(d!.kind).toBe('toggle')
+    expect(d!.label).toBe('Not yet voted')
+  })
+
+  it('does not classify by control shape', () => {
+    // A binary custom field renders as a toggle identical to the My bills pill
+    // but is a fact about the bill. `kind` is a rendering concern; `scope` is
+    // semantic. They must stay independent.
+    const myBills = FILTER_DIMENSIONS.find(d => d.key === 'myBills')!
+    const state = FILTER_DIMENSIONS.find(d => d.key === 'state')!
+    expect(myBills.kind).toBe('toggle')
+    expect(myBills.scope).toBe('viewer')
+    expect(state.kind).toBe('options')
+    expect(state.scope).toBe('bill')
   })
 })
