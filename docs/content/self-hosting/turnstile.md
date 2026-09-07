@@ -1,3 +1,7 @@
+---
+description: "Optionally add a Cloudflare Turnstile human-check to FloorVote's login screens, on top of the always-on per-IP rate limiter. Configuration only, no code changes."
+---
+
 # Turnstile (optional login protection)
 
 Every login form already has an always-on, per-IP rate limiter. On top of that, you can add a [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) human-check on the login screens. It's **optional and off by default** — skip this page entirely and login still works.

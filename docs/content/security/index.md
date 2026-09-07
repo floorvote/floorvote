@@ -1,3 +1,7 @@
+---
+description: "How to report a security vulnerability in FloorVote, what the app and the project protect for you, and what a self-hosting operator stays responsible for."
+---
+
 # Security
 
 ## Reporting a vulnerability

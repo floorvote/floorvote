@@ -1,3 +1,7 @@
+---
+description: "Deploy FloorVote's central service to your own Cloudflare account: the shared worker that pulls legislative data from LegiScan and feeds every team instance."
+---
+
 # Self-hosting: set up your central service
 
 FloorVote runs on your own Cloudflare account. This page gets your **central service** running — the one shared worker that pulls in legislative data and feeds it to your teams. Once it's up, you [add one or more tenants](/self-hosting/tenants) (a tenant is one team's instance).

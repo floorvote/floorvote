@@ -1,3 +1,8 @@
+---
+title: "Cost to run a self-hosted bill tracker"
+description: "About $5 to $7 a month on Cloudflare, plus AI summary usage. LegiScan's API is free for most teams; broader coverage runs $1,000 to $6,000 a year."
+---
+
 # How much does it cost?
 
 To run FloorVote, you'll need to make two accounts: Cloudflare and LegiScan. You can realistically expect that running FloorVote will cost you about $5-7/month to start.

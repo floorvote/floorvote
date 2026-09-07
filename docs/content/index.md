@@ -1,4 +1,5 @@
 ---
+description: "Documentation for FloorVote, the open source bill tracker: what it does, what it runs on, how to deploy it, and how it works inside."
 layout: home
 hero:
   # No `name`: VitePress renders it as flat brand-coloured text, which puts the

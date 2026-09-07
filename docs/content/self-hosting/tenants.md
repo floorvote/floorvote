@@ -1,3 +1,7 @@
+---
+description: "Add a team instance: one Cloudflare Worker, D1 database, and queue, with its own users, votes, and positions, fed entirely by your central service."
+---
+
 # Adding a tenant
 
 A tenant is one team's instance: a single Cloudflare Worker + D1 database + queue. The Worker serves both the API and the app, and all bill data flows from your [central service](/self-hosting/) — tenants never call LegiScan directly. This page assumes your central service is already running.

@@ -1,3 +1,7 @@
+---
+description: "Run a public, no-signup FloorVote instance by deploying a tenant with DEMO_MODE enabled, and choose which bills and content the demo shows."
+---
+
 # Public demo site (optional)
 
 Most deployments don't need this — **skip this page and every tenant is a normal, sign-in-required instance.**

@@ -1,3 +1,7 @@
+---
+description: "How FloorVote works inside: one central Worker holds the LegiScan account and every bill's text, and fans changes out to self-contained per-team tenant Workers."
+---
+
 # Architecture
 
 FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to LegiScan, stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls LegiScan directly. That way all legislative-API traffic comes from one place, on a schedule you control, however many tenants you run.

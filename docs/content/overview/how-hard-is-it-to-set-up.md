@@ -1,3 +1,7 @@
+---
+description: "A one-time technical setup: provisioning Cloudflare resources and running deploy scripts in a terminal. Not a signup form, and not a developer-only job."
+---
+
 # How hard is it to set up?
 
 Setting up FloorVote is a technical task. You'll be provisioning Cloudflare resources and running deploy scripts, not clicking through a simple signup form. Take a look at the [Self-hosting guide](/self-hosting/) to see exactly what's involved before you commit to setting it up.

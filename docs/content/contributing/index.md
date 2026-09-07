@@ -1,3 +1,7 @@
+---
+description: "How to contribute to FloorVote: local development, running tests, coding conventions, pull requests, and the DCO sign-off the project requires."
+---
+
 # Contributing
 
 FloorVote is open source, and contributions are welcome.

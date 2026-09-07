@@ -1,3 +1,7 @@
+---
+description: "Day-to-day operation of a running FloorVote deployment: the optional superadmin dashboard, adding states, adding teams, upgrading, and monitoring."
+---
+
 # Operating your deployment
 
 Once your central service and at least one tenant are running, this page covers the day-to-day: optional central features you can turn on, growing your deployment, and keeping it up to date. None of this is required to get running — see [Self-hosting](/self-hosting/) and [Adding tenants](/self-hosting/tenants) for the must-do path.

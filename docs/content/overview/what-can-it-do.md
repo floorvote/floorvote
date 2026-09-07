@@ -1,3 +1,8 @@
+---
+title: "Bill tracking features for policy teams"
+description: "AI bill summaries, member voting, comments, official team positions, email digests, and hearing calendars for teams tracking state and federal legislation."
+---
+
 # What can FloorVote do?
 
 FloorVote is an open, self-hostable bill tracker for any team that tracks legislation—automatic bill summaries, member voting, email notifications, and hearing calendars, all for about $5-7/month in infrastructure.
