@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { processCentralNotification, processQueue } from '../../src/queue/processor'
+import { processCentralNotification, processQueue, shedRetryDelay } from '../../src/queue/processor'
 import { eq } from 'drizzle-orm'
 import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
 import { parseSubjects } from '../../src/lib/billSubjects'
@@ -511,7 +511,9 @@ describe('processCentralNotification', () => {
     }
     await processQueue([message as any], testEnv as any, db)
 
-    expect(retried).toEqual([60])
+    // Backed off for the attempt number, not the flat base delay.
+    expect(retried).toEqual([shedRetryDelay(60, 7)])
+    expect(retried[0]).toBeGreaterThan(60)
     const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
     expect(row?.aiError).toContain('attempt 7')
     expect(row?.aiError).toContain('503')

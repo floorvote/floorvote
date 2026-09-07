@@ -75,6 +75,32 @@ function shedDetail(err: unknown): { status?: number; detail?: string } {
  * The case this covers is the reprocess of bills that already exist, which is
  * where bills were actually being lost.
  */
+/**
+ * How long to hold a shed message before redelivering it.
+ *
+ * A shed is backpressure, so the useful question is how long the pipeline can
+ * ride out a shedding window before the retry budget runs out. A fixed delay
+ * answers that badly: at 60s with max_retries=10 the whole budget spans ten
+ * minutes, and a provider shedding for longer than that dead-letters every
+ * message in flight regardless of how many retries are configured. Raising the
+ * retry count alone does not help much either — a UT reprocess with 10 retries
+ * still dead-lettered roughly 360 messages in one burst.
+ *
+ * Doubling per attempt turns the same 10 retries into about five hours of
+ * coverage. The cap keeps a single message from parking for a whole day, and
+ * stays well inside Cloudflare's 0-86400s bound for delaySeconds.
+ *
+ * A zero base means "retry immediately" (the priority-to-standard tier fallback)
+ * and is passed through untouched.
+ */
+const SHED_MAX_DELAY_SECONDS = 3600
+
+export function shedRetryDelay(baseSeconds: number, attempts: number): number {
+  if (baseSeconds <= 0) return 0
+  const exponent = Math.max(0, attempts - 1)
+  return Math.min(Math.round(baseSeconds * 2 ** exponent), SHED_MAX_DELAY_SECONDS)
+}
+
 async function recordShedAttempt(
   db: AppDb,
   billId: string,
@@ -167,11 +193,12 @@ export async function processQueue(
         console.warn(
           `[processor] AI gateway shed for ${message.body.billId}`
           + ` (status ${err.status ?? 'unknown'})`
-          + `${err.delaySeconds > 0 ? `, requeing in ${err.delaySeconds}s` : ', requeing immediately'}`
+          + `${err.delaySeconds > 0 ? `, attempt ${message.attempts}, requeing in ${shedRetryDelay(err.delaySeconds, message.attempts)}s` : ', requeing immediately'}`
           + `${err.detail ? ` — ${err.detail}` : ''}`,
         )
-        if (err.delaySeconds > 0) {
-          message.retry({ delaySeconds: err.delaySeconds })
+        const delaySeconds = shedRetryDelay(err.delaySeconds, message.attempts)
+        if (delaySeconds > 0) {
+          message.retry({ delaySeconds })
         } else {
           message.retry()
         }
