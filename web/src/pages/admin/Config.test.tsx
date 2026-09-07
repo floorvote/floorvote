@@ -385,7 +385,13 @@ describe('Config — preset panel removed', () => {
     render(<Config />)
     await screen.findByText('AI instructions')
     expect(screen.queryByText('Reset to preset')).toBeNull()
-    expect(screen.getAllByText('Reset to default').length).toBeGreaterThan(0)
+    // Only ai_context has a value here (relevance_question and tag_taxonomy
+    // are blank, so those two show the "Start from default" seed instead),
+    // so exactly one field shows "Reset to default" — the Bill summary
+    // field. The Tags field never shows this label at all now (it says
+    // "Clear all"), so this count no longer includes it the way it once did.
+    expect(screen.getAllByText('Reset to default').length).toBe(1)
+    expect(screen.queryByText('Clear all')).not.toBeInTheDocument()
   })
 })
 
@@ -826,6 +832,23 @@ describe('Config — tag taxonomy table', () => {
     renderInRegistry(<Config />)
     expect(await screen.findByLabelText('Tag name, row 1')).toHaveValue('Elections')
     expect(screen.getByLabelText('Description, row 1')).toHaveValue('voting')
+  })
+
+  it('labels the Tags field\'s reset control "Clear all", not "Reset to default"', async () => {
+    // Unlike aiContext/relevanceQuestion, whose default is a real generic
+    // prompt ("Reset to default" describes what happens there), the Tags
+    // field is a table: the control empties every row and what the admin
+    // sees is an empty table. "Clear all" says that; "Reset to default"
+    // would not. A revert of this label alone must fail this test even
+    // though the other two fields keep saying "Reset to default".
+    mockConfig({ tag_taxonomy: [{ name: 'Elections' }] })
+    renderInRegistry(<Config />)
+    await screen.findByLabelText('Tag name, row 1')
+    // #config-tags-label's parent is the flex row holding the "Tags" label
+    // and its reset control, side by side.
+    const row = document.getElementById('config-tags-label')!.parentElement as HTMLElement
+    expect(within(row).getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Reset to default' })).not.toBeInTheDocument()
   })
 
   it('shows the tag count in a pill beside the label', async () => {

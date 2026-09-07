@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useLayoutEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../../../shared/tokens'
 import {
   deriveSortDirection, moveRow, parsePastedRows, rowProblems, sortRows, withTrailingBlank,
@@ -22,12 +22,22 @@ type Props = {
 
 // Shared by the header row and every body row so the two grids can never
 // drift out of sync with each other. The narrow-screen override in
-// mobile.css (.tag-table > div > div) targets this same grid, collapsing it
-// to two tracks and dropping the grip/ordinal column.
+// mobile.css (.tag-table .tag-table-row) targets this same grid, collapsing
+// it to two tracks and dropping the grip/ordinal column.
 const GRID_TEMPLATE_COLUMNS = '34px minmax(0,1fr) minmax(0,1.6fr) 34px'
 
 /** Which editable column an interaction came from, so a move can return to it. */
 type Column = 'name' | 'description'
+
+// A custom MIME type, not 'text/plain': the reorder grip's payload is just a
+// row index, and 'text/plain' makes that digit a legitimate native drop
+// target for any textarea/input on the page. A user who grabs the grip and
+// releases over, say, the description field of another row (or the Config
+// page's custom-fields text areas) would get the raw digit inserted at the
+// caret by the browser's own text-drop handling. No native target accepts
+// this type, so a reorder drag that lands somewhere other than a tag row
+// silently does nothing instead of leaking a digit into a field.
+const DRAG_MIME = 'application/x-floorvote-tag-row'
 
 /**
  * The tag taxonomy editor: one row per tag, name and optional description.
@@ -43,6 +53,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   const nameRefs = useRef<Array<HTMLInputElement | null>>([])
   const descRefs = useRef<Array<HTMLTextAreaElement | null>>([])
   const [dragFrom, setDragFrom] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<number | null>(null)
   const [announcement, setAnnouncement] = useState('')
   // Derived from `displayed` itself rather than tracked as its own state, so
   // it can never claim a direction the rows are no longer actually in — e.g.
@@ -208,7 +219,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   return (
     <div>
       <div className="tag-table" style={{ border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceMuted, borderBottom: `1px solid ${color.borderStrong}` }}>
+        <div className="tag-table-row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceMuted, borderBottom: `1px solid ${color.borderStrong}` }}>
           {/* Shares the grip cell's class hook so the narrow-width rule removes
               this placeholder from grid placement too — otherwise it would keep
               claiming column 1 of row 1 and push the header into a broken
@@ -265,107 +276,160 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
           const problem = problems[i]
           const msgId = `${idPrefix}-tag-problem-${i}`
           const isTrailingBlank = i === displayed.length - 1
+          // Drop-indicator line shown immediately before this row while
+          // dragging over it, matching Config.tsx's custom-fields list and
+          // BillList/ViewSwitcher's saved-views reorder — the two other
+          // reorderable lists in this codebase. The `dragFrom !== i - 1`
+          // clause (alongside `dragFrom !== i`) suppresses a pointless line
+          // at the drag source, where a drop would be a no-op. This applies
+          // uniformly to the trailing blank (i === displayed.length - 1) too,
+          // which is deliberately a valid hover/drop target below even
+          // though it can never be a drag source.
+          const showIndicator = dragOver === i && dragFrom !== null && dragFrom !== i && dragFrom !== i - 1
           return (
-            <div
-              key={i}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
-                borderTop: i === 0 ? undefined : `1px solid ${color.borderNeutralFaint}`,
-                background: problem ? color.bgDangerSoft : undefined,
-              }}
-              // The drop target is the WHOLE row, not the 34px grip: the grip
-              // is only ~10% of the row's width, and without a dragover
-              // preventDefault the browser shows "no drop allowed" over the
-              // tag input, the description, and the delete cell — i.e. over
-              // almost everywhere someone actually releases the pointer.
-              // `draggable` stays on the grip, so the grip remains the only
-              // thing that can START a drag.
-              //
-              // Both handlers bail out early when dragFrom is null — i.e. this
-              // drag did not originate from the reorder grip. Without that
-              // check, preventDefault ran (and onDrop did nothing) for ANY
-              // drag over a real row, including a user dragging selected text
-              // from elsewhere on the page toward a description textarea —
-              // silently swallowing the browser's native "insert at caret"
-              // drop. A reorder drag always sets dragFrom first (onDragStart
-              // below), so this leaves reordering untouched.
-              onDragEnd={() => setDragFrom(null)}
-              onDragOver={isTrailingBlank ? undefined : e => {
-                if (dragFrom !== null) e.preventDefault()
-              }}
-              onDrop={isTrailingBlank ? undefined : e => {
-                if (dragFrom === null) return
-                e.preventDefault()
-                reorder(dragFrom, i)
-                setDragFrom(null)
-              }}
-            >
-              {isTrailingBlank ? (
-                // The trailing blank is not a tag: no grip, not draggable,
-                // and not a drop target either — an affordance that does
-                // nothing is worse than no affordance. It still gets the
-                // grip's class hook (with no grip inside it) purely so the
-                // narrow-width rule removes it from grid placement the same
-                // way it removes the real grip cell — otherwise this
-                // placeholder alone would keep claiming column 1 of row 1
-                // and break the two-row stack for the "add a tag" row.
-                <div className="tag-table-reorder" />
-              ) : (
-                <div
-                  className="tag-table-reorder"
-                  style={{ display: 'flex', alignItems: 'flex-start', padding: '9px 4px 0 8px', gap: 4 }}
-                  draggable
-                  onDragStart={() => setDragFrom(i)}
-                >
-                  <span aria-hidden="true" style={{ cursor: 'grab', color: color.textMuted, fontSize: fontSize.sm, userSelect: 'none' }}>⠿</span>
-                  <span aria-hidden="true" style={{ fontSize: fontSize.xs, color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
-                </div>
+            <Fragment key={i}>
+              {showIndicator && (
+                <div className="tag-table-drop-indicator" style={{ height: 2, background: color.accentBlue, margin: '0 12px' }} />
               )}
+              <div
+                className="tag-table-row"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
+                  borderTop: i === 0 ? undefined : `1px solid ${color.borderNeutralFaint}`,
+                  background: problem ? color.bgDangerSoft : undefined,
+                  opacity: dragFrom === i ? 0.4 : 1,
+                }}
+                // The drop target is the WHOLE row, not the 34px grip: the grip
+                // is only ~10% of the row's width, and without a dragover
+                // preventDefault the browser shows "no drop allowed" over the
+                // tag input, the description, and the delete cell — i.e. over
+                // almost everywhere someone actually releases the pointer.
+                // `draggable` stays on the grip, so the grip remains the only
+                // thing that can START a drag. This now includes the trailing
+                // blank as a drop target (the tail drop zone below moves the
+                // dragged row to the last real position), but never as a
+                // source — it renders no grip at all.
+                //
+                // Both handlers bail out early when dragFrom is null — i.e. this
+                // drag did not originate from the reorder grip. Without that
+                // check, preventDefault ran (and onDrop did nothing) for ANY
+                // drag over a real row, including a user dragging selected text
+                // from elsewhere on the page toward a description textarea —
+                // silently swallowing the browser's native "insert at caret"
+                // drop. A reorder drag always sets dragFrom first (onDragStart
+                // below), so this leaves reordering untouched.
+                onDragEnd={() => { setDragFrom(null); setDragOver(null) }}
+                onDragOver={e => {
+                  if (dragFrom === null) return
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                  setDragOver(i)
+                }}
+                onDrop={e => {
+                  if (dragFrom === null) return
+                  e.preventDefault()
+                  // Read the source index back from dataTransfer rather than
+                  // trusting state alone, matching both existing
+                  // implementations of this pattern.
+                  const fromIdx = parseInt(e.dataTransfer.getData(DRAG_MIME), 10)
+                  setDragFrom(null)
+                  setDragOver(null)
+                  if (Number.isNaN(fromIdx)) return
+                  // The indicator promises insert-BEFORE row i, but moveRow
+                  // splices the source out before inserting at the target —
+                  // so on a downward drag (fromIdx < i), removing the source
+                  // shifts row i (and everything between) up by one first.
+                  // Landing before row i's ORIGINAL position therefore means
+                  // targeting i - 1 in the post-removal array, not i, or the
+                  // dragged row ends up one slot too far (after row i rather
+                  // than before it). An upward drag (fromIdx > i) has no such
+                  // shift below the target, so i is already correct there.
+                  //
+                  // The tail zone (dropping on the trailing blank) is not an
+                  // insert-before-i case at all: it means "move to the last
+                  // real position", i.e. target the last real index directly
+                  // — reorder() itself refuses `to === lastIndex` (the
+                  // blank's own slot). That target needs no fromIdx < i
+                  // adjustment: moveRow's own from === to no-op guard already
+                  // covers dragging the last real row onto the blank.
+                  const lastRealIndex = displayed.length - 2
+                  const to = isTrailingBlank
+                    ? lastRealIndex
+                    : fromIdx < i ? i - 1 : i
+                  reorder(fromIdx, to)
+                }}
+              >
+                {isTrailingBlank ? (
+                  // The trailing blank is not a tag: no grip, not draggable —
+                  // an affordance that does nothing is worse than no
+                  // affordance. It still gets the grip's class hook (with no
+                  // grip inside it) purely so the narrow-width rule removes
+                  // it from grid placement the same way it removes the real
+                  // grip cell — otherwise this placeholder alone would keep
+                  // claiming column 1 of row 1 and break the two-row stack
+                  // for the "add a tag" row.
+                  <div className="tag-table-reorder" />
+                ) : (
+                  <div
+                    className="tag-table-reorder"
+                    style={{ display: 'flex', alignItems: 'flex-start', padding: '9px 4px 0 8px', gap: 4 }}
+                    draggable
+                    onDragStart={e => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      e.dataTransfer.setData(DRAG_MIME, String(i))
+                      setDragFrom(i)
+                    }}
+                  >
+                    <span aria-hidden="true" style={{ cursor: 'grab', color: color.textMuted, fontSize: fontSize.sm, userSelect: 'none' }}>⠿</span>
+                    <span aria-hidden="true" style={{ fontSize: fontSize.xs, color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
+                  </div>
+                )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <input
-                  ref={el => { nameRefs.current[i] = el }}
-                  type="text"
-                  value={row.name}
-                  aria-label={`Tag name, row ${i + 1}`}
-                  aria-invalid={problem ? true : undefined}
-                  aria-describedby={problem ? msgId : undefined}
-                  placeholder={isTrailingBlank ? 'Add a tag…' : undefined}
-                  onChange={e => setRow(i, { name: e.target.value })}
-                  onKeyDown={e => onFieldKeyDown(e, i, 'name')}
-                  onPaste={e => onFieldPaste(e, i)}
-                  style={{ ...fieldStyle, fontWeight: fontWeight.medium, color: problem ? color.textDanger : color.textPrimary }}
-                />
-                {problem && <div id={msgId} style={msgStyle}>{problem}</div>}
-              </div>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <input
+                    ref={el => { nameRefs.current[i] = el }}
+                    type="text"
+                    value={row.name}
+                    aria-label={`Tag name, row ${i + 1}`}
+                    aria-invalid={problem ? true : undefined}
+                    aria-describedby={problem ? msgId : undefined}
+                    placeholder={isTrailingBlank ? 'Add a tag…' : undefined}
+                    onChange={e => setRow(i, { name: e.target.value })}
+                    onKeyDown={e => onFieldKeyDown(e, i, 'name')}
+                    onPaste={e => onFieldPaste(e, i)}
+                    style={{ ...fieldStyle, fontWeight: fontWeight.medium, color: problem ? color.textDanger : color.textPrimary }}
+                  />
+                  {problem && <div id={msgId} style={msgStyle}>{problem}</div>}
+                </div>
 
-              <div style={{ display: 'flex', minWidth: 0, borderLeft: `1px solid ${color.borderNeutralFaint}` }}>
-                <textarea
-                  ref={el => { descRefs.current[i] = el }}
-                  rows={1}
-                  value={row.description}
-                  aria-label={`Description, row ${i + 1}`}
-                  placeholder="Optional context for the AI"
-                  onChange={e => setRow(i, { description: e.target.value })}
-                  onKeyDown={e => onFieldKeyDown(e, i, 'description')}
-                  onPaste={e => onFieldPaste(e, i)}
-                  onInput={e => resizeTextarea(e.currentTarget)}
-                  style={{ ...fieldStyle, color: color.textSecondary, resize: 'none', overflow: 'hidden' }}
-                />
-              </div>
+                <div style={{ display: 'flex', minWidth: 0, borderLeft: `1px solid ${color.borderNeutralFaint}` }}>
+                  <textarea
+                    ref={el => { descRefs.current[i] = el }}
+                    rows={1}
+                    value={row.description}
+                    aria-label={`Description, row ${i + 1}`}
+                    placeholder="Optional context for the AI"
+                    onChange={e => setRow(i, { description: e.target.value })}
+                    onKeyDown={e => onFieldKeyDown(e, i, 'description')}
+                    onPaste={e => onFieldPaste(e, i)}
+                    onInput={e => resizeTextarea(e.currentTarget)}
+                    style={{ ...fieldStyle, color: color.textSecondary, resize: 'none', overflow: 'hidden' }}
+                  />
+                </div>
 
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5px 4px' }}>
-                <button
-                  type="button"
-                  aria-label={`Delete row ${i + 1}`}
-                  onClick={() => removeAt(i)}
-                  style={delStyle}
-                >
-                  ×
-                </button>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '5px 4px' }}>
+                  <button
+                    type="button"
+                    aria-label={`Delete row ${i + 1}`}
+                    onClick={() => removeAt(i)}
+                    style={delStyle}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
-            </div>
+            </Fragment>
           )
         })}
       </div>

@@ -801,7 +801,7 @@ export function Config() {
                       {rowsToTaxonomy(taxonomyRows).length}
                     </span>
                   </span>
-                  {renderResetControl('tagTaxonomy', rowsToTaxonomy(taxonomyRows).length > 0, 'Reset to default')}
+                  {renderResetControl('tagTaxonomy', rowsToTaxonomy(taxonomyRows).length > 0, 'Clear all')}
                 </div>
                 <div role="group" aria-labelledby="config-tags-label">
                   <TagTaxonomyTable
