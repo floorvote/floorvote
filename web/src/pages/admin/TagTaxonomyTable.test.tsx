@@ -588,7 +588,7 @@ describe('TagTaxonomyTable — drag-drop outcomes', () => {
     expect(values()).toEqual(['Housing', 'Courts', 'Elections', ''])
   })
 
-  it('drag Housing (row 2), drop on Courts (row 3) is a no-op: the dragFrom !== i - 1 guard suppresses the indicator and the drop changes nothing', () => {
+  it('drag Housing (row 2), drop on Courts (row 3) is a no-op: dropping a row onto the one immediately below it suppresses the indicator and changes nothing', () => {
     const onRows = vi.fn()
     render(<Harness initial={[
       { name: 'Elections', description: '' },
@@ -843,5 +843,31 @@ describe('TagTaxonomyTable — paste', () => {
     await user.paste('tions')
     expect(tagFields()).toHaveLength(2)
     expect(tagFields()[0]).toHaveValue('Elections')
+  })
+
+  it('visually hides the sort button caption and the live region with the shared SR_ONLY style', () => {
+    // Asserts on `margin: -1`, which the shared SR_ONLY style carries and a
+    // hand-rolled clip-rect copy previously lacked — a regression back to a
+    // local duplicate would fail this without changing anything visible.
+    render(<Harness initial={[
+      { name: 'Elections', description: '' },
+      { name: 'Housing', description: '' },
+    ]} />)
+
+    const sortCaption = screen.getByText(
+      (_, el) => el?.tagName === 'SPAN'
+        && el.children.length === 0
+        && /Click to sort/.test(el.textContent ?? ''),
+    )
+    expect(sortCaption.style.margin).toBe('-1px')
+
+    const status = screen.getByRole('status')
+    expect(status.style.margin).toBe('-1px')
+  })
+
+  it('positions the outer wrapper so the SR_ONLY children cannot escape to a distant ancestor', () => {
+    const { container } = render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.style.position).toBe('relative')
   })
 })

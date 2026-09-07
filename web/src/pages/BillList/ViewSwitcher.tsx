@@ -6,6 +6,7 @@ import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
 import { VIEW_STYLE } from '../../../../shared/viewStyle'
 import { useDemo } from '../../context/DemoContext'
+import { DropIndicator, useDragReorder } from '../../components/dragReorder'
 
 // Fixed dropdown width (FIX 2): the menu used to be content-sized off a
 // `minWidth: 232` floor, so revealing Rename/Delete on hover widened the whole
@@ -55,8 +56,6 @@ export function ViewSwitcher({
   // reverted if onReorder rejects. Reset from props whenever the incoming
   // views identity/order changes (a fresh fetch, a rename/delete reload).
   const [orderedViews, setOrderedViews] = useState<SavedView[]>(views)
-  const [dragFrom, setDragFrom] = useState<number | null>(null)
-  const [dragOver, setDragOver] = useState<number | null>(null)
   useEffect(() => {
     setOrderedViews(views)
   }, [views])
@@ -71,6 +70,24 @@ export function ViewSwitcher({
   // a demo — demoMode === false is ambiguous before `settled`, and a naive
   // `!demoMode` would flash Rename/Delete at a demo visitor on first render.
   const isNotDemo = settled && !demoMode
+  // Reorder is a write, gated the same as Rename/Delete: an admin, on a tenant
+  // positively known not to be a demo.
+  const canReorder = isAdmin && isNotDemo
+
+  // Drag-to-reorder, shared with the tag table (admin/TagTaxonomyTable.tsx) and
+  // custom fields (admin/Config.tsx) — see components/dragReorder.tsx. Declared
+  // up here, above the `views.length === 0` early return below, because it is a
+  // hook. Persistence stays at this call site: commitReorder is optimistic and
+  // reverts on failure, which neither of the other two lists does.
+  //
+  // `to` arrives already adjusted for the splice-out shift, and only for a drop
+  // the indicator promised, so commitReorder needs neither the arithmetic nor a
+  // no-op guard it used to carry.
+  const dnd = useDragReorder({
+    count: orderedViews.length,
+    disabled: !canReorder,
+    onReorder: (from, to) => { void commitReorder(from, to) },
+  })
 
   // Closing the menu abandons any in-progress rename or delete confirm, so
   // reopening never resumes a half-finished destructive action. It also drops
@@ -155,12 +172,7 @@ export function ViewSwitcher({
     }
   }
 
-  // Reorder is a write, gated the same as Rename/Delete: an admin, on a tenant
-  // positively known not to be a demo.
-  const canReorder = isAdmin && isNotDemo
-
   async function commitReorder(fromIdx: number, toIdx: number) {
-    if (fromIdx === toIdx) return
     const previous = orderedViews
     const reordered = [...previous]
     const [moved] = reordered.splice(fromIdx, 1)
@@ -221,33 +233,18 @@ export function ViewSwitcher({
           </button>
           <div style={{ height: 1, background: color.borderDefault, margin: '4px 0' }} />
           {orderedViews.map((v, i) => {
-            // Drop-indicator line before this row while dragging over it. The
-            // dragFrom !== i / i - 1 guard (same as Config.tsx's custom-fields
-            // reorder) keeps a pointless line from appearing right at the drag
-            // source, where a drop would be a no-op.
-            const showIndicator = dragOver === i && dragFrom !== null && dragFrom !== i && dragFrom !== i - 1
-            const indicator = showIndicator && (
-              <div style={{ height: 2, background: VIEW_STYLE.border, margin: '0 12px' }} />
-            )
+            // The views layer's own teal, not the primitive's default blue —
+            // this line belongs to the same surface as the selected row.
+            const indicator = dnd.indicatorBefore(i) && <DropIndicator lineColor={VIEW_STYLE.border} />
             // Any row can be a drop target regardless of its state, but only a
             // row that is neither being renamed nor confirming delete may be
-            // the drag *source* — mirrors Config.tsx's cfEditing !== field.id.
-            const dropHandlers = canReorder ? {
-              onDragOver: (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(i) },
-              onDrop: (e: React.DragEvent) => {
-                e.preventDefault()
-                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
-                setDragFrom(null)
-                setDragOver(null)
-                if (Number.isNaN(fromIdx)) return
-                void commitReorder(fromIdx, i)
-              },
-            } : {}
+            // the drag *source* — those two branches render no grip at all.
+            const dropHandlers = dnd.dropProps(i)
             if (renamingId === v.id) {
               return (
                 <div key={v.id}>
                   {indicator}
-                  <div style={{ ...rowStyle(false), cursor: 'default', gap: 6 }} {...dropHandlers}>
+                  <div style={{ ...rowStyle(false), cursor: 'default', gap: 6, ...dnd.sourceStyle(i) }} {...dropHandlers}>
                     <input
                       aria-label="View name"
                       value={draftName}
@@ -271,7 +268,7 @@ export function ViewSwitcher({
               return (
                 <div key={v.id}>
                   {indicator}
-                  <div style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger }} {...dropHandlers}>
+                  <div style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger, ...dnd.sourceStyle(i) }} {...dropHandlers}>
                     <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete for everyone?</span>
                     <button onClick={() => setConfirmingId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
                     <button onClick={() => { void commitDelete(v.id) }} style={smallButtonStyle('danger')}>Delete</button>
@@ -286,17 +283,10 @@ export function ViewSwitcher({
             // mid-drag and closing the popup out from under the interaction.
             const grip = canReorder && (
               <span
-                draggable
-                onDragStart={e => {
-                  e.dataTransfer.effectAllowed = 'move'
-                  e.dataTransfer.setData('text/plain', String(i))
-                  setDragFrom(i)
-                }}
-                onDragEnd={() => { setDragFrom(null); setDragOver(null) }}
+                {...dnd.gripProps(i)}
                 style={{
                   fontSize: fontSize.base, color: color.borderStrong, cursor: 'grab',
                   userSelect: 'none', flexShrink: 0, lineHeight: 1,
-                  opacity: dragFrom === i ? 0.4 : 1,
                 }}
                 aria-label={`Reorder ${v.name}`}
               >⠿</span>
@@ -309,7 +299,7 @@ export function ViewSwitcher({
                   onMouseLeave={() => setHoveredId(null)}
                   onFocus={() => setFocusedId(v.id)}
                   onBlur={() => setFocusedId(null)}
-                  style={{ ...rowStyle(isActive), cursor: 'default', opacity: dragFrom === i ? 0.4 : 1 }}
+                  style={{ ...rowStyle(isActive), cursor: 'default', ...dnd.sourceStyle(i) }}
                   {...dropHandlers}
                 >
                   {grip}
@@ -334,22 +324,12 @@ export function ViewSwitcher({
               </div>
             )
           })}
+          {/* The append-at-end zone, which insert-before semantics cannot
+              otherwise reach. Not a special case in the primitive: it is
+              simply slot `count`. */}
           {canReorder && (
-            <div
-              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(orderedViews.length) }}
-              onDrop={e => {
-                e.preventDefault()
-                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10)
-                setDragFrom(null)
-                setDragOver(null)
-                if (Number.isNaN(fromIdx)) return
-                void commitReorder(fromIdx, orderedViews.length)
-              }}
-              style={{ minHeight: 6 }}
-            >
-              {dragOver === orderedViews.length && dragFrom !== null && dragFrom !== orderedViews.length - 1 && (
-                <div style={{ height: 2, background: VIEW_STYLE.border, margin: '0 12px' }} />
-              )}
+            <div {...dnd.tailDropProps()} style={{ minHeight: 6 }}>
+              {dnd.indicatorAtEnd() && <DropIndicator lineColor={VIEW_STYLE.border} />}
             </div>
           )}
         </div>

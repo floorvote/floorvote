@@ -1,5 +1,7 @@
 import { Fragment, useLayoutEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../../../shared/tokens'
+import { DropIndicator, useDragReorder } from '../../components/dragReorder'
+import { SR_ONLY } from '../../lib/textStyles'
 import {
   deriveSortDirection, moveRow, parsePastedRows, rowProblems, sortRows, withTrailingBlank,
   type SortDirection, type TaxonomyRow,
@@ -29,16 +31,6 @@ const GRID_TEMPLATE_COLUMNS = '34px minmax(0,1fr) minmax(0,1.6fr) 34px'
 /** Which editable column an interaction came from, so a move can return to it. */
 type Column = 'name' | 'description'
 
-// A custom MIME type, not 'text/plain': the reorder grip's payload is just a
-// row index, and 'text/plain' makes that digit a legitimate native drop
-// target for any textarea/input on the page. A user who grabs the grip and
-// releases over, say, the description field of another row (or the Config
-// page's custom-fields text areas) would get the raw digit inserted at the
-// caret by the browser's own text-drop handling. No native target accepts
-// this type, so a reorder drag that lands somewhere other than a tag row
-// silently does nothing instead of leaking a digit into a field.
-const DRAG_MIME = 'application/x-floorvote-tag-row'
-
 /**
  * The tag taxonomy editor: one row per tag, name and optional description.
  *
@@ -52,8 +44,6 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   const problems = rowProblems(displayed)
   const nameRefs = useRef<Array<HTMLInputElement | null>>([])
   const descRefs = useRef<Array<HTMLTextAreaElement | null>>([])
-  const [dragFrom, setDragFrom] = useState<number | null>(null)
-  const [dragOver, setDragOver] = useState<number | null>(null)
   const [announcement, setAnnouncement] = useState('')
   // Derived from `displayed` itself rather than tracked as its own state, so
   // it can never claim a direction the rows are no longer actually in — e.g.
@@ -164,6 +154,21 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     })
   }
 
+  // Drag-to-reorder, shared with custom fields (Config.tsx) and saved views
+  // (BillList/ViewSwitcher.tsx) — see components/dragReorder.tsx. `count` is
+  // the number of REAL rows: the trailing blank (the last index of `displayed`)
+  // is a rendering convenience, not a tag, so it is never a drag source and
+  // never gets an item index. It serves instead as the primitive's
+  // append-at-end zone, which is exactly what dropping on it has always meant
+  // ("move to the last real position").
+  //
+  // `to` arrives already adjusted for the splice-out shift, so reorder() moves
+  // the row and does no arithmetic of its own.
+  const dnd = useDragReorder({
+    count: displayed.length - 1,
+    onReorder: (from, to) => reorder(from, to),
+  })
+
   function onFieldPaste(e: React.ClipboardEvent, i: number) {
     const text = e.clipboardData.getData('text')
     // A paste with no line or column separator is an ordinary one — let the
@@ -217,7 +222,13 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   }
 
   return (
-    <div>
+    // Positioned so it is the containing block for the two absolutely
+    // positioned SR_ONLY elements below (the sort button's hidden span and
+    // the aria-live status region) — both are `position: absolute` with no
+    // offsets, so without a positioned ancestor here they'd resolve against
+    // whatever distant positioned ancestor happens to exist, or the initial
+    // containing block. Do not remove this as redundant.
+    <div style={{ position: 'relative' }}>
       <div className="tag-table" style={{ border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, overflow: 'hidden' }}>
         <div className="tag-table-row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceMuted, borderBottom: `1px solid ${color.borderStrong}` }}>
           {/* Shares the grip cell's class hook so the narrow-width rule removes
@@ -252,9 +263,9 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                   which would replace "Tag" and drop it from the accessible
                   name entirely — a WCAG 2.5.3 Label in Name failure for
                   anyone using voice control to say "click Tag"). Visually
-                  hidden with the same clip-rect pattern the live region below
-                  already uses. */}
-              <span style={srOnlyStyle}>
+                  hidden with the shared SR_ONLY style, the same one the live
+                  region below uses. */}
+              <span style={SR_ONLY}>
                 {!canReorder
                   ? ', rows cannot be reordered by name.'
                   : sortDirection === 'none'
@@ -276,21 +287,13 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
           const problem = problems[i]
           const msgId = `${idPrefix}-tag-problem-${i}`
           const isTrailingBlank = i === displayed.length - 1
-          // Drop-indicator line shown immediately before this row while
-          // dragging over it, matching Config.tsx's custom-fields list and
-          // BillList/ViewSwitcher's saved-views reorder — the two other
-          // reorderable lists in this codebase. The `dragFrom !== i - 1`
-          // clause (alongside `dragFrom !== i`) suppresses a pointless line
-          // at the drag source, where a drop would be a no-op. This applies
-          // uniformly to the trailing blank (i === displayed.length - 1) too,
-          // which is deliberately a valid hover/drop target below even
-          // though it can never be a drag source.
-          const showIndicator = dragOver === i && dragFrom !== null && dragFrom !== i && dragFrom !== i - 1
+          // The trailing blank is the primitive's append-at-end slot, not an
+          // item — it is a valid hover/drop target but never a drag source, and
+          // it carries no item index.
+          const showIndicator = isTrailingBlank ? dnd.indicatorAtEnd() : dnd.indicatorBefore(i)
           return (
             <Fragment key={i}>
-              {showIndicator && (
-                <div className="tag-table-drop-indicator" style={{ height: 2, background: color.accentBlue, margin: '0 12px' }} />
-              )}
+              {showIndicator && <DropIndicator className="tag-table-drop-indicator" />}
               <div
                 className="tag-table-row"
                 style={{
@@ -298,7 +301,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                   gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                   borderTop: i === 0 ? undefined : `1px solid ${color.borderNeutralFaint}`,
                   background: problem ? color.bgDangerSoft : undefined,
-                  opacity: dragFrom === i ? 0.4 : 1,
+                  ...dnd.sourceStyle(i),
                 }}
                 // The drop target is the WHOLE row, not the 34px grip: the grip
                 // is only ~10% of the row's width, and without a dragover
@@ -306,59 +309,15 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                 // tag input, the description, and the delete cell — i.e. over
                 // almost everywhere someone actually releases the pointer.
                 // `draggable` stays on the grip, so the grip remains the only
-                // thing that can START a drag. This now includes the trailing
-                // blank as a drop target (the tail drop zone below moves the
-                // dragged row to the last real position), but never as a
-                // source — it renders no grip at all.
+                // thing that can START a drag.
                 //
-                // Both handlers bail out early when dragFrom is null — i.e. this
-                // drag did not originate from the reorder grip. Without that
-                // check, preventDefault ran (and onDrop did nothing) for ANY
-                // drag over a real row, including a user dragging selected text
-                // from elsewhere on the page toward a description textarea —
-                // silently swallowing the browser's native "insert at caret"
-                // drop. A reorder drag always sets dragFrom first (onDragStart
-                // below), so this leaves reordering untouched.
-                onDragEnd={() => { setDragFrom(null); setDragOver(null) }}
-                onDragOver={e => {
-                  if (dragFrom === null) return
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = 'move'
-                  setDragOver(i)
-                }}
-                onDrop={e => {
-                  if (dragFrom === null) return
-                  e.preventDefault()
-                  // Read the source index back from dataTransfer rather than
-                  // trusting state alone, matching both existing
-                  // implementations of this pattern.
-                  const fromIdx = parseInt(e.dataTransfer.getData(DRAG_MIME), 10)
-                  setDragFrom(null)
-                  setDragOver(null)
-                  if (Number.isNaN(fromIdx)) return
-                  // The indicator promises insert-BEFORE row i, but moveRow
-                  // splices the source out before inserting at the target —
-                  // so on a downward drag (fromIdx < i), removing the source
-                  // shifts row i (and everything between) up by one first.
-                  // Landing before row i's ORIGINAL position therefore means
-                  // targeting i - 1 in the post-removal array, not i, or the
-                  // dragged row ends up one slot too far (after row i rather
-                  // than before it). An upward drag (fromIdx > i) has no such
-                  // shift below the target, so i is already correct there.
-                  //
-                  // The tail zone (dropping on the trailing blank) is not an
-                  // insert-before-i case at all: it means "move to the last
-                  // real position", i.e. target the last real index directly
-                  // — reorder() itself refuses `to === lastIndex` (the
-                  // blank's own slot). That target needs no fromIdx < i
-                  // adjustment: moveRow's own from === to no-op guard already
-                  // covers dragging the last real row onto the blank.
-                  const lastRealIndex = displayed.length - 2
-                  const to = isTrailingBlank
-                    ? lastRealIndex
-                    : fromIdx < i ? i - 1 : i
-                  reorder(fromIdx, to)
-                }}
+                // The primitive's handlers bail out when no reorder is in
+                // progress — i.e. this drag did not originate from a grip.
+                // Without that, preventDefault would run for ANY drag over a
+                // real row, including a user dragging selected text toward a
+                // description textarea, silently swallowing the browser's
+                // native "insert at caret" drop.
+                {...(isTrailingBlank ? dnd.tailDropProps() : dnd.dropProps(i))}
               >
                 {isTrailingBlank ? (
                   // The trailing blank is not a tag: no grip, not draggable —
@@ -374,12 +333,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                   <div
                     className="tag-table-reorder"
                     style={{ display: 'flex', alignItems: 'flex-start', padding: '9px 4px 0 8px', gap: 4 }}
-                    draggable
-                    onDragStart={e => {
-                      e.dataTransfer.effectAllowed = 'move'
-                      e.dataTransfer.setData(DRAG_MIME, String(i))
-                      setDragFrom(i)
-                    }}
+                    {...dnd.gripProps(i)}
                   >
                     <span aria-hidden="true" style={{ cursor: 'grab', color: color.textMuted, fontSize: fontSize.sm, userSelect: 'none' }}>⠿</span>
                     <span aria-hidden="true" style={{ fontSize: fontSize.xs, color: color.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
@@ -444,10 +398,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
         </button>
       </div>
 
-      <div role="status" aria-live="polite" style={{
-        position: 'absolute', width: 1, height: 1, overflow: 'hidden',
-        clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
-      }}>{announcement}</div>
+      <div role="status" aria-live="polite" style={SR_ONLY}>{announcement}</div>
     </div>
   )
 }
@@ -455,13 +406,6 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
 function resizeTextarea(ta: HTMLTextAreaElement) {
   ta.style.height = 'auto'
   ta.style.height = `${Math.max(ta.scrollHeight, 34)}px`
-}
-
-// Same clip-rect incantation as the aria-live region below, so the two
-// visually-hidden techniques in this component don't drift apart.
-const srOnlyStyle: React.CSSProperties = {
-  position: 'absolute', width: 1, height: 1, overflow: 'hidden',
-  clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
 }
 
 const sortHeaderBtnStyle: React.CSSProperties = {
