@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { processCentralNotification } from '../../src/queue/processor'
+import { processCentralNotification, processQueue } from '../../src/queue/processor'
 import { eq } from 'drizzle-orm'
 import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
 import { parseSubjects } from '../../src/lib/billSubjects'
@@ -460,6 +460,96 @@ describe('processCentralNotification', () => {
       delaySeconds: 60,
     })
     // No bill row is written — the upsert happens after AI, so the message will be re-delivered in full
+  })
+
+  it('carries the upstream status and body on the shed, so a dead-lettered bill is diagnosable', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    const { processBill } = await import('../../src/lib/llm')
+    // A 429 has two very different causes — transient load shedding, where
+    // retrying is right, and a hard quota wall, where every retry is another
+    // guaranteed failure. Only the body distinguishes them, and a shed writes
+    // no ai_error, so the error itself has to carry the evidence.
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(new Error('Your prepayment credits are depleted.'), { status: 429 })
+    )
+
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await expect(processCentralNotification(msg, testEnv as any, db)).rejects.toMatchObject({
+      delaySeconds: 60,
+      status: 429,
+      detail: expect.stringContaining('prepayment credits are depleted'),
+    })
+  })
+
+  it('records the shed on the bill, so exhausting retries is not silent', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    // A shed throws before the upsert, so only a bill that already exists can
+    // carry the record. That is the reprocess case, which is where bills were
+    // actually being lost.
+    await db.insert(bills).values({
+      id: 'shed-test-bill', externalId: BILL_ID, billNumber: 'HB 1',
+      title: 'Election Act', state: 'UT', matchType: 'keyword',
+    })
+
+    const { processBill } = await import('../../src/lib/llm')
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(new Error('Service Unavailable'), { status: 503 })
+    )
+
+    // processQueue, not processCentralNotification: the recording happens in the
+    // consumer's catch, where the attempt count lives.
+    const retried: number[] = []
+    const message = {
+      body: { tenantId: 'test-org', billId: BILL_ID } as TenantQueueMessage,
+      attempts: 7,
+      ack: () => { throw new Error('should not ack a shed') },
+      retry: (opts?: { delaySeconds?: number }) => { retried.push(opts?.delaySeconds ?? 0) },
+    }
+    await processQueue([message as any], testEnv as any, db)
+
+    expect(retried).toEqual([60])
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.aiError).toContain('attempt 7')
+    expect(row?.aiError).toContain('503')
+    expect(row?.aiAttemptedAt).not.toBeNull()
+    // Must NOT dedup itself into silence on the next pass.
+    expect(row?.lastAiTextHash).toBeNull()
+  })
+
+  it('clears the recorded shed once the bill analyses successfully', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    // A shed throws before the upsert, so only a bill that already exists can
+    // carry the record. That is the reprocess case, which is where bills were
+    // actually being lost.
+    await db.insert(bills).values({
+      id: 'shed-test-bill', externalId: BILL_ID, billNumber: 'HB 1',
+      title: 'Election Act', state: 'UT', matchType: 'keyword',
+    })
+
+    const { processBill } = await import('../../src/lib/llm')
+    ;(processBill as any).mockRejectedValueOnce(
+      Object.assign(new Error('Service Unavailable'), { status: 503 })
+    )
+    const shedMessage = {
+      body: { tenantId: 'test-org', billId: BILL_ID } as TenantQueueMessage,
+      attempts: 3,
+      ack: () => {},
+      retry: () => {},
+    }
+    await processQueue([shedMessage as any], testEnv as any, db)
+    expect((await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get())?.aiError)
+      .toContain('attempt 3')
+
+    // Redelivery succeeds — the transient note must not linger.
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID }, testEnv as any, db)
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.aiError).toBeNull()
   })
 
   it('skips re-processing on next message when ai_skip_reason is set (early-return dedup)', async () => {

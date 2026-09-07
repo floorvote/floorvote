@@ -16,7 +16,13 @@ import {
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
-  constructor(public readonly delaySeconds: number) {
+  constructor(
+    public readonly delaySeconds: number,
+    /** Upstream HTTP status that caused the shed — 429 or 503. */
+    public readonly status?: number,
+    /** Short excerpt of the upstream body, which is what tells the two 429s apart. */
+    public readonly detail?: string,
+  ) {
     super('AI gateway shed — will redeliver')
   }
 }
@@ -24,6 +30,70 @@ class AiShedError extends Error {
 function isGeminiShed(err: unknown): boolean {
   const e = err as { status?: number } | undefined
   return e?.status === 429 || e?.status === 503
+}
+
+/**
+ * Pull the status and a short body excerpt off a provider error.
+ *
+ * A 429 is ambiguous, and the two causes want opposite responses: transient
+ * load shedding, where retrying with backoff is exactly right, and a hard quota
+ * or credit wall, where every retry is another guaranteed failure and backoff
+ * only delays the discovery. The status alone cannot separate them — the body
+ * does ("prepayment credits are depleted" versus a rate-limit message) — so
+ * capture enough of it to tell them apart while the incident is still live.
+ *
+ * This matters more than it looks: a shed writes no ai_error, so without this
+ * a dead-lettered bill leaves no record anywhere of why it failed.
+ */
+function shedDetail(err: unknown): { status?: number; detail?: string } {
+  const e = err as { status?: number; message?: unknown } | undefined
+  const raw = typeof e?.message === 'string' ? e.message : String(err ?? '')
+  return { status: e?.status, detail: raw.slice(0, 200) }
+}
+
+/**
+ * Record a shed on the bill itself, so exhausting the retry budget is visible.
+ *
+ * A shed throws before the upsert, so it writes no bill row at all. That makes a
+ * dead-lettered bill indistinguishable from one that was never queued: the table
+ * looks untouched, no bill records a reason, and the only trace is a log line on
+ * a queue-consumer invocation, which `wrangler tail` does not surface. A 116-bill
+ * reprocess lost 56 bills that way without anything in the database changing.
+ *
+ * Writing on EVERY shed rather than only the last one is deliberate. A consumer
+ * cannot see its own `max_retries` — it is wrangler config, and it varies per
+ * tenant — so there is no reliable way to know which attempt is the final one.
+ * Recording each attempt means the last one to run is the one that survives if
+ * the message never comes back, which is the diagnostic we actually want.
+ *
+ * This is bookkeeping, not control flow: a failure here must never interfere with
+ * the retry it is describing.
+ *
+ * LIMITATION: a shed throws before the upsert, so a bill with no row yet — a
+ * first-time match that sheds on its very first analysis — has nothing to write
+ * to, and the update matches zero rows. Those are still only visible in the logs.
+ * The case this covers is the reprocess of bills that already exist, which is
+ * where bills were actually being lost.
+ */
+async function recordShedAttempt(
+  db: AppDb,
+  billId: string,
+  attempts: number,
+  err: AiShedError,
+): Promise<void> {
+  const detail = err.detail ? ` — ${err.detail}` : ''
+  const note = `AI provider shed (attempt ${attempts}, status ${err.status ?? 'unknown'}); will retry${detail}`
+  try {
+    // Deliberately does NOT touch lastAiTextHash, matching the transient-failure
+    // branch of the upsert: the next pass must retry rather than dedup itself
+    // into permanent silence. A later success clears aiError.
+    await db.update(bills)
+      .set({ aiAttemptedAt: nowDb(), aiError: note.slice(0, 300) })
+      .where(eq(bills.externalId, billId))
+      .run()
+  } catch (recordErr) {
+    console.error(`[processor] could not record shed for ${billId}:`, recordErr)
+  }
 }
 
 // AiSkipReason values mirror the column in api/migrations/0039_ai_skip_reason.sql.
@@ -93,7 +163,13 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
-        console.warn(`[processor] AI gateway shed for ${message.body.billId}${err.delaySeconds > 0 ? `, requeing in ${err.delaySeconds}s` : ', requeing immediately'}`)
+        await recordShedAttempt(db, message.body.billId, message.attempts, err)
+        console.warn(
+          `[processor] AI gateway shed for ${message.body.billId}`
+          + ` (status ${err.status ?? 'unknown'})`
+          + `${err.delaySeconds > 0 ? `, requeing in ${err.delaySeconds}s` : ', requeing immediately'}`
+          + `${err.detail ? ` — ${err.detail}` : ''}`,
+        )
         if (err.delaySeconds > 0) {
           message.retry({ delaySeconds: err.delaySeconds })
         } else {
@@ -423,7 +499,7 @@ export async function processCentralNotification(
   // bill the reader had just prioritized. Only forceAI forces the model.
   const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
-  let aiResult: { summary: string; tags: string[]; relevanceScore: number } | null = null
+  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[] } | null = null
   let aiSkipReason: AiSkipReason | null = null
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
@@ -488,7 +564,8 @@ export async function processCentralNotification(
             )
           } catch (retryErr) {
             if (isGeminiShed(retryErr)) {
-              throw new AiShedError(0)
+              const shed = shedDetail(retryErr)
+              throw new AiShedError(0, shed.status, shed.detail)
             }
             aiSkipReason = classifyAiError(retryErr)
             if (aiSkipReason) {
@@ -499,7 +576,8 @@ export async function processCentralNotification(
             }
           }
         } else {
-          throw new AiShedError(60)
+          const shed = shedDetail(err)
+          throw new AiShedError(60, shed.status, shed.detail)
         }
       } else {
         aiSkipReason = classifyAiError(err)
@@ -543,6 +621,10 @@ export async function processCentralNotification(
       tenantSummary: aiResult.summary,
       tags: JSON.stringify(aiResult.tags),
       relevanceScore: aiResult.relevanceScore,
+      // Stored but not yet surfaced anywhere: this is the first pass at a parsed
+      // layer over bill text, kept verbatim so a later consumer can decide what
+      // structure it needs.
+      affectedCitations: JSON.stringify(aiResult.affectedCitations),
       // Clear any prior permanent skip — AI ran successfully on this text version.
       aiSkipReason: null,
       // …and any prior transient failure, for the same reason.
