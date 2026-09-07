@@ -13,7 +13,7 @@ import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListR
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
-import { decodeSubjectFilters, encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { decodeSubjectFiltersChecked, encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState, MAX_SUBJECT_FILTERS } from '../../lib/billSubjects'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — list with optional filters and server-side pagination
@@ -31,8 +31,13 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
-    const subjectFilters = decodeSubjectFilters(c.req.queries('subject') ?? [])
+    const subjectDecoded = decodeSubjectFiltersChecked(c.req.queries('subject') ?? [])
+    if (subjectDecoded.overflow) {
+      return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
+    }
+    const subjectFilters = subjectDecoded.filters
     const q = c.req.query('q')
+    const matchAny = c.req.query('match') === 'any'
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
     const page = Math.max(1, parseInt(pageParam ?? '1', 10) || 1)
@@ -68,6 +73,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       newMatchMinRelevance,
       cfParamMap,
       userId: currentUser.id,
+      matchAny,
     })
 
     // Sort
@@ -269,10 +275,15 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const years = c.req.queries('year') ?? []
     const states = c.req.queries('state') ?? []
     const tagFilters = c.req.queries('tag') ?? []
-    const subjectFilters = decodeSubjectFilters(c.req.queries('subject') ?? [])
+    const subjectDecoded = decodeSubjectFiltersChecked(c.req.queries('subject') ?? [])
+    if (subjectDecoded.overflow) {
+      return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
+    }
+    const subjectFilters = subjectDecoded.filters
 
     const q = c.req.query('q')
     const minRelevance = c.req.query('minRelevance')
+    const matchAny = c.req.query('match') === 'any'
     const myBillsParam = c.req.query('myBills')
     const unvoted = c.req.query('unvoted')
     const newMatchesParam = c.req.query('newMatches')
@@ -354,7 +365,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       const searchCond = buildSearchCondition(q)
       if (searchCond) baseConditions.push(searchCond)
     }
-    if (minRelevance) baseConditions.push(sql`${bills.relevanceScore} >= ${parseInt(minRelevance, 10)}`)
+    // minRelevance is a bill fact (it renders a chip), not a scope — it joins the
+    // other dimensional filters via the group operator inside buildWhere below,
+    // rather than always ANDing on top like the base conditions.
+    const minRelevanceFilter: SQL | undefined = minRelevance
+      ? sql`${bills.relevanceScore} >= ${parseInt(minRelevance, 10)}`
+      : undefined
 
     // CF conditions tracked separately so each field can be excluded for its own facet counts
     const cfSqlMap: Record<string, SQL> = {}
@@ -394,24 +410,50 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // (mirrors how myBills/unvoted scope the facets above).
     if (newMatchesActive) baseConditions.push(newMatchWhere(newMatchMinRelevance))
 
-    // Disjunctive: each dimension's WHERE omits that dimension's own filter
     // excludeCfFieldId omits that CF field's condition (for CF disjunctive counts)
+    // Bill-fact dimensions (dimFilters, cfParts, minRelevanceFilter) combine via the
+    // group operator (OR under match=any, AND otherwise); baseConditions (search,
+    // myBills, unvoted, newMatches — viewer scope) always AND on top, mirroring
+    // buildBillsWhere in query.ts so facet counts never disagree with the list.
     function buildWhere(excludeCfFieldId?: string, ...dimFilters: (SQL | undefined)[]): SQL | undefined {
       const cfParts = Object.entries(cfSqlMap)
         .filter(([id]) => id !== excludeCfFieldId)
         .map(([, s]) => s)
-      const all = [...baseConditions, ...cfParts, ...dimFilters.filter(Boolean) as SQL[]]
+      const factParts = [...(dimFilters.filter(Boolean) as SQL[]), ...cfParts, ...(minRelevanceFilter ? [minRelevanceFilter] : [])]
+      const factCond = factParts.length === 0
+        ? undefined
+        : factParts.length === 1
+          ? factParts[0]
+          : (matchAny ? or(...factParts)! : and(...factParts)!)
+      const all = [...baseConditions, ...(factCond ? [factCond] : [])]
       return all.length > 0 ? and(...all) : undefined
     }
 
-    const statusWhere   = buildWhere(undefined, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const priorityWhere = buildWhere(undefined, statusFilter,   yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const yearWhere     = buildWhere(undefined, statusFilter,   priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const stateWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter, subjectFilter)
-    const positionWhere = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, subjectFilter)
-    const tagWhere      = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter, subjectFilter)
-    const subjectWhere  = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
-    // Full WHERE (all filters) for myBillsCount
+    // Per-dimension facet WHERE. Under AND, disjunctive faceting omits only the
+    // dimension's own filter (dropping a term from an AND widens the set, which is
+    // what we want for "how many would there be if I picked something else here").
+    // Under OR (match=any) that logic inverts: a value's marginal contribution to
+    // an OR is independent of the other groups, so dropping just one term still
+    // narrows the count to bills matching every OTHER active filter — which is
+    // wrong (see MUST FIX 1: Clerk/Elections fixture, where the tag facet must
+    // not be scoped down to subject-matching bills only). So under match=any every
+    // dimensional facet query counts over baseConditions alone, with no bill-fact
+    // filters at all — each dimension is evaluated independently of the others.
+    function buildFacetWhere(excludeCfFieldId?: string, ...dimFilters: (SQL | undefined)[]): SQL | undefined {
+      if (matchAny) return baseConditions.length > 0 ? and(...baseConditions) : undefined
+      return buildWhere(excludeCfFieldId, ...dimFilters)
+    }
+
+    const statusWhere   = buildFacetWhere(undefined, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const priorityWhere = buildFacetWhere(undefined, statusFilter,   yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const yearWhere     = buildFacetWhere(undefined, statusFilter,   priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const stateWhere    = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter, subjectFilter)
+    const positionWhere = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, subjectFilter)
+    const tagWhere      = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter, subjectFilter)
+    const subjectWhere  = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
+    // Full WHERE (all filters, combined via the group operator) for myBillsCount,
+    // newMatchesCount, and as the fallback when no CF field has an active filter —
+    // this one must reflect the actual list, not a per-dimension facet count.
     const finalWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
 
     const tagWhereClause = tagWhere ? sql`WHERE ${tagWhere}` : sql``
@@ -510,7 +552,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     } else {
       // Per active field, count with that field's own filter excluded (disjunctive).
       const perFieldResults = await Promise.all(
-        cfFieldIds.map(id => cfCounts(buildWhere(id, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
+        cfFieldIds.map(id => cfCounts(buildFacetWhere(id, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
       )
       for (const rows of perFieldResults) mergeCfRows(rows)
     }

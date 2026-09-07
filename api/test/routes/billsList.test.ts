@@ -141,7 +141,9 @@ describe('GET /bills — subject filtering', () => {
 
   // IMPORTANT 1 regression: subjectMembership binds 2 params per value with no cap,
   // and a shared/bookmarked URL can carry far more than D1's 100-bound-param limit.
-  // Without a cap, this 500s instead of returning a page.
+  // Without a cap, this would 500 instead of returning a response. It no longer
+  // silently truncates past the cap either (see test/routes/searchParams.test.ts
+  // "subject filter cap") — over-cap now 400s rather than 500ing or under-selecting.
   it('does not 500 when the URL carries far more subject filters than D1 can bind', async () => {
     const db = getDb(env.DB)
     await seedBillWithSubjects(db, { id: 's17', state: 'UT' }, ['Election Law'])
@@ -150,7 +152,7 @@ describe('GET /bills — subject filtering', () => {
     for (let i = 0; i < 60; i++) params.append('subject', `UT:Subject ${i}`)
     const res = await app.request(`/api/bills?${params}`, { headers: { Cookie: `session=${token}` } }, env)
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(400)
   })
 })
 

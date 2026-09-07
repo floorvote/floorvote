@@ -21,6 +21,9 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     isAdmin: false,
     newMatches: false,
     newMatchesCount: 0,
+    unvotedOnly: false,
+    matchAny: false,
+    onMatchAnyChange: vi.fn(),
     uniqueStates: ['UT'],
     statusOptions: [{ value: 'active', label: 'Active' }, { value: 'dead', label: 'Dead' }],
     priorityOptions: [{ value: 'high', label: 'High' }],
@@ -43,6 +46,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     onMinRelevanceChange: vi.fn(),
     onMyBillsChange: vi.fn(),
     onNewMatchesChange: vi.fn(),
+    onUnvotedOnlyChange: vi.fn(),
     onClearAll: vi.fn(),
   }
 }
@@ -154,6 +158,43 @@ describe('FilterSheet — dimension list (level 1)', () => {
     const newMatchesButton = screen.getByRole('button', { name: /new matches/i })
     expect(within(newMatchesButton).getByText('7')).toBeInTheDocument()
     expect(newMatchesButton.querySelector('svg')).not.toBeInTheDocument()
+  })
+
+  it('shows Not yet voted as a direct, always-visible toggle, and can both set and clear it (Critical 1)', () => {
+    // Regression coverage: `unvoted` is reachable on mobile only through the
+    // sheet (the desktop toolbar's scope cluster doesn't exist here, and
+    // `.desktop-filter-dropdowns` is display:none on mobile — see
+    // task-7-report.md, Critical 1). Before the fix, FilterSheet had no
+    // "Not yet voted" control at all, so a state that IS reachable on
+    // mobile (Sidebar's "N unvoted" chip, saved views) had no visible
+    // indicator and no way to clear it from the sheet.
+    const onUnvotedOnlyChange = vi.fn()
+    const { rerender } = renderSheet({ unvotedOnly: false, onUnvotedOnlyChange })
+    fireEvent.click(screen.getByRole('button', { name: 'Not yet voted' }))
+    expect(onUnvotedOnlyChange).toHaveBeenCalledWith(true)
+
+    // Once active, the same control clears it back off ...
+    rerender(<FilterSheet {...makeDefaults()} unvotedOnly onUnvotedOnlyChange={onUnvotedOnlyChange} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Not yet voted' }))
+    expect(onUnvotedOnlyChange).toHaveBeenCalledWith(false)
+
+    // ... and Clear all clears it too, same as every other active filter.
+    const onClearAll = vi.fn()
+    rerender(<FilterSheet {...makeDefaults()} unvotedOnly onClearAll={onClearAll} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    expect(onClearAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts an active Not yet voted toward the sheet\'s own "Clear all" gate, matching the mobile filter button badge (Critical 1)', () => {
+    // Before the fix, the mobile filter button's badge (f.totalActiveFilters,
+    // which counts unvotedOnly) disagreed with this sheet's own totalActive
+    // (which didn't) — the badge could read "1" over a sheet showing no
+    // active filters and no "Clear all" button.
+    const { rerender } = renderSheet({ unvotedOnly: false })
+    expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+
+    rerender(<FilterSheet {...makeDefaults()} unvotedOnly />)
+    expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
   })
 
   it('shows State only when the tenant has known states, using the same values as its options', () => {
@@ -437,5 +478,100 @@ describe('FilterSheet — custom field filters', () => {
     // Same check as the "zero fields" case — a text-only tenant should look
     // identical to a tenant with no custom fields at all.
     expect(screen.queryByText('Notes')).not.toBeInTheDocument()
+  })
+
+  // Whole-branch review finding: the sheet had the scope-cluster ORDERING
+  // (scope dimensions before bill-fact dimensions — see the "scope and
+  // operator parity" describe below) but not the SEPARATOR marking the
+  // boundary between them, so a binary custom field toggle sat flush against
+  // My bills/New matches/Not yet voted, rendered as a byte-identical control.
+  // Desktop marks this boundary with a `data-testid="scope-separator"`
+  // vertical rule; the sheet needs the same marker (adapted to its vertical
+  // layout) and only when there's an actual bill-fact toggle for it to
+  // separate from.
+  it('renders the scope/bill-fact separator when a binary custom field is present', () => {
+    renderSheet({ customFieldDefs: [BINARY_CF] })
+    expect(screen.getByTestId('scope-separator')).toBeInTheDocument()
+  })
+
+  it('renders no separator when there is no binary custom field to separate from', () => {
+    renderSheet({ customFieldDefs: [] })
+    expect(screen.queryByTestId('scope-separator')).not.toBeInTheDocument()
+  })
+})
+
+// Task 8: mobile parity with desktop's scope cluster + AND/OR group operator.
+describe('FilterSheet scope and operator parity', () => {
+  it('lists scope dimensions (My bills, New matches, Not yet voted) before bill-fact dimensions (Status, ...)', () => {
+    // Ordering already falls out of the existing hand-written layout — My
+    // bills / New matches / Not yet voted render as direct level-1 controls
+    // before the "Filters" section's DimensionRows (see FilterSheet.tsx) —
+    // rather than from `visibleFilterDimensions` registry order, which this
+    // component does not consume for its level-1 layout. This test locks
+    // that already-correct behavior in place.
+    renderSheet({ isAdmin: true })
+    const labels = screen.getAllByRole('button').map(b => b.textContent ?? '')
+    const lastScope = Math.max(
+      labels.findIndex(t => t.includes('My bills')),
+      labels.findIndex(t => t.includes('New matches')),
+      labels.findIndex(t => t.includes('Not yet voted')),
+    )
+    const firstBillFact = labels.findIndex(t => /^status\b/i.test(t))
+    expect(lastScope).toBeGreaterThanOrEqual(0)
+    expect(firstBillFact).toBeGreaterThan(lastScope)
+  })
+
+  it('offers the operator when two groups are active', () => {
+    renderSheet({ tags: ['Education'], statuses: ['active'] })
+    expect(screen.getByRole('button', { name: /and/i })).toBeInTheDocument()
+  })
+
+  it('reflects matchAny from props', () => {
+    // GroupOperator's aria-label is a full sentence mentioning both "AND" and
+    // "OR" regardless of state (see GroupOperator.tsx) — the visible button
+    // text ("AND"/"OR") is what actually flips, so assert on that directly
+    // rather than the accessible name.
+    renderSheet({ tags: ['Education'], statuses: ['active'], matchAny: true })
+    const summary = screen.getByTestId('sheet-active-filter-chips')
+    expect(within(summary).getByText('OR')).toBeInTheDocument()
+    expect(within(summary).queryByText('AND')).not.toBeInTheDocument()
+  })
+
+  it('does not offer the operator with one active group', () => {
+    renderSheet({ tags: ['Education'] })
+    expect(screen.queryByRole('button', { name: /^and$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^or$/i })).not.toBeInTheDocument()
+  })
+
+  it('does not offer the operator when only viewer-scope filters (My bills / Not yet voted) are active', () => {
+    renderSheet({ myBills: true, unvotedOnly: true })
+    expect(screen.queryByRole('button', { name: /^and$/i })).not.toBeInTheDocument()
+  })
+
+  it('propagates a toggle to the parent', () => {
+    const onMatchAnyChange = vi.fn()
+    renderSheet({ tags: ['Education'], statuses: ['active'], onMatchAnyChange })
+    const summary = screen.getByTestId('sheet-active-filter-chips')
+    fireEvent.click(within(summary).getByText('AND'))
+    expect(onMatchAnyChange).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('FilterSheet — SheetChip accessibility (aria-pressed)', () => {
+  it('exposes pressed state on the My bills toggle', () => {
+    renderSheet({ myBills: true })
+    expect(screen.getByRole('button', { name: 'My bills' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('exposes unpressed state on the Not yet voted toggle', () => {
+    renderSheet({ unvotedOnly: false })
+    expect(screen.getByRole('button', { name: 'Not yet voted' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('exposes pressed state on an option chip once drilled into (e.g. Status)', () => {
+    renderSheet({ statuses: ['active'] })
+    fireEvent.click(screen.getByRole('button', { name: /status/i }))
+    expect(screen.getByRole('button', { name: /^active/i })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^dead/i })).toHaveAttribute('aria-pressed', 'false')
   })
 })

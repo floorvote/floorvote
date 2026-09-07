@@ -315,16 +315,22 @@ export type BillFilterParams = {
   newMatchMinRelevance: number
   cfParamMap: Record<string, string[]>
   userId: string
+  matchAny: boolean
 }
 
 export async function buildBillsWhere(
   db: ReturnType<typeof getDb>,
   p: BillFilterParams,
 ): Promise<SQL | undefined> {
-  const conditions: SQL[] = []
+  // Bill facts render as chip-row groups and are joined by the group operator.
+  // Scope conditions (the viewer-relative predicates and search) always
+  // AND on top: `(fact1 OP fact2 OP … ) AND search AND myBills AND unvoted …`.
+  // See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
+  const billFacts: SQL[] = []
+  const scopes: SQL[] = []
 
   const statusFilter = multiFilter(bills.status, p.statuses)
-  if (statusFilter) conditions.push(statusFilter)
+  if (statusFilter) billFacts.push(statusFilter)
 
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
   if (p.priorities.length > 0) {
@@ -335,27 +341,27 @@ export async function buildBillsWhere(
     if (real.length > 0) parts.push(real.length === 1 ? eq(bills.priority, real[0]) : inArray(bills.priority, real))
     if (hasAny) parts.push(isNotNull(bills.priority))
     if (hasNone) parts.push(isNull(bills.priority))
-    if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
+    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
   }
 
   const sessionFilter = multiFilter(bills.session, p.sessions)
-  if (sessionFilter) conditions.push(sessionFilter)
+  if (sessionFilter) billFacts.push(sessionFilter)
 
   const yearFilter = p.years.length > 0
     ? (p.years.length === 1
         ? eq(bills.yearStart, Number(p.years[0]))
         : inArray(bills.yearStart, p.years.map(Number)))
     : undefined
-  if (yearFilter) conditions.push(yearFilter)
+  if (yearFilter) billFacts.push(yearFilter)
 
   const stateFilter = multiFilter(bills.state, p.states)
-  if (stateFilter) conditions.push(stateFilter)
+  if (stateFilter) billFacts.push(stateFilter)
 
   if (p.q) {
     const searchCond = buildSearchCondition(p.q)
-    if (searchCond) conditions.push(searchCond)
+    if (searchCond) scopes.push(searchCond)
   }
-  if (p.minRelevance) conditions.push(sql`${bills.relevanceScore} >= ${parseInt(p.minRelevance, 10)}`)
+  if (p.minRelevance) billFacts.push(sql`${bills.relevanceScore} >= ${parseInt(p.minRelevance, 10)}`)
 
   if (Object.keys(p.cfParamMap).length > 0) {
     const cfKeys = Object.keys(p.cfParamMap)
@@ -410,7 +416,7 @@ export async function buildBillsWhere(
           ))
         }
       }
-      if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
+      if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
     }
   }
 
@@ -420,13 +426,13 @@ export async function buildBillsWhere(
     const parts: SQL[] = []
     if (hasAny) parts.push(sql`json_array_length(${bills.tags}) > 0`) // "Any" = has any tag
     if (realTags.length > 0) parts.push(tagMembership(realTags))
-    if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
+    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
   }
 
   if (p.subjectFilters.length > 0) {
     const suppressed = await loadSuppressedSubjectStates(db)
     const allowed = filterSuppressedSubjects(p.subjectFilters, suppressed)
-    if (allowed.length > 0) conditions.push(subjectMembership(allowed))
+    if (allowed.length > 0) billFacts.push(subjectMembership(allowed))
   }
 
   if (p.positionValues.length > 0) {
@@ -444,15 +450,15 @@ export async function buildBillsWhere(
     }
     if (hasAny) parts.push(sql`${bills.id} IN (SELECT bill_id FROM official_positions)`)
     if (hasNone) parts.push(sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
-    if (parts.length > 0) conditions.push(parts.length === 1 ? parts[0] : or(...parts)!)
+    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
   }
 
   if (p.unvoted === '1') {
-    conditions.push(sql`${bills.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${p.userId})`)
+    scopes.push(sql`${bills.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${p.userId})`)
   }
 
   if (p.newMatches === '1' || p.newMatches === 'true') {
-    conditions.push(newMatchWhere(p.newMatchMinRelevance))
+    scopes.push(newMatchWhere(p.newMatchMinRelevance))
   }
 
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
@@ -462,9 +468,19 @@ export async function buildBillsWhere(
       db.select({ billId: comments.billId }).from(comments).where(and(eq(comments.userId, p.userId), isNull(comments.deletedAt))).all(),
     ])
     const myIds = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
+    // Scope, not a bill fact: an empty set means no rows regardless of the group
+    // operator, so this stays an unconditional early return.
     if (myIds.length === 0) return sql`1 = 0`
-    conditions.push(inArray(bills.id, myIds))
+    scopes.push(inArray(bills.id, myIds))
   }
 
-  return conditions.length > 0 ? and(...conditions) : undefined
+  const factCond = billFacts.length === 0
+    ? undefined
+    : billFacts.length === 1
+      ? billFacts[0]
+      : (p.matchAny ? or(...billFacts)! : and(...billFacts)!)
+
+  const all = [...(factCond ? [factCond] : []), ...scopes]
+  if (all.length === 0) return undefined
+  return all.length === 1 ? all[0] : and(...all)!
 }

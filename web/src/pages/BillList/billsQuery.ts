@@ -2,7 +2,7 @@ import type { SortColumn, SortDir } from './types'
 
 export type BillsFilterValues = {
   statuses: string[]; priorities: string[]; positions: string[]; years: number[]; states: string[]
-  minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean
+  minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean; matchAny: boolean
   tags: string[]; subjects: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
 }
 
@@ -19,6 +19,7 @@ export function billsApiParams(v: BillsFilterValues, page: number, pageSize: num
   if (v.myBills) params.set('myBills', '1')
   if (v.unvoted) params.set('unvoted', '1')
   if (v.newMatches) params.set('newMatches', '1')
+  if (v.matchAny) params.set('match', 'any')
   v.tags.forEach(t => params.append('tag', t))
   v.subjects.forEach(s => params.append('subject', s))
   if (v.search) params.set('q', v.search)
@@ -54,6 +55,7 @@ export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilte
     myBills: search.get('myBills') === '1',
     unvoted: search.get('unvoted') === '1',
     newMatches: search.get('newMatches') === '1',
+    matchAny: search.get('match') === 'any',
     tags: search.getAll('tag'),
     subjects: search.getAll('subject'),
     search: '', // q is never carried in the /bills URL — sidebar nav never has a search term

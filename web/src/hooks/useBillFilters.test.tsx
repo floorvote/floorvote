@@ -121,6 +121,60 @@ describe('useBillFilters', () => {
     })
   })
 
+  describe('matchAny (group operator)', () => {
+    function matchAnyWrapper({ children }: { children: ReactNode }) {
+      return <MemoryRouter initialEntries={['/bills?match=any&status=Introduced']}>{children}</MemoryRouter>
+    }
+
+    it('hydrates matchAny from ?match=any on mount', () => {
+      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
+      expect(result.current.matchAny).toBe(true)
+    })
+
+    it('does not hydrate matchAny when the param is absent', () => {
+      const { result } = renderHook(useHarness, { wrapper })
+      expect(result.current.matchAny).toBe(false)
+    })
+
+    it('writes match=any to the URL when set, and drops it when cleared', () => {
+      const { result } = renderHook(useHarness, { wrapper })
+      expect(result.current.urlSearch).not.toContain('match=')
+
+      act(() => result.current.setMatchAny(true))
+      expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
+
+      act(() => result.current.setMatchAny(false))
+      expect(new URLSearchParams(result.current.urlSearch).get('match')).toBeNull()
+    })
+
+    it('handleResetFilters clears matchAny', () => {
+      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
+      expect(result.current.matchAny).toBe(true)
+
+      act(() => result.current.handleResetFilters())
+
+      expect(result.current.matchAny).toBe(false)
+      expect(result.current.urlSearch).not.toContain('match=')
+    })
+
+    // Explicit product decision (Task 6 brief): matchAny is inert with a
+    // single active filter group, but it must persist rather than get
+    // cleared, so removing and re-adding a group restores the same state.
+    // Nothing in useBillFilters ties matchAny to any other filter's count —
+    // this pins that absence so a later refactor can't silently add it.
+    it('is not cleared when another filter dimension is cleared, leaving one (or zero) groups', () => {
+      const { result } = renderHook(useHarness, { wrapper: matchAnyWrapper })
+      expect(result.current.matchAny).toBe(true)
+      expect(result.current.filterStatuses).toEqual(['Introduced'])
+
+      act(() => result.current.handleStatusClick('Introduced'))
+
+      expect(result.current.filterStatuses).toEqual([])
+      expect(result.current.matchAny).toBe(true)
+      expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
+    })
+  })
+
   // Regression: cfFilters is lifted state, parsed once against customFieldDefs
   // at the moment a `cf_` key is first read. customFieldDefs loads async, so a
   // mount that beats that fetch used to freeze the key under the raw slug

@@ -6,6 +6,8 @@ import type { CustomFieldDef } from '../pages/BillList/types'
 import { FilterSheetVirtualList } from './FilterSheetVirtualList'
 import { filterDimensionLabel, isFilterDimensionVisible, type FilterDimensionContext } from '../lib/filterDimensions'
 import { filterableCustomFields } from '../lib/customFieldFilters'
+import { buildActiveFilterGroups } from '../pages/BillList/activeFilterGroups'
+import { GroupOperator } from '../pages/BillList/GroupOperator'
 
 interface FilterSheetProps {
   isOpen: boolean
@@ -23,6 +25,13 @@ interface FilterSheetProps {
   isAdmin: boolean
   newMatches: boolean
   newMatchesCount?: number
+  unvotedOnly: boolean
+  /** Whether active bill-fact filter groups combine with AND (false, the
+   *  default) or OR (true) — same state desktop reads/writes as `f.matchAny`
+   *  / `f.setMatchAny`. Rendered between groups in this sheet's active-chip
+   *  summary via `GroupOperator`, identically to desktop's chip row. */
+  matchAny: boolean
+  onMatchAnyChange: (v: boolean) => void
   /** Distinct states the tenant's bills span — same value desktop passes as
    *  `f.uniqueStates`, used only to decide whether the State dimension
    *  appears (see lib/filterDimensions.ts). */
@@ -53,6 +62,7 @@ interface FilterSheetProps {
   onMinRelevanceChange: (v: number) => void
   onMyBillsChange: (v: boolean) => void
   onNewMatchesChange: (v: boolean) => void
+  onUnvotedOnlyChange: (v: boolean) => void
   onClearAll: () => void
   counts?: {
     status: Record<string, number>
@@ -65,13 +75,13 @@ interface FilterSheetProps {
   }
 }
 
-// The drill-down (options-list) dimensions. "My bills" and "New matches"
-// (single toggles) and "Min. Relevance" (a slider) aren't included here —
-// none is a list of options to choose among, so all three stay as direct
-// controls on the dimension list (level 1) rather than becoming a drill-down
-// target of their own. See lib/filterDimensions.ts for the full registry
-// (including the two toggles) that both this component and the desktop
-// toolbar read their labels and visibility from.
+// The drill-down (options-list) dimensions. "My bills", "New matches", and
+// "Not yet voted" (single toggles) and "Min. Relevance" (a slider) aren't
+// included here — none is a list of options to choose among, so all four
+// stay as direct controls on the dimension list (level 1) rather than
+// becoming a drill-down target of their own. See lib/filterDimensions.ts for
+// the full registry (including the three toggles) that both this component
+// and the desktop toolbar read their labels and visibility from.
 //
 // Dropdown-type custom fields are drill-down dimensions too, but they're
 // dynamic (tenant-defined, a variable count) rather than fixed registry
@@ -96,6 +106,7 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
   return (
     <button
       onClick={onClick}
+      aria-pressed={active}
       style={{
         fontSize: fontSize.sm,
         padding: '7px 14px',
@@ -217,11 +228,12 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
-  isAdmin, newMatches, newMatchesCount, uniqueStates,
+  isAdmin, newMatches, newMatchesCount, unvotedOnly, uniqueStates,
+  matchAny, onMatchAnyChange,
   statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
   customFieldDefs, cfFilters, onCfFilterChange,
   onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
-  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange,
+  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedOnlyChange,
   onClearAll, counts,
 }: FilterSheetProps) {
   useEffect(() => {
@@ -262,7 +274,11 @@ export function FilterSheet({
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
 
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  // Must mirror useBillFilters' totalActiveFilters (the mobile filter
+  // button's badge count) term for term — a mismatch is exactly the bug that
+  // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
+  // button badge counted it, this sheet's own "Clear all" gate didn't.
+  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -304,6 +320,35 @@ export function FilterSheet({
     : undefined
 
   const sessionVisible = (totalSessionCount ?? sessionOptions.length) > 0
+
+  // Same groups (and same AND/OR operator) desktop shows in its active-chip
+  // row above the sticky header (index.tsx) — built from this component's
+  // own props rather than threaded in whole, since matchAny/onMatchAnyChange
+  // are the only two new props this task adds (see FilterSheetProps above).
+  // Removal callbacks translate directly to this component's existing
+  // onXChange setters; the sheet needs no additional wiring from index.tsx.
+  const activeFilterGroups = buildActiveFilterGroups({
+    filterStates: states,
+    filterStatuses: statuses,
+    filterPositions: positions,
+    filterPriorities: priorities,
+    filterYears: sessions.map(Number),
+    selectedTags: tags,
+    selectedSubjects: subjects,
+    cfFilters,
+    filterMinRelevance: minRelevance,
+    positionOptions,
+    customFieldDefs,
+    onRemoveState: s => onStateChange(states.filter(x => x !== s)),
+    onRemoveStatus: s => onStatusChange(statuses.filter(x => x !== s)),
+    onRemovePosition: p => onPositionChange(positions.filter(x => x !== p)),
+    onRemovePriority: p => onPriorityChange(priorities.filter(x => x !== p)),
+    onRemoveYear: y => onSessionChange(sessions.filter(s => s !== String(y))),
+    onRemoveTag: tag => onTagChange(tags.filter(x => x !== tag)),
+    onRemoveSubject: subject => onSubjectChange(subjects.filter(x => x !== subject)),
+    onRemoveCf: (fieldId, v) => onCfFilterChange(fieldId, (cfFilters[fieldId] ?? []).filter(x => x !== v)),
+    onRemoveMinRelevance: () => onMinRelevanceChange(0),
+  })
 
   return (
     <>
@@ -393,6 +438,36 @@ export function FilterSheet({
                 </div>
               )}
 
+              {/* Not yet voted — always visible, same as My bills (see
+                  lib/filterDimensions.ts). This is the mobile drill-down
+                  sheet's only affordance for the state: it's reachable here
+                  even though it has no dedicated mobile control anywhere
+                  else, unlike the desktop toolbar's FilterToggle cluster. */}
+              <div style={{ marginBottom: 20 }}>
+                <SectionLabel title={filterDimensionLabel('unvoted')} />
+                <SheetChip
+                  label={filterDimensionLabel('unvoted')}
+                  active={unvotedOnly}
+                  onClick={() => onUnvotedOnlyChange(!unvotedOnly)}
+                />
+              </div>
+
+              {/* Scope/bill-fact separator — mirrors desktop's vertical rule
+                  (index.tsx's `data-testid="scope-separator"`) adapted to this
+                  sheet's vertical layout. My bills / New matches / Not yet
+                  voted above are viewer SCOPE (who's looking, not what the
+                  bill is), while the binary custom fields below are bill
+                  FACTS rendered as byte-identical SheetChip controls — mobile
+                  is exactly the surface where that distinction is hardest to
+                  infer without something marking the boundary. */}
+              {toggleCustomFields.length > 0 && (
+                <div
+                  data-testid="scope-separator"
+                  aria-hidden="true"
+                  style={{ height: 1, margin: '0 0 20px', background: color.borderDefault }}
+                />
+              )}
+
               {/* Binary custom fields — a direct toggle, same treatment as
                   My bills / New matches above (see lib/customFieldFilters.ts).
                   Zero filterable binary fields renders nothing here at all. */}
@@ -450,6 +525,23 @@ export function FilterSheet({
                   <span>10</span>
                 </div>
               </div>
+
+              {/* Active bill-fact filter chips, with the AND/OR operator
+                  between groups — mirrors desktop's chip row (index.tsx)
+                  exactly, including the interleaving rule: one operator
+                  between each adjacent pair of groups, none before the first
+                  or after the last, none at all with a single group. Viewer-
+                  scope state (My bills / New matches / Not yet voted) is
+                  never in these groups by construction (buildActiveFilterGroups),
+                  so it never sits between operators — it's rendered as the
+                  pills above instead. */}
+              {activeFilterGroups.length > 0 && (
+                <div data-testid="sheet-active-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 20, alignItems: 'center' }}>
+                  {activeFilterGroups.flatMap((g, i) => i === 0
+                    ? g.chips
+                    : [<GroupOperator key={`op-${g.key}`} matchAny={matchAny} onToggle={() => onMatchAnyChange(!matchAny)} />, ...g.chips])}
+                </div>
+              )}
 
               <div style={{ marginBottom: 20 }}>
                 <SectionLabel title="Filters" />

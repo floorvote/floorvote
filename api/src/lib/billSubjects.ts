@@ -76,6 +76,28 @@ export function decodeSubjectFilters(values: string[]): Array<{ state: string; n
 }
 
 /**
+ * Like decodeSubjectFilters, but reports whether the request exceeded
+ * MAX_SUBJECT_FILTERS instead of silently dropping the remainder.
+ *
+ * The silent truncation is safe for a text search and actively wrong for a
+ * filter: it returns FEWER bills than asked for, with nothing to indicate it.
+ * Routes reject an over-cap request; see
+ * docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
+ */
+export function decodeSubjectFiltersChecked(
+  values: string[],
+): { filters: Array<{ state: string; name: string }>; overflow: boolean } {
+  const filters: Array<{ state: string; name: string }> = []
+  for (const value of values) {
+    const decoded = decodeSubjectFilter(value)
+    if (!decoded) continue
+    if (filters.length >= MAX_SUBJECT_FILTERS) return { filters, overflow: true }
+    filters.push(decoded)
+  }
+  return { filters, overflow: false }
+}
+
+/**
  * Replace a bill's subject rows. Delete-then-insert rather than a diff: central
  * does the same on its side, and a diff would have to reason about a partial
  * write. Safe to call with an empty list.
