@@ -13,6 +13,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
+import { DropIndicator, useDragReorder } from '../../components/dragReorder'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
@@ -143,8 +144,26 @@ export function Config() {
   const [cfEditOptions, setCfEditOptions] = useState('')
   const [cfEditMultiple, setCfEditMultiple] = useState(false)
   const [cfEditError, setCfEditError] = useState<string | null>(null)
-  const [cfDragFrom, setCfDragFrom] = useState<number | null>(null)
-  const [cfDragOver, setCfDragOver] = useState<number | null>(null)
+  // Drag-to-reorder, shared with the tag table (TagTaxonomyTable.tsx) and
+  // saved views (BillList/ViewSwitcher.tsx) — see components/dragReorder.tsx.
+  // Persistence stays here, because it is this list's own: a fire-and-forget
+  // PUT on drop. `to` arrives already adjusted for the splice-out shift, so
+  // this is a plain remove-then-insert with no arithmetic of its own — the
+  // downward-drag off-by-one that used to live here is now unrepresentable.
+  const cfDnd = useDragReorder({
+    count: customFields.length,
+    disabled: demoLocked,
+    onReorder: (from, to) => {
+      const reordered = [...customFields]
+      const [moved] = reordered.splice(from, 1)
+      reordered.splice(to, 0, moved)
+      setCustomFields(reordered)
+      apiFetch('/admin/custom-fields/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ order: reordered.map(f => f.id) }),
+      }).catch(() => {})
+    },
+  })
   const [cfTooltip, setCfTooltip] = useState<{ key: string; x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -929,31 +948,17 @@ export function Config() {
           <div style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', marginBottom: 14, position: 'relative' }}>
             {customFields.map((field, i) => (
               <div key={field.id}>
-                {cfDragOver === i && cfDragFrom !== null && cfDragFrom !== i && cfDragFrom !== i - 1 && (
-                  <div style={{ height: 2, background: color.accentBlue, margin: '0 12px' }} />
-                )}
+                {cfDnd.indicatorBefore(i) && <DropIndicator />}
+                {/* The drop target is the whole row, but `draggable` is on the
+                    grip alone (below). With it on the row the grip was purely
+                    decorative and the browser's drag image was the entire row —
+                    the "whole row moving" feel neither of the other two lists
+                    has. The source row's dimming is state-driven too, rather
+                    than a style.opacity mutation on the DOM node, so React is
+                    never rendering against a value it does not own. */}
                 <div
-                  draggable={cfEditing !== field.id && !demoLocked}
-                  onDragStart={demoLocked ? undefined : e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); setCfDragFrom(i); (e.currentTarget as HTMLElement).style.opacity = '0.4' }}
-                  onDragEnd={demoLocked ? undefined : e => { (e.currentTarget as HTMLElement).style.opacity = '1'; setCfDragFrom(null); setCfDragOver(null) }}
-                  onDragOver={demoLocked ? undefined : e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setCfDragOver(i) }}
-                  onDrop={demoLocked ? undefined : e => {
-                    e.preventDefault()
-                    setCfDragFrom(null)
-                    setCfDragOver(null)
-                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'))
-                    const toIdx = i
-                    if (fromIdx === toIdx) return
-                    const reordered = [...customFields]
-                    const [moved] = reordered.splice(fromIdx, 1)
-                    reordered.splice(toIdx, 0, moved)
-                    setCustomFields(reordered)
-                    apiFetch('/admin/custom-fields/reorder', {
-                      method: 'PUT',
-                      body: JSON.stringify({ order: reordered.map(f => f.id) }),
-                    }).catch(() => {})
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: color.white, borderTop: i > 0 ? `1px solid ${color.surfaceMuted}` : 'none', gap: 10, cursor: cfEditing === field.id ? 'default' : demoLocked ? 'not-allowed' : 'grab' }}
+                  {...cfDnd.dropProps(i)}
+                  style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: color.white, borderTop: i > 0 ? `1px solid ${color.surfaceMuted}` : 'none', gap: 10, cursor: 'default', ...cfDnd.sourceStyle(i) }}
                 >
                   {cfEditing === field.id ? (
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -993,7 +998,10 @@ export function Config() {
                     </div>
                   ) : (
                     <>
-                      <span style={{ fontSize: fontSize.base, color: demoLocked ? color.borderDefault : color.borderStrong, cursor: demoLocked ? 'not-allowed' : 'grab', userSelect: 'none', flexShrink: 0 }}>⠿</span>
+                      <span
+                        {...cfDnd.gripProps(i)}
+                        style={{ fontSize: fontSize.base, color: demoLocked ? color.borderDefault : color.borderStrong, cursor: demoLocked ? 'not-allowed' : 'grab', userSelect: 'none', flexShrink: 0 }}
+                      >⠿</span>
                       <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium }}>{field.name}</span>
                       {/* Hover handlers sit on the wrapper, not the button. A disabled
                           button fires no pointer events, so on a demo tenant — where
@@ -1112,29 +1120,11 @@ export function Config() {
                 </div>
               </div>
             ))}
-            {/* Drop zone after last item for dragging to bottom */}
-            <div
-              onDragOver={demoLocked ? undefined : e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setCfDragOver(customFields.length) }}
-              onDrop={demoLocked ? undefined : e => {
-                e.preventDefault()
-                const fromIdx = parseInt(e.dataTransfer.getData('text/plain'))
-                setCfDragFrom(null)
-                setCfDragOver(null)
-                if (fromIdx === customFields.length - 1) return
-                const reordered = [...customFields]
-                const [moved] = reordered.splice(fromIdx, 1)
-                reordered.push(moved)
-                setCustomFields(reordered)
-                apiFetch('/admin/custom-fields/reorder', {
-                  method: 'PUT',
-                  body: JSON.stringify({ order: reordered.map(f => f.id) }),
-                }).catch(() => {})
-              }}
-              style={{ minHeight: 8 }}
-            >
-              {cfDragOver === customFields.length && cfDragFrom !== null && cfDragFrom !== customFields.length - 1 && (
-                <div style={{ height: 2, background: color.accentBlue, margin: '0 12px' }} />
-              )}
+            {/* The append-at-end zone, which insert-before semantics cannot
+                otherwise reach. It is not a special case in the primitive:
+                it is simply slot `count`. */}
+            <div {...cfDnd.tailDropProps()} style={{ minHeight: 8 }}>
+              {cfDnd.indicatorAtEnd() && <DropIndicator />}
             </div>
           </div>
         )}

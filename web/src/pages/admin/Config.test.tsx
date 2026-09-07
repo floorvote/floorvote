@@ -1053,3 +1053,150 @@ describe('Config — tag taxonomy header sort', () => {
     expect(screen.getByLabelText('Description, row 1')).toHaveValue('municipal broadband')
   })
 })
+
+// The same outcome matrix the tag table and saved views carry, asserting the
+// resulting ORDER rather than counting indicator elements. Counting is what let
+// two bugs survive here for as long as they did: the line renders in the right
+// place, and only the result is wrong.
+describe('Config — custom fields drag-to-reorder', () => {
+  const FIELDS = [
+    { id: 'a', name: 'Alpha', type: 'text', pinned: false },
+    { id: 'b', name: 'Bravo', type: 'text', pinned: false },
+    { id: 'c', name: 'Charlie', type: 'text', pinned: false },
+  ]
+
+  function mockFields() {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG }
+      if (path === '/admin/custom-fields') return FIELDS.map(f => ({ ...f }))
+      if (path === '/admin/custom-fields/reorder') return {}
+      if (path === '/bills/drafts') return { drafts: [] }
+      throw new Error('unexpected path: ' + path)
+    })
+  }
+
+  async function setup() {
+    mockFields()
+    render(<Config />)
+    await screen.findByText('Alpha')
+  }
+
+  /** The field row: the flex div holding the grip, the name and the controls. */
+  const row = (name: string) => screen.getByText(name).closest('div') as HTMLElement
+  /** The grip is the only ⠿ inside a row. */
+  const grip = (name: string) => within(row(name)).getByText('⠿')
+  /** The append-at-end drop zone: the last child of the bordered list container. */
+  const tail = () => row('Alpha').parentElement!.parentElement!.lastElementChild as HTMLElement
+
+  /** Field names in DOM order. */
+  function order() {
+    return ['Alpha', 'Bravo', 'Charlie']
+      .map(n => ({ n, el: screen.getByText(n) }))
+      .sort((x, y) => (x.el.compareDocumentPosition(y.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+      .map(x => x.n)
+  }
+
+  function reorderCalls() {
+    return mockFetch.mock.calls.filter(c => c[0] === '/admin/custom-fields/reorder')
+  }
+
+  function fakeDataTransfer() {
+    let stored = ''
+    return {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: (_type: string, value: string) => { stored = value },
+      getData: () => stored,
+    }
+  }
+
+  // One act() per event, not one around the batch: the primitive's handlers
+  // bail out when no reorder is in progress (so an ordinary drag falls through
+  // to the browser), and batching dragstart with the dragover that follows it
+  // would leave the row still rendering with dragFrom === null. A real browser
+  // delivers these as separate tasks.
+  async function drag(from: string, to: string | 'tail') {
+    const dataTransfer = fakeDataTransfer()
+    const target = to === 'tail' ? tail() : row(to)
+    await act(async () => { fireEvent.dragStart(grip(from), { dataTransfer }) })
+    await act(async () => { fireEvent.dragOver(target, { dataTransfer }) })
+    await act(async () => { fireEvent.drop(target, { dataTransfer }) })
+    await act(async () => { fireEvent.dragEnd(target, { dataTransfer }) })
+  }
+
+  it('drag Alpha, drop on Charlie inserts Alpha immediately before Charlie', async () => {
+    await setup()
+    await drag('Alpha', 'Charlie')
+    expect(order()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+    expect(JSON.parse(String(reorderCalls()[0][1]!.body)).order).toEqual(['b', 'a', 'c'])
+  })
+
+  it('drag Charlie, drop on Alpha inserts Charlie immediately before Alpha', async () => {
+    await setup()
+    await drag('Charlie', 'Alpha')
+    expect(order()).toEqual(['Charlie', 'Alpha', 'Bravo'])
+    expect(JSON.parse(String(reorderCalls()[0][1]!.body)).order).toEqual(['c', 'a', 'b'])
+  })
+
+  it('drag Alpha, drop on the tail zone moves Alpha to the end', async () => {
+    await setup()
+    await drag('Alpha', 'tail')
+    expect(order()).toEqual(['Bravo', 'Charlie', 'Alpha'])
+    expect(JSON.parse(String(reorderCalls()[0][1]!.body)).order).toEqual(['b', 'c', 'a'])
+  })
+
+  it('drag Alpha, drop on Bravo changes nothing and persists nothing', async () => {
+    await setup()
+    await drag('Alpha', 'Bravo')
+    expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    expect(reorderCalls()).toHaveLength(0)
+  })
+
+  it('drag Charlie, drop on the tail zone changes nothing and persists nothing', async () => {
+    await setup()
+    await drag('Charlie', 'tail')
+    expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    expect(reorderCalls()).toHaveLength(0)
+  })
+
+  it('puts draggable on the grip, not on the whole row', async () => {
+    await setup()
+    // A whole-row draggable makes the browser's drag image the entire row —
+    // the "whole row moving" feel the other two lists never had — and makes the
+    // rendered grip purely decorative.
+    expect(grip('Alpha')).toHaveAttribute('draggable', 'true')
+    expect(row('Alpha')).not.toHaveAttribute('draggable', 'true')
+  })
+
+  it('dims the source row from state, without mutating style.opacity on the node', async () => {
+    await setup()
+    const dataTransfer = fakeDataTransfer()
+    await act(async () => { fireEvent.dragStart(grip('Bravo'), { dataTransfer }) })
+    expect(row('Bravo')).toHaveStyle({ opacity: '0.4' })
+    expect(row('Alpha')).toHaveStyle({ opacity: '1' })
+    await act(async () => { fireEvent.dragEnd(grip('Bravo'), { dataTransfer }) })
+    expect(row('Bravo')).toHaveStyle({ opacity: '1' })
+  })
+
+  it('offers no grip while a row is being edited', async () => {
+    await setup()
+    await act(async () => { fireEvent.click(within(row('Bravo')).getByText('edit').closest('button')!) })
+    const editInput = screen.getByDisplayValue('Bravo')
+    expect(editInput).toBeInTheDocument()
+    // Once editing starts, "Bravo" is an input value rather than text, so the
+    // edited row has to be reached via the input rather than by name.
+    const editingRow = editInput.closest('div')!.parentElement as HTMLElement
+    expect(within(editingRow).queryByText('⠿')).not.toBeInTheDocument()
+    // The other rows keep theirs.
+    expect(grip('Alpha')).toHaveAttribute('draggable', 'true')
+  })
+
+  it('offers no drag at all on a demo-locked tenant', async () => {
+    demo.demoLocked = true
+    await setup()
+    expect(grip('Alpha')).not.toHaveAttribute('draggable', 'true')
+    await drag('Alpha', 'Charlie')
+    expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    expect(reorderCalls()).toHaveLength(0)
+  })
+})

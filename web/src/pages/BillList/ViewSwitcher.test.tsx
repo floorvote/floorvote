@@ -319,6 +319,100 @@ describe('ViewSwitcher', () => {
       expect(onReorder).toHaveBeenCalledWith(['v2', 'v1'])
     })
 
+    // The same outcome matrix the tag table and custom fields carry, asserting
+    // the resulting ORDER rather than counting indicator elements — counting is
+    // what let two bugs survive here, because the line renders in the right
+    // place and only the result is wrong.
+    describe('outcomes', () => {
+      const THREE: SavedView[] = [
+        { id: 'a', name: 'Alpha view', query: '' },
+        { id: 'b', name: 'Bravo view', query: '' },
+        { id: 'c', name: 'Charlie view', query: '' },
+      ]
+
+      function open3() {
+        const onReorder = vi.fn()
+        render(
+          <ViewSwitcher
+            views={THREE}
+            currentSearch=""
+            isAdmin
+            onApply={vi.fn()}
+            onRename={vi.fn()}
+            onDelete={vi.fn()}
+            onReorder={onReorder}
+          />,
+        )
+        fireEvent.click(screen.getByRole('button', { name: /views/i }))
+        return { onReorder }
+      }
+
+      const menu = () => screen.getByRole('group', { name: 'Saved views' })
+      const row = (name: string) => screen.getByText(name).closest('div')!
+      /** The append-at-end zone: the last child of the menu. */
+      const tail = () => menu().lastElementChild!
+
+      function order() {
+        return ['Alpha view', 'Bravo view', 'Charlie view']
+          .map(n => ({ n, el: screen.getByText(n) }))
+          .sort((x, y) => (x.el.compareDocumentPosition(y.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+          .map(x => x.n)
+      }
+
+      function drag(from: string, to: string | 'tail') {
+        const dataTransfer = fakeDataTransfer()
+        const target = to === 'tail' ? tail() : row(to)
+        fireEvent.dragStart(screen.getByLabelText(`Reorder ${from}`), { dataTransfer })
+        fireEvent.dragOver(target, { dataTransfer })
+        fireEvent.drop(target, { dataTransfer })
+        fireEvent.dragEnd(target, { dataTransfer })
+      }
+
+      it('drag Alpha, drop on Charlie inserts Alpha immediately before Charlie', () => {
+        const { onReorder } = open3()
+        drag('Alpha view', 'Charlie view')
+        expect(order()).toEqual(['Bravo view', 'Alpha view', 'Charlie view'])
+        expect(onReorder).toHaveBeenCalledWith(['b', 'a', 'c'])
+      })
+
+      it('drag Charlie, drop on Alpha inserts Charlie immediately before Alpha', () => {
+        const { onReorder } = open3()
+        drag('Charlie view', 'Alpha view')
+        expect(order()).toEqual(['Charlie view', 'Alpha view', 'Bravo view'])
+        expect(onReorder).toHaveBeenCalledWith(['c', 'a', 'b'])
+      })
+
+      it('drag Alpha, drop on the tail zone moves Alpha to the end', () => {
+        const { onReorder } = open3()
+        drag('Alpha view', 'tail')
+        expect(order()).toEqual(['Bravo view', 'Charlie view', 'Alpha view'])
+        expect(onReorder).toHaveBeenCalledWith(['b', 'c', 'a'])
+      })
+
+      it('drag Alpha, drop on Bravo changes nothing and calls nothing', () => {
+        const { onReorder } = open3()
+        drag('Alpha view', 'Bravo view')
+        expect(order()).toEqual(['Alpha view', 'Bravo view', 'Charlie view'])
+        expect(onReorder).not.toHaveBeenCalled()
+      })
+
+      it('drag Charlie, drop on the tail zone changes nothing and calls nothing', () => {
+        const { onReorder } = open3()
+        drag('Charlie view', 'tail')
+        expect(order()).toEqual(['Alpha view', 'Bravo view', 'Charlie view'])
+        expect(onReorder).not.toHaveBeenCalled()
+      })
+
+      it('dims the whole source row, not just its grip', () => {
+        open3()
+        const dataTransfer = fakeDataTransfer()
+        fireEvent.dragStart(screen.getByLabelText('Reorder Bravo view'), { dataTransfer })
+        expect(row('Bravo view')).toHaveStyle({ opacity: '0.4' })
+        expect(row('Alpha view')).toHaveStyle({ opacity: '1' })
+        expect(screen.getByLabelText('Reorder Bravo view')).toHaveStyle({ opacity: '1' })
+      })
+    })
+
     it('reverts the visible order when the reorder request fails', async () => {
       const onReorder = vi.fn().mockRejectedValue(new Error('boom'))
       renderSwitcher({ isAdmin: true, onReorder })
