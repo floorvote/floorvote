@@ -90,41 +90,54 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
         </ol>
       )
     } else {
-      // Mixed block: paragraph lines followed by list items.
-      // Split into contiguous runs of paragraph vs list lines.
+      // Mixed block: paragraph and list lines in any order. Split into
+      // contiguous runs and emit each in turn.
+      //
+      // This used to special-case exactly one shape -- a paragraph followed by
+      // list items -- and required EVERY line after the first bullet to be a
+      // bullet. Anything trailing the list (most often a closing "Effective
+      // January 1, 2026." line) failed that test and fell through to the
+      // paragraph branch, which joined the whole block with spaces: the list
+      // collapsed into one run-on paragraph with its "- " markers left inline.
+      // A model that ends a bulleted summary with one closing sentence is
+      // ordinary output, so the shape has to render rather than be a trap.
       const isBullet = (l: string) => /^[-*+]\s/.test(l) || /^\d+\.\s/.test(l)
-      const firstBulletIdx = lines.findIndex(isBullet)
 
-      if (firstBulletIdx > 0 && lines.slice(firstBulletIdx).every(isBullet)) {
-        const paraLines = lines.slice(0, firstBulletIdx)
-        const listLines = lines.slice(firstBulletIdx)
-        const isOl = listLines.every(l => /^\d+\.\s/.test(l))
+      type Run = { bullet: boolean; lines: string[] }
+      const runs: Run[] = []
+      for (const line of lines) {
+        const bullet = isBullet(line)
+        const last = runs[runs.length - 1]
+        if (last && last.bullet === bullet) last.lines.push(line)
+        else runs.push({ bullet, lines: [line] })
+      }
 
-        elements.push(
-          <p key={`${bi}-p`} style={pStyle}>{renderInline(paraLines.join(' '))}</p>
-        )
-        if (isOl) {
+      runs.forEach((run, ri) => {
+        const key = `${bi}-${ri}`
+        if (!run.bullet) {
+          elements.push(<p key={key} style={pStyle}>{renderInline(run.lines.join(' '))}</p>)
+          return
+        }
+        // Ordered only when every item in THIS run is numbered; a run mixing
+        // "1." and "-" renders as a bullet list rather than renumbering itself.
+        if (run.lines.every(l => /^\d+\.\s/.test(l))) {
           elements.push(
-            <ol key={`${bi}-l`} style={listStyle}>
-              {listLines.map((l, i) => (
+            <ol key={key} style={listStyle}>
+              {run.lines.map((l, i) => (
                 <li key={i} style={liStyle}>{renderInline(l.replace(/^\d+\.\s+/, ''))}</li>
               ))}
             </ol>
           )
         } else {
           elements.push(
-            <ul key={`${bi}-l`} style={listStyle}>
-              {listLines.map((l, i) => (
+            <ul key={key} style={listStyle}>
+              {run.lines.map((l, i) => (
                 <li key={i} style={liStyle}>{renderInline(l.replace(/^[-*+]\s+/, ''))}</li>
               ))}
             </ul>
           )
         }
-      } else {
-        elements.push(
-          <p key={bi} style={pStyle}>{renderInline(lines.join(' '))}</p>
-        )
-      }
+      })
     }
   })
 
