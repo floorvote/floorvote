@@ -26,6 +26,7 @@ interface FilterSheetProps {
   newMatches: boolean
   newMatchesCount?: number
   unvotedOnly: boolean
+  unvotedCount?: number
   /** Whether active bill-fact filter groups combine with AND (false, the
    *  default) or OR (true) — same state desktop reads/writes as `f.matchAny`
    *  / `f.setMatchAny`. Rendered between groups in this sheet's active-chip
@@ -36,6 +37,9 @@ interface FilterSheetProps {
    *  `f.uniqueStates`, used only to decide whether the State dimension
    *  appears (see lib/filterDimensions.ts). */
   uniqueStates: string[]
+  /** The tenant's bills span more than one state — same value as desktop's
+   *  `f.isMultiState`, gated by `knownStates.size > 1`. */
+  isMultiState: boolean
   statusOptions: { value: string; label: string }[]
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
@@ -228,7 +232,7 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
-  isAdmin, newMatches, newMatchesCount, unvotedOnly, uniqueStates,
+  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, uniqueStates, isMultiState,
   matchAny, onMatchAnyChange,
   statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
   customFieldDefs, cfFilters, onCfFilterChange,
@@ -270,14 +274,14 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin }
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState }
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
 
   // Must mirror useBillFilters' totalActiveFilters (the mobile filter
   // button's badge count) term for term — a mismatch is exactly the bug that
   // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
-  // button badge counted it, this sheet's own "Clear all" gate didn't.
+  // button badge counted it, this sheet's own "Reset filters" gate didn't.
   const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
@@ -398,7 +402,7 @@ export function FilterSheet({
                 onClick={onClearAll}
                 style={{ fontSize: fontSize.sm, color: color.linkBlue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
               >
-                Clear all
+                Reset filters
               </button>
             )}
             <button
@@ -448,6 +452,7 @@ export function FilterSheet({
                 <SheetChip
                   label={filterDimensionLabel('unvoted')}
                   active={unvotedOnly}
+                  count={unvotedCount ?? 0}
                   onClick={() => onUnvotedOnlyChange(!unvotedOnly)}
                 />
               </div>

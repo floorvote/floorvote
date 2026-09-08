@@ -20,6 +20,7 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
   const onRename = vi.fn()
   const onDelete = vi.fn()
   const onReorder = vi.fn()
+  const onOverwrite = vi.fn()
   const utils = render(
     <ViewSwitcher
       views={VIEWS}
@@ -29,10 +30,11 @@ function renderSwitcher(over: Partial<Parameters<typeof ViewSwitcher>[0]> = {}) 
       onRename={onRename}
       onDelete={onDelete}
       onReorder={onReorder}
+      onOverwrite={onOverwrite}
       {...over}
     />,
   )
-  return { ...utils, onApply, onRename, onDelete, onReorder }
+  return { ...utils, onApply, onRename, onDelete, onReorder, onOverwrite }
 }
 
 // Fires a native-drag-event sequence (dragstart on the handle, dragover +
@@ -204,6 +206,26 @@ describe('ViewSwitcher', () => {
     expect(onDelete).toHaveBeenCalledWith('v1')
   })
 
+  it('offers rename, overwrite, and delete on the hovered row', () => {
+    renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
+    expect(screen.getByRole('button', { name: /rename/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /replace this view's filters/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument()
+  })
+
+  it('confirms inline before overwriting, naming what is lost', () => {
+    const { onOverwrite } = renderSwitcher({ isAdmin: true })
+    fireEvent.click(screen.getByRole('button', { name: /views/i }))
+    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
+    fireEvent.click(screen.getByRole('button', { name: /replace this view's filters/i }))
+    expect(screen.getByText(/Replace this view's filters with the current ones\?/)).toBeInTheDocument()
+    expect(onOverwrite).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /^replace$/i }))
+    expect(onOverwrite).toHaveBeenCalledWith('v1')
+  })
+
   it('places Rename and Delete before the count chip in the row', () => {
     renderSwitcher({ isAdmin: true })
     fireEvent.click(screen.getByRole('button', { name: /views/i }))
@@ -348,6 +370,7 @@ describe('ViewSwitcher', () => {
             onRename={vi.fn()}
             onDelete={vi.fn()}
             onReorder={onReorder}
+            onOverwrite={vi.fn()}
           />,
         )
         fireEvent.click(screen.getByRole('button', { name: /views/i }))
@@ -486,6 +509,7 @@ describe('ViewSwitcher', () => {
               onRename={vi.fn()}
               onDelete={vi.fn()}
               onReorder={vi.fn()}
+              onOverwrite={vi.fn()}
             />,
           )
           fireEvent.click(screen.getByRole('button', { name: /views/i }))

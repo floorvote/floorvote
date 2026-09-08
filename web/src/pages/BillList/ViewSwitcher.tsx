@@ -11,11 +11,14 @@ import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../componen
 // Fixed dropdown width (FIX 2): the menu used to be content-sized off a
 // `minWidth: 232` floor, so revealing Rename/Delete on hover widened the whole
 // menu. Fixing the width instead makes the name column shrink (it already
-// carries flex/minWidth/textOverflow) so the row layout never jumps. 272px is
+// carries flex/minWidth/textOverflow) so the row layout never jumps. 272px was
 // 232 (the old floor, comfortable for name + count alone) plus room for the
 // Rename and Delete buttons (~2-3 chars + padding each) so the two-button row
 // still shows a readable slice of the name rather than truncating it away.
-const MENU_WIDTH = 272
+// Raised to 300px for the third (overwrite) icon button added alongside
+// them — the same reasoning applies: room for the extra control, or it
+// widens the row on hover exactly as before FIX 2.
+const MENU_WIDTH = 300
 
 export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
 
@@ -37,7 +40,7 @@ function ViewCountBadge({ count, failed }: { count: number | undefined; failed: 
 }
 
 export function ViewSwitcher({
-  views, currentSearch, isAdmin, onApply, onRename, onDelete, onReorder,
+  views, currentSearch, isAdmin, onApply, onRename, onDelete, onReorder, onOverwrite,
 }: {
   views: SavedView[]
   currentSearch: string
@@ -46,11 +49,16 @@ export function ViewSwitcher({
   onRename: (id: string, name: string) => void | Promise<void>
   onDelete: (id: string) => void | Promise<void>
   onReorder: (order: string[]) => void | Promise<void>
+  onOverwrite: (id: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  // Separate from confirmingId (delete's confirm state) — overwrite is a
+  // distinct destructive action with its own wording, and a row must not be
+  // able to show both confirms at once.
+  const [confirmingOverwriteId, setConfirmingOverwriteId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   // Local, optimistic ordering of `views` — reordered immediately on drop and
   // reverted if onReorder rejects. Reset from props whenever the incoming
@@ -111,6 +119,7 @@ export function ViewSwitcher({
     if (open) return
     setRenamingId(null)
     setConfirmingId(null)
+    setConfirmingOverwriteId(null)
     setHoveredId(null)
     setFocusedId(null)
   }, [open])
@@ -179,6 +188,16 @@ export function ViewSwitcher({
     } catch {
       // Leave the confirm state open so the user can see the delete didn't
       // take, instead of closing as though it had succeeded.
+    }
+  }
+
+  async function commitOverwrite(id: string) {
+    try {
+      await onOverwrite(id)
+      setConfirmingOverwriteId(null)
+    } catch {
+      // Leave the confirm state open so the user can see the overwrite
+      // didn't take, instead of closing as though it had succeeded.
     }
   }
 
@@ -292,6 +311,22 @@ export function ViewSwitcher({
                 </div>
               )
             }
+            if (confirmingOverwriteId === v.id) {
+              return (
+                <div key={v.id}>
+                  {indicator}
+                  <div style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger, ...dnd.sourceStyle(i) }} {...dropHandlers}>
+                    {/* Overwrite loses more than delete does in one specific way:
+                        a deleted view can be rebuilt from the filters still on
+                        screen, but the previous filter set behind an overwritten
+                        view has nothing to recover it. The wording says so. */}
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Replace this view's filters with the current ones?</span>
+                    <button onClick={() => setConfirmingOverwriteId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
+                    <button onClick={() => { void commitOverwrite(v.id) }} style={smallButtonStyle('danger')}>Replace</button>
+                  </div>
+                </div>
+              )
+            }
             const isActive = active?.id === v.id
             // Only draggable via this handle, not the whole row: the row's
             // name button applies the view and closes the menu on click, so
@@ -335,7 +370,20 @@ export function ViewSwitcher({
                   {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
                     <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
                       <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
-                      <button onClick={() => { setRenamingId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
+                      <button
+                        onClick={() => { setRenamingId(null); setConfirmingId(null); setConfirmingOverwriteId(v.id) }}
+                        // The `save` glyph is a floppy disk and reads oddly for
+                        // "replace this view's saved filters with the ones on
+                        // screen now" — that mismatch is accepted, so the
+                        // accessible name and tooltip (not the icon) carry what
+                        // the control actually does.
+                        aria-label="Replace this view's filters with the current ones"
+                        title="Replace this view's filters with the current ones"
+                        style={iconGlyphButtonStyle}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>save</span>
+                      </button>
+                      <button onClick={() => { setRenamingId(null); setConfirmingOverwriteId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
                     </span>
                   )}
                   <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
@@ -376,6 +424,16 @@ function rowStyle(selected: boolean): React.CSSProperties {
 const iconButtonStyle: React.CSSProperties = {
   fontFamily: 'inherit', background: 'none', border: 'none', cursor: 'pointer',
   color: color.textSecondary, fontSize: fontSize.xs, padding: '1px 4px', borderRadius: radius.sm,
+}
+
+// Config.tsx's row-action icon idiom (a bare material-symbols-outlined glyph,
+// no text) rather than iconButtonStyle's text-label treatment — Rename and
+// Delete read fine as words, but "Save" as a word would misdescribe this
+// control worse than the floppy-disk glyph already does.
+const iconGlyphButtonStyle: React.CSSProperties = {
+  fontFamily: 'inherit', background: 'none', border: 'none', cursor: 'pointer',
+  color: color.textSecondary, padding: '1px 4px', borderRadius: radius.sm,
+  display: 'inline-flex', alignItems: 'center',
 }
 
 function smallButtonStyle(kind: 'primary' | 'danger' | 'cancel'): React.CSSProperties {

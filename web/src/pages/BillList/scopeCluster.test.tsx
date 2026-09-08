@@ -9,7 +9,7 @@
 // needs to drive scope filters directly from the URL.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
@@ -50,6 +50,7 @@ vi.mock('../../lib/api', () => {
       return {
         status: { '2': 1 }, priority: {}, session: {}, year: {}, state: { RI: 1 }, position: {},
         tags: { Clerk: 1 }, subjects: {}, customFields: {}, myBillsCount: 2, newMatchesCount: 3,
+        unvotedCount: 7,
       } as T
     }
     if (path.startsWith('/bills?')) {
@@ -131,6 +132,11 @@ describe('scope cluster', () => {
     expect(screen.getByRole('button', { name: /not yet voted/i })).toBeInTheDocument()
   })
 
+  it('shows a count on Not yet voted, like its neighbours', async () => {
+    await renderBillList({})
+    expect(screen.getByRole('button', { name: /not yet voted/i })).toHaveTextContent('7')
+  })
+
   it('separates the cluster from the dimensions', async () => {
     await renderBillList({})
     expect(screen.getByTestId('scope-separator')).toBeInTheDocument()
@@ -153,5 +159,29 @@ describe('scope cluster', () => {
   it('does not open the chip row at all when only scope filters are active', async () => {
     await renderBillList({ initialUrl: '/bills?unvoted=1&newMatches=1' })
     expect(screen.queryByTestId('active-filter-chips')).not.toBeInTheDocument()
+  })
+})
+
+describe('scope control copy', () => {
+  it('every scope tooltip leads with "Show only"', async () => {
+    await renderBillList({ isAdmin: true })
+    // My bills
+    fireEvent.focus(screen.getByRole('button', { name: /my bills/i }))
+    expect(await screen.findByText(/^Show only bills you've voted on/)).toBeInTheDocument()
+
+    // New matches
+    fireEvent.focus(screen.getByRole('button', { name: /new matches/i }))
+    expect(await screen.findByText(/^Show only newly keyword-matched/)).toBeInTheDocument()
+
+    // Not yet voted
+    fireEvent.focus(screen.getByRole('button', { name: /not yet voted/i }))
+    expect(await screen.findByText(/^Show only bills you haven't voted/)).toBeInTheDocument()
+  })
+
+  it('the search tooltip leads with "Show only" and keeps its syntax help', async () => {
+    await renderBillList({})
+    fireEvent.focus(screen.getByPlaceholderText('Search…'))
+    expect(await screen.findByText(/Show only bills matching your search terms\./)).toBeInTheDocument()
+    expect(screen.getByText(/Commas act as ORs/)).toBeInTheDocument()
   })
 })

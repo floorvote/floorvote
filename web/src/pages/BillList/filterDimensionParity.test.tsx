@@ -13,11 +13,11 @@
 //     condition re-derived instead of reused) fails this test.
 //
 // Two matrices are exercised for the two conditional dimensions:
-//   - State:       uniqueStates = []           (hidden) vs non-empty (shown)
+//   - State:       isMultiState = false       (hidden) vs true      (shown)
 //   - New matches: isAdmin = false             (hidden) vs true      (shown)
-// (State's real gate — see lib/filterDimensions.ts — is "at least one known
-// state", not "more than one"; the "shown" cases below use two states to
-// additionally demonstrate the multi-state case renders correctly.)
+// (State's real gate — see lib/filterDimensions.ts — is isMultiState ("more
+// than one known state"), so single-state instances hide State. The "shown"
+// cases use two states to demonstrate the multi-state case correctly.)
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
@@ -155,6 +155,7 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
       matchAny={false}
       onMatchAnyChange={() => {}}
       uniqueStates={ctx.uniqueStates}
+      isMultiState={ctx.isMultiState}
       statusOptions={[{ value: 'active', label: 'Active' }]}
       priorityOptions={[{ value: 'high', label: 'High' }]}
       positionOptions={[{ value: 'support', label: 'Support' }]}
@@ -186,11 +187,12 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
 // existing myBills special-case).
 // 'myBills' has a second, independent reason to stay out of this loop: on
 // desktop its accessible name is a compound (label + count badge), not a
-// bare exact match. 'unvoted' has no count badge on either surface, so its
-// accessible name IS the exact label — which is exactly why the direct
-// assertions below use `getByRole` with an exact name, on both desktop and
-// mobile (Task 7 wired it into the desktop FilterToggle cluster; the
-// Critical-1 fix wired the matching control into FilterSheet).
+// bare exact match. 'unvoted' now carries a count badge too (Task 4 gave it
+// an unvotedCount, mirroring myBillsCount/newMatchesCount), so its direct
+// assertions below use a case-insensitive substring match instead of an
+// exact name, on both desktop and mobile (Task 7 wired it into the desktop
+// FilterToggle cluster; the Critical-1 fix wired the matching control into
+// FilterSheet).
 const ALWAYS_VISIBLE_OPTION_KEYS = FILTER_DIMENSIONS
   .filter(d => d.key !== 'state' && d.key !== 'newMatches' && d.key !== 'myBills' && d.key !== 'unvoted')
   .map(d => d.key)
@@ -204,15 +206,15 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     // My bills and Not yet voted (toggles) are always visible too, just not
     // via FilterDropdown.
     expect(screen.getByText(filterDimensionLabel('myBills'))).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('unvoted') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: new RegExp(filterDimensionLabel('unvoted'), 'i') })).toBeInTheDocument()
     cleanup()
 
-    renderMobile({ uniqueStates: ['RI'], isAdmin: false })
+    renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false })
     for (const key of ALWAYS_VISIBLE_OPTION_KEYS) {
       expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel(key)}$`) })).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: filterDimensionLabel('myBills') })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: filterDimensionLabel('unvoted') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: new RegExp(filterDimensionLabel('unvoted'), 'i') })).toBeInTheDocument()
   })
 
   describe.each([
@@ -220,7 +222,8 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'one known state', uniqueStates: ['RI'] },
     { label: 'multiple known states', uniqueStates: ['RI', 'NJ'] },
   ])('State dimension — $label', ({ uniqueStates }) => {
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false })
+    const isMultiState = uniqueStates.length > 1
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin: false, states: uniqueStates })
@@ -229,7 +232,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on mobile`, () => {
-      renderMobile({ uniqueStates, isAdmin: false })
+      renderMobile({ uniqueStates, isAdmin: false, isMultiState })
       const stateRow = screen.queryByRole('button', { name: new RegExp(`^${filterDimensionLabel('state')}$`) })
       expect(stateRow !== null).toBe(expectedVisible)
     })
@@ -239,7 +242,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'non-admin', isAdmin: false },
     { label: 'admin', isAdmin: true },
   ])('New matches dimension — $label', ({ isAdmin }) => {
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false })
 
     it(`is ${expectedVisible ? 'shown, with a count' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin, states: ['RI'] })
@@ -252,7 +255,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     })
 
     it(`is ${expectedVisible ? 'shown, with a count' : 'hidden'} on mobile`, () => {
-      renderMobile({ uniqueStates: ['RI'], isAdmin, newMatchesCount: 3 })
+      renderMobile({ uniqueStates: ['RI'], isAdmin, isMultiState: false, newMatchesCount: 3 })
       const newMatchesButton = screen.queryByRole('button', { name: /new matches/i })
       expect(newMatchesButton !== null).toBe(expectedVisible)
       if (expectedVisible) {
@@ -270,7 +273,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     expect(screen.getByText('NJ')).toBeInTheDocument()
     cleanup()
 
-    renderMobile({ uniqueStates: ['RI', 'NJ'], isAdmin: true })
+    renderMobile({ uniqueStates: ['RI', 'NJ'], isAdmin: true, isMultiState: true })
     expect(screen.getByRole('button', { name: new RegExp(`^${filterDimensionLabel('state')}$`) })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /new matches/i })).toBeInTheDocument()
   })
@@ -368,7 +371,8 @@ describe('no dimension label may be rendered from a literal', () => {
     'mobile renders $key from the registry alone — renaming it leaves no stale text in the sheet',
     async ({ key }) => {
       await withRenamedDimension(key, (originalLabel) => {
-        const { container } = renderMobile({ uniqueStates: ['RI'], isAdmin: true })
+        // Use multi-state context so State dimension is visible (it's conditionally hidden on single-state)
+        const { container } = renderMobile({ uniqueStates: ['RI', 'NJ'], isAdmin: true, isMultiState: true })
         const sheetText = container.textContent ?? ''
         expect(sheetText).toContain(SENTINEL)
         expect(sheetText).not.toContain(originalLabel)
@@ -410,7 +414,7 @@ describe('custom field filter parity', () => {
   })
 
   it('mobile exposes exactly the filterable custom fields, by name', () => {
-    renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: CUSTOM_FIELD_DEFS })
+    renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, customFieldDefs: CUSTOM_FIELD_DEFS })
     for (const name of FILTERABLE_CF_NAMES) {
       expect(screen.getByRole('button', { name: new RegExp(name, 'i') })).toBeInTheDocument()
     }
@@ -427,7 +431,7 @@ describe('custom field filter parity', () => {
     }
     cleanup()
 
-    const { container } = renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: [] })
+    const { container } = renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, customFieldDefs: [] })
     for (const name of [...FILTERABLE_CF_NAMES, ...UNFILTERABLE_CF_NAMES]) {
       expect(container.textContent ?? '').not.toMatch(new RegExp(name, 'i'))
     }
@@ -447,7 +451,7 @@ describe('custom field filter parity', () => {
     )
     cleanup()
 
-    renderMobile({ uniqueStates: ['RI'], isAdmin: false, customFieldDefs: CUSTOM_FIELD_DEFS })
+    renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, customFieldDefs: CUSTOM_FIELD_DEFS })
     const mobileNames = FILTERABLE_CF_NAMES.filter(
       name => screen.queryByRole('button', { name: new RegExp(name, 'i') }) !== null,
     )

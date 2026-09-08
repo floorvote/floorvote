@@ -169,6 +169,63 @@ describe('/api/admin/views', () => {
     expect(body.error).toBe('name is required')
   })
 
+  it("overwrites a view's query, leaving its name and slug alone", async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string; slug: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'subject=UT%3AElections&tag=Clerk&match=any' }) },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { query: string; name: string; slug: string }
+    expect(body.query).toBe('subject=UT%3AElections&tag=Clerk&match=any')
+    expect(body.name).toBe('Clerk bills')
+    expect(body.slug).toBe(created.slug)
+
+    // Persisted, not just echoed in the response.
+    const listRes = await app.request('/api/views', { headers: { Cookie: memberCookie } }, env)
+    const { views } = await listRes.json() as { views: { id: string; query: string; slug: string }[] }
+    const view = views.find(v => v.id === created.id)
+    expect(view?.query).toBe('subject=UT%3AElections&tag=Clerk&match=any')
+    expect(view?.slug).toBe(created.slug)
+  })
+
+  it('still renames when only a name is sent, leaving the query untouched', async () => {
+    const created = await (await post(adminCookie, { name: 'Old', query: 'status=Passed' })).json() as { id: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'New' }) },
+      env,
+    )
+    const body = await res.json() as { name: string; query: string }
+    expect(body.name).toBe('New')
+    expect(body.query).toBe('status=Passed')
+  })
+
+  it('rejects a blank query on overwrite', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: '' }) },
+      env,
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('updates both name and query when both are sent, regenerating the slug', async () => {
+    const created = await (await post(adminCookie, { name: 'Clerk bills', query: 'subject=UT%3AElections' })).json() as { id: string; slug: string }
+    const res = await app.request(
+      `/api/admin/views/${created.id}`,
+      { method: 'PUT', headers: { Cookie: adminCookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'County clerk bills', query: 'tag=Clerk' }) },
+      env,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { name: string; query: string; slug: string }
+    expect(body.name).toBe('County clerk bills')
+    expect(body.query).toBe('tag=Clerk')
+    expect(body.slug).toBe('county-clerk-bills')
+  })
+
   it('404s renaming an unknown id', async () => {
     const res = await app.request(
       '/api/admin/views/nope',

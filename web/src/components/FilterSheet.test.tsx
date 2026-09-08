@@ -25,6 +25,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     matchAny: false,
     onMatchAnyChange: vi.fn(),
     uniqueStates: ['UT'],
+    isMultiState: false,
     statusOptions: [{ value: 'active', label: 'Active' }, { value: 'dead', label: 'Dead' }],
     priorityOptions: [{ value: 'high', label: 'High' }],
     positionOptions: [{ value: 'support', label: 'Support' }],
@@ -160,6 +161,12 @@ describe('FilterSheet — dimension list (level 1)', () => {
     expect(newMatchesButton.querySelector('svg')).not.toBeInTheDocument()
   })
 
+  it('shows a count on Not yet voted, like New matches (Task 4)', () => {
+    renderSheet({ unvotedCount: 7 })
+    const unvotedButton = screen.getByRole('button', { name: /not yet voted/i })
+    expect(within(unvotedButton).getByText('7')).toBeInTheDocument()
+  })
+
   it('shows Not yet voted as a direct, always-visible toggle, and can both set and clear it (Critical 1)', () => {
     // Regression coverage: `unvoted` is reachable on mobile only through the
     // sheet (the desktop toolbar's scope cluster doesn't exist here, and
@@ -170,38 +177,60 @@ describe('FilterSheet — dimension list (level 1)', () => {
     // indicator and no way to clear it from the sheet.
     const onUnvotedOnlyChange = vi.fn()
     const { rerender } = renderSheet({ unvotedOnly: false, onUnvotedOnlyChange })
-    fireEvent.click(screen.getByRole('button', { name: 'Not yet voted' }))
+    fireEvent.click(screen.getByRole('button', { name: /not yet voted/i }))
     expect(onUnvotedOnlyChange).toHaveBeenCalledWith(true)
 
     // Once active, the same control clears it back off ...
     rerender(<FilterSheet {...makeDefaults()} unvotedOnly onUnvotedOnlyChange={onUnvotedOnlyChange} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Not yet voted' }))
+    fireEvent.click(screen.getByRole('button', { name: /not yet voted/i }))
     expect(onUnvotedOnlyChange).toHaveBeenCalledWith(false)
 
-    // ... and Clear all clears it too, same as every other active filter.
+    // ... and Reset filters clears it too, same as every other active filter.
     const onClearAll = vi.fn()
     rerender(<FilterSheet {...makeDefaults()} unvotedOnly onClearAll={onClearAll} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Clear all' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
     expect(onClearAll).toHaveBeenCalledTimes(1)
   })
 
-  it('counts an active Not yet voted toward the sheet\'s own "Clear all" gate, matching the mobile filter button badge (Critical 1)', () => {
+  it('counts an active Not yet voted toward the sheet\'s own "Reset filters" gate, matching the mobile filter button badge (Critical 1)', () => {
     // Before the fix, the mobile filter button's badge (f.totalActiveFilters,
     // which counts unvotedOnly) disagreed with this sheet's own totalActive
     // (which didn't) — the badge could read "1" over a sheet showing no
-    // active filters and no "Clear all" button.
+    // active filters and no "Reset filters" button.
     const { rerender } = renderSheet({ unvotedOnly: false })
-    expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset filters' })).not.toBeInTheDocument()
 
     rerender(<FilterSheet {...makeDefaults()} unvotedOnly />)
-    expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeInTheDocument()
   })
 
-  it('shows State only when the tenant has known states, using the same values as its options', () => {
-    const { rerender } = renderSheet({ uniqueStates: [] })
+  // Task 2: the mobile sheet's clear control must call the SAME operation as
+  // desktop (BillList wires this prop straight to useBillFilters'
+  // handleResetFilters) rather than a hand-duplicated subset that drifts —
+  // see task-2-report.md. This test only proves the sheet still invokes
+  // onClearAll once with everything active; index.test.tsx is what proves
+  // the real handler actually clears every filter.
+  it('clears every filter, including the ones the old copy missed', () => {
+    const onClearAll = vi.fn()
+    renderSheet({
+      ...makeDefaults(),
+      unvotedOnly: true, tags: ['Clerk'], matchAny: true, onClearAll,
+    })
+    fireEvent.click(screen.getByRole('button', { name: /reset filters/i }))
+    expect(onClearAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('labels the control the same as desktop', () => {
+    renderSheet({ ...makeDefaults(), statuses: ['Introduced'] })
+    expect(screen.getByRole('button', { name: /reset filters/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^clear all$/i })).not.toBeInTheDocument()
+  })
+
+  it('shows State only when the tenant has multiple known states, using the same values as its options', () => {
+    const { rerender } = renderSheet({ uniqueStates: [], isMultiState: false })
     expect(screen.queryByRole('button', { name: /^state/i })).not.toBeInTheDocument()
 
-    rerender(<FilterSheet {...makeDefaults()} uniqueStates={['UT', 'NJ']} stateOptions={[{ value: 'UT', label: 'UT' }, { value: 'NJ', label: 'NJ' }]} />)
+    rerender(<FilterSheet {...makeDefaults()} uniqueStates={['UT', 'NJ']} isMultiState stateOptions={[{ value: 'UT', label: 'UT' }, { value: 'NJ', label: 'NJ' }]} />)
     expect(screen.getByRole('button', { name: /^state/i })).toBeInTheDocument()
   })
 })
@@ -241,7 +270,7 @@ describe('FilterSheet — drilling into a dimension', () => {
     const onClearAll = vi.fn()
     renderSheet({ statuses: ['active'], onClearAll })
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
-    fireEvent.click(screen.getByText('Clear all'))
+    fireEvent.click(screen.getByText('Reset filters'))
     expect(onClearAll).toHaveBeenCalled()
   })
 
@@ -565,7 +594,7 @@ describe('FilterSheet — SheetChip accessibility (aria-pressed)', () => {
 
   it('exposes unpressed state on the Not yet voted toggle', () => {
     renderSheet({ unvotedOnly: false })
-    expect(screen.getByRole('button', { name: 'Not yet voted' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: /not yet voted/i })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('exposes pressed state on an option chip once drilled into (e.g. Status)', () => {
