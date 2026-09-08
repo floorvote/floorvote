@@ -1264,14 +1264,30 @@ describe('Config — custom fields drag-to-reorder', () => {
       expect(grip('Alpha')).toHaveAccessibleName('Reorder Alpha. Press Alt with the up or down arrow keys.')
     })
 
-    it('states the shortcut on screen for both reorderable lists, in the same words', async () => {
+    it('states the shortcut on screen for neither reorderable list', async () => {
       await setup()
-      // A sighted keyboard-only user cannot discover Alt+Arrow from a grip
-      // glyph, and at the tag table the grip is not even a Tab stop — so both
-      // sections say it in prose, from the primitive's one constant.
-      expect(screen.getByText(/Drag a handle to\s+reorder, or focus one\. Press Alt with the up or down arrow keys\./))
-        .toBeInTheDocument()
-      expect(screen.getByText(/Drag a handle to reorder, or focus a tag's name or description\. Press Alt with the up or down arrow keys\./))
+      // Both visible hints were removed deliberately (operator: the lists read
+      // as reorderable on their own). Asserted rather than merely absent so a
+      // future edit cannot quietly reinstate one and re-diverge the two.
+      expect(screen.queryByText(/Drag a handle to\s+reorder, or focus one\./))
+        .not.toBeInTheDocument()
+      expect(screen.queryByText(/Drag a handle to reorder, or focus a tag's name or description\./))
+        .not.toBeInTheDocument()
+    })
+
+    it('still names the shortcut on the grip itself, which is what assistive tech reads', async () => {
+      await setup()
+      // dragReorder's grips carry it in their accessible name, so removing the
+      // prose costs sighted users a visible cue but takes nothing from AT.
+      expect(grip('Alpha')).toHaveAccessibleName(/Press Alt with the up or down arrow keys\./)
+    })
+
+    it('still exposes the tag shortcut to assistive tech after the visible copy went', async () => {
+      await setup()
+      // Removing the prose must not remove the only route for a screen-reader
+      // user: TagTaxonomyTable keeps its own SR_ONLY sentence (wired via
+      // aria-describedby) and the grip's accessible name carries it too.
+      expect(screen.getByText(/To reorder this tag: .*Press Alt with the up or down arrow keys\./))
         .toBeInTheDocument()
     })
 

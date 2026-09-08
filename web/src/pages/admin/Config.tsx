@@ -13,7 +13,8 @@ import { useAuth } from '../../hooks/useAuth'
 import { useDemo } from '../../context/DemoContext'
 import { ResizableTextarea } from '../../components/ResizableTextarea'
 import { HintText } from '../../components/HintText'
-import { DropIndicator, REORDER_KEY_HINT, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
+import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
+import { inlineEditSaveStyle, inlineEditCancelStyle } from '../../lib/inlineEditStyles'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
@@ -771,7 +772,7 @@ export function Config() {
       <div style={sectionCard}>
         <h2 style={sectionTitle}>AI instructions</h2>
         <div style={sectionIntro}>
-          When a bill is fully analyzed, the AI reads its full text and produces a summary, a relevance score, and a set of tags. The instructions below control how it does that.
+          When a bill is fully analyzed, the AI reads its full text and assigns it a summary, a relevance score, and a set of tags. The instructions below control how it does that.
         </div>
 
         {loading ? (
@@ -838,9 +839,6 @@ export function Config() {
                     — and at narrow widths mobile.css hides the grip outright.
                     Same sentence as custom fields, from the same constant, so
                     the two cannot come to describe the shortcut differently. */}
-                <div style={{ ...hintStyle, marginBottom: 6 }}>
-                  Drag a handle to reorder, or focus a tag's name or description. {REORDER_KEY_HINT}
-                </div>
                 <div role="group" aria-labelledby="config-tags-label">
                   <TagTaxonomyTable
                     rows={taxonomyRows}
@@ -871,8 +869,8 @@ export function Config() {
                   />
                 </div>
                 <div style={hintStyle}>
-                  The AI will only assign tags from this list. A description is optional
-                  context for the model — it never appears in the app.
+                  List of tags for the AI to assign to bills. It will only assign
+                  tags from this list.
                 </div>
                 {isAiConfigDefault(tagTaxonomy) && (
                   <div style={hintStyle}>
@@ -959,8 +957,7 @@ export function Config() {
         <h2 style={sectionTitle}>Custom fields</h2>
         <div style={sectionIntro}>
           Define fields that appear on every bill detail page. Admins and owners can set values per bill.
-          Fields are hidden from members until at least one value is set. Drag a handle to
-          reorder, or focus one. {REORDER_KEY_HINT}
+          Fields are hidden from members until at least one value is set.
         </div>
 
         {/* Field list */}
@@ -986,12 +983,19 @@ export function Config() {
                 >
                   {cfEditing === field.id ? (
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <input
-                        type="text"
-                        value={cfEditName}
-                        onChange={e => setCfEditName(e.target.value)}
-                        style={{ fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
-                      />
+                      {/* Name and the two actions share one line. The dropdown
+                          controls below stay stacked — they are further fields,
+                          not actions, so they do not belong on the button row. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="text"
+                          value={cfEditName}
+                          onChange={e => setCfEditName(e.target.value)}
+                          style={{ flex: 1, minWidth: 0, fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, fontFamily: 'inherit' }}
+                        />
+                        <button onClick={() => handleSaveCustomFieldEdit(field.id)} disabled={demoLocked} style={inlineEditSaveStyle(demoLocked)}>Save</button>
+                        <button onClick={() => { setCfEditing(null); setCfEditError(null) }} style={inlineEditCancelStyle()}>Cancel</button>
+                      </div>
                       {field.type === 'dropdown' && (
                         <>
                           <input
@@ -1015,10 +1019,7 @@ export function Config() {
                       {cfEditError && (
                         <div style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{cfEditError}</div>
                       )}
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => handleSaveCustomFieldEdit(field.id)} disabled={demoLocked} style={{ fontSize: fontSize.sm, padding: '3px 10px', borderRadius: radius.sm, border: 'none', background: demoLocked ? color.borderDefault : color.accentBlue, color: demoLocked ? color.textMuted : color.white, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>Save</button>
-                        <button onClick={() => { setCfEditing(null); setCfEditError(null) }} style={{ fontSize: fontSize.sm, padding: '3px 10px', borderRadius: radius.sm, border: `1px solid ${color.borderDefault}`, background: color.white, color: color.textSlate, cursor: 'pointer' }}>Cancel</button>
-                      </div>
+
                     </div>
                   ) : (
                     <>

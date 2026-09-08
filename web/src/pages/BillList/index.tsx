@@ -842,7 +842,7 @@ export function BillList() {
           <HoverTooltip text={`Filter by AI-scored relevance to your ${orgNoun}`}>
             <>
               <style>{`
-                input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; }
+                input[type=range].relevance-slider { -webkit-appearance: none; appearance: none; background: transparent; height: 14px; margin: 0; }
                 input[type=range].relevance-slider::-webkit-slider-runnable-track {
                   background: linear-gradient(to right, ${color.accentAmber} 0%, ${color.accentAmber} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} ${(relevanceDraft / 10) * 100}%, ${color.borderDefault} 100%);
                   height: 4px; border-radius: 4px;

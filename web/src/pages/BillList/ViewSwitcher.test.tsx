@@ -201,7 +201,9 @@ describe('ViewSwitcher', () => {
     fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
     fireEvent.click(screen.getAllByRole('button', { name: /delete/i })[0])
     expect(onDelete).not.toHaveBeenCalled()
-    expect(screen.getByText(/delete for everyone/i)).toBeTruthy()
+    // Names the object as well as the blast radius — "Delete for everyone?"
+    // alone did not say what was being deleted.
+    expect(screen.getByText(/delete view for everyone/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^delete$/i }))
     expect(onDelete).toHaveBeenCalledWith('v1')
   })
