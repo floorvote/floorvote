@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
+import { HoverTooltip } from '../../components/HoverTooltip'
+import { inlineEditSaveStyle, inlineEditCancelStyle } from '../../lib/inlineEditStyles'
 import { findActiveView } from '../../lib/savedViews'
 import { apiFetch } from '../../lib/api'
 import { countBadge } from '../../lib/chipStyles'
@@ -15,9 +17,9 @@ import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../componen
 // 232 (the old floor, comfortable for name + count alone) plus room for the
 // Rename and Delete buttons (~2-3 chars + padding each) so the two-button row
 // still shows a readable slice of the name rather than truncating it away.
-// Raised to 300px for the third (overwrite) icon button added alongside
-// them — the same reasoning applies: room for the extra control, or it
-// widens the row on hover exactly as before FIX 2.
+// Raised to 300px for a third control. All three are now glyph buttons rather
+// than words, which needs less room than the figure assumed — the surplus goes
+// to the name column, so it is left as-is rather than tightened.
 const MENU_WIDTH = 300
 
 export type SavedView = { id: string; name: string; query: string; slug?: string; previousSlug?: string | null }
@@ -294,7 +296,11 @@ export function ViewSwitcher({
                         borderRadius: radius.sm, color: color.textPrimary,
                       }}
                     />
-                    <button onClick={commitRename} style={smallButtonStyle('primary')}>Save</button>
+                    <button onClick={commitRename} style={inlineEditSaveStyle()}>Save</button>
+                    {/* Escape still cancels, but a keyboard-only affordance is
+                        not a visible one — and the custom-fields form this now
+                        matches has always shown the button. */}
+                    <button onClick={() => setRenamingId(null)} style={inlineEditCancelStyle()}>Cancel</button>
                   </div>
                 </div>
               )
@@ -304,7 +310,7 @@ export function ViewSwitcher({
                 <div key={v.id}>
                   {indicator}
                   <div style={{ ...rowStyle(false), cursor: 'default', background: color.bgDangerSoft, color: color.textDanger, ...dnd.sourceStyle(i) }} {...dropHandlers}>
-                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete for everyone?</span>
+                    <span style={{ flex: 1, minWidth: 0, fontWeight: fontWeight.medium }}>Delete view for everyone?</span>
                     <button onClick={() => setConfirmingId(null)} style={smallButtonStyle('cancel')}>Cancel</button>
                     <button onClick={() => { void commitDelete(v.id) }} style={smallButtonStyle('danger')}>Delete</button>
                   </div>
@@ -360,30 +366,57 @@ export function ViewSwitcher({
                   <button
                     onClick={() => { onApply(v); setOpen(false) }}
                     style={{
-                      flex: '1 1 auto', minWidth: 0, textAlign: 'left', background: 'none',
+                      flex: '0 1 auto', minWidth: 0, textAlign: 'left', background: 'none',
                       border: 'none', padding: 0, cursor: 'pointer', font: 'inherit',
                       color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                   >
                     {v.name}
                   </button>
+                  {/* Rename hugs the name, as it does on a custom-field row.
+                      Everything else is pushed to the far side by the spacer
+                      below, so the row reads name-then-actions rather than one
+                      huddle on the left. Tooltips are HoverTooltip, not the
+                      native `title` attribute: title waits about a second and
+                      never fires on touch, which for an icon-only control is
+                      the whole explanation missing. */}
                   {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
-                    <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
-                      <button onClick={() => beginRename(v)} style={iconButtonStyle}>Rename</button>
+                    <HoverTooltip text={`Rename "${v.name}"`}>
                       <button
-                        onClick={() => { setRenamingId(null); setConfirmingId(null); setConfirmingOverwriteId(v.id) }}
-                        // The `save` glyph is a floppy disk and reads oddly for
-                        // "replace this view's saved filters with the ones on
-                        // screen now" — that mismatch is accepted, so the
-                        // accessible name and tooltip (not the icon) carry what
-                        // the control actually does.
-                        aria-label="Replace this view's filters with the current ones"
-                        title="Replace this view's filters with the current ones"
+                        onClick={() => beginRename(v)}
+                        aria-label={`Rename "${v.name}"`}
                         style={iconGlyphButtonStyle}
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>save</span>
+                        <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>edit</span>
                       </button>
-                      <button onClick={() => { setRenamingId(null); setConfirmingOverwriteId(null); setConfirmingId(v.id) }} style={iconButtonStyle}>Delete</button>
+                    </HoverTooltip>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  {isAdmin && isNotDemo && (hoveredId === v.id || focusedId === v.id) && (
+                    <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
+                      {/* The `save` glyph is a floppy disk and reads oddly for
+                          "replace this view's saved filters with the ones on
+                          screen now" — that mismatch is accepted, so the
+                          accessible name and tooltip (not the icon) carry what
+                          the control actually does. */}
+                      <HoverTooltip text="Replace this view's filters with the current ones">
+                        <button
+                          onClick={() => { setRenamingId(null); setConfirmingId(null); setConfirmingOverwriteId(v.id) }}
+                          aria-label="Replace this view's filters with the current ones"
+                          style={iconGlyphButtonStyle}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>save</span>
+                        </button>
+                      </HoverTooltip>
+                      <HoverTooltip text={`Delete "${v.name}"`}>
+                        <button
+                          onClick={() => { setRenamingId(null); setConfirmingOverwriteId(null); setConfirmingId(v.id) }}
+                          aria-label={`Delete "${v.name}"`}
+                          style={{ ...iconGlyphButtonStyle, color: color.textErrorRed }}
+                        >
+                          <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>
+                        </button>
+                      </HoverTooltip>
                     </span>
                   )}
                   <ViewCountBadge count={viewCounts[v.id]} failed={failedCounts.has(v.id)} />
@@ -409,9 +442,19 @@ export function ViewSwitcher({
   )
 }
 
+// FIX 3, the vertical twin of FIX 2 above: at rest a row is just the name and
+// its count badge (fontSize.sm), but hovering reveals three glyph buttons whose
+// boxes are taller than that, so the row grew and every row below it shifted
+// under the pointer. minHeight pins the row to its hovered height — 18px of
+// content (a fontSize.base glyph at lineHeight 1, plus the buttons' 1px
+// padding) over the 14px of row padding — so revealing the controls can no
+// longer change it. alignItems: center keeps the shorter resting content
+// centred in that space.
+const ROW_MIN_HEIGHT = 32
+
 function rowStyle(selected: boolean): React.CSSProperties {
   return {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px',
+    display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', minHeight: ROW_MIN_HEIGHT, boxSizing: 'border-box',
     fontSize: fontSize.sm, width: '100%', textAlign: 'left',
     fontFamily: 'inherit', border: 'none', cursor: 'pointer',
     // VIEW_STYLE, not the filter blue's bgInfo/linkBlue — a selected view row
@@ -421,27 +464,22 @@ function rowStyle(selected: boolean): React.CSSProperties {
   }
 }
 
-const iconButtonStyle: React.CSSProperties = {
-  fontFamily: 'inherit', background: 'none', border: 'none', cursor: 'pointer',
-  color: color.textSecondary, fontSize: fontSize.xs, padding: '1px 4px', borderRadius: radius.sm,
-}
-
-// Config.tsx's row-action icon idiom (a bare material-symbols-outlined glyph,
-// no text) rather than iconButtonStyle's text-label treatment — Rename and
-// Delete read fine as words, but "Save" as a word would misdescribe this
-// control worse than the floppy-disk glyph already does.
+// Config.tsx's row-action icon idiom: a bare material-symbols-outlined glyph
+// with no text label, its meaning carried by aria-label and title. All three
+// row actions use it, so the row reads as one set rather than a mix of words
+// and symbols. Delete additionally overrides the colour to textErrorRed,
+// matching the custom-fields row it borrows from.
 const iconGlyphButtonStyle: React.CSSProperties = {
   fontFamily: 'inherit', background: 'none', border: 'none', cursor: 'pointer',
   color: color.textSecondary, padding: '1px 4px', borderRadius: radius.sm,
-  display: 'inline-flex', alignItems: 'center',
+  display: 'inline-flex', alignItems: 'center', lineHeight: 1,
 }
 
-function smallButtonStyle(kind: 'primary' | 'danger' | 'cancel'): React.CSSProperties {
+function smallButtonStyle(kind: 'danger' | 'cancel'): React.CSSProperties {
   const base: React.CSSProperties = {
     fontFamily: 'inherit', fontSize: fontSize.xs, padding: '2px 8px',
     borderRadius: radius.sm, cursor: 'pointer', whiteSpace: 'nowrap',
   }
-  if (kind === 'primary') return { ...base, border: `1px solid ${color.billBadgeNavy}`, background: color.billBadgeNavy, color: color.white, fontWeight: fontWeight.semibold }
   if (kind === 'danger') return { ...base, border: `1px solid ${color.borderRedChip}`, background: color.white, color: color.textDanger, fontWeight: fontWeight.semibold }
   return { ...base, border: `1px solid ${color.borderDefault}`, background: color.white, color: color.textSecondary }
 }

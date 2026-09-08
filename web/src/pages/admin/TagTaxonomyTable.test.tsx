@@ -64,36 +64,8 @@ describe('TagTaxonomyTable', () => {
     expect(tagFields()[0]).toHaveFocus()
   })
 
-  it('the + Add tag button lands the caret in an empty row', async () => {
-    const user = userEvent.setup()
-    render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
-    await user.click(screen.getByRole('button', { name: /add tag/i }))
-    // The trailing blank IS the empty row to type into, so the button focuses
-    // it rather than manufacturing a second one beside it.
-    expect(tagFields()).toHaveLength(2)
-    expect(tagFields()[1]).toHaveFocus()
-  })
 
-  it('the + Add tag button appends a row when the last row is in use', async () => {
-    const user = userEvent.setup()
-    render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
-    // Fill the trailing blank so there is no empty row left to land in.
-    await user.type(tagFields()[1], 'Housing')
-    await user.click(screen.getByRole('button', { name: /add tag/i }))
-    expect(tagFields()).toHaveLength(3)
-    expect(tagFields()[2]).toHaveFocus()
-  })
 
-  it('repeated + Add tag clicks never stack up more than one blank row', async () => {
-    const user = userEvent.setup()
-    render(<Harness initial={[{ name: 'Elections', description: '' }]} />)
-    const add = screen.getByRole('button', { name: /add tag/i })
-    await user.click(add)
-    await user.click(add)
-    // A surplus blank would not be the last index, so it would sprout a grip
-    // and an ordinal and become reorderable — a "tag" that is not a tag.
-    expect(tagFields().map(f => (f as HTMLInputElement).value)).toEqual(['Elections', ''])
-  })
 
   it('two consecutive Returns in the trailing blank row never produce more than one blank row', async () => {
     const user = userEvent.setup()

@@ -106,25 +106,6 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     return !row.name.trim() && !row.description.trim()
   }
 
-  /**
-   * "+ Add tag" wants a row to type into, not necessarily a NEW row. Inserting
-   * unconditionally after the last index put a blank AFTER the trailing blank,
-   * and withTrailingBlank kept both — so repeated clicks piled up blanks that,
-   * no longer being the last index, sprouted grips and ordinals and became
-   * reorderable, contradicting the rule that the trailing blank is not a tag.
-   */
-  function addTag() {
-    const lastIndex = displayed.length - 1
-    const last = displayed[lastIndex]
-    // withTrailingBlank guarantees an empty last row today, so the insert below
-    // is defensive; it keeps the button correct if that ever changes.
-    if (last && isBlankRow(last)) {
-      nameRefs.current[lastIndex]?.focus()
-      return
-    }
-    insertAfter(lastIndex)
-  }
-
   function removeAt(i: number) {
     onChange(displayed.filter((_, j) => j !== i))
     queueMicrotask(() => {
@@ -204,13 +185,12 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     const empty = isBlankRow(row)
     if (e.key === 'Enter') {
       e.preventDefault()
-      // Mirrors the "+ Add tag" fix above, reached by keyboard instead: Return
-      // in a row that is already wholly empty must not insert another blank
-      // (from ['Elections'], focusing the trailing blank and pressing Return
-      // twice would otherwise yield ['Elections','','','']) — indices that are
-      // no longer last would sprout grips and ordinals and become reorderable,
-      // the same harm the button fix addressed. Land in a further empty row
-      // if one exists; otherwise do nothing.
+      // Return in a row that is already wholly empty must not insert another
+      // blank (from ['Elections'], focusing the trailing blank and pressing
+      // Return twice would otherwise yield ['Elections','','','']) — indices
+      // that are no longer last would sprout grips and ordinals and become
+      // reorderable, contradicting the rule that the trailing blank is not a
+      // tag. Land in a further empty row if one exists; otherwise do nothing.
       if (empty) {
         const target = displayed.findIndex((r, j) => j > i && isBlankRow(r))
         if (target !== -1) nameRefs.current[target]?.focus()
@@ -235,7 +215,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
     <div style={{ position: 'relative' }}>
       {/* The shortcut, once, for aria-describedby to point at. Rendered here,
           immediately before the table it describes, rather than after the
-          "+ Add tag" button below — a screen-reader user browsing linearly
+          table — a screen-reader user browsing linearly
           used to hit this sentence as a stray orphan at the very end of the
           whole control, attached (via aria-describedby) to fields far above
           it. It stays in the DOM regardless of scroll position, and its id is
@@ -246,8 +226,8 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
           constant so it cannot drift from the grip's accessible name. */}
       <span id={hintId} style={SR_ONLY}>{`To reorder this tag: ${REORDER_KEY_HINT}`}</span>
 
-      <div className="tag-table" style={{ border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, overflow: 'hidden' }}>
-        <div className="tag-table-row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceMuted, borderBottom: `1px solid ${color.borderStrong}` }}>
+      <div className="tag-table" style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.lg, overflow: 'hidden' }}>
+        <div className="tag-table-row" style={{ display: 'grid', gridTemplateColumns: GRID_TEMPLATE_COLUMNS, background: color.surfaceSubtle, borderBottom: `1px solid ${color.borderDefault}` }}>
           {/* Shares the grip cell's class hook so the narrow-width rule removes
               this placeholder from grid placement too — otherwise it would keep
               claiming column 1 of row 1 and push the header into a broken
@@ -291,8 +271,8 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                       ? ', sorted A to Z. Click to sort Z to A.'
                       : ', sorted Z to A. Click to sort A to Z.'}
               </span>
-              <span aria-hidden="true" style={{ marginLeft: 4 }}>
-                {sortDirection === 'none' ? '↕' : sortDirection === 'asc' ? '▲' : '▼'}
+              <span aria-hidden="true" style={{ marginLeft: 3, fontSize: fontSize.xs, opacity: sortDirection === 'none' ? 0.4 : 1 }}>
+                {sortDirection === 'none' ? '▲▼' : sortDirection === 'asc' ? '▼' : '▲'}
               </span>
             </button>
           </span>
@@ -372,7 +352,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                 ) : (
                   <div
                     className="tag-table-reorder"
-                    style={{ display: 'flex', alignItems: 'flex-start', padding: '9px 4px 0 8px', gap: 4 }}
+                    style={{ display: 'flex', alignItems: 'baseline', padding: '9px 4px 0 8px', gap: 4 }}
                     {...dnd.gripProps(i)}
                   >
                     <span aria-hidden="true" style={{ cursor: 'grab', color: color.textMuted, fontSize: fontSize.sm, userSelect: 'none' }}>⠿</span>
@@ -431,16 +411,6 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
         })}
       </div>
 
-      <div style={{ marginTop: 9 }}>
-        <button
-          type="button"
-          onClick={addTag}
-          style={addStyle}
-        >
-          + Add tag
-        </button>
-      </div>
-
       {/* The polite live region for reorder announcements, absolutely
           positioned (SR_ONLY), which is why the wrapper above is relative. */}
       <ReorderLiveRegion announcement={dnd.announcement} />
@@ -477,10 +447,4 @@ const msgStyle: React.CSSProperties = {
 const delStyle: React.CSSProperties = {
   border: 'none', background: 'none', cursor: 'pointer', color: color.textMuted,
   fontSize: fontSize.lg, lineHeight: 1, width: 24, height: 24, borderRadius: radius.sm,
-}
-
-const addStyle: React.CSSProperties = {
-  font: 'inherit', fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: color.textSlate,
-  background: color.white, border: `1px solid ${color.borderStrong}`,
-  borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer',
 }
