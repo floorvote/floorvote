@@ -509,6 +509,7 @@ describe('ViewSwitcher', () => {
               onRename={vi.fn()}
               onDelete={vi.fn()}
               onReorder={vi.fn()}
+              onOverwrite={vi.fn()}
             />,
           )
           fireEvent.click(screen.getByRole('button', { name: /views/i }))
