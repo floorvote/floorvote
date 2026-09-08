@@ -64,3 +64,9 @@ docs/superpowers/
 # against it. Both describe one machine's setup, not the product.
 api/wrangler.dev.toml
 scripts/dev-demo-local.sh
+
+# Provisioning run logs. scripts/new-instance.sh writes one per run to
+# $REPO_ROOT/logs/ (see its LOG_DIR), so every tenant added leaves untracked
+# files behind. They record one machine's run — resource ids, account subdomain,
+# the wrangler output — and are not useful to anyone else.
+/logs/
