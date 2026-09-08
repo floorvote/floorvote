@@ -22,7 +22,8 @@
 #     [--email-provider cloudflare|resend] \
 #     [--seed-dir <path> --session-id <id>] \
 #     [--admin-secret <central ADMIN_SECRET>] \
-#     [--from-step N]
+#     [--from-step N] \
+#     [--preflight-only]
 #
 #   Multi-state example (pass comma-separated states; STATE var is left empty and
 #   state_coverage is seeded in D1):
@@ -33,6 +34,8 @@
 #
 #   --state is kept as an alias for --states (single-state compat).
 #   --from-step lets you resume after a failure without re-running earlier steps.
+#   --preflight-only runs the validation below and exits without provisioning
+#     anything. Every run preflights first regardless; this just stops after it.
 #   --seed-dir/--session-id trigger optional historical seeding (Step 9); omit to
 #     let current-session bills flow in on the next central full-sync pass.
 #
@@ -51,7 +54,9 @@ CENTRAL_DIR="$REPO_ROOT/central"
 # Keep these here, or (recommended) set them in a gitignored scripts/.env.ops so a
 # rebranded fork never edits this committed file. Env / .env.ops values win over the
 # defaults below.
-[[ -f "$SCRIPT_DIR/.env.ops" ]] && { set -a; source "$SCRIPT_DIR/.env.ops"; set +a; }
+ENV_OPS_FILE="$SCRIPT_DIR/.env.ops"
+ENV_OPS_LOADED=0
+[[ -f "$ENV_OPS_FILE" ]] && { set -a; source "$ENV_OPS_FILE"; set +a; ENV_OPS_LOADED=1; }
 
 # Resource-name prefix for this deployment's Workers / D1 / queues. Default "floorvote"
 # matches the docs. A rebranded deployment sets RESOURCE_PREFIX (e.g. "acme") ONCE and
@@ -111,6 +116,7 @@ APP_URL=""
 EMAIL_PROVIDER="cloudflare"
 SEED_DIR=""
 SESSION_ID=""
+PREFLIGHT_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -126,6 +132,7 @@ while [[ $# -gt 0 ]]; do
     --admin-secret)   ADMIN_SECRET="$2";   shift 2 ;;
     --app-url)        APP_URL="$2";        shift 2 ;;
     --from-step)      FROM_STEP="$2";      shift 2 ;;
+    --preflight-only) PREFLIGHT_ONLY=1;     shift 1 ;;
     --help|-h)        usage ;;
     *) die "Unknown option: $1" ;;
   esac
@@ -146,18 +153,31 @@ IS_MULTI_STATE=false
 STATE="${STATES_ARR[0]}"
 $IS_MULTI_STATE && STATE=""
 
+# A bare `read` here fails under `set -e` when stdin is not a terminal, and the
+# ERR trap does not exist yet, so the script would exit silently with no output
+# at all. Tolerate the failed read and let the explicit check below report it.
 if [[ -z "$ADMIN_SECRET" ]]; then
-  read -rsp "[$(date '+%Y-%m-%d %H:%M:%S')]  Central ADMIN_SECRET: " ADMIN_SECRET
-  echo
+  if [[ -t 0 ]]; then
+    read -rsp "[$(date '+%Y-%m-%d %H:%M:%S')]  Central ADMIN_SECRET: " ADMIN_SECRET || true
+    echo
+  else
+    log_warn "no terminal to prompt for ADMIN_SECRET — pass --admin-secret, or set it in central/.dev.vars"
+  fi
 fi
-[[ -n "$ADMIN_SECRET" ]] || die "Central ADMIN_SECRET is required (operator → central auth)"
+# Preflight reports a missing secret among the other findings rather than dying
+# here, so one run surfaces every problem instead of one per re-run.
+if [[ $PREFLIGHT_ONLY -eq 0 ]]; then
+  [[ -n "$ADMIN_SECRET" ]] || die "Central ADMIN_SECRET is required (operator → central auth)"
+fi
 
 # Collect per-instance secrets upfront — before the log redirect makes stdout a
 # pipe (wrangler refuses to prompt when stdout is not a TTY). Only CF_AIG_TOKEN is
 # required; GEMINI/RESEND are optional rollback credentials (blank = skip).
-if [[ $FROM_STEP -le 5 ]]; then
+if [[ $FROM_STEP -le 5 && $PREFLIGHT_ONLY -eq 0 ]]; then
   echo
-  read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN; echo
+  read -rsp "CF_AIG_TOKEN (required — AI Gateway 'Run' token): " CF_AIG_TOKEN || \
+    die "could not read CF_AIG_TOKEN — this prompt needs a terminal. Run interactively, or use --preflight-only to validate without it."
+  echo
   [[ -n "$CF_AIG_TOKEN" ]] || die "CF_AIG_TOKEN is required"
   echo "  The next two are OPTIONAL rollback credentials. Leave blank to skip."
   echo "  GEMINI_API_KEY is only read if AI_GATEWAY_ENABLED is flipped to false."
@@ -183,8 +203,13 @@ SLUG_UPPER="$(echo "$SLUG" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
 CENTRALAPI_BINDING="TENANT_${SLUG_UPPER}"
 # Each tenant needs a unique ratelimits namespace_id. Find the max existing id
 # (excluding dev=2099) and increment.
-RATELIMIT_NS_ID=$(grep 'namespace_id' "$API_DIR/wrangler.toml" \
-  | grep -o '"[0-9]*"' | tr -d '"' | grep -v '^2099$' | sort -n | tail -1)
+# `|| true` matters: under `set -o pipefail` a grep that matches nothing makes
+# this assignment fail, and `set -e` then exits the script silently, before the
+# ERR trap is installed -- no message, no log file, exit 1. That happens on any
+# fresh clone, where api/wrangler.toml has no namespace_id lines yet (or does
+# not exist at all).
+RATELIMIT_NS_ID=$(grep 'namespace_id' "$API_DIR/wrangler.toml" 2>/dev/null \
+  | grep -o '"[0-9]*"' | tr -d '"' | grep -v '^2099$' | sort -n | tail -1 || true)
 RATELIMIT_NS_ID=$(( ${RATELIMIT_NS_ID:-2000} + 1 ))
 
 # ── Setup log file ─────────────────────────────────────────────────────────────
@@ -197,6 +222,220 @@ log "Log file: $LOG_FILE"
 [[ $FROM_STEP -gt 1 ]] && log "Resuming from step $FROM_STEP"
 
 trap 'die "Command failed at line $LINENO — see $LOG_FILE"' ERR
+
+# ── Preflight ─────────────────────────────────────────────────────────────────
+# Validate everything BEFORE mutating anything. The script's failure mode has
+# always been that it appends config, commits it, and deploys before discovering
+# a problem -- so a bad run leaves committed state behind and surfaces as an
+# unrelated-looking Cloudflare API error several steps later.
+#
+# The specific incident this was written for: with scripts/.env.ops absent, the
+# operator defaults below silently fall back to the upstream "floorvote" prefix.
+# The run appended `service = "floorvote-<slug>"` to central/wrangler.toml,
+# COMMITTED it, and then failed on central's deploy with
+# `code: 10143 -- Worker 'floorvote-<slug>' not found`, which reads like a
+# Cloudflare problem rather than a missing local file. .env.ops is gitignored, so
+# this fires in every fresh clone and every new git worktree, not just on a first
+# install.
+#
+# Anything that would produce a broken tenant is fatal here. Anything merely
+# unusual warns. The only thing preflight mutates is the shared dead-letter
+# queue, which is created if absent (see below) because every tenant's consumer
+# references it and the deploy fails outright without it.
+PF_FAIL=0
+# macOS ships no `timeout`, so bound slow calls by hand: run in the background,
+# poll, and kill on expiry. Without this a hung DNS lookup stalls the whole run
+# with no output, which is how this was first hit.
+pf_timeout() {
+  local secs="$1"; shift
+  "$@" & local pid=$!
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if (( waited >= secs )); then kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; return 124; fi
+    sleep 1; waited=$((waited + 1))
+  done
+  wait "$pid"
+}
+pf_ok()   { echo "    ✓ $*"; }
+pf_warn() { echo "    ⚠ $*"; }
+pf_bad()  { echo "    ✗ $*"; PF_FAIL=1; }
+
+preflight() {
+  echo
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ━━━ Preflight ━━━"
+
+  # 1. Operator config -- the silent-fallback trap.
+  echo "  Operator config:"
+  if [[ $ENV_OPS_LOADED -eq 1 ]]; then
+    pf_ok "loaded $ENV_OPS_FILE"
+  else
+    pf_warn "no $ENV_OPS_FILE (fine only if these values come from the environment)"
+  fi
+  local placeholder=0
+  [[ "$CF_ACCOUNT_ID" == "REPLACE_WITH_ACCOUNT_ID" ]] && { pf_bad "CF_ACCOUNT_ID is still the placeholder"; placeholder=1; }
+  [[ "$ACCOUNT_SUBDOMAIN" == "<your-subdomain>" ]]    && { pf_bad "ACCOUNT_SUBDOMAIN is still the placeholder"; placeholder=1; }
+  [[ "$SUPERADMIN_JWT_PUBLIC_KEY" == "<your-ES256-public-JWK>" ]] && { pf_bad "SUPERADMIN_JWT_PUBLIC_KEY is still the placeholder"; placeholder=1; }
+  [[ -z "${CF_AIG_GATEWAY:-}" ]] && pf_bad "CF_AIG_GATEWAY is empty (required -- AI silently does nothing without it)"
+  [[ "$CENTRAL_URL" == *"<your-subdomain>"* ]] && pf_bad "CENTRAL_URL still contains a placeholder: $CENTRAL_URL"
+  if [[ $placeholder -eq 1 && $ENV_OPS_LOADED -eq 0 ]]; then
+    pf_bad "these are the built-in defaults: this run would provision with the wrong names."
+    echo "      Create $ENV_OPS_FILE (it is gitignored, so each clone/worktree needs its own)"
+    echo "      or export the values. Copy from another checkout that has one."
+  fi
+  [[ $placeholder -eq 0 ]] && pf_ok "prefix=$RESOURCE_PREFIX central=$CENTRAL_WORKER_NAME account=${CF_ACCOUNT_ID:0:8}…"
+
+  # Stop here if the config itself is wrong. Everything below talks to
+  # Cloudflare or to central, which is pointless with placeholder values -- and
+  # check 6 CREATES a queue, which must never happen on a run already known to
+  # be misconfigured (it would be created under the wrong resource prefix).
+  if [[ $PF_FAIL -eq 1 ]]; then
+    echo
+    die "Preflight failed on operator config. Nothing has been provisioned and no remote calls were made."
+  fi
+
+  # 2. wrangler identity. A token for the wrong account fails later as an
+  #    opaque `code: 7403 -- the given account is not valid or is not
+  #    authorized`, which reads like a permissions problem, not a wrong login.
+  echo "  Cloudflare auth:"
+  local whoami
+  if whoami=$(pf_timeout 60 npx wrangler whoami 2>&1); then
+    if grep -q "$CF_ACCOUNT_ID" <<<"$whoami"; then
+      pf_ok "authenticated, and CF_ACCOUNT_ID is among the accessible accounts"
+    else
+      pf_bad "authenticated, but CF_ACCOUNT_ID ($CF_ACCOUNT_ID) is NOT among the accessible accounts"
+      echo "      Export the right CLOUDFLARE_API_TOKEN, or \`npx wrangler login\` as the right identity."
+    fi
+  else
+    pf_bad "npx wrangler whoami failed -- not authenticated"
+  fi
+
+  # 3. Queue prefix agreement. Central derives a tenant's queue name from its own
+  #    TENANT_QUEUE_PREFIX; if that disagrees with RESOURCE_PREFIX, central
+  #    resolves a queue that does not exist, creates a phantom with no consumer,
+  #    and the tenant receives no bills -- with nothing anywhere reporting an error.
+  echo "  Queue naming:"
+  if [[ -f "$CENTRAL_DIR/wrangler.toml" ]]; then
+    local cprefix
+    # BSD sed (macOS) has no \s, so use POSIX classes; cut on quotes instead of
+    # a substitution so the pattern stays readable.
+    cprefix=$(grep -E '^[[:space:]]*TENANT_QUEUE_PREFIX[[:space:]]*=' "$CENTRAL_DIR/wrangler.toml" | head -1 | cut -d'"' -f2 || true)
+    if [[ -z "$cprefix" ]]; then
+      pf_warn "central/wrangler.toml sets no TENANT_QUEUE_PREFIX (central defaults apply)"
+    elif [[ "$cprefix" == "$RESOURCE_PREFIX" ]]; then
+      pf_ok "central TENANT_QUEUE_PREFIX matches RESOURCE_PREFIX ($cprefix)"
+    else
+      pf_bad "central TENANT_QUEUE_PREFIX ('$cprefix') != RESOURCE_PREFIX ('$RESOURCE_PREFIX')"
+      echo "      Central would look for '${cprefix}-${SLUG}-queue' while this creates"
+      echo "      '${RESOURCE_PREFIX}-${SLUG}-queue'. The tenant would silently receive no bills."
+    fi
+  else
+    pf_warn "no central/wrangler.toml here -- cannot cross-check the queue prefix"
+  fi
+
+  # 4. Config file present. Absent on a fresh upstream clone, where it must be
+  #    created from api/wrangler.example.toml before any tenant can be added.
+  echo "  Tenant config file:"
+  if [[ -f "$API_DIR/wrangler.toml" ]]; then
+    pf_ok "api/wrangler.toml exists"
+  else
+    pf_bad "api/wrangler.toml does not exist — create it from api/wrangler.example.toml first"
+    echo "      It needs the top-level [assets] block (with run_worker_first = [\"/api/*\"])"
+    echo "      and account_id before any tenant env block is appended."
+  fi
+
+  # 5. Name collisions. Appending a second [env.<slug>] block yields a config
+  #    whose later keys quietly win.
+  echo "  Name collisions:"
+  if grep -qE "^\[env\.${SLUG}\]" "$API_DIR/wrangler.toml" 2>/dev/null; then
+    if [[ $FROM_STEP -gt 3 ]]; then
+      pf_ok "[env.$SLUG] already present (resuming past step 3 -- expected)"
+    else
+      pf_bad "[env.$SLUG] already exists in api/wrangler.toml -- pick another slug, or --from-step 4"
+    fi
+  else
+    pf_ok "slug '$SLUG' is free in api/wrangler.toml"
+  fi
+  if grep -q "namespace_id = \"${RATELIMIT_NS_ID}\"" "$API_DIR/wrangler.toml" 2>/dev/null; then
+    pf_bad "ratelimit namespace_id $RATELIMIT_NS_ID is already used -- tenants would share a login budget"
+  else
+    pf_ok "ratelimit namespace_id $RATELIMIT_NS_ID is free"
+  fi
+
+  # 6. Central reachable, and the admin secret actually works. force-register
+  #    (step 8) is otherwise the first thing to find out, long after the deploys.
+  echo "  Central:"
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$CENTRAL_URL/api/health" --max-time 20 || echo 000)
+  if [[ "$code" == "200" ]]; then
+    pf_ok "reachable at $CENTRAL_URL"
+  else
+    pf_bad "GET $CENTRAL_URL/api/health returned $code (expected 200)"
+  fi
+  if [[ -z "${ADMIN_SECRET:-}" ]]; then
+    pf_bad "ADMIN_SECRET is empty -- set it in central/.dev.vars, --admin-secret, or the environment"
+  else
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "x-admin-secret: $ADMIN_SECRET" "$CENTRAL_URL/api/tenants" --max-time 20 || echo 000)
+    if [[ "$code" == "200" ]]; then pf_ok "ADMIN_SECRET accepted by central"
+    else pf_bad "central rejected ADMIN_SECRET (HTTP $code on /api/tenants)"; fi
+  fi
+
+  # 7. The shared dead-letter queue. Every tenant's consumer names it and the
+  #    tenant deploy fails outright if it is absent, but nothing creates it --
+  #    so create-or-confirm it here. This is preflight's one mutation, and it is
+  #    idempotent and shared rather than tenant-specific.
+  echo "  Shared dead-letter queue:"
+  local dlq="${RESOURCE_PREFIX}-dlq"
+  if pf_timeout 60 npx wrangler queues list 2>/dev/null | grep -qE "(^|[[:space:]])${dlq}([[:space:]]|$)"; then
+    pf_ok "$dlq exists"
+  elif [[ $PF_FAIL -eq 1 ]]; then
+    pf_warn "$dlq missing -- NOT creating it, because a check above already failed"
+  else
+    pf_warn "$dlq missing -- creating it (every tenant consumer references it)"
+    if pf_timeout 60 npx wrangler queues create "$dlq" >/dev/null 2>&1; then pf_ok "created $dlq"
+    else pf_bad "could not create $dlq -- the tenant deploy will fail referencing it"; fi
+  fi
+
+  # 8. Seed inputs, before an hour of work is spent reaching them.
+  if [[ -n "$SEED_DIR" || -n "$SESSION_ID" ]]; then
+    echo "  Seed data:"
+    [[ -n "$SEED_DIR" && -n "$SESSION_ID" ]] || pf_bad "--seed-dir and --session-id must be given together"
+    if [[ -n "$SEED_DIR" ]]; then
+      if [[ -d "$SEED_DIR" ]]; then
+        local missing=""
+        for sub in bill vote people; do [[ -d "$SEED_DIR/$sub" ]] || missing="$missing $sub"; done
+        if [[ -z "$missing" ]]; then pf_ok "$SEED_DIR has bill/ vote/ people/"
+        else pf_bad "$SEED_DIR is missing:$missing"; fi
+      else
+        pf_bad "--seed-dir does not exist: $SEED_DIR"
+      fi
+    fi
+    $IS_MULTI_STATE && pf_bad "--seed-dir cannot be combined with a multi-state tenant (seed each session separately)"
+  fi
+
+  # 9. Whether api/wrangler.toml is committable. Upstream gitignores it; forks
+  #    that track it expect the commit. Step 3 must not assume either way.
+  echo "  Config tracking:"
+  if git -C "$REPO_ROOT" check-ignore -q api/wrangler.toml 2>/dev/null; then
+    WRANGLER_TOML_TRACKED=0
+    pf_ok "api/wrangler.toml is gitignored here -- the env block will not be committed"
+  else
+    WRANGLER_TOML_TRACKED=1
+    pf_ok "api/wrangler.toml is tracked -- the env block will be committed after a successful deploy"
+  fi
+
+  echo
+  if [[ $PF_FAIL -eq 1 ]]; then
+    die "Preflight failed. Nothing has been provisioned. Fix the ✗ items above and re-run."
+  fi
+  log_ok "Preflight passed -- nothing provisioned yet"
+}
+
+WRANGLER_TOML_TRACKED=1
+preflight
+if [[ $PREFLIGHT_ONLY -eq 1 ]]; then
+  log "--preflight-only: stopping here."
+  exit 0
+fi
 
 # ── Confirm ───────────────────────────────────────────────────────────────────
 echo
@@ -232,9 +471,19 @@ if step "Create Queue"; then
   log_ok "Queue created: $QUEUE_NAME"
 fi
 
-# ── Step 3: Append tenant env block to api/wrangler.toml + commit ──────────────
+# ── Step 3: Append tenant env block to api/wrangler.toml ──────────────────────
+# Deliberately does NOT commit. The commit moved to the end of step 4, after the
+# deploy succeeds: committing first meant a failed deploy left the bad config in
+# history, which is exactly how a wrong-prefix run got recorded before anything
+# reported an error. An uncommitted working-tree change is trivial to inspect or
+# discard; a commit is not.
 if step "Add env block to api/wrangler.toml"; then
   [[ -n "${DB_ID:-}" ]] || die "DB_ID unset (resume from step 1, or pass it through)"
+  # Idempotent so a failed step 4 can be retried with --from-step 3 without
+  # appending a duplicate block (whose later keys would quietly win).
+  if grep -qE "^\\[env\\.${SLUG}\\]" "$API_DIR/wrangler.toml"; then
+    log "[env.${SLUG}] already present — leaving it as is"
+  else
   cat >> "$API_DIR/wrangler.toml" <<TOML
 
 [env.${SLUG}]
@@ -303,12 +552,8 @@ name = "EMAIL"
 [env.${SLUG}.triggers]
 crons = ["0 11 * * *"]
 TOML
-  log_ok "Appended [env.${SLUG}] to api/wrangler.toml"
-
-  cd "$REPO_ROOT"
-  git add api/wrangler.toml
-  git commit -m "chore: add ${SLUG} (${STATES_CSV}) tenant env block" || log_warn "nothing to commit"
-  log_ok "Committed api/wrangler.toml"
+  log_ok "Appended [env.${SLUG}] to api/wrangler.toml (uncommitted until the deploy succeeds)"
+  fi
 fi
 
 # ── Step 4: Deploy the tenant worker (builds web + migrations + deploy) ────────
@@ -318,6 +563,18 @@ if step "Deploy tenant worker"; then
   cd "$API_DIR"
   npm run deploy:tenant -- "$SLUG"
   log_ok "Worker deployed: $WORKER_URL"
+
+  # Now that the config is known-good, record it. Upstream gitignores
+  # api/wrangler.toml; forks that track it expect the commit. Preflight decided
+  # which case this is, so `git add` neither fails nor needs -f.
+  if [[ "${WRANGLER_TOML_TRACKED:-1}" -eq 1 ]]; then
+    cd "$REPO_ROOT"
+    git add api/wrangler.toml
+    git commit -m "chore: add ${SLUG} (${STATES_CSV}) tenant env block" || log_warn "nothing to commit"
+    log_ok "Committed api/wrangler.toml"
+  else
+    log "api/wrangler.toml is gitignored here — not committing (this is the upstream default)"
+  fi
 fi
 
 # ── Step 5: Set secrets (worker now exists) ────────────────────────────────────
@@ -369,13 +626,20 @@ service = "${WORKER_NAME}"
 entrypoint = "CentralApi"
 TOML
     log_ok "Appended ${CENTRALAPI_BINDING} CentralApi binding to central/wrangler.toml"
-    cd "$REPO_ROOT"
-    git add central/wrangler.toml
-    git commit -m "chore: bind ${SLUG} CentralApi on central" || log_warn "nothing to commit"
   fi
   cd "$CENTRAL_DIR"
   npm run deploy:legiscan
   log_ok "Central deployed with ${CENTRALAPI_BINDING} binding"
+  # Committed only now: a binding naming a worker that does not exist fails this
+  # deploy with `code: 10143`, and that bad binding should not already be in
+  # history when it does.
+  if ! git -C "$REPO_ROOT" check-ignore -q central/wrangler.toml 2>/dev/null; then
+    cd "$REPO_ROOT"
+    git add central/wrangler.toml
+    git commit -m "chore: bind ${SLUG} CentralApi on central" || log_warn "nothing to commit"
+  else
+    log "central/wrangler.toml is gitignored here — not committing"
+  fi
 fi
 
 # ── Step 7: Register with central (syncs keywords + state coverage) ────────────
