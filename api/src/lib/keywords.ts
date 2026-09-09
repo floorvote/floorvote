@@ -1,20 +1,7 @@
-import { WORD_BOUNDARY_KEYWORDS } from '../../../shared/wordBoundaryKeywords'
-
-// Mirror of central/src/lib/keywords.ts matchesUnion — must stay in sync.
-// See that file for why the wildcard is checked by membership before the loop
-// and why an EMPTY list still means match-nothing.
-export const WILDCARD_KEYWORD = '*'
-
-export function matchesKeywords(text: string, keywords: string[]): boolean {
-  if (keywords.includes(WILDCARD_KEYWORD)) return true
-  const lower = text.toLowerCase()
-  for (const kw of keywords) {
-    if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      if (new RegExp(`(?<![a-zA-Z])${escaped}`, 'i').test(lower)) return true
-    } else {
-      if (lower.includes(kw.toLowerCase())) return true
-    }
-  }
-  return false
-}
+/**
+ * Re-export of the shared matcher. This file used to carry its own copy of the
+ * matching logic, hand-mirrored with central/src/lib/keywords.ts; the two could
+ * drift silently, and a drift is serious — central decides which bills to
+ * deliver, this Worker decides which to analyze.
+ */
+export { matchesKeywords, matchesUnion, compileKeyword, WILDCARD_KEYWORD } from '../../../shared/keywords'

@@ -2,53 +2,52 @@ import { describe, it, expect } from 'vitest'
 import { matchesKeywords } from '../../src/lib/keywords'
 import { KEYWORD_MATCH_CASES } from '../../../shared/keywordMatchFixtures'
 
-describe('matchesKeywords — word boundary enforcement for "election"', () => {
-  // "election" is in WORD_BOUNDARY_KEYWORDS: must not match mid-word occurrences.
-  // This mirrors the same set in central/src/lib/keywords.ts — both must stay in sync.
-  it('matches "election" as a standalone word', () => {
+describe('matchesKeywords — glob semantics', () => {
+  it('matches a bare keyword as a whole word', () => {
     expect(matchesKeywords('Election Administration Act', ['election'])).toBe(true)
   })
 
-  it('matches "election" at the start of a compound phrase', () => {
-    expect(matchesKeywords('election security improvements', ['election'])).toBe(true)
-  })
-
-  it('does NOT match "election" inside "reelection"', () => {
-    expect(matchesKeywords('Prohibits reelection of incumbent after term limit', ['election'])).toBe(false)
-  })
-
-  it('does NOT match "election" inside "selection"', () => {
+  it('does NOT match a bare keyword inside a longer word', () => {
     expect(matchesKeywords('Rules governing the selection of jury members', ['election'])).toBe(false)
+    expect(matchesKeywords('Prohibits reelection after term limit', ['election'])).toBe(false)
+    expect(matchesKeywords('Establishes preelection disclosure', ['election'])).toBe(false)
   })
 
-  it('does NOT match "election" inside "preelection"', () => {
-    expect(matchesKeywords('Establishes preelection disclosure requirements', ['election'])).toBe(false)
+  it('does NOT match a bare keyword against a plural', () => {
+    expect(matchesKeywords('general elections calendar', ['election'])).toBe(false)
   })
 
-  it('still matches other keywords (no word boundary) like "ballot" mid-string', () => {
-    expect(matchesKeywords('mail-in ballot application form', ['ballot'])).toBe(true)
+  it('matches a plural with a trailing star', () => {
+    expect(matchesKeywords('general elections calendar', ['election*'])).toBe(true)
+    expect(matchesKeywords('Rules governing the selection', ['election*'])).toBe(false)
+  })
+
+  it('matches mid-word with surrounding stars', () => {
+    expect(matchesKeywords('mail-in ballot application form', ['*ballot*'])).toBe(true)
   })
 })
 
-describe('matchesKeywords — wildcard sentinel', () => {
-  it('matches any text when the list contains "*"', () => {
+describe('matchesKeywords — wildcard sole membership', () => {
+  it('matches any text when "*" is the only keyword', () => {
     expect(matchesKeywords('Tobacco Amendments', ['*'])).toBe(true)
   })
 
-  it('matches empty text when the list contains "*"', () => {
+  it('matches empty text when "*" is the only keyword', () => {
     expect(matchesKeywords('', ['*'])).toBe(true)
   })
 
-  it('is unaffected by other keywords alongside "*"', () => {
-    expect(matchesKeywords('Water Usage Modifications', ['county', '*'])).toBe(true)
+  it('drops "*" when other keywords are present', () => {
+    expect(matchesKeywords('Water Usage Modifications', ['county', '*'])).toBe(false)
+    expect(matchesKeywords('County Water Usage', ['county', '*'])).toBe(true)
   })
 
   it('still matches nothing for an empty list', () => {
     expect(matchesKeywords('Election Law Amendments', [])).toBe(false)
   })
 
-  it('treats "*extra" as an ordinary substring keyword, not the sentinel', () => {
+  it('treats "*extra" as ends-with, not the sentinel', () => {
     expect(matchesKeywords('Tobacco Amendments', ['*extra'])).toBe(false)
+    expect(matchesKeywords('An extra provision', ['*extra'])).toBe(true)
   })
 })
 
