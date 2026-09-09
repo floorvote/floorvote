@@ -9,6 +9,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
+import { matchesUnion } from '../../shared/keywords'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -32,22 +33,7 @@ const ELECTION_KEYWORDS = [
   'elective public office', 'elective office', 'nominating petition', 'recall election',
 ]
 
-const WORD_BOUNDARY_KEYWORDS = new Set(['election'])
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function matchesKeywords(text: string, keywords: string[]): { matched: boolean; keyword: string } {
-  const lower = text.toLowerCase()
-  for (const kw of keywords) {
-    if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      if (new RegExp(`(?<![a-zA-Z])${escaped}`, 'i').test(lower)) return { matched: true, keyword: kw }
-    } else {
-      if (lower.includes(kw.toLowerCase())) return { matched: true, keyword: kw }
-    }
-  }
-  return { matched: false, keyword: '' }
-}
 
 async function centralGet(path: string): Promise<any> {
   const res = await fetch(`${CENTRAL_URL}${path}`, {
@@ -261,7 +247,7 @@ async function main() {
         const matchedBills = osBills.filter((b: any) => {
           const abstractText = (b.abstracts ?? []).map((a: any) => a.abstract ?? '').join(' ')
           const text = `${b.title} ${abstractText}`
-          return matchesKeywords(text, ELECTION_KEYWORDS).matched
+          return matchesUnion(text, ELECTION_KEYWORDS).matched
         })
 
         log(`  Keyword matches: ${matchedBills.length} / ${osBills.length} (${(matchedBills.length / osBills.length * 100).toFixed(1)}%)`)
