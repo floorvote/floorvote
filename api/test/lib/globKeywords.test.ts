@@ -75,6 +75,14 @@ describe('wildcard sole membership', () => {
   it('empty list matches nothing', () => {
     expect(matchesKeywords('Election Law', [])).toBe(false)
   })
+
+  it('treats a run of only asterisks the same as a bare wildcard', () => {
+    expect(matchesKeywords('Tobacco Amendments', ['**'])).toBe(true)
+    expect(matchesKeywords('Tobacco Amendments', ['**', 'county'])).toBe(false)
+    expect(matchesKeywords('County Budget', ['**', 'county'])).toBe(true)
+    expect(matchesKeywords('Tobacco Amendments', ['***'])).toBe(true)
+    expect(compileKeyword('**')).toBeNull()
+  })
 })
 
 describe('degenerate keywords', () => {

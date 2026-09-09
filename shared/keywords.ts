@@ -29,6 +29,18 @@
  */
 export const WILDCARD_KEYWORD = '*'
 
+/**
+ * True for any keyword that is nothing but asterisks after trimming (`*`,
+ * `**`, `***`, ...). All of these are the wildcard: `'*'.split('*')` and
+ * `'**'.split('*')` both produce only empty segments, so they compile to the
+ * same unanchored "match anything" pattern. `compileKeyword` and
+ * `effectiveKeywords` both call this so the two cannot drift apart.
+ */
+function isWildcardKeyword(pattern: string): boolean {
+  const trimmed = pattern.trim()
+  return trimmed.length > 0 && /^\*+$/.test(trimmed)
+}
+
 const BOUNDARY_L = '(?<![a-zA-Z])'
 const BOUNDARY_R = '(?![a-zA-Z])'
 
@@ -52,7 +64,7 @@ export function compileKeyword(pattern: string): RegExp | null {
 
   const trimmed = pattern.trim()
   let re: RegExp | null = null
-  if (trimmed.length > 0 && trimmed !== WILDCARD_KEYWORD) {
+  if (trimmed.length > 0 && !isWildcardKeyword(trimmed)) {
     // Split on '*' and rejoin with '.*'. Segments are escaped, so every other
     // regex metacharacter in a keyword is a literal. Empty leading/trailing
     // segments are exactly how we detect a star at that end.
@@ -74,10 +86,10 @@ export function compileKeyword(pattern: string): RegExp | null {
  * since the wildcard would make every sibling redundant.
  */
 function effectiveKeywords(keywords: string[]): { wildcard: boolean; list: string[] } {
-  if (keywords.length === 1 && keywords[0].trim() === WILDCARD_KEYWORD) {
+  if (keywords.length === 1 && isWildcardKeyword(keywords[0])) {
     return { wildcard: true, list: [] }
   }
-  return { wildcard: false, list: keywords.filter(k => k.trim() !== WILDCARD_KEYWORD) }
+  return { wildcard: false, list: keywords.filter(k => !isWildcardKeyword(k)) }
 }
 
 /** Match `text` against the union of `keywords`, reporting which one hit. */
