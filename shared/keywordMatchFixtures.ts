@@ -11,8 +11,9 @@
  * a change to either side that is not mirrored fails that side's tests.
  *
  * There are further hand-copies of the same logic in one-off scripts, which no
- * test covers — keep them in step by hand when the matcher changes. The full
- * inventory, verified by grepping for keyword matching across the repo:
+ * test covers — keep them in step by hand when the matcher changes. This is
+ * the inventory of the TypeScript copies only, not a claim to have found every
+ * hand-copy in the repo:
  *   scripts/openstates/load-history.ts      (matchesUnion — has the wildcard)
  *   scripts/openstates/seed-from-bulk.ts    (kwMatch — has the wildcard;
  *                                            takes operator --keywords)
@@ -24,6 +25,14 @@
  * The two eval scripts deliberately omit the wildcard: they match against their
  * own hard-coded keyword list and never see an operator-supplied one, so the
  * sentinel can never reach them.
+ *
+ * scripts/openstates/openstates-crossref.py is a SEPARATE, deliberate
+ * divergence and is not tracked here: it's a Python, offline-only script that
+ * cannot import this TypeScript module, so it keeps its own copy — a
+ * `WORD_BOUNDARY = {'election'}` carve-out plus plain substring matching, i.e.
+ * the OLD pre-glob semantics this file replaced everywhere else. It was never
+ * ported to glob syntax and its match counts are not comparable to any of the
+ * matchers above.
  */
 
 export type KeywordMatchCase = { text: string; keywords: string[]; expected: boolean }

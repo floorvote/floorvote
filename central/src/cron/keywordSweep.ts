@@ -1,7 +1,7 @@
 import { eq, and } from 'drizzle-orm'
 import { sessions, bills, billTenants, tenants, keywordRegistry } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
-import { WILDCARD_KEYWORD } from '../lib/keywords'
+import { isWildcardKeyword } from '../lib/keywords'
 import type { BillProvider } from '../providers/types'
 import type { Env, CentralDb, IngestorQueueMessage } from '../types'
 
@@ -44,11 +44,24 @@ export async function runKeywordSweep(env: Env, db: CentralDb, provider: BillPro
 
       for (const keyword of keywords) {
         // The wildcard sentinel is not a provider query — sending it would become
-        // a literal `q=*` and 400 the whole sweep. A wildcard tenant already
-        // receives every bill through the normal sync path, so it needs no sweep.
-        if (keyword === WILDCARD_KEYWORD) continue
+        // a literal `q=*` (or `q=**`, `q=***`, ...) and 400 the whole sweep. A
+        // wildcard tenant already receives every bill through the normal sync
+        // path, so it needs no sweep. Use isWildcardKeyword rather than an
+        // equality check against WILDCARD_KEYWORD: shared/keywords.ts treats
+        // any all-asterisk string (and one with surrounding whitespace) as the
+        // wildcard, and an equality check would only catch the exact '*'.
+        if (isWildcardKeyword(keyword)) continue
 
-        for await (const stub of provider.fetchKeywordMatches(session.state, session.identifier, keyword, since24h)) {
+        // Strip glob stars before sending to the provider: the provider's
+        // full-text search has no glob semantics of its own and would reject
+        // or silently no-op on a literal '*'. Widening the query this way is
+        // safe in the direction that matters — the local matcher (matchesUnion)
+        // re-filters every result against the real glob pattern afterward, so
+        // a broader provider query can only add candidates that get filtered
+        // back out, never let through something that shouldn't match.
+        const providerQuery = keyword.replace(/\*/g, '')
+
+        for await (const stub of provider.fetchKeywordMatches(session.state, session.identifier, providerQuery, since24h)) {
           if (linkedIds.has(stub.id)) continue
           linkedIds.add(stub.id)
 

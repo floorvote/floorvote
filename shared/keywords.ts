@@ -19,6 +19,10 @@
  * The boundary class is [a-zA-Z], so digits do not block: `election` matches
  * "election2024". That is inherited from the lookbehind this replaced and kept
  * deliberately, since bill text pairs words with years constantly.
+ *
+ * The boundary class is also ASCII-only, so accented and non-Latin letters
+ * never count as boundaries: `élection` matches inside `réélection`, silently
+ * behaving like a substring keyword instead of a whole-word one.
  */
 
 /**
@@ -36,7 +40,7 @@ export const WILDCARD_KEYWORD = '*'
  * same unanchored "match anything" pattern. `compileKeyword` and
  * `effectiveKeywords` both call this so the two cannot drift apart.
  */
-function isWildcardKeyword(pattern: string): boolean {
+export function isWildcardKeyword(pattern: string): boolean {
   const trimmed = pattern.trim()
   return trimmed.length > 0 && /^\*+$/.test(trimmed)
 }
@@ -65,10 +69,17 @@ export function compileKeyword(pattern: string): RegExp | null {
   const trimmed = pattern.trim()
   let re: RegExp | null = null
   if (trimmed.length > 0 && !isWildcardKeyword(trimmed)) {
-    // Split on '*' and rejoin with '.*'. Segments are escaped, so every other
-    // regex metacharacter in a keyword is a literal. Empty leading/trailing
-    // segments are exactly how we detect a star at that end.
-    const parts = trimmed.split('*')
+    // Collapse runs of '*' to one before splitting. An all-asterisk pattern is
+    // caught by isWildcardKeyword above, but an INTERIOR run (e.g. `a***b`) is
+    // not — left uncollapsed it splits into that many empty segments, each
+    // becoming its own `.*` in the joined body (`a.*.*.*b`). Each extra `.*`
+    // is a separate backtracking choice point, and they compound
+    // multiplicatively against each other on a failing match, so a handful of
+    // stray stars on a long line can take the regex engine from microseconds
+    // to effectively hanging (catastrophic backtracking). Collapsing first
+    // means a run of stars always compiles identically to a single `*`.
+    const collapsed = trimmed.replace(/\*+/g, '*')
+    const parts = collapsed.split('*')
     const body = parts.map(escapeLiteral).join('.*')
     const left = parts[0] === '' ? '' : BOUNDARY_L
     const right = parts[parts.length - 1] === '' ? '' : BOUNDARY_R
@@ -95,6 +106,13 @@ function effectiveKeywords(keywords: string[]): { wildcard: boolean; list: strin
 /** Match `text` against the union of `keywords`, reporting which one hit. */
 export function matchesUnion(text: string, keywords: string[]): { matched: boolean; keyword: string } {
   const { wildcard, list } = effectiveKeywords(keywords)
+  // Always report the canonical WILDCARD_KEYWORD ('*') here, even though the
+  // literal stored/sole entry might be '**' or '***'. Callers persist this
+  // value as matched_keyword and later compare it against WILDCARD_KEYWORD
+  // (or isWildcardKeyword) to decide things like "this came from the
+  // catch-all, skip provider-side handling for it" — normalizing here keeps
+  // that comparison exact-match-safe instead of forcing every call site to
+  // re-derive wildcard-ness from an arbitrary run of stars.
   if (wildcard) return { matched: true, keyword: WILDCARD_KEYWORD }
   for (const kw of list) {
     const re = compileKeyword(kw)

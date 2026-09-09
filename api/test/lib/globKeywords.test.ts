@@ -44,6 +44,16 @@ describe('glob keyword compilation', () => {
     expect(matchesKeywords('ballot by mail', ['mail*ballot'])).toBe(false)
   })
 
+  it('collapses a run of interior stars instead of compounding them', () => {
+    // Regression for catastrophic backtracking: an uncollapsed run of stars
+    // (e.g. 'a***b' -> 'a.*.*.*b') creates one backtracking choice point per
+    // star, which compounds multiplicatively on a failing match against long
+    // text. This must still match, and must do so promptly.
+    expect(matchesKeywords('a big b', ['a***b'])).toBe(true)
+    expect(matchesKeywords('mail in ballot', ['mail**ballot'])).toBe(true)
+    expect(compileKeyword('a***b')?.source).toBe(compileKeyword('a*b')?.source)
+  })
+
   it('escapes regex metacharacters', () => {
     expect(matchesKeywords('section 1.2 applies', ['1.2'])).toBe(true)
     expect(matchesKeywords('section 132 applies', ['1.2'])).toBe(false)
