@@ -20,10 +20,10 @@ const TAXONOMY: TaxonomyItem[] = [
  * Rejected for matching nothing: 'nutrient runoff', 'combined sewer overflow'.
  */
 const KEYWORDS = [
-  'pfas', 'drinking water', 'great lakes', 'water quality', 'groundwater', 'wetland',
-  'lead service line', 'erosion', 'stormwater', 'sewage', 'microplastic',
-  'invasive species', 'water withdrawal', 'dredging', 'water utility', 'shoreline',
-  'harmful algal bloom', 'water main', 'septic', 'aquatic invasive', 'watershed', 'beach',
+  '*pfas*', '*drinking water*', '*great lakes*', '*water quality*', '*groundwater*', '*wetland*',
+  '*lead service line*', '*erosion*', '*stormwater*', '*sewage*', '*microplastic*',
+  '*invasive species*', '*water withdrawal*', '*dredging*', '*water utility*', '*shoreline*',
+  '*harmful algal bloom*', '*water main*', '*septic*', '*aquatic invasive*', '*watershed*', '*beach*',
 ]
 
 const SESSIONS: DemoSeedSession[] = [

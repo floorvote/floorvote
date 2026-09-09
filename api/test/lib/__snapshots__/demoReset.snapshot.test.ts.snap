@@ -50,7 +50,7 @@ exports[`demo reset golden snapshot > matches the recorded snapshot, identically
 {"key":"association_name","value":"\\"Demo — NJ County Clerks\\""}
 {"key":"demo_banner","value":"\\"Demo instance. The bills are real New Jersey legislation — the association, its county clerks, and the hearing dates are fictional. Anything you change resets every few hours.\\""}
 {"key":"demo_reset_at","value":"<d+0>"}
-{"key":"keywords","value":"[\\"election\\",\\"ballot\\",\\"vote by mail\\",\\"county clerk\\",\\"board of elections\\",\\"deed\\",\\"land records\\",\\"public records\\",\\"OPRA\\",\\"notary\\",\\"voter\\"]"}
+{"key":"keywords","value":"[\\"election*\\",\\"*ballot*\\",\\"*vote by mail*\\",\\"*county clerk*\\",\\"*board of elections*\\",\\"*deed*\\",\\"*land records*\\",\\"*public records*\\",\\"*OPRA*\\",\\"*notary*\\",\\"*voter*\\"]"}
 {"key":"modules","value":"{\\"waiting-for-vote\\":false,\\"upcoming-hearings\\":false,\\"calendar\\":true,\\"email-digest\\":{\\"enabled\\":true,\\"settings\\":{\\"frequency\\":\\"daily\\",\\"weeklyDay\\":\\"1\\"}}}"}
 {"key":"org_noun","value":"\\"association\\""}
 {"key":"position_vocabulary","value":"[\\"Support\\",\\"Oppose\\",\\"Amend\\",\\"Monitor\\",\\"No Position\\"]"}
