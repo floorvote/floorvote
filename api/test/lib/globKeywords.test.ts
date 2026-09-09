@@ -102,3 +102,31 @@ describe('degenerate keywords', () => {
     })
   })
 })
+
+describe('matchesUnion return value', () => {
+  it('a hit reports the matching keyword', () => {
+    expect(matchesUnion('a county budget', ['election', 'county'])).toEqual({
+      matched: true, keyword: 'county',
+    })
+  })
+
+  it('a miss reports an empty keyword', () => {
+    expect(matchesUnion('tobacco amendments', ['election', 'county'])).toEqual({
+      matched: false, keyword: '',
+    })
+  })
+
+  it('the wildcard reports the wildcard', () => {
+    expect(matchesUnion('anything', ['*'])).toEqual({ matched: true, keyword: '*' })
+  })
+
+  it('a literal asterisk in the text does not trigger the wildcard', () => {
+    expect(matchesUnion('Budget * Amendments', ['county'])).toEqual({
+      matched: false, keyword: '',
+    })
+  })
+
+  it('a literal asterisk in the text does not prevent a real match', () => {
+    expect(matchesUnion('County * Budget', ['county']).matched).toBe(true)
+  })
+})
