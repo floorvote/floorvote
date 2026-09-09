@@ -92,3 +92,56 @@ export function stripMarkdown(text: string): string {
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
+
+/**
+ * Insert the blank lines a model omits, so a CommonMark parser sees the blocks
+ * it intended.
+ *
+ * Models write one block per line with no blank line between them. CommonMark
+ * then treats a prose line following a bullet as a LAZY CONTINUATION of that
+ * bullet, so a summary ending "…second thing.\nEffective January 1, 2026." puts
+ * the effective date inside the last list item, joined without even a space.
+ * Alternating prose and lists is mangled the same way.
+ *
+ * Only one rule is needed: a non-list line directly after a list line starts a
+ * new block. A list following a paragraph already parses correctly, because
+ * CommonMark lets a bullet list interrupt a paragraph.
+ */
+export function separateBlocks(text: string): string {
+  const isListLine = (l: string) => /^[ \t]*([-*+]|\d+\.)\s/.test(l)
+  const lines = text.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const prev = lines[i - 1]
+    const cur = lines[i]
+    if (prev !== undefined && prev.trim() && cur.trim() && isListLine(prev) && !isListLine(cur)) {
+      out.push('')
+    }
+    out.push(cur)
+  }
+  return out.join('\n')
+}
+
+/**
+ * Normalize list indentation to two spaces per level.
+ *
+ * Models indent nested items by two, four, or six spaces without much
+ * consistency. CommonMark measures nesting from the parent item's content
+ * column, and treats anything four or more columns past it as an indented code
+ * block -- so a six-space "child" under "- parent" renders as <pre>, not a
+ * nested list. Snapping each list line to at most one level deeper than the
+ * line above makes nesting depend on the model's INTENT (it indented further)
+ * rather than on hitting an exact column.
+ */
+export function normalizeListIndent(text: string): string {
+  const listLine = /^([ \t]*)(([-*+]|\d+\.)\s+)(.*)$/
+  const depths: number[] = []   // raw indent width at each rendered level
+  return text.split('\n').map(line => {
+    const m = listLine.exec(line)
+    if (!m) { depths.length = 0; return line }
+    const raw = m[1].replace(/\t/g, '  ').length
+    while (depths.length && raw < depths[depths.length - 1]) depths.pop()
+    if (!depths.length || raw > depths[depths.length - 1]) depths.push(raw)
+    return '  '.repeat(depths.length - 1) + m[2] + m[4]
+  }).join('\n')
+}

@@ -64,7 +64,10 @@ describe('MarkdownSummary', () => {
     )
     expect(container.querySelectorAll('ul')).toHaveLength(2)
     expect(container.querySelectorAll('p')).toHaveLength(3)
-    const order = [...container.children[0].children].map(el => el.tagName)
+    // The rendered blocks live on .markdown-summary; a sibling <style> now
+    // carries the scoped CSS, so select the host rather than the first child.
+    const host = container.querySelector('.markdown-summary')!
+    const order = [...host.children].map(el => el.tagName)
     expect(order).toEqual(['P', 'UL', 'P', 'UL', 'P'])
   })
 
