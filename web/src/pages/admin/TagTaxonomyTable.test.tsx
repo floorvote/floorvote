@@ -151,6 +151,20 @@ describe('TagTaxonomyTable', () => {
     expect(onRows.mock.calls[onRows.mock.calls.length - 1][0][0].name).toBe('Courts')
   })
 
+  it('renders the tag name as a textarea so long names wrap', () => {
+    render(<TagTaxonomyTable rows={[{ name: 'Document Preparation, Domestic Partnerships & Lockbox', description: 'x' }]} onChange={() => {}} idPrefix="t" />)
+    const field = screen.getByLabelText('Tag name, row 1')
+    expect(field.tagName).toBe('TEXTAREA')
+  })
+
+  it('does not insert a newline when Enter is pressed in a tag name', () => {
+    const onChange = vi.fn()
+    render(<TagTaxonomyTable rows={[{ name: 'Elections', description: '' }]} onChange={onChange} idPrefix="t" />)
+    const field = screen.getByLabelText('Tag name, row 1')
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect((field as HTMLTextAreaElement).value).not.toContain('\n')
+  })
+
   it('grows the description textarea to fit its value on first render, without any input event', () => {
     const longDescription =
       'This is a long, wrapping description that spans several lines of text so that a ' +
@@ -244,7 +258,7 @@ describe('TagTaxonomyTable — narrow layout', () => {
     expect(headerSecondChild).toHaveTextContent('Tag')
 
     const bodyRowSecondChild = rows[1].children[1]
-    expect(bodyRowSecondChild.querySelector('input[aria-label^="Tag name"]')).toBeInTheDocument()
+    expect(bodyRowSecondChild.querySelector('textarea[aria-label^="Tag name"]')).toBeInTheDocument()
 
     // `.tag-table-reorder` must sit on the grip/ordinal cell the narrow rule
     // hides — and only on that cell, not on the whole row, or hiding it

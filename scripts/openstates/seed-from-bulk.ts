@@ -31,7 +31,7 @@ import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { createHash } from 'crypto'
-import { WORD_BOUNDARY_KEYWORDS } from '../../shared/wordBoundaryKeywords'
+import { matchesUnion, WILDCARD_KEYWORD } from '../../shared/keywords'
 
 const __filename = fileURLToPath(import.meta.url)
 const REPO_ROOT = join(dirname(__filename), '..', '..')
@@ -167,25 +167,6 @@ function d1ExecuteFile(sqlFile: string): void {
     `npx wrangler d1 execute ${CENTRAL_DB} --remote --file ${JSON.stringify(sqlFile)}`,
     { cwd: REPO_ROOT, stdio: 'inherit' },
   )
-}
-
-// Mirror of central/src/lib/keywords.ts matchesUnion — must stay in sync.
-// See that file for why the wildcard is checked by membership before the loop
-// and why an EMPTY list still means match-nothing.
-const WILDCARD_KEYWORD = '*'
-
-function kwMatch(text: string, kws: string[]): { matched: boolean; keyword: string } {
-  if (kws.includes(WILDCARD_KEYWORD)) return { matched: true, keyword: WILDCARD_KEYWORD }
-  const lower = text.toLowerCase()
-  for (const kw of kws) {
-    if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      if (new RegExp(`(?<![a-zA-Z])${escaped}`, 'i').test(lower)) return { matched: true, keyword: kw }
-    } else {
-      if (lower.includes(kw.toLowerCase())) return { matched: true, keyword: kw }
-    }
-  }
-  return { matched: false, keyword: '' }
 }
 
 function syntheticVersionId(v: BulkVersion, index: number): string {
@@ -344,7 +325,7 @@ async function main() {
       if (tenantId) {
         const text = `${bill.title} ${abstract ?? ''}`
         // Guarded above: keywords is non-empty whenever tenantId is set.
-        const result = kwMatch(text, keywords)
+        const result = matchesUnion(text, keywords)
 
         if (result.matched) {
           kwMatchCount++

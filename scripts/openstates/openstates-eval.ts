@@ -11,6 +11,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { fileURLToPath } from 'url'
+import { matchesUnion } from '../../shared/keywords'
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -29,13 +30,11 @@ const TARGET_STATES = ['ri', 'nj', 'ut', 'mn']
 
 // Exact keywords from api/src/lib/keywords.ts (kept in sync)
 const ELECTION_KEYWORDS = [
-  'election', 'ballot', 'voter', 'voting', 'precinct', 'polling', 'absentee',
-  'poll worker', 'election official', 'canvass', 'recount', 'redistrict',
-  'campaign finance', 'candidate filing', 'electoral college', 'popular vote',
-  'elective public office', 'elective office', 'nominating petition', 'recall election',
+  'election*', '*ballot*', '*voter*', '*voting*', '*precinct*', '*polling*', '*absentee*',
+  '*poll worker*', '*election official*', '*canvass*', '*recount*', '*redistrict*',
+  '*campaign finance*', '*candidate filing*', '*electoral college*', '*popular vote*',
+  '*elective public office*', '*elective office*', '*nominating petition*', '*recall election*',
 ]
-
-const WORD_BOUNDARY_KEYWORDS = new Set(['election'])
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
@@ -52,19 +51,6 @@ async function osGet(path: string, params: Record<string, string | number | stri
   const res = await fetch(url.toString())
   if (!res.ok) throw new Error(`OpenStates ${path} → ${res.status}: ${await res.text()}`)
   return res.json()
-}
-
-function matchesKeywords(text: string): { matched: boolean; keyword: string } {
-  const lower = text.toLowerCase()
-  for (const kw of ELECTION_KEYWORDS) {
-    if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      if (new RegExp(`(?<![a-zA-Z])${escaped}`, 'i').test(lower)) return { matched: true, keyword: kw }
-    } else {
-      if (lower.includes(kw.toLowerCase())) return { matched: true, keyword: kw }
-    }
-  }
-  return { matched: false, keyword: '' }
 }
 
 // 10 req/min free tier = 1 req per 6s; use 7s to be safe
@@ -244,7 +230,7 @@ async function main() {
 
     const electionBills = allBills.filter(b => {
       const text = `${b.title} ${b.abstracts?.map((a: any) => a.abstract).join(' ') ?? ''}`
-      return matchesKeywords(text).matched
+      return matchesUnion(text, ELECTION_KEYWORDS).matched
     })
 
     const sampleRate = allBills.length / total
@@ -257,7 +243,7 @@ async function main() {
       log(`    sample matches:`)
       for (const b of electionBills.slice(0, 5)) {
         const txt = `${b.title}`
-        const { keyword } = matchesKeywords(txt)
+        const { keyword } = matchesUnion(txt, ELECTION_KEYWORDS)
         log(`      [${keyword}] ${b.identifier}: ${b.title.substring(0, 80)}`)
       }
     }

@@ -22,6 +22,7 @@ import { unzipSync } from 'fflate'
 import { tmpdir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { matchesUnion } from '../../shared/keywords'
 
 const __filename = fileURLToPath(import.meta.url)
 const REPO_ROOT = join(dirname(__filename), '..')
@@ -122,27 +123,6 @@ function d1ExecuteFile(sqlFile: string): void {
     `npx wrangler d1 execute ${CENTRAL_DB} --remote --file ${JSON.stringify(sqlFile)}`,
     { cwd: REPO_ROOT, stdio: 'inherit' }
   )
-}
-
-const WORD_BOUNDARY_KEYWORDS = new Set(['election'])
-
-// Mirror of central/src/lib/keywords.ts matchesUnion — must stay in sync.
-// See that file for why the wildcard is checked by membership before the loop
-// and why an EMPTY list still means match-nothing.
-const WILDCARD_KEYWORD = '*'
-
-function matchesUnion(text: string, keywords: string[]): { matched: boolean; keyword: string } {
-  if (keywords.includes(WILDCARD_KEYWORD)) return { matched: true, keyword: WILDCARD_KEYWORD }
-  const lower = text.toLowerCase()
-  for (const kw of keywords) {
-    if (WORD_BOUNDARY_KEYWORDS.has(kw)) {
-      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      if (new RegExp(`(?<![a-zA-Z])${escaped}`, 'i').test(lower)) return { matched: true, keyword: kw }
-    } else {
-      if (lower.includes(kw.toLowerCase())) return { matched: true, keyword: kw }
-    }
-  }
-  return { matched: false, keyword: '' }
 }
 
 // ── List sessions ─────────────────────────────────────────────────────────────

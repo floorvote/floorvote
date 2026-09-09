@@ -1,61 +1,53 @@
 import { describe, it, expect } from 'vitest'
-import { matchesWordBoundary, matchesUnion } from '../../src/lib/keywords'
+import { matchesKeywords, matchesUnion } from '../../src/lib/keywords'
 import { KEYWORD_MATCH_CASES } from '../../../shared/keywordMatchFixtures'
 
-describe('matchesWordBoundary', () => {
-  it('matches "election" in "election law"', () => {
-    expect(matchesWordBoundary('election law amendment', 'election')).toBe(true)
+describe('matchesKeywords — glob semantics', () => {
+  it('matches a bare keyword as a whole word', () => {
+    expect(matchesKeywords('Election Administration Act', ['election'])).toBe(true)
   })
 
-  it('does NOT match "election" inside "selection"', () => {
-    expect(matchesWordBoundary('Selection of primary care provider', 'election')).toBe(false)
+  it('does NOT match a bare keyword inside a longer word', () => {
+    expect(matchesKeywords('Rules governing the selection of jury members', ['election'])).toBe(false)
+    expect(matchesKeywords('Prohibits reelection after term limit', ['election'])).toBe(false)
+    expect(matchesKeywords('Establishes preelection disclosure', ['election'])).toBe(false)
   })
 
-  it('matches "election" at start of string', () => {
-    expect(matchesWordBoundary('election officials', 'election')).toBe(true)
-  })
-})
-
-describe('matchesUnion', () => {
-  it('matches a regular keyword via substring', () => {
-    const result = matchesUnion('Voting rights expansion act', ['voting', 'ballot'])
-    expect(result).toEqual({ matched: true, keyword: 'voting' })
+  it('does NOT match a bare keyword against a plural', () => {
+    expect(matchesKeywords('general elections calendar', ['election'])).toBe(false)
   })
 
-  it('returns no match when no keyword hits', () => {
-    const result = matchesUnion('Vehicle registration fee increase', ['ballot'])
-    expect(result).toEqual({ matched: false, keyword: '' })
+  it('matches a plural with a trailing star', () => {
+    expect(matchesKeywords('general elections calendar', ['election*'])).toBe(true)
+    expect(matchesKeywords('Rules governing the selection', ['election*'])).toBe(false)
   })
 
-  it('uses word boundary for "election"', () => {
-    expect(matchesUnion('Selection of primary care', ['election']).matched).toBe(false)
-    expect(matchesUnion('Election law amendment', ['election']).matched).toBe(true)
+  it('matches mid-word with surrounding stars', () => {
+    expect(matchesKeywords('mail-in ballot application form', ['*ballot*'])).toBe(true)
   })
 })
 
-describe('matchesUnion — wildcard sentinel', () => {
-  it('matches any text when the list contains "*"', () => {
-    expect(matchesUnion('Tobacco Amendments', ['*'])).toEqual({ matched: true, keyword: '*' })
+describe('matchesKeywords — wildcard sole membership', () => {
+  it('matches any text when "*" is the only keyword', () => {
+    expect(matchesKeywords('Tobacco Amendments', ['*'])).toBe(true)
   })
 
-  it('matches empty text when the list contains "*"', () => {
-    expect(matchesUnion('', ['*'])).toEqual({ matched: true, keyword: '*' })
+  it('matches empty text when "*" is the only keyword', () => {
+    expect(matchesKeywords('', ['*'])).toBe(true)
   })
 
-  it('is unaffected by other keywords alongside "*"', () => {
-    expect(matchesUnion('Water Usage Modifications', ['county', '*'])).toEqual({ matched: true, keyword: '*' })
+  it('drops "*" when other keywords are present', () => {
+    expect(matchesKeywords('Water Usage Modifications', ['county', '*'])).toBe(false)
+    expect(matchesKeywords('County Water Usage', ['county', '*'])).toBe(true)
   })
 
   it('still matches nothing for an empty list', () => {
-    expect(matchesUnion('Election Law Amendments', [])).toEqual({ matched: false, keyword: '' })
+    expect(matchesKeywords('Election Law Amendments', [])).toBe(false)
   })
 
-  it('treats "*extra" as an ordinary substring keyword, not the sentinel', () => {
-    expect(matchesUnion('Tobacco Amendments', ['*extra'])).toEqual({ matched: false, keyword: '' })
-  })
-
-  it('does not let a literal asterisk in the text trigger the sentinel', () => {
-    expect(matchesUnion('Budget * Amendments', ['county'])).toEqual({ matched: false, keyword: '' })
+  it('treats "*extra" as ends-with, not the sentinel', () => {
+    expect(matchesKeywords('Tobacco Amendments', ['*extra'])).toBe(false)
+    expect(matchesKeywords('An extra provision', ['*extra'])).toBe(true)
   })
 })
 

@@ -3,17 +3,17 @@ export const NJ_COUNTY_CLERKS = {
   description: 'Tuned for New Jersey county clerk associations. Covers elections, land records, court administration, and OPRA.',
 
   keywords: [
-    'election',
-    'ballot',
-    'vote by mail',
-    'county clerk',
-    'board of elections',
-    'deed',
-    'land records',
-    'public records',
-    'OPRA',
-    'notary',
-    'voter',
+    'election*',
+    '*ballot*',
+    '*vote by mail*',
+    '*county clerk*',
+    '*board of elections*',
+    '*deed*',
+    '*land records*',
+    '*public records*',
+    '*OPRA*',
+    '*notary*',
+    '*voter*',
   ],
 
   aiContext: `You are analyzing a bill for an association of New Jersey county clerks. Their duties include: elections administration (ballot design and printing, Vote by Mail applications, candidate petitions, certifying results), recording deeds and land documents, serving the Superior Court, issuing passports and marriage licenses, registering trade names, certifying notary publics, and managing public records requests under OPRA (Open Public Records Act).
