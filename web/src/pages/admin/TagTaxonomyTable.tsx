@@ -46,7 +46,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   const hintId = `${idPrefix}-reorder-hint`
   const displayed = withTrailingBlank(rows)
   const problems = rowProblems(displayed)
-  const nameRefs = useRef<Array<HTMLInputElement | null>>([])
+  const nameRefs = useRef<Array<HTMLTextAreaElement | null>>([])
   const descRefs = useRef<Array<HTMLTextAreaElement | null>>([])
   // Derived from `displayed` itself rather than tracked as its own state, so
   // it can never claim a direction the rows are no longer actually in — e.g.
@@ -88,6 +88,7 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
   const descriptionsKey = JSON.stringify(displayed.map(r => r.description))
   useLayoutEffect(() => {
     descRefs.current.forEach(ta => { if (ta) resizeTextarea(ta) })
+    nameRefs.current.forEach(ta => { if (ta) resizeTextarea(ta) })
   }, [descriptionsKey])
 
   function setRow(i: number, patch: Partial<TaxonomyRow>) {
@@ -361,9 +362,9 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                 )}
 
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  <input
+                  <textarea
                     ref={el => { nameRefs.current[i] = el }}
-                    type="text"
+                    rows={1}
                     value={row.name}
                     aria-label={`Tag name, row ${i + 1}`}
                     aria-invalid={problem ? true : undefined}
@@ -373,7 +374,8 @@ export default function TagTaxonomyTable({ rows, onChange, onSort, idPrefix }: P
                     onChange={e => setRow(i, { name: e.target.value })}
                     onKeyDown={e => onFieldKeyDown(e, i, 'name')}
                     onPaste={e => onFieldPaste(e, i)}
-                    style={{ ...fieldStyle, fontWeight: fontWeight.medium, color: problem ? color.textDanger : color.textPrimary }}
+                    onInput={e => resizeTextarea(e.currentTarget)}
+                    style={{ ...fieldStyle, fontWeight: fontWeight.medium, resize: 'none', overflow: 'hidden', color: problem ? color.textDanger : color.textPrimary }}
                   />
                   {problem && <div id={msgId} style={msgStyle}>{problem}</div>}
                 </div>
