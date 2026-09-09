@@ -30,10 +30,10 @@ const TARGET_STATES = ['ri', 'nj', 'ut', 'mn']
 
 // Exact keywords from api/src/lib/keywords.ts (kept in sync)
 const ELECTION_KEYWORDS = [
-  'election', 'ballot', 'voter', 'voting', 'precinct', 'polling', 'absentee',
-  'poll worker', 'election official', 'canvass', 'recount', 'redistrict',
-  'campaign finance', 'candidate filing', 'electoral college', 'popular vote',
-  'elective public office', 'elective office', 'nominating petition', 'recall election',
+  'election*', '*ballot*', '*voter*', '*voting*', '*precinct*', '*polling*', '*absentee*',
+  '*poll worker*', '*election official*', '*canvass*', '*recount*', '*redistrict*',
+  '*campaign finance*', '*candidate filing*', '*electoral college*', '*popular vote*',
+  '*elective public office*', '*elective office*', '*nominating petition*', '*recall election*',
 ]
 
 // ── API helpers ──────────────────────────────────────────────────────────────
