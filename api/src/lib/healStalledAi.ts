@@ -4,16 +4,38 @@ import type { AppDb, Env } from '../types'
 
 /** Attempts after which a bill is left for a human rather than re-queued. */
 export const HEAL_MAX_ATTEMPTS = 5
-/** Bills re-queued per run. Each costs one getBill() against the shared LegiScan quota. */
+/**
+ * Bills re-queued per run.
+ *
+ * The cost is Gemini calls through the same AI Gateway that shed these bills in
+ * the first place, so the limit is really a "don't re-stampede the thing that
+ * just fell over" bound: 50/hour re-analyzes a full outage's backlog over a few
+ * hours instead of one spike.
+ *
+ * It costs NO LegiScan quota. The heal sends to the tenant's own BILL_QUEUE;
+ * the consumer reads the bill and its text from central via centralFetch, which
+ * are D1 and R2 reads. getBill() is spent by central's ingestor, which the heal
+ * never touches.
+ */
 export const HEAL_DEFAULT_LIMIT = 50
 /**
  * How old ai_attempted_at must be before a bill counts as stalled.
  *
  * LOAD-BEARING. recordShedAttempt writes ai_attempted_at on EVERY shed, so a bill
- * working through its backoff is indistinguishable from one that exhausted it. At
- * max_retries=3 with a 60s base the backoff spans 60+120+240 ≈ 7 minutes, so an
- * hour proves the message is out of the queue. Without this floor the heal
- * double-queues messages that are still live.
+ * working through its backoff is indistinguishable from one that exhausted it.
+ * This floor is what separates them: it must exceed the longest a live message
+ * can sit between retries, or the heal double-queues messages still in flight.
+ *
+ * It is therefore COUPLED TO THE QUEUE'S max_retries, which lives in the
+ * operator's own api/wrangler.toml and is not visible from here — the code
+ * cannot check it, so treat this as a contract. shedRetryDelay doubles a 60s
+ * base per attempt and caps at 3600s, so the gap between the last two retries
+ * grows to a full hour once max_retries is high enough to reach the cap.
+ *
+ * Rule: raising max_retries above ~4 requires raising HEAL_MIN_AGE_MS to match.
+ * (max_retries has been 10 in the past — see processor.ts's shed backoff notes —
+ * and at that setting a live message can sit an hour past its last
+ * ai_attempted_at write, colliding exactly with this floor.)
  */
 export const HEAL_MIN_AGE_MS = 60 * 60 * 1000
 
