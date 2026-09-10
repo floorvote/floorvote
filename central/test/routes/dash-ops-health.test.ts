@@ -25,7 +25,8 @@ describe('GET /admin/dash/ops-health', () => {
       { billId: 1, tenantId: 'ri', notifiedAt: recent, matchType: 'keyword' } as any,
     ])
     await db.insert(schema.tenantStats).values([
-      { tenantId: 'ri', statDate: '2026-06-05', pulledAt: recent } as any,
+      // Well over STALLED_AI_WARN, on a tenant whose pipeline is otherwise fresh.
+      { tenantId: 'ri', statDate: '2026-06-05', pulledAt: recent, billsAiStalled: 24 } as any,
     ])
     await db.insert(schema.sessions).values([
       { sessionId: 1, state: 'RI', stateId: 41, yearStart: 2026, yearEnd: 2026, prefile: 0, sineDie: 0, prior: 0, special: 0, sessionTag: '', sessionTitle: 'RI 2026', sessionName: 'RI 2026', syncEnabled: true, lastSyncedAt: recent } as any,
@@ -40,8 +41,14 @@ describe('GET /admin/dash/ops-health', () => {
     expect(ri.lastBillDeliveredAt).toBe(recent)
     expect(ri.lastStatsPullAt).toBe(recent)
     expect(ri.lastSeenAt).toBe(recent)
+    // The count is reported, but it must NOT poison `stale`. Nothing decrements
+    // ai_heal_attempts, so folding it in would leave this row stale forever and
+    // make a genuinely stale stats pull unreadable against the residue.
+    expect(ri.stalledAi).toBe(24)
     expect(ri.stale).toBe(false)
     expect(ri.aiContextPersonalized).toBe(true)
+    // The UI needs the threshold to explain the column rather than hard-code it.
+    expect(body.data.thresholds.stalledAi).toBe(10)
 
     const stale = body.data.tenants.find((t: any) => t.tenantId === 'stale')
     expect(stale.stale).toBe(true) // never delivered a bill + lastSeen old

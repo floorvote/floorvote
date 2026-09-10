@@ -9,8 +9,8 @@ beforeEach(() => {
     if (String(url).includes('/ops-health')) {
       return new Response(JSON.stringify({ data: {
         tenants: [
-          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, aiContextPersonalized: true, stalledAi: 0 },
-          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true, aiContextPersonalized: false, stalledAi: 24 },
+          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, aiContextPersonalized: true, stalledAi: 24 },
+          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true, aiContextPersonalized: false, stalledAi: 0 },
         ],
         states: [
           { state: 'RI', lastSyncedAt: '2026-06-05T05:00:00Z', stale: false },
@@ -42,6 +42,8 @@ describe('OpsHealth page', () => {
     expect(screen.getByText('generic default')).toBeInTheDocument()
   })
 
+  // The count rides on the non-stale tenant on purpose: stalled bills are
+  // reported as their own column and no longer feed the row's stale flag.
   it('shows the stalled-AI count for each tenant', async () => {
     render(<MemoryRouter><OpsHealth /></MemoryRouter>)
     await waitFor(() => expect(screen.getAllByText('RI').length).toBeGreaterThanOrEqual(1))
