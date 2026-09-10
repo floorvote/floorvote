@@ -97,6 +97,18 @@ export const bills = sqliteTable('bills', {
   // one that was never queued — the same ambiguity central's bill_texts
   // .fetch_attempted_at/.fetch_error exist to prevent.
   aiAttemptedAt: text('ai_attempted_at'),
+  // aiError has NO reader in application code, and that is deliberate — do not
+  // "clean up" an unread column. It is the only per-bill record of *why* AI
+  // failed, and its reader is a human running a query when the ops dashboard
+  // shows bills stuck: `SELECT bill_number, ai_heal_attempts, ai_error FROM
+  // bills WHERE ai_attempted_at IS NOT NULL AND ai_processed_at IS NULL AND
+  // ai_skip_reason IS NULL`. That is the same role bill_texts.fetch_error
+  // plays, which the comment above already cites as this pair's model.
+  //
+  // It is deliberately NOT load-bearing: it is free-text that gets reworded, so
+  // nothing may parse it. When the self-healing sweep needed "how many have we
+  // given up on" as a SQL question, that became its own integer column
+  // (aiHealAttempts, migration 0067) rather than a regex over this string.
   aiError: text('ai_error'),
   // Times the self-healing sweep has re-queued this bill (migration 0067).
   // Cleared on successful AI processing; at 5 the bill is left for a human.
