@@ -1,6 +1,7 @@
 import { sql, isNotNull, isNull, and, gt, ne, or, like, notInArray } from 'drizzle-orm'
 import type { getDb } from '../db/client'
 import * as schema from '../db/schema'
+import { countStalledAiBills } from './healStalledAi'
 
 type DB = ReturnType<typeof getDb>
 
@@ -18,6 +19,9 @@ export interface EngagementStats {
   roles_defined: number
   custom_fields_defined: number
   bills_ai_processed: number
+  /** Bills attempted by AI over an hour ago, never processed, not permanently
+   *  skipped. Operator-only: it measures our pipeline, not the tenant's work. */
+  bills_ai_stalled: number
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -40,6 +44,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
     rolesRow,
     customDefsRow,
     aiProcessedRow,
+    aiStalledCount,
   ] = await Promise.all([
     db.select({ n: sql<number>`COUNT(*)` }).from(schema.users).get(),
     db.select({ n: sql<number>`COUNT(DISTINCT ${schema.sessions.userId})` })
@@ -81,6 +86,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
       .from(schema.bills)
       .where(isNotNull(schema.bills.aiProcessedAt))
       .get(),
+    countStalledAiBills(db),
   ])
 
   return {
@@ -97,6 +103,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
     roles_defined: Number(rolesRow?.n ?? 0),
     custom_fields_defined: Number(customDefsRow?.n ?? 0),
     bills_ai_processed: Number(aiProcessedRow?.n ?? 0),
+    bills_ai_stalled: aiStalledCount,
   }
 }
 
