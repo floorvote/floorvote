@@ -1,0 +1,16 @@
+-- How many times the self-healing sweep has re-queued this bill's AI analysis.
+--
+-- ai_error is written on every shed (0059) on the premise, recorded in
+-- api/wrangler.toml, that a human would find and re-queue dead-lettered bills.
+-- Nothing ever read it. healStalledAiBills() automates that half. This column
+-- bounds it, so a bill that fails permanently is retried 5 times and then
+-- left alone rather than re-queued hourly forever.
+--
+-- Reset to 0 on successful AI processing (api/src/queue/processor.ts), so a bill
+-- that fails again months later is not poisoned by old attempts.
+--
+-- An explicit counter rather than parsing ai_error text: that string is a
+-- free-text diagnostic and making it load-bearing would break the moment it is
+-- reworded. It also makes "how many bills have we given up on" a SQL question,
+-- which is exactly what the operator dashboard needs.
+ALTER TABLE bills ADD COLUMN ai_heal_attempts INTEGER NOT NULL DEFAULT 0;

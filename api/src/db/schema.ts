@@ -98,6 +98,9 @@ export const bills = sqliteTable('bills', {
   // .fetch_attempted_at/.fetch_error exist to prevent.
   aiAttemptedAt: text('ai_attempted_at'),
   aiError: text('ai_error'),
+  // Times the self-healing sweep has re-queued this bill (migration 0067).
+  // Cleared on successful AI processing; at 5 the bill is left for a human.
+  aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
   triagedAt: text('triaged_at'),

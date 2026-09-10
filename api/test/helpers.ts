@@ -63,6 +63,7 @@ import migrationSql62 from '../migrations/0062_restore_feed_events_indexes.sql?r
 import migrationSql64 from '../migrations/0064_saved_views.sql?raw'
 import migrationSql65 from '../migrations/0065_saved_view_slugs.sql?raw'
 import migrationSql66 from '../migrations/0066_affected_citations.sql?raw'
+import migrationSql67 from '../migrations/0067_ai_heal_attempts.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -172,6 +173,7 @@ export async function applyMigrations(): Promise<void> {
     parseMigration(migrationSql64, '0064_saved_views'),
     parseMigration(migrationSql65, '0065_saved_view_slugs'),
     parseMigration(migrationSql66, '0066_affected_citations'),
+    parseMigration(migrationSql67, '0067_ai_heal_attempts'),
   ])
 }
 
