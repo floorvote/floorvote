@@ -114,6 +114,64 @@ describe('GET /admin/dash/ops-health', () => {
     )
   })
 
+  it('suppresses the bill-delivery problem for a tenant covering only a sine-die state', async () => {
+    const db = drizzle(env.DB, { schema })
+    const old = new Date(Date.now() - 200 * 60 * 60 * 1000).toISOString() // ~8d ago
+
+    await db.insert(schema.tenants).values([
+      { tenantId: 'adjourned', name: 'Adjourned', stateCoverage: '["RI"]', active: true, apiUrl: 'http://adj', lastSeenAt: old } as any,
+    ])
+    await db.insert(schema.sessions).values([
+      { sessionId: 10, state: 'RI', stateId: 41, yearStart: 2026, yearEnd: 2026, prefile: 0, sineDie: 1, prior: 0, special: 0, sessionTag: '', sessionTitle: 'RI 2026', sessionName: 'RI 2026', syncEnabled: true, lastSyncedAt: old } as any,
+    ])
+
+    const res = await app.fetch(new Request('http://central/admin/dash/ops-health', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    const adjourned = body.data.tenants.find((t: any) => t.tenantId === 'adjourned')
+    expect(adjourned.expectsBills).toBe(false)
+    expect(adjourned.problems).not.toEqual(expect.arrayContaining([expect.stringContaining('No bills delivered')]))
+    // The suppression is narrow — a tenant that never phones home still needs
+    // to be flagged for that, sine die or not.
+    expect(adjourned.problems).toEqual(expect.arrayContaining([expect.stringContaining('Not seen in')]))
+  })
+
+  it('keeps the bill-delivery problem for a tenant covering an in-session state', async () => {
+    const db = drizzle(env.DB, { schema })
+    const old = new Date(Date.now() - 200 * 60 * 60 * 1000).toISOString() // ~8d ago
+    const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+    await db.insert(schema.tenants).values([
+      { tenantId: 'insession', name: 'In Session', stateCoverage: '["NJ"]', active: true, apiUrl: 'http://ins', lastSeenAt: recent } as any,
+    ])
+    await db.insert(schema.sessions).values([
+      { sessionId: 11, state: 'NJ', stateId: 30, yearStart: 2026, yearEnd: 2026, prefile: 0, sineDie: 0, prior: 0, special: 0, sessionTag: '', sessionTitle: 'NJ 2026', sessionName: 'NJ 2026', syncEnabled: true, lastSyncedAt: recent } as any,
+    ])
+
+    const res = await app.fetch(new Request('http://central/admin/dash/ops-health', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    const insession = body.data.tenants.find((t: any) => t.tenantId === 'insession')
+    expect(insession.expectsBills).toBe(true)
+    expect(insession.problems).toEqual(expect.arrayContaining([expect.stringContaining('No bills delivered')]))
+  })
+
+  it('expects bills for a wildcard-coverage tenant when any state is in session', async () => {
+    const db = drizzle(env.DB, { schema })
+    const old = new Date(Date.now() - 200 * 60 * 60 * 1000).toISOString() // ~8d ago
+    const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+    await db.insert(schema.tenants).values([
+      { tenantId: 'wildcard', name: 'Wildcard', stateCoverage: '["*"]', active: true, apiUrl: 'http://wc', lastSeenAt: recent } as any,
+    ])
+    await db.insert(schema.sessions).values([
+      { sessionId: 12, state: 'NJ', stateId: 30, yearStart: 2026, yearEnd: 2026, prefile: 0, sineDie: 0, prior: 0, special: 0, sessionTag: '', sessionTitle: 'NJ 2026', sessionName: 'NJ 2026', syncEnabled: true, lastSyncedAt: recent } as any,
+    ])
+
+    const res = await app.fetch(new Request('http://central/admin/dash/ops-health', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    const wildcard = body.data.tenants.find((t: any) => t.tenantId === 'wildcard')
+    expect(wildcard.expectsBills).toBe(true)
+  })
+
   it('excludes sine-die and sync-disabled sessions from state staleness', async () => {
     const db = drizzle(env.DB, { schema })
     const old = new Date(Date.now() - 200 * 60 * 60 * 1000).toISOString()

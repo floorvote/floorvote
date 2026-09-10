@@ -11,6 +11,7 @@ type TenantHealth = {
   lastSeenAt: string | null
   stale: boolean
   problems: string[]
+  expectsBills: boolean
   aiContextPersonalized: boolean
   stalledAi: number
   stalledAiOldestHours: number
@@ -61,7 +62,19 @@ const tenantCols: Column<TenantHealth>[] = [
           </span>
         ),
   },
-  { key: 'bill', header: 'Last bill delivered', cell: t => <span title={absolute(t.lastBillDeliveredAt)}>{relative(t.lastBillDeliveredAt)}</span> },
+  {
+    key: 'bill',
+    header: 'Last bill delivered',
+    cell: t => (
+      <span title={absolute(t.lastBillDeliveredAt)}>
+        {relative(t.lastBillDeliveredAt)}
+        {/* A reader seeing a stale-looking time with status OK would otherwise
+            wonder why — spell out that the legislature isn't in session, so
+            there's nothing to deliver. */}
+        {!t.expectsBills && <span style={{ color: 'var(--muted)' }}> (out of session)</span>}
+      </span>
+    ),
+  },
   { key: 'stats', header: 'Last stats pull', cell: t => <span title={absolute(t.lastStatsPullAt)}>{relative(t.lastStatsPullAt)}</span> },
   {
     key: 'stalled',

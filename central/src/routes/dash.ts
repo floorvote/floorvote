@@ -734,6 +734,20 @@ dashRoutes.get('/ops-health', async (c) => {
     }
   }
 
+  // Sessions that are still in progress (not sine die) and actually being
+  // synced — the only states a tenant could realistically receive bills from
+  // right now. Fetched once and shared by both the per-tenant expectsBills
+  // check below and the per-state sync staleness at the bottom of this
+  // handler, rather than querying schema.sessions twice for the same rows.
+  const activeSessions = await db.select().from(schema.sessions).where(eq(schema.sessions.sineDie, 0)).all()
+  const lastSyncByState = new Map<string, string | null>()
+  for (const s of activeSessions) {
+    if (!s.syncEnabled) continue
+    const prev = lastSyncByState.get(s.state) ?? null
+    if (!prev || (s.lastSyncedAt && s.lastSyncedAt > prev)) lastSyncByState.set(s.state, s.lastSyncedAt)
+  }
+  const inSessionStates = new Set(lastSyncByState.keys())
+
   const tenantHealth = tenants.map(t => {
     const lastBillDeliveredAt = lastBillByTenant.get(t.tenantId) ?? null
     const lastStatsPullAt = lastStatsByTenant.get(t.tenantId) ?? null
@@ -744,6 +758,20 @@ dashRoutes.get('/ops-health', async (c) => {
     const seenStale = isStale(t.lastSeenAt, STALE_HOURS.lastSeen)
     const aiStuck = stalledAiOldestHours > STALLED_AI_STUCK_HOURS
 
+    // stateCoverage is a JSON array of state codes, e.g. '["RI"]'; '*' means
+    // every state (used by the elections-wide tenant). Same parse idiom as
+    // dash.ts:117 and :511 — fall back to [] on malformed JSON.
+    let coverage: string[] = []
+    try { coverage = JSON.parse(t.stateCoverage ?? '[]') } catch {}
+    // A tenant can only expect bills from a state whose legislature is
+    // currently in session and being synced — a sine-die state has no bills
+    // being introduced, so "no bills delivered" there is a false alarm, not
+    // a problem. Do NOT simplify this back to an unconditional check: a
+    // healthy, out-of-session tenant must read OK, not stale.
+    const expectsBills = coverage.includes('*')
+      ? inSessionStates.size > 0
+      : coverage.some(s => inSessionStates.has(s))
+
     // A timestamp missing entirely (never delivered/pulled/seen) has no age of
     // its own to report — fall back to how long the tenant has existed, so the
     // sentence still says something true rather than "N days" with no N.
@@ -753,7 +781,7 @@ dashRoutes.get('/ops-health', async (c) => {
     }
 
     const problems: string[] = []
-    if (billStale) problems.push(`No bills delivered in ${plural(daysSince(lastBillDeliveredAt), 'day')}`)
+    if (billStale && expectsBills) problems.push(`No bills delivered in ${plural(daysSince(lastBillDeliveredAt), 'day')}`)
     if (statsStale) problems.push(`Stats pull is ${plural(daysSince(lastStatsPullAt), 'day')} old`)
     if (seenStale) problems.push(`Not seen in ${plural(daysSince(t.lastSeenAt), 'day')}`)
     // Only the AGE is a problem, per STALLED_AI_STUCK_HOURS above — a nonzero
@@ -771,19 +799,13 @@ dashRoutes.get('/ops-health', async (c) => {
       lastSeenAt: t.lastSeenAt,
       stale: problems.length > 0,
       problems,
+      expectsBills,
       aiContextPersonalized: t.aiContextPersonalized,
       stalledAi,
       stalledAiOldestHours,
     }
   })
 
-  const activeSessions = await db.select().from(schema.sessions).where(eq(schema.sessions.sineDie, 0)).all()
-  const lastSyncByState = new Map<string, string | null>()
-  for (const s of activeSessions) {
-    if (!s.syncEnabled) continue
-    const prev = lastSyncByState.get(s.state) ?? null
-    if (!prev || (s.lastSyncedAt && s.lastSyncedAt > prev)) lastSyncByState.set(s.state, s.lastSyncedAt)
-  }
   const states = Array.from(lastSyncByState.entries())
     .map(([state, lastSyncedAt]) => ({ state, lastSyncedAt, stale: isStale(lastSyncedAt, STALE_HOURS.stateSync) }))
     .sort((a, b) => a.state.localeCompare(b.state))
