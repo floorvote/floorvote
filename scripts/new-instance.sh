@@ -684,10 +684,31 @@ if step "Seed active session(s) for whole-session monitoring"; then
     # monitor — the old sine_die=0-only filter silently seeded NOTHING when a legislature
     # had adjourned its regular session mid-cycle (e.g. a state whose only current sessions
     # are already sine_die).
+    #
+    # That widening still assumed the state sits every year. Biennial legislatures
+    # (NV, MT, ND, TX, ...) meet in odd years only, so in an even year EVERY session is
+    # sine_die with a year_end in the past and the filter matches nothing — the tenant is
+    # provisioned empty and, because deliver-on-creation only carries NEW bills and the
+    # state has none until the next biennium, it never fills. That is the same silent
+    # failure the comment above describes, one cycle out. So: if the current-session
+    # filter finds nothing, fall back to the most recent year that actually has bills.
+    # A tenant monitoring last session's bills is the right answer for an off-year
+    # state, and is strictly better than an empty instance.
+    d1_session_ids() {
+      npx wrangler d1 execute central-bills-ls --env legiscan --remote --json \
+        --command "$1" \
+        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(' '.join(str(r['id']) for r in d[0]['results']))" 2>/dev/null || echo ""
+    }
     for st in "${STATES_ARR[@]}"; do
-      SIDS=$(npx wrangler d1 execute central-bills-ls --env legiscan --remote --json \
-        --command "SELECT s.session_id AS id FROM sessions s WHERE s.state='${st}' AND s.sync_enabled=1 AND (s.sine_die=0 OR s.year_end >= CAST(strftime('%Y','now') AS INTEGER)) AND EXISTS (SELECT 1 FROM bills b WHERE b.session_id=s.session_id)" \
-        2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(' '.join(str(r['id']) for r in d[0]['results']))" 2>/dev/null || echo "")
+      SIDS=$(d1_session_ids "SELECT s.session_id AS id FROM sessions s WHERE s.state='${st}' AND s.sync_enabled=1 AND (s.sine_die=0 OR s.year_end >= CAST(strftime('%Y','now') AS INTEGER)) AND EXISTS (SELECT 1 FROM bills b WHERE b.session_id=s.session_id)")
+      if [[ -z "$SIDS" ]]; then
+        # Off-year fallback: every session of the most recent year that has bills.
+        # Matching on year_end (not a single max session_id) keeps a regular session
+        # and its special sessions together, which is what the current-session branch
+        # above also returns.
+        SIDS=$(d1_session_ids "SELECT s.session_id AS id FROM sessions s WHERE s.state='${st}' AND s.sync_enabled=1 AND EXISTS (SELECT 1 FROM bills b WHERE b.session_id=s.session_id) AND s.year_end = (SELECT MAX(s2.year_end) FROM sessions s2 WHERE s2.state=s.state AND s2.sync_enabled=1 AND EXISTS (SELECT 1 FROM bills b2 WHERE b2.session_id=s2.session_id))")
+        [[ -n "$SIDS" ]] && log_warn "${st} has no session in progress — seeding the most recent session(s) with bills instead (biennial or off-year legislature)"
+      fi
       if [[ -z "$SIDS" ]]; then
         log_warn "central has no bills yet for ${st} — tenant will fill on the next full pass (or pass --seed-dir to bulk-load)"
         continue
