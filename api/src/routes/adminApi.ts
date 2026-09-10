@@ -15,6 +15,7 @@ import { nowDb } from '../lib/dbTime'
 import { recordAuthEvent, authReqContext } from '../lib/authEvents'
 import { getAccountDeletionEnabled, ACCOUNT_DELETION_KEY } from '../lib/accountDeletion'
 import { countActiveOwners } from '../lib/owners'
+import { healStalledAiBills } from '../lib/healStalledAi'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import { adminSavedViewsRouter } from './savedViewsApi'
@@ -941,6 +942,17 @@ adminApiRouter.post('/reprocess-bill/:externalId', async (c) => {
   const externalId = decodeURIComponent(c.req.param('externalId'))
   await c.env.BILL_QUEUE.send({ tenantId: c.env.TENANT_ID, billId: externalId, forceAI: true, interactive: true })
   return c.json({ queued: 1 })
+})
+
+// POST /admin/heal-ai — re-queue bills whose AI analysis was shed and never retried.
+//
+// The same function the hourly cron runs. This endpoint is what makes the feature
+// testable on demand rather than one-shot-per-hour, and it is the fallback for
+// draining a backlog immediately after an outage. Operator-facing: no UI calls it.
+adminApiRouter.post('/heal-ai', async (c) => {
+  if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
+  const result = await healStalledAiBills(c.env, getDb(c.env.DB))
+  return c.json(result)
 })
 
 // POST /admin/refresh-metadata — refresh every bill's metadata from central without re-running AI

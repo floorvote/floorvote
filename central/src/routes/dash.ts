@@ -232,6 +232,23 @@ const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000  // 48 hours
 
 const STALE_HOURS = { billDelivery: 96, statsPull: 36, lastSeen: 48, stateSync: STALE_THRESHOLD_MS / 3_600_000 }
 
+/**
+ * Above this many AI-stalled bills, a tenant's count is worth an operator's
+ * attention. The heal drains a transient outage within the hour; a number that
+ * persists past a pull means bills are hitting the attempt cap.
+ *
+ * Deliberately NOT part of the row's `stale` boolean. `stale` answers "is this
+ * tenant's pipeline currently moving", and every other input to it is a
+ * timestamp that recovers on its own the moment the pipeline recovers. The
+ * stalled count does not: nothing decrements ai_heal_attempts, so a tenant that
+ * once accrued unfixable bills would read stale forever and a genuinely stale
+ * stats pull would become indistinguishable from an old outage's residue. The
+ * "AI stalled" cell colors itself, which is the signal without the poison.
+ *
+ * A count, not hours — hence its own constant rather than a STALE_HOURS entry.
+ */
+const STALLED_AI_WARN = 10
+
 dashRoutes.get('/sync/states', async (c) => {
   const db = drizzle(c.env.DB, { schema })
 
@@ -697,9 +714,29 @@ dashRoutes.get('/ops-health', async (c) => {
     .all()
   const lastStatsByTenant = new Map(statsRows.map(r => [r.tenantId, r.last]))
 
+  const stalledRows = await db
+    .select({
+      tenantId: schema.tenantStats.tenantId,
+      stalled: schema.tenantStats.billsAiStalled,
+      pulledAt: schema.tenantStats.pulledAt,
+    })
+    .from(schema.tenantStats)
+    .all()
+  // Latest row per tenant, picked in JS — mirrors dash-engagement's approach.
+  const stalledByTenant = new Map<string, number>()
+  const latestPullByTenant = new Map<string, string>()
+  for (const r of stalledRows) {
+    const seen = latestPullByTenant.get(r.tenantId)
+    if (!seen || r.pulledAt > seen) {
+      latestPullByTenant.set(r.tenantId, r.pulledAt)
+      stalledByTenant.set(r.tenantId, Number(r.stalled))
+    }
+  }
+
   const tenantHealth = tenants.map(t => {
     const lastBillDeliveredAt = lastBillByTenant.get(t.tenantId) ?? null
     const lastStatsPullAt = lastStatsByTenant.get(t.tenantId) ?? null
+    const stalledAi = stalledByTenant.get(t.tenantId) ?? 0
     const stale =
       isStale(lastBillDeliveredAt, STALE_HOURS.billDelivery) ||
       isStale(lastStatsPullAt, STALE_HOURS.statsPull) ||
@@ -713,6 +750,7 @@ dashRoutes.get('/ops-health', async (c) => {
       lastSeenAt: t.lastSeenAt,
       stale,
       aiContextPersonalized: t.aiContextPersonalized,
+      stalledAi,
     }
   })
 
@@ -728,7 +766,9 @@ dashRoutes.get('/ops-health', async (c) => {
     .sort((a, b) => a.state.localeCompare(b.state))
 
   return c.json({
-    data: { tenants: tenantHealth, states, thresholds: STALE_HOURS },
+    // stalledAi is a bill count, not hours — the UI needs it to explain what the
+    // "AI stalled" column's coloring means rather than hard-coding the number.
+    data: { tenants: tenantHealth, states, thresholds: { ...STALE_HOURS, stalledAi: STALLED_AI_WARN } },
     meta: { generatedAt: new Date().toISOString() },
   })
 })

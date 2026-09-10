@@ -1,0 +1,20 @@
+-- Bills stuck in AI analysis, per tenant, as reported by the hourly engagement pull.
+--
+-- A shedding window hits every tenant at once, so this belongs on central: a
+-- per-tenant view fragments one incident into eight partial pictures. It is also
+-- operator infrastructure — a county clerk cannot fix a 503 and did not cause it.
+--
+-- ============================================================================
+-- DEPLOY ORDER: apply this migration BEFORE deploying central, never after.
+-- Deploying central first breaks every query that touches tenant_stats.
+--
+-- Why: central/src/routes/dash.ts and dash-engagement.ts select from
+-- schema.tenantStats without a column list. Drizzle expands an unqualified
+-- select() to the schema's full column list, which after this change includes
+-- bills_ai_stalled. If central ships before the migration runs, those queries
+-- fail with "no such column: bills_ai_stalled" — taking down the ops dashboard
+-- and the adoption page until the migration is applied.
+--
+-- This mirrors the hazard documented on 0017_tenant_ai_personalized.sql.
+-- ============================================================================
+ALTER TABLE tenant_stats ADD COLUMN bills_ai_stalled INTEGER NOT NULL DEFAULT 0;

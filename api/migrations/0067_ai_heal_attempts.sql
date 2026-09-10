@@ -1,0 +1,45 @@
+-- How many times the self-healing sweep has re-queued this bill's AI analysis.
+--
+-- ai_error is written on every shed (0059) on the premise, recorded in
+-- api/wrangler.toml, that a human would find and re-queue dead-lettered bills.
+-- Nothing ever read it. healStalledAiBills() automates that half. This column
+-- bounds it, so a bill that fails permanently is retried 5 times and then
+-- left alone rather than re-queued hourly forever.
+--
+-- Reset to 0 on successful AI processing (api/src/queue/processor.ts), so a bill
+-- that fails again months later is not poisoned by old attempts.
+--
+-- An explicit counter rather than parsing ai_error text: that string is a
+-- free-text diagnostic and making it load-bearing would break the moment it is
+-- reworded. It also makes "how many bills have we given up on" a SQL question,
+-- which is exactly what the operator dashboard needs.
+--
+-- ============================================================================
+-- DEPLOY ORDER: apply this migration BEFORE deploying the api worker, never
+-- after. Deploying the worker first breaks every route that reads bills.
+--
+-- Why: several routes select from schema.bills without a column list, and
+-- Drizzle expands an unqualified select() to the schema's full column list,
+-- which after this change includes ai_heal_attempts. If the worker ships
+-- before the migration runs, those queries fail with "no such column:
+-- ai_heal_attempts". The call sites:
+--   src/routes/billsApi/listRoutes.ts    — the bills list
+--   src/routes/billsApi/detail.ts        — bill detail
+--   src/routes/billsApi/lookupRoutes.ts  — bill lookup
+--   src/routes/billsApi/draftRoutes.ts   — drafts
+--   src/routes/users.ts                  — user-scoped bill reads
+--
+-- Blast radius is larger here than for the equivalent central hazard
+-- (central/migrations-legiscan/0018_tenant_stats_ai_stalled.sql, which this
+-- mirrors): those routes are member-facing, so getting the order wrong 500s
+-- the app for readers, not just the ops dashboard for operators.
+--
+-- npm run deploy:tenant applies pending migrations before deploying, so the
+-- normal path is safe. This warning is for a hand-rolled `wrangler deploy`.
+--
+-- (Keep semicolons out of these comments. api/test/helpers.ts splits migration
+-- files on the statement terminator BEFORE it strips comment lines, so one
+-- inside a comment turns the rest of that sentence into a statement and every
+-- test that applies migrations fails with a syntax error.)
+-- ============================================================================
+ALTER TABLE bills ADD COLUMN ai_heal_attempts INTEGER NOT NULL DEFAULT 0;

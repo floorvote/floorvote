@@ -147,6 +147,30 @@ describe('computeExcludedEngagementStats', () => {
   })
 })
 
+describe('computeEngagementStats bills_ai_stalled', () => {
+  async function seedBill(id: string, overrides: Partial<typeof schema.bills.$inferInsert> = {}) {
+    const db = getDb(env.DB)
+    await db.insert(schema.bills).values({
+      id,
+      billNumber: `H${id}`,
+      title: `t${id}`,
+      state: 'RI',
+      ...overrides,
+    } as typeof schema.bills.$inferInsert)
+  }
+
+  it('reports bills stalled in AI analysis', async () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+    const oneHourAgo = new Date(Date.now() - 1 * 3600 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+    await seedBill('a', { aiAttemptedAt: twoHoursAgo, aiProcessedAt: null })
+    await seedBill('b', { aiAttemptedAt: twoHoursAgo, aiProcessedAt: oneHourAgo }) // succeeded
+    await seedBill('c', { aiAttemptedAt: twoHoursAgo, aiSkipReason: 'pdf_too_large' }) // permanent skip
+    const db = getDb(env.DB)
+    const stats = await computeEngagementStats(db)
+    expect(stats.bills_ai_stalled).toBe(1)
+  })
+})
+
 describe('normalizeExcludeDomains', () => {
   it('lowercases, strips junk, dedupes, and requires a dot', () => {
     expect(normalizeExcludeDomains([' BiPartisanPolicy.org ', 'bipartisanpolicy.org', 'localhost', ''])).toEqual(['bipartisanpolicy.org'])

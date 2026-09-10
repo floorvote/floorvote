@@ -338,6 +338,7 @@ export const tenantStats = sqliteTable('tenant_stats', {
   rolesDefined:         integer('roles_defined').notNull().default(0),
   customFieldsDefined:  integer('custom_fields_defined').notNull().default(0),
   billsAiProcessed:     integer('bills_ai_processed').notNull().default(0),
+  billsAiStalled:       integer('bills_ai_stalled').notNull().default(0),
   pulledAt:             text('pulled_at').notNull().default(sql`(datetime('now'))`),
   probeLatencyMs:       integer('probe_latency_ms'),
   probeOk:              integer('probe_ok'),

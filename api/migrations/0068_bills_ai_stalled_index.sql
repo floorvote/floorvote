@@ -1,0 +1,42 @@
+-- Partial index backing healStalledAiBills() and countStalledAiBills()
+-- (api/src/lib/healStalledAi.ts).
+--
+-- All four queries in that file share the predicate
+--   ai_attempted_at IS NOT NULL AND ai_processed_at IS NULL AND ai_skip_reason
+--   IS NULL AND ai_attempted_at < cutoff
+-- plus the row-selection query's ORDER BY ai_attempted_at LIMIT 50. With no
+-- index on bills covering any of those columns, EXPLAIN QUERY PLAN against a
+-- database built from this branch's migrations showed
+--   SCAN bills
+--   USE TEMP B-TREE FOR ORDER BY
+-- on every one of them. This runs hourly on every tenant, so it was three
+-- full table scans plus a sort per tenant per hour, growing with bills — on
+-- the largest tenants (10k-13k bills) exactly the kind of cost that later
+-- surfaces as a shed rather than as visible slowness, which is what this
+-- whole feature exists to heal.
+--
+-- The index is partial rather than covering the whole table because the
+-- predicate only ever matches attempted-but-unresolved bills, a tiny sliver
+-- of the table. A full index on ai_attempted_at would pay maintenance cost
+-- on every bill insert and AI-processing update for rows this feature never
+-- looks at. Indexing just the WHERE ai_attempted_at IS NOT NULL AND
+-- ai_processed_at IS NULL AND ai_skip_reason IS NULL slice keeps the ingest
+-- write path nearly free of it.
+--
+-- After adding it, the same four queries planned as
+--   SEARCH bills USING INDEX idx_bills_ai_stalled (ai_attempted_at>? AND ai_attempted_at<?)
+-- with the temp B-tree gone too: because the index key is ai_attempted_at,
+-- SQLite can walk it in order and satisfy ORDER BY ai_attempted_at for free.
+--
+-- COUPLING, worth calling out because it is easy to break silently: SQLite
+-- will only use a partial index when the query's WHERE clause implies the
+-- index's WHERE clause. All four call sites carry all three IS NOT NULL /
+-- IS NULL clauses today, which is why this applies everywhere it needs to.
+-- If a future edit to healStalledAi.ts drops one of those clauses from a
+-- query -- say, to broaden what counts as stalled -- that query silently
+-- stops being able to use this index and falls back to the scan this
+-- migration exists to remove, with no error, just a slower query. See
+-- api/test/migrations/billsAiStalledIndex.test.ts, which asserts the plan
+-- directly for exactly this reason.
+CREATE INDEX idx_bills_ai_stalled ON bills (ai_attempted_at)
+  WHERE ai_attempted_at IS NOT NULL AND ai_processed_at IS NULL AND ai_skip_reason IS NULL;

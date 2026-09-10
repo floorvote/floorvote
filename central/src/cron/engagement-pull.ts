@@ -22,7 +22,7 @@ const METRIC_KEYS = [
   'votes_cast', 'comments_written', 'comment_reactions',
   'positions_set', 'notes_created', 'custom_field_values',
   'bills_with_engagement', 'roles_defined', 'custom_fields_defined',
-  'bills_ai_processed',
+  'bills_ai_processed', 'bills_ai_stalled',
 ] as const
 type MetricKey = (typeof METRIC_KEYS)[number]
 
@@ -96,6 +96,7 @@ async function upsertRow(
     rolesDefined:        metrics.roles_defined,
     customFieldsDefined: metrics.custom_fields_defined,
     billsAiProcessed:    metrics.bills_ai_processed,
+    billsAiStalled:      metrics.bills_ai_stalled,
     excludedJson:        excluded ? JSON.stringify(excluded) : null,
     pulledAt:            nowDb(),
   }
