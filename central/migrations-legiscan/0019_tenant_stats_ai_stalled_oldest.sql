@@ -1,0 +1,23 @@
+-- How old the oldest stalled-in-AI-analysis bill is, per tenant, as reported by
+-- the hourly engagement pull.
+--
+-- bills_ai_stalled (0018) is a bare count: it cannot tell a sweep that is
+-- chewing through a fresh outage from one that has been stuck for days. The
+-- age of the oldest stalled bill is the signal that actually distinguishes
+-- them, so it gets its own column rather than overloading the count.
+--
+-- ============================================================================
+-- DEPLOY ORDER: apply this migration BEFORE deploying central, never after.
+-- Deploying central first breaks every query that touches tenant_stats.
+--
+-- Why: central/src/routes/dash.ts and dash-engagement.ts select from
+-- schema.tenantStats without a column list. Drizzle expands an unqualified
+-- select() to the schema's full column list, which after this change includes
+-- bills_ai_stalled_oldest_hours. If central ships before the migration runs,
+-- those queries fail with "no such column: bills_ai_stalled_oldest_hours" --
+-- taking down the ops dashboard and the adoption page until the migration is
+-- applied.
+--
+-- This mirrors the hazard documented on 0018_tenant_stats_ai_stalled.sql.
+-- ============================================================================
+ALTER TABLE tenant_stats ADD COLUMN bills_ai_stalled_oldest_hours INTEGER NOT NULL DEFAULT 0;

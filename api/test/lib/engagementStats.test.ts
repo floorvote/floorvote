@@ -169,6 +169,22 @@ describe('computeEngagementStats bills_ai_stalled', () => {
     const stats = await computeEngagementStats(db)
     expect(stats.bills_ai_stalled).toBe(1)
   })
+
+  it('reports 0 for bills_ai_stalled_oldest_hours when nothing is stalled', async () => {
+    const db = getDb(env.DB)
+    const stats = await computeEngagementStats(db)
+    expect(stats.bills_ai_stalled_oldest_hours).toBe(0)
+  })
+
+  it('reports the floored whole hours since the oldest stalled bill', async () => {
+    // ~30h old: 30 * 3600 - 60s, so a floor lands on 29 rather than rounding to 30.
+    // Deliberately just under the hour boundary to prove this floors, not rounds.
+    const thirtyHoursAgo = new Date(Date.now() - (30 * 3600 - 60) * 1000).toISOString().slice(0, 19).replace('T', ' ')
+    await seedBill('d', { aiAttemptedAt: thirtyHoursAgo, aiProcessedAt: null })
+    const db = getDb(env.DB)
+    const stats = await computeEngagementStats(db)
+    expect(stats.bills_ai_stalled_oldest_hours).toBe(29)
+  })
 })
 
 describe('normalizeExcludeDomains', () => {

@@ -39,22 +39,6 @@ export const HEAL_DEFAULT_LIMIT = 50
  */
 export const HEAL_MIN_AGE_MS = 60 * 60 * 1000
 
-/**
- * How old ai_attempted_at must be before a bill counts as PERMANENTLY stalled
- * for the once-daily watchdog, rather than just mid-sweep.
- *
- * A working hourly heal drains a transient shed within its own 1-hour floor
- * (HEAL_MIN_AGE_MS) — by the next run at the latest. 24 hours is therefore not
- * "more stalled than the hourly floor," it is a different claim: the sweep
- * that should have cleared this bill many times over has either stopped
- * running or cannot clear it (e.g. BILL_QUEUE itself is down, so every hourly
- * run's send throws and breaks early — see healStalledAiBills' catch). Either
- * way it is the one condition cappedOut can't see: cappedOut only increments
- * when the sweep RUNS and hits the attempt cap, so a sweep that silently
- * stopped running leaves cappedOut at 0 forever while this climbs.
- */
-export const HEAL_WATCH_AGE_MS = 24 * 60 * 60 * 1000
-
 export interface HealResult {
   /** Bills re-queued this run. */
   queued: number
@@ -100,18 +84,22 @@ export async function countStalledAiBills(db: AppDb, now: Date = new Date()): Pr
 }
 
 /**
- * Count bills stalled long enough that the hourly sweep — which should have
- * cleared them within an hour of them going stalled — evidently isn't
- * clearing them. Feeds the once-daily "is the sweep actually working" check.
+ * Oldest ai_attempted_at among currently-stalled bills, as the raw DB
+ * timestamp string (space-separated UTC), or null when nothing is stalled.
+ *
+ * Reuses stalledWhere so the "what counts as stalled" predicate lives in
+ * exactly one place — countStalledAiBills' count and this timestamp must
+ * agree on which bills they're describing. Exported so engagementStats can
+ * turn this into an age without redefining the predicate itself.
  */
-export async function countLongStalledAiBills(db: AppDb, now: Date = new Date()): Promise<number> {
-  const cutoff = toDbTime(new Date(now.getTime() - HEAL_WATCH_AGE_MS))
+export async function oldestStalledAiAttemptedAt(db: AppDb, now: Date = new Date()): Promise<string | null> {
+  const cutoff = toDbTime(new Date(now.getTime() - HEAL_MIN_AGE_MS))
   const row = await db
-    .select({ n: sql<number>`COUNT(*)` })
+    .select({ oldest: sql<string | null>`MIN(${bills.aiAttemptedAt})` })
     .from(bills)
     .where(stalledWhere(cutoff))
     .get()
-  return Number(row?.n ?? 0)
+  return row?.oldest ?? null
 }
 
 /**

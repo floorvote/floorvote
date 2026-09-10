@@ -1,7 +1,7 @@
 import { sql, isNotNull, isNull, and, gt, ne, or, like, notInArray } from 'drizzle-orm'
 import type { getDb } from '../db/client'
 import * as schema from '../db/schema'
-import { countStalledAiBills } from './healStalledAi'
+import { countStalledAiBills, oldestStalledAiAttemptedAt } from './healStalledAi'
 
 type DB = ReturnType<typeof getDb>
 
@@ -22,9 +22,27 @@ export interface EngagementStats {
   /** Bills attempted by AI over an hour ago, never processed, not permanently
    *  skipped. Operator-only: it measures our pipeline, not the tenant's work. */
   bills_ai_stalled: number
+  /** Whole hours since the oldest stalled bill's ai_attempted_at, or 0 when
+   *  nothing is stalled. The count above can't tell a fresh outage from a
+   *  four-day-old one; this is the number that can. */
+  bills_ai_stalled_oldest_hours: number
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+
+/**
+ * Whole hours between `oldest` (a space-separated UTC DB timestamp, or null)
+ * and `now`. Floors rather than rounds, so a bill stalled 89 minutes reads as
+ * 1 hour, not 2 — consistent with HEAL_MIN_AGE_MS's own 1-hour floor already
+ * having elapsed before a bill counts as stalled at all.
+ */
+function hoursSince(oldest: string | null, now: Date): number {
+  if (!oldest) return 0
+  const oldestMs = Date.parse(oldest.replace(' ', 'T') + 'Z')
+  if (Number.isNaN(oldestMs)) return 0
+  return Math.max(0, Math.floor((now.getTime() - oldestMs) / HOUR_MS))
+}
 
 export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
   const sevenDaysAgo = new Date(Date.now() - 7 * DAY_MS).toISOString()
@@ -45,6 +63,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
     customDefsRow,
     aiProcessedRow,
     aiStalledCount,
+    oldestStalled,
   ] = await Promise.all([
     db.select({ n: sql<number>`COUNT(*)` }).from(schema.users).get(),
     db.select({ n: sql<number>`COUNT(DISTINCT ${schema.sessions.userId})` })
@@ -87,6 +106,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
       .where(isNotNull(schema.bills.aiProcessedAt))
       .get(),
     countStalledAiBills(db),
+    oldestStalledAiAttemptedAt(db),
   ])
 
   return {
@@ -104,6 +124,7 @@ export async function computeEngagementStats(db: DB): Promise<EngagementStats> {
     custom_fields_defined: Number(customDefsRow?.n ?? 0),
     bills_ai_processed: Number(aiProcessedRow?.n ?? 0),
     bills_ai_stalled: aiStalledCount,
+    bills_ai_stalled_oldest_hours: hoursSince(oldestStalled, new Date()),
   }
 }
 

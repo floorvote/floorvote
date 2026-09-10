@@ -33,7 +33,7 @@ import { computeEngagementSnapshot } from './lib/engagementSnapshot'
 import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
-import { healStalledAiBills, countLongStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
+import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
 import { nowDb } from './lib/dbTime'
 import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
@@ -263,33 +263,6 @@ export default {
       ctx.waitUntil(
         runJob(env, 'digest', () => runDigest(env, db))
           .then(() => runJob(env, 'week-ahead', () => runWeekAhead(env, db)))
-          // Once-daily watchdog for the hourly heal-ai sweep below: a working
-          // sweep drains a stalled bill within HEAL_MIN_AGE_MS of it going
-          // stalled, so nothing should ever reach 24h old. Piggybacking here
-          // (rather than a third cron) needs no ordering guard with digest/
-          // week-ahead — it only reads bills, so it can't collide with their
-          // association_config writes — but staying in the .then() chain keeps
-          // all three visible as one sequence at this call site.
-          .then(() => runJob(env, 'heal-ai-watch', async () => {
-            const longStalled = await countLongStalledAiBills(db)
-            if (longStalled > 0) {
-              // Deliberately throws: this is the one signal the hourly branch's
-              // fail-soft (below) and its cap-out warn cannot produce between
-              // them. Fail-soft hides a sweep that errors every run; cap-outs
-              // only fire once the sweep DOES run and hits HEAL_MAX_ATTEMPTS.
-              // Neither exists if the sweep has simply stopped running (e.g.
-              // BILL_QUEUE is down and every send throws), which is exactly
-              // when a bill sits stalled for a full day. runJob's alert path
-              // turns this into the one operator email; the message says what
-              // to check rather than reusing the generic "cron failed" framing.
-              throw new Error(
-                `${longStalled} bill(s) have been stuck on AI analysis for over 24 hours. ` +
-                `The hourly heal-ai sweep should clear a stalled bill within an hour, so this ` +
-                `means the sweep is not running or cannot deliver to BILL_QUEUE. Check Workers ` +
-                `Logs for "[heal-ai]" lines from the last day and confirm the queue is healthy.`,
-              )
-            }
-          }))
       )
       return
     }

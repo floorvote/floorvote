@@ -233,21 +233,19 @@ const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000  // 48 hours
 const STALE_HOURS = { billDelivery: 96, statsPull: 36, lastSeen: 48, stateSync: STALE_THRESHOLD_MS / 3_600_000 }
 
 /**
- * Above this many AI-stalled bills, a tenant's count is worth an operator's
- * attention. The heal drains a transient outage within the hour; a number that
- * persists past a pull means bills are hitting the attempt cap.
- *
- * Deliberately NOT part of the row's `stale` boolean. `stale` answers "is this
- * tenant's pipeline currently moving", and every other input to it is a
- * timestamp that recovers on its own the moment the pipeline recovers. The
- * stalled count does not: nothing decrements ai_heal_attempts, so a tenant that
- * once accrued unfixable bills would read stale forever and a genuinely stale
- * stats pull would become indistinguishable from an old outage's residue. The
- * "AI stalled" cell colors itself, which is the signal without the poison.
- *
- * A count, not hours — hence its own constant rather than a STALE_HOURS entry.
+ * Above this many hours, the oldest AI-stalled bill is the real problem
+ * signal — not the count. A working hourly heal sweep (see healStalledAi.ts's
+ * HEAL_MIN_AGE_MS) clears a stalled bill within its own one-hour floor, so a
+ * bill still stuck a full day later means the sweep is not running or cannot
+ * deliver, not that it's mid-way through draining a fresh outage. A count
+ * alone can't tell those apart — a large-but-fresh count is the sweep
+ * working; an age past this threshold is the sweep not working.
  */
-const STALLED_AI_WARN = 10
+const STALLED_AI_STUCK_HOURS = 24
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
 
 dashRoutes.get('/sync/states', async (c) => {
   const db = drizzle(c.env.DB, { schema })
@@ -718,18 +716,21 @@ dashRoutes.get('/ops-health', async (c) => {
     .select({
       tenantId: schema.tenantStats.tenantId,
       stalled: schema.tenantStats.billsAiStalled,
+      stalledOldestHours: schema.tenantStats.billsAiStalledOldestHours,
       pulledAt: schema.tenantStats.pulledAt,
     })
     .from(schema.tenantStats)
     .all()
   // Latest row per tenant, picked in JS — mirrors dash-engagement's approach.
   const stalledByTenant = new Map<string, number>()
+  const stalledOldestByTenant = new Map<string, number>()
   const latestPullByTenant = new Map<string, string>()
   for (const r of stalledRows) {
     const seen = latestPullByTenant.get(r.tenantId)
     if (!seen || r.pulledAt > seen) {
       latestPullByTenant.set(r.tenantId, r.pulledAt)
       stalledByTenant.set(r.tenantId, Number(r.stalled))
+      stalledOldestByTenant.set(r.tenantId, Number(r.stalledOldestHours))
     }
   }
 
@@ -737,10 +738,30 @@ dashRoutes.get('/ops-health', async (c) => {
     const lastBillDeliveredAt = lastBillByTenant.get(t.tenantId) ?? null
     const lastStatsPullAt = lastStatsByTenant.get(t.tenantId) ?? null
     const stalledAi = stalledByTenant.get(t.tenantId) ?? 0
-    const stale =
-      isStale(lastBillDeliveredAt, STALE_HOURS.billDelivery) ||
-      isStale(lastStatsPullAt, STALE_HOURS.statsPull) ||
-      isStale(t.lastSeenAt, STALE_HOURS.lastSeen)
+    const stalledAiOldestHours = stalledOldestByTenant.get(t.tenantId) ?? 0
+    const billStale = isStale(lastBillDeliveredAt, STALE_HOURS.billDelivery)
+    const statsStale = isStale(lastStatsPullAt, STALE_HOURS.statsPull)
+    const seenStale = isStale(t.lastSeenAt, STALE_HOURS.lastSeen)
+    const aiStuck = stalledAiOldestHours > STALLED_AI_STUCK_HOURS
+
+    // A timestamp missing entirely (never delivered/pulled/seen) has no age of
+    // its own to report — fall back to how long the tenant has existed, so the
+    // sentence still says something true rather than "N days" with no N.
+    const daysSince = (iso: string | null): number => {
+      const h = hoursSince(iso) ?? hoursSince(t.registeredAt) ?? 0
+      return Math.floor(h / 24)
+    }
+
+    const problems: string[] = []
+    if (billStale) problems.push(`No bills delivered in ${plural(daysSince(lastBillDeliveredAt), 'day')}`)
+    if (statsStale) problems.push(`Stats pull is ${plural(daysSince(lastStatsPullAt), 'day')} old`)
+    if (seenStale) problems.push(`Not seen in ${plural(daysSince(t.lastSeenAt), 'day')}`)
+    // Only the AGE is a problem, per STALLED_AI_STUCK_HOURS above — a nonzero
+    // count whose oldest is recent is the sweep working, not a problem.
+    if (aiStuck) {
+      problems.push(`${plural(stalledAi, 'bill')} stuck on AI analysis, oldest ${plural(Math.floor(stalledAiOldestHours / 24), 'day')}`)
+    }
+
     return {
       tenantId: t.tenantId,
       name: t.name,
@@ -748,9 +769,11 @@ dashRoutes.get('/ops-health', async (c) => {
       lastBillDeliveredAt,
       lastStatsPullAt,
       lastSeenAt: t.lastSeenAt,
-      stale,
+      stale: problems.length > 0,
+      problems,
       aiContextPersonalized: t.aiContextPersonalized,
       stalledAi,
+      stalledAiOldestHours,
     }
   })
 
@@ -766,9 +789,9 @@ dashRoutes.get('/ops-health', async (c) => {
     .sort((a, b) => a.state.localeCompare(b.state))
 
   return c.json({
-    // stalledAi is a bill count, not hours — the UI needs it to explain what the
-    // "AI stalled" column's coloring means rather than hard-coding the number.
-    data: { tenants: tenantHealth, states, thresholds: { ...STALE_HOURS, stalledAi: STALLED_AI_WARN } },
+    // Thresholds are in hours; the UI turns them into the `problems` sentences
+    // above, so it no longer needs to know these numbers itself.
+    data: { tenants: tenantHealth, states, thresholds: STALE_HOURS },
     meta: { generatedAt: new Date().toISOString() },
   })
 })
