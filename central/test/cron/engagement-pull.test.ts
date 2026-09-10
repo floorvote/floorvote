@@ -42,7 +42,7 @@ const FULL_METRICS = {
   total_members: 12, active_members_7d: 4, active_members_30d: 8, votes_cast: 42,
   comments_written: 18, comment_reactions: 31, positions_set: 7, notes_created: 3,
   custom_field_values: 87, bills_with_engagement: 12, roles_defined: 2,
-  custom_fields_defined: 2, bills_ai_processed: 156,
+  custom_fields_defined: 2, bills_ai_processed: 156, bills_ai_stalled: 9,
 }
 
 describe('pullEngagementStats', () => {
@@ -55,6 +55,22 @@ describe('pullEngagementStats', () => {
     expect(rows.length).toBe(2)
     expect(rows[0].totalMembers).toBe(12)
     expect(rows[0].billsAiProcessed).toBe(156)
+  })
+
+  // The one contract in the AI-stall feature that fails silently. The tenant
+  // names this metric in its snapshot, snapshotToMetrics copies only keys in
+  // METRIC_KEYS, and upsertRow maps that key to a tenant_stats column. A
+  // mismatch anywhere in that chain does not throw: snapshotToMetrics coerces
+  // the missing key to 0 and the dashboard reads a constant 0 forever, with
+  // nothing logged and no test failing. So assert the whole round trip.
+  it('carries bills_ai_stalled from the tenant snapshot into tenant_stats', async () => {
+    await seedTwoTenants()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => fakeResponse(FULL_METRICS))
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats(TEST_ENV, db)
+    const rows = await db.select().from(schema.tenantStats).all()
+    expect(rows.length).toBe(2)
+    for (const row of rows) expect(row.billsAiStalled).toBe(9)
   })
 
   it('skips tenants that fail and continues with others', async () => {
