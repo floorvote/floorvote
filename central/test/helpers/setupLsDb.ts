@@ -18,6 +18,7 @@ import migration0014 from '../../migrations-legiscan/0014_tenant_stats_excluded.
 // on every insert, so omitting it breaks any test that touches bill_texts.
 import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
 import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
+import migration0018 from '../../migrations-legiscan/0018_tenant_stats_ai_stalled.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -47,5 +48,6 @@ export async function setupLsDb(): Promise<void> {
     parseMigration(migration0014, '0014_tenant_stats_excluded'),
     parseMigration(migration0016, '0016_bill_texts_fetch_error'),
     parseMigration(migration0017, '0017_tenant_ai_personalized'),
+    parseMigration(migration0018, '0018_tenant_stats_ai_stalled'),
   ])
 }
