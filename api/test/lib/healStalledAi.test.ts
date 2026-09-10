@@ -94,6 +94,26 @@ describe('healStalledAiBills selection', () => {
     expect(res.remaining).toBe(1)
   })
 
+  it('stops the run when the queue send throws, rather than burning the batch', async () => {
+    await seedBill('q1', { aiAttemptedAt: ago(300) })  // oldest → always first
+    await seedBill('q2', { aiAttemptedAt: ago(200) })
+    await seedBill('q3', { aiAttemptedAt: ago(100) })
+    const downQueue = {
+      TENANT_ID: 'nvsos',
+      BILL_QUEUE: { send: vi.fn(async () => { throw new Error('queue unavailable') }) },
+    } as unknown as Parameters<typeof healStalledAiBills>[0]
+
+    const res = await healStalledAiBills(downQueue, getDb(env.DB), { now: NOW })
+
+    // One send attempted, then the run ends: the ordering is deterministic, so
+    // pushing on would spend every eligible bill's attempt on a dead queue.
+    expect(downQueue.BILL_QUEUE!.send).toHaveBeenCalledOnce()
+    expect(res.queued).toBe(0)
+    expect(res.remaining).toBe(3)
+    const rows = await getDb(env.DB).select().from(bills).all()
+    expect(rows.filter(r => r.aiHealAttempts > 0)).toHaveLength(1)
+  })
+
   it('countStalledAiBills counts qualifying bills without queueing', async () => {
     await seedBill('h1'); await seedBill('h2', { aiSkipReason: 'pdf_too_large' })
     expect(await countStalledAiBills(getDb(env.DB), NOW)).toBe(1)

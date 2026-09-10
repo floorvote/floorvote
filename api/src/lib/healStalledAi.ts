@@ -137,7 +137,21 @@ export async function healStalledAiBills(
       .set({ aiHealAttempts: sql`${bills.aiHealAttempts} + 1` })
       .where(eq(bills.id, row.id))
       .run()
-    await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: row.externalId, forceAI: true })
+    try {
+      await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: row.externalId, forceAI: true })
+    } catch (err) {
+      // Stop the run, don't skip the row. The select is ordered by
+      // ai_attempted_at, so the same oldest bill leads every run: retrying the
+      // rest of this batch against a queue that is down would spend the whole
+      // batch's attempts on zero deliveries. Five hours of outage would give
+      // that first bill five increments, no sends, and a permanent cap-out —
+      // making "retried 5 times" untrue exactly when it matters most.
+      //
+      // Returning the partial counts is the point: the next hourly run resumes
+      // from the same head of the queue, and the operator sees how far it got.
+      console.error(`[heal-ai] queue send failed for ${row.externalId}, ending run early:`, err)
+      break
+    }
     queued++
   }
 
