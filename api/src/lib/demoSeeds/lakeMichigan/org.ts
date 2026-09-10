@@ -19,11 +19,15 @@ const TAXONOMY: TaxonomyItem[] = [
  * worse than useless, because these drive central's per-state ingest filter.
  * Rejected for matching nothing: 'nutrient runoff', 'combined sewer overflow'.
  */
+// This demo's bills are pinned by externalId in bills.ts, so these keywords gate
+// nothing -- they exist for a visitor to read on the Config page. So they are
+// written the way a thoughtful person would actually type them: bare, with a
+// trailing star only where the plural is the common form.
 const KEYWORDS = [
-  '*pfas*', '*drinking water*', '*great lakes*', '*water quality*', '*groundwater*', '*wetland*',
-  '*lead service line*', '*erosion*', '*stormwater*', '*sewage*', '*microplastic*',
-  '*invasive species*', '*water withdrawal*', '*dredging*', '*water utility*', '*shoreline*',
-  '*harmful algal bloom*', '*water main*', '*septic*', '*aquatic invasive*', '*watershed*', '*beach*',
+  'pfas', 'drinking water', 'great lakes', 'water quality', 'groundwater', 'wetland*',
+  'lead service line*', 'erosion', 'stormwater', 'sewage', 'microplastic*',
+  'invasive species', 'water withdrawal*', 'dredging', 'water utility', 'shoreline*',
+  'harmful algal bloom*', 'water main*', 'septic', 'aquatic invasive', 'watershed*', 'beach*',
 ]
 
 const SESSIONS: DemoSeedSession[] = [
