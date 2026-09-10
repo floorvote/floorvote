@@ -100,6 +100,19 @@ export const bills = sqliteTable('bills', {
   aiError: text('ai_error'),
   // Times the self-healing sweep has re-queued this bill (migration 0067).
   // Cleared on successful AI processing; at 5 the bill is left for a human.
+  //
+  // DO NOT use this column to ask "did the heal run?" — it cannot answer that.
+  // Because a success resets it to 0, a bill the heal rescued and a bill the
+  // heal never touched are indistinguishable here, so `WHERE ai_heal_attempts
+  // > 0` returning nothing is what a *working* heal looks like. It reads as a
+  // dead feature and it fooled us once already. A non-zero value means only
+  // "currently mid-recovery", and 5 means "gave up".
+  //
+  // To ask whether the heal did something, group processed bills by hour and
+  // look for a spike on the hour (the sweep is hourly, `0 * * * *`):
+  //   SELECT substr(ai_processed_at, 1, 13), COUNT(*) FROM bills
+  //   WHERE ai_processed_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC
+  // To ask what is still stuck, use the predicate in lib/healStalledAi.ts.
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
