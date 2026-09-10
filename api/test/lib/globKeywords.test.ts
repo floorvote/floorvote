@@ -140,3 +140,34 @@ describe('matchesUnion return value', () => {
     expect(matchesUnion('County * Budget', ['county']).matched).toBe(true)
   })
 })
+
+describe('literal prefilter', () => {
+  // matchesUnion rejects a bill cheaply when the pattern's longest literal run
+  // is absent. These are the ways that shortcut could lie.
+  it('still matches when the literal differs in case from the text', () => {
+    expect(matchesKeywords('ELECTION LAW AMENDMENTS', ['election*'])).toBe(true)
+    expect(matchesKeywords('Incorporated Town', ['*corporat*'])).toBe(true)
+  })
+
+  it('still matches when the longest literal is not the first segment', () => {
+    expect(matchesKeywords('a mail in ballot form', ['mail*ballot'])).toBe(true)
+    expect(matchesKeywords('ballot by mail', ['mail*ballot'])).toBe(false)
+  })
+
+  it('still matches a pattern whose literal carries regex metacharacters', () => {
+    expect(matchesKeywords('section 1.2 applies', ['1.2'])).toBe(true)
+    expect(matchesKeywords('section 132 applies', ['1.2'])).toBe(false)
+  })
+
+  it('rejects when the literal is present but the boundary fails', () => {
+    // The prefilter passes here — "election" is in "selection" — so the regex
+    // still has to do the real work.
+    expect(matchesKeywords('selection process', ['election*'])).toBe(false)
+    expect(matchesKeywords('resilient infrastructure', ['*lien'])).toBe(false)
+  })
+
+  it('matches a phrase whose literal spans a space', () => {
+    expect(matchesKeywords('the campaign finance report', ['campaign finance*'])).toBe(true)
+    expect(matchesKeywords('a finance campaign', ['campaign finance*'])).toBe(false)
+  })
+})
