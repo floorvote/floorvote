@@ -3,12 +3,17 @@ import { env, createExecutionContext, createScheduledController, waitOnExecution
 
 vi.mock('../../src/lib/healStalledAi', () => ({
   healStalledAiBills: vi.fn(async () => ({ queued: 3, cappedOut: 0, remaining: 0 })),
+  countLongStalledAiBills: vi.fn(async () => 0),
   HEAL_MAX_ATTEMPTS: 5,
 }))
 vi.mock('../../src/cron/sync', () => ({ registerWithCentral: vi.fn(async () => true) }))
+vi.mock('../../src/lib/digest', () => ({ runDigest: vi.fn(async () => undefined) }))
+vi.mock('../../src/lib/weekAhead', () => ({ runWeekAhead: vi.fn(async () => undefined) }))
+const sendEmail = vi.fn(async () => ({ ok: true, provider: 'resend' as const }))
+vi.mock('../../src/lib/email', () => ({ sendEmail: (env: any, msg: any) => sendEmail(env, msg) }))
 
 import worker from '../../src/index'
-import { healStalledAiBills } from '../../src/lib/healStalledAi'
+import { healStalledAiBills, countLongStalledAiBills } from '../../src/lib/healStalledAi'
 import { registerWithCentral } from '../../src/cron/sync'
 
 async function runScheduled(cron: string) {
@@ -54,6 +59,51 @@ describe('scheduled() heal branch', () => {
     // runJob logs `[job:heal-ai] failed` and emails on a throw. Neither may happen.
     expect(error).not.toHaveBeenCalledWith(expect.stringContaining('[job:heal-ai] failed'), expect.anything())
     warn.mockRestore()
+    error.mockRestore()
+  })
+
+  // A transient D1 read failure (the incident this branch exists to survive)
+  // must not propagate to runJob's alert path. It should be logged, loudly,
+  // with the real cause intact — not just Drizzle's "Failed query: ..." wrapper.
+  it('does not alert when healStalledAiBills rejects, and logs the cause chain', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const inner = new Error('D1_ERROR: too many retries')
+    const wrapped = new Error('Failed query: select count(*) from bills', { cause: inner })
+    vi.mocked(healStalledAiBills).mockRejectedValueOnce(wrapped)
+
+    await runScheduled('0 * * * *')
+
+    // Neither runJob's own failure log nor the alert email may fire.
+    expect(error).not.toHaveBeenCalledWith(expect.stringContaining('[job:heal-ai] failed'), expect.anything())
+    expect(sendEmail).not.toHaveBeenCalled()
+
+    const logged = error.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('[heal-ai]')
+    expect(logged).toContain('D1_ERROR: too many retries')
+    error.mockRestore()
+  })
+
+  it('does not run the heal-ai-watch check on the hourly cron', async () => {
+    await runScheduled('0 * * * *')
+    expect(countLongStalledAiBills).not.toHaveBeenCalled()
+  })
+
+  it('runs digest, then week-ahead, then the heal-ai-watch check on the daily cron, sending nothing when nothing is long-stalled', async () => {
+    await runScheduled('0 11 * * *')
+    expect(countLongStalledAiBills).toHaveBeenCalledOnce()
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('alerts once when the heal-ai-watch check finds long-stalled bills', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(countLongStalledAiBills).mockResolvedValueOnce(4)
+
+    await runScheduled('0 11 * * *')
+
+    expect(sendEmail).toHaveBeenCalledOnce()
+    const msg = sendEmail.mock.calls[0][1] as { subject: string; html: string; text?: string }
+    expect(msg.subject).toContain('heal-ai-watch')
+    expect(msg.html).toMatch(/4/)
     error.mockRestore()
   })
 })

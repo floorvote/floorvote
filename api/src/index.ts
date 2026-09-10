@@ -33,7 +33,7 @@ import { computeEngagementSnapshot } from './lib/engagementSnapshot'
 import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
-import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
+import { healStalledAiBills, countLongStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
 import { nowDb } from './lib/dbTime'
 import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
@@ -138,6 +138,22 @@ app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
 
 app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
+
+// Drizzle wraps a D1 error as `Failed query: <sql>` and hangs the real error
+// off `.cause` (see the heal-ai hourly branch below for why that matters).
+// A plain `console.error(err)` on the wrapper stringifies only its own
+// message, so this walks `.cause` and joins every message in the chain.
+function describeErrorCauseChain(err: unknown): string {
+  const messages: string[] = []
+  const seen = new Set<unknown>()
+  let current: unknown = err
+  while (current != null && !seen.has(current)) {
+    seen.add(current)
+    messages.push(current instanceof Error ? current.message : String(current))
+    current = current instanceof Error ? current.cause : undefined
+  }
+  return messages.join(' | caused by: ')
+}
 
 // Returns true when the request should be rejected: secret unset (prod lockdown)
 // or header mismatch (wrong caller). In local dev CENTRAL_ADMIN_SECRET is set in
@@ -247,6 +263,33 @@ export default {
       ctx.waitUntil(
         runJob(env, 'digest', () => runDigest(env, db))
           .then(() => runJob(env, 'week-ahead', () => runWeekAhead(env, db)))
+          // Once-daily watchdog for the hourly heal-ai sweep below: a working
+          // sweep drains a stalled bill within HEAL_MIN_AGE_MS of it going
+          // stalled, so nothing should ever reach 24h old. Piggybacking here
+          // (rather than a third cron) needs no ordering guard with digest/
+          // week-ahead — it only reads bills, so it can't collide with their
+          // association_config writes — but staying in the .then() chain keeps
+          // all three visible as one sequence at this call site.
+          .then(() => runJob(env, 'heal-ai-watch', async () => {
+            const longStalled = await countLongStalledAiBills(db)
+            if (longStalled > 0) {
+              // Deliberately throws: this is the one signal the hourly branch's
+              // fail-soft (below) and its cap-out warn cannot produce between
+              // them. Fail-soft hides a sweep that errors every run; cap-outs
+              // only fire once the sweep DOES run and hits HEAL_MAX_ATTEMPTS.
+              // Neither exists if the sweep has simply stopped running (e.g.
+              // BILL_QUEUE is down and every send throws), which is exactly
+              // when a bill sits stalled for a full day. runJob's alert path
+              // turns this into the one operator email; the message says what
+              // to check rather than reusing the generic "cron failed" framing.
+              throw new Error(
+                `${longStalled} bill(s) have been stuck on AI analysis for over 24 hours. ` +
+                `The hourly heal-ai sweep should clear a stalled bill within an hour, so this ` +
+                `means the sweep is not running or cannot deliver to BILL_QUEUE. Check Workers ` +
+                `Logs for "[heal-ai]" lines from the last day and confirm the queue is healthy.`,
+              )
+            }
+          }))
       )
       return
     }
@@ -255,7 +298,28 @@ export default {
     // registerWithCentral, and this must not re-register the tenant every hour.
     if (event.cron === '0 * * * *') {
       ctx.waitUntil(runJob(env, 'heal-ai', async () => {
-        const result = await healStalledAiBills(env, db)
+        let result
+        try {
+          result = await healStalledAiBills(env, db)
+        } catch (err) {
+          // Sibling to the cap-out warn below: a real but non-actionable-per-
+          // occurrence failure that must not reach runJob's throw path. The
+          // diagnosed incident was a transient D1 read failure on one of this
+          // function's two COUNT(*) queries (~1.4% of hourly runs fleet-wide,
+          // no side effects) — genuinely nothing to do about a single blip, and
+          // letting it throw would email ALERT_EMAILS "cron failed: heal-ai"
+          // a few times a day for a cron that is, on the whole, fine.
+          //
+          // Unlike the cap-out, THIS failure mode was hard to diagnose in the
+          // first place: Drizzle wraps the real D1 error as "Failed query:
+          // <sql>" and hangs the actual error off `.cause`, and a plain
+          // console.error(err) stringifies only the wrapper — the D1 message
+          // that would have told us what actually went wrong never reached the
+          // logs. Walk the cause chain so a recurring failure is diagnosable
+          // from Workers Logs alone, without needing to reproduce it again.
+          console.error(`[heal-ai] sweep failed, skipping this run: ${describeErrorCauseChain(err)}`)
+          return
+        }
         if (result.queued > 0 || result.cappedOut > 0) {
           console.log(`[heal-ai] queued=${result.queued} cappedOut=${result.cappedOut} remaining=${result.remaining}`)
         }
