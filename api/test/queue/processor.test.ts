@@ -573,6 +573,53 @@ describe('processCentralNotification', () => {
     expect(row?.aiAttemptedAt).toBeNull()
   })
 
+  it('advances ai_attempted_at when a forceAI pass declines to run AI for lack of text', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    // The exact bill the heal targets: attempted long ago, never processed, and
+    // still textless in central. The re-queue produces no aiResult, no skip
+    // reason and no error — so if the upsert writes nothing to the AI columns,
+    // ai_attempted_at stays at the old value and healStalledAiBills() re-selects
+    // this bill on the very next hourly run, spending all five attempts in five
+    // consecutive hours instead of five spaced ones.
+    const stale = '2026-01-01 00:00:00'
+    await db.insert(bills).values({
+      id: 'stalled-stub-bill', externalId: BILL_ID, billNumber: 'HB 1',
+      title: 'Election Act', state: 'UT', matchType: 'keyword',
+      aiHealAttempts: 1, aiAttemptedAt: stale,
+    })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, texts: [], textHash: null }) })
+    }))
+
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, forceAI: true }, testEnv as any, db)
+
+    const { processBill } = await import('../../src/lib/llm')
+    expect(processBill).not.toHaveBeenCalled()
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.aiProcessedAt).toBeNull()
+    expect(row?.aiAttemptedAt).not.toBeNull()
+    expect(row?.aiAttemptedAt).not.toBe(stale)
+  })
+
+  it('does not stamp ai_attempted_at on an ordinary pass that never tried to run AI', async () => {
+    const db = getDb(env.DB)
+    // No keywords and no matchType → shouldRunAi is false, but this is not a
+    // forceAI re-queue. Stamping here would invent an attempt that never
+    // happened and make a never-analyzed bill look stalled to the heal.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, texts: [], textHash: null }) })
+    }))
+
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID }, testEnv as any, db)
+
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.aiAttemptedAt).toBeNull()
+  })
+
   it('skips re-processing on next message when ai_skip_reason is set (early-return dedup)', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

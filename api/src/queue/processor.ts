@@ -674,6 +674,26 @@ export async function processCentralNotification(
       // next pass retries rather than deduping itself into permanent silence.
       aiAttemptedAt: now,
       aiError,
+    } : msg.forceAI && !shouldRunAi ? {
+      // A forceAI pass that declined to run AI — no full text in central, or a
+      // demo tenant. It produced no result, no skip reason and no error, so
+      // without this branch the row keeps whatever ai_attempted_at it already had.
+      //
+      // That matters because healStalledAiBills() selects on
+      // `ai_attempted_at < now - HEAL_MIN_AGE_MS`, and a stub with no text is
+      // exactly the population it targets. Leaving the timestamp stale means the
+      // heal re-selects the same bill on the very next hourly run: all five
+      // attempts burn in five consecutive hours with none of the spacing the
+      // floor exists to provide, and the bill is then capped out forever.
+      //
+      // A pass that declined is still an attempt. Stamping it is what lets the
+      // selection predicate observe the attempt and space the next one.
+      //
+      // Deliberately scoped to msg.forceAI: an ordinary metadata-only or
+      // stub-only pass was never trying to run AI, and stamping ai_attempted_at
+      // there would invent an attempt that never happened — making bills that
+      // have simply never been analyzed look stalled.
+      aiAttemptedAt: now,
     } : {}),
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
