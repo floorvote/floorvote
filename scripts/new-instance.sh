@@ -549,8 +549,12 @@ entrypoint = "TenantApi"
 [[env.${SLUG}.send_email]]
 name = "EMAIL"
 
+# Both crons are required: src/index.ts dispatches on the cron string, so a
+# missing schedule disables its job silently. Daily sends the digest and
+# week-ahead emails; hourly re-queues bills whose AI analysis the provider
+# gateway shed and never retried.
 [env.${SLUG}.triggers]
-crons = ["0 11 * * *"]
+crons = ["0 11 * * *", "0 * * * *"]
 TOML
   log_ok "Appended [env.${SLUG}] to api/wrangler.toml (uncommitted until the deploy succeeds)"
   fi

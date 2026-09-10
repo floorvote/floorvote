@@ -197,8 +197,12 @@ name = "EMAIL"
 
 [env.[slug].triggers]
 # daily — sends digest and week-ahead emails
-crons = ["0 11 * * *"]
+# hourly — re-queues bills whose AI analysis the provider gateway shed
+crons = ["0 11 * * *", "0 * * * *"]
 ```
+
+> [!IMPORTANT]
+> Register **both** crons. The Worker dispatches on the cron string, so a schedule you leave out does not error — it just means that job never runs. Drop the hourly one and bills the AI gateway sheds during a rate-limit window stay un-analyzed until someone finds them by hand.
 
 The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound tenant-to-central calls authenticate by *arrival* (that named entrypoint is only reachable over same-account bindings), so the tenant carries no shared secret.
 

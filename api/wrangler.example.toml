@@ -167,6 +167,24 @@ namespace_id = "3001"               # unique per env
 #   limit = 30
 #   period = 60
 
+# Scheduled work. Both entries are required on a normal tenant: src/index.ts
+# dispatches on the cron string, so an unregistered schedule silently disables
+# the job it maps to rather than failing anywhere visible.
+#
+#   "0 11 * * *"  daily — sends the digest and week-ahead emails.
+#   "0 * * * *"   hourly — re-queues bills whose AI analysis the provider
+#                 gateway shed and never retried (lib/healStalledAi.ts). Without
+#                 it those bills sit un-analyzed until someone notices by hand.
+#
+# Anything NOT matching one of these falls through to registerWithCentral, which
+# is why the heal has its own branch: adding the hourly cron without the code
+# that claims it would re-register the tenant with central every hour.
+#
+# A DEMO_MODE tenant wants neither of these — it takes a reset cron instead
+# (e.g. "0 0,6,12,18 * * *"); demo never emails and never calls the model.
+[env.example.triggers]
+crons = ["0 11 * * *", "0 * * * *"]
+
 # Secrets (set via `wrangler secret put --env example`):
 # RESEND_API_KEY           — magic-link email (if EMAIL_PROVIDER=resend)
 # GEMINI_API_KEY           — Google Gemini AI (fallback when AI_GATEWAY_ENABLED != true)
