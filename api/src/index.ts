@@ -259,11 +259,19 @@ export default {
         if (result.queued > 0 || result.cappedOut > 0) {
           console.log(`[heal-ai] queued=${result.queued} cappedOut=${result.cappedOut} remaining=${result.remaining}`)
         }
-        // Cap-outs are the only case needing a human, so they go to ALERT_EMAILS
-        // via runJob's failure path. Everything else self-heals silently.
+        // Cap-outs are NOT a job failure and deliberately do not throw. Nothing
+        // decrements ai_heal_attempts, so cappedOut is a standing condition: one
+        // permanently broken bill would email ALERT_EMAILS "cron failed: heal-ai"
+        // 24 times a day, forever, about a cron that ran fine. Alert fatigue is
+        // how the next real silent failure gets missed — which is the failure
+        // mode this whole sweep exists to close.
+        //
+        // The operator surface for cap-outs is the ops dashboard's "AI stalled"
+        // column, which is a level reading and reads correctly when the number
+        // stops moving. This warn is its greppable counterpart in the logs.
         if (result.cappedOut > 0) {
-          throw new Error(
-            `${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
+          console.warn(
+            `[heal-ai] ${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
           )
         }
       }))

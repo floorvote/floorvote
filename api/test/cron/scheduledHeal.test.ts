@@ -39,4 +39,21 @@ describe('scheduled() heal branch', () => {
     expect(healStalledAiBills).not.toHaveBeenCalled()
     expect(registerWithCentral).toHaveBeenCalledOnce()
   })
+
+  // Nothing decrements ai_heal_attempts, so cappedOut is a standing condition,
+  // not an event. Failing the job on it would email ALERT_EMAILS "cron failed:
+  // heal-ai" every hour forever about a cron that ran fine.
+  it('warns but does not fail the job when bills have capped out', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(healStalledAiBills).mockResolvedValueOnce({ queued: 0, cappedOut: 7, remaining: 7 })
+
+    await runScheduled('0 * * * *')
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('7 bill(s) have hit the 5-attempt heal cap'))
+    // runJob logs `[job:heal-ai] failed` and emails on a throw. Neither may happen.
+    expect(error).not.toHaveBeenCalledWith(expect.stringContaining('[job:heal-ai] failed'), expect.anything())
+    warn.mockRestore()
+    error.mockRestore()
+  })
 })
