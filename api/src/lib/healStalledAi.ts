@@ -140,12 +140,18 @@ export async function healStalledAiBills(
     try {
       await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: row.externalId, forceAI: true })
     } catch (err) {
-      // Stop the run, don't skip the row. The select is ordered by
-      // ai_attempted_at, so the same oldest bill leads every run: retrying the
-      // rest of this batch against a queue that is down would spend the whole
-      // batch's attempts on zero deliveries. Five hours of outage would give
-      // that first bill five increments, no sends, and a permanent cap-out —
-      // making "retried 5 times" untrue exactly when it matters most.
+      // Stop the run, don't skip the row. Retrying the rest of this batch
+      // against a queue that is down would spend up to 49 more attempts on zero
+      // deliveries, so breaking bounds the loss to the one row we already
+      // incremented.
+      //
+      // What this does NOT fix: the increment above precedes the send, and the
+      // select is ordered by ai_attempted_at, so the same oldest bill leads
+      // every run. A sustained outage still costs that one row an increment per
+      // run and can still cap it out without five real deliveries. That is
+      // accepted — one poisoned row per tenant per outage, visible in
+      // stalledAi, is a better trade than either losing the whole batch's
+      // budget or decrementing on a send whose delivery we cannot confirm.
       //
       // Returning the partial counts is the point: the next hourly run resumes
       // from the same head of the queue, and the operator sees how far it got.
