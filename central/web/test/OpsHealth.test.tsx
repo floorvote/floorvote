@@ -11,10 +11,13 @@ beforeEach(() => {
         tenants: [
           // Healthy: a large stalled-AI count, but the oldest one is recent —
           // the sweep working through a fresh outage, not a problem.
-          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, problems: [], aiContextPersonalized: true, stalledAi: 24, stalledAiOldestHours: 2 },
-          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true, problems: ['No bills delivered in 8 days', 'Not seen in 8 days'], aiContextPersonalized: false, stalledAi: 0, stalledAiOldestHours: 0 },
+          { tenantId: 'ri', name: 'RI', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, problems: [], expectsBills: true, aiContextPersonalized: true, stalledAi: 24, stalledAiOldestHours: 2 },
+          { tenantId: 'stale', name: 'Stale', active: true, lastBillDeliveredAt: null, lastStatsPullAt: null, lastSeenAt: null, stale: true, problems: ['No bills delivered in 8 days', 'Not seen in 8 days'], expectsBills: true, aiContextPersonalized: false, stalledAi: 0, stalledAiOldestHours: 0 },
           // Otherwise fresh, but the sweep has been stuck for days.
-          { tenantId: 'stuck', name: 'Stuck', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: true, problems: ['3 bills stuck on AI analysis, oldest 2 days'], aiContextPersonalized: false, stalledAi: 3, stalledAiOldestHours: 50 },
+          { tenantId: 'stuck', name: 'Stuck', active: true, lastBillDeliveredAt: '2026-06-05T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: true, problems: ['3 bills stuck on AI analysis, oldest 2 days'], expectsBills: true, aiContextPersonalized: false, stalledAi: 3, stalledAiOldestHours: 50 },
+          // Out of session: adjourned sine die, so the old bill timestamp is
+          // expected, not a problem — the muted note is what makes that clear.
+          { tenantId: 'adjourned', name: 'Adjourned', active: true, lastBillDeliveredAt: '2026-05-01T05:00:00Z', lastStatsPullAt: '2026-06-05T06:00:00Z', lastSeenAt: '2026-06-05T05:30:00Z', stale: false, problems: [], expectsBills: false, aiContextPersonalized: true, stalledAi: 5, stalledAiOldestHours: 1 },
         ],
         states: [
           { state: 'RI', lastSyncedAt: '2026-06-05T05:00:00Z', stale: false },
@@ -62,6 +65,15 @@ describe('OpsHealth page', () => {
     expect(screen.getByText('3 bills stuck on AI analysis, oldest 2 days')).toBeInTheDocument()
     const stuckRow = screen.getByText('Stuck').closest('tr')
     expect(stuckRow).toHaveClass('row-stale')
+  })
+
+  it('notes "(out of session)" next to the bill-delivery time only when the tenant cannot expect bills', async () => {
+    render(<MemoryRouter><OpsHealth /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByText('Adjourned')).toBeInTheDocument())
+    const adjournedRow = screen.getByText('Adjourned').closest('tr') as HTMLElement
+    expect(adjournedRow.textContent).toContain('(out of session)')
+    const riRow = screen.getAllByText('RI')[0].closest('tr') as HTMLElement
+    expect(riRow.textContent).not.toContain('(out of session)')
   })
 
   // The count rides on the non-stale tenant on purpose: a large count whose
