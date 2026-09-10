@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { DataTable, Column } from '../components/DataTable'
 
-type TenantHealth = { tenantId: string; name: string; active: boolean; lastBillDeliveredAt: string | null; lastStatsPullAt: string | null; lastSeenAt: string | null; stale: boolean; aiContextPersonalized: boolean }
+type TenantHealth = { tenantId: string; name: string; active: boolean; lastBillDeliveredAt: string | null; lastStatsPullAt: string | null; lastSeenAt: string | null; stale: boolean; aiContextPersonalized: boolean; stalledAi: number }
 type StateHealth = { state: string; lastSyncedAt: string | null; stale: boolean }
 type OpsData = { tenants: TenantHealth[]; states: StateHealth[]; thresholds: Record<string, number> }
 
@@ -23,6 +23,15 @@ const tenantCols: Column<TenantHealth>[] = [
   { key: 'name', header: 'Tenant', cell: t => t.name },
   { key: 'bill', header: 'Last bill delivered', cell: t => fmt(t.lastBillDeliveredAt) },
   { key: 'stats', header: 'Last stats pull', cell: t => fmt(t.lastStatsPullAt) },
+  {
+    key: 'stalled',
+    header: 'AI stalled',
+    cell: t => (
+      <span style={{ color: t.stalledAi > 0 ? 'var(--warning)' : undefined }}>
+        {t.stalledAi}
+      </span>
+    ),
+  },
   { key: 'seen', header: 'Last seen', cell: t => fmt(t.lastSeenAt) },
   {
     key: 'ai',

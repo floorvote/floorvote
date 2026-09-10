@@ -232,6 +232,11 @@ const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000  // 48 hours
 
 const STALE_HOURS = { billDelivery: 96, statsPull: 36, lastSeen: 48, stateSync: STALE_THRESHOLD_MS / 3_600_000 }
 
+/** A tenant with more than this many AI-stalled bills is flagged on the ops table.
+ *  The heal drains a transient outage within the hour; a number that persists past
+ *  a pull means bills are hitting the attempt cap. */
+const STALLED_AI_WARN = 10
+
 dashRoutes.get('/sync/states', async (c) => {
   const db = drizzle(c.env.DB, { schema })
 
@@ -697,13 +702,34 @@ dashRoutes.get('/ops-health', async (c) => {
     .all()
   const lastStatsByTenant = new Map(statsRows.map(r => [r.tenantId, r.last]))
 
+  const stalledRows = await db
+    .select({
+      tenantId: schema.tenantStats.tenantId,
+      stalled: schema.tenantStats.billsAiStalled,
+      pulledAt: schema.tenantStats.pulledAt,
+    })
+    .from(schema.tenantStats)
+    .all()
+  // Latest row per tenant, picked in JS — mirrors dash-engagement's approach.
+  const stalledByTenant = new Map<string, number>()
+  const latestPullByTenant = new Map<string, string>()
+  for (const r of stalledRows) {
+    const seen = latestPullByTenant.get(r.tenantId)
+    if (!seen || r.pulledAt > seen) {
+      latestPullByTenant.set(r.tenantId, r.pulledAt)
+      stalledByTenant.set(r.tenantId, Number(r.stalled))
+    }
+  }
+
   const tenantHealth = tenants.map(t => {
     const lastBillDeliveredAt = lastBillByTenant.get(t.tenantId) ?? null
     const lastStatsPullAt = lastStatsByTenant.get(t.tenantId) ?? null
+    const stalledAi = stalledByTenant.get(t.tenantId) ?? 0
     const stale =
       isStale(lastBillDeliveredAt, STALE_HOURS.billDelivery) ||
       isStale(lastStatsPullAt, STALE_HOURS.statsPull) ||
-      isStale(t.lastSeenAt, STALE_HOURS.lastSeen)
+      isStale(t.lastSeenAt, STALE_HOURS.lastSeen) ||
+      stalledAi > STALLED_AI_WARN
     return {
       tenantId: t.tenantId,
       name: t.name,
@@ -713,6 +739,7 @@ dashRoutes.get('/ops-health', async (c) => {
       lastSeenAt: t.lastSeenAt,
       stale,
       aiContextPersonalized: t.aiContextPersonalized,
+      stalledAi,
     }
   })
 
