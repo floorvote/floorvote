@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { applyMigrations, resetDb } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
-import { healStalledAiBills, countStalledAiBills, countLongStalledAiBills } from '../../src/lib/healStalledAi'
+import { healStalledAiBills, countStalledAiBills } from '../../src/lib/healStalledAi'
 
 const NOW = new Date('2026-09-09T12:00:00Z')
 
@@ -117,15 +117,5 @@ describe('healStalledAiBills selection', () => {
   it('countStalledAiBills counts qualifying bills without queueing', async () => {
     await seedBill('h1'); await seedBill('h2', { aiSkipReason: 'pdf_too_large' })
     expect(await countStalledAiBills(getDb(env.DB), NOW)).toBe(1)
-  })
-
-  it('countLongStalledAiBills does not count a bill stalled only 2 hours', async () => {
-    await seedBill('i1', { aiAttemptedAt: ago(120) })
-    expect(await countLongStalledAiBills(getDb(env.DB), NOW)).toBe(0)
-  })
-
-  it('countLongStalledAiBills counts a bill stalled 30 hours', async () => {
-    await seedBill('i2', { aiAttemptedAt: ago(30 * 60) })
-    expect(await countLongStalledAiBills(getDb(env.DB), NOW)).toBe(1)
   })
 })

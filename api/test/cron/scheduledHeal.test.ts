@@ -3,7 +3,6 @@ import { env, createExecutionContext, createScheduledController, waitOnExecution
 
 vi.mock('../../src/lib/healStalledAi', () => ({
   healStalledAiBills: vi.fn(async () => ({ queued: 3, cappedOut: 0, remaining: 0 })),
-  countLongStalledAiBills: vi.fn(async () => 0),
   HEAL_MAX_ATTEMPTS: 5,
 }))
 vi.mock('../../src/cron/sync', () => ({ registerWithCentral: vi.fn(async () => true) }))
@@ -13,7 +12,7 @@ const sendEmail = vi.fn(async () => ({ ok: true, provider: 'resend' as const }))
 vi.mock('../../src/lib/email', () => ({ sendEmail: (env: any, msg: any) => sendEmail(env, msg) }))
 
 import worker from '../../src/index'
-import { healStalledAiBills, countLongStalledAiBills } from '../../src/lib/healStalledAi'
+import { healStalledAiBills } from '../../src/lib/healStalledAi'
 import { registerWithCentral } from '../../src/cron/sync'
 
 async function runScheduled(cron: string) {
@@ -80,30 +79,6 @@ describe('scheduled() heal branch', () => {
     const logged = error.mock.calls.map((c) => c.join(' ')).join('\n')
     expect(logged).toContain('[heal-ai]')
     expect(logged).toContain('D1_ERROR: too many retries')
-    error.mockRestore()
-  })
-
-  it('does not run the heal-ai-watch check on the hourly cron', async () => {
-    await runScheduled('0 * * * *')
-    expect(countLongStalledAiBills).not.toHaveBeenCalled()
-  })
-
-  it('runs digest, then week-ahead, then the heal-ai-watch check on the daily cron, sending nothing when nothing is long-stalled', async () => {
-    await runScheduled('0 11 * * *')
-    expect(countLongStalledAiBills).toHaveBeenCalledOnce()
-    expect(sendEmail).not.toHaveBeenCalled()
-  })
-
-  it('alerts once when the heal-ai-watch check finds long-stalled bills', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    vi.mocked(countLongStalledAiBills).mockResolvedValueOnce(4)
-
-    await runScheduled('0 11 * * *')
-
-    expect(sendEmail).toHaveBeenCalledOnce()
-    const msg = sendEmail.mock.calls[0][1] as { subject: string; html: string; text?: string }
-    expect(msg.subject).toContain('heal-ai-watch')
-    expect(msg.html).toMatch(/4/)
     error.mockRestore()
   })
 })

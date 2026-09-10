@@ -43,6 +43,7 @@ const FULL_METRICS = {
   comments_written: 18, comment_reactions: 31, positions_set: 7, notes_created: 3,
   custom_field_values: 87, bills_with_engagement: 12, roles_defined: 2,
   custom_fields_defined: 2, bills_ai_processed: 156, bills_ai_stalled: 9,
+  bills_ai_stalled_oldest_hours: 3,
 }
 
 describe('pullEngagementStats', () => {
@@ -71,6 +72,16 @@ describe('pullEngagementStats', () => {
     const rows = await db.select().from(schema.tenantStats).all()
     expect(rows.length).toBe(2)
     for (const row of rows) expect(row.billsAiStalled).toBe(9)
+  })
+
+  it('carries bills_ai_stalled_oldest_hours from the tenant snapshot into tenant_stats', async () => {
+    await seedTwoTenants()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => fakeResponse(FULL_METRICS))
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats(TEST_ENV, db)
+    const rows = await db.select().from(schema.tenantStats).all()
+    expect(rows.length).toBe(2)
+    for (const row of rows) expect(row.billsAiStalledOldestHours).toBe(3)
   })
 
   it('skips tenants that fail and continues with others', async () => {
