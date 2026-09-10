@@ -554,6 +554,25 @@ describe('processCentralNotification', () => {
     expect(row?.aiError).toBeNull()
   })
 
+  it('resets ai_heal_attempts when AI processing succeeds', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+
+    // Seed a bill the heal sweep has already retried twice, so a successful pass
+    // must not leave it near the cap — otherwise a bill that fails again months
+    // later starts near HEAL_MAX_ATTEMPTS and gets abandoned early.
+    await db.insert(bills).values({
+      id: 'heal-test-bill', externalId: BILL_ID, billNumber: 'HB 1',
+      title: 'Election Act', state: 'UT', matchType: 'keyword',
+      aiHealAttempts: 2, aiAttemptedAt: '2026-01-01 00:00:00',
+    })
+
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID }, testEnv as any, db)
+    const row = await db.select().from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.aiHealAttempts).toBe(0)
+    expect(row?.aiAttemptedAt).toBeNull()
+  })
+
   it('skips re-processing on next message when ai_skip_reason is set (early-return dedup)', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

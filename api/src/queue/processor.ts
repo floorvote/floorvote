@@ -657,6 +657,9 @@ export async function processCentralNotification(
       // …and any prior transient failure, for the same reason.
       aiAttemptedAt: null,
       aiError: null,
+      // …and any heal attempts. A bill that recovers starts clean, so a failure
+      // months from now is not poisoned by an old, unrelated outage.
+      aiHealAttempts: 0,
       ...(isFirstKeywordMatch ? { newMatchAt: now } : {}),
     } : aiSkipReason ? {
       // Permanent AI failure on this text. Recording lastAiTextHash here serves the
