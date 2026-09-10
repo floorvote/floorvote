@@ -33,6 +33,7 @@ import { computeEngagementSnapshot } from './lib/engagementSnapshot'
 import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
+import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
 import { nowDb } from './lib/dbTime'
 import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
@@ -247,6 +248,25 @@ export default {
         runJob(env, 'digest', () => runDigest(env, db))
           .then(() => runJob(env, 'week-ahead', () => runWeekAhead(env, db)))
       )
+      return
+    }
+    // Hourly: re-queue bills whose AI analysis was shed and never retried.
+    // An explicit branch with its own return — the fall-through below is
+    // registerWithCentral, and this must not re-register the tenant every hour.
+    if (event.cron === '0 * * * *') {
+      ctx.waitUntil(runJob(env, 'heal-ai', async () => {
+        const result = await healStalledAiBills(env, db)
+        if (result.queued > 0 || result.cappedOut > 0) {
+          console.log(`[heal-ai] queued=${result.queued} cappedOut=${result.cappedOut} remaining=${result.remaining}`)
+        }
+        // Cap-outs are the only case needing a human, so they go to ALERT_EMAILS
+        // via runJob's failure path. Everything else self-heals silently.
+        if (result.cappedOut > 0) {
+          throw new Error(
+            `${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
+          )
+        }
+      }))
       return
     }
     ctx.waitUntil(runJob(env, 'register', () => registerWithCentral(env, db)))
