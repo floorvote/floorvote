@@ -23,6 +23,7 @@ export default defineConfig({
           OPERATOR_NAME: 'Test Operator',
           OPERATOR_URL: 'https://operator.test',
           OPERATOR_CONTACT_EMAILS: 'ops@example.test',
+          ALERT_EMAILS: 'ops@example.test',
         },
       },
     }),
