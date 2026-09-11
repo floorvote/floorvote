@@ -31,8 +31,40 @@ describe('glob keyword compilation', () => {
     expect(matchesKeywords('mail-in ballot', ['ballot'])).toBe(true)
   })
 
-  it('digits do not block a boundary', () => {
-    expect(matchesKeywords('election2024 results', ['election'])).toBe(true)
+  it('digits block a boundary, exactly as letters do', () => {
+    expect(matchesKeywords('election2024 results', ['election'])).toBe(false)
+    expect(matchesKeywords('election2024 results', ['election*'])).toBe(true)
+  })
+
+  it('a chapter glob matches a statute section but not a subdivision', () => {
+    // Bill descriptions lead with the sections affected, so a chapter is an
+    // intake signal on its own: "An Act to amend 5.02 of the statutes; ..."
+    expect(matchesKeywords('An Act to amend 5.02 of the statutes', ['5.#*'])).toBe(true)
+    expect(matchesKeywords('An Act to amend 115.385 of the statutes', ['5.#*'])).toBe(false)
+    // "(1) (b) 5.," is a subdivision of ch. 115, not a section of ch. 5. The
+    // digit token is the only thing that separates the two.
+    expect(matchesKeywords('to amend 115.385 (1) (b) 5., 6.30', ['5.#*'])).toBe(false)
+    expect(matchesKeywords('to amend 115.385 (1) (b) 5., 6.30', ['5.*'])).toBe(true)
+  })
+
+  it('# matches exactly one digit and is a literal nowhere', () => {
+    expect(matchesKeywords('section 5.02', ['5.##'])).toBe(true)
+    expect(matchesKeywords('section 5.0', ['5.##'])).toBe(false)
+    expect(matchesKeywords('ranked #1 priority', ['#1'])).toBe(false)
+  })
+
+  it('a # run does not defeat the prefilter', () => {
+    // The prefilter substring-tests the longest literal run. A '#' is not
+    // literal text, so a run containing one must be split before that pick —
+    // otherwise '5.#' goes into the substring test, no bill contains it, and
+    // the keyword silently matches nothing.
+    expect(matchesKeywords('to create 59.52 (1)', ['59.#*'])).toBe(true)
+    expect(matchesKeywords('to create 765.001 (2)', ['#65.#*'])).toBe(true)
+  })
+
+  it('an exact section cite stays exact', () => {
+    expect(matchesKeywords('to amend 19.85 (1) (c)', ['19.85'])).toBe(true)
+    expect(matchesKeywords('to amend 19.851 (1)', ['19.85'])).toBe(false)
   })
 
   it('is case-insensitive', () => {

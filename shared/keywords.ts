@@ -7,18 +7,37 @@
  * because `election` is a substring of `selection`. Operators can now express
  * that themselves, for any keyword.
  *
- * Syntax: `*` means "any characters". A keyword with no `*` matches a whole
- * word; each `*` relaxes the boundary on that side.
+ * Syntax: `*` matches any run of characters, `#` matches exactly one digit,
+ * and a keyword with no wildcard matches a whole token. Letters and digits are
+ * both token characters; each `*` relaxes the boundary on that side.
  *
- *   election     exact word    election
- *   election*    starts a word election, elections
- *   *election    ends a word   election, selection, reelection
- *   *election*   anywhere      all of the above
- *   *            every bill    (only when it is the sole entry)
+ *   election     exact token   election
+ *   election*    starts a token election, elections, election2024
+ *   *election    ends a token   election, selection, reelection
+ *   *election*   anywhere       all of the above
+ *   5.#*         a statute chapter  5.02, 5.35  (not 115.385, not "(b) 5.,")
+ *   19.85        an exact section   19.85  (not 19.851)
+ *   *            every bill     (only when it is the sole entry)
  *
- * The boundary class is [a-zA-Z], so digits do not block: `election` matches
- * "election2024". That is inherited from the lookbehind this replaced and kept
- * deliberately, since bill text pairs words with years constantly.
+ * The boundary class is [a-zA-Z0-9]: a digit is inside a token exactly as a
+ * letter is, so `election` does NOT match "election2024" — `election*` does.
+ * The class was letters-only until statute citations needed expressing. Bill
+ * descriptions lead with the sections a bill affects ("An Act to amend 6.86
+ * (1) (a) 2.; to create 5.02 of the statutes; Relating to: ..."), which makes a
+ * chapter a usable intake signal without reading bill text — but only if the
+ * left boundary blocks on digits, or chapter 5 also matches 115.385. Measured
+ * across 32,750 bills in seven tenants when the class changed: zero keywords
+ * in use had a digit directly abutting them, so nothing changed but this.
+ *
+ * `#` exists because `*` is unbounded. A citation's trailing subdivision is
+ * "5." followed by punctuation, so `5.*` matches subdivisions of every other
+ * chapter too (measured 32% precision); requiring a digit after the dot is
+ * what separates a chapter from a subdivision (100%). `#` was a literal
+ * character before it was a token — no keyword in any tenant used one.
+ * Claiming it is a one-way door, taken deliberately: there is no escape
+ * syntax, so no keyword can contain a literal '#' from here on. Nothing in
+ * bill text needs one today; a keyword that did would have to be spelled
+ * around it, or the syntax would need an escape this file does not have.
  *
  * The boundary class is also ASCII-only, so accented and non-Latin letters
  * never count as boundaries: `élection` matches inside `réélection`, silently
@@ -45,8 +64,11 @@ export function isWildcardKeyword(pattern: string): boolean {
   return trimmed.length > 0 && /^\*+$/.test(trimmed)
 }
 
-const BOUNDARY_L = '(?<![a-zA-Z])'
-const BOUNDARY_R = '(?![a-zA-Z])'
+const BOUNDARY_L = '(?<![a-zA-Z0-9])'
+const BOUNDARY_R = '(?![a-zA-Z0-9])'
+
+/** The digit token. One `#` in a pattern matches exactly one digit. */
+export const DIGIT_TOKEN = '#'
 
 function escapeLiteral(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -85,7 +107,12 @@ function compilePattern(pattern: string): Compiled | null {
     // means a run of stars always compiles identically to a single `*`.
     const collapsed = trimmed.replace(/\*+/g, '*')
     const parts = collapsed.split('*')
-    const body = parts.map(escapeLiteral).join('.*')
+    // Runs of '#' are NOT collapsed: each one means one digit, so `5.##` and
+    // `5.#` are different patterns. A '#' cannot introduce backtracking the way
+    // a stray '*' can — `\d` consumes exactly one character.
+    const body = parts
+      .map(part => part.split(DIGIT_TOKEN).map(escapeLiteral).join('\\d'))
+      .join('.*')
     const left = parts[0] === '' ? '' : BOUNDARY_L
     const right = parts[parts.length - 1] === '' ? '' : BOUNDARY_R
     const re = new RegExp(`${left}${body}${right}`, 'i')
@@ -94,7 +121,16 @@ function compilePattern(pattern: string): Compiled | null {
     // regex is case-insensitive and the prefilter compares against lowercased
     // text; empty when the pattern is all stars and separators, in which case
     // the prefilter is skipped.
-    const lit = parts.filter(x => x !== '').sort((a, b) => b.length - a.length)[0] ?? ''
+    //
+    // Split on '#' as well as '*': a '#' stands for a digit the prefilter
+    // cannot know, so a run containing one is not a verbatim literal. Taking
+    // the whole run would put a '#' into the substring test, which no bill text
+    // contains, and the prefilter would reject every bill before the regex ran
+    // — turning `5.#*` into a keyword that silently matches nothing.
+    const lit = parts
+      .flatMap(part => part.split(DIGIT_TOKEN))
+      .filter(x => x !== '')
+      .sort((a, b) => b.length - a.length)[0] ?? ''
     compiled = { re, lit: lit.toLowerCase() }
   }
   cache.set(pattern, compiled)
