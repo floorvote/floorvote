@@ -34,6 +34,10 @@
  * chapter too (measured 32% precision); requiring a digit after the dot is
  * what separates a chapter from a subdivision (100%). `#` was a literal
  * character before it was a token — no keyword in any tenant used one.
+ * Claiming it is a one-way door, taken deliberately: there is no escape
+ * syntax, so no keyword can contain a literal '#' from here on. Nothing in
+ * bill text needs one today; a keyword that did would have to be spelled
+ * around it, or the syntax would need an escape this file does not have.
  *
  * The boundary class is also ASCII-only, so accented and non-Latin letters
  * never count as boundaries: `élection` matches inside `réélection`, silently

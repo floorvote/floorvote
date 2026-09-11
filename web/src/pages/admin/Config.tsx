@@ -736,7 +736,7 @@ export function Config() {
                 style={{ fontFamily: 'monospace', fontSize: fontSize.sm }}
               />
               <div style={hintStyle}>
-                <HintText text={'One keyword or phrase per line. Matching is case-insensitive and checks bill titles and descriptions. A keyword on its own matches a whole word: `election` matches "election" but not "elections" or "selection". Add `*` to widen it — `election*` also matches "elections". `*corporat*` matches "corporations" and "incorporated". Multi-word phrases work the same way: `board of canvassers` matches that exact phrase.'} />
+                <HintText text={'One keyword or phrase per line. Matching is case-insensitive and checks bill titles and descriptions. A keyword on its own matches a whole word: `election` matches "election" but not "elections" or "selection". Add `*` to widen it — `election*` also matches "elections". `*corporat*` matches "corporations" and "incorporated". Multi-word phrases work the same way: `board of canvassers` matches that exact phrase. Use `#` for a single digit: `5.#*` matches "5.02" and "5.35" but not "115.385" — useful when a keyword is a number, like a statute section.'} />
               </div>
             </div>
 

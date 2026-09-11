@@ -64,6 +64,15 @@ export async function runKeywordSweep(env: Env, db: CentralDb, provider: BillPro
         // literally would search for a '#' no bill text contains and return
         // nothing. Dropping it searches `5.` instead — broader, then narrowed
         // by matchesUnion below, which is the direction that stays correct.
+        //
+        // This path is OpenStates-only, and reading it as proof that keyword
+        // patterns reach a provider's search API is the mistake it invites.
+        // LegiScan's fetchKeywordMatches is an empty generator ("LegiScan
+        // doesn't support keyword search via this interface"), and the
+        // deployed LegiScan entrypoint (index-legiscan.ts) never calls this
+        // sweep at all — its cron pulls the session masterlist and matches
+        // locally. So for a LegiScan tenant every keyword, `#` and all, is
+        // evaluated only by matchesUnion against text already in hand.
         const providerQuery = keyword.replace(/[*#]/g, '')
 
         for await (const stub of provider.fetchKeywordMatches(session.state, session.identifier, providerQuery, since24h)) {
