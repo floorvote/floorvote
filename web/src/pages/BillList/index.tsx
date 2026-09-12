@@ -603,6 +603,7 @@ export function BillList() {
     filterMinRelevance: f.filterMinRelevance,
     positionOptions: f.positionOptions,
     customFieldDefs,
+    isMultiState: f.isMultiState,
     onRemoveState: s => f.setFilterStates(prev => prev.filter(x => x !== s)),
     onRemoveStatus: s => f.setFilterStatuses(prev => prev.filter(x => x !== s)),
     onRemovePosition: p => f.setFilterPositions(prev => prev.filter(x => x !== p)),

@@ -19,6 +19,11 @@ export type ActiveFilterGroupArgs = {
   filterMinRelevance: number
   positionOptions: { value: string; label?: string }[]
   customFieldDefs: CustomFieldDef[]
+  /** Subject values are stored state-prefixed ("NJ:Elections") in every tenant.
+   *  In a single-state tenant that prefix is the same on every chip, so it is
+   *  dropped from the label only — the stored value, and therefore removal,
+   *  is unaffected. */
+  isMultiState: boolean
   onRemoveState: (s: string) => void
   onRemoveStatus: (s: string) => void
   onRemovePosition: (p: string) => void
@@ -103,7 +108,9 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   )))
   push('subjects', a.selectedSubjects.map(subject => {
     const idx = subject.indexOf(':')
-    const label = idx > 0 ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject
+    const label = idx > 0
+      ? (a.isMultiState ? `${subject.slice(0, idx)}: ${subject.slice(idx + 1)}` : subject.slice(idx + 1))
+      : subject
     return (
       <ActiveChip
         key={`subject-${subject}`}

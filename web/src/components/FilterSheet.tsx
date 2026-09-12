@@ -343,6 +343,7 @@ export function FilterSheet({
     filterMinRelevance: minRelevance,
     positionOptions,
     customFieldDefs,
+    isMultiState,
     onRemoveState: s => onStateChange(states.filter(x => x !== s)),
     onRemoveStatus: s => onStatusChange(statuses.filter(x => x !== s)),
     onRemovePosition: p => onPositionChange(positions.filter(x => x !== p)),

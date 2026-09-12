@@ -9,7 +9,7 @@ const base = {
   filterStates: [], filterStatuses: [], filterPositions: [], filterPriorities: [],
   filterYears: [], selectedTags: [], selectedSubjects: [], cfFilters: {},
   filterMinRelevance: 0,
-  positionOptions: [], customFieldDefs: [],
+  positionOptions: [], customFieldDefs: [], isMultiState: false,
   onRemoveState: noop, onRemoveStatus: noop, onRemovePosition: noop,
   onRemovePriority: noop, onRemoveYear: noop, onRemoveTag: noop,
   onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,
@@ -73,10 +73,32 @@ describe('buildActiveFilterGroups', () => {
     expect(relevanceChipLabel(10)).toBe('Relevance 10')
   })
 
-  it('renders a subject chip with its state prefix', () => {
-    const groups = buildActiveFilterGroups({ ...base, selectedSubjects: ['UT:Elections'] })
+  it('renders a subject chip with its state prefix in a multi-state tenant', () => {
+    const groups = buildActiveFilterGroups({ ...base, isMultiState: true, selectedSubjects: ['UT:Elections'] })
     render(<>{groups[0].chips}</>)
     expect(screen.getByText('UT: Elections')).toBeInTheDocument()
+  })
+
+  // In a single-state tenant every subject carries the same state prefix, so
+  // printing it on each chip is pure noise. The stored value keeps the prefix
+  // either way — only the label drops it, so removal still matches.
+  it('drops the state prefix from subject chips in a single-state tenant', () => {
+    const onRemoveSubject = vi.fn()
+    const groups = buildActiveFilterGroups({ ...base, selectedSubjects: ['NJ:State and Local Government'], onRemoveSubject })
+    render(<>{groups[0].chips}</>)
+    expect(screen.getByText('State and Local Government')).toBeInTheDocument()
+    expect(screen.queryByText('NJ: State and Local Government')).not.toBeInTheDocument()
+    screen.getByRole('button').click()
+    expect(onRemoveSubject).toHaveBeenCalledWith('NJ:State and Local Government')
+  })
+
+  it('leaves an unprefixed subject alone in either tenant shape', () => {
+    for (const isMultiState of [false, true]) {
+      const groups = buildActiveFilterGroups({ ...base, isMultiState, selectedSubjects: ['Elections'] })
+      const { unmount } = render(<>{groups[0].chips}</>)
+      expect(screen.getByText('Elections')).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('labels the FILTER_ANY / "none" special cases for position and priority', () => {
