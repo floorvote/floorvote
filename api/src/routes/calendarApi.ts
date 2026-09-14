@@ -39,7 +39,7 @@ function sanitizeTimezone(tz: string | null | undefined): string | null {
 async function getOrCreateSlug(db: ReturnType<typeof getDb>): Promise<string> {
   const row = await db.select().from(associationConfig).where(eq(associationConfig.key, 'calendar_feed_slug')).get()
   if (row?.value) return row.value
-  const slug = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => (b % 36).toString(36)).join('')
+  const slug = Array.from(crypto.getRandomValues(new Uint8Array(26))).map(b => (b % 36).toString(36)).join('')
   await db.insert(associationConfig).values({ key: 'calendar_feed_slug', value: slug })
     .onConflictDoNothing()
   const after = await db.select().from(associationConfig).where(eq(associationConfig.key, 'calendar_feed_slug')).get()
@@ -352,7 +352,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 
 calendarRouter.post('/regenerate-slug', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
-  const slug = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => (b % 36).toString(36)).join('')
+  const slug = Array.from(crypto.getRandomValues(new Uint8Array(26))).map(b => (b % 36).toString(36)).join('')
   await db.insert(associationConfig).values({ key: 'calendar_feed_slug', value: slug })
     .onConflictDoUpdate({ target: associationConfig.key, set: { value: slug } })
   const host = new URL(c.req.url).host
