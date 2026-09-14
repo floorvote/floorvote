@@ -187,10 +187,15 @@ namespace_id = "<unique-integer>"
   limit = 10
   period = 60
 
+# Object-level authorization. Central reads `props.tenantId` — a per-binding value
+# Cloudflare sets at deploy time and guarantees is authentic — and rejects any
+# tenant-scoped call targeting a DIFFERENT tenant. Omit it and central falls back
+# to lenient mode for this tenant. It MUST equal the TENANT_ID var above.
 [[env.[slug].services]]
 binding = "CENTRAL"
 service = "<your-central-worker-name>"
 entrypoint = "TenantApi"
+props = { tenantId = "[slug]" }
 
 [[env.[slug].send_email]]
 name = "EMAIL"

@@ -545,6 +545,11 @@ namespace_id = "${RATELIMIT_NS_ID}"
 binding = "CENTRAL"
 service = "${CENTRAL_WORKER_NAME}"
 entrypoint = "TenantApi"
+# Object-level authz. Central reads this as ctx.props.tenantId -- a per-binding
+# value Cloudflare sets at deploy time and guarantees unforgeable -- and rejects
+# tenant-scoped calls targeting a different tenant. Omit it and central finds no
+# caller id and falls back to lenient mode for this tenant. MUST equal TENANT_ID.
+props = { tenantId = "${SLUG}" }
 
 [[env.${SLUG}.send_email]]
 name = "EMAIL"
