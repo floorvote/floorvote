@@ -10,7 +10,7 @@ Each tenant exposes a public, unauthenticated iCalendar feed at:
 GET /api/calendar/feed/:slugIcs
 ```
 
-`:slugIcs` is a per-tenant **capability URL**: a 128-bit cryptographically-random token (optionally suffixed `.ics`). Knowledge of the slug is the only thing required to read the feed — there is no login, cookie, or API key. This is intentional, so that standard calendar clients (Google Calendar, Apple Calendar, Outlook) and link-unfurl bots can subscribe by URL alone, none of which can complete an authenticated flow.
+`:slugIcs` is a per-tenant **capability URL**: a 26-character base-36 token (~134 bits of entropy) drawn from `crypto.getRandomValues` (optionally suffixed `.ics`). Knowledge of the slug is the only thing required to read the feed — there is no login, cookie, or API key. This is intentional, so that standard calendar clients (Google Calendar, Apple Calendar, Outlook) and link-unfurl bots can subscribe by URL alone, none of which can complete an authenticated flow.
 
 ## Why it is unauthenticated
 
@@ -24,7 +24,7 @@ This is an accepted risk, mitigated by the controls below.
 
 ## Controls
 
-- **High-entropy slug.** The slug is a 128-bit random token, so it cannot be guessed or enumerated.
+- **High-entropy slug.** The slug is a ~134-bit random token (26 bytes mod 36), so it cannot be guessed or enumerated.
 - **Constant-time comparison.** The slug is compared in constant time, so it cannot be discovered by a timing side channel.
 - **Rotatable.** An admin can rotate the slug at any time via `POST /api/calendar/regenerate-slug`, which immediately invalidates the old URL. Rotate it if it is believed to have leaked.
 - **Never logged.** The slug is a secret and must be treated like one. As of the June 2026 review it is not written to any log line, and it must stay that way — do not add logging that includes `slugIcs` or the resolved slug. Verified: there is no `console.*` reference to the slug in `api/src/routes/calendarApi.ts`.
