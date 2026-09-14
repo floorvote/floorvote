@@ -107,7 +107,11 @@ run npx wrangler queues consumer remove "$QUEUE_NAME" "$WORKER_NAME"
 # ── Step 2: Delete the Worker (releases the custom domain) ─────────────────────
 echo ""
 echo "── Step 2: Delete Worker"
-run npx wrangler delete "$WORKER_NAME"
+# --name, not positional: wrangler's positional argument is a path to an entry
+# point, not a Worker name. Bare `wrangler delete "$WORKER_NAME"` ignored the
+# tenant entirely and fell back to whatever `name` the resolved config carried --
+# from api/ that is floorvote-api, i.e. delete the shared Worker, not the tenant.
+run npx wrangler delete --name "$WORKER_NAME"
 
 # ── Step 3: Deactivate tenant in central (LegiScan) DB ────────────────────────
 echo ""

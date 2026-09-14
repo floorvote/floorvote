@@ -374,9 +374,14 @@ preflight() {
   if [[ -z "${ADMIN_SECRET:-}" ]]; then
     pf_bad "ADMIN_SECRET is empty -- set it in central/.dev.vars, --admin-secret, or the environment"
   else
-    code=$(curl -s -o /dev/null -w '%{http_code}' -H "x-admin-secret: $ADMIN_SECRET" "$CENTRAL_URL/api/tenants" --max-time 20 || echo 000)
+    # /api/admin/* sits behind the x-admin-secret middleware and `superadmin/check`
+    # is its only side-effect-free GET, so it answers exactly the question asked:
+    # 200 = secret accepted, 401 = rejected. /api/tenants cannot: it registers no
+    # bare GET, so every run fell through to the SPA catch-all -- and central binds
+    # no ASSETS, making that a hard 404 and failing preflight for every operator.
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "x-admin-secret: $ADMIN_SECRET" "$CENTRAL_URL/api/admin/superadmin/check" --max-time 20 || echo 000)
     if [[ "$code" == "200" ]]; then pf_ok "ADMIN_SECRET accepted by central"
-    else pf_bad "central rejected ADMIN_SECRET (HTTP $code on /api/tenants)"; fi
+    else pf_bad "central rejected ADMIN_SECRET (HTTP $code on /api/admin/superadmin/check)"; fi
   fi
 
   # 7. The shared dead-letter queue. Every tenant's consumer names it and the
