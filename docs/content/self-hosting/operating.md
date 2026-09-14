@@ -8,7 +8,7 @@ Once your central service and at least one tenant are running, this page covers 
 
 ## Optional: superadmin dashboard
 
-The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, set these secrets on central (run from inside `central/`):
+The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA), then set these secrets on central (run from inside `central/`):
 
 ```bash
 # Magic-link email for the dashboard
