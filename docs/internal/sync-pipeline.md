@@ -35,8 +35,9 @@ For each masterlist entry:
 2. **Keyword matching.** Build `haystack = title + description + number`, test against per-tenant keyword union, compute `newMatchType ∈ { 'keyword', 'manual', null }`. `'manual'` is never demoted by this loop. Upsert `bill_tenants` rows.
 3. **Dispatch:**
    - **→ ingestor queue** (will trigger `getBill`): bill IDs that are `justMatched` (newMatchType ≠ prev and ≠ null) OR `alreadyMatchedAndChanged` (existing match + hash changed).
+   - **→ ingestor queue, match or no match**: bills whose masterlist entry carries **no title** and whose hash changed (a brand-new row counts as changed). There is nothing to keyword-match against, and `getBill` is the only way to get a real title, description, sponsor, and history — so these go to the ingestor even when no tenant matches them. Self-limiting: the ingestor writes the fresh `change_hash`, so later passes see no delta and don't re-queue.
    - **→ tenant queue directly** (no API call): `stubOnly` messages for `match_type=null` link changes, so the tenant refreshes denormalized fields from central's `/bills/:id`.
-   - **Nothing**: unchanged or never-matched bills.
+   - **Nothing**: unchanged bills, and changed-but-never-matched bills that do have a title.
 
 ### Raw pass
 
@@ -53,7 +54,7 @@ The full pass is the **only** pass that refreshes `last_action`/`status` for mon
 
 ### Cron design consequences
 
-- `getBill` is **only** called for matched bills (`match_type ∈ {'keyword', 'manual'}`). The cron is the API gate; unmatched changes never touch the ingestor.
+- `getBill` is called for matched bills (`match_type ∈ {'keyword', 'manual'}`) **and** for changed masterlist entries with no title, matched or not (`runFullPass` in [sync-legiscan.ts](../../central/src/cron/sync-legiscan.ts) — untitled entries are queued before the per-tenant match loop runs). The cron is the API gate; apart from that untitled-entry exception, unmatched changes never touch the ingestor.
 - New keyword matches surface in full passes only ⇒ ≤8h latency.
 - Monitoring-only bill metadata updates surface in full passes only ⇒ ≤8h latency. The raw pass leaves unmatched bills' `change_hash` stale precisely so the full pass keeps detecting them (see "Why the raw pass leaves unmatched hashes stale"); advancing it there used to swallow the change.
 - **Ordering note**: the cron writes the new `change_hash` and masterlist fields to central D1 *before* sending the queue message. By the time the ingestor's snapshot reads `bills.change_hash`, it already matches what `getBill` will return. This means `bill_change_log` rows for `title_changed` / `status_change` / `description_changed` are not emitted for cron-triggered messages — the snapshot reads the post-change value. Child-collection diffs (history, sponsors, votes, supplements, amendments) are still captured correctly. This is a known caveat.
@@ -117,7 +118,7 @@ Every tenant `bills` row carries three independent fields that together describe
 | `match_type` | `'keyword'` / `'manual'` / `null` | Tracking tier. `null` = monitoring-only (metadata refresh, no AI). |
 | `text_status` | `'in_r2'` / `'available'` / `'no_texts'` / `'not_checked'` / `null` | Whether central confirms full text exists. Derived from `texts_fetched_at` + `bill_texts` rows on central. |
 | `ai_processed_at` | timestamp / `null` | Whether AI has run successfully and when. |
-| `ai_skip_reason` | `'pdf_too_large'` / `null` | Paired qualifier on `ai_processed_at`. When the AI provider rejects input non-retryably (e.g. Gemini's 1000-page PDF cap), the tenant queue processor records the reason here and leaves `ai_processed_at` null. The early-return dedup at `processor.ts` treats `ai_skip_reason != null` symmetrically with `ai_processed_at != null` — both mean "permanently decided, don't waste a text fetch + AI call." Cleared automatically when a subsequent AI run succeeds (e.g. on a new, smaller text version, or after `forceAI`). |
+| `ai_skip_reason` | `'pdf_too_large'` / `'unreadable_document'` / `null` | Paired qualifier on `ai_processed_at`. When the AI provider rejects the input non-retryably, the tenant queue processor records the reason here and leaves `ai_processed_at` null. `'pdf_too_large'` is Gemini's 1000-page PDF cap; `'unreadable_document'` is Gemini refusing the bytes as a document at all (a state site serving an HTML shell under a `.pdf` URL is the known cause). Both come from `classifyAiError` in `processor.ts` — transient 429/503 errors are shed and retried instead, so they never land here. The early-return dedup at `processor.ts` treats `ai_skip_reason != null` symmetrically with `ai_processed_at != null` — both mean "permanently decided, don't waste a text fetch + AI call." Cleared automatically when a subsequent AI run succeeds (e.g. on a new, smaller text version, or after `forceAI`). |
 
 These four fields are the source of truth for tenant-side gating and UI rendering.
 
@@ -134,11 +135,47 @@ Only `ai_processed_at` is ever set successfully; `ai_skip_reason` is never set i
 - **`metadataOnly: true`** — only from tenant's own `/admin/refresh-metadata` route. Upserts bill metadata. Skips text fetch and AI.
 - **Normal** — proceeds to text fetch and AI:
   - Fetches text from central if `text_status ∈ {'available', 'in_r2'}`.
-  - Runs AI (Gemini default; Claude fallback on 429/503) when:
+  - Runs AI (Gemini, at the tier chosen below) when:
     - **shouldRunAi**: `msg.forceAI || derivedMatchType !== null` (where `derivedMatchType` comes from the message, the existing row, or keyword-match for brand-new bills)
     - **AND** text was successfully fetched
-    - **AND** `aiDedup` is false: `existing.lastAiTextHash !== centralBill.textHash`, *unless* `forceAI` or `forceMetadata` bypasses dedup
+    - **AND** `aiDedup` is false: `existing.lastAiTextHash !== centralBill.textHash`, *unless* `forceAI` bypasses dedup. `forceMetadata` does **not** bypass it — see "Two AI gates, easily confused" below.
   - Writes `ai_processed_at`, `last_ai_text_hash`, `last_ai_text_doc_id` on success.
+
+### AI service tiers
+
+Every AI call in the pipeline goes to Gemini via `processBill` ([api/src/lib/llm.ts](../../api/src/lib/llm.ts)) with an explicit `serviceTier`. There is **no second provider** — no Anthropic/Claude path exists anywhere in this codebase, and no call ever falls back to a different or cheaper model. What changes under load is the tier and the timing, never the analysis.
+
+The tier is picked in `processor.ts` by a single line:
+
+```ts
+const tier: 'flex' | 'priority' = msg.interactive ? 'priority' : 'flex'
+```
+
+| Tier | When | Why |
+|---|---|---|
+| `flex` | **The default** — every cron-, ingestor-, and admin-driven message | Bulk ingestion is throughput work with nobody watching. Flex is the cheapest tier and the first Google sheds under load, which is exactly the right trade for a backlog that can be retried for hours. |
+| `priority` | Only when the message carries `interactive: true` | Set **only** by the promote-bill and reprocess-bill routes (`interactive` in [api/src/types.ts](../../api/src/types.ts) and [central/src/types-legiscan.ts](../../central/src/types-legiscan.ts)); it is never inferred from anything else. It means a human clicked something on a page and is watching a spinner for this one bill. |
+| `standard` | Never chosen up front — only as a one-shot fallback after a shed `priority` call | The escalation step below. |
+
+Escalation on a shed (`isGeminiShed` = upstream HTTP 429 or 503):
+
+1. **priority sheds** → retry once, immediately, at `standard`. Somebody is waiting, so spend a second call now instead of parking the message in a queue backoff.
+2. **flex sheds** → no in-invocation retry; throw `AiShedError(60)` straight to the queue.
+3. **the `standard` retry also sheds** → `AiShedError(0)` — retry, but with no added delay.
+4. `AiShedError` reaches `processQueue`, which records the shed on the bill row (`ai_attempted_at` + `ai_error`, deliberately *not* `last_ai_text_hash`, so the bill can't dedup itself into permanent silence) and calls `message.retry({ delaySeconds: shedRetryDelay(base, attempts) })`. The base doubles per attempt and caps at 3600s, so ten retries cover roughly five hours of shedding instead of ten minutes.
+
+The shape is deliberate: a human waiting on a page gets priority capacity and, when that is unavailable, an immediate retry on another tier instead of a queue backoff; bulk ingestion never competes for that capacity; and shed work waits with backoff rather than silently degrading. A bill's summary is always the same model's output — the only variable is how long it took to arrive.
+
+### Two AI gates, easily confused
+
+`forceMetadata` appears in one of them and not the other:
+
+| Gate | Condition | Bypassed by |
+|---|---|---|
+| **Early skip** — "nothing changed, don't even fetch the text" | `existing.providerUpdatedAt === centralBill.updatedAt` **and** AI is already terminally decided (`ai_processed_at` or `ai_skip_reason` set) | `forceMetadata`, `forceAI`, `stubOnly`, `metadataOnly`, or central holding an R2 key the tenant hasn't recorded yet |
+| **AI dedup** — "the model already read this exact text" | `existing.lastAiTextHash === centralBill.textHash` | **`forceAI` only** |
+
+So `POST /tenants/reprocess/:tenantId` (`forceMetadata: true`) gets past the early skip and re-upserts metadata, then still dedups on the text hash and pays for no model call. That split is load-bearing: while `forceMetadata` was part of the dedup condition, every metadata refresh was a fresh AI call — and because `PATCH /bills/:id/priority` reaches `/reprocess` through `backfillCalendar`, merely setting a priority re-analyzed the bill and could surface a phantom "New bill matching your keywords" event. Only `forceAI` forces the model.
 
 ### What lives where
 
@@ -178,5 +215,5 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **Change detection**: `central/src/lib/detect-changes.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)
 - **Central bill detail API**: `central/src/routes/bills-legiscan.ts`
-- **Tenant bill detail API**: `api/src/routes/billsApi.ts` (`buildBillDetail`)
+- **Tenant bill detail API**: `api/src/routes/billsApi/detail.ts` (`buildBillDetail`)
 - **Schemas**: `central/src/db/schema-legiscan.ts`, `api/src/db/schema.ts`

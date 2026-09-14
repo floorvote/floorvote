@@ -74,7 +74,7 @@ export type TenantQueueMessage = {
   tenantId: string
   billId: string // "legiscan:{bill_id}" or "ocd-bill/{uuid}"
   forceMetadata?: boolean // Skip providerUpdatedAt dedup; re-upsert metadata; still gates AI on keywords
-  forceAI?: boolean // Skip dedup AND keyword gate; always run Claude
+  forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred
   stubOnly?: boolean // Update stub metadata only; skip full bill fetch and AI
   metadataOnly?: boolean // Refresh metadata from central; skip text fetch + AI.

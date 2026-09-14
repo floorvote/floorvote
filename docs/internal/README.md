@@ -13,7 +13,6 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | `emails.md` | The email-shell contract — follow it when adding an email type. |
 | `calendar.md` | ICS calendar feed capability-URL security model. |
 | `turnstile.md` | Turnstile and login rate-limiting internals. |
-| `style-tokens.md` | Style-token consolidation decisions. |
 | `dates.md` | Date and time storage and display convention. |
 | `domains-and-email.md` | `APP_DOMAINS` / `EMAIL_FROM` nuance (CORS, cookie scope, domain migration). |
 | `tenant-automation.md` | What can and can't be scripted when adding a tenant (agent-facing). |
