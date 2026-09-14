@@ -52,7 +52,7 @@ npx tsx scripts/render-digest-sample.ts
 npx tsx scripts/render-week-ahead-sample.ts
 ```
 
-Both call `renderSampleEmail`, so the committed previews, the QA send path, and the
+Both call `renderSampleEmail`, so the generated previews, the QA send path, and the
 conformance snapshots are guaranteed identical.
 
 To send live samples to one address (staging):

@@ -452,7 +452,7 @@ The `--tenant` flag links the bills and updates the team's `state_coverage` — 
 > **`--tenant --remote` needs `CENTRAL_API_URL`.** The seeder writes bills straight to central's database, but the `--tenant` link step calls central's API over HTTP. Without `CENTRAL_API_URL` (and the admin secret) it silently falls back to `http://localhost:8787` and dies with `fetch failed` *after* seeding — the `$CENTRAL` and `$ADMIN_SECRET` you exported in Step 8 cover both.
 
 > [!WARNING]
-> Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `--skip-fetch`/`skipFetch` — the seeder handles this for you; a bulk queue without it would spend a month of API budget in one run.
+> Per-legislator vote records are slow to seed on large states (20–30 min) and are skipped by default. Add `--with-individual-votes` to include them, or `--skip-votes` to skip roll calls entirely. **Quota note:** never bulk-queue bills without `skipFetch` — the seeder handles this for you; a bulk queue without it would spend a month of API budget in one run.
 
 ## Step 13: Link bills and queue AI (only if you skipped `--tenant`)
 

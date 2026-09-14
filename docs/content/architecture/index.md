@@ -61,7 +61,14 @@ The central-and-tenant split isn't just a diagram — each piece answers a real 
 
 Two standalone, explorable versions of the diagrams above, for when you want to trace a path rather than read prose:
 
-- [**Architecture dossier**](/internal/architecture.html) — the full component map, expandable section by section.
-- [**Sync flow**](/internal/sync-flow.html) — the LegiScan-to-tenant pipeline, step by step.
+- <a href="/docs/internal/architecture.html" target="_self"><strong>Architecture dossier</strong></a> — the full component map, expandable section by section.
+- <a href="/docs/internal/sync-flow.html" target="_self"><strong>Sync flow</strong></a> — the LegiScan-to-tenant pipeline, step by step.
+
+<!-- Raw anchors with target="_self", not markdown links: these two files are static
+     assets in public/, not VitePress pages. A markdown link compiles to an SPA router
+     link, and the router finds no page route for them and renders its own 404 — which
+     is why they used to work on cmd-click (real navigation) but not on a plain click.
+     Raw anchors skip the router. They also skip `base`, hence the explicit /docs/. -->
+
 
 These are maintainer-oriented companions to [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md), which is the code-grounded source of truth.

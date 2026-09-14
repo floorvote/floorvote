@@ -42,7 +42,7 @@ wrangler secret put CF_EMAIL_TOKEN --env legiscan
 
 ## Adding a new state to an existing tenant
 
-Update `state_coverage` in the tenant's `association_config`, then load that state's bills into central (see the seeding steps in [Adding tenants](/self-hosting/tenants#step-8-seed-the-active-session-s)). Central will then notify the tenant of any bills matching its keywords.
+Update `state_coverage` in the tenant's `association_config`, then load that state's bills into central (see the seeding steps in [Adding tenants](/self-hosting/tenants#step-12-seed-the-active-session-s)). Central will then notify the tenant of any bills matching its keywords.
 
 ## Adding another tenant
 

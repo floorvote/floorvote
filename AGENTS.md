@@ -41,13 +41,13 @@ This is the canonical project layout — the README intentionally does not dupli
 
 | Layer | Technology |
 |---|---|
-| Backend | Hono 4.12 on Cloudflare Workers |
+| Backend | Hono 4.13 on Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite via Drizzle ORM) |
 | Storage | Cloudflare R2 (bill text + masterlist cache) |
 | Queues | Cloudflare Queues (ingestor + per-tenant delivery) |
 | Frontend | React 19 + React Router 7 + Vite 8 (Workers Assets) |
 | Email | Cloudflare Email Service (magic link auth); Resend available as a fallback via `EMAIL_PROVIDER` |
-| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. Model is hardcoded in `api/src/lib/llm.ts` — changing it is a code edit, not config |
+| AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. `api/src/lib/llm.ts` holds the default; override per env with the `GEMINI_MODEL` and `GEMINI_THINKING_BUDGET` vars |
 | Legislative data | LegiScan |
 | Testing | Vitest + @cloudflare/vitest-pool-workers; Vitest + jsdom |
 

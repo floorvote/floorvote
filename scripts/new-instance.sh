@@ -592,8 +592,10 @@ if step "Deploy tenant worker"; then
 fi
 
 # ── Step 5: Set secrets (worker now exists) ────────────────────────────────────
-# Only CF_AIG_TOKEN is required. No CENTRAL_ADMIN_SECRET, no SUPERADMIN_JWT_SECRET —
-# both directions are binding-authenticated (TenantApi outbound, CentralApi inbound).
+# Only CF_AIG_TOKEN is required. No CENTRAL_ADMIN_SECRET, and no superadmin signing
+# key: central is the sole issuer and holds SUPERADMIN_JWT_PRIVATE_KEY, while a tenant
+# only ever verifies, using the public JWK in its vars. Both directions are
+# binding-authenticated (TenantApi outbound, CentralApi inbound).
 if step "Set secrets"; then
   cd "$API_DIR"
   echo "$CF_AIG_TOKEN" | npx wrangler secret put CF_AIG_TOKEN --env "$SLUG"

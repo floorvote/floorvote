@@ -26,8 +26,16 @@ Turnstile is fully enabled on both login surfaces. The server gate
 (`shared/turnstile.ts`) verifies the token on `POST /api/auth/magic-link`
 (tenants) and `POST /admin/dash/auth/login` (central); the login forms render the
 widget and send the token (`web/src/pages/Login.tsx` + `web/src/components/Turnstile.tsx`,
-and the central `web/` equivalents). The secret is the `TURNSTILE_SECRET_KEY`
-worker secret, set on all tenants + central.
+and the central `web/` equivalents). The switch is the `TURNSTILE_SECRET_KEY`
+worker secret: unset, `verifyTurnstile` fails OPEN and the gate is inert; set, it
+fails CLOSED on a missing token, an invalid token, or a siteverify outage.
+
+Both halves are required together. `TURNSTILE_SITE_KEY` is what makes a login form
+render the widget and send a token, so setting the secret on a worker whose sitekey
+is unset turns every login on it into a 403.
+
+**Current state of this deployment:** set on tenants; **not** set on central, which
+declares no `TURNSTILE_SITE_KEY` in `central/wrangler.toml`.
 
 **The public sitekey is config-driven** (not hardcoded). Each worker exposes it
 via the `TURNSTILE_SITE_KEY` **var** (`[env.<id>.vars]` in `api/wrangler.toml` /
