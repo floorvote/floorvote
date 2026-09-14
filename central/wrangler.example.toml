@@ -134,6 +134,18 @@ name = "EMAIL"
 # [[env.legiscan.send_email]]
 # name = "EMAIL"
 #
+# # Dashboard SPA. Without this block c.env.ASSETS is undefined and the
+# # catch-all route returns 404 for every non-API path — the dashboard
+# # won't load. run_worker_first must be true (not a path list) because
+# # the magic-link callback (GET /admin/dash/auth/callback) is a top-level
+# # browser navigation handled by a Hono route; without Worker-first the
+# # SPA not_found_handling intercepts it and the auth handler never runs.
+# [env.legiscan.assets]
+# directory = "./web/dist"
+# binding = "ASSETS"
+# not_found_handling = "single-page-application"
+# run_worker_first = true
+#
 # # Dashboard login rate limiter. routes/dash-auth.ts rate-limits the magic-link
 # # path, but checkRateLimit fails OPEN when nothing is bound — so without this
 # # block central's dashboard login has no limit at all, while every tenant does.
