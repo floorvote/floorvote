@@ -134,6 +134,17 @@ name = "EMAIL"
 # [[env.legiscan.send_email]]
 # name = "EMAIL"
 #
+# # Dashboard login rate limiter. routes/dash-auth.ts rate-limits the magic-link
+# # path, but checkRateLimit fails OPEN when nothing is bound — so without this
+# # block central's dashboard login has no limit at all, while every tenant does.
+# # namespace_id must not be shared with a tenant's, or the counters pool.
+# [[env.legiscan.ratelimits]]
+# name = "LOGIN_RATE_LIMITER"
+# namespace_id = "3001"
+#   [env.legiscan.ratelimits.simple]
+#   limit = 10
+#   period = 60
+#
 # # Additional secrets for LegiScan env (set via `wrangler secret put --env legiscan`):
 # # LEGISCAN_API_KEY      — LegiScan bill data
 # # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
