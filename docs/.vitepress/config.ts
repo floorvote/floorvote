@@ -19,6 +19,12 @@ export default withMermaid(
     // it the generated <loc> values would drop /docs and point at pages the
     // marketing Worker owns.
     sitemap: { hostname: 'https://floorvote.org/docs/' },
+    transformHead({ pageData }) {
+      const path = pageData.relativePath.replace(/(?:index)?\.md$/, '')
+      return [
+        ['link', { rel: 'canonical', href: `https://floorvote.org/docs/${path}` }],
+      ]
+    },
     head: [
       ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
       ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
