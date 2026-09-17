@@ -6,6 +6,14 @@
 --
 -- All names, titles, and bill content are fictional.
 
+-- ── Single-state coverage ────────────────────────────────────────────────
+-- The dev seed leaves state_coverage unset, which computeMultiState()
+-- (api/src/routes/configApi.ts) treats as "unknown" and defaults to
+-- multi-state — showing a "RI" state prefix on the bill badge that a
+-- single-state association's product screenshot shouldn't have.
+
+INSERT OR REPLACE INTO association_config (key, value) VALUES ('state_coverage', '["RI"]');
+
 -- ── Users: rename the two visible in the bill-detail screenshot ─────────────
 
 UPDATE users SET name = 'Chad Mitchell',  subtitle = 'Registrar, Amity Island'
@@ -34,37 +42,44 @@ UPDATE bills SET
   sponsor_party   = 'D',
   sponsor_url     = 'https://legislature.example.gov/members/tavares',
   last_action     = 'Reported favorably with amendments; scheduled for floor vote',
-  last_action_date = '2026-09-10',
-  history         = '[{"date":"2026-06-10","action":"Introduced","chamber":"House"},{"date":"2026-06-18","action":"Referred to House Elections Committee","chamber":"House"},{"date":"2026-07-15","action":"Committee hearing held","chamber":"House"},{"date":"2026-08-22","action":"Fiscal impact study requested","chamber":"House"},{"date":"2026-09-03","action":"Fiscal impact report received","chamber":"House"},{"date":"2026-09-10","action":"Reported favorably with amendments","chamber":"House"}]',
+  -- "Updated Nd ago" (ChangeHistoryTooltip) falls back to last_action_date
+  -- when there's no change log, which the dev seed never populates. Keep the
+  -- history entry's date in lockstep so "Last action:" and the Actions
+  -- timeline agree with it.
+  last_action_date = date('now', '-11 days'),
+  history         = REPLACE(
+    '[{"date":"2026-06-10","action":"Introduced","chamber":"House"},{"date":"2026-06-18","action":"Referred to House Elections Committee","chamber":"House"},{"date":"2026-07-15","action":"Committee hearing held","chamber":"House"},{"date":"2026-08-22","action":"Fiscal impact study requested","chamber":"House"},{"date":"2026-09-03","action":"Fiscal impact report received","chamber":"House"},{"date":"2026-09-10","action":"Reported favorably with amendments","chamber":"House"}]',
+    '2026-09-10', date('now', '-11 days')
+  ),
   state_link      = 'https://legislature.example.gov/billtracker',
   committee       = 'House Elections Committee',
   co_sponsors     = '[{"name":"Rep. Dara Whitfield","party":"R","role":"Rep","district":"14","url":"https://legislature.example.gov/members/whitfield"}]',
-  relevance_score = 9,
-  updated_at      = '2026-09-11 14:00:00'
+  relevance_score = 9
 WHERE id = 'bill-early-vote';
 
 -- ── Comments on bill-early-vote ────────────────────────────────────────────
--- Delete the original batch and insert two short ones.
+-- Delete the original batch and insert two short ones. Chad's comment and the
+-- position (above) are both 4 days ago; Gerry's reply is 3 days ago.
 
 DELETE FROM comments WHERE bill_id = 'bill-early-vote';
 
 INSERT OR REPLACE INTO comments (id, bill_id, user_id, content, created_at) VALUES
   ('c-1', 'bill-early-vote', 'user-maria',
    '<p>We filed a support position. The bipartisan sponsor pair is encouraging; Tavares and Whitfield don''t often co-lead. The $8M appropriation is great, but we should flag the recurring funding gap in our <a href="https://legislature.example.gov/testimony" target="_blank">testimony</a>.</p>',
-   '2026-09-12 10:00:00'),
+   datetime('now', '-4 days')),
   ('c-2', 'bill-early-vote', 'user-david',
    '<p><span data-type="mention" data-id="user:user-maria" data-label="Chad Mitchell">@Chad Mitchell</span>, I agree. The pre-certification audit piece is something the minority caucus pushed for. Wondering what the <span data-type="mention" data-id="role:role-outreach" data-label="Deputy Clerks">@Deputy Clerks</span> think about the early voting provisions.</p>',
-   '2026-09-13 09:00:00');
+   datetime('now', '-3 days'));
 
 -- ── Reactions on the new comments ──────────────────────────────────────────
 
 DELETE FROM comment_reactions WHERE comment_id IN ('c-1','c-2','c-7','c-8','c-9','c-10','c-11','c-12');
 
 INSERT OR REPLACE INTO comment_reactions (id, comment_id, user_id, emoji, created_at) VALUES
-  ('cr-1', 'c-1', 'user-david', '👍', '2026-09-12 10:30:00'),
-  ('cr-2', 'c-1', 'user-sarah', '👍', '2026-09-12 11:00:00'),
-  ('cr-3', 'c-1', 'user-james', '💯', '2026-09-12 11:30:00'),
-  ('cr-4', 'c-2', 'user-maria', '👍', '2026-09-13 09:30:00');
+  ('cr-1', 'c-1', 'user-david', '👍', datetime('now', '-4 days', '+30 minutes')),
+  ('cr-2', 'c-1', 'user-sarah', '👍', datetime('now', '-4 days', '+1 hours')),
+  ('cr-3', 'c-1', 'user-james', '💯', datetime('now', '-4 days', '+90 minutes')),
+  ('cr-4', 'c-2', 'user-maria', '👍', datetime('now', '-3 days', '+30 minutes'));
 
 -- ── Personal note ──────────────────────────────────────────────────────────
 
@@ -81,7 +96,8 @@ INSERT OR REPLACE INTO notes (id, bill_id, user_id, content, created_at) VALUES
 
 -- ── Bill text type: "Comm. Sub." instead of "Committee Amendment" ───────────
 
-UPDATE bill_texts SET type = 'Comm. Sub.', date = '2026-09-10'
+-- Same day as the "reported favorably" action above, so keep it in lockstep.
+UPDATE bill_texts SET type = 'Comm. Sub.', date = date('now', '-11 days')
   WHERE bill_id = 'bill-early-vote' AND doc_id = 10003;
 
 -- ── Member votes: replace with 12 votes (7 support / 3 neutral / 2 oppose) ─
@@ -101,15 +117,25 @@ INSERT INTO member_votes (id, user_id, bill_id, position, created_at) VALUES
   ('mv-11',   'user-james',    'bill-early-vote', 'support', '2026-09-10 13:00:00'),
   ('mv-12',   'user-linda',    'bill-early-vote', 'support', '2026-09-10 14:00:00'),
   ('mv-14',   'user-tom',      'bill-early-vote', 'support', '2026-09-10 16:00:00'),
-  ('mv-15',   'user-rachel',   'bill-early-vote', 'support', '2026-09-11 09:00:00'),
+  ('mv-15',   'user-rachel',   'bill-early-vote', 'oppose',  '2026-09-11 09:00:00'),
   ('mv-13',   'user-mike',     'bill-early-vote', 'neutral', '2026-09-10 15:00:00'),
   ('mv-ex-1', 'user-amy',      'bill-early-vote', 'neutral', '2026-09-11 10:00:00'),
   ('mv-ex-2', 'user-noname',   'bill-early-vote', 'neutral', '2026-09-11 11:00:00'),
-  ('mv-ex-3', 'demo-user',     'bill-early-vote', 'oppose',  '2026-09-11 12:00:00'),
+  ('mv-ex-3', 'demo-user',     'bill-early-vote', 'support', '2026-09-11 12:00:00'),
   ('mv-ex-4', 'user-ex-voter', 'bill-early-vote', 'oppose',  '2026-09-11 13:00:00');
 
--- ── Position (already "Support" from standard seed, but update the note) ────
+-- ── Position (already "Support" from standard seed, but update the note) ───
+-- set_by is already 'user-maria' (Chad) from the standard seed; back-date it
+-- to 4 days ago to match the timing of Chad's comment thread.
 
 UPDATE official_positions SET
-  notes = 'Critical infrastructure for voter access; bipartisan support is encouraging'
+  notes = 'Critical infrastructure for voter access; bipartisan support is encouraging',
+  created_at = datetime('now', '-4 days'),
+  updated_at = datetime('now', '-4 days')
 WHERE bill_id = 'bill-early-vote';
+
+-- ── Priority ("High Priority · Set by ... ago") ─────────────────────────────
+-- Sourced from the most recent priority_set feed_event, not a bill column.
+
+UPDATE feed_events SET created_at = datetime('now', '-8 days')
+WHERE id = 'fe-4' AND bill_id = 'bill-early-vote' AND type = 'priority_set';
