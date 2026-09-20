@@ -6,6 +6,7 @@ import { getDb } from '../../src/db/client'
 import { termsAcceptances } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { TERMS_EXEMPT } from '../../src/middleware/auth'
+import { signSuperadminJwt } from '../../../shared/superadminJwt'
 
 // The documents' current material version. Any YYYY-MM-DD works for the tests;
 // what matters is the ordering between them.
@@ -184,5 +185,72 @@ describe('TERMS_EXEMPT against the live route table', () => {
         .map(r => `${r.method} ${r.path}`),
     )
     expect([...TERMS_EXEMPT].filter(k => !live.has(k))).toEqual([])
+  })
+})
+
+// The public key lives in vitest.config.mts, so a token signed with this pairs
+// with it and the JWT bootstrap branch runs for real.
+const TEST_SUPERADMIN_PRIV = '{"key_ops":["sign"],"ext":true,"kty":"EC","x":"jMeKJ1Tf0sgE37Rzg02ARwUKvJ2hF6Zy2gI3mluSjpg","y":"vJ0-S0RvpYh3Z87ti61CrBjprBhpmiA4WujS6_Yb_lQ","crv":"P-256","d":"goMnWG7NT0ErjBM6BH8a_rf1hUjMvLB3o3h4f5sE-aY"}'
+
+describe('GET /auth/me reports acceptance state', () => {
+  let userId: string
+  let cookie: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    userId = await seedUser({ role: 'member' })
+    cookie = `session=${await seedSession(userId)}`
+  })
+
+  async function me(envOverride: Record<string, unknown>, jar = cookie) {
+    const res = await app.request('/api/auth/me', { headers: { Cookie: jar } }, envOverride)
+    return await res.json() as { termsAcceptanceRequired?: boolean; termsAcceptanceKind?: string }
+  }
+
+  it('reports required=false when the gate is disarmed', async () => {
+    await seedMagicLink(userId, { used: true })
+    const body = await me(env)
+    expect(body.termsAcceptanceRequired).toBe(false)
+  })
+
+  // The off-by-one the spec singles out: the interstitial renders AFTER verify
+  // has marked the link used, so a genuine first-timer is already at exactly 1.
+  it('calls exactly one used link a first_login', async () => {
+    await seedMagicLink(userId, { used: true })
+    const body = await me(armed)
+    expect(body.termsAcceptanceRequired).toBe(true)
+    expect(body.termsAcceptanceKind).toBe('first_login')
+  })
+
+  it('calls two used links an existing_member', async () => {
+    await seedMagicLink(userId, { used: true })
+    await seedMagicLink(userId, { used: true })
+    const body = await me(armed)
+    expect(body.termsAcceptanceKind).toBe('existing_member')
+  })
+
+  it('calls a stale acceptance an update', async () => {
+    await seedMagicLink(userId, { used: true })
+    await accept(userId, OLDER)
+    const body = await me(armed)
+    expect(body.termsAcceptanceRequired).toBe(true)
+    expect(body.termsAcceptanceKind).toBe('update')
+  })
+
+  it('reports required=false once they have accepted the current value', async () => {
+    await seedMagicLink(userId, { used: true })
+    await accept(userId, CURRENT)
+    const body = await me(armed)
+    expect(body.termsAcceptanceRequired).toBe(false)
+  })
+
+  it('reports both fields on the superadmin JWT branch, and never calls them a first_login', async () => {
+    // Zero used magic links — bootstrapped from a JWT, never through a link.
+    // A NOT EXISTS predicate would read that as a first-timer.
+    const jwt = await signSuperadminJwt('super@example.com', 'Super Admin', TEST_SUPERADMIN_PRIV)
+    const body = await me(armed, `superadmin_jwt=${jwt}`)
+    expect(body.termsAcceptanceRequired).toBe(true)
+    expect(body.termsAcceptanceKind).toBe('existing_member')
   })
 })

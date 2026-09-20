@@ -17,6 +17,7 @@ import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
 import { ensureDemoSession, demoSessionCookie } from '../lib/demoSession'
 import { requireAuth } from '../middleware/auth'
+import { termsAcceptanceState } from '../lib/termsAcceptance'
 import type { AppEnv } from '../types'
 
 export const authRoutes = new Hono<AppEnv>()
@@ -291,6 +292,7 @@ authRoutes.get('/me', async (c) => {
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
+            ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
           })
         }
       }
@@ -366,6 +368,7 @@ authRoutes.get('/me', async (c) => {
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
+    ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),
   })
 })
 
