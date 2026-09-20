@@ -4,6 +4,7 @@ import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { termsAcceptances } from '../../src/db/schema'
+import { eq } from 'drizzle-orm'
 import { TERMS_EXEMPT } from '../../src/middleware/auth'
 
 // The documents' current material version. Any YYYY-MM-DD works for the tests;
@@ -100,5 +101,88 @@ describe('the terms gate in requireAuth', () => {
   it('exempts exactly one path, and no more', () => {
     expect(TERMS_EXEMPT.size).toBe(1)
     expect([...TERMS_EXEMPT]).toEqual(['POST /api/auth/accept-terms'])
+  })
+})
+
+describe('POST /api/auth/accept-terms', () => {
+  let userId: string
+  let cookie: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    userId = await seedUser({ role: 'member' })
+    await seedMagicLink(userId, { used: true })
+    cookie = `session=${await seedSession(userId)}`
+  })
+
+  async function rows() {
+    return await getDb(env.DB).select().from(termsAcceptances)
+      .where(eq(termsAcceptances.userId, userId)).all()
+  }
+
+  // The endpoint must not be gated behind the gate it clears.
+  it('succeeds while un-accepted, which is the only state it is ever called in', async () => {
+    const res = await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    expect(res.status).toBe(204)
+  })
+
+  it('inserts exactly one row, stamped with the current value', async () => {
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    const r = await rows()
+    expect(r).toHaveLength(1)
+    expect(r[0].termsUpdated).toBe(CURRENT)
+  })
+
+  it('writes accepted_at in the space-separated db shape, never an ISO string', async () => {
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    const r = await rows()
+    expect(r[0].acceptedAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('no-ops on a double submit — one row, still 204', async () => {
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    const second = await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    expect(second.status).toBe(204)
+    expect(await rows()).toHaveLength(1)
+  })
+
+  it('inserts a second row after a bump, rather than updating the first', async () => {
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    const bumped = { ...env, LEGAL_TERMS_UPDATED: NEWER }
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, bumped)
+    const r = await rows()
+    expect(r).toHaveLength(2)
+    expect(r.map(x => x.termsUpdated).sort()).toEqual([CURRENT, NEWER])
+  })
+
+  it('clears the gate — a previously 403ing route passes afterwards', async () => {
+    expect((await app.request('/api/stats/sidebar', { headers: { Cookie: cookie } }, armed)).status).toBe(403)
+    await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, armed)
+    expect((await app.request('/api/stats/sidebar', { headers: { Cookie: cookie } }, armed)).status).toBe(200)
+  })
+
+  it('401s without a session', async () => {
+    const res = await app.request('/api/auth/accept-terms', { method: 'POST' }, armed)
+    expect(res.status).toBe(401)
+  })
+
+  it('records nothing when the gate is disarmed, having nothing to record against', async () => {
+    const res = await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, env)
+    expect(res.status).toBe(204)
+    expect(await rows()).toHaveLength(0)
+  })
+})
+
+// Mirrors demoReadOnly.test.ts: an exemption that names a route which no longer
+// exists silently exempts nothing, which is the failure mode you never notice.
+describe('TERMS_EXEMPT against the live route table', () => {
+  it('names only routes that exist', () => {
+    const live = new Set(
+      app.routes
+        .filter(r => r.path.startsWith('/api/'))
+        .map(r => `${r.method} ${r.path}`),
+    )
+    expect([...TERMS_EXEMPT].filter(k => !live.has(k))).toEqual([])
   })
 })

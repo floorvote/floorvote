@@ -256,6 +256,10 @@ const DENIED = new Set([
   'POST /api/admin/reprocess-llm-all',
   'POST /api/admin/roles',
   'POST /api/admin/views',
+  // Denied rather than allowed because the terms gate is never armed on a demo
+  // tenant -- no operator-overlay documents, no registered users, nothing to
+  // bind -- so nothing there should ever call this.
+  'POST /api/auth/accept-terms',
   'POST /api/auth/logout',
   'POST /api/auth/magic-link',
   'POST /api/auth/verify',
@@ -319,8 +323,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(48)
-    expect(registered().length).toBe(72)
+    expect(DENIED.size).toBe(49)
+    expect(registered().length).toBe(73)
   })
 
   it('refuses every denied route with the read-only message', async () => {
