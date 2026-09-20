@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { ApiError } from '../lib/api'
+import { TERMS_NOT_ACCEPTED_EVENT } from '../lib/appEvents'
 import { retryFetch, createProgressBox, type ProgressBox } from '../lib/retryFetch'
 
 type User = {
@@ -65,6 +66,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     return () => controller.abort()
   }, [authProgress])
+
+  // A tab left open when LEGAL_TERMS_UPDATED is bumped starts getting 403s from
+  // every route. api.ts announces the first one, and re-reading /auth/me flips
+  // termsAcceptanceRequired so RequireAuth puts the interstitial up instead of
+  // letting the failure surface as a generic error.
+  //
+  // /auth/me is safe to call here: it reads the session cookie itself rather
+  // than mounting requireAuth, so it answers 200 while the gate is refusing
+  // everything else -- no loop.
+  useEffect(() => {
+    function recheck() {
+      retryFetch<User>('/auth/me')
+        .then(setUser)
+        .catch(() => { /* leave the existing state alone; the next request re-announces */ })
+    }
+    window.addEventListener(TERMS_NOT_ACCEPTED_EVENT, recheck)
+    return () => window.removeEventListener(TERMS_NOT_ACCEPTED_EVENT, recheck)
+  }, [])
 
   function setSubtitle(subtitle: string | null) {
     setUser((prev) => prev ? { ...prev, subtitle } : prev)
