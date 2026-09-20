@@ -13,6 +13,10 @@ type User = {
   emailWeekAheadEnabled: boolean
   lastSeenFeed: string | null
   isLastOwner: boolean
+  /** True while the Legal Terms must be accepted before the app is usable. */
+  termsAcceptanceRequired: boolean
+  /** Which copy the acceptance interstitial shows. */
+  termsAcceptanceKind: 'first_login' | 'existing_member' | 'update'
 }
 
 type AuthState = {
@@ -25,11 +29,13 @@ type AuthState = {
   setName: (name: string) => void
   setEmailDigestEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
+  setTermsAccepted: () => void
 }
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
   setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+  setTermsAccepted: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -81,7 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, lastSeenFeed: ts } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed }}>{children}</AuthContext>
+  // Accepting flips the flag in context rather than reloading: /auth/me is
+  // fetched once at app load, so a reload would be the only other way to clear
+  // the interstitial, and it would throw away wherever the user was headed.
+  function setTermsAccepted() {
+    setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
+  }
+
+  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed, setTermsAccepted }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {
