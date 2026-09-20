@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt } from 'drizzle-orm'
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
+import { hasLoggedInSelect } from '../lib/loginHistory'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendMagicLink } from '../lib/email'
@@ -44,9 +45,7 @@ adminApiRouter.get('/members', async (c) => {
       deactivatedAt: users.deactivatedAt,
       canVote: users.canVote,
       invitedBy: users.invitedBy,
-      hasLoggedIn: sql<number>`CASE WHEN EXISTS (
-        SELECT 1 FROM magic_links WHERE user_id = users.id AND used_at IS NOT NULL
-      ) THEN 1 ELSE 0 END`,
+      hasLoggedIn: hasLoggedInSelect,
     })
     .from(users)
     .orderBy(desc(users.createdAt))

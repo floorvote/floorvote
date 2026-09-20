@@ -2,14 +2,15 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
-import { users, bills, memberVotes, associationConfig, magicLinks, calendarEvents } from '../db/schema'
-import { count, eq, isNotNull, isNull, and, inArray, sql, exists, gte, lte, or } from 'drizzle-orm'
+import { users, bills, memberVotes, associationConfig, calendarEvents } from '../db/schema'
+import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'drizzle-orm'
 import type { AppEnv } from '../types'
 import { sessionToSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { newMatchWhere } from './billsApi/query'
 import { getNewMatchMinRelevance } from '../lib/newMatch'
+import { hasLoggedInWhere } from '../lib/loginHistory'
 
 const statsRouter = new Hono<AppEnv>()
 
@@ -29,7 +30,7 @@ statsRouter.get('/', async (c) => {
     // `hasLoggedIn` definition the Members admin page uses for its "Active" status.
     db.select({ count: count() }).from(users).where(and(
       isNull(users.deactivatedAt),
-      exists(db.select({ id: magicLinks.id }).from(magicLinks).where(and(eq(magicLinks.userId, users.id), isNotNull(magicLinks.usedAt)))),
+      hasLoggedInWhere(db),
     )).get(),
     db.select({ count: count() })
       .from(calendarEvents)
