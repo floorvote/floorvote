@@ -112,3 +112,22 @@ describe('AcceptTerms', () => {
     expect(screen.queryByRole('button', { name: /decline|reject|do not agree/i })).not.toBeInTheDocument()
   })
 })
+
+describe('AcceptTerms — onAccepted', () => {
+  it('runs the hook after a successful acceptance, so a parked router can recover', async () => {
+    const onAccepted = vi.fn()
+    authState.kind = 'update'
+    render(<MemoryRouter><AcceptTerms onAccepted={onAccepted} /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await waitFor(() => expect(setTermsAccepted).toHaveBeenCalledTimes(1))
+    expect(onAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run it when the box was never ticked', () => {
+    const onAccepted = vi.fn()
+    render(<MemoryRouter><AcceptTerms onAccepted={onAccepted} /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+    expect(onAccepted).not.toHaveBeenCalled()
+  })
+})

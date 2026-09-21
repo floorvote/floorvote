@@ -211,3 +211,24 @@ describe('RootErrorBoundary', () => {
     expect(screen.queryByText('login page')).not.toBeInTheDocument()
   })
 })
+
+// Regression: found on staging the moment the gate was armed. A child loader
+// runs BEFORE the parent RequireAuth element renders, so an armed gate makes the
+// loader throw 403 and this boundary catches it — RequireAuth never gets the
+// chance to show the interstitial, and the user meets "Something went wrong"
+// instead of the screen that would let them continue.
+vi.mock('./AcceptTerms', () => ({ AcceptTerms: () => <div>accept terms screen</div> }))
+
+describe('RootErrorBoundary — the terms gate', () => {
+  it('shows the interstitial, not the error card, when a loader is refused for terms', async () => {
+    renderBoundary({ loader: () => { throw new ApiError(403, 'Terms not accepted', 'terms_not_accepted') } })
+    expect(await screen.findByText('accept terms screen')).toBeInTheDocument()
+    expect(screen.queryByText('Something went wrong')).toBeNull()
+  })
+
+  it('still shows the error card for any other 403', async () => {
+    renderBoundary({ loader: () => { throw new ApiError(403, 'Forbidden') } })
+    expect(await screen.findByText('Something went wrong')).toBeInTheDocument()
+    expect(screen.queryByText('accept terms screen')).toBeNull()
+  })
+})

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useRouteError, useRevalidator, Navigate, Link } from 'react-router-dom'
 import { ApiError } from '../lib/api'
+import { AcceptTerms } from './AcceptTerms'
 import { color, fontSize, fontWeight, radius } from '../styles/tokens'
 
 export function RootErrorBoundary() {
@@ -48,6 +49,22 @@ export function RootErrorBoundary() {
 
   if (error instanceof ApiError && error.status === 401) {
     return <Navigate to="/login" replace />
+  }
+
+  // Terms acceptance is outstanding.
+  //
+  // RequireAuth renders the interstitial for the ordinary path, but it never
+  // gets the chance here: a child route's loader runs BEFORE the parent's
+  // element, so on a fresh load with the gate armed the loader throws 403 and
+  // this boundary catches it while RequireAuth is still unrendered. Without this
+  // branch the user meets "Something went wrong" and has no way forward — which
+  // is exactly what staging did the moment the gate was armed.
+  //
+  // Accepting has to revalidate as well as flip the flag: the router is parked
+  // in an error state, and only re-running the loader that threw tears this
+  // boundary down.
+  if (error instanceof ApiError && error.code === 'terms_not_accepted') {
+    return <AcceptTerms onAccepted={() => { void revalidator.revalidate() }} />
   }
 
   // A thrown redirect Response reaching an error boundary means it came from a
