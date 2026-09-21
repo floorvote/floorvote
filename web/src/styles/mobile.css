@@ -475,7 +475,19 @@ body.nav-pending * { cursor: wait !important; }
 
   /* Admin members table -> stacked cards on mobile. The 8-column table only
      fits via horizontal scroll otherwise. Each row becomes a card with the
-     name as the title and the remaining cells labeled (via data-label). */
+     name as the title and the remaining cells labeled (via data-label).
+
+     Two surfaces opt into this, not one: the admin Members page and the
+     sidebar members popup (components/sidebar/MembersPopup.tsx), which renders
+     the same first three columns under the same class names precisely so the
+     card treatment is shared rather than forked. Keep these rules keyed off
+     `.members-table` alone — scoping them to the admin page would silently
+     drop the popup back to a table too wide for a phone. The popup also drops
+     its roles column entirely when no member has a role, so the matching
+     labeled card row disappears with it (the <td> is never rendered).
+
+     `.members-table-wrap` below is admin-only; the popup supplies its own
+     scroll container. */
   .members-table-wrap {
     overflow-x: visible !important;
     margin: 0 !important;

@@ -17,3 +17,8 @@ export function orgRelevanceLabel(noun: string): string {
   return `${titleCase(noun)} relevance`
 }
 
+// Header for the custom-roles column, in both the admin Members table and the
+// sidebar members popup — shared so the two surfaces cannot drift.
+export function orgRolesLabel(noun: string): string {
+  return `${titleCase(noun)} roles`
+}
