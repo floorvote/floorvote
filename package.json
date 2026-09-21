@@ -20,7 +20,7 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.47.2",
+    "@material-symbols/svg-400": "^0.47.4",
     "@resvg/resvg-js": "^2.6.2",
     "concurrently": "^10.0.5",
     "fflate": "^0.8.3",
