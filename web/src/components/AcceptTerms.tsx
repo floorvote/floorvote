@@ -28,7 +28,15 @@ import { color, fontSize, fontWeight, radius, shadow } from '../styles/tokens'
  * login page has the same constraint and resolves it the same way. Both
  * documents name the operator in their opening paragraph, one click away.
  */
-export function AcceptTerms() {
+export function AcceptTerms({ onAccepted }: {
+  /**
+   * Called after a successful acceptance, in addition to clearing the flag.
+   * RootErrorBoundary passes a revalidate here: when the interstitial is reached
+   * because a loader threw, flipping the flag alone leaves the router parked in
+   * its error state.
+   */
+  onAccepted?: () => void
+} = {}) {
   const { user, setTermsAccepted } = useAuth()
   const { demoMode } = useDemo()
   const { showTerms, showPrivacy } = legalDocsVisible(!!demoMode)
@@ -75,6 +83,7 @@ export function AcceptTerms() {
     try {
       await apiFetch('/auth/accept-terms', { method: 'POST' })
       setTermsAccepted()
+      onAccepted?.()
     } finally {
       setBusy(false)
     }
