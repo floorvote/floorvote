@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../lib/api'
 import { TERMS_NOT_ACCEPTED_EVENT } from '../lib/appEvents'
 import { retryFetch, createProgressBox, type ProgressBox } from '../lib/retryFetch'
@@ -47,6 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // life — the effect below depends on it and must not re-run, and RequireAuth
   // reads `.current` off this same cell on its own render tick.
   const [authProgress] = useState(createProgressBox)
+  // Bumped whenever this component learns something locally that a /auth/me
+  // response in flight cannot know about yet. See recheck() below.
+  const epoch = useRef(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -77,8 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // everything else -- no loop.
   useEffect(() => {
     function recheck() {
+      // Discard a response that was already in flight when the user accepted.
+      //
+      // The 403 that raises the interstitial is also what triggers this
+      // recheck, so the two race: the request goes out while acceptance is
+      // still outstanding, answers `termsAcceptanceRequired: true`, and lands
+      // after the POST has cleared the flag -- resurrecting the gate under
+      // someone who just agreed. Ignoring any response older than the last
+      // local change keeps the newer truth.
+      const issuedAt = epoch.current
       retryFetch<User>('/auth/me')
-        .then(setUser)
+        .then((u) => { if (epoch.current === issuedAt) setUser(u) })
         .catch(() => { /* leave the existing state alone; the next request re-announces */ })
     }
     window.addEventListener(TERMS_NOT_ACCEPTED_EVENT, recheck)
@@ -110,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // fetched once at app load, so a reload would be the only other way to clear
   // the interstitial, and it would throw away wherever the user was headed.
   function setTermsAccepted() {
+    epoch.current += 1
     setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
   }
 

@@ -64,7 +64,19 @@ export function RootErrorBoundary() {
   // in an error state, and only re-running the loader that threw tears this
   // boundary down.
   if (error instanceof ApiError && error.code === 'terms_not_accepted') {
-    return <AcceptTerms onAccepted={() => { void revalidator.revalidate() }} />
+    // Reload rather than revalidate, and the distinction is load-bearing.
+    //
+    // This boundary catches errors thrown by loaders on routes BELOW it, and
+    // revalidate() re-runs those loaders but does NOT retire an error caught
+    // here at the parent -- measured: after acceptance the feed loader re-ran
+    // and returned 200 twice while this boundary went on holding the original
+    // 403. (A child route with its own errorElement, like bill detail, does
+    // clear on revalidate, which is why that path needs no reload.)
+    //
+    // One page load at the moment someone accepts, landing them on the URL
+    // they originally asked for. The no-reload rule exists to avoid throwing
+    // away where the user was headed, and a reload of the current URL keeps it.
+    return <AcceptTerms onAccepted={() => { window.location.reload() }} />
   }
 
   // A thrown redirect Response reaching an error boundary means it came from a
