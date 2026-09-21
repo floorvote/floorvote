@@ -117,7 +117,7 @@ export const ROLE_CHIP_X: React.CSSProperties = {
 }
 
 // Violet pill for the account-role badge (Owner / Admin). Owner additionally gets
-// a solid violet ring (see chipSystem in Members.tsx) so it reads a step above
+// a solid violet ring (see accountRoleChip below) so it reads a step above
 // Admin; the base border is transparent so Admin and Member keep an identical box
 // size. Custom "Team roles" chips use the bluer indigo ROLE_CHIP palette — a
 // distinct hue — so the two never read as the same thing in the adjacent column.
@@ -132,6 +132,20 @@ export const ADMIN_BADGE = {
   display: 'inline-block' as const,
   flexShrink: 0 as const,
   whiteSpace: 'nowrap' as const,
+}
+
+// Account-role chip (Owner / Admin / Member) — the single source for both the
+// admin Members table and the sidebar members popup. Owner gets the solid violet
+// ring; anything that isn't owner/admin falls back to the muted gray pairing.
+export function accountRoleChip(role: string): React.CSSProperties {
+  return role === 'owner' ? { ...ADMIN_BADGE, border: `1px solid ${color.brandViolet}` }
+    : role === 'admin' ? ADMIN_BADGE
+    : { ...ADMIN_BADGE, color: color.textSlate500, background: color.surfaceMuted }
+}
+
+// Human label for an account role. Pairs with accountRoleChip.
+export function accountRoleLabel(role: string): string {
+  return role === 'owner' ? 'Owner' : role === 'admin' ? 'Admin' : 'Member'
 }
 
 // Display name with email fallback — use everywhere a user name is shown.

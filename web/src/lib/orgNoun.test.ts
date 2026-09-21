@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_ORG_NOUN, normalizeOrgNoun,
-  titleCase, orgPositionLabel, orgRelevanceLabel,
+  titleCase, orgPositionLabel, orgRelevanceLabel, orgRolesLabel,
 } from './orgNoun'
 
 describe('normalizeOrgNoun', () => {
@@ -45,6 +45,10 @@ describe('display helpers', () => {
   })
   it('orgRelevanceLabel', () => {
     expect(orgRelevanceLabel('coalition')).toBe('Coalition relevance')
+  })
+  it('orgRolesLabel', () => {
+    expect(orgRolesLabel('chapter')).toBe('Chapter roles')
+    expect(orgRolesLabel('team')).toBe('Team roles')
   })
 })
 

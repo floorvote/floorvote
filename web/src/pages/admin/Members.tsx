@@ -9,11 +9,12 @@ import { HintText } from '../../components/HintText'
 import { CARD } from '../../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../../lib/textStyles'
 import { relativeTime, absoluteTime, feedTsToEpoch } from '../../lib/time'
-import { displayName, ADMIN_BADGE, ROLE_CHIP, ROLE_CHIP_X, sortRoles } from '../../lib/chipStyles'
+import { displayName, accountRoleChip, accountRoleLabel, ROLE_CHIP, ROLE_CHIP_X, sortRoles } from '../../lib/chipStyles'
+import { MemberNameCell } from '../../components/MemberNameCell'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useDemo } from '../../context/DemoContext'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
-import { titleCase } from '../../lib/orgNoun'
+import { orgRolesLabel } from '../../lib/orgNoun'
 
 type Role = { id: string; name: string }
 
@@ -203,7 +204,7 @@ export function Members() {
         setMembers(memberData)
         setOrgRoles(roleData)
         const noun = configData.org_noun ?? 'team'
-        setRolesLabel(`${titleCase(noun)} roles`)
+        setRolesLabel(orgRolesLabel(noun))
         setAccountDeletionEnabled(configData.accountDeletionEnabled ?? false)
       })
       .catch(() => setListError('Failed to load members.'))
@@ -596,11 +597,6 @@ export function Members() {
     display: 'inline-flex', alignItems: 'center',
     whiteSpace: 'nowrap', cursor: 'pointer',
   }
-  const chipSystem = (role: string): React.CSSProperties =>
-    role === 'owner' ? { ...ADMIN_BADGE, border: `1px solid ${color.brandViolet}` }
-    : role === 'admin' ? ADMIN_BADGE
-    : { ...ADMIN_BADGE, color: color.textSlate500, background: color.surfaceMuted }
-
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
       <SettingsNav />
@@ -846,6 +842,12 @@ export function Members() {
               {[...members]
                 .filter(memberMatchesFilters)
                 .sort((a, b) => {
+                  // Pin the signed-in user to the top, but only in the unfiltered
+                  // list — a search for someone else must not staple self on top.
+                  if (!(memberSearch.trim() !== '' || troubleFilter)) {
+                    if (a.id === user?.id) return -1
+                    if (b.id === user?.id) return 1
+                  }
                   const rolePriority = { owner: 0, admin: 1, member: 2 } as const
                   if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
                   return displayName(a).localeCompare(displayName(b))
@@ -857,33 +859,16 @@ export function Members() {
                 return (
                   <tr key={member.id} style={{ borderBottom: `1px solid ${color.surfaceMuted}`, opacity: isDeactivated ? 0.6 : 1 }}>
                     <td className="members-name-cell" style={{ padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, color: color.textPrimary }}>{member.name}</span>
-                        {isSelf && (
-                          <span style={{
-                            fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.countChipText,
-                            background: color.countChipBg, borderRadius: radius.sm, padding: '1px 5px',
-                            letterSpacing: '0.05em', flexShrink: 0,
-                          }}>ME</span>
-                        )}
-                      </div>
-                      {member.subtitle && (
-                        <div style={{ fontSize: fontSize.sm, color: color.textSlate500, marginTop: 1 }}>{member.subtitle}</div>
-                      )}
-                      <a
-                        href={`mailto:${member.email}`}
-                        style={{ fontSize: fontSize.sm, color: color.textMuted, textDecoration: 'none' }}
-                        onMouseOver={e => (e.currentTarget.style.textDecoration = 'underline')}
-                        onMouseOut={e => (e.currentTarget.style.textDecoration = 'none')}
-                        onFocus={e => (e.currentTarget.style.textDecoration = 'underline')}
-                        onBlur={e => (e.currentTarget.style.textDecoration = 'none')}
-                      >
-                        {member.email}
-                      </a>
+                      <MemberNameCell
+                        name={member.name}
+                        email={member.email}
+                        subtitle={member.subtitle}
+                        isSelf={isSelf}
+                      />
                     </td>
                     <td data-label="Role" style={{ padding: '10px 12px', color: color.textSlate500 }}>
-                      <span style={chipSystem(member.role)}>
-                        {member.role === 'owner' ? 'Owner' : member.role === 'admin' ? 'Admin' : 'Member'}
+                      <span style={accountRoleChip(member.role)}>
+                        {accountRoleLabel(member.role)}
                       </span>
                     </td>
                     <td data-label={rolesLabel} style={{ padding: '10px 12px' }}>

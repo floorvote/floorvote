@@ -65,6 +65,9 @@ export interface Config {
   associationName: string
   states: string[]
   modules: Record<string, boolean>
+  /** Resolved org self-noun from GET /config (e.g. 'team', 'chapter'). Drives
+   *  the members popup's roles-column header via orgRolesLabel. */
+  orgNoun?: string
   demoLocked?: boolean
 }
 

@@ -34,6 +34,7 @@ import { PriorityChip } from './sidebar/PriorityChip'
 import { VoteButton } from './sidebar/VoteButton'
 import { UserCard } from './sidebar/UserCard'
 import { MembersPopup } from './sidebar/MembersPopup'
+import { DEFAULT_ORG_NOUN, orgRolesLabel } from '../lib/orgNoun'
 import { HearingRow } from './sidebar/HearingRow'
 import { calendarChipLabel, showCustomizeControl } from './sidebar/helpers'
 import type { SidebarProps, SidebarData, Stats, Config, Member } from './sidebar/types'
@@ -890,7 +891,13 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             {stats?.memberCount ?? '—'} member{stats?.memberCount !== 1 ? 's' : ''}
           </button>
           {showMembersPopup && members !== null && (
-            <MembersPopup members={members} currentUserId={user?.id} onClose={() => setShowMembersPopup(false)} />
+            <MembersPopup
+              members={members}
+              currentUserId={user?.id}
+              rolesLabel={orgRolesLabel(config?.orgNoun ?? DEFAULT_ORG_NOUN)}
+              triggerRef={membersButtonRef}
+              onClose={() => setShowMembersPopup(false)}
+            />
           )}
         </div>
         <div style={{ display: 'flex', gap: 16, padding: '2px 4px 2px 12px' }}>
