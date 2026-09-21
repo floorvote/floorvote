@@ -538,6 +538,11 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
     if (err instanceof ApiError && err.status === 404) {
       throw new Response('Not found', { status: 404 })
     }
+    // Terms acceptance is outstanding. Rethrow the ApiError as-is rather than
+    // flattening it into a 500: BillDetailError keys on `code` to show the
+    // acceptance screen, and a Response would arrive with that code gone and
+    // read as "Failed to load bill." to someone following a digest-email link.
+    if (err instanceof ApiError && err.code === 'terms_not_accepted') throw err
     throw new Response('Failed to load bill.', { status: 500 })
   }
   // Normalize /bills/:id and legacy /:session/:billNumber to the canonical

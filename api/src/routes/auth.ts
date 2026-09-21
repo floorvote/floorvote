@@ -372,7 +372,6 @@ authRoutes.get('/me', async (c) => {
   })
 })
 
-// POST /auth/logout
 // POST /auth/accept-terms
 //
 // Mounts requireAuth to get c.get('user'), which is the only reason it needs an
@@ -412,6 +411,7 @@ authRoutes.post('/accept-terms', requireAuth, async (c) => {
   return new Response(null, { status: 204 })
 })
 
+// POST /auth/logout
 authRoutes.post('/logout', async (c) => {
   const rawToken = getCookie(c, 'session')
   if (rawToken) {
