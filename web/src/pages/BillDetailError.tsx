@@ -1,5 +1,7 @@
-import { useRouteError, isRouteErrorResponse, Link } from 'react-router-dom'
+import { useRouteError, isRouteErrorResponse, useRevalidator, Link } from 'react-router-dom'
 import { color, fontSize, fontWeight } from '../styles/tokens'
+import { ApiError } from '../lib/api'
+import { AcceptTerms } from '../components/AcceptTerms'
 
 /**
  * errorElement for the bill-detail routes. Renders three distinct outcomes
@@ -15,7 +17,15 @@ import { color, fontSize, fontWeight } from '../styles/tokens'
  */
 export function BillDetailError() {
   const error = useRouteError()
+  const revalidator = useRevalidator()
   const status = isRouteErrorResponse(error) ? error.status : null
+
+  // These routes carry their own errorElement, which shadows RootErrorBoundary,
+  // so the gate has to be handled here too. Accepting revalidates, which re-runs
+  // billDetailLoader and lands the reader on the bill they actually asked for.
+  if (error instanceof ApiError && error.code === 'terms_not_accepted') {
+    return <AcceptTerms onAccepted={() => { void revalidator.revalidate() }} />
+  }
 
   if (status === 404) {
     return (
