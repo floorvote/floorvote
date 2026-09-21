@@ -154,3 +154,42 @@ describe('RequireAuth', () => {
     })
   })
 })
+
+// The AcceptTerms component has its own suite; here the only question is whether
+// RequireAuth puts it up in place of the routed content.
+vi.mock('./AcceptTerms', () => ({ AcceptTerms: () => <div>accept terms screen</div> }))
+
+describe('RequireAuth — the terms gate', () => {
+  function renderProtected() {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route element={<RequireAuth />}>
+            <Route path="/" element={<div>protected page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+    advance(600)
+  }
+
+  it('renders the interstitial instead of the routed content when acceptance is required', () => {
+    hoisted.auth = {
+      user: { id: 'u1', termsAcceptanceRequired: true },
+      loading: false, authError: false, authProgress: createProgressBox(),
+    }
+    renderProtected()
+    expect(screen.getByText('accept terms screen')).toBeInTheDocument()
+    expect(screen.queryByText('protected page')).toBeNull()
+  })
+
+  it('renders the routed content once acceptance is not required', () => {
+    hoisted.auth = {
+      user: { id: 'u1', termsAcceptanceRequired: false },
+      loading: false, authError: false, authProgress: createProgressBox(),
+    }
+    renderProtected()
+    expect(screen.getByText('protected page')).toBeInTheDocument()
+    expect(screen.queryByText('accept terms screen')).toBeNull()
+  })
+})

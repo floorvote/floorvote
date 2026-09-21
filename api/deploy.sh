@@ -58,6 +58,36 @@ if [ -n "$CONFIGURED_ACCOUNT" ]; then
   fi
 fi
 
+# Preflight: refuse to arm the terms gate on a build that has no documents.
+#
+# LEGAL_TERMS_UPDATED arms the acceptance interstitial, which links to /terms and
+# /privacy. Those routes render documents bundled into the web build from
+# docs/legal/ (web/vite.config.ts, the `legal-docs` plugin). They are an operator
+# overlay -- absent upstream and on any fork that has not written its own -- so a
+# tenant can be armed against a build that cannot show the reader what they are
+# being asked to accept, with no way past the interstitial.
+#
+# This is the one genuinely new coupling the gate introduces, so it is a hard
+# stop rather than a warning. Unset the var, or install both documents.
+TERMS_ARMED=$(awk -v want="[env.${ENV}.vars]" '
+  $0 == want { inblock = 1; next }
+  inblock && /^\[/ { inblock = 0 }
+  inblock && /^[[:space:]]*LEGAL_TERMS_UPDATED[[:space:]]*=/ {
+    sub(/^[^=]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit
+  }
+' wrangler.toml)
+if [ -n "$TERMS_ARMED" ]; then
+  for doc in "../docs/legal/TERMS OF USE.md" "../docs/legal/PRIVACY POLICY.md"; do
+    if [ ! -f "$doc" ]; then
+      echo "ERROR: env ${ENV} sets LEGAL_TERMS_UPDATED=${TERMS_ARMED}, but ${doc#../} is missing." >&2
+      echo "The acceptance interstitial would link to a page that does not render." >&2
+      echo "Install both operator legal documents, or unset LEGAL_TERMS_UPDATED for this env." >&2
+      exit 1
+    fi
+  done
+  echo "Terms gate armed for ${ENV} (LEGAL_TERMS_UPDATED=${TERMS_ARMED}); both documents present."
+fi
+
 echo "Building web assets..."
 npm run build --prefix ../web
 

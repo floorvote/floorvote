@@ -1,6 +1,7 @@
 import { Navigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { LoadingState } from './LoadingState'
+import { AcceptTerms } from './AcceptTerms'
 import { color, fontSize, fontWeight, radius } from '../styles/tokens'
 
 export function RequireAuth() {
@@ -59,5 +60,10 @@ export function RequireAuth() {
     )
   }
   if (!user) return <Navigate to="/login" replace />
+  // The clickwrap gate's frontend half. Every authenticated route is wrapped by
+  // this component, so there is no route to reach with the interstitial up --
+  // which matches the API side, where requireAuth refuses everything but
+  // POST /auth/accept-terms.
+  if (user.termsAcceptanceRequired) return <AcceptTerms />
   return <Outlet />
 }

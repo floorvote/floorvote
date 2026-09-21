@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory'
 import { getCookie } from 'hono/cookie'
-import { eq } from 'drizzle-orm'
+import { eq, sql, getTableColumns } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { sessions, users } from '../db/schema'
 import { hashToken } from '../lib/crypto'
@@ -22,6 +22,24 @@ export type AuthVariables = {
     canVote: boolean
   }
 }
+
+// The one route that must work while the terms gate is refusing everything else.
+//
+// Everything else is exempt by construction, which is why this list has a single
+// entry: routes on authRoutes do not mount requireAuth (they cannot, being
+// pre-auth), GET /auth/me and POST /auth/logout read the session cookie
+// themselves, and /terms and /privacy are frontend routes that make no API call
+// at all. accept-terms needs the exemption only because it *does* mount
+// requireAuth, to get c.get('user').
+//
+// Exact-match, not DEMO_WRITE_ALLOWLIST's regex compilation: that list has
+// `:param` segments and this one does not. What is worth borrowing is its test —
+// termsGate.test.ts compares these entries against the live route table by
+// string equality, so a renamed route fails loudly instead of silently
+// exempting nothing.
+export const TERMS_EXEMPT: ReadonlySet<string> = new Set([
+  'POST /api/auth/accept-terms',
+])
 
 export const requireAuth = createMiddleware<{
   Bindings: Env
@@ -51,11 +69,41 @@ export const requireAuth = createMiddleware<{
     return c.json({ error: 'Not authenticated' }, 401)
   }
 
-  const user = await db.select().from(users).where(eq(users.id, session.userId)).get()
+  // The acceptance read rides the user fetch as a correlated subquery rather than
+  // a third round trip. MAX(terms_updated), not the last row written: it answers
+  // "the furthest version this user has accepted", so a stray older row -- a
+  // replayed request, a backfill -- cannot un-accept somebody.
+  const user = await db.select({
+    ...getTableColumns(users),
+    newestTermsAccepted: sql<string | null>`(
+      SELECT MAX(terms_updated) FROM terms_acceptances WHERE user_id = users.id
+    )`,
+  }).from(users).where(eq(users.id, session.userId)).get()
   if (!user) return c.json({ error: 'Not authenticated' }, 401)
 
   if (user.deactivatedAt && !(await isSuperadminRequest(c))) {
     return c.json({ error: 'Account deactivated' }, 403)
+  }
+
+  // The clickwrap gate. Inside requireAuth rather than composed alongside it: a
+  // separate middleware would have to be remembered on every new route, and
+  // forgetting it fails OPEN. Here, new routes are covered automatically and
+  // every exemption is explicit in TERMS_EXEMPT.
+  //
+  // Unset or empty disarms it. Legal documents are an operator overlay, absent
+  // from upstream forks and from the demo -- arming everywhere would put a
+  // clickwrap in front of visitors with nothing to read.
+  const termsUpdated = c.env.LEGAL_TERMS_UPDATED
+  if (termsUpdated) {
+    const key = `${c.req.method} ${new URL(c.req.url).pathname}`
+    if (!TERMS_EXEMPT.has(key)) {
+      // Lexicographic on YYYY-MM-DD. Never datetime() -- these are dates, not
+      // timestamps, and wrapping either side invites a parse that disagrees.
+      const accepted = user.newestTermsAccepted
+      if (!accepted || accepted < termsUpdated) {
+        return c.json({ error: 'Terms not accepted', code: 'terms_not_accepted' }, 403)
+      }
+    }
   }
 
   if (user.role !== 'admin' && user.role !== 'member' && user.role !== 'owner') {

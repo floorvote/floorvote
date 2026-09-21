@@ -517,6 +517,10 @@ EMAIL_FROM = "${EMAIL_FROM:-notifications@example.com}"
 EMAIL_FROM_BULK = "${EMAIL_FROM_BULK:-}"
 ALERT_EMAILS = "${ALERT_EMAILS:-}"
 OPERATOR_NAME = "${OPERATOR_NAME:-}"
+# Terms-acceptance gate: unset means off. Set it to the date of the last
+# material change to docs/legal/ only when hosting under your own documents,
+# and never on a demo tenant. See api/wrangler.example.toml.
+# LEGAL_TERMS_UPDATED = ""
 OPERATOR_URL = "${OPERATOR_URL:-}"
 OPERATOR_CONTACT_EMAILS = "${OPERATOR_CONTACT_EMAILS:-}"
 SUPERADMIN_JWT_PUBLIC_KEY='${SUPERADMIN_JWT_PUBLIC_KEY}'

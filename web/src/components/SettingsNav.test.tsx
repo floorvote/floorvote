@@ -6,7 +6,7 @@ import * as AuthContext from '../context/AuthContext'
 
 function mockAdminUser() {
   vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-    user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false },
+    user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
     loading: false,
     authError: false,
     authProgress: { current: null },
@@ -14,6 +14,7 @@ function mockAdminUser() {
     setName: vi.fn(),
     setEmailDigestEnabled: vi.fn(),
     setLastSeenFeed: vi.fn(),
+    setTermsAccepted: vi.fn(),
   })
 }
 
@@ -29,7 +30,7 @@ function stubScrollMetrics(nav: HTMLElement, { scrollWidth, clientWidth, scrollL
 describe('SettingsNav', () => {
   it('shows a Notifications tab and no Modules tab', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false },
+      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
       authError: false,
       authProgress: { current: null },
@@ -37,6 +38,7 @@ describe('SettingsNav', () => {
       setName: vi.fn(),
       setEmailDigestEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
+    setTermsAccepted: vi.fn(),
     })
     render(<MemoryRouter><SettingsNav /></MemoryRouter>)
     expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('href', '/admin/notifications')
@@ -45,7 +47,7 @@ describe('SettingsNav', () => {
 
   it('orders admin tabs Account, Config, Members, Notifications, Draft bills and drops the pipe divider', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false },
+      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
       authError: false,
       authProgress: { current: null },
@@ -53,6 +55,7 @@ describe('SettingsNav', () => {
       setName: vi.fn(),
       setEmailDigestEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
+    setTermsAccepted: vi.fn(),
     })
     const { container } = render(<MemoryRouter><SettingsNav /></MemoryRouter>)
 

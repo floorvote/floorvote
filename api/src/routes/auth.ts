@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { eq, and, isNull, gt, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
-import { users, sessions, magicLinks } from '../db/schema'
+import { users, sessions, magicLinks, termsAcceptances } from '../db/schema'
 import { nowDb } from '../lib/dbTime'
 import { dbTsToEpoch } from '../../../shared/time'
 import { generateToken, hashToken } from '../lib/crypto'
@@ -16,6 +16,8 @@ import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
 import { ensureDemoSession, demoSessionCookie } from '../lib/demoSession'
+import { requireAuth } from '../middleware/auth'
+import { termsAcceptanceState } from '../lib/termsAcceptance'
 import type { AppEnv } from '../types'
 
 export const authRoutes = new Hono<AppEnv>()
@@ -290,6 +292,7 @@ authRoutes.get('/me', async (c) => {
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
+            ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
           })
         }
       }
@@ -365,10 +368,50 @@ authRoutes.get('/me', async (c) => {
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
+    ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),
   })
 })
 
 // POST /auth/logout
+// POST /auth/accept-terms
+//
+// Mounts requireAuth to get c.get('user'), which is the only reason it needs an
+// entry in TERMS_EXEMPT -- it would otherwise be refused by the very gate it
+// exists to clear.
+//
+// No rate limiting: session-gated, one small insert, and the no-op below bounds
+// what a repeat caller can write.
+authRoutes.post('/accept-terms', requireAuth, async (c) => {
+  const termsUpdated = c.env.LEGAL_TERMS_UPDATED
+  // Disarmed: there is no version to record an acceptance against. 204 anyway,
+  // so a client that posts optimistically is not handed an error it cannot act on.
+  if (!termsUpdated) return new Response(null, { status: 204 })
+
+  const db = getDb(c.env.DB)
+  const user = c.get('user')
+
+  // Idempotent by read-then-insert rather than a unique constraint: re-acceptance
+  // after a bump is a legitimate second row for the same user, so uniqueness on
+  // user_id alone would be wrong and (user_id, terms_updated) would turn a
+  // double-submit into a 500 instead of a no-op.
+  const existing = await db
+    .select({ newest: sql<string | null>`MAX(${termsAcceptances.termsUpdated})` })
+    .from(termsAcceptances)
+    .where(eq(termsAcceptances.userId, user.id))
+    .get()
+  if (existing?.newest && existing.newest >= termsUpdated) {
+    return new Response(null, { status: 204 })
+  }
+
+  await db.insert(termsAcceptances).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    termsUpdated,
+    acceptedAt: nowDb(),
+  })
+  return new Response(null, { status: 204 })
+})
+
 authRoutes.post('/logout', async (c) => {
   const rawToken = getCookie(c, 'session')
   if (rawToken) {

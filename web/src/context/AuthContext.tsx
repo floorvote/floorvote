@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { ApiError } from '../lib/api'
+import { TERMS_NOT_ACCEPTED_EVENT } from '../lib/appEvents'
 import { retryFetch, createProgressBox, type ProgressBox } from '../lib/retryFetch'
 
 type User = {
@@ -13,6 +14,10 @@ type User = {
   emailWeekAheadEnabled: boolean
   lastSeenFeed: string | null
   isLastOwner: boolean
+  /** True while the Legal Terms must be accepted before the app is usable. */
+  termsAcceptanceRequired: boolean
+  /** Which copy the acceptance interstitial shows. */
+  termsAcceptanceKind: 'first_login' | 'existing_member' | 'update'
 }
 
 type AuthState = {
@@ -25,11 +30,13 @@ type AuthState = {
   setName: (name: string) => void
   setEmailDigestEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
+  setTermsAccepted: () => void
 }
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
   setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+  setTermsAccepted: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -60,6 +67,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => controller.abort()
   }, [authProgress])
 
+  // A tab left open when LEGAL_TERMS_UPDATED is bumped starts getting 403s from
+  // every route. api.ts announces the first one, and re-reading /auth/me flips
+  // termsAcceptanceRequired so RequireAuth puts the interstitial up instead of
+  // letting the failure surface as a generic error.
+  //
+  // /auth/me is safe to call here: it reads the session cookie itself rather
+  // than mounting requireAuth, so it answers 200 while the gate is refusing
+  // everything else -- no loop.
+  useEffect(() => {
+    function recheck() {
+      retryFetch<User>('/auth/me')
+        .then(setUser)
+        .catch(() => { /* leave the existing state alone; the next request re-announces */ })
+    }
+    window.addEventListener(TERMS_NOT_ACCEPTED_EVENT, recheck)
+    return () => window.removeEventListener(TERMS_NOT_ACCEPTED_EVENT, recheck)
+  }, [])
+
   function setSubtitle(subtitle: string | null) {
     setUser((prev) => prev ? { ...prev, subtitle } : prev)
   }
@@ -81,7 +106,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, lastSeenFeed: ts } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed }}>{children}</AuthContext>
+  // Accepting flips the flag in context rather than reloading: /auth/me is
+  // fetched once at app load, so a reload would be the only other way to clear
+  // the interstitial, and it would throw away wherever the user was headed.
+  function setTermsAccepted() {
+    setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
+  }
+
+  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed, setTermsAccepted }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {

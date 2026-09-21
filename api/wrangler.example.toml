@@ -111,6 +111,23 @@ SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # published. Left unset, the footer offers the upstream repository, which is
 # accurate only while you run it unmodified. "" withdraws the offer.
 # OPERATOR_SOURCE_URL = "https://github.com/yourorg/floorvote"
+#
+# Arms the terms-acceptance gate: every user must tick a checkbox agreeing to the
+# Legal Terms before the app is usable, and again whenever this date moves. Unset
+# or empty leaves the gate off, which is the right state unless you host under
+# your own legal documents.
+#
+# The value is the date of the last MATERIAL change to those documents, bumped by
+# hand. Do NOT derive it from their "Last updated" line -- that moves for typo
+# fixes, and every move re-prompts your entire membership.
+#
+# Requires both docs/legal/TERMS OF USE.md and docs/legal/PRIVACY POLICY.md to be
+# installed: the interstitial links to /terms and /privacy, which render from
+# them. api/deploy.sh refuses to deploy an armed env without both.
+#
+# Never arm a DEMO_MODE tenant -- demo visitors share one account, so there is no
+# one to bind and nothing to record.
+# LEGAL_TERMS_UPDATED = "2026-01-31"
 # AI_GATEWAY_ENABLED = "true"
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"
 # CF_AIG_GATEWAY = "your-gateway-slug"

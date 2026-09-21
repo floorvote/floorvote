@@ -25,6 +25,18 @@ export const sessions = sqliteTable('sessions', {
   lastActive: text('last_active').notNull().default(sql`(datetime('now'))`),
 })
 
+// One row per acceptance of the Legal Terms (migration 0069). Append-only:
+// re-acceptance after a LEGAL_TERMS_UPDATED bump is an INSERT, never an UPDATE,
+// so the record of which text a user accepted previously survives.
+export const termsAcceptances = sqliteTable('terms_acceptances', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  // The LEGAL_TERMS_UPDATED value accepted against. YYYY-MM-DD, compared
+  // lexicographically -- never wrap either side in datetime().
+  termsUpdated: text('terms_updated').notNull(),
+  acceptedAt: text('accepted_at').notNull(),
+})
+
 export const magicLinks = sqliteTable('magic_links', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull(),
