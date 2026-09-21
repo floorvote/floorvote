@@ -1,4 +1,4 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useRevalidator } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { LoadingState } from './LoadingState'
 import { AcceptTerms } from './AcceptTerms'
@@ -64,6 +64,24 @@ export function RequireAuth() {
   // this component, so there is no route to reach with the interstitial up --
   // which matches the API side, where requireAuth refuses everything but
   // POST /auth/accept-terms.
-  if (user.termsAcceptanceRequired) return <AcceptTerms />
+  // Revalidate on acceptance, not just flip the flag.
+  //
+  // This component short-circuits above AppLayout, so it is what a gated user
+  // usually meets -- but by then the router has already stored the 403 thrown
+  // by whichever loader ran for the URL they asked for. Clearing the flag alone
+  // un-hides the layout while leaving that error in place, so the route's own
+  // errorElement renders a second, fresh interstitial inside the shell and only
+  // a manual refresh escapes it. Re-running the loader is what retires it.
+  if (user.termsAcceptanceRequired) return <AcceptTermsGate />
   return <Outlet />
+}
+
+/**
+ * Wraps the interstitial so `useRevalidator` is only called on the branch that
+ * needs it. RequireAuth itself renders on every authenticated route, including
+ * in tests that mount it outside a data router, and that hook throws there.
+ */
+function AcceptTermsGate() {
+  const revalidator = useRevalidator()
+  return <AcceptTerms onAccepted={() => { void revalidator.revalidate() }} />
 }

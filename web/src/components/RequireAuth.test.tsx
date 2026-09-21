@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { StrictMode } from 'react'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
+import { MemoryRouter, Routes, Route, createMemoryRouter, RouterProvider } from 'react-router-dom'
 
 const hoisted = vi.hoisted(() => ({
   auth: {} as Record<string, unknown>,
@@ -157,39 +158,60 @@ describe('RequireAuth', () => {
 
 // The AcceptTerms component has its own suite; here the only question is whether
 // RequireAuth puts it up in place of the routed content.
-vi.mock('./AcceptTerms', () => ({ AcceptTerms: () => <div>accept terms screen</div> }))
+vi.mock('./AcceptTerms', () => ({
+  AcceptTerms: ({ onAccepted }: { onAccepted?: () => void }) => (
+    <div>
+      accept terms screen
+      <button onClick={() => onAccepted?.()}>simulate accept</button>
+    </div>
+  ),
+}))
 
 describe('RequireAuth — the terms gate', () => {
-  function renderProtected() {
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route element={<RequireAuth />}>
-            <Route path="/" element={<div>protected page</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
-    )
-    advance(600)
-  }
-
-  it('renders the interstitial instead of the routed content when acceptance is required', () => {
+  // A data router, because the interstitial branch uses useRevalidator — and
+  // because that is what App.tsx actually mounts.
+  function renderGated(required: boolean, loader?: () => unknown) {
     hoisted.auth = {
-      user: { id: 'u1', termsAcceptanceRequired: true },
+      user: { id: 'u1', termsAcceptanceRequired: required },
       loading: false, authError: false, authProgress: createProgressBox(),
     }
-    renderProtected()
-    expect(screen.getByText('accept terms screen')).toBeInTheDocument()
+    const router = createMemoryRouter(
+      [{
+        element: <RequireAuth />,
+        children: [{ index: true, loader: loader ?? (() => null), element: <div>protected page</div> }],
+      }],
+      { initialEntries: ['/'] },
+    )
+    render(<StrictMode><RouterProvider router={router} /></StrictMode>)
+  }
+
+  it('renders the interstitial instead of the routed content when acceptance is required', async () => {
+    vi.useRealTimers()
+    renderGated(true)
+    expect(await screen.findByText('accept terms screen')).toBeInTheDocument()
     expect(screen.queryByText('protected page')).toBeNull()
   })
 
-  it('renders the routed content once acceptance is not required', () => {
-    hoisted.auth = {
-      user: { id: 'u1', termsAcceptanceRequired: false },
-      loading: false, authError: false, authProgress: createProgressBox(),
-    }
-    renderProtected()
-    expect(screen.getByText('protected page')).toBeInTheDocument()
+  it('renders the routed content once acceptance is not required', async () => {
+    vi.useRealTimers()
+    renderGated(false)
+    expect(await screen.findByText('protected page')).toBeInTheDocument()
     expect(screen.queryByText('accept terms screen')).toBeNull()
+  })
+
+  // Regression, found on the wi canary. RequireAuth short-circuits ABOVE
+  // AppLayout, so it -- not the error boundaries -- is what a gated user
+  // usually meets. The router has already stored the failed loader's error by
+  // then, and clearing the flag alone does not re-run that loader: the layout
+  // appears and the stale error renders a second, fresh interstitial inside it.
+  // Only a manual refresh escaped it.
+  it('revalidates after acceptance, so the stale loader error is retired', async () => {
+    vi.useRealTimers()
+    let loaderRuns = 0
+    renderGated(true, () => { loaderRuns++; return null })
+    await screen.findByText('accept terms screen')
+    const before = loaderRuns
+    fireEvent.click(screen.getByText('simulate accept'))
+    await waitFor(() => expect(loaderRuns).toBeGreaterThan(before))
   })
 })
