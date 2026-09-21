@@ -62,11 +62,23 @@ describe('AcceptTerms', () => {
 
   // A same-tab navigation would unmount the interstitial and discard the
   // checkbox — load-bearing, not cosmetic.
-  it('opens both documents in a new tab', () => {
+  it('opens every document link in a new tab', () => {
     renderIt()
-    for (const name of [/terms of use/i, /privacy policy/i]) {
-      expect(screen.getByRole('link', { name })).toHaveAttribute('target', '_blank')
-    }
+    // Named twice now — in the body sentence and in the checkbox label — and
+    // both have to open alongside, not navigate away.
+    const links = screen.getAllByRole('link')
+    expect(links.length).toBeGreaterThanOrEqual(2)
+    for (const link of links) expect(link).toHaveAttribute('target', '_blank')
+    expect(links.some(l => /terms of use/i.test(l.textContent ?? ''))).toBe(true)
+    expect(links.some(l => /privacy policy/i.test(l.textContent ?? ''))).toBe(true)
+  })
+
+  // The bare row of links under the body is gone: three sightings of the same
+  // pair on one short screen read as boilerplate.
+  it('names the documents twice, not three times', () => {
+    renderIt()
+    const mentions = (document.body.textContent ?? '').match(/Terms of Use/g) ?? []
+    expect(mentions).toHaveLength(2)
   })
 
   it('welcomes a first_login by product name', () => {
@@ -84,7 +96,8 @@ describe('AcceptTerms', () => {
 
   it('tells an update what changed underneath them', () => {
     renderIt('update')
-    expect(screen.getByText(/we.ve updated our terms of use and privacy policy/i)).toBeInTheDocument()
+    // textContent, not getByText: the sentence is broken up by the two links.
+    expect(document.body.textContent).toMatch(/updated our Terms of Use and Privacy Policy since you last accepted/i)
   })
 
   it('signs out', async () => {
