@@ -15,6 +15,7 @@ function mockAdminUser() {
     setEmailDigestEnabled: vi.fn(),
     setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
+    clearUser: vi.fn(),
   })
 }
 
@@ -39,6 +40,7 @@ describe('SettingsNav', () => {
       setEmailDigestEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
+    clearUser: vi.fn(),
     })
     render(<MemoryRouter><SettingsNav /></MemoryRouter>)
     expect(screen.getByRole('link', { name: 'Notifications' })).toHaveAttribute('href', '/admin/notifications')
@@ -56,6 +58,7 @@ describe('SettingsNav', () => {
       setEmailDigestEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
     setTermsAccepted: vi.fn(),
+    clearUser: vi.fn(),
     })
     const { container } = render(<MemoryRouter><SettingsNav /></MemoryRouter>)
 
