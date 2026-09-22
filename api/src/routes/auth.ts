@@ -163,6 +163,46 @@ authRoutes.get('/verify', async (c) => {
   return c.redirect(`${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`, 302)
 })
 
+// GET /auth/verify/status?token=…
+//
+// What a token's fate is, WITHOUT consuming it. /auth/verify cannot answer
+// this: it renders a button whose POST is the only thing that reads a link,
+// and reading it spends it. AuthVerify needs the answer before deciding
+// whether to bother a signed-in visitor at all -- for a spent link there is
+// nothing to protect, and the click in front of it protects nothing.
+//
+// Writes nothing: no used_at, no session, no auth_events row.
+authRoutes.get('/verify/status', async (c) => {
+  // Own key, not magic-link's: sharing the bucket would let a burst of status
+  // checks lock someone out of requesting an actual login link. Fails open
+  // when the binding is absent (dev/tests), like every other use.
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `verify-status:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+
+  const rawToken = c.req.query('token')
+  if (!rawToken) return c.json({ error: 'token is required' }, 400)
+
+  const db = getDb(c.env.DB)
+  const link = await db
+    .select({ usedAt: magicLinks.usedAt, expiresAt: magicLinks.expiresAt, email: users.email })
+    .from(magicLinks)
+    .innerJoin(users, eq(users.id, magicLinks.userId))
+    .where(eq(magicLinks.tokenHash, await hashToken(rawToken)))
+    .get()
+
+  if (!link) return c.json({ status: 'invalid' })
+  if (link.usedAt) return c.json({ status: 'used' })
+  if (dbTsToEpoch(link.expiresAt) < Date.now()) return c.json({ status: 'expired' })
+
+  // The address rides along only here. Whoever holds a live token can already
+  // learn it by spending the token and reading the profile, so naming it costs
+  // a sliver of stealth and buys a warning the reader can act on. Once the
+  // token is dead that argument dies with it -- hence no email above.
+  return c.json({ status: 'valid', email: link.email })
+})
+
 // POST /auth/verify
 authRoutes.post('/verify', async (c) => {
   const body = await c.req.json<{ token?: string }>().catch(() => ({} as { token?: string }))
