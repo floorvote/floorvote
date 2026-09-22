@@ -1,5 +1,6 @@
 import React, { useState, type FormEvent } from 'react'
 import { useSearchParams, Navigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 import { apiFetch, ApiError } from '../lib/api'
 import { Wordmark as BrandWordmark } from '../components/Wordmark'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -13,6 +14,7 @@ const VERIFY_ERRORS: Record<string, string> = {
 }
 
 export function AuthVerify() {
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const [loading, setLoading] = useState(false)
@@ -32,6 +34,19 @@ export function AuthVerify() {
       window.location.replace('/')
     } catch (err) {
       const key = err instanceof ApiError ? err.message : 'invalid'
+      // Already signed in, and the link is spent. Nothing is wrong: this is a
+      // stale email -- often months old -- clicked by someone whose session
+      // never lapsed, because every visit extends it. Telling them to request
+      // a new link asks them to fix a problem they do not have, and the only
+      // way out was to know to type the bare domain.
+      //
+      // Deliberately only on failure. A VALID token must still be consumed
+      // even for a signed-in visitor: that is how a forwarded link signs you
+      // in as the person it was addressed to.
+      if (user && (key === 'used' || key === 'expired')) {
+        window.location.replace('/')
+        return
+      }
       setError(VERIFY_ERRORS[key] ?? VERIFY_ERRORS.invalid)
       setLoading(false)
     }

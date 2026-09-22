@@ -16,11 +16,13 @@ vi.mock('../lib/legalVisibility', () => ({
 vi.mock('../context/DemoContext', () => ({ useDemo: () => ({ demoMode: false }) }))
 
 const setTermsAccepted = vi.fn()
+const clearUser = vi.fn()
 const authState = vi.hoisted(() => ({ kind: 'first_login' as 'first_login' | 'existing_member' | 'update' }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
     user: { id: 'u1', termsAcceptanceKind: authState.kind },
     setTermsAccepted,
+    clearUser,
   }),
 }))
 
@@ -105,6 +107,9 @@ describe('AcceptTerms', () => {
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }))
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith('/auth/logout', { method: 'POST' }))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login'))
+    // Must forget the user locally too, or /login's authenticated redirect
+    // bounces them straight back into the gated app.
+    expect(clearUser).toHaveBeenCalled()
   })
 
   it('offers no way to decline — refusing is leaving', () => {

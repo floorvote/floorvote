@@ -37,7 +37,7 @@ export function AcceptTerms({ onAccepted }: {
    */
   onAccepted?: () => void
 } = {}) {
-  const { user, setTermsAccepted } = useAuth()
+  const { user, setTermsAccepted, clearUser } = useAuth()
   const { demoMode } = useDemo()
   const { showTerms, showPrivacy } = legalDocsVisible(!!demoMode)
   const navigate = useNavigate()
@@ -94,6 +94,7 @@ export function AcceptTerms({ onAccepted }: {
   // only an admin can remove an account.
   async function handleSignOut() {
     await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {})
+    clearUser()
     navigate('/login')
   }
 

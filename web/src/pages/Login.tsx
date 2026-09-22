@@ -1,11 +1,12 @@
 import React, { useState, useEffect, type FormEvent } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { Navigate, useSearchParams, Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { Wordmark as BrandWordmark } from '../components/Wordmark'
 import { Turnstile } from '../components/Turnstile'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { legalDocsVisible } from '../lib/legalVisibility'
+import { useAuth } from '../hooks/useAuth'
 
 const AUTH_ERRORS: Record<string, string> = {
   expired: 'This link has expired. Request a new one.',
@@ -14,6 +15,16 @@ const AUTH_ERRORS: Record<string, string> = {
 }
 
 export function Login() {
+  // Someone who is already signed in has no business on a sign-in form. This
+  // is most often reached by clicking a stale magic link: AuthVerify sends
+  // them here when the link turns out to be spent, and before this they were
+  // asked to request another one they did not need.
+  //
+  // Safe against a loop only because signing out now clears the auth context
+  // (AuthContext.clearUser) -- otherwise a just-signed-out person would be
+  // bounced back into the app, 401, and land here again.
+  const { user, loading: authLoading } = useAuth()
+
   usePageTitle('Sign In')
   const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
@@ -49,6 +60,12 @@ export function Login() {
       .catch(() => {})
       .finally(() => setBootstrapped(true))
   }, [isManual])
+
+  // After every hook: an early return above them would change the hook order
+  // between renders, which is a rules-of-hooks violation React does not
+  // forgive. Someone already signed in has no business on a sign-in form --
+  // most often they got here from a stale magic link.
+  if (!authLoading && user) return <Navigate to="/" replace />
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()

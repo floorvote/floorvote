@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
 
 /**
@@ -200,5 +200,26 @@ describe('AuthProvider retries /auth/me', () => {
     // A loop that outlived its component would keep hammering /auth/me forever.
     expect(hoisted.calls).toHaveLength(1)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+// Signing out has to forget the user locally, not just server-side. /login now
+// redirects an authenticated visitor into the app, so a context that still
+// holds the old user after logout would bounce them straight back, 401 in the
+// loaders, and return them to /login -- a loop.
+describe('AuthProvider — clearUser', () => {
+  it('forgets the user, so a signed-out person is not treated as signed in', async () => {
+    vi.useRealTimers() // this file runs on fake timers; retryFetch needs real ones
+    hoisted.calls = []
+    hoisted.impl = async () => ({ id: 'u1', email: 'a@b.c' })
+    let ctx: { user: unknown; clearUser: () => void } | null = null
+    function Probe() {
+      ctx = useAuth() as unknown as { user: unknown; clearUser: () => void }
+      return null
+    }
+    render(<AuthProvider><Probe /></AuthProvider>)
+    await waitFor(() => expect(ctx!.user).not.toBeNull())
+    await act(async () => { ctx!.clearUser() })
+    expect(ctx!.user).toBeNull()
   })
 })

@@ -31,12 +31,13 @@ type AuthState = {
   setEmailDigestEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
   setTermsAccepted: () => void
+  clearUser: () => void
 }
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
   setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
-  setTermsAccepted: () => {},
+  setTermsAccepted: () => {}, clearUser: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -121,12 +122,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Accepting flips the flag in context rather than reloading: /auth/me is
   // fetched once at app load, so a reload would be the only other way to clear
   // the interstitial, and it would throw away wherever the user was headed.
+  // Forget the user after signing out. Without this the context keeps the old
+  // user until something reloads the page, so any route that redirects an
+  // authenticated visitor into the app -- /login now does -- would bounce a
+  // just-signed-out person straight back, where the loaders 401 and send them
+  // to /login again.
+  function clearUser() {
+    epoch.current += 1
+    setUser(null)
+  }
+
   function setTermsAccepted() {
     epoch.current += 1
     setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed, setTermsAccepted }}>{children}</AuthContext>
+  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {

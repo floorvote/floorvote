@@ -48,7 +48,7 @@ const MIN_WIDTH = 230
 const MAX_WIDTH = 400
 
 export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
-  const { user } = useAuth()
+  const { user, clearUser } = useAuth()
   const { demoMode } = useDemo()
   const { hasUnread, visitHadUnread } = useFeedUnread()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -157,6 +157,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
 
   async function handleLogout() {
     await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {})
+    clearUser()
     navigate('/login')
   }
 
