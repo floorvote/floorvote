@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { EventForm } from './EventForm'
 import type { BillOption } from '../BillPicker'
 
-const opts: BillOption[] = [{ id: '1', billNumber: 'H 100', title: 'Elections', state: 'RI' }]
+const opts: BillOption[] = [{ id: '1', billNumber: 'H 100', title: 'Elections', state: 'RI', isDraft: false }]
 const pos = { positionStyle: {}, transformOrigin: 'top left', enterOffsetY: -6 }
 
 function setup(props = {}) {

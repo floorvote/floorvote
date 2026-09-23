@@ -7,6 +7,12 @@ export interface BillOption {
   billNumber: string
   title: string
   state: string | null
+  /** Draft bills get the dashed BillBadge variant on the selected pills.
+   *  Required, not optional: GET /calendar/bill-options is the only producer of
+   *  this shape, and an optional field would let a future caller that builds
+   *  options by hand silently hand every draft a solid badge. Required makes
+   *  that a type error at the call site instead. */
+  isDraft: boolean
 }
 
 const MAX_RESULTS = 8
@@ -67,7 +73,12 @@ export function BillPicker({ options, value, onChange, multiState, single }: {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
           {selected.map(b => (
             <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <BillBadge billNumber={b.billNumber} state={b.state ?? undefined} mini />
+              {/* No visible DraftChip: the selected pills are a wrapping row
+                  of badge + remove button inside a form field, and a ~43px chip
+                  per pill would wrap it after two or three selections. The
+                  textual half of the signal is the badge's own screen-reader
+                  label, which costs no layout. */}
+              <BillBadge billNumber={b.billNumber} state={b.state ?? undefined} mini isDraft={b.isDraft} draftSrLabel />
               <button type="button" aria-label={`Remove ${b.billNumber}`} onClick={() => remove(b.id)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: color.textMuted, fontSize: fontSize.sm, padding: 0, lineHeight: 1 }}>×</button>
             </span>
@@ -90,6 +101,11 @@ export function BillPicker({ options, value, onChange, multiState, single }: {
               <span style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold }}>
                 {multiState && o.state ? `${o.state} ${o.billNumber}` : o.billNumber}
               </span>
+              {/* The dropdown rows render no BillBadge at all, so there is no
+                  dashed outline to pair with — but picking a draft unknowingly
+                  is the same mistake the badge exists to prevent, and a
+                  full-width row has room for the word. */}
+              {o.isDraft && <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, color: color.textSecondary, marginLeft: 6 }}>Draft</span>}
               <span style={{ fontSize: fontSize.xs, color: color.textMuted }}> — {o.title}</span>
             </button>
           ))}

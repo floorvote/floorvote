@@ -190,6 +190,28 @@ describe('GET /api/calendar/bill-options', () => {
     const rows = await r.json() as Array<{ id: string; billNumber: string; title: string }>
     expect(rows.map(b => b.billNumber)).toEqual(['H 100'])
   })
+
+  // BillPicker reads isDraft off these rows to pick the dashed BillBadge
+  // variant, but its component tests build the options by hand — so dropping
+  // the select column here would ship solid navy badges for drafts in the
+  // picker with a green web suite. BillDetail's link-to-filed picker also
+  // *filters* on this field, so losing it would additionally offer a draft as a
+  // link target for another draft. These assert the wire payload itself.
+  it('emits isDraft for drafts and filed bills alike', async () => {
+    await seedBill({ billNumber: 'D 1', state: 'RI', session: '2026', matchType: 'manual', isDraft: true })
+    const r = await SELF.fetch('http://localhost/api/calendar/bill-options', { headers: { Cookie: `session=${token}` } })
+    expect(r.status).toBe(200)
+    const rows = await r.json() as Array<{ billNumber: string; isDraft?: boolean }>
+    const draft = rows.find(b => b.billNumber === 'D 1')
+    const filed = rows.find(b => b.billNumber === 'H 100')
+    expect(draft).toBeDefined()
+    expect(draft!.isDraft).toBe(true)
+    // Literal false, not an absent key: absent renders a solid badge and so
+    // looks correct, which is how a dropped column would hide.
+    expect(filed).toBeDefined()
+    expect(filed!.isDraft).toBe(false)
+    expect('isDraft' in filed!).toBe(true)
+  })
 })
 
 describe('POST /api/calendar/events', () => {
