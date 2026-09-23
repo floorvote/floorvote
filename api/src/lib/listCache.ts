@@ -39,6 +39,10 @@ export type ListCacheParams = {
   dir: 'asc' | 'desc'
   page: number
   pageSize: number
+  // drafts is org-shared and low-volume (unlike myBills/unvoted, which are
+  // per-user and bypass this cache entirely), so it widens the cache key
+  // instead of bypassing.
+  drafts: boolean
 }
 
 // Caching is OFF by default. Authenticated tenants edit bills (incl. priority,
@@ -82,6 +86,7 @@ function serializeParams(p: ListCacheParams): string {
     dir: p.dir,
     page: p.page,
     pageSize: p.pageSize,
+    drafts: p.drafts,
   }
   return JSON.stringify(canonical)
 }

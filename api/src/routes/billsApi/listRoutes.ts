@@ -22,6 +22,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const {
       sort, dir: dirParam, minRelevance,
       myBills: myBillsParam, unvoted, newMatches: newMatchesParam,
+      drafts: draftsParam,
       page: pageParam, pageSize: pageSizeParam,
     } = c.req.query()
     const statuses = c.req.queries('status') ?? []
@@ -55,6 +56,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
     const newMatchMinRelevance = newMatchesActive ? await getNewMatchMinRelevance(db) : 0
+    const draftsActive = draftsParam === '1' || draftsParam === 'true'
 
     const finalWhere = await buildBillsWhere(db, {
       statuses,
@@ -71,6 +73,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       unvoted,
       newMatches: newMatchesActive ? '1' : undefined,
       newMatchMinRelevance,
+      drafts: draftsActive ? '1' : undefined,
       cfParamMap,
       userId: currentUser.id,
       matchAny,
@@ -93,6 +96,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
           statuses, priorities, positionValues, sessions, years, states, tagFilters,
           subjectFilters,
           q, minRelevance, cfParamMap, sort: sort ?? 'default', dir: sortDir, page, pageSize,
+          drafts: draftsActive,
         })
       : null
 
@@ -216,7 +220,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       state: b.state,
       status: b.status,
       session: b.session,
-      sessionSlug: sessionToSlug(b.session),
+      sessionSlug: b.isDraft ? String(b.yearStart ?? '') : sessionToSlug(b.session),
       sessionId: b.sessionId,
       yearStart: b.yearStart ?? null,
       yearEnd:   b.yearEnd   ?? null,
@@ -287,6 +291,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const myBillsParam = c.req.query('myBills')
     const unvoted = c.req.query('unvoted')
     const newMatchesParam = c.req.query('newMatches')
+    const draftsParam = c.req.query('drafts')
+    const draftsActive = draftsParam === '1' || draftsParam === 'true'
     const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
     // Threshold is only needed for the admin count or when the worklist filter is active.
@@ -399,7 +405,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 })
+      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0 })
     }
 
     // Shared by the `unvoted` scope filter above and unvotedCount below, so
@@ -413,6 +419,11 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // When the worklist filter is active, every dimensional facet respects it too
     // (mirrors how myBills/unvoted scope the facets above).
     if (newMatchesActive) baseConditions.push(newMatchWhere(newMatchMinRelevance))
+
+    // drafts is a scope like unvoted/newMatches, not a bill fact: it always
+    // narrows and never joins the group operator.
+    const draftPredicate = eq(bills.isDraft, true)
+    if (draftsActive) baseConditions.push(draftPredicate)
 
     // excludeCfFieldId omits that CF field's condition (for CF disjunctive counts).
     // Accepts one id or several — the "other unfiltered fields" facet query needs
@@ -747,6 +758,15 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       .all()
     const unvotedCount = Number(uvc)
 
+    // draftCount: how many drafts exist within the active dimensional filters.
+    // Not gated on isAdmin — drafts are ordinary tracked bills that members vote
+    // on, so the chip is theirs too. Zero hides the chip entirely.
+    const [{ count: dc }] = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(bills)
+      .where(finalWhere ? and(finalWhere, draftPredicate) : draftPredicate)
+      .all()
+    const draftCount = Number(dc)
+
     return c.json({
       status: statusCounts,
       priority: priorityCountsOut,
@@ -760,6 +780,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       myBillsCount,
       newMatchesCount,
       unvotedCount,
+      draftCount,
     })
   })
 }

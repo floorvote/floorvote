@@ -139,7 +139,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0 }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -177,7 +177,7 @@ export function BillList() {
   // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState }
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, draftCount: facetCounts.draftCount, draftsActive: f.drafts }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -205,14 +205,14 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
+    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
     const paramsStr = billsApiParams({
       statuses: f.filterStatuses, priorities: f.filterPriorities, positions: f.filterPositions,
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
-      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, matchAny: f.matchAny,
+      myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
       tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
     }, nextPage, PAGE_SIZE)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
@@ -249,7 +249,7 @@ export function BillList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
@@ -262,6 +262,7 @@ export function BillList() {
     if (f.myBills) params.set('myBills', '1')
     if (f.unvotedOnly) params.set('unvoted', '1')
     if (f.newMatches) params.set('newMatches', '1')
+    if (f.drafts) params.set('drafts', '1')
     if (f.matchAny) params.set('match', 'any')
     f.selectedTags.forEach(t => params.append('tag', t))
     f.selectedSubjects.forEach(s => params.append('subject', s))
@@ -277,7 +278,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -571,7 +572,7 @@ export function BillList() {
   const sorted = allBills
   sortedRef.current = sorted
   const sortedPaths = useMemo(
-    () => sorted.map(b => billUrl({ id: b.id, state: b.state, session: b.session, billNumber: b.billNumber })),
+    () => sorted.map(b => billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })),
     [sorted]
   )
 
@@ -771,8 +772,8 @@ export function BillList() {
         </button>
         {/* Desktop filter dropdowns — hidden on mobile via CSS */}
         <div className="desktop-filter-dropdowns">
-          {/* Scope cluster — viewer-relative filters (My bills, New matches,
-              Not yet voted). These always narrow and never join the chip
+          {/* Scope cluster — workflow filters (My bills, New matches, Not yet
+              voted, Drafts). These always narrow and never join the chip
               row's AND/OR group operator, so they're clustered here, ahead
               of every bill-fact dimension, and separated visually below. */}
           <HoverTooltip text="Show only bills you've voted on, commented on, or noted">
@@ -801,6 +802,16 @@ export function BillList() {
               count={filterCounts.unvotedCount}
             />
           </HoverTooltip>
+          {isFilterDimensionVisible('drafts', filterDimensionCtx) && (
+            <HoverTooltip text="Show only draft bills — pre-filed, not yet introduced">
+              <FilterToggle
+                label={filterDimensionLabel('drafts')}
+                active={f.drafts}
+                onToggle={() => f.setDrafts(v => !v)}
+                count={filterCounts.draftCount}
+              />
+            </HoverTooltip>
+          )}
           <div
             data-testid="scope-separator"
             aria-hidden="true"
@@ -1145,6 +1156,8 @@ export function BillList() {
         newMatchesCount={filterCounts.newMatchesCount}
         unvotedOnly={f.unvotedOnly}
         unvotedCount={filterCounts.unvotedCount}
+        drafts={f.drafts}
+        draftCount={filterCounts.draftCount}
         matchAny={f.matchAny}
         onMatchAnyChange={f.setMatchAny}
         uniqueStates={f.uniqueStates}
@@ -1175,6 +1188,7 @@ export function BillList() {
         onMyBillsChange={f.setMyBills}
         onNewMatchesChange={f.setNewMatches}
         onUnvotedOnlyChange={f.setUnvotedOnly}
+        onDraftsChange={f.setDrafts}
         counts={{ ...filterCounts, session: filterCounts.year }}
         // Mobile's reset is the SAME operation as desktop's — calling the shared
         // handler rather than re-listing setters. The previous inline copy had

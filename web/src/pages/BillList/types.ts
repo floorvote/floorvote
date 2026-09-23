@@ -5,6 +5,7 @@ export type Bill = {
   state: string
   status: string
   session: string
+  sessionSlug: string
   sessionId: string | null
   yearStart: number | null
   yearEnd: number | null
@@ -71,4 +72,5 @@ export type FacetCounts = {
   myBillsCount: number
   newMatchesCount: number
   unvotedCount: number
+  draftCount: number
 }

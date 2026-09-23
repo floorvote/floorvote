@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull, ne } from 'drizzle-orm'
+import { eq, and, inArray, isNull, ne, max } from 'drizzle-orm'
+import type { Context } from 'hono'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
@@ -9,6 +10,7 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
+import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -52,7 +54,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
   router.post('/draft', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const body = await c.req.json<{
-      billNumber?: string; title?: string; summary?: string; sponsor?: string; text?: string; state?: string
+      billNumber?: string; title?: string; summary?: string; sponsor?: string
+      text?: string; state?: string; year?: number
     }>().catch(() => ({} as Record<string, string>))
     const title = body.title?.trim()
     if (!title) return c.json({ error: 'title is required' }, 400)
@@ -60,7 +63,20 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     const id = crypto.randomUUID()
     const user = c.get('user')
     const state = (body.state?.trim() || c.env.STATE || '').toUpperCase()
-    const billNumber = body.billNumber?.trim() || 'DRAFT'
+    // A multi-state tenant has no c.env.STATE fallback, so an omitted body.state
+    // resolves to '' here. billUrl() requires a state, so a stateless draft can
+    // never get a canonical URL — reject rather than silently creating one.
+    // A single-state tenant always has c.env.STATE set, so this never fires there.
+    if (!state) {
+      return c.json({ error: 'This instance tracks multiple states. Include a state when creating a draft.' }, 400)
+    }
+    const year = Number.isInteger(body.year) ? Number(body.year) : await defaultDraftYear(c, db, state)
+    const billNumber = body.billNumber?.trim() || await nextDraftNumber(db, state)
+
+    const collision = await findNumberCollision(db, { state, year, billNumber })
+    if (collision) {
+      return c.json({ error: `${billNumber} is already used by another ${state} bill in ${year}.` }, 409)
+    }
 
     await db.insert(bills).values({
       id,
@@ -68,6 +84,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       billNumber,
       title,
       state,
+      yearStart: year,
+      yearEnd: year,
       matchType: 'manual',
       isDraft: true,
       draftText: body.text?.trim() || null,
@@ -84,7 +102,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       metadata: JSON.stringify({ draft: true, billNumber, title }),
     })
 
-    return c.json({ id, billNumber, title, isDraft: true }, 201)
+    return c.json({ id, billNumber, title, year, isDraft: true }, 201)
   })
 
   // POST /bills/:id/link — merge a draft into a filed bill (admin/owner only). :id is the DRAFT.
@@ -144,6 +162,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
 
     const body = await c.req.json<{
       title?: string; sponsor?: string; summary?: string; text?: string
+      billNumber?: string; year?: number; state?: string
     }>().catch(() => ({} as Record<string, string>))
 
     // Build update object — only include fields present in body
@@ -157,6 +176,39 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     if ('summary' in body) patch.tenantSummary = body.summary?.trim() || null
     if ('text' in body) patch.draftText = body.text?.trim() || null
 
+    // An omitted state leaves the row alone — including a legacy '', which
+    // migration 0070 deliberately did not guess a value for. A state that IS
+    // sent must be usable: billUrl() needs one, so a draft whose state is
+    // cleared could never get a canonical /STATE/YEAR/NUMBER URL. Same
+    // reasoning as the create guard in POST /bills/draft above.
+    let nextState = existing.state
+    if ('state' in body) {
+      const s = body.state?.trim().toUpperCase() ?? ''
+      if (!s) {
+        return c.json({ error: 'A draft without a state cannot have a canonical URL. Include a state when editing a draft.' }, 400)
+      }
+      nextState = s
+    }
+
+    const nextNumber = 'billNumber' in body ? (body.billNumber?.trim() || existing.billNumber) : existing.billNumber
+    const nextYear = Number.isInteger(body.year) ? Number(body.year) : existing.yearStart
+    // State is part of the uniqueness triple (state, year, billNumber), so a
+    // state-only change has to re-run the collision check too — moving a draft
+    // into a state that already numbers a bill this way is the same ambiguity
+    // as renumbering it within one.
+    if (nextNumber !== existing.billNumber || nextYear !== existing.yearStart || nextState !== existing.state) {
+      const collision = await findNumberCollision(db, {
+        state: nextState, year: nextYear as number, billNumber: nextNumber, excludeId: id,
+      })
+      if (collision) {
+        return c.json({ error: `${nextNumber} is already used by another ${nextState} bill in ${nextYear}.` }, 409)
+      }
+      patch.billNumber = nextNumber
+      patch.yearStart = nextYear as number
+      patch.yearEnd = nextYear as number
+      if (nextState !== existing.state) patch.state = nextState
+    }
+
     if (Object.keys(patch).length > 0) {
       await db.update(bills).set(patch).where(eq(bills.id, id))
     }
@@ -169,6 +221,9 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       sponsor: updated!.sponsor ?? null,
       summary: updated!.tenantSummary ?? null,
       text: updated!.draftText ?? null,
+      billNumber: updated!.billNumber,
+      year: updated!.yearStart,
+      state: updated!.state,
       isDraft: true,
     })
   })
@@ -236,4 +291,40 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     await latchTriaged(db, id, c.get('user').id)
     return c.json({ ok: true })
   })
+}
+
+/** The year a new draft should default to. Drafting happens most often during
+ *  the off-season, so once the current session is sine die the sensible default
+ *  is the NEXT session, not the one that just ended.
+ *
+ *  A central outage must not block creating a draft — a slightly wrong year is
+ *  editable, a 500 is not — so this falls back to the tenant's own newest filed
+ *  year and logs.
+ *
+ *  Exported so GET /bills/draft-defaults (lookupRoutes.ts, which must register
+ *  before GET /:id) and this file's own POST /draft can both call it without a
+ *  circular import: lookupRoutes.ts imports from here, not the other way. */
+export async function defaultDraftYear(
+  c: Context<AppEnv>,
+  db: ReturnType<typeof getDb>,
+  state: string,
+): Promise<number> {
+  const thisYear = new Date().getUTCFullYear()
+  try {
+    const res = await centralFetch(c.env, `/tenants/current-session/${state}`)
+    if (res.ok) {
+      const s = await res.json<{ yearStart: number; yearEnd: number; sineDie: boolean }>()
+      if (s.sineDie) return s.yearEnd + 1
+      return Math.min(Math.max(thisYear, s.yearStart), s.yearEnd)
+    }
+    console.error(`[draft-defaults] central returned ${res.status}`)
+  } catch (err) {
+    console.error('[draft-defaults] central unreachable:', err)
+  }
+  const row = await db
+    .select({ yearEnd: max(bills.yearEnd) })
+    .from(bills)
+    .where(and(eq(bills.isDraft, false), eq(bills.state, state)))
+    .get()
+  return row?.yearEnd ?? thisYear
 }

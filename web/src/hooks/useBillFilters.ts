@@ -45,6 +45,7 @@ export function useBillFilters(opts: {
   const [myBills, setMyBills] = useState(() => searchParams.get('myBills') === '1')
   const [unvotedOnly, setUnvotedOnly] = useState(() => searchParams.get('unvoted') === '1')
   const [newMatches, setNewMatches] = useState(() => searchParams.get('newMatches') === '1')
+  const [drafts, setDrafts] = useState(() => searchParams.get('drafts') === '1')
   const [matchAny, setMatchAny] = useState(() => searchParams.get('match') === 'any')
   const [selectedTags, setSelectedTags] = useState<string[]>(() => searchParams.getAll('tag'))
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(
@@ -102,6 +103,7 @@ export function useBillFilters(opts: {
     setMyBills(params.get('myBills') === '1')
     setUnvotedOnly(params.get('unvoted') === '1')
     setNewMatches(params.get('newMatches') === '1')
+    setDrafts(params.get('drafts') === '1')
     setMatchAny(params.get('match') === 'any')
     setSelectedTags(params.getAll('tag'))
     setSelectedSubjects(params.getAll('subject'))
@@ -140,9 +142,10 @@ export function useBillFilters(opts: {
     myBills,
     unvoted: unvotedOnly,
     newMatches,
+    drafts,
     matchAny,
     cf: cfFilters,
-  }), [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, selectedSubjects, search, filterMinRelevance, myBills, unvotedOnly, newMatches, matchAny, cfFilters])
+  }), [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, selectedSubjects, search, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, cfFilters])
 
   function setCfFilter(fieldId: string, values: string[]) {
     setCfFilters(prev => ({ ...prev, [fieldId]: values }))
@@ -175,6 +178,7 @@ export function useBillFilters(opts: {
     if (myBills) next.set('myBills', '1')
     if (unvotedOnly) next.set('unvoted', '1')
     if (newMatches) next.set('newMatches', '1')
+    if (drafts) next.set('drafts', '1')
     if (matchAny) next.set('match', 'any')
     selectedTags.forEach(t => next.append('tag', t))
     selectedSubjects.forEach(s => next.append('subject', s))
@@ -219,7 +223,7 @@ export function useBillFilters(opts: {
     lastWrittenSearch.current = searchStr
     setSearchParams(next, { replace: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, matchAny, selectedTags, selectedSubjects, sortCol, sortDir, cfFilters])
+  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, selectedTags, selectedSubjects, sortCol, sortDir, cfFilters])
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
@@ -264,6 +268,7 @@ export function useBillFilters(opts: {
     setMyBills(false)
     setUnvotedOnly(false)
     setNewMatches(false)
+    setDrafts(false)
     setMatchAny(false)
     setSelectedTags([])
     setSelectedSubjects([])
@@ -299,6 +304,7 @@ export function useBillFilters(opts: {
     setMyBills(params.get('myBills') === '1')
     setUnvotedOnly(params.get('unvoted') === '1')
     setNewMatches(params.get('newMatches') === '1')
+    setDrafts(params.get('drafts') === '1')
     setMatchAny(params.get('match') === 'any')
     setSelectedTags(params.getAll('tag'))
     setSelectedSubjects(params.getAll('subject'))
@@ -321,11 +327,11 @@ export function useBillFilters(opts: {
 
   const hasActiveFilters = !!(
     search || filterStatuses.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
-    filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || selectedSubjects.length > 0 || myBills || unvotedOnly || newMatches ||
+    filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || selectedSubjects.length > 0 || myBills || unvotedOnly || newMatches || drafts ||
     Object.keys(cfFilters).some(k => (cfFilters[k]?.length ?? 0) > 0)
   )
 
-  const totalActiveFilters = filterStatuses.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActiveFilters = filterStatuses.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   const yearFacetKeys = useMemo(() => {
     return Object.keys(facetCounts.year)
@@ -399,6 +405,7 @@ export function useBillFilters(opts: {
     myBills, setMyBills,
     unvotedOnly, setUnvotedOnly,
     newMatches, setNewMatches,
+    drafts, setDrafts,
     matchAny, setMatchAny,
     selectedTags, setSelectedTags,
     selectedSubjects, subjectGroups,

@@ -4,6 +4,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { BillRow } from './BillRow'
 import type { Bill } from './types'
 
+const navigateMock = vi.hoisted(() => vi.fn())
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return { ...actual, useNavigate: () => navigateMock }
+})
+
 // BillRow reads org copy off ConfigContext; the actual config shape doesn't
 // matter for this test, so stub it out rather than standing up a real provider.
 vi.mock('../../context/ConfigContext', () => ({
@@ -21,7 +27,7 @@ vi.mock('../../context/DemoContext', () => ({
 function makeBill(over: Partial<Bill> = {}): Bill {
   return {
     id: 'b1', billNumber: 'HB 1', title: 'Test bill', state: 'RI', status: '2',
-    session: '2025-2026', sessionId: null, yearStart: 2025, yearEnd: 2026,
+    session: '2025-2026', sessionSlug: '2025-2026', sessionId: null, yearStart: 2025, yearEnd: 2026,
     abstract: null, url: null, stateUrl: null, lastAction: null,
     lastActionDate: '2026-02-01', tenantSummary: null, tags: [], priority: null,
     matchType: null, isDraft: false, position: null, relevanceScore: null,
@@ -64,6 +70,32 @@ function renderRow(isAdmin: boolean, opts: { onVote?: (billId: string, pos: 'sup
     </MemoryRouter>,
   )
 }
+
+describe('BillRow row-click navigation target', () => {
+  afterEach(() => { navigateMock.mockClear() })
+
+  it('links a filed bill to its canonical /STATE/SESSION/BILL path', () => {
+    const { container } = renderRow(false, { bill: { state: 'RI', sessionSlug: '2025-2026', billNumber: 'HB 1' } })
+    fireEvent.click(container.querySelector('.bill-row-grid') as HTMLElement)
+    expect(navigateMock).toHaveBeenCalledWith('/RI/2025-2026/HB 1', expect.anything())
+  })
+
+  it('links a draft with a state to /STATE/YEAR/D-number, not /bills/:id', () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, state: 'IL', session: '', sessionSlug: '2026', billNumber: 'D1' },
+    })
+    fireEvent.click(container.querySelector('.bill-row-grid') as HTMLElement)
+    expect(navigateMock).toHaveBeenCalledWith('/IL/2026/D1', expect.anything())
+  })
+
+  it('links a stateless draft to /bills/:id', () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-2', isDraft: true, state: '', session: '', sessionSlug: '2026', billNumber: 'D1' },
+    })
+    fireEvent.click(container.querySelector('.bill-row-grid') as HTMLElement)
+    expect(navigateMock).toHaveBeenCalledWith('/bills/draft-2', expect.anything())
+  })
+})
 
 describe('BillRow hover selection checkbox', () => {
   it('does not render a checkbox on hover for non-admins', () => {

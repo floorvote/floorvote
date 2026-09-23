@@ -37,6 +37,7 @@ export type FilterState = {
   myBills: boolean
   unvoted: boolean
   newMatches: boolean
+  drafts: boolean
   matchAny: boolean
   cf: Record<string, string[]>
 }
@@ -63,6 +64,7 @@ export function buildFilterBody(f: FilterState): Record<string, unknown> {
     ...(f.myBills && { myBills: '1' }),
     ...(f.unvoted && { unvoted: '1' }),
     ...(f.newMatches && { newMatches: '1' }),
+    ...(f.drafts && { drafts: '1' }),
     ...(f.matchAny && { match: 'any' }),
     ...(Object.keys(f.cf).length > 0 && { cf: f.cf }),
   }
@@ -89,6 +91,7 @@ export function buildBulkValuesParams(f: FilterState): URLSearchParams {
   if (f.myBills) params.set('myBills', '1')
   if (f.unvoted) params.set('unvoted', '1')
   if (f.newMatches) params.set('newMatches', '1')
+  if (f.drafts) params.set('drafts', '1')
   if (f.matchAny) params.set('match', 'any')
   for (const [fieldId, values] of Object.entries(f.cf)) {
     values.forEach(v => params.append(`cf_${fieldId}`, v))

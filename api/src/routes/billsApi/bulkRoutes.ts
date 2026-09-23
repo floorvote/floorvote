@@ -38,6 +38,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         myBills?: string
         unvoted?: string
         newMatches?: string
+        drafts?: string
         cf?: Record<string, string[]>
         match?: string
       }
@@ -100,6 +101,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted,
         newMatches: f.newMatches,
+        drafts: f.drafts,
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap: f.cf ?? {},
         userId: currentUser.id,
@@ -349,7 +351,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       filter?: {
         status?: string[]; priority?: string[]; position?: string[]; session?: string[]
         year?: string[]; state?: string[]; tag?: string[]; subject?: string[]; q?: string; minRelevance?: string
-        myBills?: string; unvoted?: string; newMatches?: string; cf?: Record<string, string[]>
+        myBills?: string; unvoted?: string; newMatches?: string; drafts?: string; cf?: Record<string, string[]>
         match?: string
       }
     }
@@ -381,6 +383,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
+        drafts: f.drafts,
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? min : 0,
         cfParamMap: f.cf ?? {}, userId: currentUser.id,
         // Same `=== 'any'` test as GET /bills / GET /bills/facets and the /bulk
@@ -447,6 +450,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const myBillsParam = params.get('myBills') ?? undefined
       const unvoted = params.get('unvoted') ?? undefined
       const newMatchesParam = params.get('newMatches') ?? undefined
+      const draftsParam = params.get('drafts') ?? undefined
 
       const cfParamMap: Record<string, string[]> = {}
       for (const [key, value] of params) {
@@ -461,6 +465,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         subjectFilters,
         q, minRelevance, myBillsParam, unvoted,
         newMatches: newMatchesParam,
+        drafts: draftsParam,
         newMatchMinRelevance: (newMatchesParam === '1' || newMatchesParam === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap, userId: currentUser.id,
         // Same `=== 'any'` test as GET /bills / GET /bills/facets and the other

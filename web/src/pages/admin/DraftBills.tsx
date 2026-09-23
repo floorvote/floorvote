@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionBtnBlue } from '../../styles/actionRow'
@@ -9,6 +10,9 @@ import { CARD_TITLE } from '../../lib/textStyles'
 import { useDemo } from '../../context/DemoContext'
 import { RichTextEditor } from '../../components/RichTextEditor'
 import { BillBadge } from '../../components/BillBadge'
+import { Picker, type PickerOption } from '../../components/Picker'
+import { pickerFieldTriggerStyle, PickerFieldCaret } from '../../lib/pickerFieldStyle'
+
 
 export function DraftBills() {
   const navigate = useNavigate()
@@ -19,9 +23,36 @@ export function DraftBills() {
   const [draftSummary, setDraftSummary] = useState('')
   const [draftSponsor, setDraftSponsor] = useState('')
   const [draftText, setDraftText] = useState('')
+  const [draftNumber, setDraftNumber] = useState('')
+  // Seeded with the current year, never '': an empty value matches no <option>,
+  // so the <select> would render the first year while holding nothing and the
+  // request body would silently omit `year`.
+  const [draftYear, setDraftYear] = useState(String(new Date().getFullYear()))
+  const [draftState, setDraftState] = useState('')
   const [creatingDraft, setCreatingDraft] = useState(false)
   const [createDraftError, setCreateDraftError] = useState<string | null>(null)
   const [draftList, setDraftList] = useState<{ id: string; billNumber: string; title: string; state: string | null }[] | null>(null)
+  // Source for the State field's option list. This admin page isn't wired
+  // into useBillFilters' searchParams/facetCounts plumbing, so it calls
+  // GET /bills/facets directly rather than reusing that hook.
+  //
+  // Facets only reports states that already HAVE bills, so it can never tell a
+  // single-state tenant from a multi-state one whose bills happen to sit in one
+  // state. It is therefore no longer consulted about whether to SHOW the field
+  // — only about what to offer in it. `null` means "unknown" (still loading, or
+  // the call failed); `statesResolved` distinguishes those from a genuine empty
+  // list, so a tenant with no bills yet gets a free-text input instead of a
+  // select it cannot satisfy.
+  const [knownStates, setKnownStates] = useState<string[] | null>(null)
+  const [statesResolved, setStatesResolved] = useState(false)
+  // The authoritative single-state signal, from GET /bills/draft-defaults:
+  // c.env.STATE when the tenant is configured for one state, null when it
+  // tracks many. null (including before the call resolves, or if it fails)
+  // shows the State field — the client only ever hides it on positive evidence
+  // of a configured state. The real guarantee that a draft never gets state=''
+  // is server-side (POST /bills/draft 400s on an empty resolved state); this
+  // field is the convenience that lets an admin satisfy that up front.
+  const [tenantState, setTenantState] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch<{ drafts: { id: string; billNumber: string; title: string; state: string | null }[] }>('/bills/drafts')
@@ -29,9 +60,46 @@ export function DraftBills() {
       .catch(() => setDraftList([]))
   }, [])
 
+  useEffect(() => {
+    apiFetch<{ state: Record<string, number> }>('/bills/facets')
+      .then(f => setKnownStates(Object.keys(f.state).sort()))
+      .catch(() => setKnownStates(null))
+      .finally(() => setStatesResolved(true))
+  }, [])
+
+  const needsState = tenantState === null
+  const stateOptions = knownStates ?? []
+  // Offer a select when facets gave us something to offer; otherwise (a tenant
+  // with no bills yet, or a facets outage) let the admin type the state.
+  const useStateSelect = !statesResolved || stateOptions.length > 0
+
+  // Fetched when the form opens rather than on mount: the number depends on how
+  // many drafts exist, so a stale value from page load could collide.
+  // Re-fetched when the chosen state changes, not just when the form opens:
+  // both the next draft number and the session-aware year are per-state, so a
+  // value computed for the wrong bucket can hand back a number that 409s on
+  // create. This deliberately overwrites a hand-typed number when the admin
+  // then switches state — the prefill must describe the state actually in use.
+  useEffect(() => {
+    if (!showDraftForm) return
+    const picked = draftState.trim().toUpperCase()
+    const qs = picked ? `?state=${encodeURIComponent(picked)}` : ''
+    let cancelled = false
+    apiFetch<{ billNumber?: string; year?: number; tenantState?: string | null }>('/bills/draft-defaults' + qs)
+      .then(d => {
+        if (cancelled) return
+        setDraftNumber(d.billNumber ?? '')
+        if (d.year != null) setDraftYear(String(d.year))
+        setTenantState(d.tenantState ?? null)
+      })
+      .catch(() => { /* keep the current-year default; the server fills the number in when omitted */ })
+    return () => { cancelled = true }
+  }, [showDraftForm, draftState])
+
   async function handleCreateDraft() {
     const title = draftTitle.trim()
     if (!title || demoLocked) return
+    if (needsState && !draftState.trim()) return
     setCreatingDraft(true)
     setCreateDraftError(null)
     try {
@@ -40,9 +108,32 @@ export function DraftBills() {
       if (draftSponsor.trim()) body.sponsor = draftSponsor.trim()
       if (hasContent(draftSummary)) body.summary = draftSummary
       if (hasContent(draftText)) body.text = draftText
+      if (draftNumber.trim()) body.billNumber = draftNumber.trim()
+      if (draftYear.trim()) body.year = Number(draftYear)
+      if (draftState.trim()) body.state = draftState.trim()
       const created = await apiFetch<{ id: string }>('/bills/draft', {
         method: 'POST',
         body: JSON.stringify(body),
+      })
+      // Tear the form down BEFORE navigating. The rich-text editors register
+      // with the unsaved-text registry; unmounting them deregisters, so the
+      // nav guard sees a clean page. Navigating first raised a confirm about
+      // text that had in fact just been saved — and cancelling it stranded an
+      // already-created draft behind a still-full form, so the next submit
+      // created a duplicate. flushSync forces the unmount (and its
+      // deregistration effect) to commit before navigate() runs the
+      // blocker's dirty check — without it, the check races the effect and
+      // still sees the stale, dirty registrations.
+      flushSync(() => {
+        setShowDraftForm(false)
+        setDraftTitle('')
+        setDraftSummary('')
+        setDraftSponsor('')
+        setDraftText('')
+        setDraftNumber('')
+        setDraftYear(String(new Date().getFullYear()))
+        setDraftState('')
+        setCreateDraftError(null)
       })
       navigate('/bills/' + created.id)
     } catch (err) {
@@ -85,6 +176,81 @@ export function DraftBills() {
         )}
         {showDraftForm && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="draft-number" style={labelStyle}>Bill number</label>
+                <input
+                  id="draft-number"
+                  value={draftNumber}
+                  onChange={e => setDraftNumber(e.target.value)}
+                  placeholder="D1"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- the Picker's trigger is a <button>, not a labelable control; it carries its own aria-label="Year" for the accessible name. */}
+                <label style={labelStyle}>Year</label>
+                {(() => {
+                  // The held value must always be one of the options, and the
+                  // current year must always be offerable — the fetched base
+                  // can be in the past when central is unreachable and the
+                  // fallback is the tenant's newest filed year.
+                  const thisYear = new Date().getFullYear()
+                  const base = Number(draftYear) || thisYear
+                  const years = [...new Set([base, base + 1, base + 2, thisYear])].sort((a, b) => a - b)
+                  const yearOptions: PickerOption[] = years.map(y => ({ value: String(y), label: String(y) }))
+                  return (
+                    <Picker
+                      mode="single"
+                      value={draftYear}
+                      options={yearOptions}
+                      onChange={v => { if (v != null) setDraftYear(v) }}
+                      ariaLabel="Year"
+                      panelMinWidth={100}
+                      trigger={({ toggle, open }) => (
+                        <button type="button" aria-label="Year" onClick={toggle} style={pickerFieldTriggerStyle()}>
+                          <span>{draftYear}</span>
+                          <PickerFieldCaret open={open} />
+                        </button>
+                      )}
+                    />
+                  )
+                })()}
+              </div>
+            </div>
+            {needsState && (
+              <div>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- htmlFor only applies in the free-text fallback branch below; the Picker branch's trigger is a <button> carrying its own aria-label="State". */}
+                <label htmlFor={useStateSelect ? undefined : 'draft-state'} style={labelStyle}>
+                  State <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span>
+                </label>
+                {useStateSelect ? (
+                  <Picker
+                    mode="single"
+                    value={draftState || null}
+                    options={stateOptions.map(s => ({ value: s, label: s }))}
+                    emptyOption={{ label: 'Select a state…' }}
+                    onChange={v => setDraftState(v ?? '')}
+                    ariaLabel="State"
+                    trigger={({ toggle, open }) => (
+                      <button type="button" aria-label="State" onClick={toggle} style={pickerFieldTriggerStyle()}>
+                        <span>{draftState || 'Select a state…'}</span>
+                        <PickerFieldCaret open={open} />
+                      </button>
+                    )}
+                  />
+                ) : (
+                  <input
+                    id="draft-state"
+                    value={draftState}
+                    onChange={e => setDraftState(e.target.value.toUpperCase())}
+                    placeholder="UT"
+                    maxLength={2}
+                    style={inputStyle}
+                  />
+                )}
+              </div>
+            )}
             <div>
               <label htmlFor="draft-title" style={labelStyle}>Title <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span></label>
               <input
@@ -135,13 +301,13 @@ export function DraftBills() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={handleCreateDraft}
-                disabled={!draftTitle.trim() || creatingDraft || demoLocked}
-                style={actionBtnBlue(!draftTitle.trim() || creatingDraft || demoLocked)}
+                disabled={!draftTitle.trim() || (needsState && !draftState.trim()) || creatingDraft || demoLocked}
+                style={actionBtnBlue(!draftTitle.trim() || (needsState && !draftState.trim()) || creatingDraft || demoLocked)}
               >
                 {creatingDraft ? 'Creating…' : 'Create draft'}
               </button>
               <button
-                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setCreateDraftError(null) }}
+                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setDraftNumber(''); setDraftYear(String(new Date().getFullYear())); setDraftState(''); setCreateDraftError(null) }}
                 style={{ fontSize: fontSize.sm, color: color.textSecondary, background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '8px 14px', cursor: 'pointer' }}
               >
                 Cancel

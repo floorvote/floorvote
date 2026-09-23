@@ -145,7 +145,7 @@ export const BillRow = memo(function BillRow({
         isFiltered={bill.priority != null && filterPriorities.includes(bill.priority)}
       />
     )
-  const billPath = billUrl({ id: bill.id, state: bill.state, session: bill.session, billNumber: bill.billNumber })
+  const billPath = billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })
   const org = useConfig().config?.orgNoun ?? DEFAULT_ORG_NOUN
   const positionTooltip = `Your ${org}'s official position on this bill`
 

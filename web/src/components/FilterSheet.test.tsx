@@ -22,6 +22,8 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     newMatches: false,
     newMatchesCount: 0,
     unvotedOnly: false,
+    drafts: false,
+    draftCount: 0,
     matchAny: false,
     onMatchAnyChange: vi.fn(),
     uniqueStates: ['UT'],
@@ -48,6 +50,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     onMyBillsChange: vi.fn(),
     onNewMatchesChange: vi.fn(),
     onUnvotedOnlyChange: vi.fn(),
+    onDraftsChange: vi.fn(),
     onClearAll: vi.fn(),
   }
 }

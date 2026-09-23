@@ -5,7 +5,11 @@ import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 
-const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0 }
+const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0 }
+
+function draftsWrapper({ children }: { children: ReactNode }) {
+  return <MemoryRouter initialEntries={['/bills?drafts=1']}>{children}</MemoryRouter>
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills']}>{children}</MemoryRouter>
@@ -172,6 +176,34 @@ describe('useBillFilters', () => {
       expect(result.current.filterStatuses).toEqual([])
       expect(result.current.matchAny).toBe(true)
       expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
+    })
+  })
+
+  describe('drafts', () => {
+    it('mounting at ?drafts=1 reads it back as active', () => {
+      const { result } = renderHook(useHarness, { wrapper: draftsWrapper })
+      expect(result.current.drafts).toBe(true)
+    })
+
+    it('toggling drafts writes drafts=1 to the URL, and drops it when cleared', () => {
+      const { result } = renderHook(useHarness, { wrapper })
+      expect(result.current.urlSearch).not.toContain('drafts=')
+
+      act(() => result.current.setDrafts(true))
+      expect(new URLSearchParams(result.current.urlSearch).get('drafts')).toBe('1')
+
+      act(() => result.current.setDrafts(false))
+      expect(new URLSearchParams(result.current.urlSearch).get('drafts')).toBeNull()
+    })
+
+    it('handleResetFilters clears drafts', () => {
+      const { result } = renderHook(useHarness, { wrapper: draftsWrapper })
+      expect(result.current.drafts).toBe(true)
+
+      act(() => result.current.handleResetFilters())
+
+      expect(result.current.drafts).toBe(false)
+      expect(result.current.urlSearch).not.toContain('drafts=')
     })
   })
 

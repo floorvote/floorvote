@@ -2,7 +2,7 @@ import type { SortColumn, SortDir } from './types'
 
 export type BillsFilterValues = {
   statuses: string[]; priorities: string[]; positions: string[]; years: number[]; states: string[]
-  minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean; matchAny: boolean
+  minRelevance: number; myBills: boolean; unvoted: boolean; newMatches: boolean; drafts: boolean; matchAny: boolean
   tags: string[]; subjects: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
 }
 
@@ -19,6 +19,7 @@ export function billsApiParams(v: BillsFilterValues, page: number, pageSize: num
   if (v.myBills) params.set('myBills', '1')
   if (v.unvoted) params.set('unvoted', '1')
   if (v.newMatches) params.set('newMatches', '1')
+  if (v.drafts) params.set('drafts', '1')
   if (v.matchAny) params.set('match', 'any')
   v.tags.forEach(t => params.append('tag', t))
   v.subjects.forEach(s => params.append('subject', s))
@@ -55,6 +56,7 @@ export function billsFilterValuesFromSearch(search: URLSearchParams): BillsFilte
     myBills: search.get('myBills') === '1',
     unvoted: search.get('unvoted') === '1',
     newMatches: search.get('newMatches') === '1',
+    drafts: search.get('drafts') === '1',
     matchAny: search.get('match') === 'any',
     tags: search.getAll('tag'),
     subjects: search.getAll('subject'),
@@ -77,7 +79,7 @@ export function billsChipSelection(pathname: string, search: string): { allBills
   const otherFiltersActive =
     v.statuses.length > 0 || v.priorities.length > 0 || v.positions.length > 0 ||
     v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.unvoted || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
+    v.myBills || v.unvoted || v.drafts || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
   if (otherFiltersActive) return { allBills: false, newMatches: false }
   if (v.newMatches) return { allBills: false, newMatches: true }
   return { allBills: true, newMatches: false }
@@ -107,7 +109,7 @@ export function prioritizedChipSelection(pathname: string, search: string): { pr
   const otherFiltersActive =
     v.statuses.length > 0 || v.positions.length > 0 ||
     v.years.length > 0 || v.states.length > 0 || v.minRelevance > 0 ||
-    v.myBills || v.newMatches || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
+    v.myBills || v.newMatches || v.drafts || v.tags.length > 0 || v.subjects.length > 0 || Object.keys(v.cfFilters).length > 0
   if (otherFiltersActive) return { priority: false, unvoted: false }
   if (v.unvoted) return { priority: false, unvoted: true }
   return { priority: true, unvoted: false }
