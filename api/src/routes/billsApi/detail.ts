@@ -196,7 +196,7 @@ export async function buildBillDetail(
     state: bill.state,
     status: bill.status,
     session: bill.session,
-    sessionSlug: sessionToSlug(bill.session),
+    sessionSlug: bill.isDraft ? String(bill.yearStart ?? '') : sessionToSlug(bill.session),
     sessionId: bill.sessionId,
     yearStart: bill.yearStart ?? null,
     yearEnd: bill.yearEnd ?? null,

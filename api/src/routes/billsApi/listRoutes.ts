@@ -216,7 +216,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       state: b.state,
       status: b.status,
       session: b.session,
-      sessionSlug: sessionToSlug(b.session),
+      sessionSlug: b.isDraft ? String(b.yearStart ?? '') : sessionToSlug(b.session),
       sessionId: b.sessionId,
       yearStart: b.yearStart ?? null,
       yearEnd:   b.yearEnd   ?? null,
