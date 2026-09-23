@@ -1,5 +1,5 @@
 import { CHIP_BASE } from '../lib/chipStyles'
-import { color, fontSize, fontWeight, radius } from '../styles/tokens'
+import { BODY_FONT, color, fontSize, fontWeight, radius } from '../styles/tokens'
 
 // The word "Draft" for a draft bill — dashed, unfilled, and inert. Pairs with
 // the dashed BillBadge outline as the second half of the draft signal, and
@@ -45,14 +45,25 @@ export function DraftChip() {
 // and discussed in BillRow.test.tsx / the task report, not fixable by sizing
 // this element differently (any nonzero width inline before wrapped text can
 // tip a title sitting exactly at a wrap boundary).
+//
+// Visibility is owned entirely by the stylesheet (.bill-title-draft-marker in
+// mobile.css: hidden by default, revealed in the mid-width band, re-hidden
+// below 768px). Do NOT put `display` back into this inline style object —
+// inline styles outrank stylesheet rules that aren't !important, so the base
+// hide would lose and "Draft" would render at EVERY width, doubling up with
+// the Status-column DraftChip at full width. That was a shipped bug; see the
+// "owns no display" test in DraftChip.test.tsx.
 export function TitleDraftMarker({ className }: { className?: string }) {
   return (
     <span
       className={className}
       style={{
-        display: 'inline-flex',
         alignItems: 'center',
         verticalAlign: 'middle',
+        // The title line sets 'Source Serif 4', serif; this marker is chip
+        // typography and must match the sans chips in the row, so it opts
+        // back out to the body/UI face rather than inheriting the serif.
+        fontFamily: BODY_FONT,
         fontSize: fontSize.xs,
         fontWeight: fontWeight.semibold,
         lineHeight: '12px',

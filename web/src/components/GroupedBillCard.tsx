@@ -5,6 +5,7 @@ import { useVerticalResize, ResizeHandle } from './ResizeHandle'
 import { relativeTime, absoluteTime, isUnreadItem } from '../lib/time'
 import { billUrl as buildBillUrl } from '../lib/sessionSlug'
 import { BillBadge } from './BillBadge'
+import { DraftChip } from './DraftChip'
 import { PriorityBadge } from './PriorityBadge'
 import { PrioritySquare } from './PrioritySquare'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
@@ -39,7 +40,7 @@ function MaterialIcon({ name, color, size = 14, fill = 0 }: {
 // update digestEmail too.
 export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: { group: GroupedBillEvents; seenAt?: string | null; currentUserId?: string | null }) {
   const navigate = useNavigate()
-  const { billId, billNumber, billState, billSessionSlug } = group
+  const { billId, billNumber, billState, billSessionSlug, billIsDraft } = group
   const model = buildBillCardModel(group)
   const [hovered, setHovered] = useState(false)
   const [hoveredHeader, setHoveredHeader] = useState(false)
@@ -90,7 +91,15 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
         style={{ background: hoveredHeader ? color.surfaceMuted : CARD_STYLE.headerBg }}
       >
         <div style={{ padding: '12px 14px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <BillBadge billNumber={billNumber} state={billState ?? undefined} />
+          {/* Draft marker, same pairing as BillRow/BillDetail: the dashed badge
+              outline is the visual half, and DraftChip's literal "Draft" is the
+              text half — the border alone carries no meaning to a screen reader
+              or to anyone who can't distinguish it, so the chip must ship with
+              it wherever the dashed variant is used. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <BillBadge billNumber={billNumber} state={billState ?? undefined} isDraft={billIsDraft} />
+            {billIsDraft && <DraftChip />}
+          </div>
           {model.priority && <PriorityBadge priority={model.priority} />}
         </div>
 
