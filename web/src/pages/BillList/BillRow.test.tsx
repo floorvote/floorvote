@@ -136,47 +136,69 @@ describe('BillRow draft visual marker', () => {
 // Draft marker (the mid-width fallback shown when the Status column is
 // hidden — see mobile.css .bill-title-draft-marker) against that constraint.
 describe('BillRow title-line Draft marker does not change row height', () => {
-  const SAME_TITLE = 'Voter Identification Requirements'
+  // The marker must fit inside the title's own line box. If it doesn't, every
+  // draft row in the mid-width band is taller than it was at mount — and /bills
+  // is virtualized with row heights measured once at mount and never
+  // re-measured (a separately recorded, out-of-scope bug: the ResizeObserver
+  // path never attaches), so the list renders gaps or overlapping rows.
+  //
+  // jsdom runs no layout, so offsetHeight/getBoundingClientRect are all zero
+  // here and any assertion built on them passes for every mutation. (An
+  // earlier version of this block compared two title divs' offsetHeight and
+  // was vacuous; it was deleted rather than left looking like coverage.)
+  // What jsdom *does* give us is the two elements' declared boxes, which come
+  // from two independent places in the source: the marker's own style
+  // (DraftChip.tsx) and the title div's style (BillRow.tsx). Reading both off
+  // the rendered DOM and comparing them is a real constraint — it fails if
+  // either side drifts.
+  it("the marker's own box fits inside the title's line box, both read from the DOM", () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1', title: 'Voter Identification Requirements' },
+    })
+    const marker = screen.getByText('Draft', { selector: '.bill-title-draft-marker' })
+    const title = marker.parentElement as HTMLElement
+    expect(title).toBeTruthy()
+    expect(title.textContent).toContain('Voter Identification Requirements')
+    expect(container.contains(title)).toBe(true)
 
-  it('a draft row and a filed row with identical title text report the same title-element height', () => {
-    // jsdom does not run real layout (offsetHeight is 0 for everything here),
-    // so this equality holds trivially in this environment — it is a
-    // regression guard against a *relative* height difference being
-    // introduced (e.g. the marker becoming a block element, or gaining
-    // margin that jsdom's box model does track), not a substitute for the
-    // real-browser measurement in the task report, which is where the
-    // actual pixel comparison (and the one genuine finding) lives.
-    const { container: draftContainer } = renderRow(false, {
-      bill: { id: 'draft-1', isDraft: true, title: SAME_TITLE, billNumber: 'D1' },
-    })
-    const { container: filedContainer } = renderRow(false, {
-      bill: { id: 'b1', isDraft: false, title: SAME_TITLE, billNumber: 'HB 1' },
-    })
-    const draftTitle = screen.getAllByText(SAME_TITLE)
-      .map(el => el.closest('div'))
-      .find(el => el && draftContainer.contains(el)) as HTMLElement
-    const filedTitle = screen.getAllByText(SAME_TITLE, { exact: false })
-      .map(el => el.closest('div'))
-      .find(el => el && filedContainer.contains(el)) as HTMLElement
-    expect(draftTitle).toBeTruthy()
-    expect(filedTitle).toBeTruthy()
-    expect(draftTitle.offsetHeight).toBe(filedTitle.offsetHeight)
+    // Title line box: read the title div's real declared values, not constants
+    // restated here. lineHeight is unitless on the title, so it multiplies its
+    // own font-size.
+    const titleFontSize = parseFloat(title.style.fontSize)
+    const titleLineHeightRatio = parseFloat(title.style.lineHeight)
+    expect(titleFontSize).toBeGreaterThan(0)
+    expect(titleLineHeightRatio).toBeGreaterThan(0)
+    expect(title.style.lineHeight).not.toMatch(/px|em|%/) // unitless multiplier
+    const titleLineBox = titleFontSize * titleLineHeightRatio
+
+    // Marker box: line-height + vertical padding + vertical border.
+    const s = marker.style
+    const markerLineHeight = parseFloat(s.lineHeight)
+    expect(s.lineHeight).toMatch(/px$/) // explicit px, so this sum is meaningful
+    const paddingV = (parseFloat(s.paddingTop) || 0) + (parseFloat(s.paddingBottom) || 0)
+    const borderMatch = /^(\d+(?:\.\d+)?)px/.exec(s.border || s.borderTopWidth || '')
+    expect(borderMatch).not.toBeNull()
+    const borderV = parseFloat(borderMatch![1]) * 2
+    const markerBox = markerLineHeight + paddingV + borderV
+
+    expect(markerBox).toBeLessThanOrEqual(titleLineBox)
   })
 
-  it('the marker\'s own box (border + padding + line-height) fits inside the title\'s line box', () => {
-    // Real numeric check, independent of jsdom's lack of layout: the title
-    // line box is fontSize.base (14px) * line-height 1.35 = 18.9px. The
-    // marker must not exceed that, or it would grow the line — and therefore
-    // the row — regardless of what any single title's wrap does.
+  // A box that fits is only half of it: the marker must also sit *on* the
+  // line rather than beside or below it. Vertical margin adds to the line's
+  // height, and a block-level display breaks the line entirely — either one
+  // grows the row after mount. These are the mutations the deleted
+  // offsetHeight test claimed to catch and did not.
+  it('the marker is inline-level and contributes no vertical margin', () => {
     renderRow(false, { bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1' } })
-    const marker = screen.getByText('Draft', { selector: '.bill-title-draft-marker' })
-    const s = marker.style
-    const lineHeight = parseFloat(s.lineHeight) // px, set explicitly on the marker
-    const paddingV = (parseFloat(s.paddingTop) || 0) + (parseFloat(s.paddingBottom) || 0)
-    const borderV = 2 // 1px dashed border, top + bottom (jsdom doesn't parse shorthand border into borderTopWidth reliably)
-    const markerBoxHeight = lineHeight + paddingV + borderV
-    const titleLineBox = 14 * 1.35 // fontSize.base * the title's line-height
-    expect(markerBoxHeight).toBeLessThanOrEqual(titleLineBox)
+    const s = screen.getByText('Draft', { selector: '.bill-title-draft-marker' }).style
+    expect(s.display).toMatch(/^inline/)
+    expect(parseFloat(s.marginTop) || 0).toBe(0)
+    expect(parseFloat(s.marginBottom) || 0).toBe(0)
+    expect(parseFloat(s.marginBlockStart) || 0).toBe(0)
+    expect(parseFloat(s.marginBlockEnd) || 0).toBe(0)
+    // `margin` shorthand, if used, must not introduce vertical margin either.
+    if (s.margin) expect(s.margin).toMatch(/^0(px)?(\s|$)/)
   })
 })
 

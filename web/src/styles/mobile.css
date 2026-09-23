@@ -204,9 +204,13 @@ body.nav-pending * { cursor: wait !important; }
 
    If you add, remove, or renumber a .bill-col-status breakpoint, update its
    .bill-title-draft-marker pair in the same block or "Draft" silently
-   disappears in that band, leaving only the dashed badge. A test
-   (mobileDraftChip.test.ts) checks this pairing, the default-hidden rule,
-   and the className-to-selector link stay intact. */
+   disappears in that band, leaving only the dashed badge.
+
+   Below 768px the mobile meta row takes over and carries its own DraftChip,
+   so the max-width: 768px block hides this marker again — otherwise BOTH
+   show, because the query container is always <= 1000px at phone widths. A
+   test (mobileDraftChip.test.ts) checks this pairing, the default-hidden
+   rule, the 768px re-hide, and the className-to-selector link stay intact. */
 .bill-title-draft-marker {
   display: none;
 }
@@ -471,6 +475,23 @@ body.nav-pending * { cursor: wait !important; }
   .bill-row-mobile-meta {
     display: flex !important;
     margin-bottom: 6px;
+  }
+
+  /* The mobile meta line above carries its own DraftChip, so the title-line
+     fallback marker must go away here or a draft row shows "Draft" twice —
+     once on the title line, once in the meta row — both visually and to
+     screen readers. This is not hypothetical: the bill-list scroll wrapper is
+     the query container, and at any phone viewport it is always <= 1000px, so
+     the container-query reveal rules above always match at these widths too.
+     Both selectors are needed: the .bill-list-ms-scoped reveal has higher
+     specificity (0,2,0) than the bare class, so hiding only the bare class
+     would lose to it on multi-state lists. !important is needed because the
+     reveals use it; this block is later in source order, so equal-specificity
+     !important declarations resolve here. mobileDraftChip.test.ts asserts
+     this block hides both. */
+  .bill-title-draft-marker,
+  .bill-list-ms .bill-title-draft-marker {
+    display: none !important;
   }
 
   /* Hide desktop priority column — priority lives in mobile-meta instead */
