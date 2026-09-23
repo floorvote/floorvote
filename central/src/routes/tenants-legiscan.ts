@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, inArray } from 'drizzle-orm'
+import { eq, and, isNull, inArray, desc } from 'drizzle-orm'
 import { matchesUnion } from '../lib/keywords'
 import * as schema from '../db/schema-legiscan'
 import { secretsMatch } from '../lib/auth'
@@ -24,6 +24,29 @@ tenantsLsRoutes.use('*', async (c, next) => {
     return c.json({ error: 'unauthorized' }, 401)
   }
   return next()
+})
+
+// GET /tenants/current-session/:state — the state's newest regular session.
+// Used by a tenant's GET /bills/draft-defaults to pick a default year for a new
+// draft bill. schema-legiscan has no is_current column, so "current" is the
+// highest-yearStart non-special session; sineDie tells the caller whether that
+// session has already adjourned, which is when a draft belongs to the NEXT one.
+tenantsLsRoutes.get('/current-session/:state', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const state = c.req.param('state').toUpperCase()
+  const row = await db
+    .select({
+      yearStart: schema.sessions.yearStart,
+      yearEnd: schema.sessions.yearEnd,
+      sineDie: schema.sessions.sineDie,
+    })
+    .from(schema.sessions)
+    .where(and(eq(schema.sessions.state, state), eq(schema.sessions.special, 0)))
+    .orderBy(desc(schema.sessions.yearStart))
+    .limit(1)
+    .get()
+  if (!row) return c.json({ error: 'no session for state' }, 404)
+  return c.json({ yearStart: row.yearStart, yearEnd: row.yearEnd, sineDie: row.sineDie === 1 })
 })
 
 tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
