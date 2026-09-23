@@ -198,7 +198,18 @@ body.nav-pending * { cursor: wait !important; }
    disappears in that band, leaving only the dashed badge. A test
    (mobileDraftChip.test.ts) checks this pairing stays intact.
    .bill-row-chips-cell going to display:none at 768px hides this element too,
-   so it never doubles up with .bill-row-mobile-meta's own Draft chip. */
+   so it never doubles up with .bill-row-mobile-meta's own Draft chip.
+
+   Every @container block below that reveals .bill-draft-chip-inline also
+   widens the first grid-column track (normally just var(--bill-col-w), sized
+   for the badge alone) via a `.bill-row-draft .bill-row-chips-cell` override,
+   so the chip has room and doesn't draw over the next column. +60px is a
+   measured value, not a guess: the rendered chip ("Draft", 12px/600 Inter,
+   3px 10px padding, 1px border) is ~50.7px wide; +6px for the flex gap next
+   to the badge; rounded up to 60px for cross-browser font-metric slop. If
+   DraftChip's copy, font, size, or padding changes, re-measure and update the
+   constant in all 8 blocks below (mobileDraftChip.test.ts checks the pairing
+   exists, not the exact px value). */
 .bill-draft-chip-inline {
   display: none;
 }
@@ -223,6 +234,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
+  /* Draft rows: widen the first track to also hold .bill-draft-chip-inline
+     (see the constant's derivation above the .bill-draft-chip-inline rule). */
+  .bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 90px 130px auto !important;
+  }
 }
 
 @container (max-width: 870px) {
@@ -235,6 +251,9 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
+  }
+  .bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 130px auto !important;
   }
 }
 
@@ -249,6 +268,9 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+  .bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
@@ -270,6 +292,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
+  .bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
+  }
 }
 
 /* Multi-state shifts every breakpoint 35px earlier. The layout is identical to
@@ -289,6 +314,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
+  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 90px 130px auto !important;
+  }
 }
 
 @container (max-width: 905px) {
@@ -301,6 +329,9 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
+  }
+  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 130px auto !important;
   }
 }
 
@@ -315,6 +346,9 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
@@ -334,6 +368,9 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
+  }
+  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
+    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 

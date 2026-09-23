@@ -185,7 +185,7 @@ export const BillRow = memo(function BillRow({
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`bill-row bill-row-grid${isMultiState ? ' bill-list-ms' : ''}`}
+      className={`bill-row bill-row-grid${isMultiState ? ' bill-list-ms' : ''}${bill.isDraft ? ' bill-row-draft' : ''}`}
       style={{
         display: 'grid',
         gridTemplateColumns: `12px ${OUTER_GRID}`,
