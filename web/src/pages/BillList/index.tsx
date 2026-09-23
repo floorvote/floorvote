@@ -139,7 +139,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0 }
+    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -177,7 +177,7 @@ export function BillList() {
   // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, draftCount: facetCounts.draftCount, draftsActive: f.drafts }
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -1158,6 +1158,7 @@ export function BillList() {
         unvotedCount={filterCounts.unvotedCount}
         drafts={f.drafts}
         draftCount={filterCounts.draftCount}
+        hasDrafts={filterCounts.hasDrafts}
         matchAny={f.matchAny}
         onMatchAnyChange={f.setMatchAny}
         uniqueStates={f.uniqueStates}

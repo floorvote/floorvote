@@ -1580,6 +1580,58 @@ describe('GET /bills/facets', () => {
     expect(body.status['In Committee']).toBe(1)
     expect(body.status['Passed House']).toBe(1)
   })
+
+  describe('hasDrafts', () => {
+    it('is false when the tenant has no draft bills', async () => {
+      // beforeEach seeds HB 1 / SB 2 / AB 3, none of them drafts.
+      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean }
+      expect(body.hasDrafts).toBe(false)
+    })
+
+    it('is true when at least one draft exists', async () => {
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean }
+      expect(body.hasDrafts).toBe(true)
+    })
+
+    it('stays true on the myBills empty early-return path', async () => {
+      // myBills=1 for a user with zero votes/notes/comments hits the
+      // early-return branch (listRoutes.ts, `ids.length > 0` else-branch)
+      // that short-circuits straight to a hard-coded facets object instead
+      // of running the normal dimensional queries. That object must still
+      // carry the tenant-wide hasDrafts signal, not a hard-coded false —
+      // exactly the shape of bug this feature was already bitten by once.
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      const res = await SELF.fetch('http://localhost/api/bills/facets?myBills=1', {
+        headers: { Cookie: `session=${token}` },
+      })
+      expect(res.status).toBe(200)
+      const body = await res.json() as { hasDrafts: boolean; myBillsCount: number }
+      // Confirms we actually hit the early-return branch under test, not some
+      // other code path.
+      expect(body.myBillsCount).toBe(0)
+      expect(body.hasDrafts).toBe(true)
+    })
+
+    it('stays true even when the active dimensional filters match zero drafts', async () => {
+      // The bug this fixes: a status filter that only matches filed bills must
+      // not make the tenant-wide existence check disappear along with the
+      // filtered draftCount.
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true, status: 'Drafting' })
+      const res = await SELF.fetch('http://localhost/api/bills/facets?status=In+Committee', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean; draftCount: number }
+      expect(body.draftCount).toBe(0)
+      expect(body.hasDrafts).toBe(true)
+    })
+  })
 })
 
 describe('GET /bills — unvoted filter', () => {

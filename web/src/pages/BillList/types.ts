@@ -73,4 +73,5 @@ export type FacetCounts = {
   newMatchesCount: number
   unvotedCount: number
   draftCount: number
+  hasDrafts: boolean
 }

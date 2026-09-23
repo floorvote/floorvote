@@ -72,14 +72,14 @@ export interface FilterDimensionContext {
    *  `isMultiState`, i.e. `knownStates.size > 1`). A single-state instance
    *  offers a choice of one, so State is hidden there. */
   isMultiState: boolean
-  /** How many draft (pre-filed) bills the tenant has, WITHIN the active
-   *  dimensional filters — unlike `isAdmin`/`isMultiState`, this is
-   *  filter-dependent and can legitimately swing to zero while the Drafts
-   *  filter itself is on (e.g. Drafts + a status filter matching no drafts).
-   *  Use `draftsActive` below, not this, to keep the chip visible in that
-   *  case — draftCount alone would hide the very control needed to turn the
-   *  filter back off. */
-  draftCount: number
+  /** Whether the tenant has ANY draft (pre-filed) bill at all — unfiltered,
+   *  from `GET /bills/facets`'s `hasDrafts`. This is the chip's visibility
+   *  signal: unlike a filtered count, it never swings to zero just because
+   *  the active dimensional filters happen to exclude drafts (e.g. a status
+   *  filter matching no drafts). The filtered `draftCount` badge is a
+   *  separate value read directly by the two surfaces, not through this
+   *  context — see FacetCounts. */
+  hasDrafts: boolean
   /** Whether the Drafts filter is currently ON (`f.drafts` / the sheet's
    *  `drafts` prop). The chip must stay visible whenever its own filter is
    *  active, even if that filter combined with others now matches zero
@@ -111,7 +111,11 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
   { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin },
   { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
-  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.draftCount > 0 || ctx.draftsActive },
+  // Hidden only when the tenant has no drafts at all (hasDrafts). Never
+  // hidden because the active filters happen to exclude drafts — draftsActive
+  // is the safety net that keeps the chip (and its own way to turn itself
+  // back off) visible while the Drafts filter is on, regardless of hasDrafts.
+  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },

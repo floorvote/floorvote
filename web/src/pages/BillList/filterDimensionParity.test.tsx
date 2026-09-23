@@ -34,7 +34,11 @@ import type { CustomFieldDef } from './types'
 // conditional dimensions without duplicating the mock setup.
 const authState = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin' }))
 const facetState = vi.hoisted(() => ({ states: ['RI'] as string[] }))
-const draftState = vi.hoisted(() => ({ draftCount: 2 }))
+// draftCount is the filtered badge number; hasDrafts is the unfiltered
+// tenant-wide existence signal that now drives visibility (see
+// lib/filterDimensions.ts) — kept independent so a test can put them at odds
+// (has drafts overall, but the active filters match none of them).
+const draftState = vi.hoisted(() => ({ draftCount: 2, hasDrafts: true }))
 // Custom field defs are dynamic (tenant-defined) — mutable per test the same
 // way authState/facetState are, so the custom-field parity tests below can
 // drive '/config/custom-fields' without a second mock setup.
@@ -77,6 +81,7 @@ vi.mock('../../lib/api', () => {
         status: { '2': 1 }, priority: {}, session: {}, year: { '2026': 1 }, state: stateCounts, position: {},
         tags: { Education: 1 }, subjects: { 'RI:Roads': 1 }, customFields: {}, myBillsCount: 0, newMatchesCount: 3,
         draftCount: draftState.draftCount,
+        hasDrafts: draftState.hasDrafts,
       } as T
     }
     if (path.startsWith('/bills?')) {
@@ -122,6 +127,7 @@ beforeEach(() => {
   authState.role = 'member'
   facetState.states = ['RI']
   draftState.draftCount = 2
+  draftState.hasDrafts = true
   cfDefsState.defs = []
   // knownStates is a module-level cache that only grows (see index.tsx) —
   // clear it so one test's facet response can't leak into the next test's
@@ -134,10 +140,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function renderDesktop(opts: { isAdmin: boolean; states: string[]; draftCount?: number; initialUrl?: string }) {
+async function renderDesktop(opts: { isAdmin: boolean; states: string[]; draftCount?: number; hasDrafts?: boolean; initialUrl?: string }) {
   authState.role = opts.isAdmin ? 'admin' : 'member'
   facetState.states = opts.states
   if (opts.draftCount !== undefined) draftState.draftCount = opts.draftCount
+  if (opts.hasDrafts !== undefined) draftState.hasDrafts = opts.hasDrafts
   render(<BillList />, { wrapper: (props) => <Wrapper {...props} initialUrl={opts.initialUrl} /> })
   await screen.findByText('Default bill')
 }
@@ -145,7 +152,8 @@ async function renderDesktop(opts: { isAdmin: boolean; states: string[]; draftCo
 // --- Mobile harness (FilterSheet) — every dimension gets non-empty options
 // so only the two conditional dimensions vary across the matrix.
 function renderMobile(
-  ctx: Omit<FilterDimensionContext, 'draftCount' | 'draftsActive'> & {
+  ctx: Omit<FilterDimensionContext, 'hasDrafts' | 'draftsActive'> & {
+    hasDrafts?: boolean
     draftCount?: number
     drafts?: boolean
     newMatchesCount?: number
@@ -165,6 +173,7 @@ function renderMobile(
       unvotedOnly={false}
       drafts={ctx.drafts ?? false}
       draftCount={ctx.draftCount ?? 3}
+      hasDrafts={ctx.hasDrafts ?? true}
       matchAny={false}
       onMatchAnyChange={() => {}}
       uniqueStates={ctx.uniqueStates}
@@ -237,7 +246,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'multiple known states', uniqueStates: ['RI', 'NJ'] },
   ])('State dimension — $label', ({ uniqueStates }) => {
     const isMultiState = uniqueStates.length > 1
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState, draftCount: 0, draftsActive: false })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState, hasDrafts: false, draftsActive: false })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin: false, states: uniqueStates })
@@ -256,7 +265,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'non-admin', isAdmin: false },
     { label: 'admin', isAdmin: true },
   ])('New matches dimension — $label', ({ isAdmin }) => {
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false, draftCount: 0, draftsActive: false })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false, hasDrafts: false, draftsActive: false })
 
     it(`is ${expectedVisible ? 'shown, with a count' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin, states: ['RI'] })
@@ -278,27 +287,31 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     })
   })
 
-  // Drafts hides at zero — UNLESS its own filter is active, in which case it
-  // must stay visible so the user has a control to turn it back off (see
-  // lib/filterDimensions.ts's draftsActive doc comment).
+  // Drafts hides only when the tenant has NO drafts at all (hasDrafts) —
+  // UNLESS its own filter is active, in which case it must stay visible so
+  // the user has a control to turn it back off (see lib/filterDimensions.ts's
+  // draftsActive doc comment). Critically, it must NOT hide just because the
+  // active dimensional filters match zero drafts while the tenant has some
+  // (the "has drafts, filters match none" row below) — that was the bug.
   describe.each([
-    { label: 'zero drafts, filter off', draftCount: 0, draftsActive: false, expectedVisible: false },
-    { label: 'non-zero drafts, filter off', draftCount: 2, draftsActive: false, expectedVisible: true },
-    { label: 'zero drafts, filter ON', draftCount: 0, draftsActive: true, expectedVisible: true },
-  ])('Drafts dimension — $label', ({ draftCount, draftsActive, expectedVisible }) => {
+    { label: 'no drafts at all, filter off', hasDrafts: false, draftCount: 0, draftsActive: false, expectedVisible: false },
+    { label: 'has drafts, filter off', hasDrafts: true, draftCount: 2, draftsActive: false, expectedVisible: true },
+    { label: 'has drafts, active filters match none, filter off', hasDrafts: true, draftCount: 0, draftsActive: false, expectedVisible: true },
+    { label: 'no drafts at all, filter ON', hasDrafts: false, draftCount: 0, draftsActive: true, expectedVisible: true },
+  ])('Drafts dimension — $label', ({ hasDrafts, draftCount, draftsActive, expectedVisible }) => {
     it(`registry isVisible reports ${expectedVisible}`, () => {
-      const actual = FILTER_DIMENSIONS.find(d => d.key === 'drafts')!.isVisible({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, draftCount, draftsActive })
+      const actual = FILTER_DIMENSIONS.find(d => d.key === 'drafts')!.isVisible({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, hasDrafts, draftsActive })
       expect(actual).toBe(expectedVisible)
     })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on desktop`, async () => {
-      await renderDesktop({ isAdmin: false, states: ['RI'], draftCount, initialUrl: draftsActive ? '/bills?drafts=1' : '/bills' })
+      await renderDesktop({ isAdmin: false, states: ['RI'], hasDrafts, draftCount, initialUrl: draftsActive ? '/bills?drafts=1' : '/bills' })
       const draftsButton = screen.queryByRole('button', { name: new RegExp(filterDimensionLabel('drafts'), 'i') })
       expect(draftsButton !== null).toBe(expectedVisible)
     })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on mobile`, () => {
-      renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, draftCount, drafts: draftsActive })
+      renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, hasDrafts, draftCount, drafts: draftsActive })
       const draftsRow = screen.queryByRole('button', { name: new RegExp(filterDimensionLabel('drafts'), 'i') })
       expect(draftsRow !== null).toBe(expectedVisible)
     })

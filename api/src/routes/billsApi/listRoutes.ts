@@ -397,6 +397,19 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       if (parts.length > 0) cfSqlMap[fieldId] = parts.length === 1 ? parts[0] : or(...parts)!
     }
 
+    // hasDrafts: does this TENANT have any draft at all, completely unfiltered
+    // — no dimensional filters, no myBills/unvoted/newMatches scope. This is
+    // the chip-visibility signal (draftCount below stays filtered, for the
+    // badge). Computed up front so the myBills early-return below — which
+    // otherwise skips straight to an empty facets object — still reports it
+    // correctly instead of hard-coding false.
+    const [hasDraftRow] = await db.select({ id: bills.id })
+      .from(bills)
+      .where(eq(bills.isDraft, true))
+      .limit(1)
+      .all()
+    const hasDrafts = hasDraftRow !== undefined
+
     if (myBillsParam === 'true' || myBillsParam === '1') {
       const [voteRows, noteRows, commentRows] = await Promise.all([
         db.select({ billId: memberVotes.billId }).from(memberVotes).where(eq(memberVotes.userId, currentUser.id)).all(),
@@ -405,7 +418,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0 })
+      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
     }
 
     // Shared by the `unvoted` scope filter above and unvotedCount below, so
@@ -781,6 +794,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       newMatchesCount,
       unvotedCount,
       draftCount,
+      hasDrafts,
     })
   })
 }

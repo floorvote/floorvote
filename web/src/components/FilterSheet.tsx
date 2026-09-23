@@ -29,6 +29,10 @@ interface FilterSheetProps {
   unvotedCount?: number
   drafts: boolean
   draftCount?: number
+  /** Whether the tenant has any draft bill at all, unfiltered — same value
+   *  desktop reads as `facetCounts.hasDrafts`, used only to decide whether
+   *  the Drafts dimension appears (see lib/filterDimensions.ts). */
+  hasDrafts?: boolean
   /** Whether active bill-fact filter groups combine with AND (false, the
    *  default) or OR (true) — same state desktop reads/writes as `f.matchAny`
    *  / `f.setMatchAny`. Rendered between groups in this sheet's active-chip
@@ -235,7 +239,7 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
-  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, drafts, draftCount, uniqueStates, isMultiState,
+  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
   matchAny, onMatchAnyChange,
   statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
   customFieldDefs, cfFilters, onCfFilterChange,
@@ -277,7 +281,7 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, draftCount: draftCount ?? 0, draftsActive: drafts }
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts }
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
   const draftsVisible = isFilterDimensionVisible('drafts', filterDimensionCtx)
@@ -462,7 +466,8 @@ export function FilterSheet({
                 />
               </div>
 
-              {/* Drafts — hidden entirely at zero drafts (see
+              {/* Drafts — hidden only when the tenant has no drafts at all,
+                  never because the active filters exclude them (see
                   lib/filterDimensions.ts). Same toggle treatment as My bills /
                   New matches / Not yet voted: a workflow scope, not a list of
                   options. */}
