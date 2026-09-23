@@ -49,10 +49,13 @@ describe('draft canonical URLs', () => {
 
   it('does not resolve a stateless draft via the legacy no-state route', async () => {
     const db = getDb(env.DB)
-    // A multi-state tenant draft can legitimately have state = '' (POST /bills/draft
-    // falling back to an unset c.env.STATE). Such a draft keeps its /bills/<uuid>
-    // URL — the legacy /resolve/:sessionSlug/:billNumber route must not surface
-    // it, since there is no state to hand back for a canonical redirect.
+    // POST /bills/draft now 400s when the resolved state would be empty (see
+    // draftRoutes.ts), so a row like this can no longer be created through the
+    // route — it can only pre-date that guard (the production rows this bug
+    // produced were left in place by migration 0070 rather than backfilled).
+    // Such a draft keeps its /bills/<uuid> URL — the legacy
+    // /resolve/:sessionSlug/:billNumber route must not surface it, since there
+    // is no state to hand back for a canonical redirect.
     await db.insert(bills).values({
       id: 'd2', billNumber: 'D1', title: 'Stateless pre-filed', state: '',
       isDraft: true, yearStart: 2027, yearEnd: 2027,

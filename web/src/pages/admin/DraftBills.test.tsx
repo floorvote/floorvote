@@ -204,4 +204,20 @@ describe('DraftBills state field on multi-state tenants', () => {
     await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
     expect(await screen.findByLabelText(/^state/i)).toBeInTheDocument()
   })
+
+  // A freshly provisioned multi-state tenant (or one whose bills were all
+  // dismissed) reports zero states from facets. That must not read as
+  // "single state" either — hiding the field there would leave the admin
+  // with no way to satisfy the server's empty-state 400.
+  it('shows the State field when facets succeeds but reports zero states', async () => {
+    vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
+      if (path === '/bills/drafts') return { drafts: [] } as never
+      if (path === '/bills/facets') return { state: {} } as never
+      return {} as never
+    })
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
+    expect(await screen.findByLabelText(/^state/i)).toBeInTheDocument()
+  })
 })

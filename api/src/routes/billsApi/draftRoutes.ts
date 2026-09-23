@@ -68,7 +68,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     // never get a canonical URL — reject rather than silently creating one.
     // A single-state tenant always has c.env.STATE set, so this never fires there.
     if (!state) {
-      return c.json({ error: 'This instance tracks multiple states, so a draft needs an explicit state.' }, 400)
+      return c.json({ error: 'This instance tracks multiple states. Include a state when creating a draft.' }, 400)
     }
     const year = Number.isInteger(body.year) ? Number(body.year) : await defaultDraftYear(c, db, state)
     const billNumber = body.billNumber?.trim() || await nextDraftNumber(db, state)

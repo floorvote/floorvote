@@ -32,12 +32,15 @@ export function DraftBills() {
   // isMultiState mirrors useBillFilters' own notion (knownStates.size > 1)
   // rather than inventing a second one.
   //
-  // null means "we don't yet know" — either the facets call hasn't resolved
-  // or it failed. That must NOT be treated as "single state": a multi-state
-  // tenant whose bills currently all sit in one state, or a facets outage,
-  // would otherwise hide the State field and reproduce the exact
-  // state='' bug this field exists to prevent. Only an array with exactly
-  // one entry counts as confirmed single-state.
+  // The client can only ever hide the State field when it has positive
+  // evidence of a single state; every other case shows it. `null` means "we
+  // don't yet know" (facets hasn't resolved, or failed) and an empty array
+  // means "facets succeeded but found zero states" (a fresh tenant, or one
+  // whose bills were all dismissed) — neither tells us the tenant is
+  // single-state, so both show the field. The actual guarantee that a draft
+  // never gets state='' is enforced server-side (POST /bills/draft 400s on
+  // an empty resolved state); this field is only a convenience that lets an
+  // admin supply the state up front instead of hitting that 400.
   const [knownStates, setKnownStates] = useState<string[] | null>(null)
 
   useEffect(() => {
@@ -52,7 +55,7 @@ export function DraftBills() {
       .catch(() => setKnownStates(null))
   }, [])
 
-  const isMultiState = knownStates === null || knownStates.length > 1
+  const isMultiState = knownStates === null || knownStates.length !== 1
 
   // Fetched when the form opens rather than on mount: the number depends on how
   // many drafts exist, so a stale value from page load could collide.

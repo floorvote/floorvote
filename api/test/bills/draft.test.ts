@@ -202,4 +202,31 @@ describe('POST /api/bills/draft', () => {
     const row = await db.select().from(bills).where(eq(bills.id, body.id)).get()
     expect(row?.state).toBe('UT')
   })
+
+  it('a single-state tenant (c.env.STATE set) is unaffected by the empty-state guard', async () => {
+    // The guard only fires when the resolved state is empty. A single-state
+    // tenant always has c.env.STATE configured, so a create with no `state`
+    // in the body must still succeed and inherit the tenant's state — this
+    // is the "breaks nothing legitimate" half of the guard, and it has no
+    // coverage otherwise. `env` from cloudflare:test is the live worker
+    // environment for this test file; mutating it before the request is
+    // visible to the handler via c.env.
+    ;(env as unknown as { STATE?: string }).STATE = 'WY'
+    try {
+      const res = await SELF.fetch('https://x/api/bills/draft', {
+        method: 'POST',
+        headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Single-state tenant draft' }),
+      })
+      expect(res.status).toBe(201)
+      const body = await res.json<{ id: string }>()
+      const db = getDb(env.DB)
+      const row = await db.select().from(bills).where(eq(bills.id, body.id)).get()
+      expect(row?.state).toBe('WY')
+    } finally {
+      // Other tests in this file rely on STATE being unset — restore it so
+      // this test doesn't leak state into ones that run after it.
+      delete (env as unknown as { STATE?: string }).STATE
+    }
+  })
 })
