@@ -30,7 +30,6 @@ import { color, radius, fontSize, fontWeight, shadow, BRAND_FONT } from '../styl
 import { SR_ONLY } from '../lib/textStyles'
 import { CustomizeSidebar } from './sidebar/CustomizeSidebar'
 import { BillBadge } from './BillBadge'
-import { DraftChip } from './DraftChip'
 import { PriorityChip } from './sidebar/PriorityChip'
 import { VoteButton } from './sidebar/VoteButton'
 import { UserCard } from './sidebar/UserCard'
@@ -734,13 +733,17 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                           onMouseMove={(e) => handleBillTitleMove({ ...bill, state: multiState ? bill.state : undefined }, e)}
                           onMouseLeave={handleBillTitleLeave}
                         >
-                          {/* The badge line is its own block and the priority
-                              chip is absolutely positioned out of flow, so
-                              there is room here for the visible chip — the
-                              stronger of the two draft signals. */}
+                          {/* No visible DraftChip here: this line already
+                              carries the priority control beside the badge, and
+                              a second chip on it makes a cramped row worse. The
+                              dashed badge is the visual half of the signal and
+                              `draftSrLabel` is the text half, folded into the
+                              badge's own accessible name — the same pairing
+                              HearingRow, BillPicker's pills and EventLines use.
+                              The dashed border alone is decoration to a screen
+                              reader, so it can never be the only cue. */}
                           <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
-                            {bill.isDraft && <DraftChip mini />}
+                            <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} draftSrLabel />
                           </div>
                           <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.tooltipBg, fontFamily: "'Source Serif 4', serif", lineHeight: 1.4, display: 'block' }}>
                             {bill.title}
