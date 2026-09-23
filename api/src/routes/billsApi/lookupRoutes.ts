@@ -7,6 +7,8 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { sessionToSlug } from '../../lib/sessionSlug'
 import { buildBillDetail } from './detail'
+import { nextDraftNumber } from '../../lib/draftNumber'
+import { defaultDraftYear } from './draftRoutes'
 
 export function registerLookupRoutes(router: Hono<AppEnv>) {
   // GET /bills/:id — composite detail by internal UUID
@@ -56,6 +58,16 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
       .orderBy(bills.createdAt)
       .all()
     return c.json({ drafts: rows })
+  })
+
+  // GET /bills/draft-defaults — the number and year a new draft should
+  // pre-fill with. One call so the form never has to know how either is
+  // derived. Admin only, matching the create route. MUST be before /:id.
+  router.get('/draft-defaults', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const state = (c.env.STATE || '').toUpperCase()
+    const billNumber = await nextDraftNumber(db, state)
+    return c.json({ billNumber, year: await defaultDraftYear(c, db, state) })
   })
 
   router.get('/:id', async (c) => {

@@ -1,60 +1,121 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
+import { nextDraftNumber } from '../../src/lib/draftNumber'
 
 vi.mock('../../src/lib/centralFetch', () => ({
   centralFetch: vi.fn(),
 }))
 
+function mockSession(yearStart: number, yearEnd: number, sineDie: boolean) {
+  vi.mocked(centralFetch).mockResolvedValue({
+    ok: true,
+    json: async () => ({ yearStart, yearEnd, sineDie }),
+  } as Response)
+}
+
+describe('nextDraftNumber (unit)', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('numbers each state independently, starting at D1', async () => {
+    const db = getDb(env.DB)
+    await db.insert(bills).values([
+      { id: 'ut-1', billNumber: 'D1', title: 'One', state: 'UT', isDraft: true },
+      { id: 'ut-2', billNumber: 'D2', title: 'Two', state: 'UT', isDraft: true },
+      { id: 'co-1', billNumber: 'D1', title: 'Colorado One', state: 'CO', isDraft: true },
+    ])
+    // Deleting the eq(bills.state, state) clause would make this UT call see
+    // all three D-numbered rows and return D3, same as CO's D2 — so a passing
+    // pair of asserts here actually exercises the per-state filter.
+    expect(await nextDraftNumber(db, 'UT')).toBe('D3')
+    expect(await nextDraftNumber(db, 'CO')).toBe('D2')
+  })
+
+  it('returns D1 for a state with no existing drafts', async () => {
+    const db = getDb(env.DB)
+    await db.insert(bills).values({ id: 'ut-1', billNumber: 'D1', title: 'One', state: 'UT', isDraft: true })
+    expect(await nextDraftNumber(db, 'CO')).toBe('D1')
+  })
+})
+
 describe('GET /api/bills/draft-defaults', () => {
+  let adminId: string
   let adminToken: string
   let memberToken: string
 
   beforeEach(async () => {
     await resetDb()
     await applyMigrations()
-    const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
+    adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
     adminToken = await seedSession(adminId)
     const memberId = await seedUser({ email: 'member@x.com', role: 'member' })
     memberToken = await seedSession(memberId)
     vi.mocked(centralFetch).mockReset()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // This also proves the route isn't shadowed by GET /bills/:id: a shadowed
+  // request would hit the id lookup and come back 404 with a different body
+  // shape, not 200 with { billNumber, year }.
   it('numbers the first draft D1 and uses the live session year', async () => {
-    vi.mocked(centralFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ yearStart: 2025, yearEnd: 2026, sineDie: false }),
-    } as Response)
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-06-01T00:00:00Z'))
+    mockSession(2025, 2026, false)
     const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ billNumber: 'D1', year: new Date().getUTCFullYear() })
+    expect(await res.json()).toEqual({ billNumber: 'D1', year: 2025 })
   })
 
   it('advances past a sine die session', async () => {
-    vi.mocked(centralFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ yearStart: 2025, yearEnd: 2026, sineDie: true }),
-    } as Response)
+    mockSession(2025, 2026, true)
     const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(await res.json()).toMatchObject({ year: 2027 })
   })
 
+  it('clamps up to yearStart when the current year is earlier than the session', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2020-01-01T00:00:00Z'))
+    mockSession(2025, 2026, false)
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(await res.json()).toMatchObject({ year: 2025 })
+  })
+
+  it('clamps down to yearEnd when the current year is later than the session', async () => {
+    // Advancing the clock this far would expire the session seeded in
+    // beforeEach (its 30-day expiry was computed at real "now"), so re-seed
+    // it after the jump.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    adminToken = await seedSession(adminId)
+    mockSession(2025, 2026, false)
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(await res.json()).toMatchObject({ year: 2026 })
+  })
+
   it('increments the number past existing drafts', async () => {
-    vi.mocked(centralFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ yearStart: 2025, yearEnd: 2026, sineDie: false }),
-    } as Response)
+    mockSession(2025, 2026, false)
     // c.env.STATE is unset in the test worker (see vitest.config.mts — several
     // configApi tests rely on that too), so the route computes state === ''.
-    // Seed drafts with the matching state rather than 'UT' so this test
-    // actually exercises the per-state filter instead of accidentally passing.
+    // Seed drafts with the matching state so this exercises the live route;
+    // the per-state filter itself is covered directly above, against real
+    // state values, via nextDraftNumber().
     const db = getDb(env.DB)
     await db.insert(bills).values([
       { id: 'a', billNumber: 'D1', title: 'One', state: '', isDraft: true },
@@ -77,24 +138,33 @@ describe('GET /api/bills/draft-defaults', () => {
     expect(await res.json()).toMatchObject({ year: 2026 })
   })
 
+  it('falls back to the tenant\'s own newest year when central returns a non-ok response', async () => {
+    vi.mocked(centralFetch).mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response)
+    const db = getDb(env.DB)
+    await db.insert(bills).values({ id: 'f', billNumber: 'HB1', title: 'Filed', state: '', yearStart: 2024, yearEnd: 2024 })
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ year: 2024 })
+  })
+
+  it('falls back to the current year when central is unreachable and the tenant has no filed bills', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2028-03-15T00:00:00Z'))
+    adminToken = await seedSession(adminId) // re-seed: see comment above
+    vi.mocked(centralFetch).mockRejectedValue(new Error('central unreachable'))
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ year: 2028 })
+  })
+
   it('rejects a non-admin with 403', async () => {
     const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(403)
-  })
-
-  it('is not shadowed by GET /bills/:id', async () => {
-    vi.mocked(centralFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ yearStart: 2025, yearEnd: 2026, sineDie: false }),
-    } as Response)
-    const res = await SELF.fetch('https://x/api/bills/draft-defaults', {
-      headers: { Cookie: `session=${adminToken}` },
-    })
-    expect(res.status).toBe(200)
-    const body = await res.json<{ billNumber: string; year: number }>()
-    expect(body).toHaveProperty('billNumber')
-    expect(body).toHaveProperty('year')
   })
 })

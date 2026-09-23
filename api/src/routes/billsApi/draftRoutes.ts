@@ -10,7 +10,6 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
-import { nextDraftNumber } from '../../lib/draftNumber'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -22,17 +21,6 @@ async function latchTriaged(db: ReturnType<typeof getDb>, id: string, userId: st
 }
 
 export function registerDraftRoutes(router: Hono<AppEnv>) {
-  // GET /bills/draft-defaults — the number and year a new draft should
-  // pre-fill with. One call so the form never has to know how either is
-  // derived. Admin only, matching the create route. MUST be registered
-  // before GET /:id (in lookupRoutes) — see index.ts registration order.
-  router.get('/draft-defaults', requireAdmin, async (c) => {
-    const db = getDb(c.env.DB)
-    const state = (c.env.STATE || '').toUpperCase()
-    const billNumber = await nextDraftNumber(db, state)
-    return c.json({ billNumber, year: await defaultDraftYear(c, db, state) })
-  })
-
   // DELETE /bills/:id — admin only
   router.delete('/:id', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
@@ -257,8 +245,12 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
  *
  *  A central outage must not block creating a draft — a slightly wrong year is
  *  editable, a 500 is not — so this falls back to the tenant's own newest filed
- *  year and logs. */
-async function defaultDraftYear(
+ *  year and logs.
+ *
+ *  Exported so GET /bills/draft-defaults (lookupRoutes.ts, which must register
+ *  before GET /:id) and this file's own POST /draft can both call it without a
+ *  circular import: lookupRoutes.ts imports from here, not the other way. */
+export async function defaultDraftYear(
   c: Context<AppEnv>,
   db: ReturnType<typeof getDb>,
   state: string,
