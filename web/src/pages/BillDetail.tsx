@@ -641,8 +641,9 @@ export function BillDetail() {
   const [deletingDraft, setDeletingDraft] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [filedOptions, setFiledOptions] = useState<BillOption[]>([])
-  const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | null>(null)
-  const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | null>(null)
+  const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | null>(null)
+  const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | null>(null)
+  const [draftFieldError, setDraftFieldError] = useState<string | null>(null)
 
   const refreshSidebar = useSidebarRefresh()
   const { refresh: refreshNotifications, mentions } = useNotifications()
@@ -1630,6 +1631,153 @@ export function BillDetail() {
               >
                 {bill.sponsor ?? <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span>}
               </button>
+            )}
+          </div>
+        )}
+
+        {/* Draft: bill number / year inline row for admins. Follows the sponsor
+            editor above exactly — same hover affordance, save call, and optimistic
+            update — but a collision comes back as a 409 from PATCH .../draft, so
+            each form's submit is wrapped to surface the server's message inline
+            rather than losing it to an uncaught rejection. */}
+        {bill.isDraft && isAdmin && (
+          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginTop: 4, marginBottom: 0, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span>
+              {editingDraftField === 'billNumber' ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (demoLocked) return
+                    const val = (e.currentTarget.elements.namedItem('draftBillNumber') as HTMLInputElement).value.trim()
+                    if (!val) return
+                    try {
+                      const updated = await apiFetch<{ billNumber: string; year: number }>(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ billNumber: val }) })
+                      setBill(prev => prev ? { ...prev, billNumber: updated.billNumber } : prev)
+                      setEditingDraftField(null)
+                      setDraftFieldError(null)
+                    } catch (err) {
+                      setDraftFieldError(err instanceof ApiError ? err.message : 'Failed to save bill number.')
+                    }
+                  }}
+                  style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+                >
+                  <span style={{ color: color.textMuted }}>Bill number:</span>
+                  <input
+                    name="draftBillNumber"
+                    defaultValue={bill.billNumber ?? ''}
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
+                    style={{
+                      fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
+                      padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 120,
+                    }}
+                  />
+                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                  <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
+                </form>
+              ) : (
+                // The label is folded into the button's own text (rather than a
+                // preceding sibling, as the sponsor row above uses) so this
+                // control's text never equals the bare billNumber shown in the
+                // chip strip's BillBadge — getByText('HB 1')-style queries there
+                // would otherwise match this element too.
+                <button
+                  type="button"
+                  aria-label="Edit bill number"
+                  onClick={() => { if (!demoLocked) { setEditingDraftField('billNumber'); setDraftFieldError(null) } }}
+                  onMouseEnter={() => setHoveredDraftField('billNumber')}
+                  onMouseLeave={() => setHoveredDraftField(null)}
+                  disabled={demoLocked}
+                  style={{
+                    display: 'inline-block',
+                    margin: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    color: 'inherit',
+                    textAlign: 'left',
+                    ...editableFieldBox(hoveredDraftField === 'billNumber'),
+                    padding: '1px 6px',
+                    cursor: demoLocked ? 'not-allowed' : 'text',
+                    opacity: demoLocked ? 0.5 : 1,
+                  }}
+                >
+                  {`Bill number: ${bill.billNumber}`}
+                </button>
+              )}
+            </span>
+
+            <span>
+              {editingDraftField === 'year' ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault()
+                    if (demoLocked) return
+                    const raw = (e.currentTarget.elements.namedItem('draftYear') as HTMLInputElement).value.trim()
+                    const val = Number(raw)
+                    if (!raw || !Number.isInteger(val)) return
+                    try {
+                      const updated = await apiFetch<{ billNumber: string; year: number }>(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ year: val }) })
+                      setBill(prev => prev ? { ...prev, yearStart: updated.year, yearEnd: updated.year } : prev)
+                      setEditingDraftField(null)
+                      setDraftFieldError(null)
+                    } catch (err) {
+                      setDraftFieldError(err instanceof ApiError ? err.message : 'Failed to save year.')
+                    }
+                  }}
+                  style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+                >
+                  <span style={{ color: color.textMuted }}>Year:</span>
+                  <input
+                    name="draftYear"
+                    type="number"
+                    defaultValue={bill.yearStart ?? ''}
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
+                    style={{
+                      fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
+                      padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 90,
+                    }}
+                  />
+                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                  <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
+                </form>
+              ) : (
+                // Same fold-the-label-in reasoning as the bill-number button above:
+                // this keeps the plain year value (e.g. "2026") from colliding
+                // with a SessionChip or other page text that shows the bare year.
+                <button
+                  type="button"
+                  aria-label="Edit year"
+                  onClick={() => { if (!demoLocked) { setEditingDraftField('year'); setDraftFieldError(null) } }}
+                  onMouseEnter={() => setHoveredDraftField('year')}
+                  onMouseLeave={() => setHoveredDraftField(null)}
+                  disabled={demoLocked}
+                  style={{
+                    display: 'inline-block',
+                    margin: 0,
+                    background: 'none',
+                    border: 'none',
+                    font: 'inherit',
+                    color: 'inherit',
+                    textAlign: 'left',
+                    ...editableFieldBox(hoveredDraftField === 'year'),
+                    padding: '1px 6px',
+                    cursor: demoLocked ? 'not-allowed' : 'text',
+                    opacity: demoLocked ? 0.5 : 1,
+                  }}
+                >
+                  {bill.yearStart != null
+                    ? `Year: ${bill.yearStart}`
+                    : <>Year: <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span></>}
+                </button>
+              )}
+            </span>
+
+            {draftFieldError && (
+              <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{draftFieldError}</span>
             )}
           </div>
         )}

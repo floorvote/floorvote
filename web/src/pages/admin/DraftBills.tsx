@@ -20,9 +20,18 @@ export function DraftBills() {
   const [draftSummary, setDraftSummary] = useState('')
   const [draftSponsor, setDraftSponsor] = useState('')
   const [draftText, setDraftText] = useState('')
+  const [draftNumber, setDraftNumber] = useState('')
+  const [draftYear, setDraftYear] = useState('')
+  const [draftState, setDraftState] = useState('')
   const [creatingDraft, setCreatingDraft] = useState(false)
   const [createDraftError, setCreateDraftError] = useState<string | null>(null)
   const [draftList, setDraftList] = useState<{ id: string; billNumber: string; title: string; state: string | null }[] | null>(null)
+  // Fallback source for the state list and multi-state signal: this admin
+  // page isn't wired into useBillFilters' searchParams/facetCounts plumbing,
+  // so it calls GET /bills/facets directly rather than reusing that hook.
+  // isMultiState mirrors useBillFilters' own notion (knownStates.size > 1)
+  // rather than inventing a second one.
+  const [knownStates, setKnownStates] = useState<string[]>([])
 
   useEffect(() => {
     apiFetch<{ drafts: { id: string; billNumber: string; title: string; state: string | null }[] }>('/bills/drafts')
@@ -30,9 +39,27 @@ export function DraftBills() {
       .catch(() => setDraftList([]))
   }, [])
 
+  useEffect(() => {
+    apiFetch<{ state: Record<string, number> }>('/bills/facets')
+      .then(f => setKnownStates(Object.keys(f.state).sort()))
+      .catch(() => setKnownStates([]))
+  }, [])
+
+  const isMultiState = knownStates.length > 1
+
+  // Fetched when the form opens rather than on mount: the number depends on how
+  // many drafts exist, so a stale value from page load could collide.
+  useEffect(() => {
+    if (!showDraftForm) return
+    apiFetch<{ billNumber: string; year: number }>('/bills/draft-defaults')
+      .then(d => { setDraftNumber(d.billNumber ?? ''); setDraftYear(d.year != null ? String(d.year) : '') })
+      .catch(() => { /* leave blank; the server fills both in when omitted */ })
+  }, [showDraftForm])
+
   async function handleCreateDraft() {
     const title = draftTitle.trim()
     if (!title || demoLocked) return
+    if (isMultiState && !draftState.trim()) return
     setCreatingDraft(true)
     setCreateDraftError(null)
     try {
@@ -41,6 +68,9 @@ export function DraftBills() {
       if (draftSponsor.trim()) body.sponsor = draftSponsor.trim()
       if (hasContent(draftSummary)) body.summary = draftSummary
       if (hasContent(draftText)) body.text = draftText
+      if (draftNumber.trim()) body.billNumber = draftNumber.trim()
+      if (draftYear.trim()) body.year = Number(draftYear)
+      if (draftState.trim()) body.state = draftState.trim()
       const created = await apiFetch<{ id: string }>('/bills/draft', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -60,6 +90,9 @@ export function DraftBills() {
         setDraftSummary('')
         setDraftSponsor('')
         setDraftText('')
+        setDraftNumber('')
+        setDraftYear('')
+        setDraftState('')
         setCreateDraftError(null)
       })
       navigate('/bills/' + created.id)
@@ -103,6 +136,52 @@ export function DraftBills() {
         )}
         {showDraftForm && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 14 }}>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="draft-number" style={labelStyle}>Bill number</label>
+                <input
+                  id="draft-number"
+                  value={draftNumber}
+                  onChange={e => setDraftNumber(e.target.value)}
+                  placeholder="D1"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="draft-year" style={labelStyle}>Year</label>
+                <select
+                  id="draft-year"
+                  value={draftYear}
+                  onChange={e => setDraftYear(e.target.value)}
+                  style={inputStyle}
+                >
+                  {(() => {
+                    const base = Number(draftYear) || new Date().getFullYear()
+                    const years = [base, base + 1, base + 2]
+                    // A backfilled draft can carry a year below the default;
+                    // keep it selectable so editing one does not silently move it.
+                    if (!years.includes(base)) years.unshift(base)
+                    return years.map(y => <option key={y} value={String(y)}>{y}</option>)
+                  })()}
+                </select>
+              </div>
+            </div>
+            {isMultiState && (
+              <div>
+                <label htmlFor="draft-state" style={labelStyle}>
+                  State <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span>
+                </label>
+                <select
+                  id="draft-state"
+                  value={draftState}
+                  onChange={e => setDraftState(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Select a state…</option>
+                  {knownStates.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label htmlFor="draft-title" style={labelStyle}>Title <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span></label>
               <input
@@ -153,13 +232,13 @@ export function DraftBills() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={handleCreateDraft}
-                disabled={!draftTitle.trim() || creatingDraft || demoLocked}
-                style={actionBtnBlue(!draftTitle.trim() || creatingDraft || demoLocked)}
+                disabled={!draftTitle.trim() || (isMultiState && !draftState.trim()) || creatingDraft || demoLocked}
+                style={actionBtnBlue(!draftTitle.trim() || (isMultiState && !draftState.trim()) || creatingDraft || demoLocked)}
               >
                 {creatingDraft ? 'Creating…' : 'Create draft'}
               </button>
               <button
-                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setCreateDraftError(null) }}
+                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setDraftNumber(''); setDraftYear(''); setDraftState(''); setCreateDraftError(null) }}
                 style={{ fontSize: fontSize.sm, color: color.textSecondary, background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '8px 14px', cursor: 'pointer' }}
               >
                 Cancel

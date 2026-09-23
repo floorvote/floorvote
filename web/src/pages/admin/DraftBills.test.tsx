@@ -104,3 +104,80 @@ describe('DraftBills read-only demo', () => {
     expect(deleteBtn).toHaveAttribute('title', 'Delete draft')
   })
 })
+
+describe('DraftBills number and year', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('pre-fills the number and year from draft-defaults and posts both', async () => {
+    const posted: Record<string, unknown>[] = []
+    vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/bills/drafts') return { drafts: [] } as never
+      if (path === '/bills/draft-defaults') return { billNumber: 'D3', year: 2027 } as never
+      if (path === '/bills/draft') { posted.push(JSON.parse(String(init?.body))); return { id: 'x' } as never }
+      return {} as never
+    })
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
+
+    expect(await screen.findByLabelText(/bill number/i)).toHaveValue('D3')
+    expect(screen.getByLabelText(/year/i)).toHaveValue('2027')
+
+    await user.type(screen.getByLabelText(/title/i), 'Pre-filed')
+    await user.click(screen.getByRole('button', { name: /create draft/i }))
+
+    expect(posted[0]).toMatchObject({ title: 'Pre-filed', billNumber: 'D3', year: 2027 })
+  })
+
+  it('surfaces a 409 collision as an inline error', async () => {
+    vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
+      if (path === '/bills/drafts') return { drafts: [] } as never
+      if (path === '/bills/draft-defaults') return { billNumber: 'D1', year: 2026 } as never
+      if (path === '/bills/draft') throw new api.ApiError(409, 'HB0209 is already used by another UT bill in 2026.')
+      return {} as never
+    })
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
+    await user.type(screen.getByLabelText(/title/i), 'Clash')
+    await user.click(screen.getByRole('button', { name: /create draft/i }))
+
+    expect(await screen.findByText(/already used by another UT bill in 2026/)).toBeInTheDocument()
+  })
+})
+
+describe('DraftBills state field on multi-state tenants', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  function mockMultiState() {
+    vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
+      if (path === '/bills/drafts') return { drafts: [] } as never
+      if (path === '/bills/facets') return { state: { UT: 3, ID: 1 } } as never
+      if (path === '/bills/draft-defaults') return { billNumber: 'D1', year: 2026 } as never
+      return {} as never
+    })
+  }
+
+  it('shows a required State field and keeps Create draft disabled until one is chosen', async () => {
+    mockMultiState()
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
+    await user.type(await screen.findByLabelText(/title/i), 'Multi-state draft')
+
+    const submitBtn = screen.getByRole('button', { name: /create draft/i })
+    expect(submitBtn).toBeDisabled()
+
+    const stateSelect = await screen.findByLabelText(/state/i)
+    await user.selectOptions(stateSelect, 'UT')
+    expect(submitBtn).toBeEnabled()
+  })
+
+  it('does not show a State field on a single-state tenant', async () => {
+    mockDrafts([])
+    render(<MemoryRouter><DraftBills /></MemoryRouter>)
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
+    expect(screen.queryByLabelText(/^state/i)).not.toBeInTheDocument()
+  })
+})
