@@ -1679,6 +1679,13 @@ export function BillDetail() {
                       setBill(prev => prev ? { ...prev, billNumber: updated.billNumber } : prev)
                       setEditingDraftField(null)
                       setDraftFieldError(null)
+                      // The canonical URL embeds the bill number on the
+                      // number-prefixed route, same as the state editor below —
+                      // rebuild it so the address bar doesn't keep naming the
+                      // old number. (/bills/:id needs no fix: it carries no
+                      // bill number and still resolves.)
+                      const rebuilt = billUrl({ state: bill.state, sessionSlug: bill.sessionSlug, session: bill.session, billNumber: updated.billNumber, id: bill.id })
+                      if (billNumberParam && rebuilt !== location.pathname) navigate(rebuilt, { replace: true })
                     } catch (err) {
                       setDraftFieldError(err instanceof ApiError ? err.message : 'Failed to save bill number.')
                     }
@@ -1743,9 +1750,18 @@ export function BillDetail() {
                     if (!raw || !Number.isInteger(val)) return
                     try {
                       const updated = await apiFetch<{ billNumber: string; year: number }>(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ year: val }) })
-                      setBill(prev => prev ? { ...prev, yearStart: updated.year, yearEnd: updated.year } : prev)
+                      const newSlug = String(updated.year)
+                      setBill(prev => prev ? { ...prev, yearStart: updated.year, yearEnd: updated.year, sessionSlug: newSlug } : prev)
                       setEditingDraftField(null)
                       setDraftFieldError(null)
+                      // For a draft, sessionSlug IS the year (see
+                      // api/src/routes/billsApi/detail.ts), and the canonical
+                      // URL embeds it — so a year save must update sessionSlug
+                      // and rebuild the URL, same as the state editor below.
+                      // (/bills/:id needs no fix: it carries no year and still
+                      // resolves.)
+                      const rebuilt = billUrl({ state: bill.state, sessionSlug: newSlug, session: bill.session, billNumber: bill.billNumber, id: bill.id })
+                      if (slugParam && rebuilt !== location.pathname) navigate(rebuilt, { replace: true })
                     } catch (err) {
                       setDraftFieldError(err instanceof ApiError ? err.message : 'Failed to save year.')
                     }
