@@ -262,6 +262,21 @@ describe('BillDetail draft State editor', () => {
     expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: TX')
   })
 
+  // Facets counts drafts (the drafts predicate is only applied when the Drafts
+  // filter is active), so a draft's own state is normally in the list because
+  // the draft counts itself. If it ever weren't, the trigger would show a state
+  // with no matching radio — unselectable, and unable to round-trip.
+  it('offers the bill\'s own state even when facets omits it', async () => {
+    const user = userEvent.setup()
+    mockApi(null, undefined, { TX: 2 }) // no RI, though the draft is RI
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit state' }))
+    await user.click(await screen.findByRole('button', { name: 'State' }))
+    expect(screen.getByRole('radio', { name: 'RI' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'TX' })).toBeInTheDocument()
+  })
+
   // The Picker is controlled, unlike the free-text fallback's plain <input> —
   // it must be seeded with the bill's current state when the editor opens.
   it('prefills the State picker with the bill\'s current state when opened', async () => {

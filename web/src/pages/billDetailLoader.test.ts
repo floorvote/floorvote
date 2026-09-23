@@ -43,6 +43,30 @@ describe('billDetailLoader', () => {
     expect((result as Response).headers.get('Location')).toBe('/RI/2025-2026/HB 1')
   })
 
+  // A draft's `session` is '', so deriving the canonical slug from it yields
+  // nothing and the URL collapses back to /bills/:id — a draft reached by uuid
+  // (digest link, notification, prefetch) would never normalize. The API sends
+  // sessionSlug = the draft's year for exactly this.
+  it('redirects a draft reached by uuid to its canonical /STATE/YEAR/NUMBER URL', async () => {
+    const DRAFT = { id: 'd1', state: 'IL', session: '', sessionSlug: '2026', billNumber: 'D1', title: 'Pre-filed' }
+    vi.spyOn(api, 'apiFetch').mockResolvedValue(DRAFT as never)
+    const result = await billDetailLoader(loaderArgs({ billId: 'd1' }, 'http://localhost/bills/d1'))
+    expect(result).toBeInstanceOf(Response)
+    expect((result as Response).status).toBe(302)
+    expect((result as Response).headers.get('Location')).toBe('/IL/2026/D1')
+  })
+
+  // A stateless draft (created on a multi-state tenant before the State field
+  // existed) has no canonical URL to normalize to — /bills/:id IS its only URL,
+  // so the loader must leave it alone rather than redirect to a broken path.
+  it('leaves a stateless draft on its uuid URL', async () => {
+    const DRAFT = { id: 'd2', state: '', session: '', sessionSlug: '2026', billNumber: 'D1', title: 'Stateless' }
+    vi.spyOn(api, 'apiFetch').mockResolvedValue(DRAFT as never)
+    const result = await billDetailLoader(loaderArgs({ billId: 'd2' }, 'http://localhost/bills/d2'))
+    expect(result).not.toBeInstanceOf(Response)
+    expect(result).toEqual(DRAFT)
+  })
+
   it('throws a 409 Response when the legacy bill number is ambiguous', async () => {
     vi.spyOn(api, 'apiFetch').mockRejectedValue(new api.ApiError(409, 'ambiguous'))
     await expect(

@@ -551,7 +551,14 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
   // /STATE/SESSION/BILL URL. The (billId || !state) guard means we never redirect
   // when already on the canonical route — so there is no redirect loop despite the
   // unencoded space in billUrl's output vs. the encoded request pathname.
-  const canonical = billUrl({ state: bill.state, session: bill.session, billNumber: bill.billNumber, id: bill.id })
+  //
+  // sessionSlug, not session: a draft's `session` is '', so deriving the slug
+  // from it yields nothing and this collapses to /bills/:id — meaning a draft
+  // opened by uuid (digest link, notification, prefetch) would never normalize
+  // to /STATE/YEAR/D1. The API sends sessionSlug = the draft's year for exactly
+  // this (api/src/routes/billsApi/detail.ts). A stateless draft still has no
+  // canonical URL and correctly stays on /bills/:id.
+  const canonical = billUrl({ state: bill.state, sessionSlug: bill.sessionSlug, session: bill.session, billNumber: bill.billNumber, id: bill.id })
   if ((billId || !state) && canonical !== new URL(request.url).pathname) {
     return redirect(canonical)
   }
@@ -1911,7 +1918,16 @@ export function BillDetail() {
                       <Picker
                         mode="single"
                         value={draftStateEdit || null}
-                        options={(knownStates ?? []).map(s => ({ value: s, label: s }))}
+                        // The bill's own state is unioned in so the Picker can
+                        // always round-trip its current value. Facets counts
+                        // drafts (the drafts predicate is only applied when the
+                        // Drafts filter is active), so the draft normally counts
+                        // itself and this is a no-op — but if facets is ever
+                        // scoped away from drafts, the alternative is a trigger
+                        // showing a state with no matching radio to re-select.
+                        options={[...new Set([...(knownStates ?? []), bill.state].filter(Boolean))]
+                          .sort()
+                          .map(s => ({ value: s, label: s }))}
                         emptyOption={{ label: 'Select a state…' }}
                         onChange={v => setDraftStateEdit(v ?? '')}
                         ariaLabel="State"
