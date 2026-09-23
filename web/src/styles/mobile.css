@@ -28,6 +28,38 @@
   inset: 0;
 }
 
+/* Same stretched-link overlay, for each row of the Prioritized bills list.
+   The bill badge and the priority control (a <select> for admins, a read-only
+   chip for everyone else) are flex siblings on one centered line, so they share
+   a centre line — which they could not while the control was absolutely
+   positioned at a fixed top offset outside the Link. The control cannot nest
+   inside the Link (clicking it would navigate), so the Link's ::after covers
+   the badge line and the title instead, keeping exactly the region that used to
+   be inside the Link clickable. The wrapper deliberately does NOT include the
+   vote buttons below it, so the overlay cannot turn them into a navigation
+   target; the priority control sits above the overlay via position:relative +
+   z-index inline in Sidebar.tsx. */
+.sidebar-priority-bill { position: relative; }
+.sidebar-priority-bill-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+/* Keyboard focus follows the click target, not the anchor's own box. The
+   anchor is only as big as the title now, so the default *:focus-visible ring
+   would outline the title and leave the badge — which the same Tab stop
+   activates — outside it. The ::after IS the click target, so ring that
+   instead and suppress the anchor's own (higher specificity than the
+   *:focus-visible rule above, and later in the file). outline-offset is 0: the
+   overlay already spans the row's full content box, so an outset ring would
+   sit in the row padding and read as a ring around the whole row. */
+.sidebar-priority-bill-link:focus-visible { outline: none; }
+.sidebar-priority-bill-link:focus-visible::after {
+  outline: 2px solid var(--fv-focus-ring);
+  outline-offset: 0;
+}
+
 /* Skip-to-content link: off-screen until it takes keyboard focus. */
 .skip-link {
   position: absolute; left: 8px; top: -48px; z-index: 3000;

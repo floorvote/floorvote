@@ -18,7 +18,9 @@ export interface PriorityBill {
   summary: string | null
   priority: 'high' | 'medium' | 'low'
   myVote: string | null
-  /** Draft bills get the dashed BillBadge variant plus a visible DraftChip.
+  /** Draft bills get the dashed BillBadge variant plus a screen-reader-only
+   *  ", draft" on the badge (`draftSrLabel`) — the priority control shares the
+   *  badge's line, so there is no room for a visible DraftChip.
    *  Required, not optional: /stats/sidebar is the only producer of this shape,
    *  so making it optional would buy nothing and would let a dropped select
    *  column read as "filed" — a silent solid badge — instead of a type error. */

@@ -4,12 +4,13 @@
  * The widget rendered a prioritized draft bill with the solid navy badge,
  * because /stats/sidebar's PriorityBill shape carried no draft flag. It now
  * selects bills.isDraft and emits `isDraft`, and this list passes it to
- * BillBadge and pairs it with a mini DraftChip.
+ * BillBadge.
  *
- * This is the one of the five tight surfaces with room for the visible chip:
- * the badge sits on a block line of its own and the priority chip beside it is
- * absolutely positioned out of flow. See DraftChip's `mini` comment for the
- * width arithmetic at the 230px sidebar minimum.
+ * There is no visible DraftChip on this surface any more: the priority control
+ * shares the badge's line, and a second chip on it made an already cramped row
+ * worse. The dashed badge is the visual half of the signal and BillBadge's
+ * `draftSrLabel` is the text half — the dashed border on its own is decoration
+ * to a screen reader, so it can never be the only cue.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
@@ -78,28 +79,40 @@ async function renderSidebar(bills: PriorityBill[]) {
 describe('Sidebar prioritized-bills draft marker', () => {
   beforeEach(() => { priorityBills = [] })
 
-  it('renders the dashed badge and a visible Draft chip for a draft bill', async () => {
+  it('renders the dashed badge for a draft bill', async () => {
     await renderSidebar([makeBill({ isDraft: true })])
     const badge = screen.getByText('H 100')
     expect(/dashed/.test(badge.style.border)).toBe(true)
     expect(badge.style.background === 'transparent' || badge.style.background === '').toBe(true)
-    expect(screen.getByText('Draft')).toBeTruthy()
   })
 
-  it('renders the solid badge and no Draft text for a filed bill', async () => {
+  // The chip was removed on purpose. If it comes back, it comes back next to
+  // the priority control on the same line — the thing this change undid.
+  it('shows no visible Draft text beside the badge', async () => {
+    await renderSidebar([makeBill({ isDraft: true })])
+    expect(screen.queryByText('Draft')).toBeNull()
+  })
+
+  // Losing the visible chip must not lose the word. SR_ONLY is
+  // position:absolute/1x1 with a clip rect, so it is in the accessibility tree
+  // but takes no layout space; testing-library's default `getByText` ignores
+  // nothing here, so match on the badge's own accessible name instead.
+  it('keeps the word "draft" in the badge accessible name via draftSrLabel', async () => {
+    await renderSidebar([makeBill({ isDraft: true })])
+    const badge = screen.getByText('H 100')
+    expect(badge.textContent).toContain(', draft')
+    const sr = badge.querySelector('span')
+    expect(sr?.style.position).toBe('absolute')
+    // The SR span must never set `display` — see DraftChip.tsx's note on why an
+    // inline display outranks the stylesheet and shipped a bug once.
+    expect(sr?.style.display).toBe('')
+  })
+
+  it('renders the solid badge and no draft cue at all for a filed bill', async () => {
     await renderSidebar([makeBill({ isDraft: false })])
     const badge = screen.getByText('H 100')
     expect(/dashed/.test(badge.style.border)).toBe(false)
     expect(screen.queryByText('Draft')).toBeNull()
-  })
-
-  // The chip shares its line with a mini badge, so it must be the mini chip
-  // (12px / 2px 6px) — the full-size one is what the width budget was measured
-  // against and rejected.
-  it('uses the mini chip scale so it sits beside a mini badge', async () => {
-    await renderSidebar([makeBill({ isDraft: true })])
-    const chip = screen.getByText('Draft')
-    expect(chip.style.padding).toBe('2px 6px')
-    expect(/dashed/.test(chip.style.border)).toBe(true)
+    expect(badge.textContent).not.toContain('draft')
   })
 })

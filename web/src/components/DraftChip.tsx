@@ -19,13 +19,11 @@ import { BODY_FONT, color, fontSize, fontWeight, radius } from '../styles/tokens
 // picking the lightest value that still reads fine (see shared/tokens.ts).
 //
 // `mini` scales it to CHIP_MINI (12px / 2px 6px) so it can sit beside a mini
-// BillBadge without dwarfing it — the sidebar's priority-bill list. Measured
-// against the 230px sidebar minimum: content width there is 210px, the
-// absolutely-positioned priority chip takes ~50px off the right, and a
-// multi-state mini badge (~68px) plus the 6px gap plus this chip (~43px) comes
-// to ~117px inside the ~164px that leaves. The container still wraps rather
-// than clips, so an unusually long bill number degrades by growing the row,
-// which is free — the sidebar list is plain flow layout, not virtualized.
+// BillBadge without dwarfing it — the notifications slide-over's bill footer.
+// The sidebar's priority-bill list used to be the other mini caller; it now
+// pairs the dashed badge with BillBadge's `draftSrLabel` instead, because the
+// priority control shares that badge's line and a second chip on it made an
+// already cramped row worse.
 export function DraftChip({ mini }: { mini?: boolean } = {}) {
   return (
     <span
