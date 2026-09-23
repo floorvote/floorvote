@@ -162,7 +162,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
 
     const body = await c.req.json<{
       title?: string; sponsor?: string; summary?: string; text?: string
-      billNumber?: string; year?: number
+      billNumber?: string; year?: number; state?: string
     }>().catch(() => ({} as Record<string, string>))
 
     // Build update object — only include fields present in body
@@ -176,18 +176,37 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     if ('summary' in body) patch.tenantSummary = body.summary?.trim() || null
     if ('text' in body) patch.draftText = body.text?.trim() || null
 
+    // An omitted state leaves the row alone — including a legacy '', which
+    // migration 0070 deliberately did not guess a value for. A state that IS
+    // sent must be usable: billUrl() needs one, so a draft whose state is
+    // cleared could never get a canonical /STATE/YEAR/NUMBER URL. Same
+    // reasoning as the create guard in POST /bills/draft above.
+    let nextState = existing.state
+    if ('state' in body) {
+      const s = body.state?.trim().toUpperCase() ?? ''
+      if (!s) {
+        return c.json({ error: 'A draft without a state cannot have a canonical URL. Include a state when editing a draft.' }, 400)
+      }
+      nextState = s
+    }
+
     const nextNumber = 'billNumber' in body ? (body.billNumber?.trim() || existing.billNumber) : existing.billNumber
     const nextYear = Number.isInteger(body.year) ? Number(body.year) : existing.yearStart
-    if (nextNumber !== existing.billNumber || nextYear !== existing.yearStart) {
+    // State is part of the uniqueness triple (state, year, billNumber), so a
+    // state-only change has to re-run the collision check too — moving a draft
+    // into a state that already numbers a bill this way is the same ambiguity
+    // as renumbering it within one.
+    if (nextNumber !== existing.billNumber || nextYear !== existing.yearStart || nextState !== existing.state) {
       const collision = await findNumberCollision(db, {
-        state: existing.state, year: nextYear as number, billNumber: nextNumber, excludeId: id,
+        state: nextState, year: nextYear as number, billNumber: nextNumber, excludeId: id,
       })
       if (collision) {
-        return c.json({ error: `${nextNumber} is already used by another ${existing.state} bill in ${nextYear}.` }, 409)
+        return c.json({ error: `${nextNumber} is already used by another ${nextState} bill in ${nextYear}.` }, 409)
       }
       patch.billNumber = nextNumber
       patch.yearStart = nextYear as number
       patch.yearEnd = nextYear as number
+      if (nextState !== existing.state) patch.state = nextState
     }
 
     if (Object.keys(patch).length > 0) {
@@ -204,6 +223,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       text: updated!.draftText ?? null,
       billNumber: updated!.billNumber,
       year: updated!.yearStart,
+      state: updated!.state,
       isDraft: true,
     })
   })
