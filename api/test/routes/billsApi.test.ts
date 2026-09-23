@@ -155,6 +155,37 @@ describe('GET /bills', () => {
     expect(numbers.indexOf('CURRENT')).toBeLessThan(numbers.indexOf('FUTURE'))
   })
 
+  it('default sort puts a future-year draft above a current-year filed bill', async () => {
+    // A draft is pre-filed into the NEXT session on purpose (defaultDraftYear()'s sine-die
+    // rule), so its future year_end is deliberate and must beat current-year work. The filed
+    // bill carries the higher priority so the year tier — not a later tier — has to do the work:
+    // if the clamp still collapsed the draft's year to the current year they would tie and
+    // PRIORITIZED would come first.
+    const cy = new Date().getUTCFullYear()
+    await seedBill({ billNumber: 'PRIORITIZED', sessionId: '2300', yearStart: cy, yearEnd: cy, priority: 'high' })
+    await seedBill({ billNumber: 'DRAFT', sessionId: '2400', yearStart: cy + 1, yearEnd: cy + 1, isDraft: true })
+    const res = await SELF.fetch('http://localhost/api/bills', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
+    expect(numbers.indexOf('DRAFT')).toBeLessThan(numbers.indexOf('PRIORITIZED'))
+  })
+
+  it('default sort still clamps a future-dated biennium for FILED bills', async () => {
+    // Regression guard for the draft exemption above: a filed row whose year_end names the far
+    // end of a biennium must NOT outrank current-session bills. Both rows are filed, so the
+    // clamp ties them on the year tier and priority separates them — dropping the clamp would
+    // put FILED_BIENNIUM first instead.
+    const cy = new Date().getUTCFullYear()
+    await seedBill({ billNumber: 'FILED_BIENNIUM', sessionId: '2400', yearStart: cy, yearEnd: cy + 1, priority: 'low' })
+    await seedBill({ billNumber: 'FILED_CURRENT', sessionId: '2300', yearStart: cy, yearEnd: cy, priority: 'high' })
+    const res = await SELF.fetch('http://localhost/api/bills', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
+    expect(numbers.indexOf('FILED_CURRENT')).toBeLessThan(numbers.indexOf('FILED_BIENNIUM'))
+  })
+
   it('explicit Year ascending orders by year_end (oldest first)', async () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'ENDS_LATER', sessionId: '2200', yearStart: cy, yearEnd: cy + 1 })

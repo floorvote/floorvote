@@ -173,7 +173,12 @@ const posSubquery = sql`(SELECT position FROM official_positions WHERE bill_id =
 // immutable proxy for sine_die (LegiScan flips sine_die at the year boundary), and strftime keeps
 // the active/past split self-updating at the year rollover. No session_id grouping — within the
 // active bucket (and within any past year) the later tiers do the sorting.
-const S_ACTIVE_YEAR_DESC = sql`MIN(COALESCE(${bills.yearEnd}, 0), CAST(strftime('%Y','now') AS INTEGER)) DESC`
+// Drafts are exempt from the clamp and sort on their true year_end. The clamp exists because a
+// FILED row's future year_end is incidental — it just names the far end of a biennium, so such a
+// row must not outrank current-session bills. A draft's future year_end is the opposite: it is
+// deliberate, because defaultDraftYear() pre-files into the NEXT session after sine die, and that
+// draft belongs above current-year work rather than tied with it.
+const S_ACTIVE_YEAR_DESC = sql`CASE WHEN ${bills.isDraft} THEN COALESCE(${bills.yearEnd}, 0) ELSE MIN(COALESCE(${bills.yearEnd}, 0), CAST(strftime('%Y','now') AS INTEGER)) END DESC`
 const S_YEAREND_ASC      = sql`${bills.yearEnd} ASC NULLS LAST`
 const S_PRIORITY_DESC = sql`CASE ${bills.priority} WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC`
 const S_PRIORITY_ASC  = sql`CASE ${bills.priority} WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END ASC`
