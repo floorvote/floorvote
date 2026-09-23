@@ -724,36 +724,66 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   {sorted.map(bill => {
                     const voted = bill.myVote !== null
                     return (
-                      <div key={bill.id} style={{ padding: '6px 10px 8px', borderTop: `1px solid ${color.surfaceMuted}`, opacity: user?.canVote && voted ? 0.45 : 1, position: 'relative' }}>
-                        <Link
-                          to={billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}
-                          onClick={() => onClose()}
-                          style={{ display: 'block', textDecoration: 'none' }}
-                          onMouseEnter={(e) => handleBillTitleEnter({ ...bill, state: multiState ? bill.state : undefined }, e)}
-                          onMouseMove={(e) => handleBillTitleMove({ ...bill, state: multiState ? bill.state : undefined }, e)}
-                          onMouseLeave={handleBillTitleLeave}
-                        >
-                          {/* No visible DraftChip here: this line already
-                              carries the priority control beside the badge, and
-                              a second chip on it makes a cramped row worse. The
-                              dashed badge is the visual half of the signal and
-                              `draftSrLabel` is the text half, folded into the
-                              badge's own accessible name — the same pairing
-                              HearingRow, BillPicker's pills and EventLines use.
-                              The dashed border alone is decoration to a screen
-                              reader, so it can never be the only cue. */}
+                      <div key={bill.id} style={{ padding: '6px 10px 8px', borderTop: `1px solid ${color.surfaceMuted}`, opacity: user?.canVote && voted ? 0.45 : 1 }}>
+                        {/* Badge line + title. The priority control must not be
+                            a descendant of the bill Link — a click on it would
+                            navigate — and until now it bought that by sitting
+                            outside the Link at `position:absolute; top:6`, a
+                            fixed pixel offset that top-aligned it to the badge
+                            line rather than centering it on the badge. The two
+                            chips are different heights (a <select> and a span),
+                            so they never shared a centre line.
+                            They are flex siblings on one `alignItems:'center'`
+                            line now, which IS the alignment, and the Link keeps
+                            the whole block clickable through a stretched
+                            ::after overlay (.sidebar-priority-bill-link, the
+                            same pattern the widget headers above use). The
+                            overlay is scoped to this wrapper, not the whole
+                            row, so it can never swallow the vote buttons below;
+                            the control gets position:relative + zIndex so it
+                            paints above the overlay and stays operable. */}
+                        <div className="sidebar-priority-bill">
                           <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {/* No visible DraftChip here: this line already
+                                carries the priority control beside the badge,
+                                and a second chip on it makes a cramped row
+                                worse. The dashed badge is the visual half of
+                                the signal and `draftSrLabel` is the text half,
+                                folded into the badge's own accessible name —
+                                the same pairing HearingRow, BillPicker's pills
+                                and EventLines use. The dashed border alone is
+                                decoration to a screen reader, so it can never
+                                be the only cue. */}
                             <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} draftSrLabel />
+                            {/* `display: flex` is load-bearing, not decoration:
+                                both controls render an inline-level box, so a
+                                block wrapper adds the line box's strut (21px
+                                around an 18px chip) and drops the chip 1.5px
+                                below the badge's centre — the residue of the
+                                same bug. A flex container has no line box.
+                                (This wrapper has no class and no stylesheet
+                                rule, so an inline `display` here overrides
+                                nothing — unlike the marker in DraftChip.tsx.) */}
+                            <div style={{ display: 'flex', marginLeft: 'auto', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+                              {isAdmin
+                                ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini />
+                                : <PriorityChip priority={bill.priority} mini />
+                              }
+                            </div>
                           </div>
-                          <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.tooltipBg, fontFamily: "'Source Serif 4', serif", lineHeight: 1.4, display: 'block' }}>
-                            {bill.title}
-                          </span>
-                        </Link>
-                        <div style={{ position: 'absolute', top: 6, right: 10 }}>
-                          {isAdmin
-                            ? <CompactPrioritySelect billId={bill.id} current={bill.priority} onChange={(p) => handleSidebarPriorityChange(bill.id, p)} mini />
-                            : <PriorityChip priority={bill.priority} mini />
-                          }
+                          <Link
+                            className="sidebar-priority-bill-link"
+                            to={billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}
+                            onClick={() => onClose()}
+                            style={{ display: 'block', textDecoration: 'none' }}
+                            onMouseEnter={(e) => handleBillTitleEnter({ ...bill, state: multiState ? bill.state : undefined }, e)}
+                            onMouseMove={(e) => handleBillTitleMove({ ...bill, state: multiState ? bill.state : undefined }, e)}
+                            onMouseLeave={handleBillTitleLeave}
+                          >
+                            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.tooltipBg, fontFamily: "'Source Serif 4', serif", lineHeight: 1.4, display: 'block' }}>
+                              {bill.title}
+                            </span>
+                          </Link>
                         </div>
                         {user?.canVote && <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
                           <VoteButton label="Support" pos="support" current={bill.myVote} onClick={() => handleSidebarVote(bill.id, 'support')} />

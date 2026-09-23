@@ -28,6 +28,24 @@
   inset: 0;
 }
 
+/* Same stretched-link overlay, for each row of the Prioritized bills list.
+   The bill badge and the priority control (a <select> for admins, a read-only
+   chip for everyone else) are flex siblings on one centered line, so they share
+   a centre line — which they could not while the control was absolutely
+   positioned at a fixed top offset outside the Link. The control cannot nest
+   inside the Link (clicking it would navigate), so the Link's ::after covers
+   the badge line and the title instead, keeping exactly the region that used to
+   be inside the Link clickable. The wrapper deliberately does NOT include the
+   vote buttons below it, so the overlay cannot turn them into a navigation
+   target; the priority control sits above the overlay via position:relative +
+   z-index inline in Sidebar.tsx. */
+.sidebar-priority-bill { position: relative; }
+.sidebar-priority-bill-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
 /* Skip-to-content link: off-screen until it takes keyboard focus. */
 .skip-link {
   position: absolute; left: 8px; top: -48px; z-index: 3000;
