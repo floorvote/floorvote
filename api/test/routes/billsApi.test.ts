@@ -1580,6 +1580,39 @@ describe('GET /bills/facets', () => {
     expect(body.status['In Committee']).toBe(1)
     expect(body.status['Passed House']).toBe(1)
   })
+
+  describe('hasDrafts', () => {
+    it('is false when the tenant has no draft bills', async () => {
+      // beforeEach seeds HB 1 / SB 2 / AB 3, none of them drafts.
+      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean }
+      expect(body.hasDrafts).toBe(false)
+    })
+
+    it('is true when at least one draft exists', async () => {
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean }
+      expect(body.hasDrafts).toBe(true)
+    })
+
+    it('stays true even when the active dimensional filters match zero drafts', async () => {
+      // The bug this fixes: a status filter that only matches filed bills must
+      // not make the tenant-wide existence check disappear along with the
+      // filtered draftCount.
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true, status: 'Drafting' })
+      const res = await SELF.fetch('http://localhost/api/bills/facets?status=In+Committee', {
+        headers: { Cookie: `session=${token}` },
+      })
+      const body = await res.json() as { hasDrafts: boolean; draftCount: number }
+      expect(body.draftCount).toBe(0)
+      expect(body.hasDrafts).toBe(true)
+    })
+  })
 })
 
 describe('GET /bills — unvoted filter', () => {
