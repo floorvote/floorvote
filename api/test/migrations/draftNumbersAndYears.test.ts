@@ -1,20 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { resetDb, applyMigrations, parseMigration } from '../helpers'
 import migrationSql70 from '../../migrations/0070_draft_numbers_and_years.sql?raw'
 
-/** Run the backfill by hand. applyMigrations() already ran it against an empty
- *  DB during setup, so seeding first and replaying is the only way to observe
- *  what it does to pre-existing rows. */
+/** Run the backfill by hand, using the same parser production uses.
+ *  applyMigrations() already ran it against an empty DB during setup, so
+ *  seeding first and replaying is the only way to observe what it does to
+ *  pre-existing rows. */
 async function runBackfill(): Promise<void> {
-  const statements = migrationSql70
-    .split('\n')
-    .filter(line => !line.trimStart().startsWith('--'))
-    .join('\n')
-    .split(';')
-    .map(q => q.trim())
-    .filter(Boolean)
-  for (const q of statements) await env.DB.prepare(q).run()
+  const { queries } = parseMigration(migrationSql70, '0070_draft_numbers_and_years')
+  for (const q of queries) await env.DB.prepare(q).run()
 }
 
 describe('0070_draft_numbers_and_years', () => {
@@ -71,6 +66,24 @@ describe('0070_draft_numbers_and_years', () => {
 
     const row = await env.DB.prepare(`SELECT bill_number FROM bills WHERE id = 'f1'`).first()
     expect(row?.bill_number).toBe('HB0209')
+  })
+
+  it('leaves a hand-set draft bill_number alone but still numbers its DRAFT siblings', async () => {
+    await env.DB.prepare(
+      `INSERT INTO bills (id, bill_number, title, state, is_draft, created_at)
+       VALUES ('d1','SB0209-draft','Hand-numbered','UT',1,'2026-01-01 00:00:00'),
+              ('d2','DRAFT','Second','UT',1,'2026-02-01 00:00:00')`,
+    ).run()
+
+    await runBackfill()
+
+    const rows = await env.DB.prepare(
+      `SELECT id, bill_number FROM bills WHERE is_draft = 1 ORDER BY id`,
+    ).all()
+    expect(rows.results).toEqual([
+      { id: 'd1', bill_number: 'SB0209-draft' },
+      { id: 'd2', bill_number: 'D2' },
+    ])
   })
 
   it('is replay-safe', async () => {

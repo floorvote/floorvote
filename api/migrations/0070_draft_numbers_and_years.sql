@@ -15,6 +15,14 @@
 --
 -- Existing /bills/<uuid> links keep working -- the uuid route is untouched.
 -- These rows simply gain a canonical URL they did not have.
+--
+-- draftRoutes.ts defaults a new draft's bill_number to 'DRAFT' but a caller
+-- may supply any value, so 'DRAFT' is a default, not an invariant. Only rows
+-- still carrying that default are renumbered here -- a hand-set number is
+-- left alone. The COUNT(*) subquery still counts over every draft in the
+-- state, so a hand-numbered draft still occupies a slot in the sequence and
+-- the resulting D-sequence can have gaps. That is fine: it is an identifier,
+-- not an ordinal.
 
 UPDATE bills
 SET bill_number = 'D' || (
@@ -24,7 +32,7 @@ SET bill_number = 'D' || (
     AND (earlier.created_at < bills.created_at
          OR (earlier.created_at = bills.created_at AND earlier.id <= bills.id))
 )
-WHERE is_draft = 1;
+WHERE is_draft = 1 AND bill_number = 'DRAFT';
 
 UPDATE bills
 SET year_start = COALESCE(
