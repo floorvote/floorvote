@@ -10,6 +10,7 @@ import { isUnreadForDemo, readMentionIds, markMentionsRead } from '../lib/demoRe
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
+import { DraftChip } from './DraftChip'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { PopPanel, type PopPanelHandle } from './ui/PopPanel'
@@ -417,11 +418,18 @@ export function NotificationsSlideOver(
                     identifiable without the two-line serif title block competing
                     with the comment above it. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, minWidth: 0 }}>
+                  {/* Room for the visible chip: this footer is a single flex
+                      line whose only flexible item is the title, which already
+                      ellipsizes by design — the chip shortens the title rather
+                      than wrapping or clipping anything. Mini, to match the
+                      mini badge it sits beside. */}
                   <BillBadge
                     billNumber={m.billNumber}
                     state={m.billState ?? undefined}
                     mini
+                    isDraft={m.billIsDraft}
                   />
+                  {m.billIsDraft && <DraftChip mini />}
                   <span style={{
                     fontFamily: '"Source Serif 4", "Source Serif", Georgia, serif',
                     fontSize: fontSize.sm,

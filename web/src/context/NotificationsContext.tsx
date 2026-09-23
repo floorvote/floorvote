@@ -12,6 +12,10 @@ export type Mention = {
   billNumber: string
   billTitle: string
   billState: string | null
+  /** Required, not optional: GET /notifications is the only producer of this
+   *  shape, so an optional field would let a dropped select column read as
+   *  "filed" — a silent solid badge — instead of failing to typecheck. */
+  billIsDraft: boolean
   sessionSlug: string | null
   authorName: string
   authorSubtitle: string | null
