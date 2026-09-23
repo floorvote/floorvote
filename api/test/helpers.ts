@@ -66,6 +66,7 @@ import migrationSql66 from '../migrations/0066_affected_citations.sql?raw'
 import migrationSql67 from '../migrations/0067_ai_heal_attempts.sql?raw'
 import migrationSql68 from '../migrations/0068_bills_ai_stalled_index.sql?raw'
 import migrationSql69 from '../migrations/0069_terms_acceptances.sql?raw'
+import migrationSql70 from '../migrations/0070_draft_numbers_and_years.sql?raw'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -178,6 +179,7 @@ export async function applyMigrations(): Promise<void> {
     parseMigration(migrationSql67, '0067_ai_heal_attempts'),
     parseMigration(migrationSql68, '0068_bills_ai_stalled_index'),
     parseMigration(migrationSql69, '0069_terms_acceptances'),
+    parseMigration(migrationSql70, '0070_draft_numbers_and_years'),
   ])
 }
 
