@@ -47,8 +47,8 @@ export function relevanceChipLabel(n: number): string {
 // One group per active dimension, in filterDimensions registry order. Groups
 // are what the AND/OR operator sits between, so a dimension with three
 // selected values is ONE group of three chips, not three groups.
-// Viewer-scope dimensions are absent by construction: they render in the scope
-// cluster beside search and always narrow.
+// Workflow-scope dimensions are absent by construction: they render in the
+// scope cluster beside search and always narrow.
 export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterGroup[] {
   const groups: ActiveFilterGroup[] = []
   const push = (key: string, chips: ReactNode[]) => { if (chips.length > 0) groups.push({ key, chips }) }

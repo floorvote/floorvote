@@ -27,6 +27,8 @@ interface FilterSheetProps {
   newMatchesCount?: number
   unvotedOnly: boolean
   unvotedCount?: number
+  drafts: boolean
+  draftCount?: number
   /** Whether active bill-fact filter groups combine with AND (false, the
    *  default) or OR (true) — same state desktop reads/writes as `f.matchAny`
    *  / `f.setMatchAny`. Rendered between groups in this sheet's active-chip
@@ -67,6 +69,7 @@ interface FilterSheetProps {
   onMyBillsChange: (v: boolean) => void
   onNewMatchesChange: (v: boolean) => void
   onUnvotedOnlyChange: (v: boolean) => void
+  onDraftsChange: (v: boolean) => void
   onClearAll: () => void
   counts?: {
     status: Record<string, number>
@@ -232,12 +235,12 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 export function FilterSheet({
   isOpen, onClose,
   statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
-  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, uniqueStates, isMultiState,
+  isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, drafts, draftCount, uniqueStates, isMultiState,
   matchAny, onMatchAnyChange,
   statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
   customFieldDefs, cfFilters, onCfFilterChange,
   onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
-  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedOnlyChange,
+  onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedOnlyChange, onDraftsChange,
   onClearAll, counts,
 }: FilterSheetProps) {
   useEffect(() => {
@@ -274,15 +277,16 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState }
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, draftCount: draftCount ?? 0 }
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
+  const draftsVisible = isFilterDimensionVisible('drafts', filterDimensionCtx)
 
   // Must mirror useBillFilters' totalActiveFilters (the mobile filter
   // button's badge count) term for term — a mismatch is exactly the bug that
   // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
   // button badge counted it, this sheet's own "Reset filters" gate didn't.
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + (draftsVisible && drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -458,14 +462,31 @@ export function FilterSheet({
                 />
               </div>
 
+              {/* Drafts — hidden entirely at zero drafts (see
+                  lib/filterDimensions.ts). Same toggle treatment as My bills /
+                  New matches / Not yet voted: a workflow scope, not a list of
+                  options. */}
+              {draftsVisible && (
+                <div style={{ marginBottom: 20 }}>
+                  <SectionLabel title={filterDimensionLabel('drafts')} />
+                  <SheetChip
+                    label={filterDimensionLabel('drafts')}
+                    active={drafts}
+                    count={draftCount ?? 0}
+                    onClick={() => onDraftsChange(!drafts)}
+                  />
+                </div>
+              )}
+
               {/* Scope/bill-fact separator — mirrors desktop's vertical rule
                   (index.tsx's `data-testid="scope-separator"`) adapted to this
                   sheet's vertical layout. My bills / New matches / Not yet
-                  voted above are viewer SCOPE (who's looking, not what the
-                  bill is), while the binary custom fields below are bill
-                  FACTS rendered as byte-identical SheetChip controls — mobile
-                  is exactly the surface where that distinction is hardest to
-                  infer without something marking the boundary. */}
+                  voted / Drafts above are workflow SCOPE (where the bill sits
+                  in our handling, not what the bill is), while the binary
+                  custom fields below are bill FACTS rendered as byte-identical
+                  SheetChip controls — mobile is exactly the surface where that
+                  distinction is hardest to infer without something marking
+                  the boundary. */}
               {toggleCustomFields.length > 0 && (
                 <div
                   data-testid="scope-separator"
@@ -536,11 +557,11 @@ export function FilterSheet({
                   between groups — mirrors desktop's chip row (index.tsx)
                   exactly, including the interleaving rule: one operator
                   between each adjacent pair of groups, none before the first
-                  or after the last, none at all with a single group. Viewer-
-                  scope state (My bills / New matches / Not yet voted) is
-                  never in these groups by construction (buildActiveFilterGroups),
-                  so it never sits between operators — it's rendered as the
-                  pills above instead. */}
+                  or after the last, none at all with a single group. Workflow-
+                  scope state (My bills / New matches / Not yet voted / Drafts)
+                  is never in these groups by construction
+                  (buildActiveFilterGroups), so it never sits between
+                  operators — it's rendered as the pills above instead. */}
               {activeFilterGroups.length > 0 && (
                 <div data-testid="sheet-active-filter-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 20, alignItems: 'center' }}>
                   {activeFilterGroups.flatMap((g, i) => i === 0

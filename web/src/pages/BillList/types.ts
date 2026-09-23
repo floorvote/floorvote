@@ -71,4 +71,5 @@ export type FacetCounts = {
   myBillsCount: number
   newMatchesCount: number
   unvotedCount: number
+  draftCount: number
 }

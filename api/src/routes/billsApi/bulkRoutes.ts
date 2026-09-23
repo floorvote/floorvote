@@ -100,6 +100,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted,
         newMatches: f.newMatches,
+        drafts: undefined,
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap: f.cf ?? {},
         userId: currentUser.id,
@@ -381,6 +382,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         q: f.q, minRelevance: f.minRelevance,
         myBillsParam: f.myBills != null ? String(f.myBills) : undefined,
         unvoted: f.unvoted, newMatches: f.newMatches,
+        drafts: undefined,
         newMatchMinRelevance: (f.newMatches === '1' || f.newMatches === 'true') ? min : 0,
         cfParamMap: f.cf ?? {}, userId: currentUser.id,
         // Same `=== 'any'` test as GET /bills / GET /bills/facets and the /bulk
@@ -461,6 +463,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         subjectFilters,
         q, minRelevance, myBillsParam, unvoted,
         newMatches: newMatchesParam,
+        drafts: undefined,
         newMatchMinRelevance: (newMatchesParam === '1' || newMatchesParam === 'true') ? await getNewMatchMinRelevance(db) : 0,
         cfParamMap, userId: currentUser.id,
         // Same `=== 'any'` test as GET /bills / GET /bills/facets and the other

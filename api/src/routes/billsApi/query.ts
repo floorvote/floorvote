@@ -312,6 +312,7 @@ export type BillFilterParams = {
   myBillsParam: string | undefined
   unvoted: string | undefined
   newMatches: string | undefined
+  drafts: string | undefined
   newMatchMinRelevance: number
   cfParamMap: Record<string, string[]>
   userId: string
@@ -459,6 +460,10 @@ export async function buildBillsWhere(
 
   if (p.newMatches === '1' || p.newMatches === 'true') {
     scopes.push(newMatchWhere(p.newMatchMinRelevance))
+  }
+
+  if (p.drafts === '1' || p.drafts === 'true') {
+    scopes.push(eq(bills.isDraft, true))
   }
 
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {

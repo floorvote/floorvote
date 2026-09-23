@@ -75,6 +75,7 @@ vi.mock('../../lib/api', () => {
       return {
         status: { '2': 1 }, priority: {}, session: {}, year: { '2026': 1 }, state: stateCounts, position: {},
         tags: { Education: 1 }, subjects: { 'RI:Roads': 1 }, customFields: {}, myBillsCount: 0, newMatchesCount: 3,
+        draftCount: 2,
       } as T
     }
     if (path.startsWith('/bills?')) {
@@ -140,7 +141,13 @@ async function renderDesktop(opts: { isAdmin: boolean; states: string[] }) {
 
 // --- Mobile harness (FilterSheet) — every dimension gets non-empty options
 // so only the two conditional dimensions vary across the matrix.
-function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; customFieldDefs?: CustomFieldDef[] }) {
+function renderMobile(
+  ctx: Omit<FilterDimensionContext, 'draftCount'> & {
+    draftCount?: number
+    newMatchesCount?: number
+    customFieldDefs?: CustomFieldDef[]
+  },
+) {
   const subjectGroups: SubjectGroup[] = [{ state: 'RI', options: [{ value: 'RI:Roads', label: 'Roads', count: 1 }] }]
   return render(
     <FilterSheet
@@ -152,6 +159,8 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
       newMatches={false}
       newMatchesCount={ctx.newMatchesCount ?? 3}
       unvotedOnly={false}
+      drafts={false}
+      draftCount={ctx.draftCount ?? 3}
       matchAny={false}
       onMatchAnyChange={() => {}}
       uniqueStates={ctx.uniqueStates}
@@ -171,6 +180,7 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
       onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
       onUnvotedOnlyChange={() => {}}
+      onDraftsChange={() => {}}
       onClearAll={() => {}}
     />,
   )
@@ -194,7 +204,7 @@ function renderMobile(ctx: FilterDimensionContext & { newMatchesCount?: number; 
 // FilterToggle cluster; the Critical-1 fix wired the matching control into
 // FilterSheet).
 const ALWAYS_VISIBLE_OPTION_KEYS = FILTER_DIMENSIONS
-  .filter(d => d.key !== 'state' && d.key !== 'newMatches' && d.key !== 'myBills' && d.key !== 'unvoted')
+  .filter(d => d.key !== 'state' && d.key !== 'newMatches' && d.key !== 'myBills' && d.key !== 'unvoted' && d.key !== 'drafts')
   .map(d => d.key)
 
 describe('filter dimension parity — registry-driven visibility and labels', () => {
@@ -223,7 +233,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'multiple known states', uniqueStates: ['RI', 'NJ'] },
   ])('State dimension — $label', ({ uniqueStates }) => {
     const isMultiState = uniqueStates.length > 1
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState, draftCount: 0 })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin: false, states: uniqueStates })
@@ -242,7 +252,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'non-admin', isAdmin: false },
     { label: 'admin', isAdmin: true },
   ])('New matches dimension — $label', ({ isAdmin }) => {
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false, draftCount: 0 })
 
     it(`is ${expectedVisible ? 'shown, with a count' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin, states: ['RI'] })
@@ -463,15 +473,15 @@ describe('custom field filter parity', () => {
 })
 
 describe('dimension scope classification', () => {
-  it('classifies every dimension as a bill fact or viewer scope', () => {
+  it('classifies every dimension as a bill fact or workflow scope', () => {
     for (const d of FILTER_DIMENSIONS) {
-      expect(['bill', 'viewer']).toContain(d.scope)
+      expect(['bill', 'workflow']).toContain(d.scope)
     }
   })
 
-  it('treats the viewer-relative dimensions as scope', () => {
-    const viewer = FILTER_DIMENSIONS.filter(d => d.scope === 'viewer').map(d => d.key).sort()
-    expect(viewer).toEqual(['myBills', 'newMatches', 'unvoted'])
+  it('treats the workflow-relative dimensions as scope', () => {
+    const workflow = FILTER_DIMENSIONS.filter(d => d.scope === 'workflow').map(d => d.key).sort()
+    expect(workflow).toEqual(['drafts', 'myBills', 'newMatches', 'unvoted'])
   })
 
   it('treats every value dimension as a bill fact', () => {
@@ -495,7 +505,7 @@ describe('dimension scope classification', () => {
     const myBills = FILTER_DIMENSIONS.find(d => d.key === 'myBills')!
     const state = FILTER_DIMENSIONS.find(d => d.key === 'state')!
     expect(myBills.kind).toBe('toggle')
-    expect(myBills.scope).toBe('viewer')
+    expect(myBills.scope).toBe('workflow')
     expect(state.kind).toBe('options')
     expect(state.scope).toBe('bill')
   })

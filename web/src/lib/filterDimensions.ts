@@ -27,18 +27,33 @@ export type FilterDimensionKind = 'options' | 'toggle'
 /**
  * Which side of the group operator a dimension falls on.
  *
- *   'bill'   — a fact about the BILL. Renders in the chip row as a group and
- *              participates in the all-of/any-of operator.
- *   'viewer' — a fact about the VIEWER or the query. Renders in the scope
- *              cluster beside the search box and ALWAYS narrows.
+ *   'bill'     — describes the LEGISLATION: what it is, where it is in the
+ *                process, what it is about. Renders in the chip row as a group
+ *                and participates in the all-of/any-of operator.
+ *   'workflow' — describes WHERE THE BILL SITS IN OUR HANDLING of it: I have
+ *                engaged with it, I have not acted on it, nobody has triaged
+ *                it, it is not filed yet. Renders in the scope cluster beside
+ *                the search box and ALWAYS narrows.
+ *
+ * This axis was called 'viewer' ("a fact about the VIEWER") until 2026-09-22,
+ * and that label was already wrong for one of its members: newMatches is driven
+ * by triaged_at / triaged_by, which are columns on the bills table and
+ * org-shared — listRoutes.ts says so directly. Nothing about it is per-viewer.
+ * Drafts would have deepened the same confusion, so the axis was renamed to
+ * what it actually distinguishes.
  *
  * Deliberately independent of `kind`, which is a rendering concern. A binary
  * custom field renders as a toggle byte-identical to the My bills pill and is
  * nonetheless a bill fact — so control shape can never be used to derive this.
- * Any future "binary status read off a bill" lands on the correct side here
- * automatically.
+ *
+ * One genuine irregularity, recorded so it is not rediscovered as a bug:
+ * Priority and Position are arguably "our handling" too, and they stay on the
+ * bill side. They are multi-value option lists where OR-ing is a real query
+ * intent ("high or medium"), which is what the operator exists to serve. So the
+ * boundary is partly conceptual and partly a question of whether OR-ing the
+ * dimension means anything.
  */
-export type FilterDimensionScope = 'bill' | 'viewer'
+export type FilterDimensionScope = 'bill' | 'workflow'
 
 /**
  * Everything a dimension's visibility can depend on. Both surfaces build
@@ -57,6 +72,9 @@ export interface FilterDimensionContext {
    *  `isMultiState`, i.e. `knownStates.size > 1`). A single-state instance
    *  offers a choice of one, so State is hidden there. */
   isMultiState: boolean
+  /** How many draft (pre-filed) bills the tenant has. The Drafts chip is
+   *  hidden entirely at zero rather than showing an always-empty filter. */
+  draftCount: number
 }
 
 export interface FilterDimensionDef {
@@ -80,9 +98,10 @@ export interface FilterDimensionDef {
 
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState },
-  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'viewer', isVisible: () => true },
-  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'viewer', isVisible: ctx => ctx.isAdmin },
-  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'viewer', isVisible: () => true },
+  { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin },
+  { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
+  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.draftCount > 0 },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
