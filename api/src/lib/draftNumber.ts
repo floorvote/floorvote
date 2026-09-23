@@ -1,6 +1,7 @@
 import { and, eq, like } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import type { getDb } from '../db/client'
+import { billSlug } from './sessionSlug'
 
 /** Draft numbers are D1, D2, … per state — GitHub-PR style, not a real bill
  *  number. The D prefix is what keeps them from ever colliding with a filed
@@ -26,10 +27,19 @@ export async function nextDraftNumber(
   return `D${max + 1}`
 }
 
-/** A draft's number must be unique among ALL bills in the same state and year,
- *  not just among drafts: /bills/resolve/:state/:sessionSlug/:billNumber has no
- *  way to choose between two bills that answer to the same triple. Returns the
- *  colliding bill's id, or null.
+/** A draft's number must be unique among ALL bills in the same state that
+ *  answer to the same URL slug, not just among drafts:
+ *  /bills/resolve/:state/:sessionSlug/:billNumber has no way to choose between
+ *  two bills that answer to the same triple. Returns the colliding bill's id,
+ *  or null.
+ *
+ *  Two bills collide when they share a state and number AND either
+ *  (a) they share a year_start, or (b) the candidate's effective slug is the
+ *  draft's year. (b) is what the resolve routes actually compare, and it is
+ *  not implied by (a): a filed biennium row with year_start 2025 and session
+ *  '2026 Regular Session' answers to /UT/2026/HB0209 while its year_start says
+ *  2025. (a) is kept as well so a filed row with no session string — which
+ *  slugs to '' and so matches nothing — still blocks a same-year number.
  *
  *  This is a best-effort, read-then-write check — no database constraint
  *  enforces the triple's uniqueness, so two concurrent creates could both
@@ -42,14 +52,20 @@ export async function findNumberCollision(
   opts: { state: string; year: number; billNumber: string; excludeId?: string },
 ): Promise<string | null> {
   const rows = await db
-    .select({ id: bills.id })
+    .select({
+      id: bills.id,
+      session: bills.session,
+      isDraft: bills.isDraft,
+      yearStart: bills.yearStart,
+    })
     .from(bills)
     .where(and(
       eq(bills.state, opts.state),
       eq(bills.billNumber, opts.billNumber),
-      eq(bills.yearStart, opts.year),
     ))
     .all()
-  const hit = rows.find(r => r.id !== opts.excludeId)
+  const slug = String(opts.year)
+  const hit = rows.find(r =>
+    r.id !== opts.excludeId && (r.yearStart === opts.year || billSlug(r) === slug))
   return hit?.id ?? null
 }

@@ -5,17 +5,13 @@ import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { sessionToSlug } from '../../lib/sessionSlug'
+import { billSlug } from '../../lib/sessionSlug'
 import { buildBillDetail } from './detail'
 import { nextDraftNumber } from '../../lib/draftNumber'
 import { defaultDraftYear } from './draftRoutes'
 
-/** A draft has no provider session — it is pre-filed, so by definition outside
- *  one. Its URL slug is its year instead, which is what makes /UT/2027/D1 work
- *  alongside /UT/2026/HB0209. */
-function slugFor(b: { session: string; isDraft: boolean; yearStart: number | null }): string {
-  return b.isDraft ? String(b.yearStart ?? '') : sessionToSlug(b.session)
-}
+// billSlug lives in lib/sessionSlug so the draft-number collision check can
+// compare the same notion of "answers to this URL" that these routes do.
 
 export function registerLookupRoutes(router: Hono<AppEnv>) {
   // GET /bills/:id — composite detail by internal UUID
@@ -28,7 +24,7 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
       .from(bills)
       .where(and(eq(bills.billNumber, billNumber), eq(bills.state, stateUpper)))
       .all()
-    const match = candidates.find(b => slugFor(b) === slug)
+    const match = candidates.find(b => billSlug(b) === slug)
     if (!match) return c.json({ error: 'Not found' }, 404)
     const user = c.get('user')
     return c.json(await buildBillDetail(db, match.id, user, c.env))
@@ -45,12 +41,12 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     // A stateless draft (state = '') has no canonical URL to redirect to here —
     // it must keep resolving only via /bills/<uuid>, never via this state-less
     // legacy form (which would otherwise hand the client `state: ''`).
-    const matches = candidates.filter(b => b.state !== '' && slugFor(b) === slug)
+    const matches = candidates.filter(b => b.state !== '' && billSlug(b) === slug)
     if (matches.length === 0) return c.json({ error: 'Not found' }, 404)
     if (matches.length > 1) {
       return c.json({
         error: 'Ambiguous bill — use state-prefixed URL',
-        candidates: matches.map(m => ({ state: m.state, sessionSlug: slugFor(m), billNumber })),
+        candidates: matches.map(m => ({ state: m.state, sessionSlug: billSlug(m), billNumber })),
       }, 409)
     }
     const user = c.get('user')
@@ -73,11 +69,26 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
   // GET /bills/draft-defaults — the number and year a new draft should
   // pre-fill with. One call so the form never has to know how either is
   // derived. Admin only, matching the create route. MUST be before /:id.
+  //
+  // `tenantState` is the authoritative single-state signal: c.env.STATE when
+  // the tenant is configured for one state, null when it tracks many. The form
+  // shows its State field on null. This replaces a client-side guess from
+  // /bills/facets, which only reports states that already have bills and so
+  // cannot tell a single-state tenant from a multi-state one whose bills
+  // happen to sit in one state.
+  //
+  // ?state= is the state the admin has picked in that field. Both the number
+  // and the year are per-state, so without it a multi-state tenant prefills
+  // from the '' bucket and can hand back a number that 409s on create. When
+  // neither ?state= nor c.env.STATE yields a state we still answer (with the
+  // '' bucket) rather than erroring: the form can submit, and POST /bills/draft
+  // is the real guard.
   router.get('/draft-defaults', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
-    const state = (c.env.STATE || '').toUpperCase()
+    const tenantState = (c.env.STATE || '').trim().toUpperCase() || null
+    const state = (c.req.query('state') || '').trim().toUpperCase() || tenantState || ''
     const billNumber = await nextDraftNumber(db, state)
-    return c.json({ billNumber, year: await defaultDraftYear(c, db, state) })
+    return c.json({ billNumber, year: await defaultDraftYear(c, db, state), tenantState })
   })
 
   router.get('/:id', async (c) => {

@@ -54,9 +54,11 @@ describe('DraftBills duplicate-create regression', () => {
     const posts: unknown[] = []
     vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === '/bills/drafts') return { drafts: [] } as never
-      // Confirmed single-state, so the State field stays hidden — this test
-      // isn't exercising that field, just the create-then-navigate flow.
+      // The server reports a configured single state, so the State field stays
+      // hidden — this test isn't exercising that field, just the
+      // create-then-navigate flow.
       if (path === '/bills/facets') return { state: { UT: 5 } } as never
+      if (path.startsWith('/bills/draft-defaults')) return { billNumber: 'D1', year: 2026, tenantState: 'UT' } as never
       if (path === '/bills/draft') { posts.push(init); return { id: 'new-draft-id' } as never }
       return {} as never
     })

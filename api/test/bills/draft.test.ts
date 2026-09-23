@@ -173,6 +173,44 @@ describe('POST /api/bills/draft', () => {
     expect(rows).toHaveLength(0)
   })
 
+  it("409s when a filed bill's session slug matches the draft year but its year_start doesn't", async () => {
+    // The collision check and /bills/resolve must agree on what makes two bills
+    // ambiguous. Resolve compares the session SLUG, which for a biennium row can
+    // be a different year from year_start: this filed bill starts in 2025 but
+    // answers to /UT/2026/HB0209. A draft numbered HB0209 at year 2026 would
+    // answer to the same URL, and candidates.find() would pick between them
+    // arbitrarily — so it must be refused.
+    const db = getDb(env.DB)
+    await db.insert(bills).values({
+      id: 'filed-biennium', billNumber: 'HB0209', title: 'Filed', state: 'UT',
+      session: '2026 Regular Session', yearStart: 2025, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Clash', billNumber: 'HB0209', year: 2026, state: 'UT' }),
+    })
+    expect(res.status).toBe(409)
+    expect(await db.select().from(bills).where(eq(bills.isDraft, true)).all()).toHaveLength(0)
+  })
+
+  it('allows a number whose filed twin answers to a different slug entirely', async () => {
+    // Same state and number, but the filed row's slug is '2026-2027' and its
+    // year_start is 2027 — nothing resolves to /UT/2026/HB0210, so a 2026 draft
+    // of that number is unambiguous and must be allowed.
+    const db = getDb(env.DB)
+    await db.insert(bills).values({
+      id: 'filed-other', billNumber: 'HB0210', title: 'Filed', state: 'UT',
+      session: '2026-2027 Regular Session', yearStart: 2027, yearEnd: 2027,
+    })
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Fine', billNumber: 'HB0210', year: 2026, state: 'UT' }),
+    })
+    expect(res.status).toBe(201)
+  })
+
   it('rejects with 400 and writes no row when the resolved state is empty', async () => {
     // c.env.STATE is unset in the test worker (vitest.config.mts), which
     // stands in for a multi-state tenant. Omitting `state` here reproduces

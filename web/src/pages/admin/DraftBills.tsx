@@ -21,27 +21,35 @@ export function DraftBills() {
   const [draftSponsor, setDraftSponsor] = useState('')
   const [draftText, setDraftText] = useState('')
   const [draftNumber, setDraftNumber] = useState('')
-  const [draftYear, setDraftYear] = useState('')
+  // Seeded with the current year, never '': an empty value matches no <option>,
+  // so the <select> would render the first year while holding nothing and the
+  // request body would silently omit `year`.
+  const [draftYear, setDraftYear] = useState(String(new Date().getFullYear()))
   const [draftState, setDraftState] = useState('')
   const [creatingDraft, setCreatingDraft] = useState(false)
   const [createDraftError, setCreateDraftError] = useState<string | null>(null)
   const [draftList, setDraftList] = useState<{ id: string; billNumber: string; title: string; state: string | null }[] | null>(null)
-  // Fallback source for the state list and multi-state signal: this admin
-  // page isn't wired into useBillFilters' searchParams/facetCounts plumbing,
-  // so it calls GET /bills/facets directly rather than reusing that hook.
-  // isMultiState mirrors useBillFilters' own notion (knownStates.size > 1)
-  // rather than inventing a second one.
+  // Source for the State field's option list. This admin page isn't wired
+  // into useBillFilters' searchParams/facetCounts plumbing, so it calls
+  // GET /bills/facets directly rather than reusing that hook.
   //
-  // The client can only ever hide the State field when it has positive
-  // evidence of a single state; every other case shows it. `null` means "we
-  // don't yet know" (facets hasn't resolved, or failed) and an empty array
-  // means "facets succeeded but found zero states" (a fresh tenant, or one
-  // whose bills were all dismissed) — neither tells us the tenant is
-  // single-state, so both show the field. The actual guarantee that a draft
-  // never gets state='' is enforced server-side (POST /bills/draft 400s on
-  // an empty resolved state); this field is only a convenience that lets an
-  // admin supply the state up front instead of hitting that 400.
+  // Facets only reports states that already HAVE bills, so it can never tell a
+  // single-state tenant from a multi-state one whose bills happen to sit in one
+  // state. It is therefore no longer consulted about whether to SHOW the field
+  // — only about what to offer in it. `null` means "unknown" (still loading, or
+  // the call failed); `statesResolved` distinguishes those from a genuine empty
+  // list, so a tenant with no bills yet gets a free-text input instead of a
+  // select it cannot satisfy.
   const [knownStates, setKnownStates] = useState<string[] | null>(null)
+  const [statesResolved, setStatesResolved] = useState(false)
+  // The authoritative single-state signal, from GET /bills/draft-defaults:
+  // c.env.STATE when the tenant is configured for one state, null when it
+  // tracks many. null (including before the call resolves, or if it fails)
+  // shows the State field — the client only ever hides it on positive evidence
+  // of a configured state. The real guarantee that a draft never gets state=''
+  // is server-side (POST /bills/draft 400s on an empty resolved state); this
+  // field is the convenience that lets an admin satisfy that up front.
+  const [tenantState, setTenantState] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch<{ drafts: { id: string; billNumber: string; title: string; state: string | null }[] }>('/bills/drafts')
@@ -53,23 +61,42 @@ export function DraftBills() {
     apiFetch<{ state: Record<string, number> }>('/bills/facets')
       .then(f => setKnownStates(Object.keys(f.state).sort()))
       .catch(() => setKnownStates(null))
+      .finally(() => setStatesResolved(true))
   }, [])
 
-  const isMultiState = knownStates === null || knownStates.length !== 1
+  const needsState = tenantState === null
+  const stateOptions = knownStates ?? []
+  // Offer a select when facets gave us something to offer; otherwise (a tenant
+  // with no bills yet, or a facets outage) let the admin type the state.
+  const useStateSelect = !statesResolved || stateOptions.length > 0
 
   // Fetched when the form opens rather than on mount: the number depends on how
   // many drafts exist, so a stale value from page load could collide.
+  // Re-fetched when the chosen state changes, not just when the form opens:
+  // both the next draft number and the session-aware year are per-state, so a
+  // value computed for the wrong bucket can hand back a number that 409s on
+  // create. This deliberately overwrites a hand-typed number when the admin
+  // then switches state — the prefill must describe the state actually in use.
   useEffect(() => {
     if (!showDraftForm) return
-    apiFetch<{ billNumber: string; year: number }>('/bills/draft-defaults')
-      .then(d => { setDraftNumber(d.billNumber ?? ''); setDraftYear(d.year != null ? String(d.year) : '') })
-      .catch(() => { /* leave blank; the server fills both in when omitted */ })
-  }, [showDraftForm])
+    const picked = draftState.trim().toUpperCase()
+    const qs = picked ? `?state=${encodeURIComponent(picked)}` : ''
+    let cancelled = false
+    apiFetch<{ billNumber?: string; year?: number; tenantState?: string | null }>('/bills/draft-defaults' + qs)
+      .then(d => {
+        if (cancelled) return
+        setDraftNumber(d.billNumber ?? '')
+        if (d.year != null) setDraftYear(String(d.year))
+        setTenantState(d.tenantState ?? null)
+      })
+      .catch(() => { /* keep the current-year default; the server fills the number in when omitted */ })
+    return () => { cancelled = true }
+  }, [showDraftForm, draftState])
 
   async function handleCreateDraft() {
     const title = draftTitle.trim()
     if (!title || demoLocked) return
-    if (isMultiState && !draftState.trim()) return
+    if (needsState && !draftState.trim()) return
     setCreatingDraft(true)
     setCreateDraftError(null)
     try {
@@ -101,7 +128,7 @@ export function DraftBills() {
         setDraftSponsor('')
         setDraftText('')
         setDraftNumber('')
-        setDraftYear('')
+        setDraftYear(String(new Date().getFullYear()))
         setDraftState('')
         setCreateDraftError(null)
       })
@@ -166,27 +193,43 @@ export function DraftBills() {
                   style={inputStyle}
                 >
                   {(() => {
-                    const base = Number(draftYear) || new Date().getFullYear()
-                    const years = [base, base + 1, base + 2]
+                    // The held value must always be one of the options, and the
+                    // current year must always be offerable — the fetched base
+                    // can be in the past when central is unreachable and the
+                    // fallback is the tenant's newest filed year.
+                    const thisYear = new Date().getFullYear()
+                    const base = Number(draftYear) || thisYear
+                    const years = [...new Set([base, base + 1, base + 2, thisYear])].sort((a, b) => a - b)
                     return years.map(y => <option key={y} value={String(y)}>{y}</option>)
                   })()}
                 </select>
               </div>
             </div>
-            {isMultiState && (
+            {needsState && (
               <div>
                 <label htmlFor="draft-state" style={labelStyle}>
                   State <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span>
                 </label>
-                <select
-                  id="draft-state"
-                  value={draftState}
-                  onChange={e => setDraftState(e.target.value)}
-                  style={inputStyle}
-                >
-                  <option value="">Select a state…</option>
-                  {(knownStates ?? []).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                {useStateSelect ? (
+                  <select
+                    id="draft-state"
+                    value={draftState}
+                    onChange={e => setDraftState(e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="">Select a state…</option>
+                    {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    id="draft-state"
+                    value={draftState}
+                    onChange={e => setDraftState(e.target.value.toUpperCase())}
+                    placeholder="UT"
+                    maxLength={2}
+                    style={inputStyle}
+                  />
+                )}
               </div>
             )}
             <div>
@@ -239,13 +282,13 @@ export function DraftBills() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button
                 onClick={handleCreateDraft}
-                disabled={!draftTitle.trim() || (isMultiState && !draftState.trim()) || creatingDraft || demoLocked}
-                style={actionBtnBlue(!draftTitle.trim() || (isMultiState && !draftState.trim()) || creatingDraft || demoLocked)}
+                disabled={!draftTitle.trim() || (needsState && !draftState.trim()) || creatingDraft || demoLocked}
+                style={actionBtnBlue(!draftTitle.trim() || (needsState && !draftState.trim()) || creatingDraft || demoLocked)}
               >
                 {creatingDraft ? 'Creating…' : 'Create draft'}
               </button>
               <button
-                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setDraftNumber(''); setDraftYear(''); setDraftState(''); setCreateDraftError(null) }}
+                onClick={() => { setShowDraftForm(false); setDraftTitle(''); setDraftSummary(''); setDraftSponsor(''); setDraftText(''); setDraftNumber(''); setDraftYear(String(new Date().getFullYear())); setDraftState(''); setCreateDraftError(null) }}
                 style={{ fontSize: fontSize.sm, color: color.textSecondary, background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '8px 14px', cursor: 'pointer' }}
               >
                 Cancel

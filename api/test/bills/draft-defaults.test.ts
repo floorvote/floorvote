@@ -74,7 +74,10 @@ describe('GET /api/bills/draft-defaults', () => {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ billNumber: 'D1', year: 2025 })
+    // tenantState is null because c.env.STATE is unset in the test worker —
+    // the multi-state shape. It is the form's authoritative signal for whether
+    // to show its State field.
+    expect(await res.json()).toEqual({ billNumber: 'D1', year: 2025, tenantState: null })
   })
 
   it('advances past a sine die session', async () => {
@@ -159,6 +162,54 @@ describe('GET /api/bills/draft-defaults', () => {
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ year: 2028 })
+  })
+
+  it('numbers within the ?state= bucket, independently of the stateless bucket', async () => {
+    // The multi-state case: c.env.STATE is '' in the test worker, so without
+    // ?state= the route prefills from the '' bucket. The admin has picked TX in
+    // the form, so the number must come from TX's own bucket — otherwise the
+    // second TX draft is handed a number that POST /bills/draft 409s on.
+    mockSession(2025, 2026, false)
+    const db = getDb(env.DB)
+    await db.insert(bills).values([
+      { id: 'legacy-1', billNumber: 'D1', title: 'Legacy one', state: '', isDraft: true },
+      { id: 'legacy-2', billNumber: 'D2', title: 'Legacy two', state: '', isDraft: true },
+      { id: 'legacy-3', billNumber: 'D3', title: 'Legacy three', state: '', isDraft: true },
+      { id: 'tx-1', billNumber: 'D1', title: 'Texas one', state: 'TX', isDraft: true },
+    ])
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ billNumber: 'D2' })
+
+    // Same request without the param still sees the '' bucket — proving the
+    // two are genuinely separate and that D2 above isn't just D4 by luck.
+    const stateless = await SELF.fetch('https://x/api/bills/draft-defaults', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(await stateless.json()).toMatchObject({ billNumber: 'D4' })
+  })
+
+  it('lower-cases and trims ?state= into the canonical bucket', async () => {
+    mockSession(2025, 2026, false)
+    const db = getDb(env.DB)
+    await db.insert(bills).values({ id: 'tx-1', billNumber: 'D7', title: 'Texas', state: 'TX', isDraft: true })
+    const res = await SELF.fetch('https://x/api/bills/draft-defaults?state=%20tx%20', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(await res.json()).toMatchObject({ billNumber: 'D8' })
+  })
+
+  it('asks central for the session of the state the admin picked', async () => {
+    mockSession(2025, 2026, false)
+    await SELF.fetch('https://x/api/bills/draft-defaults?state=TX', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(vi.mocked(centralFetch)).toHaveBeenCalledWith(
+      expect.anything(),
+      '/tenants/current-session/TX',
+    )
   })
 
   it('rejects a non-admin with 403', async () => {
