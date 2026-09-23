@@ -7,7 +7,7 @@ import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
 
 const hearing: CalendarEvent = {
   id: '1', uid: 'a', source: 'hearing', billId: 'b1',
-  bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Title', state: 'RI', priority: 'high' }],
+  bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Title', state: 'RI', priority: 'high', isDraft: false }],
   date: '2999-01-01', time: null, location: 'Room', description: 'Elections Cmte', details: null, url: null, status: 'confirmed',
 }
 const custom: CalendarEvent = {

@@ -7,7 +7,7 @@ import { color } from '../../styles/tokens'
 
 const hearing: CalendarEvent = {
   id: '1', uid: 'a', source: 'hearing', billId: 'b1',
-  bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Title', state: 'RI', priority: 'high' }],
+  bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Title', state: 'RI', priority: 'high', isDraft: false }],
   date: '2999-01-01', time: '09:00', location: 'Room 1', description: 'Elections Cmte', details: null, url: null, status: 'confirmed',
 }
 const allDayCustom: CalendarEvent = {
@@ -24,7 +24,7 @@ const customCancelled: CalendarEvent = {
 }
 const customWithBill: CalendarEvent = {
   id: '5', uid: 'e', source: 'custom', billId: null,
-  bills: [{ id: 'b9', billNumber: 'S 9', billTitle: 'Linked bill', state: 'RI', priority: 'low' }],
+  bills: [{ id: 'b9', billNumber: 'S 9', billTitle: 'Linked bill', state: 'RI', priority: 'low', isDraft: false }],
   date: '2999-01-05', time: '12:00', location: null, description: 'Linked custom event', details: null, url: null, status: 'confirmed',
 }
 

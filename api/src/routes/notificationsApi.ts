@@ -34,6 +34,7 @@ notificationsRouter.get('/', async (c) => {
       billAbstract: bills.abstract,
       billState: bills.state,
       billSession: bills.session,
+      billIsDraft: bills.isDraft,
     })
     .from(commentMentions)
     .innerJoin(comments, eq(commentMentions.commentId, comments.id))
@@ -64,6 +65,10 @@ notificationsRouter.get('/', async (c) => {
       billNumber: m.billNumber,
       billTitle: m.billAbstract ?? m.billTitle,
       billState: m.billState,
+      // Drives the dashed BillBadge variant on the mention's bill footer. A
+      // draft is fully commentable, so a mention on one is an ordinary case,
+      // not a corner one.
+      billIsDraft: m.billIsDraft,
       sessionSlug: m.billSession ? sessionToSlug(m.billSession) : null,
       authorId: m.authorId,
       authorName: m.authorName,

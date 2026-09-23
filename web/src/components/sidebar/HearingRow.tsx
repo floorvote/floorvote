@@ -126,6 +126,13 @@ export function HearingRow({
               billNumber={b.billNumber}
               state={b.state}
               mini
+              isDraft={b.isDraft}
+              /* No visible DraftChip here: this is a wrapped chip row capped at
+                 six chips in a ~300px sidebar column, and a ~50px chip beside
+                 every draft badge would push the row to wrap at a fraction of
+                 the bills it holds today. The text signal is the badge's own
+                 screen-reader label instead. */
+              draftSrLabel
               priority={b.priority ?? undefined}
               hoverBill={{ title: b.title, summary: b.summary, priority: b.priority }}
             />

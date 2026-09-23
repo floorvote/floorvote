@@ -94,6 +94,7 @@ statsRouter.get('/sidebar', async (c) => {
         title: bills.title,
         summary: bills.tenantSummary,
         priority: bills.priority,
+        isDraft: bills.isDraft,
         myVote: memberVotes.position,
       })
       .from(bills)
@@ -126,6 +127,13 @@ interface HearingBill {
   state: string | null
   sessionSlug: string | null
   myVote: string | null
+  /** Drives the dashed BillBadge variant on the sidebar hearing chips. Always
+   *  false in practice today: hearings are matched to tenant rows by
+   *  `externalId = 'legiscan:<n>'`, and a draft is created with a null
+   *  externalId (see billsApi/draftRoutes.ts), so no draft can reach this list.
+   *  Carried anyway so the shape is honest and a future draft-with-hearing
+   *  path can't silently reintroduce the solid badge. */
+  isDraft: boolean
 }
 
 interface HearingGroup {
@@ -254,6 +262,7 @@ async function fetchUpcomingHearings(
       priority: bills.priority,
       state: bills.state,
       session: bills.session,
+      isDraft: bills.isDraft,
     })
     .from(bills)
     .where(and(inArray(bills.externalId, billExternalIds), isNotNull(bills.priority)))
@@ -282,6 +291,7 @@ async function fetchUpcomingHearings(
       state: row.state,
       sessionSlug: row.session ? sessionToSlug(row.session) : null,
       myVote: myVoteByBillId.get(row.id) ?? null,
+      isDraft: row.isDraft,
     })
   }
 

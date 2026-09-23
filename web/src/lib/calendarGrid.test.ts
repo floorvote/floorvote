@@ -62,9 +62,9 @@ describe('date helpers', () => {
 describe('bucketEventsByDate', () => {
   it('groups events by their date string', () => {
     const evs: CalendarEvent[] = [
-      { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H1', billTitle: 't', state: null, priority: 'high' }], date: '2026-06-02', time: '14:00', location: null, description: 'x', details: null, url: null, status: 'confirmed' },
+      { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H1', billTitle: 't', state: null, priority: 'high', isDraft: false }], date: '2026-06-02', time: '14:00', location: null, description: 'x', details: null, url: null, status: 'confirmed' },
       { id: '2', uid: 'b', source: 'custom', billId: null, bills: [], date: '2026-06-02', time: null, location: null, description: 'y', details: null, url: null, status: 'confirmed' },
-      { id: '3', uid: 'c', source: 'hearing', billId: 'b2', bills: [{ id: 'b2', billNumber: 'H2', billTitle: 't', state: null, priority: 'low' }], date: '2026-06-09', time: null, location: null, description: 'z', details: null, url: null, status: 'confirmed' },
+      { id: '3', uid: 'c', source: 'hearing', billId: 'b2', bills: [{ id: 'b2', billNumber: 'H2', billTitle: 't', state: null, priority: 'low', isDraft: false }], date: '2026-06-09', time: null, location: null, description: 'z', details: null, url: null, status: 'confirmed' },
     ]
     const map = bucketEventsByDate(evs)
     expect(map.get('2026-06-02')).toHaveLength(2)

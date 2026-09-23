@@ -18,6 +18,11 @@ export interface PriorityBill {
   summary: string | null
   priority: 'high' | 'medium' | 'low'
   myVote: string | null
+  /** Draft bills get the dashed BillBadge variant plus a visible DraftChip.
+   *  Required, not optional: /stats/sidebar is the only producer of this shape,
+   *  so making it optional would buy nothing and would let a dropped select
+   *  column read as "filed" — a silent solid badge — instead of a type error. */
+  isDraft: boolean
 }
 
 export interface HearingBill {
@@ -29,6 +34,10 @@ export interface HearingBill {
   state: string | null
   sessionSlug: string | null
   myVote: string | null
+  /** See PriorityBill.isDraft. Always false today — hearings join to tenant
+   *  rows on the LegiScan externalId and drafts have none — but the chip
+   *  renders whatever arrives. */
+  isDraft: boolean
 }
 
 export interface HearingGroup {

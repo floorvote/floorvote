@@ -99,6 +99,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       status: calendarEvents.status,
       billNumber: bills.billNumber, billTitle: bills.title,
       billState: bills.state, priority: bills.priority,
+      billIsDraft: bills.isDraft,
     })
     .from(calendarEvents)
     .leftJoin(bills, eq(calendarEvents.billId, bills.id))
@@ -119,13 +120,13 @@ calendarRouter.get('/events', requireAuth, async (c) => {
 
   // Linked bills for custom events come from the join table.
   const customIds = rows.filter(r => r.source === 'custom').map(r => r.id)
-  const linkMap = new Map<string, Array<{ id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null }>>()
+  const linkMap = new Map<string, Array<{ id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }>>()
   if (customIds.length > 0) {
     const links = await db
       .select({
         eventId: calendarEventBills.eventId,
         id: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
-        state: bills.state, priority: bills.priority,
+        state: bills.state, priority: bills.priority, isDraft: bills.isDraft,
       })
       .from(calendarEventBills)
       .innerJoin(bills, eq(calendarEventBills.billId, bills.id))
@@ -133,12 +134,16 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       .all()
     for (const l of links) {
       const list = linkMap.get(l.eventId) ?? []
-      list.push({ id: l.id, billNumber: l.billNumber, billTitle: l.billTitle, state: l.state, priority: l.priority })
+      list.push({ id: l.id, billNumber: l.billNumber, billTitle: l.billTitle, state: l.state, priority: l.priority, isDraft: l.isDraft })
       linkMap.set(l.eventId, list)
     }
   }
 
-  type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null }
+  // isDraft drives the dashed BillBadge variant on the event chips. Reachable
+  // through the custom-event path only: hearing events are synced from
+  // LegiScan and a draft has no LegiScan id, but a custom event can link any
+  // tenant bill, drafts included (see calendar_event_bills / setEventBills).
+  type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }
   interface EventResult {
     id: string; uid: string; source: string; billId: string | null
     eventHash: string | null
@@ -153,7 +158,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     const billsArr: EventBill[] = r.source === 'custom'
       ? (linkMap.get(r.id) ?? [])
       : (r.billNumber
-          ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: r.billTitle ?? '', state: r.billState, priority: r.priority }]
+          ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: r.billTitle ?? '', state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false }]
           : [])
     return {
       id: r.id, uid: r.uid, source: r.source, billId: r.billId,

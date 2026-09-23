@@ -897,14 +897,13 @@ export function BillDetail() {
   useEffect(() => {
     if (!bill?.isDraft || !isAdminUser) return
     let cancelled = false
-    apiFetch<Array<BillOption & { isDraft?: boolean }>>('/calendar/bill-options')
+    apiFetch<BillOption[]>('/calendar/bill-options')
       .then(data => {
         if (cancelled) return
-        setFiledOptions(
-          data
-            .filter(o => !o.isDraft && o.id !== bill.id)
-            .map(({ id, billNumber, title, state }) => ({ id, billNumber, title, state }))
-        )
+        // isDraft is part of BillOption now, so the local intersection type and
+        // the field-stripping map it existed for both go away; the filter is
+        // still what makes this picker filed-bills-only.
+        setFiledOptions(data.filter(o => !o.isDraft && o.id !== bill.id))
       })
       .catch(() => {})
     return () => { cancelled = true }
