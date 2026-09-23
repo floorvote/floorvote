@@ -5,6 +5,7 @@ import { apiFetchForLoader } from '../lib/loaderFetch'
 import { useAuth } from '../hooks/useAuth'
 import { MarkdownSummary } from '../components/MarkdownSummary'
 import { BillBadge } from '../components/BillBadge'
+import { DraftChip } from '../components/DraftChip'
 import { PositionBadge } from '../components/PositionBadge'
 import { PriorityBadge } from '../components/PriorityBadge'
 import { CompactPrioritySelect } from '../components/CompactPrioritySelect'
@@ -1223,6 +1224,7 @@ export function BillDetail() {
           <BillBadge
             billNumber={bill.billNumber}
             state={bill.state}
+            isDraft={bill.isDraft}
             stateUrl={(() => {
               if (!config || !multiState) return undefined
               const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
@@ -1231,7 +1233,7 @@ export function BillDetail() {
               return `https://${instanceDomain}${window.location.pathname}`
             })()}
           />
-          <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />}
           {bill.session && (
             <SessionChip
               session={bill.session}

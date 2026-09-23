@@ -97,6 +97,37 @@ describe('BillRow row-click navigation target', () => {
   })
 })
 
+describe('BillRow draft visual marker', () => {
+  it('renders a dashed badge and the Draft chip for a draft bill', () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, state: 'IL', status: '', sessionSlug: '2026', billNumber: 'D1' },
+    })
+    // Desktop badge — dashed border, transparent fill (the "not filed yet" signal).
+    const badges = screen.getAllByText('D1', { exact: false })
+    expect(badges.length).toBeGreaterThan(0)
+    const badge = badges[0].closest('a, span') as HTMLElement
+    expect(badge.style.border).toContain('dashed')
+    expect(badge.style.background === '' || badge.style.background === 'transparent').toBe(true)
+
+    // The word "Draft" appears (in the status cell / mobile meta row), and the
+    // old solid gray chip is gone — replaced by a dashed, inert marker.
+    const draftChips = screen.getAllByText('Draft')
+    expect(draftChips.length).toBeGreaterThan(0)
+    for (const chip of draftChips) {
+      expect(chip.tagName).not.toBe('BUTTON')
+      expect(chip.style.border).toContain('dashed')
+    }
+    expect(container.querySelector('button')?.textContent).not.toBe('Draft')
+  })
+
+  it('renders neither a dashed badge nor the Draft chip for a filed bill', () => {
+    renderRow(false, { bill: { id: 'b1', isDraft: false, state: 'RI', status: '2', billNumber: 'HB 1' } })
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument()
+    const badge = screen.getAllByText('HB 1', { exact: false })[0].closest('a, span') as HTMLElement
+    expect(badge.style.border).not.toContain('dashed')
+  })
+})
+
 describe('BillRow hover selection checkbox', () => {
   it('does not render a checkbox on hover for non-admins', () => {
     const { container } = renderRow(false)
