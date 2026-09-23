@@ -572,7 +572,7 @@ export function BillList() {
   const sorted = allBills
   sortedRef.current = sorted
   const sortedPaths = useMemo(
-    () => sorted.map(b => billUrl({ id: b.id, state: b.state, session: b.session, billNumber: b.billNumber })),
+    () => sorted.map(b => billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })),
     [sorted]
   )
 
