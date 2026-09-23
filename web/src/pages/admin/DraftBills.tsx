@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionBtnBlue } from '../../styles/actionRow'
@@ -43,6 +44,23 @@ export function DraftBills() {
       const created = await apiFetch<{ id: string }>('/bills/draft', {
         method: 'POST',
         body: JSON.stringify(body),
+      })
+      // Tear the form down BEFORE navigating. The rich-text editors register
+      // with the unsaved-text registry; unmounting them deregisters, so the
+      // nav guard sees a clean page. Navigating first raised a confirm about
+      // text that had in fact just been saved — and cancelling it stranded an
+      // already-created draft behind a still-full form, so the next submit
+      // created a duplicate. flushSync forces the unmount (and its
+      // deregistration effect) to commit before navigate() runs the
+      // blocker's dirty check — without it, the check races the effect and
+      // still sees the stale, dirty registrations.
+      flushSync(() => {
+        setShowDraftForm(false)
+        setDraftTitle('')
+        setDraftSummary('')
+        setDraftSponsor('')
+        setDraftText('')
+        setCreateDraftError(null)
       })
       navigate('/bills/' + created.id)
     } catch (err) {
