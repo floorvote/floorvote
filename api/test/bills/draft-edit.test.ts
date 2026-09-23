@@ -8,10 +8,14 @@ import { eq } from 'drizzle-orm'
 async function createDraft(token: string, fields: {
   title: string; billNumber?: string; sponsor?: string; summary?: string; text?: string
 }): Promise<string> {
+  // c.env.STATE is unset in the test worker (vitest.config.mts), which the
+  // route now rejects with 400 unless a state is supplied — see the empty-state
+  // guard in draftRoutes.ts. 'UT' here stands in for a single-state tenant's
+  // configured STATE binding; it isn't what these tests are exercising.
   const res = await SELF.fetch('https://x/api/bills/draft', {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(fields),
+    body: JSON.stringify({ state: 'UT', ...fields }),
   })
   expect(res.status).toBe(201)
   return (await res.json<{ id: string }>()).id

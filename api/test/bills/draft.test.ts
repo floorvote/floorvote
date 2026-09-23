@@ -22,7 +22,7 @@ describe('POST /api/bills/draft', () => {
     const res = await SELF.fetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ billNumber: 'LCO 100', title: 'Pre-filed elections bill', summary: 'Summary', sponsor: 'Rep. Doe', text: 'AN ACT CONCERNING…' }),
+      body: JSON.stringify({ billNumber: 'LCO 100', title: 'Pre-filed elections bill', summary: 'Summary', sponsor: 'Rep. Doe', text: 'AN ACT CONCERNING…', state: 'UT' }),
     })
     expect(res.status).toBe(201)
     const body = await res.json<{ id: string; isDraft: boolean }>()
@@ -63,7 +63,7 @@ describe('POST /api/bills/draft', () => {
     const createRes = await SELF.fetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Draft for engagement' }),
+      body: JSON.stringify({ title: 'Draft for engagement', state: 'UT' }),
     })
     expect(createRes.status).toBe(201)
     const { id } = await createRes.json<{ id: string }>()
@@ -96,7 +96,7 @@ describe('POST /api/bills/draft', () => {
     const createRes = await SELF.fetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Listed draft' }),
+      body: JSON.stringify({ title: 'Listed draft', state: 'UT' }),
     })
     expect(createRes.status).toBe(201)
 
@@ -114,7 +114,7 @@ describe('POST /api/bills/draft', () => {
     const res = await SELF.fetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Pre-filed' }),
+      body: JSON.stringify({ title: 'Pre-filed', state: 'UT' }),
     })
     expect(res.status).toBe(201)
     const body = await res.json<{ id: string; billNumber: string; year: number }>()
@@ -129,7 +129,7 @@ describe('POST /api/bills/draft', () => {
     const res = await SELF.fetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Pre-filed', billNumber: 'LRB-1234', year: 2027 }),
+      body: JSON.stringify({ title: 'Pre-filed', billNumber: 'LRB-1234', year: 2027, state: 'UT' }),
     })
     expect(res.status).toBe(201)
     const body = await res.json<{ billNumber: string; year: number }>()
@@ -171,5 +171,35 @@ describe('POST /api/bills/draft', () => {
     expect(res.status).toBe(409)
     const rows = await db.select().from(bills).where(eq(bills.isDraft, true)).all()
     expect(rows).toHaveLength(0)
+  })
+
+  it('rejects with 400 and writes no row when the resolved state is empty', async () => {
+    // c.env.STATE is unset in the test worker (vitest.config.mts), which
+    // stands in for a multi-state tenant. Omitting `state` here reproduces
+    // the production bug (bpc-elections drafts with state = '') that made
+    // billUrl() impossible to resolve — the route must refuse it outright
+    // rather than silently writing a stateless draft.
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'No state given' }),
+    })
+    expect(res.status).toBe(400)
+    const db = getDb(env.DB)
+    const rows = await db.select().from(bills).where(eq(bills.title, 'No state given')).all()
+    expect(rows).toHaveLength(0)
+  })
+
+  it('accepts an explicit state and creates the draft', async () => {
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Explicit state', state: 'ut' }),
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json<{ id: string }>()
+    const db = getDb(env.DB)
+    const row = await db.select().from(bills).where(eq(bills.id, body.id)).get()
+    expect(row?.state).toBe('UT')
   })
 })

@@ -31,7 +31,14 @@ export function DraftBills() {
   // so it calls GET /bills/facets directly rather than reusing that hook.
   // isMultiState mirrors useBillFilters' own notion (knownStates.size > 1)
   // rather than inventing a second one.
-  const [knownStates, setKnownStates] = useState<string[]>([])
+  //
+  // null means "we don't yet know" — either the facets call hasn't resolved
+  // or it failed. That must NOT be treated as "single state": a multi-state
+  // tenant whose bills currently all sit in one state, or a facets outage,
+  // would otherwise hide the State field and reproduce the exact
+  // state='' bug this field exists to prevent. Only an array with exactly
+  // one entry counts as confirmed single-state.
+  const [knownStates, setKnownStates] = useState<string[] | null>(null)
 
   useEffect(() => {
     apiFetch<{ drafts: { id: string; billNumber: string; title: string; state: string | null }[] }>('/bills/drafts')
@@ -42,10 +49,10 @@ export function DraftBills() {
   useEffect(() => {
     apiFetch<{ state: Record<string, number> }>('/bills/facets')
       .then(f => setKnownStates(Object.keys(f.state).sort()))
-      .catch(() => setKnownStates([]))
+      .catch(() => setKnownStates(null))
   }, [])
 
-  const isMultiState = knownStates.length > 1
+  const isMultiState = knownStates === null || knownStates.length > 1
 
   // Fetched when the form opens rather than on mount: the number depends on how
   // many drafts exist, so a stale value from page load could collide.
@@ -158,9 +165,6 @@ export function DraftBills() {
                   {(() => {
                     const base = Number(draftYear) || new Date().getFullYear()
                     const years = [base, base + 1, base + 2]
-                    // A backfilled draft can carry a year below the default;
-                    // keep it selectable so editing one does not silently move it.
-                    if (!years.includes(base)) years.unshift(base)
                     return years.map(y => <option key={y} value={String(y)}>{y}</option>)
                   })()}
                 </select>
@@ -178,7 +182,7 @@ export function DraftBills() {
                   style={inputStyle}
                 >
                   <option value="">Select a state…</option>
-                  {knownStates.map(s => <option key={s} value={s}>{s}</option>)}
+                  {(knownStates ?? []).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             )}

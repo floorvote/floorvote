@@ -63,6 +63,13 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     const id = crypto.randomUUID()
     const user = c.get('user')
     const state = (body.state?.trim() || c.env.STATE || '').toUpperCase()
+    // A multi-state tenant has no c.env.STATE fallback, so an omitted body.state
+    // resolves to '' here. billUrl() requires a state, so a stateless draft can
+    // never get a canonical URL — reject rather than silently creating one.
+    // A single-state tenant always has c.env.STATE set, so this never fires there.
+    if (!state) {
+      return c.json({ error: 'This instance tracks multiple states, so a draft needs an explicit state.' }, 400)
+    }
     const year = Number.isInteger(body.year) ? Number(body.year) : await defaultDraftYear(c, db, state)
     const billNumber = body.billNumber?.trim() || await nextDraftNumber(db, state)
 
