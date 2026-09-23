@@ -10,6 +10,7 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
+import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -53,7 +54,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
   router.post('/draft', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const body = await c.req.json<{
-      billNumber?: string; title?: string; summary?: string; sponsor?: string; text?: string; state?: string
+      billNumber?: string; title?: string; summary?: string; sponsor?: string
+      text?: string; state?: string; year?: number
     }>().catch(() => ({} as Record<string, string>))
     const title = body.title?.trim()
     if (!title) return c.json({ error: 'title is required' }, 400)
@@ -61,7 +63,13 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     const id = crypto.randomUUID()
     const user = c.get('user')
     const state = (body.state?.trim() || c.env.STATE || '').toUpperCase()
-    const billNumber = body.billNumber?.trim() || 'DRAFT'
+    const year = Number.isInteger(body.year) ? Number(body.year) : await defaultDraftYear(c, db, state)
+    const billNumber = body.billNumber?.trim() || await nextDraftNumber(db, state)
+
+    const collision = await findNumberCollision(db, { state, year, billNumber })
+    if (collision) {
+      return c.json({ error: `${billNumber} is already used by another ${state} bill in ${year}.` }, 409)
+    }
 
     await db.insert(bills).values({
       id,
@@ -69,6 +77,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       billNumber,
       title,
       state,
+      yearStart: year,
+      yearEnd: year,
       matchType: 'manual',
       isDraft: true,
       draftText: body.text?.trim() || null,
@@ -85,7 +95,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       metadata: JSON.stringify({ draft: true, billNumber, title }),
     })
 
-    return c.json({ id, billNumber, title, isDraft: true }, 201)
+    return c.json({ id, billNumber, title, year, isDraft: true }, 201)
   })
 
   // POST /bills/:id/link — merge a draft into a filed bill (admin/owner only). :id is the DRAFT.
@@ -145,6 +155,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
 
     const body = await c.req.json<{
       title?: string; sponsor?: string; summary?: string; text?: string
+      billNumber?: string; year?: number
     }>().catch(() => ({} as Record<string, string>))
 
     // Build update object — only include fields present in body
@@ -158,6 +169,20 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     if ('summary' in body) patch.tenantSummary = body.summary?.trim() || null
     if ('text' in body) patch.draftText = body.text?.trim() || null
 
+    const nextNumber = 'billNumber' in body ? (body.billNumber?.trim() || existing.billNumber) : existing.billNumber
+    const nextYear = Number.isInteger(body.year) ? Number(body.year) : existing.yearStart
+    if (nextNumber !== existing.billNumber || nextYear !== existing.yearStart) {
+      const collision = await findNumberCollision(db, {
+        state: existing.state, year: nextYear as number, billNumber: nextNumber, excludeId: id,
+      })
+      if (collision) {
+        return c.json({ error: `${nextNumber} is already used by another ${existing.state} bill in ${nextYear}.` }, 409)
+      }
+      patch.billNumber = nextNumber
+      patch.yearStart = nextYear as number
+      patch.yearEnd = nextYear as number
+    }
+
     if (Object.keys(patch).length > 0) {
       await db.update(bills).set(patch).where(eq(bills.id, id))
     }
@@ -170,6 +195,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       sponsor: updated!.sponsor ?? null,
       summary: updated!.tenantSummary ?? null,
       text: updated!.draftText ?? null,
+      billNumber: updated!.billNumber,
+      year: updated!.yearStart,
       isDraft: true,
     })
   })

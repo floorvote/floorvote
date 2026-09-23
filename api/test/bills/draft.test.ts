@@ -109,4 +109,50 @@ describe('POST /api/bills/draft', () => {
     expect(found).toBeDefined()
     expect(found?.isDraft).toBe(true)
   })
+
+  it('auto-assigns D1 and the default year when neither is supplied', async () => {
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Pre-filed' }),
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json<{ id: string; billNumber: string; year: number }>()
+    expect(body.billNumber).toBe('D1')
+    const db = getDb(env.DB)
+    const row = await db.select().from(bills).where(eq(bills.id, body.id)).get()
+    expect(row?.yearStart).toBe(body.year)
+    expect(row?.yearEnd).toBe(body.year)
+  })
+
+  it('honours a supplied number and year', async () => {
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Pre-filed', billNumber: 'LRB-1234', year: 2027 }),
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json<{ billNumber: string; year: number }>()
+    expect(body.billNumber).toBe('LRB-1234')
+    expect(body.year).toBe(2027)
+  })
+
+  it('409s when the supplied number collides with a filed bill in the same state and year', async () => {
+    // Route falls back to c.env.STATE, which is unset in the test worker, so an
+    // explicit `state` in the request body is required to exercise per-state
+    // behavior through the HTTP route (rather than seeding 'UT' and having the
+    // request land on '' by accident).
+    const db = getDb(env.DB)
+    await db.insert(bills).values({
+      id: 'filed', billNumber: 'HB0209', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Clash', billNumber: 'HB0209', year: 2026, state: 'UT' }),
+    })
+    expect(res.status).toBe(409)
+    const rows = await db.select().from(bills).where(eq(bills.isDraft, true)).all()
+    expect(rows).toHaveLength(0)
+  })
 })

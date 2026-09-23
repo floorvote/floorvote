@@ -21,3 +21,24 @@ export async function nextDraftNumber(
   }
   return `D${max + 1}`
 }
+
+/** A draft's number must be unique among ALL bills in the same state and year,
+ *  not just among drafts: /bills/resolve/:state/:sessionSlug/:billNumber has no
+ *  way to choose between two bills that answer to the same triple. Returns the
+ *  colliding bill's id, or null. */
+export async function findNumberCollision(
+  db: ReturnType<typeof getDb>,
+  opts: { state: string; year: number; billNumber: string; excludeId?: string },
+): Promise<string | null> {
+  const rows = await db
+    .select({ id: bills.id })
+    .from(bills)
+    .where(and(
+      eq(bills.state, opts.state),
+      eq(bills.billNumber, opts.billNumber),
+      eq(bills.yearStart, opts.year),
+    ))
+    .all()
+  const hit = rows.find(r => r.id !== opts.excludeId)
+  return hit?.id ?? null
+}

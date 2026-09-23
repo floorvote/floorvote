@@ -135,6 +135,42 @@ describe('PATCH /api/bills/:id/draft', () => {
     // title unchanged
     expect(row?.title).toBe('Title')
   })
+
+  it('updates the number and year', async () => {
+    await seedBill({
+      id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billNumber: 'D7', year: 2027 }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ billNumber: 'D7', year: 2027 })
+  })
+
+  it("409s on a collision but allows a no-op re-save of the draft's own number", async () => {
+    await seedBill({
+      id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
+    })
+    await seedBill({
+      id: 'f1', billNumber: 'HB0209', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
+    })
+
+    const clash = await SELF.fetch('https://x/api/bills/d1/draft', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billNumber: 'HB0209' }),
+    })
+    expect(clash.status).toBe(409)
+
+    const noop = await SELF.fetch('https://x/api/bills/d1/draft', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billNumber: 'D1' }),
+    })
+    expect(noop.status).toBe(200)
+  })
 })
 
 describe('GET /api/bills/drafts', () => {
