@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -145,6 +145,15 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+// Opens the year Picker (must already be in edit mode) and clicks the given
+// year's radio option. fireEvent, not userEvent, because Picker's radio
+// inputs are pointer-events:none — the row's wrapping <label> owns the click,
+// same as ScopeSelect.test.tsx.
+async function pickYear(user: ReturnType<typeof userEvent.setup>, year: string) {
+  await user.click(screen.getByRole('button', { name: 'Year' }))
+  fireEvent.click(screen.getByRole('radio', { name: year }))
+}
+
 describe('BillDetail draft year editor', () => {
   it('saving PATCHes the new year and updates the display', async () => {
     const user = userEvent.setup()
@@ -155,9 +164,7 @@ describe('BillDetail draft year editor', () => {
     expect(trigger).toHaveTextContent('Year: 2026')
     await user.click(trigger)
 
-    const input = document.querySelector('input[name="draftYear"]') as HTMLInputElement
-    await user.clear(input)
-    await user.type(input, '2028')
+    await pickYear(user, '2028')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
@@ -167,15 +174,28 @@ describe('BillDetail draft year editor', () => {
     expect(await screen.findByRole('button', { name: 'Edit year' })).toHaveTextContent('Year: 2028')
   })
 
+  // The Picker is controlled, unlike the plain <input>s on the other editors —
+  // it must be seeded with the bill's current year when the editor opens, or
+  // it would show/hold nothing until the admin picked a value.
+  it('prefills the Year picker with the bill\'s current year when opened', async () => {
+    const user = userEvent.setup()
+    mockApi()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit year' }))
+    const yearTrigger = screen.getByRole('button', { name: 'Year' })
+    expect(yearTrigger).toHaveTextContent('2026')
+    await user.click(yearTrigger)
+    expect(screen.getByRole('radio', { name: '2026' })).toBeChecked()
+  })
+
   it('surfaces a 409 from the server inline', async () => {
     const user = userEvent.setup()
     mockApi(async () => { throw new api.ApiError(409, 'D1 is already used by another RI bill in 2028.') })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
 
     await user.click(await screen.findByRole('button', { name: 'Edit year' }))
-    const input = document.querySelector('input[name="draftYear"]') as HTMLInputElement
-    await user.clear(input)
-    await user.type(input, '2028')
+    await pickYear(user, '2028')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('D1 is already used by another RI bill in 2028.')).toBeInTheDocument()
@@ -192,9 +212,7 @@ describe('BillDetail draft year editor', () => {
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
 
     await user.click(await screen.findByRole('button', { name: 'Edit year' }))
-    const input = document.querySelector('input[name="draftYear"]') as HTMLInputElement
-    await user.clear(input)
-    await user.type(input, '2028')
+    await pickYear(user, '2028')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/RI/2028/D1', { replace: true }))
@@ -206,9 +224,7 @@ describe('BillDetail draft year editor', () => {
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
 
     await user.click(await screen.findByRole('button', { name: 'Edit year' }))
-    const input = document.querySelector('input[name="draftYear"]') as HTMLInputElement
-    await user.clear(input)
-    await user.type(input, '2028')
+    await pickYear(user, '2028')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByRole('button', { name: 'Edit year' })).toHaveTextContent('Year: 2028')

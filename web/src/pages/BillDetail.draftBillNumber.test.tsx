@@ -145,6 +145,16 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('BillDetail draft bill-number editor', () => {
+  it('prefills the input with the bill\'s current number when opened', async () => {
+    const user = userEvent.setup()
+    mockApi()
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit bill number' }))
+    const input = document.querySelector('input[name="draftBillNumber"]') as HTMLInputElement
+    expect(input.value).toBe('D1')
+  })
+
   it('saving PATCHes the new bill number and updates the display', async () => {
     const user = userEvent.setup()
     mockApi()

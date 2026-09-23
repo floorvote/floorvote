@@ -122,7 +122,7 @@ describe('DraftBills number and year', () => {
     await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
 
     expect(await screen.findByLabelText(/bill number/i)).toHaveValue('D3')
-    expect(screen.getByLabelText(/year/i)).toHaveValue('2027')
+    expect(screen.getByRole('button', { name: 'Year' })).toHaveTextContent('2027')
 
     await user.type(screen.getByLabelText(/title/i), 'Pre-filed')
     await user.click(screen.getByRole('button', { name: /create draft/i }))
@@ -168,8 +168,9 @@ describe('DraftBills state field on multi-state tenants', () => {
     const submitBtn = screen.getByRole('button', { name: /create draft/i })
     expect(submitBtn).toBeDisabled()
 
-    const stateSelect = await screen.findByLabelText(/state/i)
-    await user.selectOptions(stateSelect, 'UT')
+    const stateTrigger = await screen.findByLabelText(/state/i)
+    await user.click(stateTrigger)
+    fireEvent.click(screen.getByRole('radio', { name: 'UT' }))
     expect(submitBtn).toBeEnabled()
 
     await user.click(submitBtn)
@@ -278,11 +279,12 @@ describe('DraftBills defaults follow the chosen state', () => {
     await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
     expect(await screen.findByLabelText(/bill number/i)).toHaveValue('D4')
 
-    await user.selectOptions(await screen.findByLabelText(/^state/i), 'TX')
+    await user.click(await screen.findByLabelText(/^state/i))
+    fireEvent.click(screen.getByRole('radio', { name: 'TX' }))
 
     await screen.findByDisplayValue('D1')
     expect(screen.getByLabelText(/bill number/i)).toHaveValue('D1')
-    expect(screen.getByLabelText(/year/i)).toHaveValue('2027')
+    expect(screen.getByRole('button', { name: 'Year' })).toHaveTextContent('2027')
     expect(calls).toContain('/bills/draft-defaults?state=TX')
   })
 })
@@ -304,14 +306,15 @@ describe('DraftBills year select', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: /add draft bill/i }))
 
-    const yearSelect = await screen.findByLabelText(/year/i)
+    const yearTrigger = await screen.findByRole('button', { name: 'Year' })
     // The displayed option and the held value must agree — draftYear is never
     // '', which would match no option and render the first one instead.
-    await screen.findByRole('option', { name: '2020', selected: true })
-    expect(yearSelect).toHaveValue('2020')
+    expect(yearTrigger).toHaveTextContent('2020')
+    await user.click(yearTrigger)
+    expect(screen.getByRole('radio', { name: '2020' })).toBeChecked()
     // A past base must not push the current year out of reach.
-    expect(screen.getByRole('option', { name: thisYear })).toBeInTheDocument()
-    await user.selectOptions(yearSelect, thisYear)
-    expect(yearSelect).toHaveValue(thisYear)
+    expect(screen.getByRole('radio', { name: thisYear })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: thisYear }))
+    expect(yearTrigger).toHaveTextContent(thisYear)
   })
 })

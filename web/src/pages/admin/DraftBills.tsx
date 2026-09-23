@@ -10,6 +10,9 @@ import { CARD_TITLE } from '../../lib/textStyles'
 import { useDemo } from '../../context/DemoContext'
 import { RichTextEditor } from '../../components/RichTextEditor'
 import { BillBadge } from '../../components/BillBadge'
+import { Picker, type PickerOption } from '../../components/Picker'
+import { pickerFieldTriggerStyle, PickerFieldCaret } from '../../lib/pickerFieldStyle'
+
 
 export function DraftBills() {
   const navigate = useNavigate()
@@ -185,41 +188,57 @@ export function DraftBills() {
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <label htmlFor="draft-year" style={labelStyle}>Year</label>
-                <select
-                  id="draft-year"
-                  value={draftYear}
-                  onChange={e => setDraftYear(e.target.value)}
-                  style={inputStyle}
-                >
-                  {(() => {
-                    // The held value must always be one of the options, and the
-                    // current year must always be offerable — the fetched base
-                    // can be in the past when central is unreachable and the
-                    // fallback is the tenant's newest filed year.
-                    const thisYear = new Date().getFullYear()
-                    const base = Number(draftYear) || thisYear
-                    const years = [...new Set([base, base + 1, base + 2, thisYear])].sort((a, b) => a - b)
-                    return years.map(y => <option key={y} value={String(y)}>{y}</option>)
-                  })()}
-                </select>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- the Picker's trigger is a <button>, not a labelable control; it carries its own aria-label="Year" for the accessible name. */}
+                <label style={labelStyle}>Year</label>
+                {(() => {
+                  // The held value must always be one of the options, and the
+                  // current year must always be offerable — the fetched base
+                  // can be in the past when central is unreachable and the
+                  // fallback is the tenant's newest filed year.
+                  const thisYear = new Date().getFullYear()
+                  const base = Number(draftYear) || thisYear
+                  const years = [...new Set([base, base + 1, base + 2, thisYear])].sort((a, b) => a - b)
+                  const yearOptions: PickerOption[] = years.map(y => ({ value: String(y), label: String(y) }))
+                  return (
+                    <Picker
+                      mode="single"
+                      value={draftYear}
+                      options={yearOptions}
+                      onChange={v => { if (v != null) setDraftYear(v) }}
+                      ariaLabel="Year"
+                      panelMinWidth={100}
+                      trigger={({ toggle, open }) => (
+                        <button type="button" aria-label="Year" onClick={toggle} style={pickerFieldTriggerStyle()}>
+                          <span>{draftYear}</span>
+                          <PickerFieldCaret open={open} />
+                        </button>
+                      )}
+                    />
+                  )
+                })()}
               </div>
             </div>
             {needsState && (
               <div>
-                <label htmlFor="draft-state" style={labelStyle}>
+                {/* eslint-disable-next-line jsx-a11y/label-has-associated-control -- htmlFor only applies in the free-text fallback branch below; the Picker branch's trigger is a <button> carrying its own aria-label="State". */}
+                <label htmlFor={useStateSelect ? undefined : 'draft-state'} style={labelStyle}>
                   State <span style={{ fontWeight: fontWeight.semibold, color: color.textDanger }}>*</span>
                 </label>
                 {useStateSelect ? (
-                  <select
-                    id="draft-state"
-                    value={draftState}
-                    onChange={e => setDraftState(e.target.value)}
-                    style={inputStyle}
-                  >
-                    <option value="">Select a state…</option>
-                    {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <Picker
+                    mode="single"
+                    value={draftState || null}
+                    options={stateOptions.map(s => ({ value: s, label: s }))}
+                    emptyOption={{ label: 'Select a state…' }}
+                    onChange={v => setDraftState(v ?? '')}
+                    ariaLabel="State"
+                    trigger={({ toggle, open }) => (
+                      <button type="button" aria-label="State" onClick={toggle} style={pickerFieldTriggerStyle()}>
+                        <span>{draftState || 'Select a state…'}</span>
+                        <PickerFieldCaret open={open} />
+                      </button>
+                    )}
+                  />
                 ) : (
                   <input
                     id="draft-state"

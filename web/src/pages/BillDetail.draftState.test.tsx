@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -122,12 +122,19 @@ const CONFIG = {
 /** @param tenantState what GET /bills/draft-defaults reports: a postal code on
  *  a single-state tenant, null on a multi-state one.
  *  @param onPatch what PATCH /bills/42/draft does — resolve with the updated
- *  row, or throw an ApiError. */
-function mockApi(tenantState: string | null, onPatch?: () => Promise<unknown>) {
+ *  row, or throw an ApiError.
+ *  @param facetStates what GET /bills/facets reports for `state` — the option
+ *  list for the State Picker (see DraftBills.tsx's `knownStates`). Omitted
+ *  (undefined) mocks a facets failure, which falls back to free text. */
+function mockApi(tenantState: string | null, onPatch?: () => Promise<unknown>, facetStates?: Record<string, number>) {
   routerMock.loaderData = { ...DRAFT }
   return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/bills/42' || path.startsWith('/bills/resolve/')) return { ...DRAFT } as never
     if (path.startsWith('/bills/draft-defaults')) return { billNumber: 'D2', year: 2026, tenantState } as never
+    if (path === '/bills/facets') {
+      if (facetStates) return { state: facetStates } as never
+      throw new api.ApiError(500, 'facets unavailable')
+    }
     if (path === '/bills/42/draft' && init?.method === 'PATCH') {
       if (onPatch) return (await onPatch()) as never
       return { ...DRAFT, state: 'TX' } as never
@@ -231,5 +238,40 @@ describe('BillDetail draft State editor', () => {
 
     expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: TX')
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  // When facets has something to offer, the State editor is the same Picker
+  // single-select as the create form (DraftBills.tsx), not free text.
+  it('offers a Picker (not free text) when facets reports known states, and saves the chosen one', async () => {
+    const user = userEvent.setup()
+    mockApi(null, undefined, { RI: 3, TX: 2 })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit state' }))
+    expect(document.querySelector('input[name="draftState"]')).toBeNull()
+    const stateTrigger = await screen.findByRole('button', { name: 'State' })
+    expect(stateTrigger).toHaveTextContent('RI')
+    await user.click(stateTrigger)
+    fireEvent.click(screen.getByRole('radio', { name: 'TX' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
+      '/bills/42/draft',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ state: 'TX' }) }),
+    ))
+    expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: TX')
+  })
+
+  // The Picker is controlled, unlike the free-text fallback's plain <input> —
+  // it must be seeded with the bill's current state when the editor opens.
+  it('prefills the State picker with the bill\'s current state when opened', async () => {
+    const user = userEvent.setup()
+    mockApi(null, undefined, { RI: 3, TX: 2 })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+
+    await user.click(await screen.findByRole('button', { name: 'Edit state' }))
+    const stateTrigger = await screen.findByRole('button', { name: 'State' })
+    await user.click(stateTrigger)
+    expect(screen.getByRole('radio', { name: 'RI' })).toBeChecked()
   })
 })

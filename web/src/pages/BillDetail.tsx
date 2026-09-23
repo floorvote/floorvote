@@ -26,6 +26,8 @@ import { BillTextChip } from '../components/BillTextChip'
 import { PersonalNote } from '../components/PersonalNote'
 import { InfoTooltip } from '../components/InfoTooltip'
 import { ReactionPicker } from '../components/ReactionPicker'
+import { Picker, type PickerOption } from '../components/Picker'
+import { pickerFieldTriggerStyle, PickerFieldCaret } from '../lib/pickerFieldStyle'
 import { usePolling } from '../hooks/usePolling'
 import { useSidebarRefresh } from '../context/SidebarRefreshContext'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -653,6 +655,19 @@ export function BillDetail() {
   // states that already have bills, so it cannot tell a single-state tenant
   // from a multi-state one whose bills happen to sit in one state.
   const [tenantState, setTenantState] = useState<string | null>(null)
+  // Option list for the State Picker only — NOT used to decide whether to
+  // show the editor (that's tenantState above). Same facets-derived list and
+  // free-text fallback as the create form (DraftBills.tsx): `null` means
+  // unknown (still loading, or the call failed); `statesResolved`
+  // distinguishes that from a genuine empty list.
+  const [knownStates, setKnownStates] = useState<string[] | null>(null)
+  const [statesResolved, setStatesResolved] = useState(false)
+  // Pending edit values for the year/state Pickers, seeded from the bill's
+  // current value when an editor is opened (see the "Edit year"/"Edit state"
+  // button onClicks below) — Picker is a controlled component, unlike the
+  // plain <input>s above which read their initial value via `defaultValue`.
+  const [draftYearEdit, setDraftYearEdit] = useState('')
+  const [draftStateEdit, setDraftStateEdit] = useState('')
 
   const refreshSidebar = useSidebarRefresh()
   const { refresh: refreshNotifications, mentions } = useNotifications()
@@ -901,6 +916,18 @@ export function BillDetail() {
       .catch(() => { /* stay null — see the comment on tenantState */ })
     return () => { cancelled = true }
   }, [bill?.id, bill?.isDraft, bill?.state, isAdminUser])
+
+  // Option list for the State Picker (see knownStates above) — fetched once
+  // per draft, not tied to whether the editor is currently open.
+  useEffect(() => {
+    if (!bill?.isDraft || !isAdminUser) return
+    let cancelled = false
+    apiFetch<{ state: Record<string, number> }>('/bills/facets')
+      .then(f => { if (!cancelled) setKnownStates(Object.keys(f.state).sort()) })
+      .catch(() => { if (!cancelled) setKnownStates(null) })
+      .finally(() => { if (!cancelled) setStatesResolved(true) })
+    return () => { cancelled = true }
+  }, [bill?.id, bill?.isDraft, isAdminUser])
 
   // Keyboard arrow navigation between bills
   useEffect(() => {
@@ -1745,9 +1772,8 @@ export function BillDetail() {
                   onSubmit={async (e) => {
                     e.preventDefault()
                     if (demoLocked) return
-                    const raw = (e.currentTarget.elements.namedItem('draftYear') as HTMLInputElement).value.trim()
-                    const val = Number(raw)
-                    if (!raw || !Number.isInteger(val)) return
+                    const val = Number(draftYearEdit)
+                    if (!draftYearEdit || !Number.isInteger(val)) return
                     try {
                       const updated = await apiFetch<{ billNumber: string; year: number }>(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ year: val }) })
                       const newSlug = String(updated.year)
@@ -1769,18 +1795,39 @@ export function BillDetail() {
                   style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
                 >
                   <span style={{ color: color.textMuted }}>Year:</span>
-                  <input
-                    name="draftYear"
-                    type="number"
-                    defaultValue={bill.yearStart ?? ''}
-                    // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
-                    autoFocus
-                    onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
-                    style={{
-                      fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
-                      padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 90,
-                    }}
-                  />
+                  {(() => {
+                    // Same option-building rule as the create form (DraftBills.tsx):
+                    // the held value must always be one of the options, and the
+                    // current year must always be offerable.
+                    const thisYear = new Date().getFullYear()
+                    const base = Number(draftYearEdit) || thisYear
+                    const years = [...new Set([base, base + 1, base + 2, thisYear])].sort((a, b) => a - b)
+                    const yearOptions: PickerOption[] = years.map(y => ({ value: String(y), label: String(y) }))
+                    return (
+                      <Picker
+                        mode="single"
+                        value={draftYearEdit}
+                        options={yearOptions}
+                        onChange={v => { if (v != null) setDraftYearEdit(v) }}
+                        ariaLabel="Year"
+                        panelMinWidth={100}
+                        trigger={({ toggle, open }) => (
+                          <button
+                            type="button"
+                            aria-label="Year"
+                            onClick={toggle}
+                            // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
+                            autoFocus
+                            onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
+                            style={{ ...pickerFieldTriggerStyle(), width: 'auto', minWidth: 90, fontSize: fontSize.sm, padding: '3px 7px', border: `1px solid ${color.borderStrong}` }}
+                          >
+                            <span>{draftYearEdit}</span>
+                            <PickerFieldCaret open={open} />
+                          </button>
+                        )}
+                      />
+                    )
+                  })()}
                   <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                   <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
                 </form>
@@ -1791,7 +1838,12 @@ export function BillDetail() {
                 <button
                   type="button"
                   aria-label="Edit year"
-                  onClick={() => { if (!demoLocked) { setEditingDraftField('year'); setDraftFieldError(null) } }}
+                  onClick={() => {
+                    if (demoLocked) return
+                    setDraftYearEdit(bill.yearStart != null ? String(bill.yearStart) : String(new Date().getFullYear()))
+                    setEditingDraftField('year')
+                    setDraftFieldError(null)
+                  }}
                   onMouseEnter={() => setHoveredDraftField('year')}
                   onMouseLeave={() => setHoveredDraftField(null)}
                   disabled={demoLocked}
@@ -1818,10 +1870,14 @@ export function BillDetail() {
 
             {/* Only a multi-state tenant is offered this. A single-state
                 tenant's drafts all sit in c.env.STATE and there is nothing to
-                choose. Free text rather than a select on purpose: this page has
-                no facets fetch, and adding one would reintroduce the
-                cannot-distinguish-single-from-multi guess that tenantState
-                exists to replace. */}
+                choose. Visibility is still decided by `tenantState`
+                (GET /bills/draft-defaults), never by facets — facets only
+                reports states that already have bills, so it cannot tell a
+                single-state tenant from a multi-state one whose bills happen
+                to sit in one state. The facets-derived list below only supplies
+                the Picker's OPTIONS (same as the create form in
+                DraftBills.tsx); it falls back to free text when facets yields
+                nothing usable. */}
             {tenantState === null && (
               <span>
                 {editingDraftField === 'state' ? (
@@ -1829,7 +1885,7 @@ export function BillDetail() {
                     onSubmit={async (e) => {
                       e.preventDefault()
                       if (demoLocked) return
-                      const val = (e.currentTarget.elements.namedItem('draftState') as HTMLInputElement).value.trim().toUpperCase()
+                      const val = draftStateEdit.trim().toUpperCase()
                       if (!val) return
                       try {
                         const updated = await apiFetch<{ state: string }>(`/bills/${bill.id}/draft`, { method: 'PATCH', body: JSON.stringify({ state: val }) })
@@ -1851,24 +1907,45 @@ export function BillDetail() {
                     style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
                   >
                     <span style={{ color: color.textMuted }}>State:</span>
-                    <input
-                      name="draftState"
-                      defaultValue={bill.state}
-                      placeholder="UT"
-                      maxLength={2}
-                      // Uncontrolled like the number/year inputs above, so the
-                      // uppercasing is written straight back to the DOM node.
-                      // Submit re-uppercases regardless — this is only so the
-                      // field reads the way the value will be stored.
-                      onChange={e => { e.currentTarget.value = e.currentTarget.value.toUpperCase() }}
-                      // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
-                      autoFocus
-                      onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
-                      style={{
-                        fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
-                        padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 60,
-                      }}
-                    />
+                    {(!statesResolved || (knownStates?.length ?? 0) > 0) ? (
+                      <Picker
+                        mode="single"
+                        value={draftStateEdit || null}
+                        options={(knownStates ?? []).map(s => ({ value: s, label: s }))}
+                        emptyOption={{ label: 'Select a state…' }}
+                        onChange={v => setDraftStateEdit(v ?? '')}
+                        ariaLabel="State"
+                        trigger={({ toggle, open }) => (
+                          <button
+                            type="button"
+                            aria-label="State"
+                            onClick={toggle}
+                            // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
+                            autoFocus
+                            onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
+                            style={{ ...pickerFieldTriggerStyle(), width: 'auto', minWidth: 70, fontSize: fontSize.sm, padding: '3px 7px', border: `1px solid ${color.borderStrong}` }}
+                          >
+                            <span>{draftStateEdit || 'Select a state…'}</span>
+                            <PickerFieldCaret open={open} />
+                          </button>
+                        )}
+                      />
+                    ) : (
+                      <input
+                        name="draftState"
+                        value={draftStateEdit}
+                        placeholder="UT"
+                        maxLength={2}
+                        onChange={e => setDraftStateEdit(e.target.value.toUpperCase())}
+                        // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing pattern: focus follows the user's own click/Enter into edit mode, see the sponsor editor above
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Escape') { setEditingDraftField(null); setDraftFieldError(null) } }}
+                        style={{
+                          fontSize: fontSize.sm, border: `1px solid ${color.borderStrong}`, borderRadius: radius.md,
+                          padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 60,
+                        }}
+                      />
+                    )}
                     <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                     <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
                   </form>
@@ -1879,7 +1956,12 @@ export function BillDetail() {
                   <button
                     type="button"
                     aria-label="Edit state"
-                    onClick={() => { if (!demoLocked) { setEditingDraftField('state'); setDraftFieldError(null) } }}
+                    onClick={() => {
+                      if (demoLocked) return
+                      setDraftStateEdit(bill.state ?? '')
+                      setEditingDraftField('state')
+                      setDraftFieldError(null)
+                    }}
                     onMouseEnter={() => setHoveredDraftField('state')}
                     onMouseLeave={() => setHoveredDraftField(null)}
                     disabled={demoLocked}
