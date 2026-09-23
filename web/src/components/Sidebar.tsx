@@ -30,6 +30,7 @@ import { color, radius, fontSize, fontWeight, shadow, BRAND_FONT } from '../styl
 import { SR_ONLY } from '../lib/textStyles'
 import { CustomizeSidebar } from './sidebar/CustomizeSidebar'
 import { BillBadge } from './BillBadge'
+import { DraftChip } from './DraftChip'
 import { PriorityChip } from './sidebar/PriorityChip'
 import { VoteButton } from './sidebar/VoteButton'
 import { UserCard } from './sidebar/UserCard'
@@ -733,8 +734,13 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                           onMouseMove={(e) => handleBillTitleMove({ ...bill, state: multiState ? bill.state : undefined }, e)}
                           onMouseLeave={handleBillTitleLeave}
                         >
-                          <div style={{ marginBottom: 4 }}>
-                            <BillBadge mini billNumber={bill.billNumber} state={bill.state} />
+                          {/* The badge line is its own block and the priority
+                              chip is absolutely positioned out of flow, so
+                              there is room here for the visible chip — the
+                              stronger of the two draft signals. */}
+                          <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <BillBadge mini billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+                            {bill.isDraft && <DraftChip mini />}
                           </div>
                           <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.tooltipBg, fontFamily: "'Source Serif 4', serif", lineHeight: 1.4, display: 'block' }}>
                             {bill.title}

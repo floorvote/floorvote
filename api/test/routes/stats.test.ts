@@ -206,3 +206,55 @@ describe('GET /api/stats calendarUpcomingCount', () => {
     expect(body.calendarUpcomingDays).toBe(30)
   })
 })
+
+// The web side (Sidebar's priority list, sidebar/HearingRow) picks the dashed
+// BillBadge variant off `isDraft`, but its component tests build the sidebar
+// objects by hand — so a dropped select column or a typo in the emit below
+// would ship solid navy badges for drafts with a green web suite. That is the
+// bug the dashed variant exists to fix, returning silently. These assert the
+// wire payload itself.
+describe('GET /stats/sidebar — priorityBills isDraft', () => {
+  let memberToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const memberId = await seedUser()
+    memberToken = await seedSession(memberId)
+  })
+
+  async function priorityBills(): Promise<Array<Record<string, unknown>>> {
+    const res = await SELF.fetch('http://localhost/api/stats/sidebar', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    return (await res.json() as { priorityBills: Array<Record<string, unknown>> }).priorityBills
+  }
+
+  it('emits isDraft: true for a prioritized draft bill', async () => {
+    await seedBill({ billNumber: 'D 1', title: 'Draft Bill', priority: 'high', isDraft: true })
+    const bill = (await priorityBills()).find(b => b.billNumber === 'D 1')
+    expect(bill).toBeDefined()
+    expect(bill!.isDraft).toBe(true)
+  })
+
+  // Explicitly `false`, not `undefined`. `isDraft` is required on the web
+  // PriorityBill type, but an absent key would still render a solid badge and
+  // therefore look correct — only a literal false proves the route read
+  // bills.is_draft rather than omitting the column.
+  it('emits isDraft: false — not undefined — for a filed bill', async () => {
+    await seedBill({ billNumber: 'F 1', title: 'Filed Bill', priority: 'high', isDraft: false })
+    const bill = (await priorityBills()).find(b => b.billNumber === 'F 1')
+    expect(bill).toBeDefined()
+    expect(bill!.isDraft).toBe(false)
+    expect('isDraft' in bill!).toBe(true)
+  })
+
+  it('distinguishes the two within a single response', async () => {
+    await seedBill({ billNumber: 'D 2', title: 'Draft Two', priority: 'high', isDraft: true })
+    await seedBill({ billNumber: 'F 2', title: 'Filed Two', priority: 'low', isDraft: false })
+    const all = await priorityBills()
+    expect(all.find(b => b.billNumber === 'D 2')!.isDraft).toBe(true)
+    expect(all.find(b => b.billNumber === 'F 2')!.isDraft).toBe(false)
+  })
+})

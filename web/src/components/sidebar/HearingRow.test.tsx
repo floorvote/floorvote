@@ -10,7 +10,7 @@ const hearing: HearingGroup = {
   hearingKey: 'h1', eventHash: 'abc', type: 'Committee hearing',
   date: '2027-03-09', time: '10:00', location: 'Room 412',
   description: 'Judiciary Committee hearing',
-  bills: [{ id: 'b1', billNumber: 'H 100', title: 'Elections Act', summary: null, priority: 'high', state: 'RI', sessionSlug: null, myVote: null }],
+  bills: [{ id: 'b1', billNumber: 'H 100', title: 'Elections Act', summary: null, priority: 'high', state: 'RI', sessionSlug: null, myVote: null, isDraft: false }],
 }
 
 function renderRow(h: HearingGroup) {
