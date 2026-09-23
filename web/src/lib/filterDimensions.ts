@@ -72,9 +72,19 @@ export interface FilterDimensionContext {
    *  `isMultiState`, i.e. `knownStates.size > 1`). A single-state instance
    *  offers a choice of one, so State is hidden there. */
   isMultiState: boolean
-  /** How many draft (pre-filed) bills the tenant has. The Drafts chip is
-   *  hidden entirely at zero rather than showing an always-empty filter. */
+  /** How many draft (pre-filed) bills the tenant has, WITHIN the active
+   *  dimensional filters — unlike `isAdmin`/`isMultiState`, this is
+   *  filter-dependent and can legitimately swing to zero while the Drafts
+   *  filter itself is on (e.g. Drafts + a status filter matching no drafts).
+   *  Use `draftsActive` below, not this, to keep the chip visible in that
+   *  case — draftCount alone would hide the very control needed to turn the
+   *  filter back off. */
   draftCount: number
+  /** Whether the Drafts filter is currently ON (`f.drafts` / the sheet's
+   *  `drafts` prop). The chip must stay visible whenever its own filter is
+   *  active, even if that filter combined with others now matches zero
+   *  drafts — otherwise a user has no way to turn it back off except Reset. */
+  draftsActive: boolean
 }
 
 export interface FilterDimensionDef {
@@ -101,7 +111,7 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
   { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin },
   { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
-  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.draftCount > 0 },
+  { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.draftCount > 0 || ctx.draftsActive },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },

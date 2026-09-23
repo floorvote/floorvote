@@ -15,7 +15,7 @@ vi.mock('../context/DemoContext', () => ({
 
 const noFilters = {
   status: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
-  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, matchAny: false, cf: {},
+  q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, drafts: false, matchAny: false, cf: {},
 }
 
 function Harness({
@@ -468,5 +468,34 @@ describe('BulkActionBar — match=any (Task 6b)', () => {
   it('omits match from the filter body when the operator is not set', () => {
     const body = buildFilterBody({ ...baseFilters, matchAny: false })
     expect(body.match).toBeUndefined()
+  })
+})
+
+// CRITICAL regression: FilterState previously had no `drafts` member, so
+// index.tsx's f.currentFilters (which does carry it) was structurally
+// truncated the moment it passed through this type, and both builders below
+// silently omitted it from the write and the read. That let "select all
+// matching filters" with Drafts on quietly bulk-edit every bill, not just the
+// drafts the admin saw (see api/test/bills/draft-filter.test.ts for the
+// server-side half of this regression).
+describe('BulkActionBar — drafts filter', () => {
+  it('sends drafts=1 in the filter body when the Drafts chip is on', () => {
+    const body = buildFilterBody({ ...noFilters, drafts: true })
+    expect(body.drafts).toBe('1')
+  })
+
+  it('omits drafts from the filter body when the chip is off', () => {
+    const body = buildFilterBody({ ...noFilters, drafts: false })
+    expect(body.drafts).toBeUndefined()
+  })
+
+  it('sends drafts=1 in the bulk-values query when the Drafts chip is on', () => {
+    const params = buildBulkValuesParams({ ...noFilters, drafts: true })
+    expect(params.get('drafts')).toBe('1')
+  })
+
+  it('omits drafts from the bulk-values query when the chip is off', () => {
+    const params = buildBulkValuesParams({ ...noFilters, drafts: false })
+    expect(params.get('drafts')).toBeNull()
   })
 })

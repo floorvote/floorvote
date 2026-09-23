@@ -41,6 +41,7 @@ describe('listCache helper (direct put/get)', () => {
     statuses: [], priorities: [], positionValues: [], sessions: [], years: [],
     states: [], tagFilters: [], subjectFilters: [], q: undefined, minRelevance: undefined,
     cfParamMap: {}, sort: 'default', dir: 'desc' as const, page: 1, pageSize: 50,
+    drafts: false,
   }
 
   it('round-trips a stored page', async () => {

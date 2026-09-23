@@ -177,7 +177,7 @@ export function BillList() {
   // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, draftCount: facetCounts.draftCount }
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, draftCount: facetCounts.draftCount, draftsActive: f.drafts }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
