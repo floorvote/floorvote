@@ -1030,3 +1030,30 @@ describe('overflow menu', () => {
     }
   })
 })
+
+describe('BillDetail draft visual marker', () => {
+  afterEach(() => { authState.role = 'member' })
+
+  it('renders a dashed badge and the Draft chip for a draft bill', async () => {
+    makeMockApiFetch({ isDraft: true })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    const badge = screen.getByText('HB 1', { exact: false }).closest('a, span') as HTMLElement
+    expect(badge.style.border).toContain('dashed')
+
+    const draftChip = screen.getByText('Draft')
+    expect(draftChip.tagName).not.toBe('BUTTON')
+    expect(draftChip.style.border).toContain('dashed')
+  })
+
+  it('renders neither a dashed badge nor the Draft chip for a filed bill', async () => {
+    makeMockApiFetch({ isDraft: false })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument()
+    const badge = screen.getByText('HB 1', { exact: false }).closest('a, span') as HTMLElement
+    expect(badge.style.border).not.toContain('dashed')
+  })
+})

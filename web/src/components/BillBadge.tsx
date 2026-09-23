@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { BILL_BADGE_BASE, BILL_BADGE_MINI, PRIORITY_COLORS } from '../lib/chipStyles'
+import { BILL_BADGE_BASE, BILL_BADGE_MINI, BILL_BADGE_DRAFT, BILL_BADGE_MINI_DRAFT, PRIORITY_COLORS } from '../lib/chipStyles'
 import { color } from '../styles/tokens'
 import { useMultiState } from '../context/ConfigContext'
 import { useBillTooltip, type TooltipBill } from './BillHoverTooltip'
@@ -22,10 +22,14 @@ interface BillBadgeProps {
   /** Optional click handler for the Link (when `to` is set); deferred-nav callers
    *  should call e.preventDefault() when they take over navigation. */
   onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void
+  /** Draft bills get a dashed, transparent-fill outline instead of the solid
+   *  navy fill — the at-a-glance "not filed yet" signal. Opt-in; only pass this
+   *  where the caller already has the bill's isDraft flag on hand. */
+  isDraft?: boolean
 }
 
-export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick }: BillBadgeProps) {
-  const base = mini ? BILL_BADGE_MINI : BILL_BADGE_BASE
+export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick, isDraft }: BillBadgeProps) {
+  const base = isDraft ? (mini ? BILL_BADGE_MINI_DRAFT : BILL_BADGE_DRAFT) : (mini ? BILL_BADGE_MINI : BILL_BADGE_BASE)
   const multiState = useMultiState()
   const { onEnter, onMove, onLeave, tooltip } = useBillTooltip()
   const showState = multiState && !!state
@@ -55,7 +59,7 @@ export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, pr
     ? <>{billNumber}</>
     : stateUrl
       ? (<><a href={stateUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-          style={{ color: color.white, textDecoration: 'underline', textUnderlineOffset: 2, marginRight: 4 }}>{state}</a>{billNumber}</>)
+          style={{ color: isDraft ? color.billBadgeNavy : color.white, textDecoration: 'underline', textUnderlineOffset: 2, marginRight: 4 }}>{state}</a>{billNumber}</>)
       : <>{state}&nbsp;{billNumber}</>
 
   const inner = to

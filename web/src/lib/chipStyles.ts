@@ -52,6 +52,24 @@ export const BILL_BADGE_MINI = {
   flexShrink: 0 as const,
 }
 
+// Draft variant of the bill badge — transparent fill, dashed navy border, navy
+// text. The at-a-glance "this bill isn't filed yet" signal; pairs with
+// DraftChip (the word "Draft" in the Status column) rather than duplicating
+// the old solid-gray "Draft" chip.
+export const BILL_BADGE_DRAFT = {
+  ...BILL_BADGE_BASE,
+  background: 'transparent',
+  color: color.billBadgeNavy,
+  border: `1px dashed ${color.billBadgeNavy}`,
+}
+
+export const BILL_BADGE_MINI_DRAFT = {
+  ...BILL_BADGE_MINI,
+  background: 'transparent',
+  color: color.billBadgeNavy,
+  border: `1px dashed ${color.billBadgeNavy}`,
+}
+
 export function chipOutline(isActive: boolean, hovered: boolean, clickable: boolean) {
   return {
     outline: isActive ? `2px solid ${color.accentBlue}` : (hovered && clickable) ? `2px solid ${color.accentBlueMuted}` : 'none',

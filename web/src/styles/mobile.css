@@ -185,6 +185,36 @@ body.nav-pending * { cursor: wait !important; }
   flex-wrap: wrap;
 }
 
+/* Mid-width fallback copy of the Draft marker, hidden by default because
+   .bill-col-status normally shows the canonical "Draft" chip at zero extra
+   column width. It must reappear in every @container query below that hides
+   .bill-col-status (max-width: 1000/870/740/580px, and the .bill-list-ms
+   max-width: 1035/905/775/615px equivalents) — those container breakpoints
+   don't line up with the max-width: 768px *viewport* media query that swaps
+   in .bill-row-mobile-meta, so there is a band where the Status column is
+   gone but the mobile row hasn't taken over yet.
+
+   Unlike an earlier version of this marker, this one lives on the bill
+   TITLE line (see BillRow.tsx), not in the fixed-pixel chip-grid row: the
+   title's box is the flexible `minmax(0, 1fr)` column, identical for every
+   row, so adding inline content to it costs no column width and cannot
+   misalign Year/Last action/Relevance between rows the way a per-row
+   grid-track override did (that version visibly overlapped neighboring
+   columns and was reverted — see commits 3a1eaa2 and 415b361).
+
+   If you add, remove, or renumber a .bill-col-status breakpoint, update its
+   .bill-title-draft-marker pair in the same block or "Draft" silently
+   disappears in that band, leaving only the dashed badge.
+
+   Below 768px the mobile meta row takes over and carries its own DraftChip,
+   so the max-width: 768px block hides this marker again — otherwise BOTH
+   show, because the query container is always <= 1000px at phone widths. A
+   test (mobileDraftChip.test.ts) checks this pairing, the default-hidden
+   rule, the 768px re-hide, and the className-to-selector link stay intact. */
+.bill-title-draft-marker {
+  display: none;
+}
+
 /* Progressive column hiding using container queries.
    Order of disappearance as width decreases: status → session → last action → position.
    Each surviving column keeps its full-layout width (status 100 / year 90 /
@@ -199,6 +229,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-status {
     display: none !important;
   }
+  .bill-title-draft-marker {
+    display: inline-flex !important;
+  }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
@@ -208,6 +241,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-status,
   .bill-col-year {
     display: none !important;
+  }
+  .bill-title-draft-marker {
+    display: inline-flex !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -220,6 +256,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-lastaction {
     display: none !important;
   }
+  .bill-title-draft-marker {
+    display: inline-flex !important;
+  }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
@@ -231,6 +270,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-lastaction,
   .bill-col-position {
     display: none !important;
+  }
+  .bill-title-draft-marker {
+    display: inline-flex !important;
   }
   .bill-list-header-row,
   .bill-row-grid {
@@ -253,6 +295,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-status {
     display: none !important;
   }
+  .bill-list-ms .bill-title-draft-marker {
+    display: inline-flex !important;
+  }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
@@ -262,6 +307,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-status,
   .bill-list-ms .bill-col-year {
     display: none !important;
+  }
+  .bill-list-ms .bill-title-draft-marker {
+    display: inline-flex !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -274,6 +322,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-lastaction {
     display: none !important;
   }
+  .bill-list-ms .bill-title-draft-marker {
+    display: inline-flex !important;
+  }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
@@ -285,6 +336,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-lastaction,
   .bill-list-ms .bill-col-position {
     display: none !important;
+  }
+  .bill-list-ms .bill-title-draft-marker {
+    display: inline-flex !important;
   }
   .bill-list-header-row.bill-list-ms,
   .bill-row-grid.bill-list-ms {
@@ -421,6 +475,23 @@ body.nav-pending * { cursor: wait !important; }
   .bill-row-mobile-meta {
     display: flex !important;
     margin-bottom: 6px;
+  }
+
+  /* The mobile meta line above carries its own DraftChip, so the title-line
+     fallback marker must go away here or a draft row shows "Draft" twice —
+     once on the title line, once in the meta row — both visually and to
+     screen readers. This is not hypothetical: the bill-list scroll wrapper is
+     the query container, and at any phone viewport it is always <= 1000px, so
+     the container-query reveal rules above always match at these widths too.
+     Both selectors are needed: the .bill-list-ms-scoped reveal has higher
+     specificity (0,2,0) than the bare class, so hiding only the bare class
+     would lose to it on multi-state lists. !important is needed because the
+     reveals use it; this block is later in source order, so equal-specificity
+     !important declarations resolve here. mobileDraftChip.test.ts asserts
+     this block hides both. */
+  .bill-title-draft-marker,
+  .bill-list-ms .bill-title-draft-marker {
+    display: none !important;
   }
 
   /* Hide desktop priority column — priority lives in mobile-meta instead */

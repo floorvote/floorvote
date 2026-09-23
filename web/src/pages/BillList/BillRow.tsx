@@ -4,6 +4,7 @@ import { decodeStatus } from '../../lib/legislativeStatus'
 import { stripMarkdown } from '../../components/MarkdownSummary'
 import { billUrl } from '../../lib/sessionSlug'
 import { BillBadge } from '../../components/BillBadge'
+import { DraftChip, TitleDraftMarker } from '../../components/DraftChip'
 import { PositionBadge } from '../../components/PositionBadge'
 import { PriorityBadge } from '../../components/PriorityBadge'
 import { StatusChip } from '../../components/StatusChip'
@@ -221,18 +222,15 @@ export const BillRow = memo(function BillRow({
       <div>
         <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <BillBadge billNumber={bill.billNumber} state={bill.state} />
-            {bill.isDraft && (
-              <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
-                Draft
-              </span>
-            )}
+            <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
           </div>
-          <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}><StatusChip
-            status={decodeStatus(bill.status)}
-            onClick={() => onStatusClick(bill.status)}
-            isActive={filterStatuses.includes(bill.status)}
-          /></span>
+          <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
+            {bill.isDraft ? <DraftChip /> : <StatusChip
+              status={decodeStatus(bill.status)}
+              onClick={() => onStatusClick(bill.status)}
+              isActive={filterStatuses.includes(bill.status)}
+            />}
+          </span>
           <span className="bill-col-year" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {(() => {
               const chip = formatYearChip(bill.yearStart, bill.yearEnd)
@@ -261,13 +259,8 @@ export const BillRow = memo(function BillRow({
         </div>
         {/* Mobile-only: bill number, status, relevance — priority pinned to right edge */}
         <div className="bill-row-mobile-meta">
-          <BillBadge billNumber={bill.billNumber} state={bill.state} />
-          {bill.isDraft && (
-            <span style={{ fontSize: fontSize.xs, fontWeight: fontWeight.semibold, padding: '2px 8px', borderRadius: radius.sm, background: color.countChipBg, color: color.textSecondary, border: '1px solid transparent' }}>
-              Draft
-            </span>
-          )}
-          <StatusChip status={decodeStatus(bill.status)} />
+          <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} />}
           {bill.relevanceScore != null && (
             <RelevanceChip
               score={bill.relevanceScore}
@@ -291,6 +284,14 @@ export const BillRow = memo(function BillRow({
           }
         </div>
         <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+          {/* Mid-width fallback for the Draft marker — hidden by default (see
+              mobile.css .bill-title-draft-marker). The title's own box is the
+              full-width flexible column (unlike the fixed-pixel chip-grid
+              tracks), so a marker here costs no column width and can't
+              misalign Year/Last action/Relevance in that column. It only
+              appears where .bill-col-status is hidden and the mobile row
+              hasn't taken over — same @container-block pairing as before. */}
+          {bill.isDraft && <TitleDraftMarker className="bill-title-draft-marker" />}
           {bill.title || bill.abstract}
         </div>
         {(bill.tenantSummary || (bill.title && bill.abstract && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase())) && (

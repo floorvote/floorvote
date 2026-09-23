@@ -97,6 +97,111 @@ describe('BillRow row-click navigation target', () => {
   })
 })
 
+describe('BillRow draft visual marker', () => {
+  it('renders a dashed badge and the Draft chip for a draft bill', () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, state: 'IL', status: '', sessionSlug: '2026', billNumber: 'D1' },
+    })
+    // Desktop badge — dashed border, transparent fill (the "not filed yet" signal).
+    const badges = screen.getAllByText('D1', { exact: false })
+    expect(badges.length).toBeGreaterThan(0)
+    const badge = badges[0].closest('a, span') as HTMLElement
+    expect(badge.style.border).toContain('dashed')
+    expect(badge.style.background === '' || badge.style.background === 'transparent').toBe(true)
+
+    // The word "Draft" appears (in the status cell / mobile meta row), and the
+    // old solid gray chip is gone — replaced by a dashed, inert marker.
+    const draftChips = screen.getAllByText('Draft')
+    expect(draftChips.length).toBeGreaterThan(0)
+    for (const chip of draftChips) {
+      expect(chip.tagName).not.toBe('BUTTON')
+      expect(chip.style.border).toContain('dashed')
+    }
+    expect(container.querySelector('button')?.textContent).not.toBe('Draft')
+  })
+
+  it('renders neither a dashed badge nor the Draft chip for a filed bill', () => {
+    renderRow(false, { bill: { id: 'b1', isDraft: false, state: 'RI', status: '2', billNumber: 'HB 1' } })
+    expect(screen.queryByText('Draft')).not.toBeInTheDocument()
+    const badge = screen.getAllByText('HB 1', { exact: false })[0].closest('a, span') as HTMLElement
+    expect(badge.style.border).not.toContain('dashed')
+  })
+})
+
+// /bills is virtualized with TanStack Virtual, and row heights are measured
+// once at mount and never re-measured (a separately recorded, out-of-scope
+// bug: the ResizeObserver path never attaches). A marker that changes a row's
+// rendered height is exactly the shape of change that produces stale
+// heights — gaps or overlap between rows. These tests check the title-line
+// Draft marker (the mid-width fallback shown when the Status column is
+// hidden — see mobile.css .bill-title-draft-marker) against that constraint.
+describe('BillRow title-line Draft marker does not change row height', () => {
+  // The marker must fit inside the title's own line box. If it doesn't, every
+  // draft row in the mid-width band is taller than it was at mount — and /bills
+  // is virtualized with row heights measured once at mount and never
+  // re-measured (a separately recorded, out-of-scope bug: the ResizeObserver
+  // path never attaches), so the list renders gaps or overlapping rows.
+  //
+  // jsdom runs no layout, so offsetHeight/getBoundingClientRect are all zero
+  // here and any assertion built on them passes for every mutation. (An
+  // earlier version of this block compared two title divs' offsetHeight and
+  // was vacuous; it was deleted rather than left looking like coverage.)
+  // What jsdom *does* give us is the two elements' declared boxes, which come
+  // from two independent places in the source: the marker's own style
+  // (DraftChip.tsx) and the title div's style (BillRow.tsx). Reading both off
+  // the rendered DOM and comparing them is a real constraint — it fails if
+  // either side drifts.
+  it("the marker's own box fits inside the title's line box, both read from the DOM", () => {
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1', title: 'Voter Identification Requirements' },
+    })
+    const marker = screen.getByText('Draft', { selector: '.bill-title-draft-marker' })
+    const title = marker.parentElement as HTMLElement
+    expect(title).toBeTruthy()
+    expect(title.textContent).toContain('Voter Identification Requirements')
+    expect(container.contains(title)).toBe(true)
+
+    // Title line box: read the title div's real declared values, not constants
+    // restated here. lineHeight is unitless on the title, so it multiplies its
+    // own font-size.
+    const titleFontSize = parseFloat(title.style.fontSize)
+    const titleLineHeightRatio = parseFloat(title.style.lineHeight)
+    expect(titleFontSize).toBeGreaterThan(0)
+    expect(titleLineHeightRatio).toBeGreaterThan(0)
+    expect(title.style.lineHeight).not.toMatch(/px|em|%/) // unitless multiplier
+    const titleLineBox = titleFontSize * titleLineHeightRatio
+
+    // Marker box: line-height + vertical padding + vertical border.
+    const s = marker.style
+    const markerLineHeight = parseFloat(s.lineHeight)
+    expect(s.lineHeight).toMatch(/px$/) // explicit px, so this sum is meaningful
+    const paddingV = (parseFloat(s.paddingTop) || 0) + (parseFloat(s.paddingBottom) || 0)
+    const borderMatch = /^(\d+(?:\.\d+)?)px/.exec(s.border || s.borderTopWidth || '')
+    expect(borderMatch).not.toBeNull()
+    const borderV = parseFloat(borderMatch![1]) * 2
+    const markerBox = markerLineHeight + paddingV + borderV
+
+    expect(markerBox).toBeLessThanOrEqual(titleLineBox)
+  })
+
+  // A box that fits is only half of it: the marker must also sit *on* the
+  // line rather than beside or below it. Vertical margin adds to the line's
+  // height, and a block-level display breaks the line entirely — either one
+  // grows the row after mount. These are the mutations the deleted
+  // offsetHeight test claimed to catch and did not.
+  it('the marker is inline-level and contributes no vertical margin', () => {
+    renderRow(false, { bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1' } })
+    const s = screen.getByText('Draft', { selector: '.bill-title-draft-marker' }).style
+    expect(s.display).toMatch(/^inline/)
+    expect(parseFloat(s.marginTop) || 0).toBe(0)
+    expect(parseFloat(s.marginBottom) || 0).toBe(0)
+    expect(parseFloat(s.marginBlockStart) || 0).toBe(0)
+    expect(parseFloat(s.marginBlockEnd) || 0).toBe(0)
+    // `margin` shorthand, if used, must not introduce vertical margin either.
+    if (s.margin) expect(s.margin).toMatch(/^0(px)?(\s|$)/)
+  })
+})
+
 describe('BillRow hover selection checkbox', () => {
   it('does not render a checkbox on hover for non-admins', () => {
     const { container } = renderRow(false)

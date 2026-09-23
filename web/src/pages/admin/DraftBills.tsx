@@ -323,7 +323,9 @@ export function DraftBills() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {draftList.map(d => (
                     <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <BillBadge billNumber={d.billNumber} state={d.state} to={'/bills/' + d.id} />
+                      {/* Every row here is a draft by construction (this list comes from
+                          /bills/drafts) — isDraft is a literal true, not a field read off d. */}
+                      <BillBadge billNumber={d.billNumber} state={d.state} to={'/bills/' + d.id} isDraft />
                       <span style={{ fontSize: fontSize.sm, color: color.textSecondary, flex: 1 }}>{d.title}</span>
                       <button
                         onClick={async (e) => {
