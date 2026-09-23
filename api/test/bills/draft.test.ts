@@ -137,6 +137,23 @@ describe('POST /api/bills/draft', () => {
     expect(body.year).toBe(2027)
   })
 
+  it('skips an auto-assigned number already taken by a filed bill', async () => {
+    // A filed bill can incidentally carry a D-prefixed number. Auto-assignment
+    // must consider it too, or the caller gets a 409 for a number they never chose.
+    const db = getDb(env.DB)
+    await db.insert(bills).values({
+      id: 'filed-d3', billNumber: 'D3', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/draft', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Pre-filed', state: 'UT' }),
+    })
+    expect(res.status).toBe(201)
+    const body = await res.json<{ billNumber: string }>()
+    expect(body.billNumber).toBe('D4')
+  })
+
   it('409s when the supplied number collides with a filed bill in the same state and year', async () => {
     // Route falls back to c.env.STATE, which is unset in the test worker, so an
     // explicit `state` in the request body is required to exercise per-state

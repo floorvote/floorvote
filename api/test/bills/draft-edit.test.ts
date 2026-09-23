@@ -171,6 +171,42 @@ describe('PATCH /api/bills/:id/draft', () => {
     })
     expect(noop.status).toBe(200)
   })
+
+  it('updates only billNumber when year is omitted', async () => {
+    await seedBill({
+      id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ billNumber: 'D9' }),
+    })
+    expect(res.status).toBe(200)
+
+    const db = getDb(env.DB)
+    const row = await db.select().from(bills).where(eq(bills.id, 'd1')).get()
+    expect(row?.billNumber).toBe('D9')
+    expect(row?.yearStart).toBe(2026)
+    expect(row?.yearEnd).toBe(2026)
+  })
+
+  it('updates only year when billNumber is omitted', async () => {
+    await seedBill({
+      id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
+    })
+    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+      method: 'PATCH',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ year: 2028 }),
+    })
+    expect(res.status).toBe(200)
+
+    const db = getDb(env.DB)
+    const row = await db.select().from(bills).where(eq(bills.id, 'd1')).get()
+    expect(row?.billNumber).toBe('D1')
+    expect(row?.yearStart).toBe(2028)
+    expect(row?.yearEnd).toBe(2028)
+  })
 })
 
 describe('GET /api/bills/drafts', () => {
