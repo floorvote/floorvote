@@ -31,10 +31,13 @@ import type { PriorityBill } from './sidebar/types'
 
 let role = 'member'
 let canVote = true
-const priorityBills: PriorityBill[] = [{
-  id: 'b1', billNumber: 'H 100', sessionSlug: null, state: 'NJ',
-  title: 'Elections Act', summary: null, priority: 'high', myVote: null, isDraft: true,
-}]
+let isDraft = true
+function priorityBills(): PriorityBill[] {
+  return [{
+    id: 'b1', billNumber: 'H 100', sessionSlug: null, state: 'NJ',
+    title: 'Elections Act', summary: null, priority: 'high', myVote: null, isDraft,
+  }]
+}
 
 vi.mock('../lib/api', () => ({
   apiFetch: vi.fn(async (path: string) => {
@@ -49,7 +52,7 @@ vi.mock('../lib/api', () => ({
     if (path === '/notifications') return { unreadCount: 0 }
     if (path === '/stats') return { billCount: 10, memberCount: 3, calendarUpcomingCount: 0, calendarUpcomingDays: 30 }
     if (path === '/stats/sidebar') {
-      return { priorityBillCount: 1, unvotedPriorityCount: 0, upcomingHearings: [], upcomingHearingsDays: 30, priorityBills }
+      return { priorityBillCount: 1, unvotedPriorityCount: 0, upcomingHearings: [], upcomingHearingsDays: 30, priorityBills: priorityBills() }
     }
     if (path.startsWith('/feed')) return { latestEventAt: null, lastSeenFeed: null }
     return {}
@@ -84,11 +87,12 @@ function priorityControl(): HTMLElement {
 }
 
 describe('Sidebar prioritized bill — badge / priority chip alignment', () => {
-  beforeEach(() => { role = 'member'; canVote = true })
+  beforeEach(() => { role = 'member'; canVote = true; isDraft = true })
 
   for (const [label, r] of [['member (read-only chip)', 'member'], ['admin (priority selector)', 'owner']] as const) {
     describe(label, () => {
       beforeEach(() => { role = r })
+
 
       // The alignment relationship, stated structurally: same flex line, centered.
       // A fixed `top` offset on an out-of-flow box cannot express this, which is
@@ -118,6 +122,29 @@ describe('Sidebar prioritized bill — badge / priority chip alignment', () => {
         expect(screen.getByTestId('loc').textContent).toBe('/bills')
         await userEvent.click(priorityControl())
         expect(screen.getByTestId('loc').textContent).toBe('/bills')
+      })
+
+      // The anchor used to wrap the badge as well, so tabbing here announced
+      // the bill number and (via draftSrLabel) the draft status. Shrinking it
+      // to the title alone lost both; an aria-label puts them back.
+      it('announces the bill number and the draft status from the row link', async () => {
+        await renderSidebar()
+        const link = screen.getByRole('link', { name: /Elections Act/ })
+        const name = link.getAttribute('aria-label')!
+        expect(name).toContain('H 100')
+        expect(name).toContain('Elections Act')
+        // Exactly once — aria-label replaces the computed name, so the badge's
+        // own draftSrLabel span (a sibling, not a descendant) cannot double up.
+        expect(name.match(/draft/gi)).toHaveLength(1)
+        expect(link.textContent!.match(/draft/gi)).toBeNull()
+      })
+
+      it('says nothing about drafts on a filed bill', async () => {
+        isDraft = false
+        await renderSidebar()
+        const link = screen.getByRole('link', { name: /Elections Act/ })
+        expect(link.getAttribute('aria-label')).toContain('H 100')
+        expect(link.getAttribute('aria-label')).not.toMatch(/draft/i)
       })
 
       // The row still navigates from the title — the hit target the stretched

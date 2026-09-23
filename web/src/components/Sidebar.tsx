@@ -741,7 +741,11 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                             overlay is scoped to this wrapper, not the whole
                             row, so it can never swallow the vote buttons below;
                             the control gets position:relative + zIndex so it
-                            paints above the overlay and stays operable. */}
+                            paints above the overlay and stays operable. That
+                            zIndex is load-bearing, not tidiness: the overlay is
+                            positioned and the control's line is not, so without
+                            it the overlay paints over the select and swallows
+                            every click on it. */}
                         <div className="sidebar-priority-bill">
                           <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             {/* No visible DraftChip here: this line already
@@ -771,8 +775,21 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                               }
                             </div>
                           </div>
+                          {/* The anchor wraps only the title, but its click
+                              target (the ::after overlay) covers the badge too,
+                              and it used to wrap the badge as well — so without
+                              this label, tabbing here would announce the title
+                              alone and lose both the bill number and the draft
+                              status the badge carries. aria-label REPLACES the
+                              computed name, so the badge's own `draftSrLabel`
+                              span cannot double up: it is a DOM sibling of this
+                              anchor, not a descendant, and the ::after has
+                              `content: ''`, so neither contributes here. The
+                              state prefix is gated the same way the badge gates
+                              it, so the name matches what is on screen. */}
                           <Link
                             className="sidebar-priority-bill-link"
+                            aria-label={`${multiState && bill.state ? `${bill.state} ` : ''}${bill.billNumber}${bill.isDraft ? ', draft' : ''}, ${bill.title}`}
                             to={billUrl({ id: bill.id, state: bill.state, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}
                             onClick={() => onClose()}
                             style={{ display: 'block', textDecoration: 'none' }}

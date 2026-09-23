@@ -28,13 +28,16 @@ interface BillBadgeProps {
    *  where the caller already has the bill's isDraft flag on hand. */
   isDraft?: boolean
   /** Adds a visually-hidden ", draft" to the badge's accessible name, for the
-   *  tight surfaces (sidebar hearing chips, calendar event lines, the picker's
-   *  selected pills) where a visible DraftChip would wrap or be clipped. The
+   *  tight surfaces (the sidebar's prioritized-bill rows and hearing chips,
+   *  calendar event lines, the picker's selected pills) where a visible
+   *  DraftChip would wrap, be clipped, or crowd the row. The
    *  dashed outline is decoration to a screen reader, so a draft badge must
    *  carry the word "Draft" one way or the other; this is the other way.
    *  Ignored unless `isDraft` is set. Do NOT pass it where a visible DraftChip
    *  or TitleDraftMarker already sits next to the badge (BillRow, BillDetail,
-   *  GroupedBillCard, the sidebar's priority list) — that announces twice. */
+   *  GroupedBillCard) — that announces twice. The sidebar's priority list used
+   *  to be in that list and is now a caller: its visible chip was dropped
+   *  because the priority control shares the badge's line. */
   draftSrLabel?: boolean
 }
 
