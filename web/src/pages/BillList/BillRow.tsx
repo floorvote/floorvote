@@ -223,6 +223,17 @@ export const BillRow = memo(function BillRow({
         <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+            {/* Inline fallback copy of the Draft marker — hidden by default (see
+                mobile.css .bill-draft-chip-inline). The Status column drops out at a
+                *container* width (1000/870/740/580px, or the .bill-list-ms
+                equivalents) before the mobile stacked layout takes over at a
+                *viewport* width of 768px — those are different axes (a narrow sidebar
+                can shrink the container well before the viewport itself is mobile-
+                sized), so there's a band where .bill-col-status is gone but
+                .bill-row-mobile-meta hasn't appeared yet. Without this, "Draft" would
+                vanish there and only the dashed badge would remain — silently
+                degrading to the outline-only option that wasn't the one chosen. */}
+            {bill.isDraft && <DraftChip className="bill-draft-chip-inline" />}
           </div>
           <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
             {bill.isDraft ? <DraftChip /> : <StatusChip

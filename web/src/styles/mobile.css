@@ -185,6 +185,24 @@ body.nav-pending * { cursor: wait !important; }
   flex-wrap: wrap;
 }
 
+/* Inline fallback copy of the Draft marker (see BillRow.tsx), hidden by
+   default because .bill-col-status normally shows the canonical "Draft" chip
+   at zero extra width. It must reappear in every @container query below that
+   hides .bill-col-status (max-width: 1000/870/740/580px, and the
+   .bill-list-ms max-width: 1035/905/775/615px equivalents) — those container
+   breakpoints don't line up with the max-width: 768px *viewport* media query
+   that swaps in .bill-row-mobile-meta below, so there is a band where the
+   Status column is gone but the mobile row hasn't taken over yet. If you add,
+   remove, or renumber a .bill-col-status breakpoint, update its
+   .bill-draft-chip-inline pair in the same block or "Draft" silently
+   disappears in that band, leaving only the dashed badge. A test
+   (mobileDraftChip.test.ts) checks this pairing stays intact.
+   .bill-row-chips-cell going to display:none at 768px hides this element too,
+   so it never doubles up with .bill-row-mobile-meta's own Draft chip. */
+.bill-draft-chip-inline {
+  display: none;
+}
+
 /* Progressive column hiding using container queries.
    Order of disappearance as width decreases: status → session → last action → position.
    Each surviving column keeps its full-layout width (status 100 / year 90 /
@@ -199,6 +217,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-status {
     display: none !important;
   }
+  .bill-draft-chip-inline {
+    display: inline-flex !important;
+  }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
@@ -208,6 +229,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-status,
   .bill-col-year {
     display: none !important;
+  }
+  .bill-draft-chip-inline {
+    display: inline-flex !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -220,6 +244,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-lastaction {
     display: none !important;
   }
+  .bill-draft-chip-inline {
+    display: inline-flex !important;
+  }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
@@ -231,6 +258,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-lastaction,
   .bill-col-position {
     display: none !important;
+  }
+  .bill-draft-chip-inline {
+    display: inline-flex !important;
   }
   .bill-list-header-row,
   .bill-row-grid {
@@ -253,6 +283,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-status {
     display: none !important;
   }
+  .bill-list-ms .bill-draft-chip-inline {
+    display: inline-flex !important;
+  }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
   }
@@ -262,6 +295,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-status,
   .bill-list-ms .bill-col-year {
     display: none !important;
+  }
+  .bill-list-ms .bill-draft-chip-inline {
+    display: inline-flex !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -274,6 +310,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-lastaction {
     display: none !important;
   }
+  .bill-list-ms .bill-draft-chip-inline {
+    display: inline-flex !important;
+  }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
   }
@@ -285,6 +324,9 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-lastaction,
   .bill-list-ms .bill-col-position {
     display: none !important;
+  }
+  .bill-list-ms .bill-draft-chip-inline {
+    display: inline-flex !important;
   }
   .bill-list-header-row.bill-list-ms,
   .bill-row-grid.bill-list-ms {
