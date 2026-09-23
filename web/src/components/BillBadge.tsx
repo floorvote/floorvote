@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { BILL_BADGE_BASE, BILL_BADGE_MINI, BILL_BADGE_DRAFT, BILL_BADGE_MINI_DRAFT, PRIORITY_COLORS } from '../lib/chipStyles'
 import { color } from '../styles/tokens'
+import { SR_ONLY } from '../lib/textStyles'
 import { useMultiState } from '../context/ConfigContext'
 import { useBillTooltip, type TooltipBill } from './BillHoverTooltip'
 import { PrioritySquare } from './PrioritySquare'
@@ -26,9 +27,18 @@ interface BillBadgeProps {
    *  navy fill — the at-a-glance "not filed yet" signal. Opt-in; only pass this
    *  where the caller already has the bill's isDraft flag on hand. */
   isDraft?: boolean
+  /** Adds a visually-hidden ", draft" to the badge's accessible name, for the
+   *  tight surfaces (sidebar hearing chips, calendar event lines, the picker's
+   *  selected pills) where a visible DraftChip would wrap or be clipped. The
+   *  dashed outline is decoration to a screen reader, so a draft badge must
+   *  carry the word "Draft" one way or the other; this is the other way.
+   *  Ignored unless `isDraft` is set. Do NOT pass it where a visible DraftChip
+   *  or TitleDraftMarker already sits next to the badge (BillRow, BillDetail,
+   *  GroupedBillCard, the sidebar's priority list) — that announces twice. */
+  draftSrLabel?: boolean
 }
 
-export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick, isDraft }: BillBadgeProps) {
+export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick, isDraft, draftSrLabel }: BillBadgeProps) {
   const base = isDraft ? (mini ? BILL_BADGE_MINI_DRAFT : BILL_BADGE_DRAFT) : (mini ? BILL_BADGE_MINI : BILL_BADGE_BASE)
   const multiState = useMultiState()
   const { onEnter, onMove, onLeave, tooltip } = useBillTooltip()
@@ -45,6 +55,12 @@ export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, pr
         onMouseLeave: onLeave,
       }
     : {}
+
+  // Rendered inside the badge so it joins the chip's own accessible name
+  // ("RI H 100, draft") rather than announcing as a separate stray word.
+  // SR_ONLY is position:absolute/1px — it takes no layout space, so it cannot
+  // widen a fixed grid track or push a chip row to wrap.
+  const srDraft = isDraft && draftSrLabel ? <span style={SR_ONLY}>, draft</span> : null
 
   const marker = priority ? (
     <PrioritySquare
@@ -63,8 +79,8 @@ export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, pr
       : <>{state}&nbsp;{billNumber}</>
 
   const inner = to
-    ? <Link to={to} style={{ ...base, textDecoration: 'none' }} onClick={onClick} {...hoverProps}>{label}{marker}</Link>
-    : <span style={base} {...hoverProps}>{label}{marker}</span>
+    ? <Link to={to} style={{ ...base, textDecoration: 'none' }} onClick={onClick} {...hoverProps}>{label}{srDraft}{marker}</Link>
+    : <span style={base} {...hoverProps}>{label}{srDraft}{marker}</span>
 
   return <>{inner}{tooltip}</>
 }
