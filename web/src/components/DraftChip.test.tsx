@@ -36,7 +36,16 @@ describe('TitleDraftMarker — the stylesheet, not the component, owns visibilit
   // rejected with an explanation rather than a bare assertion failure.
   it('does not name `display` in its style object in the source', () => {
     const source = readFileSync(join(__dirname, 'DraftChip.tsx'), 'utf8')
-    const fn = source.slice(source.indexOf('export function TitleDraftMarker'))
+    const start = source.indexOf('export function TitleDraftMarker')
+    expect(start).toBeGreaterThanOrEqual(0)
+    // Bound the slice at the next top-level export, not end-of-file: this only
+    // happened to work because TitleDraftMarker is currently last, and any
+    // component appended after it that legitimately sets `display` would
+    // false-fail this.
+    const rest = source.slice(start + 1)
+    const next = rest.indexOf('\nexport ')
+    const fn = next === -1 ? rest : rest.slice(0, next)
+    expect(fn).toMatch(/TitleDraftMarker/) // the slice really is this function
     expect(fn).not.toMatch(/^\s*display:/m)
   })
 

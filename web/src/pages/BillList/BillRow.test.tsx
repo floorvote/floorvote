@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillRow } from './BillRow'
@@ -206,6 +208,92 @@ describe('BillRow title-line Draft marker does not change row height', () => {
     expect(parseFloat(s.marginBlockEnd) || 0).toBe(0)
     // `margin` shorthand, if used, must not introduce vertical margin either.
     if (s.margin) expect(s.margin).toMatch(/^0(px)?(\s|$)/)
+  })
+})
+
+// Outcome-level companion to the cause-level tests in DraftChip.test.tsx.
+// Those assert that one particular cause (an inline `display`) is absent; this
+// asserts the invariant the user actually sees — at full width a draft row
+// shows the word "Draft" exactly once.
+//
+// jsdom runs no layout and evaluates no @container/@media conditions, so it
+// cannot model the mid-width or phone bands; a real layout engine is needed
+// for those, and they are covered by a browser check recorded in the task
+// report. Full width is the one band jsdom CAN model faithfully, because the
+// only rule that applies there is mobile.css's unconditional base hide — so
+// the conditional blocks are stripped and the remainder injected as-is. This
+// is exactly the band the shipped bug broke.
+describe('BillRow — exactly one Draft marker at full width', () => {
+  function unconditionalCss(): string {
+    const raw = readFileSync(join(__dirname, '../../styles/mobile.css'), 'utf8')
+    // Comments first: several mention at-rule names in prose and would
+    // otherwise be parsed as real blocks, swallowing the rule being looked for.
+    const source = raw.replace(/\/\*[\s\S]*?\*\//g, '')
+    let out = ''
+    let i = 0
+    while (i < source.length) {
+      const m = /@(container|media|supports)[^{]*\{/.exec(source.slice(i))
+      if (!m) { out += source.slice(i); break }
+      const blockStart = i + m.index
+      out += source.slice(i, blockStart)
+      let depth = 1
+      let j = blockStart + m[0].length
+      while (depth > 0 && j < source.length) {
+        if (source[j] === '{') depth++
+        else if (source[j] === '}') depth--
+        j++
+      }
+      i = j
+    }
+    return out
+  }
+
+  afterEach(() => {
+    document.querySelectorAll('style[data-test-mobile-css]').forEach(el => el.remove())
+  })
+
+  it('renders the word "Draft" exactly once when mobile.css\u2019s full-width rules apply', () => {
+    const style = document.createElement('style')
+    style.setAttribute('data-test-mobile-css', '')
+    style.textContent = unconditionalCss()
+    document.head.appendChild(style)
+
+    // Sanity-check the harness before trusting its verdict: if jsdom did not
+    // apply the injected rule, "visible" below would be meaningless.
+    const probe = document.createElement('span')
+    probe.className = 'bill-title-draft-marker'
+    document.body.appendChild(probe)
+    expect(getComputedStyle(probe).display).toBe('none')
+    probe.remove()
+
+    const { container } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1', title: 'A Draft Bill' },
+    })
+    // Leaf-most elements only: an ancestor that merely *contains* the chip has
+    // the same textContent and would otherwise be counted as a second marker.
+    const all = Array.from(container.querySelectorAll('span')).filter(
+      el => el.textContent === 'Draft' && el.querySelector('*') === null,
+    )
+    // Three "Draft" elements exist in the DOM at once — that is the design
+    // (Status column, mobile meta row, title line); the stylesheet decides
+    // which band shows which. What must never happen is two being VISIBLE.
+    expect(all).toHaveLength(3)
+
+    // Visibility is inherited: the mobile-meta chip's own display is
+    // inline-flex and it is off-screen only because its .bill-row-mobile-meta
+    // parent is display:none. Testing the element alone would miss that and
+    // report two visible markers here.
+    const shown = (el: Element): boolean => {
+      for (let n: Element | null = el; n && n !== document.body; n = n.parentElement) {
+        if (getComputedStyle(n).display === 'none') return false
+      }
+      return true
+    }
+    const visible = all.filter(shown)
+    expect(visible).toHaveLength(1)
+    // And it is the Status-column chip, not the title-line marker.
+    expect(visible[0].className).not.toContain('bill-title-draft-marker')
+    expect(visible[0].closest('.bill-col-status')).not.toBeNull()
   })
 })
 

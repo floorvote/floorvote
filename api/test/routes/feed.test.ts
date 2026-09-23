@@ -469,3 +469,71 @@ describe('GET /feed default-scope group visibility', () => {
     expect(body.latestEventAt).toBe('2026-06-16 12:00:00')
   })
 })
+
+// The web side (GroupedBillCard) reads billIsDraft off the grouped object to
+// pick the dashed badge variant, but its tests build that object by hand — so a
+// typo in the select or the emit below would ship solid navy badges for drafts
+// in the feed with a green web suite. That is exactly the bug the dashed variant
+// was added to fix, returning silently. These assert the wire payload itself.
+describe('GET /feed — billIsDraft', () => {
+  let memberToken: string
+  let memberId: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    memberId = await seedUser({ name: 'Dana' })
+    memberToken = await seedSession(memberId)
+  })
+
+  async function seedEventForBill(billId: string, createdAt: string) {
+    const db = getDb(env.DB)
+    await db.insert(feedEvents).values({
+      id: crypto.randomUUID(),
+      type: 'comment_added',
+      billId,
+      userId: memberId,
+      metadata: '{}',
+      createdAt,
+    })
+  }
+
+  async function events(): Promise<Array<Record<string, unknown>>> {
+    const res = await SELF.fetch('http://localhost/api/feed', {
+      headers: { Cookie: `session=${memberToken}` },
+    })
+    expect(res.status).toBe(200)
+    return (await res.json() as { events: Array<Record<string, unknown>> }).events
+  }
+
+  it('emits billIsDraft: true for an event on a draft bill', async () => {
+    const draft = await seedBill({ billNumber: 'D 1', title: 'Draft Bill', isDraft: true })
+    await seedEventForBill(draft, '2026-02-01T10:00:00Z')
+    const event = (await events()).find((e) => e.billNumber === 'D 1')
+    expect(event).toBeDefined()
+    expect(event!.billIsDraft).toBe(true)
+  })
+
+  // Explicitly `false`, not `undefined`: the field is optional on the shared
+  // FeedEvent type (non-feed producers build the shape without it), so an
+  // absent key would still render correctly and hide a dropped select column.
+  // Only a literal false proves the route actually read bills.is_draft.
+  it('emits billIsDraft: false — not undefined — for a filed bill', async () => {
+    const filed = await seedBill({ billNumber: 'F 1', title: 'Filed Bill', isDraft: false })
+    await seedEventForBill(filed, '2026-02-01T11:00:00Z')
+    const event = (await events()).find((e) => e.billNumber === 'F 1')
+    expect(event).toBeDefined()
+    expect(event!.billIsDraft).toBe(false)
+    expect('billIsDraft' in event!).toBe(true)
+  })
+
+  it('distinguishes the two within a single response', async () => {
+    const draft = await seedBill({ billNumber: 'D 2', title: 'Draft Two', isDraft: true })
+    const filed = await seedBill({ billNumber: 'F 2', title: 'Filed Two', isDraft: false })
+    await seedEventForBill(draft, '2026-02-02T10:00:00Z')
+    await seedEventForBill(filed, '2026-02-02T11:00:00Z')
+    const all = await events()
+    expect(all.find((e) => e.billNumber === 'D 2')!.billIsDraft).toBe(true)
+    expect(all.find((e) => e.billNumber === 'F 2')!.billIsDraft).toBe(false)
+  })
+})
