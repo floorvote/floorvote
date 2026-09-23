@@ -4,7 +4,7 @@ import { decodeStatus } from '../../lib/legislativeStatus'
 import { stripMarkdown } from '../../components/MarkdownSummary'
 import { billUrl } from '../../lib/sessionSlug'
 import { BillBadge } from '../../components/BillBadge'
-import { DraftChip } from '../../components/DraftChip'
+import { DraftChip, TitleDraftMarker } from '../../components/DraftChip'
 import { PositionBadge } from '../../components/PositionBadge'
 import { PriorityBadge } from '../../components/PriorityBadge'
 import { StatusChip } from '../../components/StatusChip'
@@ -185,7 +185,7 @@ export const BillRow = memo(function BillRow({
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className={`bill-row bill-row-grid${isMultiState ? ' bill-list-ms' : ''}${bill.isDraft ? ' bill-row-draft' : ''}`}
+      className={`bill-row bill-row-grid${isMultiState ? ' bill-list-ms' : ''}`}
       style={{
         display: 'grid',
         gridTemplateColumns: `12px ${OUTER_GRID}`,
@@ -223,17 +223,6 @@ export const BillRow = memo(function BillRow({
         <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
-            {/* Inline fallback copy of the Draft marker — hidden by default (see
-                mobile.css .bill-draft-chip-inline). The Status column drops out at a
-                *container* width (1000/870/740/580px, or the .bill-list-ms
-                equivalents) before the mobile stacked layout takes over at a
-                *viewport* width of 768px — those are different axes (a narrow sidebar
-                can shrink the container well before the viewport itself is mobile-
-                sized), so there's a band where .bill-col-status is gone but
-                .bill-row-mobile-meta hasn't appeared yet. Without this, "Draft" would
-                vanish there and only the dashed badge would remain — silently
-                degrading to the outline-only option that wasn't the one chosen. */}
-            {bill.isDraft && <DraftChip className="bill-draft-chip-inline" />}
           </div>
           <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
             {bill.isDraft ? <DraftChip /> : <StatusChip
@@ -295,6 +284,14 @@ export const BillRow = memo(function BillRow({
           }
         </div>
         <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, marginBottom: 3, lineHeight: 1.35, fontFamily: "'Source Serif 4', serif", display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }}>
+          {/* Mid-width fallback for the Draft marker — hidden by default (see
+              mobile.css .bill-title-draft-marker). The title's own box is the
+              full-width flexible column (unlike the fixed-pixel chip-grid
+              tracks), so a marker here costs no column width and can't
+              misalign Year/Last action/Relevance in that column. It only
+              appears where .bill-col-status is hidden and the mobile row
+              hasn't taken over — same @container-block pairing as before. */}
+          {bill.isDraft && <TitleDraftMarker className="bill-title-draft-marker" />}
           {bill.title || bill.abstract}
         </div>
         {(bill.tenantSummary || (bill.title && bill.abstract && bill.abstract.trim().toLowerCase() !== bill.title.trim().toLowerCase())) && (

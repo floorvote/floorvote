@@ -128,6 +128,58 @@ describe('BillRow draft visual marker', () => {
   })
 })
 
+// /bills is virtualized with TanStack Virtual, and row heights are measured
+// once at mount and never re-measured (a separately recorded, out-of-scope
+// bug: the ResizeObserver path never attaches). A marker that changes a row's
+// rendered height is exactly the shape of change that produces stale
+// heights — gaps or overlap between rows. These tests check the title-line
+// Draft marker (the mid-width fallback shown when the Status column is
+// hidden — see mobile.css .bill-title-draft-marker) against that constraint.
+describe('BillRow title-line Draft marker does not change row height', () => {
+  const SAME_TITLE = 'Voter Identification Requirements'
+
+  it('a draft row and a filed row with identical title text report the same title-element height', () => {
+    // jsdom does not run real layout (offsetHeight is 0 for everything here),
+    // so this equality holds trivially in this environment — it is a
+    // regression guard against a *relative* height difference being
+    // introduced (e.g. the marker becoming a block element, or gaining
+    // margin that jsdom's box model does track), not a substitute for the
+    // real-browser measurement in the task report, which is where the
+    // actual pixel comparison (and the one genuine finding) lives.
+    const { container: draftContainer } = renderRow(false, {
+      bill: { id: 'draft-1', isDraft: true, title: SAME_TITLE, billNumber: 'D1' },
+    })
+    const { container: filedContainer } = renderRow(false, {
+      bill: { id: 'b1', isDraft: false, title: SAME_TITLE, billNumber: 'HB 1' },
+    })
+    const draftTitle = screen.getAllByText(SAME_TITLE)
+      .map(el => el.closest('div'))
+      .find(el => el && draftContainer.contains(el)) as HTMLElement
+    const filedTitle = screen.getAllByText(SAME_TITLE, { exact: false })
+      .map(el => el.closest('div'))
+      .find(el => el && filedContainer.contains(el)) as HTMLElement
+    expect(draftTitle).toBeTruthy()
+    expect(filedTitle).toBeTruthy()
+    expect(draftTitle.offsetHeight).toBe(filedTitle.offsetHeight)
+  })
+
+  it('the marker\'s own box (border + padding + line-height) fits inside the title\'s line box', () => {
+    // Real numeric check, independent of jsdom's lack of layout: the title
+    // line box is fontSize.base (14px) * line-height 1.35 = 18.9px. The
+    // marker must not exceed that, or it would grow the line — and therefore
+    // the row — regardless of what any single title's wrap does.
+    renderRow(false, { bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1' } })
+    const marker = screen.getByText('Draft', { selector: '.bill-title-draft-marker' })
+    const s = marker.style
+    const lineHeight = parseFloat(s.lineHeight) // px, set explicitly on the marker
+    const paddingV = (parseFloat(s.paddingTop) || 0) + (parseFloat(s.paddingBottom) || 0)
+    const borderV = 2 // 1px dashed border, top + bottom (jsdom doesn't parse shorthand border into borderTopWidth reliably)
+    const markerBoxHeight = lineHeight + paddingV + borderV
+    const titleLineBox = 14 * 1.35 // fontSize.base * the title's line-height
+    expect(markerBoxHeight).toBeLessThanOrEqual(titleLineBox)
+  })
+})
+
 describe('BillRow hover selection checkbox', () => {
   it('does not render a checkbox on hover for non-admins', () => {
     const { container } = renderRow(false)

@@ -185,32 +185,29 @@ body.nav-pending * { cursor: wait !important; }
   flex-wrap: wrap;
 }
 
-/* Inline fallback copy of the Draft marker (see BillRow.tsx), hidden by
-   default because .bill-col-status normally shows the canonical "Draft" chip
-   at zero extra width. It must reappear in every @container query below that
-   hides .bill-col-status (max-width: 1000/870/740/580px, and the
-   .bill-list-ms max-width: 1035/905/775/615px equivalents) — those container
-   breakpoints don't line up with the max-width: 768px *viewport* media query
-   that swaps in .bill-row-mobile-meta below, so there is a band where the
-   Status column is gone but the mobile row hasn't taken over yet. If you add,
-   remove, or renumber a .bill-col-status breakpoint, update its
-   .bill-draft-chip-inline pair in the same block or "Draft" silently
-   disappears in that band, leaving only the dashed badge. A test
-   (mobileDraftChip.test.ts) checks this pairing stays intact.
-   .bill-row-chips-cell going to display:none at 768px hides this element too,
-   so it never doubles up with .bill-row-mobile-meta's own Draft chip.
+/* Mid-width fallback copy of the Draft marker, hidden by default because
+   .bill-col-status normally shows the canonical "Draft" chip at zero extra
+   column width. It must reappear in every @container query below that hides
+   .bill-col-status (max-width: 1000/870/740/580px, and the .bill-list-ms
+   max-width: 1035/905/775/615px equivalents) — those container breakpoints
+   don't line up with the max-width: 768px *viewport* media query that swaps
+   in .bill-row-mobile-meta, so there is a band where the Status column is
+   gone but the mobile row hasn't taken over yet.
 
-   Every @container block below that reveals .bill-draft-chip-inline also
-   widens the first grid-column track (normally just var(--bill-col-w), sized
-   for the badge alone) via a `.bill-row-draft .bill-row-chips-cell` override,
-   so the chip has room and doesn't draw over the next column. +60px is a
-   measured value, not a guess: the rendered chip ("Draft", 12px/600 Inter,
-   3px 10px padding, 1px border) is ~50.7px wide; +6px for the flex gap next
-   to the badge; rounded up to 60px for cross-browser font-metric slop. If
-   DraftChip's copy, font, size, or padding changes, re-measure and update the
-   constant in all 8 blocks below (mobileDraftChip.test.ts checks the pairing
-   exists, not the exact px value). */
-.bill-draft-chip-inline {
+   Unlike an earlier version of this marker, this one lives on the bill
+   TITLE line (see BillRow.tsx), not in the fixed-pixel chip-grid row: the
+   title's box is the flexible `minmax(0, 1fr)` column, identical for every
+   row, so adding inline content to it costs no column width and cannot
+   misalign Year/Last action/Relevance between rows the way a per-row
+   grid-track override did (that version visibly overlapped neighboring
+   columns and was reverted — see commits 3a1eaa2 and 415b361).
+
+   If you add, remove, or renumber a .bill-col-status breakpoint, update its
+   .bill-title-draft-marker pair in the same block or "Draft" silently
+   disappears in that band, leaving only the dashed badge. A test
+   (mobileDraftChip.test.ts) checks this pairing, the default-hidden rule,
+   and the className-to-selector link stay intact. */
+.bill-title-draft-marker {
   display: none;
 }
 
@@ -228,16 +225,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-status {
     display: none !important;
   }
-  .bill-draft-chip-inline {
+  .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
-  }
-  /* Draft rows: widen the first track to also hold .bill-draft-chip-inline
-     (see the constant's derivation above the .bill-draft-chip-inline rule). */
-  .bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 90px 130px auto !important;
   }
 }
 
@@ -246,14 +238,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-year {
     display: none !important;
   }
-  .bill-draft-chip-inline {
+  .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
-  }
-  .bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 130px auto !important;
   }
 }
 
@@ -263,14 +252,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-lastaction {
     display: none !important;
   }
-  .bill-draft-chip-inline {
+  .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
-  }
-  .bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
@@ -281,7 +267,7 @@ body.nav-pending * { cursor: wait !important; }
   .bill-col-position {
     display: none !important;
   }
-  .bill-draft-chip-inline {
+  .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-list-header-row,
@@ -291,9 +277,6 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
-  }
-  .bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
@@ -308,14 +291,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-status {
     display: none !important;
   }
-  .bill-list-ms .bill-draft-chip-inline {
+  .bill-list-ms .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
-  }
-  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 90px 130px auto !important;
   }
 }
 
@@ -324,14 +304,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-year {
     display: none !important;
   }
-  .bill-list-ms .bill-draft-chip-inline {
+  .bill-list-ms .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
-  }
-  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) 130px auto !important;
   }
 }
 
@@ -341,14 +318,11 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-lastaction {
     display: none !important;
   }
-  .bill-list-ms .bill-draft-chip-inline {
+  .bill-list-ms .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
-  }
-  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
@@ -359,7 +333,7 @@ body.nav-pending * { cursor: wait !important; }
   .bill-list-ms .bill-col-position {
     display: none !important;
   }
-  .bill-list-ms .bill-draft-chip-inline {
+  .bill-list-ms .bill-title-draft-marker {
     display: inline-flex !important;
   }
   .bill-list-header-row.bill-list-ms,
@@ -368,9 +342,6 @@ body.nav-pending * { cursor: wait !important; }
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
-  }
-  .bill-list-ms.bill-row-draft .bill-row-chips-cell {
-    grid-template-columns: calc(var(--bill-col-w, 70px) + 60px) auto !important;
   }
 }
 
