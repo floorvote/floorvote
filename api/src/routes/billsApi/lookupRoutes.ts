@@ -24,9 +24,6 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     const db = getDb(c.env.DB)
     const { state, sessionSlug: slug, billNumber } = c.req.param()
     const stateUpper = state.toUpperCase()
-    // An empty state must never match — a stateless draft (state = '') would
-    // otherwise be reachable via a blank or falsy-stringifying state segment.
-    if (!stateUpper) return c.json({ error: 'Not found' }, 404)
     const candidates = await db.select({ id: bills.id, session: bills.session, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
       .from(bills)
       .where(and(eq(bills.billNumber, billNumber), eq(bills.state, stateUpper)))
@@ -45,7 +42,10 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     const { sessionSlug: slug, billNumber } = c.req.param()
     const candidates = await db.select({ id: bills.id, session: bills.session, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
       .from(bills).where(eq(bills.billNumber, billNumber)).all()
-    const matches = candidates.filter(b => slugFor(b) === slug)
+    // A stateless draft (state = '') has no canonical URL to redirect to here —
+    // it must keep resolving only via /bills/<uuid>, never via this state-less
+    // legacy form (which would otherwise hand the client `state: ''`).
+    const matches = candidates.filter(b => b.state !== '' && slugFor(b) === slug)
     if (matches.length === 0) return c.json({ error: 'Not found' }, 404)
     if (matches.length > 1) {
       return c.json({

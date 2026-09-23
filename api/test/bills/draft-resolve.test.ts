@@ -47,19 +47,32 @@ describe('draft canonical URLs', () => {
     expect(await res.json<{ sessionSlug: string }>()).toMatchObject({ sessionSlug: '2027' })
   })
 
-  it('does not let an empty state segment reach a stateless draft', async () => {
+  it('does not resolve a stateless draft via the legacy no-state route', async () => {
     const db = getDb(env.DB)
     // A multi-state tenant draft can legitimately have state = '' (POST /bills/draft
     // falling back to an unset c.env.STATE). Such a draft keeps its /bills/<uuid>
-    // URL — it must never be reachable through the state-aware resolve route via
-    // an empty or falsy-stringifying state segment.
+    // URL — the legacy /resolve/:sessionSlug/:billNumber route must not surface
+    // it, since there is no state to hand back for a canonical redirect.
     await db.insert(bills).values({
       id: 'd2', billNumber: 'D1', title: 'Stateless pre-filed', state: '',
       isDraft: true, yearStart: 2027, yearEnd: 2027,
     })
-    const res = await SELF.fetch('https://x/api/bills/resolve//2027/D1', {
+    const res = await SELF.fetch('https://x/api/bills/resolve/2027/D1', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(404)
+  })
+
+  it('still resolves a draft with a real state via the legacy no-state route', async () => {
+    const db = getDb(env.DB)
+    await db.insert(bills).values({
+      id: 'd3', billNumber: 'D1', title: 'Pre-filed', state: 'UT',
+      isDraft: true, yearStart: 2027, yearEnd: 2027,
+    })
+    const res = await SELF.fetch('https://x/api/bills/resolve/2027/D1', {
+      headers: { Cookie: `session=${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json<{ id: string }>()).toMatchObject({ id: 'd3' })
   })
 })
