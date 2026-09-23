@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull, ne } from 'drizzle-orm'
+import { eq, and, inArray, isNull, ne, max } from 'drizzle-orm'
+import type { Context } from 'hono'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
@@ -9,6 +10,7 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
+import { nextDraftNumber } from '../../lib/draftNumber'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -20,6 +22,17 @@ async function latchTriaged(db: ReturnType<typeof getDb>, id: string, userId: st
 }
 
 export function registerDraftRoutes(router: Hono<AppEnv>) {
+  // GET /bills/draft-defaults — the number and year a new draft should
+  // pre-fill with. One call so the form never has to know how either is
+  // derived. Admin only, matching the create route. MUST be registered
+  // before GET /:id (in lookupRoutes) — see index.ts registration order.
+  router.get('/draft-defaults', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const state = (c.env.STATE || '').toUpperCase()
+    const billNumber = await nextDraftNumber(db, state)
+    return c.json({ billNumber, year: await defaultDraftYear(c, db, state) })
+  })
+
   // DELETE /bills/:id — admin only
   router.delete('/:id', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
@@ -236,4 +249,36 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     await latchTriaged(db, id, c.get('user').id)
     return c.json({ ok: true })
   })
+}
+
+/** The year a new draft should default to. Drafting happens most often during
+ *  the off-season, so once the current session is sine die the sensible default
+ *  is the NEXT session, not the one that just ended.
+ *
+ *  A central outage must not block creating a draft — a slightly wrong year is
+ *  editable, a 500 is not — so this falls back to the tenant's own newest filed
+ *  year and logs. */
+async function defaultDraftYear(
+  c: Context<AppEnv>,
+  db: ReturnType<typeof getDb>,
+  state: string,
+): Promise<number> {
+  const thisYear = new Date().getUTCFullYear()
+  try {
+    const res = await centralFetch(c.env, `/tenants/current-session/${state}`)
+    if (res.ok) {
+      const s = await res.json<{ yearStart: number; yearEnd: number; sineDie: boolean }>()
+      if (s.sineDie) return s.yearEnd + 1
+      return Math.min(Math.max(thisYear, s.yearStart), s.yearEnd)
+    }
+    console.error(`[draft-defaults] central returned ${res.status}`)
+  } catch (err) {
+    console.error('[draft-defaults] central unreachable:', err)
+  }
+  const row = await db
+    .select({ yearEnd: max(bills.yearEnd) })
+    .from(bills)
+    .where(and(eq(bills.isDraft, false), eq(bills.state, state)))
+    .get()
+  return row?.yearEnd ?? thisYear
 }
