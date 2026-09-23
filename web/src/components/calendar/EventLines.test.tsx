@@ -7,7 +7,7 @@ import type { CalendarEvent } from '../../lib/calendarGrid'
 function ev(o: Partial<CalendarEvent> = {}): CalendarEvent {
   return {
     id: '1', uid: 'a', source: 'hearing', billId: 'b',
-    bills: [{ id: 'b', billNumber: 'H 100', billTitle: 'Elections Act', state: 'RI', priority: 'high' }],
+    bills: [{ id: 'b', billNumber: 'H 100', billTitle: 'Elections Act', state: 'RI', priority: 'high', isDraft: false }],
     date: '2026-06-16', time: '13:30', location: 'Room 412', description: 'Judiciary hearing',
     details: null, url: null, status: 'confirmed',
     ...o,

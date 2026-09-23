@@ -66,6 +66,16 @@ export function EventLines({ event, compact = false, linkChips = false, suppress
             billNumber={b.billNumber}
             state={b.state}
             mini
+            isDraft={b.isDraft}
+            /* No visible DraftChip anywhere in this component, including the
+               roomier full variant. The same chip row renders into the month
+               cell — a ~120px day column whose row is explicitly
+               flexWrap: nowrap / overflow: hidden, i.e. clipped by design —
+               as well as the agenda card and the day popover. Showing the word
+               in two of the three would mean a draft reads as a draft in the
+               agenda and as a filed bill in the month grid, within one
+               calendar. The badge's screen-reader label is uniform and free. */
+            draftSrLabel
             priority={b.priority ?? undefined}
             to={to}
             hoverBill={suppressHover ? undefined : { billId: b.id, title: b.billTitle, summary: null, priority: b.priority }}

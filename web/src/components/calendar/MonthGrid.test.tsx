@@ -25,7 +25,7 @@ const evs: CalendarEvent[] = [
 
 const billEvent: CalendarEvent = {
   id: '2', uid: 'b', source: 'hearing', billId: 'bb',
-  bills: [{ id: 'bb', billNumber: 'H 100', billTitle: 'Elections', state: 'RI', priority: 'high' }],
+  bills: [{ id: 'bb', billNumber: 'H 100', billTitle: 'Elections', state: 'RI', priority: 'high', isDraft: false }],
   date: '2026-06-15', time: null, location: null, description: 'Hearing', details: null, url: null, status: 'confirmed',
 }
 
@@ -62,7 +62,7 @@ describe('MonthGrid', () => {
   it('custom event with a linked bill is STILL the custom icon (regression: source, not bill, decides the marker)', () => {
     const customWithBill: CalendarEvent = {
       id: '9', uid: 'z', source: 'custom', billId: null,
-      bills: [{ id: 'bz', billNumber: 'S 9', billTitle: 'Linked', state: 'RI', priority: 'low' }],
+      bills: [{ id: 'bz', billNumber: 'S 9', billTitle: 'Linked', state: 'RI', priority: 'low', isDraft: false }],
       date: '2026-06-15', time: null, location: null, description: 'Strategy call', details: null, url: null, status: 'confirmed',
     }
     render(<MemoryRouter><MonthGrid events={[customWithBill]} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)

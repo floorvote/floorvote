@@ -5,7 +5,7 @@ import { AgendaView } from './AgendaView'
 import type { CalendarEvent } from '../../lib/calendarGrid'
 
 const evs: CalendarEvent[] = [
-  { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 't', state: 'RI', priority: 'high' }], date: '2999-06-09', time: '09:00', location: null, description: 'Future', details: null, url: null, status: 'confirmed' },
+  { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 't', state: 'RI', priority: 'high', isDraft: false }], date: '2999-06-09', time: '09:00', location: null, description: 'Future', details: null, url: null, status: 'confirmed' },
 ]
 
 const render0 = (events: CalendarEvent[]) =>

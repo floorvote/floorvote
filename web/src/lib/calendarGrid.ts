@@ -6,6 +6,12 @@ export interface CalendarEventBill {
   billTitle: string
   state: string | null
   priority: 'high' | 'medium' | 'low' | null
+  /** Required, not optional: GET /calendar/events is the only producer of this
+   *  shape, so an optional field would let a dropped select column read as
+   *  "filed" — a silent solid badge — instead of failing to typecheck. Only
+   *  custom events can carry a draft; hearing events are LegiScan-synced and a
+   *  draft has no LegiScan id. */
+  isDraft: boolean
 }
 
 export interface CalendarEvent {

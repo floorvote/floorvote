@@ -59,9 +59,9 @@ describe('computeDayPopoverPosition', () => {
 })
 
 const dayEvents: CalendarEvent[] = [
-  { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Elections bill', state: 'RI', priority: 'high' }], date: '2026-06-15', time: '09:00', location: 'Room 313', description: null, details: null, url: null, status: 'confirmed' },
+  { id: '1', uid: 'a', source: 'hearing', billId: 'b1', bills: [{ id: 'b1', billNumber: 'H 100', billTitle: 'Elections bill', state: 'RI', priority: 'high', isDraft: false }], date: '2026-06-15', time: '09:00', location: 'Room 313', description: null, details: null, url: null, status: 'confirmed' },
   { id: '2', uid: 'b', source: 'custom', billId: null, bills: [], date: '2026-06-15', time: null, location: null, description: 'Board meeting', details: null, url: null, status: 'confirmed' },
-  { id: '3', uid: 'c', source: 'hearing', billId: 'b2', bills: [{ id: 'b2', billNumber: 'S 47', billTitle: 'Ethics', state: 'RI', priority: 'low' }], date: '2026-06-15', time: '14:00', location: null, description: null, details: null, url: null, status: 'confirmed' },
+  { id: '3', uid: 'c', source: 'hearing', billId: 'b2', bills: [{ id: 'b2', billNumber: 'S 47', billTitle: 'Ethics', state: 'RI', priority: 'low', isDraft: false }], date: '2026-06-15', time: '14:00', location: null, description: null, details: null, url: null, status: 'confirmed' },
 ]
 
 const noop = () => {}

@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm'
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
-type BillChip = { billNumber: string; state: string | null; priority: string | null }
+type BillChip = { billNumber: string; state: string | null; priority: string | null; isDraft?: boolean }
 type EventRow = {
   id: string; uid: string; source: string; billId: string | null
   date: string | null; time: string | null
@@ -169,6 +169,70 @@ describe('GET /api/calendar/events', () => {
     const uids = rows.map(e => e.uid).sort()
     expect(uids).toContain('cancelled-future@t')
     expect(uids).not.toContain('cancelled-old@t')
+  })
+})
+
+// EventLines reads isDraft off each event bill to pick the dashed BillBadge
+// variant, but its component test builds the event by hand — so a dropped
+// select column here would ship solid navy badges for drafts across the month
+// grid, agenda and day popover with a green web suite.
+//
+// Both bill paths are covered because they are separate queries: hearing events
+// read the bill off the leftJoin on the event row, custom events read it off
+// the calendar_event_bills link query. Only the custom path can actually carry
+// a draft today (hearings are LegiScan-synced and a draft has no LegiScan id),
+// but both must emit the field or the shape is a lie.
+describe('GET /api/calendar/events — bills[].isDraft', () => {
+  let token: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    const uid = await seedUser({ email: 'a@b.com' }); token = await seedSession(uid)
+  })
+
+  async function events(): Promise<EventRow[]> {
+    const r = await SELF.fetch('http://localhost/api/calendar/events', { headers: { Cookie: `session=${token}` } })
+    expect(r.status).toBe(200)
+    return await r.json() as EventRow[]
+  }
+
+  it('emits isDraft on a custom event\'s linked bills — true for a draft, false for a filed bill', async () => {
+    const db = getDb(env.DB)
+    const draft = await seedBill({ billNumber: 'D 1', state: 'RI', session: '2026', matchType: 'manual', isDraft: true })
+    const filed = await seedBill({ billNumber: 'F 1', state: 'RI', session: '2026', matchType: 'manual', isDraft: false })
+    const eventId = crypto.randomUUID()
+    await db.insert(calendarEvents).values({
+      id: eventId, uid: 'custom-draft@t', billId: null, source: 'custom',
+      sequence: 0, date: isoDay(2), time: null, location: null,
+      description: 'Working session', status: 'confirmed', eventHash: null,
+    })
+    await db.insert(calendarEventBills).values([
+      { eventId, billId: draft },
+      { eventId, billId: filed },
+    ])
+    const row = (await events()).find(e => e.uid === 'custom-draft@t')!
+    const byNumber = new Map(row.bills.map(b => [b.billNumber, b]))
+    expect(byNumber.get('D 1')!.isDraft).toBe(true)
+    // Literal false, not an absent key: absent renders the solid badge and so
+    // looks correct, which is how a dropped select column would hide.
+    expect(byNumber.get('F 1')!.isDraft).toBe(false)
+    expect('isDraft' in byNumber.get('F 1')!).toBe(true)
+  })
+
+  // The hearing path reads through `?? false`, so asserting only the filed case
+  // would pass even with the select column dropped — `undefined ?? false` gets
+  // the right answer by accident. A draft hearing cannot arise from the
+  // LegiScan sync (a draft has no LegiScan id), but nothing in the schema
+  // forbids the row, so seeding one directly is what actually pins the column.
+  it('emits isDraft on a hearing event\'s bill', async () => {
+    const draft = await seedBill({ billNumber: 'D 9', state: 'RI', session: '2026', priority: 'high', isDraft: true })
+    const filed = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', priority: 'high' })
+    await seedCalendarEvent(draft, { uid: 'h-draft@t', date: isoDay(3), description: 'Draft Cmte' })
+    await seedCalendarEvent(filed, { uid: 'h-filed@t', date: isoDay(4), description: 'Elections Cmte' })
+    const all = await events()
+    expect(all.find(e => e.uid === 'h-draft@t')!.bills[0].isDraft).toBe(true)
+    const filedBill = all.find(e => e.uid === 'h-filed@t')!.bills[0]
+    expect(filedBill.isDraft).toBe(false)
+    expect('isDraft' in filedBill).toBe(true)
   })
 })
 
