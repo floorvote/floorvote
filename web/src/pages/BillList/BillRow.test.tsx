@@ -189,10 +189,17 @@ describe('BillRow title-line Draft marker does not change row height', () => {
   // height, and a block-level display breaks the line entirely — either one
   // grows the row after mount. These are the mutations the deleted
   // offsetHeight test claimed to catch and did not.
-  it('the marker is inline-level and contributes no vertical margin', () => {
+  //
+  // `display` is deliberately NOT asserted here any more: it is no longer an
+  // inline style. The component leaves it to mobile.css so the base hide can
+  // win (an inline display outranked it and rendered "Draft" at every width).
+  // The stylesheet side — that every reveal sets an inline-level display, and
+  // that the component sets none — is covered by mobileDraftChip.test.ts and
+  // DraftChip.test.tsx respectively.
+  it('the marker contributes no vertical margin', () => {
     renderRow(false, { bill: { id: 'draft-1', isDraft: true, status: '', billNumber: 'D1' } })
     const s = screen.getByText('Draft', { selector: '.bill-title-draft-marker' }).style
-    expect(s.display).toMatch(/^inline/)
+    expect(s.display).toBe('')
     expect(parseFloat(s.marginTop) || 0).toBe(0)
     expect(parseFloat(s.marginBottom) || 0).toBe(0)
     expect(parseFloat(s.marginBlockStart) || 0).toBe(0)

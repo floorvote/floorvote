@@ -86,7 +86,7 @@ describe('mobile.css — Draft marker mid-width-fallback pairing', () => {
     for (const block of blocks) {
       const hidesStatus = /\.bill-col-status\b[^}]*display:\s*none\s*!important/.test(block)
       if (!hidesStatus) continue
-      const showsMarker = /\.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*!important/.test(block)
+      const showsMarker = /\.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*;/.test(block)
       if (!showsMarker) {
         const header = block.slice(0, block.indexOf('{')).trim()
         offenders.push(header)
@@ -99,7 +99,7 @@ describe('mobile.css — Draft marker mid-width-fallback pairing', () => {
     const msBlocks = blocks.filter(b => /\.bill-list-ms \.bill-col-status\b[^}]*display:\s*none\s*!important/.test(b))
     expect(msBlocks.length).toBeGreaterThanOrEqual(4)
     for (const block of msBlocks) {
-      expect(/\.bill-list-ms \.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*!important/.test(block)).toBe(true)
+      expect(/\.bill-list-ms \.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*;/.test(block)).toBe(true)
     }
   })
 
@@ -162,8 +162,10 @@ describe('mobile.css — Draft marker is hidden on the title line at mobile widt
 
   it('hides .bill-title-draft-marker in the same block that reveals the mobile meta row', () => {
     // The declaration may group both selectors; match a rule whose selector
-    // list contains the class and whose body sets display:none !important.
-    const hidesBare = /(^|[,{}])\s*\.bill-title-draft-marker\s*[,{][^}]*display:\s*none\s*!important/m.test(
+    // list contains the class and whose body sets display:none. No
+    // !important is needed (or used): nothing sets display on this element
+    // inline any more, so plain specificity + source order decide.
+    const hidesBare = /(^|[,{}])\s*\.bill-title-draft-marker\s*[,{][^}]*display:\s*none\s*;/m.test(
       mobileBlock!.text,
     )
     expect(hidesBare).toBe(true)
@@ -172,21 +174,24 @@ describe('mobile.css — Draft marker is hidden on the title line at mobile widt
   it('also hides the .bill-list-ms-scoped marker, which outranks the bare class', () => {
     // The multi-state reveal is `.bill-list-ms .bill-title-draft-marker`
     // (specificity 0,2,0). A hide written only as `.bill-title-draft-marker`
-    // (0,1,0) loses to it even with !important, so both markers would still
-    // double up on multi-state lists.
-    const hidesMs = /\.bill-list-ms\s+\.bill-title-draft-marker\s*[,{][^}]*display:\s*none\s*!important/.test(
+    // (0,1,0) loses to it on specificity regardless of source order, so
+    // both markers would still double up on multi-state lists.
+    const hidesMs = /\.bill-list-ms\s+\.bill-title-draft-marker\s*[,{][^}]*display:\s*none\s*;/.test(
       mobileBlock!.text,
     )
     expect(hidesMs).toBe(true)
   })
 
-  it('the mobile block comes after every container-query reveal, so its !important wins on source order', () => {
-    // Equal-specificity !important declarations resolve by source order. If
-    // someone moves the mobile block above the reveals, the hide silently
-    // stops applying and both markers come back.
+  it('the mobile block comes after every container-query reveal, so it wins on source order', () => {
+    // The bare-class hide and the bare-class reveals have equal specificity
+    // (0,1,0), so source order alone decides — this is now the ONLY thing
+    // keeping them apart (the rules no longer carry !important, because the
+    // component no longer sets display inline for them to fight). If someone
+    // moves the mobile block above the reveals, the hide silently stops
+    // applying and both markers come back.
     const lastReveal = css.lastIndexOf('.bill-title-draft-marker')
     const revealsBeforeMobile = containerBlocks(css)
-      .filter(b => /\.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*!important/.test(b))
+      .filter(b => /\.bill-title-draft-marker\s*\{[^}]*display:\s*inline-flex\s*;/.test(b))
       .map(b => css.indexOf(b))
     expect(revealsBeforeMobile.length).toBeGreaterThanOrEqual(8)
     for (const at of revealsBeforeMobile) expect(at).toBeLessThan(mobileBlock!.start)

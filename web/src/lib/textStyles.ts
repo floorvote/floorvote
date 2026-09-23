@@ -1,12 +1,10 @@
 import type React from 'react'
-import { color, fontSize, fontWeight } from '../styles/tokens'
+import { color, fontSize, fontWeight, BODY_FONT } from '../styles/tokens'
 
-// The app's interface font. Everything sans inherits this from `body`
-// (web/index.html), so it is spelled out here only for the few places that sit
-// inside a serif block and need to opt back out — the bill abstract's show-more
-// toggle is the first. Keep in step with the body rule in web/index.html, which
-// is plain HTML and cannot import this.
-export const FONT_SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+// The app's interface font. Alias of the BODY_FONT token in shared/tokens.ts,
+// kept so existing importers of FONT_SANS don't all have to change; the stack
+// itself is written down once, there. New code should import BODY_FONT.
+export const FONT_SANS = BODY_FONT
 
 export const SECTION_LABEL: React.CSSProperties = {
   fontSize: fontSize.sm,

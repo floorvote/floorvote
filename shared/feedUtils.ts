@@ -11,6 +11,10 @@ export type FeedEvent = {
   billSummary: string | null
   billPriority: string | null
   billMatchType: 'keyword' | 'manual' | null
+  // Optional because several non-feed producers build FeedEvent-shaped objects
+  // (api/src/lib/digestEmail.ts, api/src/lib/mentions.ts) that have no draft
+  // concept; absent is read as "not a draft".
+  billIsDraft?: boolean
   userId: string
   userName: string
   userSubtitle: string | null
@@ -28,6 +32,7 @@ export type GroupedBillEvents = {
   billSummary: string | null
   billPriority: string | null
   billMatchType: 'keyword' | 'manual' | null
+  billIsDraft?: boolean
   date: string         // YYYY-MM-DD
   events: FeedEvent[]
 }
@@ -42,6 +47,7 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
         key, billId: e.billId, billNumber: e.billNumber,
         billTitle: e.billTitle, billSessionSlug: e.billSessionSlug, billState: e.billState,
         billSummary: e.billSummary, billPriority: e.billPriority, billMatchType: e.billMatchType,
+        billIsDraft: e.billIsDraft ?? false,
         date, events: [],
       })
     }

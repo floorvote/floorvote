@@ -210,7 +210,15 @@ body.nav-pending * { cursor: wait !important; }
    so the max-width: 768px block hides this marker again — otherwise BOTH
    show, because the query container is always <= 1000px at phone widths. A
    test (mobileDraftChip.test.ts) checks this pairing, the default-hidden
-   rule, the 768px re-hide, and the className-to-selector link stay intact. */
+   rule, the 768px re-hide, and the className-to-selector link stay intact.
+
+   These rules carry no !important, and must not need it: TitleDraftMarker
+   deliberately sets no `display` in its inline style, so the cascade here is
+   decided by specificity plus source order alone. That means SOURCE ORDER IS
+   LOAD-BEARING — the default hide first, then the reveals, then the 768px
+   re-hide last. Reordering these blocks changes behaviour. (An inline
+   `display: inline-flex` on the component is exactly what broke this before:
+   it outranked the default hide and showed "Draft" at every width.) */
 .bill-title-draft-marker {
   display: none;
 }
@@ -230,7 +238,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
@@ -243,7 +251,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -257,7 +265,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
@@ -272,7 +280,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-list-header-row,
   .bill-row-grid {
@@ -296,7 +304,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-list-ms .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 90px 130px auto !important;
@@ -309,7 +317,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-list-ms .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) 130px auto !important;
@@ -323,7 +331,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-list-ms .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-list-ms .bill-row-chips-cell {
     grid-template-columns: var(--bill-col-w, 70px) auto !important;
@@ -338,7 +346,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .bill-list-ms .bill-title-draft-marker {
-    display: inline-flex !important;
+    display: inline-flex;
   }
   .bill-list-header-row.bill-list-ms,
   .bill-row-grid.bill-list-ms {
@@ -491,7 +499,7 @@ body.nav-pending * { cursor: wait !important; }
      this block hides both. */
   .bill-title-draft-marker,
   .bill-list-ms .bill-title-draft-marker {
-    display: none !important;
+    display: none;
   }
 
   /* Hide desktop priority column — priority lives in mobile-meta instead */

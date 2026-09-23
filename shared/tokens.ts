@@ -143,6 +143,13 @@ export const fontWeight = {
 
 export const BRAND_FONT = "'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
+// The interface/body face. Set on <body> in web/index.html, so almost nothing
+// needs to name it — it is inherited. Spell it out only where an element sits
+// inside a block that overrode the font (the bill title line is 'Source Serif
+// 4', serif) and has to opt back out. Keep in step with the body rule in
+// web/index.html, which is plain HTML and cannot import this.
+export const BODY_FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+
 // ---------------------------------------------------------------------------
 // Box-shadow  (elevation scale; collapses 13 near-duplicate shadows → 6 tiers)
 // ---------------------------------------------------------------------------
