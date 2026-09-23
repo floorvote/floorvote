@@ -53,6 +53,11 @@ let resolveCustomFields: ((v: unknown) => void) | null = null
 // causes for real, rather than only checking a button was clicked.
 const overwriteCalls: Array<{ id: string; query: string | undefined }> = []
 
+// Records every POST /admin/views body, so a test can assert on the exact
+// query a new saved view is created with — the "Save as view" counterpart to
+// overwriteCalls above.
+const saveViewCalls: Array<{ name: string | undefined; query: string | undefined }> = []
+
 // Mutable so one test can opt into a locked demo tenant. Member votes are on the
 // server's demo allowlist, so handleVote must NOT consult demoLocked — see the
 // "list-page votes on a locked demo tenant" describe below.
@@ -117,6 +122,11 @@ vi.mock('../../lib/api', () => {
       if ('query' in body && !body.query) {
         throw new ApiError(400, 'query is required')
       }
+      return {} as T
+    }
+    if (init?.method === 'POST' && path === '/admin/views') {
+      const body = init?.body ? JSON.parse(init.body as string) : {}
+      saveViewCalls.push({ name: body.name, query: body.query })
       return {} as T
     }
     if (path === '/auth/me') {
@@ -207,6 +217,7 @@ class FakeIntersectionObserver {
 beforeEach(() => {
   apiCalls.length = 0
   overwriteCalls.length = 0
+  saveViewCalls.length = 0
   deferred.resolveBillDetail = null
   deferred.rejectVote = null
   voteReject.value = false
@@ -708,6 +719,40 @@ describe('BillList saved views — applying a view from the switcher', () => {
     })
   })
 
+  // Draft-bills round trip, apply direction (see the save-direction test in
+  // "BillList saved views — saving the Drafts filter" below): a view whose
+  // stored query carries drafts=1 must restore the Drafts filter as active
+  // and get it into the actual /bills request, not just the URL.
+  it('applies a drafts=1 filter from the view and reaches the bills query', async () => {
+    viewsState.response = { views: [{ id: 'v1', name: 'Draft bills', query: 'drafts=1' }] }
+
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^views$/i })).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^views$/i }))
+    fireEvent.click(await screen.findByText('Draft bills'))
+
+    await waitFor(() => {
+      const loc = screen.getByTestId('loc').textContent!
+      expect(loc).toContain('view=v1')
+    })
+    expect(screen.getByRole('button', { name: /draft bills/i })).toBeTruthy()
+
+    await waitFor(() => {
+      expect(apiCalls.some(c => c.startsWith('/bills?') && c.includes('drafts=1'))).toBe(true)
+    })
+  })
+
   // The bookmark URL should carry the human-readable slug, not the view's
   // internal UUID — that's the whole point of adding slugs.
   it('puts the slug, not the UUID, in the URL when a view with both is applied', async () => {
@@ -729,6 +774,33 @@ describe('BillList saved views — applying a view from the switcher', () => {
       const loc = screen.getByTestId('loc').textContent!
       expect(loc).toContain('view=passed-bills')
       expect(loc).not.toContain('3f6a1c2e-9b3d-4c1a-8e2f-2a5b6c7d8e9f')
+    })
+  })
+})
+
+// Draft-bills round trip, save direction: the Drafts filter is wired as a
+// `drafts=1` query param through useBillFilters, and saved views store the
+// bill list's serialized filter params opaquely — no schema change — so
+// drafts=1 should flow straight into a newly saved view's stored query. See
+// the "applies a drafts=1 filter from the view" test above for the apply
+// direction of this same round trip.
+describe('BillList saved views — saving the Drafts filter', () => {
+  it('includes drafts=1 in the query POSTed when saving a view while Drafts is active', async () => {
+    render(
+      <MemoryRouter initialEntries={['/bills?drafts=1']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /save as view/i }))
+    fireEvent.change(screen.getByLabelText('View name'), { target: { value: 'Draft bills' } })
+    fireEvent.click(screen.getByRole('button', { name: /^save view$/i }))
+
+    await waitFor(() => {
+      expect(saveViewCalls.some(c => c.name === 'Draft bills' && c.query?.includes('drafts=1'))).toBe(true)
     })
   })
 })
