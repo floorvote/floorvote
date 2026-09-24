@@ -1,4 +1,12 @@
+import { rateLimitedFetch } from './rateLimitedFetch'
+
 const BASE_URL = 'https://api.legiscan.com/'
+
+/**
+ * LegiScan enforces a ~2 requests/second sliding window as of October 1, 2026.
+ * Pace at 1.5/sec for headroom rather than riding the ceiling.
+ */
+const LEGISCAN_RATE_PER_SEC = 1.5
 
 export interface MasterListEntry {
   bill_id: number
@@ -195,7 +203,9 @@ async function legiscanFetch<T extends Record<string, unknown>>(
   url.searchParams.set('op', op)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
 
-  const res = await fetch(url.toString())
+  const res = await rateLimitedFetch(url.toString(), undefined, {
+    ratePerSec: LEGISCAN_RATE_PER_SEC,
+  })
   if (!res.ok) throw new Error(`LegiScan HTTP ${res.status}`)
   const data = (await res.json()) as { status: string } & T
   if (data.status !== 'OK') throw new Error(`LegiScan API error: ${JSON.stringify(data)}`)
