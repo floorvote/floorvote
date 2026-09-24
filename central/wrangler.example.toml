@@ -107,6 +107,11 @@ name = "EMAIL"
 # queue = "central-legiscan-ingestor"
 # max_batch_size = 5
 # max_batch_timeout = 30
+# # One consumer invocation at a time. LegiScan's ~2 req/sec sliding window
+# # (October 1, 2026) is metered client-side by src/lib/rateLimitedFetch.ts, but
+# # that bucket is per-isolate: concurrent invocations would each hold their own
+# # and the aggregate rate would scale with concurrency. Keep this at 1.
+# max_concurrency = 1
 #
 # # Per-tenant queue bindings (optional — without these, central uses HTTP publish
 # # via CF_QUEUES_TOKEN if set, which requires no central redeploy per new tenant):

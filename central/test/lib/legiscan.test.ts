@@ -28,3 +28,23 @@ describe('getMasterList', () => {
   })
 })
 
+
+// legiscanFetch now goes through rateLimitedFetch (1.5 req/sec + 429 retry).
+// Its own error handling must be unchanged: LegiScan answers HTTP 200 with an
+// error body, so both checks still have to fire.
+describe('legiscanFetch error handling', () => {
+  it('throws on a non-OK LegiScan status body served with HTTP 200', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ status: 'ERROR', alert: { message: 'Invalid API key' } }),
+        { status: 200 },
+      ),
+    )
+    await expect(getMasterList('NJ', 'key')).rejects.toThrow(/LegiScan API error/)
+  })
+
+  it('throws on a non-ok HTTP status', async () => {
+    mockFetch.mockResolvedValue(new Response('boom', { status: 500 }))
+    await expect(getMasterList('NJ', 'key')).rejects.toThrow('LegiScan HTTP 500')
+  })
+})
