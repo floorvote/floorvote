@@ -13,7 +13,7 @@ LegiScan API  →  central cron  →  central ingestor queue  →  per-tenant qu
                   (Phase 1)        (Phase 2)                  (Phase 3a)         (Phase 3b)
 ```
 
-Three queue boundaries. LegiScan API quota is **30,000 calls/month total**. Calls happen only in Phases 1 and 2 — the cron polls masterlist endpoints, the ingestor calls `getBill` once per queued bill. Phase 3 is internal data movement, zero API cost.
+Three queue boundaries. LegiScan API quota is **10,000 calls/month total** (reduced from 30,000 on October 1, 2026). Calls happen only in Phases 1 and 2 — the cron polls masterlist endpoints, the ingestor calls `getBill` once per queued bill. Phase 3 is internal data movement, zero API cost.
 
 ---
 

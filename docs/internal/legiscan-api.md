@@ -3,7 +3,7 @@
 Revision 20250317. Pull API base URL: `https://api.legiscan.com/?key=APIKEY&op=OPERATION&PARAMS`
 
 Keys, operations, state abbreviations and bill numbers are **case-insensitive**.  
-Free tier (public service): **30,000 queries/month**.  
+Free tier (public service): **10,000 queries/month** (reduced from 30,000 on October 1, 2026).  
 Successful response: `{"status":"OK", ...}`. Error: `{"status":"ERROR", "alert":{"message":"..."}}`
 
 ---

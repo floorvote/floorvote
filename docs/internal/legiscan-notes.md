@@ -1,9 +1,9 @@
 # LegiScan operational notes
 
-> Moved out of the public self-hosting docs, which keep only the two must-know facts (the free tier is 30,000 calls/month, and UI showing LegiScan data must carry "Data provided by LegiScan" attribution). This page holds the operational and licensing detail.
+> Moved out of the public self-hosting docs, which keep only the two must-know facts (the free tier is 10,000 calls/month, and UI showing LegiScan data must carry "Data provided by LegiScan" attribution). This page holds the operational and licensing detail.
 
 - **Never bulk-queue bills to the ingestor without `skipFetch: true`.** Each ingestor message triggers a `getBill()` API call. For bulk operations use `reprocess` (zero API calls) or `seed-session` (which uses `skipFetch: true`). This is the single easiest way to blow through the quota by accident.
-- **Quota tiers.** The free "Public" tier is 30,000 calls/month. The paid Pull tier (100,000/month) gives extra headroom; see [legiscan.com/pricing](https://legiscan.com/pricing).
+- **Quota tiers.** The free "Public" tier is 10,000 calls/month (reduced from 30,000 on October 1, 2026). The paid Pull tier (100,000/month) gives extra headroom; see [legiscan.com/pricing](https://legiscan.com/pricing).
 - **Charging tenants.** If you plan to charge tenants for platform access, get written confirmation from LegiScan that a central-cache architecture is permitted under your tier's terms.
 - **Cloudflare Queue quota (separate from LegiScan).** The Workers free tier allows only 10,000 queue operations/day (~3,333 messages). Bulk seeding a large session (e.g. 10,000 bills) exhausts this immediately — this is one more reason the Workers Paid plan ($5/month, 1M ops/month) is required.
 - **Bulk-seed throughput: ~45 bills/min.** `scripts/seed-legiscan.ts --from-dir … --remote` batches writes through `wrangler d1 execute` over HTTP, so round-trip latency sets the pace — not local parsing, and not the dataset size on disk. Measured 43–50 bills/min across two states (IN 935 bills, MI 3,909). Practical budget: ~20 min per 1,000 bills, ~1.5 hr at 4,000, ~4 hr at 12,000; roll calls add time at a similar rate. Consequences worth planning around:
