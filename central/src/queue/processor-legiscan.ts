@@ -60,8 +60,8 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     return
   }
 
-  trackLsCall(db, 'getBill', { billId: msg.billId })
-  const bill = await getBill(msg.billId, env.LEGISCAN_API_KEY)
+  const bill = await getBill(msg.billId, env.LEGISCAN_API_KEY, () =>
+    trackLsCall(db, 'getBill', { billId: msg.billId }))
   const now = nowDb()
 
   // --- Change detection ---
@@ -537,8 +537,8 @@ async function downloadTextToR2(
   if (!body) {
     console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to getBillText`)
     try {
-      trackLsCall(db, 'getBillText', { docId })
-      const text = await getBillText(docId, env.LEGISCAN_API_KEY)
+      const text = await getBillText(docId, env.LEGISCAN_API_KEY, () =>
+        trackLsCall(db, 'getBillText', { docId }))
       const decoded = base64ToBytes(text.doc)
       const invalid = validateTextPayload(decoded.buffer as ArrayBuffer, text.mime || mime, text.text_size ?? declaredSize)
       if (invalid) {

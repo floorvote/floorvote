@@ -115,8 +115,8 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
 }
 
 async function refreshLsSessions(state: string, apiKey: string, db: LsDb): Promise<void> {
-  trackLsCall(db, 'getSessionList', { state })
-  const lsSessions = await getSessionList(state, apiKey)
+  const lsSessions = await getSessionList(state, apiKey, () =>
+    trackLsCall(db, 'getSessionList', { state }))
   for (const s of lsSessions) {
     await db.insert(sessions).values({
       sessionId:    s.session_id,
@@ -149,8 +149,8 @@ async function runFullPass(
   env: LsEnv,
   db: LsDb,
 ): Promise<void> {
-  trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId })
-  const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY)
+  const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY, () =>
+    trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId }))
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),
@@ -351,8 +351,8 @@ async function runRawPass(
   db: LsDb,
 ): Promise<void> {
   void coveringTenants
-  trackLsCall(db, 'getMasterListRaw', { sessionId: session.sessionId })
-  const rawList = await getMasterListRaw(session.sessionId, env.LEGISCAN_API_KEY)
+  const rawList = await getMasterListRaw(session.sessionId, env.LEGISCAN_API_KEY, () =>
+    trackLsCall(db, 'getMasterListRaw', { sessionId: session.sessionId }))
   if (rawList.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),

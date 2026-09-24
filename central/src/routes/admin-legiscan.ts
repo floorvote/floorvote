@@ -454,16 +454,19 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   let refreshed = 0
 
   for (const sessionId of sessionIds) {
-    // 1 LegiScan call per session — log it for quota tracking.
-    db.insert(apiCallLog).values({
-      loggedAt: now,
-      callType: 'getMasterListBySession',
-      params: JSON.stringify({ sessionId, reason: 'backfill-stub-actions', tenantId }),
-    }).catch(err => console.error('[backfill-stub-actions] failed to log API call:', err))
+    // 1 LegiScan call per session — logged from the egress callback so the row
+    // records the outbound attempt, not the intent to make one.
+    const trackCall = () => {
+      db.insert(apiCallLog).values({
+        loggedAt: nowDb(),
+        callType: 'getMasterListBySession',
+        params: JSON.stringify({ sessionId, reason: 'backfill-stub-actions', tenantId }),
+      }).catch(err => console.error('[backfill-stub-actions] failed to log API call:', err))
+    }
 
     let list: Awaited<ReturnType<typeof getMasterListBySession>>
     try {
-      list = await getMasterListBySession(sessionId, c.env.LEGISCAN_API_KEY)
+      list = await getMasterListBySession(sessionId, c.env.LEGISCAN_API_KEY, trackCall)
     } catch (err) {
       console.error('[backfill-stub-actions] getMasterListBySession failed for session', sessionId, err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)

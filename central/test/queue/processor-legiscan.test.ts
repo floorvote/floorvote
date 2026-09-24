@@ -457,7 +457,7 @@ describe('downloadTextToR2: bot-wall handling', () => {
     await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1000)).get()
-    expect(legiscan.getBillText).toHaveBeenCalledWith(1000, 'test-key')
+    expect(legiscan.getBillText).toHaveBeenCalledWith(1000, 'test-key', expect.any(Function))
     expect(row!.r2Key, 'the fallback document should be stored').toBeTruthy()
     expect(row!.fetchError, 'a recovered fetch is not a failure').toBeNull()
   })

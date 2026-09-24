@@ -193,10 +193,16 @@ export interface LegiscanBill {
   supplements: LegiscanSupplement[]
 }
 
+/**
+ * `onRequest`, where threaded through, fires once per actual outbound HTTP
+ * attempt (see `rateLimitedFetch`). Call sites use it for quota logging so the
+ * log records egress, not intent.
+ */
 async function legiscanFetch<T extends Record<string, unknown>>(
   op: string,
   params: Record<string, string>,
   apiKey: string,
+  onRequest?: () => void,
 ): Promise<T> {
   const url = new URL(BASE_URL)
   url.searchParams.set('key', apiKey)
@@ -205,6 +211,7 @@ async function legiscanFetch<T extends Record<string, unknown>>(
 
   const res = await rateLimitedFetch(url.toString(), undefined, {
     ratePerSec: LEGISCAN_RATE_PER_SEC,
+    onRequest,
   })
   if (!res.ok) throw new Error(`LegiScan HTTP ${res.status}`)
   const data = (await res.json()) as { status: string } & T
@@ -212,19 +219,28 @@ async function legiscanFetch<T extends Record<string, unknown>>(
   return data
 }
 
-export async function getMasterList(state: string, apiKey: string): Promise<MasterListEntry[]> {
+export async function getMasterList(
+  state: string,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<MasterListEntry[]> {
   const data = await legiscanFetch<{ masterlist: Record<string, unknown> }>(
     'getMasterList',
     { state },
     apiKey,
+    onRequest,
   )
   return Object.values(data.masterlist).filter(
     (v): v is MasterListEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
   )
 }
 
-export async function getBill(billId: number, apiKey: string): Promise<LegiscanBill> {
-  const data = await legiscanFetch<{ bill: LegiscanBill }>('getBill', { id: String(billId) }, apiKey)
+export async function getBill(
+  billId: number,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<LegiscanBill> {
+  const data = await legiscanFetch<{ bill: LegiscanBill }>('getBill', { id: String(billId) }, apiKey, onRequest)
   return data.bill
 }
 
@@ -253,8 +269,12 @@ export interface LegiscanBillText {
  * this is the expensive path, which is why it is only used after a direct fetch
  * has been tried and rejected.
  */
-export async function getBillText(docId: number, apiKey: string): Promise<LegiscanBillText> {
-  const data = await legiscanFetch<{ text: LegiscanBillText }>('getBillText', { id: String(docId) }, apiKey)
+export async function getBillText(
+  docId: number,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<LegiscanBillText> {
+  const data = await legiscanFetch<{ text: LegiscanBillText }>('getBillText', { id: String(docId) }, apiKey, onRequest)
   return data.text
 }
 
@@ -266,32 +286,46 @@ interface MasterListRawEntry {
   description: string
 }
 
-export async function getMasterListBySession(sessionId: number, apiKey: string): Promise<MasterListEntry[]> {
+export async function getMasterListBySession(
+  sessionId: number,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<MasterListEntry[]> {
   const data = await legiscanFetch<{ masterlist: Record<string, unknown> }>(
     'getMasterList',
     { id: String(sessionId) },
     apiKey,
+    onRequest,
   )
   return Object.values(data.masterlist).filter(
     (v): v is MasterListEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
   )
 }
 
-export async function getMasterListRaw(sessionId: number, apiKey: string): Promise<MasterListRawEntry[]> {
+export async function getMasterListRaw(
+  sessionId: number,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<MasterListRawEntry[]> {
   const data = await legiscanFetch<{ masterlist: Record<string, unknown> }>(
     'getMasterListRaw',
     { id: String(sessionId) },
     apiKey,
+    onRequest,
   )
   return Object.values(data.masterlist).filter(
     (v): v is MasterListRawEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
   )
 }
 
-export async function getSessionList(state: string, apiKey: string): Promise<LegiscanSession[]> {
+export async function getSessionList(
+  state: string,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<LegiscanSession[]> {
   const data = await legiscanFetch<{
     sessions: Record<string, unknown>
-  }>('getSessionList', { state }, apiKey)
+  }>('getSessionList', { state }, apiKey, onRequest)
   return Object.values(data.sessions).flatMap((v, index) => {
     if (typeof v !== 'object' || v === null || !('session_id' in v)) return []
     return [{ ...(v as LegiscanSession), sort_order: index }]
