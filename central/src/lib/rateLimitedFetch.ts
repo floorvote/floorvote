@@ -32,6 +32,14 @@ export interface RateLimitedFetchOptions {
   ratePerSec: number
   /** Max 429 retries. Defaults to the number of fallback delays (3). */
   maxRetries?: number
+  /**
+   * Called once per outbound HTTP attempt, immediately after `fetch` resolves
+   * — including attempts that come back 429 and get retried, and regardless of
+   * status. This is the hook quota logging hangs off of: it fires at egress
+   * time, not at intent time, so a caller that never reaches the wire is never
+   * counted. Throws are swallowed; a broken callback must not break a request.
+   */
+  onRequest?: () => void
 }
 
 interface TokenBucket {
@@ -99,12 +107,19 @@ export async function rateLimitedFetch(
   init: RequestInit | undefined,
   opts: RateLimitedFetchOptions,
 ): Promise<Response> {
-  const { ratePerSec } = opts
+  const { ratePerSec, onRequest } = opts
   const maxRetries = opts.maxRetries ?? RETRY_DELAYS_MS.length
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await acquire(ratePerSec)
     const res = await fetch(url, init)
+    if (onRequest) {
+      try {
+        onRequest()
+      } catch (err) {
+        console.error('[rateLimitedFetch] onRequest callback threw:', err)
+      }
+    }
 
     if (res.status !== 429) return res
 

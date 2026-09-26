@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   getMasterList,
+  getMasterListBySession,
 } from '../../src/lib/legiscan'
 
 const mockFetch = vi.fn()
@@ -46,5 +47,35 @@ describe('legiscanFetch error handling', () => {
   it('throws on a non-ok HTTP status', async () => {
     mockFetch.mockResolvedValue(new Response('boom', { status: 500 }))
     await expect(getMasterList('NJ', 'key')).rejects.toThrow('LegiScan HTTP 500')
+  })
+})
+
+
+// api_call_log has to record actual egress, so the tracking callback the call
+// sites pass must reach the wire and fire only after the request resolves.
+describe('legiscan onRequest threading', () => {
+  it('invokes the callback after the request, once per call', async () => {
+    const order: string[] = []
+    mockFetch.mockImplementation(() => {
+      order.push('fetch')
+      return okJson({ masterlist: { '0': { bill_id: 1, number: 'A1', change_hash: 'h', title: 't', description: 'd' } } })
+    })
+
+    const result = await getMasterListBySession(42, 'key', () => order.push('onRequest'))
+
+    expect(result).toHaveLength(1)
+    expect(order).toEqual(['fetch', 'onRequest'])
+  })
+
+  it('still invokes the callback when LegiScan answers with an error body', async () => {
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ status: 'ERROR', alert: { message: 'nope' } }), { status: 200 }),
+    )
+    const onRequest = vi.fn()
+
+    // The request did go out, so it is still logged — the error is LegiScan's
+    // answer, not a failure to reach it.
+    await expect(getMasterList('NJ', 'key', onRequest)).rejects.toThrow(/LegiScan API error/)
+    expect(onRequest).toHaveBeenCalledTimes(1)
   })
 })
