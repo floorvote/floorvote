@@ -5,6 +5,7 @@ import * as schema from '../db/schema-legiscan'
 import { bills, billTenants, tenants, keywordRegistry, sessions, apiCallLog } from '../db/schema-legiscan'
 import { matchesUnion } from '../lib/keywords'
 import { getMasterListBySession } from '../lib/legiscan'
+import { isLimsSessionId } from '../lib/lims-ids'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
@@ -454,6 +455,8 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   let refreshed = 0
 
   for (const sessionId of sessionIds) {
+    // LIMS sessions have no LegiScan masterlist; their stubs refresh on the LIMS sync.
+    if (isLimsSessionId(sessionId)) continue
     // 1 LegiScan call per session — logged from the egress callback so the row
     // records the outbound attempt, not the intent to make one.
     const trackCall = () => {
