@@ -392,3 +392,60 @@ describe('monitor stubs', () => {
     expect(stub?.stateLink).toBe('https://lims.dccouncil.gov/Legislation/B26-0001')
   })
 })
+
+describe('POST /api/admin/lims-import', () => {
+  const CP25 = { councilPeriodId: 25, councilPeriod: '25 (2023-24)', startDate: '2023-01-02T00:00:00', endDate: '2024-12-31T00:00:00' }
+  const secureDc = {
+    ...bulk['B26-0400'],
+    legislationNumber: 'B25-0345',
+    title: 'Accountability and Victim Protection Amendment Act of 2023 (now known as "Secure DC Omnibus Amendment Act of 2024")',
+    status: 'Official Law',
+    legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B25-0345' })),
+  }
+
+  async function post(e: any, body: unknown) {
+    const { app } = await import('../../src/index-legiscan')
+    return app.fetch(new Request('http://central/api/admin/lims-import', {
+      method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }), e)
+  }
+
+  it('imports a prior-period measure as a manual pick, ingests it, and leaves that period out of the daily sync', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(lims.getCouncilPeriods).mockResolvedValue([PERIOD, CP25])
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number, cp: number) =>
+      cp === 25 && c === 1 ? [secureDc] : c === 1 ? [bulk['B26-0400']] : [])
+    const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+
+    const res = await post(e, { tenantId: 'oca', numbers: ['B25-345', 'B25-9999', 'NOPE'] })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, imported: ['B25-0345'], notFound: ['B25-9999'], invalid: ['NOPE'] })
+
+    const billId = limsBillId('B25-0345')!
+    const link = await db.select().from(schema.billTenants).where(eq(schema.billTenants.billId, billId)).get()
+    expect(link?.matchType).toBe('manual')
+    const session = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionId, limsSessionId(25))).get()
+    expect(session).toMatchObject({ sessionName: '2023-2024 Council Period 25', prior: 1, sineDie: 1 })
+    const queued = limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+    expect(queued).toContain(billId)
+
+    // The ingestor builds it like any LIMS bill.
+    vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), legislationNumber: 'B25-0345' })
+    const retry = vi.fn()
+    await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry }] } as any, e, db)
+    expect(retry).not.toHaveBeenCalled()
+    const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, billId)).get()
+    expect(bill?.stateLink).toBe('https://lims.dccouncil.gov/Legislation/B25-0345')
+
+    // The scheduled sync never pulls Council Period 25.
+    vi.mocked(lims.getBulkData).mockClear()
+    await runLimsSync(makeEnv().env, db)
+    expect(vi.mocked(lims.getBulkData).mock.calls.map(c => c[1])).not.toContain(25)
+  })
+
+  it('validates its input and the tenant', async () => {
+    const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    expect((await post(e, { tenantId: 'oca' })).status).toBe(400)
+    expect((await post(e, { tenantId: 'nobody', numbers: ['B25-0345'] })).status).toBe(404)
+  })
+})
