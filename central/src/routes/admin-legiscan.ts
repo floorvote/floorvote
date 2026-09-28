@@ -11,6 +11,7 @@ import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runLsSync } from '../cron/sync-legiscan'
+import { runLimsSync } from '../cron/sync-lims'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
@@ -40,6 +41,16 @@ adminLsRoutes.post('/trigger-sync', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   await runLsSync(c.env, db)
   return c.json({ ok: true, message: 'sync triggered' })
+})
+
+// Run the DC LIMS sync now instead of waiting for its full-pass hours (see
+// cron/sync-lims.ts). Refreshes the Council Period and members, then runs a full
+// pass: a handful of BulkData calls plus queueing, so it finishes in seconds.
+adminLsRoutes.post('/lims-sync', async (c) => {
+  if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const passes = await runLimsSync(c.env, db, { force: true })
+  return c.json({ ok: true, passes })
 })
 
 // Superadmin email check (login-request path). Central is the SOLE issuer of the

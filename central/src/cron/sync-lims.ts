@@ -43,8 +43,14 @@ const SETTLED_STATUSES = ['Official Law', 'Withdrawn', 'Failed', 'Disapproved', 
   .concat(limsStatusCode(''))  // oversight notices: details add nothing
 const MEMBER_BIO_URL = 'https://dccouncil.gov/councilmembers/'
 
-export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
-  if (!limsStates(env).has(LIMS_STATE) || !env.LIMS_API_KEY) return
+export interface LimsPassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
+
+/**
+ * `force` (the admin "run now" route) ignores the hour of day: it refreshes the
+ * Council Period and members and runs a full pass on every synced session.
+ */
+export async function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean } = {}): Promise<LimsPassReport[]> {
+  if (!limsStates(env).has(LIMS_STATE) || !env.LIMS_API_KEY) return []
 
   const covering = (await db.select().from(tenants).where(eq(tenants.active, true)).all())
     .filter(t => {
@@ -54,7 +60,7 @@ export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
       } catch { return false }
     })
     .map(t => ({ tenantId: t.tenantId, stateCoverage: t.stateCoverage, queueId: t.queueId ?? null }))
-  if (covering.length === 0) return
+  if (covering.length === 0) return []
 
   // Switching an existing deployment from LegiScan to LIMS needs a cutover that
   // moves tenant links onto the LIMS rows. Until one has run, refuse: syncing
@@ -77,13 +83,13 @@ export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
   let current = await currentLimsSession(db, today)
   // Council Periods and members change every two years; refresh daily, or now if
   // this central has never seen a LIMS session.
-  if (etHour === 5 || !current) {
+  if (opts.force || etHour === 5 || !current) {
     await refreshCouncilPeriod(env.LIMS_API_KEY, db, today)
     current = await currentLimsSession(db, today)
   }
   if (!current) {
     console.warn('[sync-lims] no current Council Period; skipping')
-    return
+    return []
   }
 
   // The previous Council Period keeps syncing for a year after it ends: acts
@@ -91,13 +97,16 @@ export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
   const year = Number(today.slice(0, 4))
   const toSync = [current, ...(await limsSessionRows(db)).filter(r => r.prior === 1 && r.yearEnd >= year - 1)]
 
+  const reports: LimsPassReport[] = []
   for (const session of toSync) {
     // LIMS has one kind of pull, so only the session's full-pass hours run it.
-    if (decideMode(session, etHour) !== 'full') continue
+    if (!opts.force && decideMode(session, etHour) !== 'full') continue
     console.log(`[sync-lims] full pass: ${session.sessionName}`)
-    await runLimsPass(session, covering, env, db, today)
+    const counts = await runLimsPass(session, covering, env, db, today)
+    reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
     await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
   }
+  return reports
 }
 
 function limsSessionRows(db: LsDb) {
@@ -186,7 +195,7 @@ async function runLimsPass(
   env: LsEnv,
   db: LsDb,
   today: string,
-): Promise<void> {
+): Promise<{ records: number; queued: number; refreshed: number }> {
   const councilPeriodId = session.sessionId - LIMS_SESSION_ID_BASE
 
   // One call per category, serially: LIMS rejects concurrent bursts.
@@ -203,7 +212,7 @@ async function runLimsPass(
       records.push({ rec, categoryId, billId })
     }
   }
-  if (records.length === 0) return
+  if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
 
   // Stored hashes (to skip unchanged records) and stored descriptions (bulk has
   // none; the ingestor fills them from LegislationDetails, and the full pass
@@ -267,4 +276,5 @@ async function runLimsPass(
     await queue.sendBatch(refresh.slice(i, i + 100).map(billId => ({ body: { billId } })))
   }
   if (refresh.length > 0) console.log(`[sync-lims] refreshing details for ${refresh.length} tracked bills`)
+  return { records: records.length, queued: queued.size, refreshed: refresh.length }
 }

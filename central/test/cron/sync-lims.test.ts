@@ -354,3 +354,32 @@ describe('cancellations', () => {
     expect(msg?.calendar?.changes.map((c: any) => c.changeType)).toContain('hearing_cancelled')
   })
 })
+
+describe('POST /api/admin/lims-sync', () => {
+  it('runs a full pass immediately, outside the full-sync hours, and reports it', async () => {
+    const { app } = await import('../../src/index-legiscan')
+    const schedule = await import('../../src/lib/sync-schedule')
+    vi.mocked(schedule.getCurrentEtHour).mockReturnValue(8)   // not a full-pass hour
+    try {
+      const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+      const res = await app.fetch(new Request('http://central/api/admin/lims-sync', {
+        method: 'POST', headers: { 'x-admin-secret': 'test-secret' },
+      }), e)
+      expect(res.status).toBe(200)
+      const body = await res.json() as { ok: boolean; passes: { sessionId: number; records: number; queued: number }[] }
+      expect(body.passes).toEqual([expect.objectContaining({ sessionId: limsSessionId(26), records: 4, queued: 2 })])
+      expect(limsQueue.sendBatch).toHaveBeenCalled()
+      expect(lims.getMembers).toHaveBeenCalled()
+    } finally {
+      vi.mocked(schedule.getCurrentEtHour).mockReturnValue(5)
+    }
+  })
+
+  it('rejects a request without the admin secret', async () => {
+    const { app } = await import('../../src/index-legiscan')
+    const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    const res = await app.fetch(new Request('http://central/api/admin/lims-sync', { method: 'POST' }), e)
+    expect(res.status).toBe(401)
+    expect(lims.getBulkData).not.toHaveBeenCalled()
+  })
+})
