@@ -177,6 +177,16 @@ export async function applyMasterList(
   env: LsEnv,
   db: LsDb,
   ingestorQueue: Queue = env.INGESTOR_QUEUE,
+  opts: {
+    /**
+     * Leave the bills row of a changed bill that is being queued for the
+     * ingestor to update, instead of writing the masterlist's status and title
+     * first. The ingestor diffs against the stored row, so a status written
+     * here is a status_change it can no longer see. LIMS sets this, because every
+     * LIMS pass is a full pass.
+     */
+    deferQueuedUpdates?: boolean
+  } = {},
 ): Promise<void> {
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
@@ -256,9 +266,9 @@ export async function applyMasterList(
           updatedAt: now,
         }).onConflictDoNothing()
       )
-    } else if (billChanged) {
-      billStmts.push(
-        db.update(bills).set({
+    }
+    const changedUpdate = !isNew && billChanged
+      ? db.update(bills).set({
           changeHash: entry.change_hash,
           title: entry.title ?? entry.number,
           description: entry.description ?? null,
@@ -269,8 +279,7 @@ export async function applyMasterList(
           url: entry.url ?? null,
           updatedAt: now,
         }).where(eq(bills.billId, entry.bill_id))
-      )
-    }
+      : null
 
     // If the masterlist has no title for this bill, queue it for a getBill() call so we
     // can populate real metadata (title, description, sponsor, history, etc.) on first ingest.
@@ -325,6 +334,18 @@ export async function applyMasterList(
         })
         stubMessagesByTenant.set(t.tenantId, msgs)
       }
+    }
+
+    if (changedUpdate && opts.deferQueuedUpdates && toQueue.has(entry.bill_id)) {
+      // Still record the latest action: the ingestor's getBill-shaped record has
+      // none, and detectChanges does not diff it. change_hash stays behind so a
+      // failed ingest is re-queued on the next pass.
+      billStmts.push(db.update(bills).set({
+        lastAction: entry.last_action ?? null,
+        lastActionDate: entry.last_action_date ?? null,
+      }).where(eq(bills.billId, entry.bill_id)))
+    } else if (changedUpdate) {
+      billStmts.push(changedUpdate)
     }
   }
 

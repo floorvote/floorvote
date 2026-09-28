@@ -1,10 +1,10 @@
-import { eq, and, inArray, gte, lt } from 'drizzle-orm'
+import { eq, and, inArray, gte, lt, sql } from 'drizzle-orm'
 import { getBulkData, getCouncilPeriods, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from '../lib/lims'
 import { bulkHash, clean, councilPeriodName, DC_STATE_ID, LIMS_STATE, toMasterListEntry } from '../lib/lims-map'
-import { limsBillId, limsPeopleId, limsSessionId, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
+import { limsBillId, limsPeopleId, limsSessionId, LIMS_BILL_ID_BASE, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
 import { limsCategories, limsStates } from '../lib/lims-config'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
-import { sessions, bills, tenants, people, limsRecords } from '../db/schema-legiscan'
+import { sessions, bills, billTenants, tenants, people, limsRecords } from '../db/schema-legiscan'
 import { trackLimsCall } from '../lib/lims-ingest'
 import { nowDb } from '../lib/dbTime'
 import { applyMasterList } from './sync-legiscan'
@@ -42,6 +42,21 @@ export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
     .map(t => ({ tenantId: t.tenantId, stateCoverage: t.stateCoverage, queueId: t.queueId ?? null }))
   if (covering.length === 0) return
 
+  // Switching an existing deployment from LegiScan to LIMS needs a cutover that
+  // moves tenant links onto the LIMS rows. Until one has run, refuse: syncing
+  // anyway would give every DC bill a second copy under a new id, and tenants
+  // would see (and pay AI for) both.
+  const legacy = await db.select({ n: sql<number>`COUNT(*)` })
+    .from(bills)
+    .innerJoin(billTenants, eq(billTenants.billId, bills.billId))
+    .where(and(eq(bills.state, LIMS_STATE), lt(bills.billId, LIMS_BILL_ID_BASE)))
+    .get()
+  if (Number(legacy?.n ?? 0) > 0) {
+    throw new Error(
+      `[sync-lims] ${legacy!.n} LegiScan DC bill links exist; LIMS sync is paused until they are cut over. ` +
+      'DC is not syncing from either source meanwhile.')
+  }
+
   const etHour = getCurrentEtHour()
   const today = nowDb().slice(0, 10)
 
@@ -57,20 +72,30 @@ export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
     return
   }
 
-  // LIMS has one kind of pull, so only the session's full-pass hours run it.
-  if (decideMode(current, etHour) !== 'full') return
+  // The previous Council Period keeps syncing for a year after it ends: acts
+  // passed late in a period finish Mayoral and Congressional review after it.
+  const year = Number(today.slice(0, 4))
+  const toSync = [current, ...(await limsSessionRows(db)).filter(r => r.prior === 1 && r.yearEnd >= year - 1)]
 
-  console.log(`[sync-lims] full pass: ${current.sessionName}`)
-  await runLimsPass(current, covering, env, db, today)
-  await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, current.sessionId))
+  for (const session of toSync) {
+    // LIMS has one kind of pull, so only the session's full-pass hours run it.
+    if (decideMode(session, etHour) !== 'full') continue
+    console.log(`[sync-lims] full pass: ${session.sessionName}`)
+    await runLimsPass(session, covering, env, db, today)
+    await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
+  }
 }
 
-async function currentLimsSession(db: LsDb, today: string) {
-  const rows = await db.select().from(sessions).where(and(
+function limsSessionRows(db: LsDb) {
+  return db.select().from(sessions).where(and(
     eq(sessions.state, LIMS_STATE),
     gte(sessions.sessionId, LIMS_SESSION_ID_BASE),
     lt(sessions.sessionId, LIMS_SESSION_ID_BASE * 2),
   )).all()
+}
+
+async function currentLimsSession(db: LsDb, today: string) {
+  const rows = await limsSessionRows(db)
   const year = Number(today.slice(0, 4))
   return rows.find(r => r.prior === 0 && r.yearStart <= year && year <= r.yearEnd)
     ?? rows.find(r => r.prior === 0)
@@ -82,21 +107,10 @@ function pickCurrentPeriod(periods: LimsCouncilPeriod[], today: string): LimsCou
   return inRange ?? [...periods].sort((a, b) => b.councilPeriodId - a.councilPeriodId)[0] ?? null
 }
 
-/** Upsert the current Council Period as a session, and its Councilmembers as people. */
-export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: string): Promise<void> {
-  const periods = await getCouncilPeriods(apiKey, () => trackLimsCall(db, 'CouncilPeriods', {}))
-  const cp = pickCurrentPeriod(periods, today)
-  if (!cp) return
-
-  const sessionId = limsSessionId(cp.councilPeriodId)
+async function upsertPeriod(db: LsDb, cp: LimsCouncilPeriod, prior: 0 | 1): Promise<void> {
   const name = councilPeriodName(cp)
-  // Any other LIMS session stops being current.
-  await db.update(sessions).set({ prior: 1 }).where(and(
-    gte(sessions.sessionId, LIMS_SESSION_ID_BASE),
-    lt(sessions.sessionId, LIMS_SESSION_ID_BASE * 2),
-  ))
   await db.insert(sessions).values({
-    sessionId,
+    sessionId: limsSessionId(cp.councilPeriodId),
     state: LIMS_STATE,
     stateId: DC_STATE_ID,
     yearStart: Number(cp.startDate.slice(0, 4)),
@@ -104,12 +118,33 @@ export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: stri
     sessionTag: `CP${cp.councilPeriodId}`,
     sessionTitle: name,
     sessionName: name,
-    prior: 0,
+    prior,
     sineDie: 0,
   }).onConflictDoUpdate({
     target: sessions.sessionId,
-    set: { sessionTitle: name, sessionName: name, prior: 0 },
+    set: { sessionTitle: name, sessionName: name, prior },
   })
+}
+
+/**
+ * Upsert the current Council Period as a session (plus the previous one while
+ * it is within a year of ending), and the current Councilmembers as people.
+ */
+export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: string): Promise<void> {
+  const periods = await getCouncilPeriods(apiKey, () => trackLimsCall(db, 'CouncilPeriods', {}))
+  const cp = pickCurrentPeriod(periods, today)
+  if (!cp) return
+
+  // Any other LIMS session stops being current.
+  await db.update(sessions).set({ prior: 1 }).where(and(
+    gte(sessions.sessionId, LIMS_SESSION_ID_BASE),
+    lt(sessions.sessionId, LIMS_SESSION_ID_BASE * 2),
+  ))
+  await upsertPeriod(db, cp, 0)
+  const previous = periods.find(p => p.councilPeriodId === cp.councilPeriodId - 1)
+  if (previous && Number(previous.endDate.slice(0, 4)) >= Number(today.slice(0, 4)) - 1) {
+    await upsertPeriod(db, previous, 1)
+  }
 
   const members = await getMembers(cp.councilPeriodId, apiKey,
     () => trackLimsCall(db, 'Members', { councilPeriodId: cp.councilPeriodId }))
@@ -195,5 +230,6 @@ async function runLimsPass(
     if (chunk.length > 0) await db.batch(chunk)
   }
 
-  await applyMasterList(session, entries, coveringTenants, env, db, env.LIMS_INGESTOR_QUEUE ?? env.INGESTOR_QUEUE)
+  await applyMasterList(session, entries, coveringTenants, env, db, env.LIMS_INGESTOR_QUEUE ?? env.INGESTOR_QUEUE,
+    { deferQueuedUpdates: true })
 }

@@ -76,12 +76,45 @@ export async function sha256Hex(s: string): Promise<string> {
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** "Parker, Zachary" / "Zachary Parker " / "Councilmember Parker" → comparable key. */
+const SUFFIX_RE = /,?\s+(Jr|Sr|II|III|IV)\.?(?=,|$)/i
+
+/**
+ * Comparable key for a Councilmember name as LIMS writes it on different
+ * surfaces: "Parker, Zachary", "Zachary Parker ", "Robert C. White, Jr.",
+ * "White, Robert C. Jr.". Generational suffixes are dropped, and a
+ * "Last, First" name is turned around.
+ */
 export function personKey(name: string): string {
-  const n = clean(name).replace(/^(Councilmember|Chairman|Chairperson|Chair)\s+/i, '')
-  const [last, first] = n.includes(',') ? n.split(',').map(p => p.trim()) : [null, null]
-  const full = last !== null ? `${first} ${last}` : n
+  const n = clean(name).replace(/^(Councilmember|Chairman|Chairperson|Chair)\s+/i, '').replace(SUFFIX_RE, '')
+  const comma = n.indexOf(',')
+  const full = comma >= 0 ? `${n.slice(comma + 1)} ${n.slice(0, comma)}` : n
   return full.toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+/** personKey without middle names or initials: "robert c white" → "robert white". */
+export function personShortKey(name: string): string {
+  const parts = personKey(name).split(' ')
+  return parts.length > 2 ? `${parts[0]} ${parts[parts.length - 1]}` : parts.join(' ')
+}
+
+/**
+ * Index Councilmembers under both keys. A short key shared by two people is
+ * left out rather than guessed.
+ */
+export function indexPeople(list: LimsPerson[]): Map<string, LimsPerson> {
+  const map = new Map<string, LimsPerson>()
+  const shortCount = new Map<string, number>()
+  for (const p of list) shortCount.set(personShortKey(p.name), (shortCount.get(personShortKey(p.name)) ?? 0) + 1)
+  for (const p of list) {
+    map.set(personKey(p.name), p)
+    const short = personShortKey(p.name)
+    if (shortCount.get(short) === 1 && !map.has(short)) map.set(short, p)
+  }
+  return map
+}
+
+function findPerson(people: Map<string, LimsPerson>, name: string): LimsPerson | undefined {
+  return people.get(personKey(name)) ?? people.get(personShortKey(name))
 }
 
 export interface LimsDocRef {
@@ -204,7 +237,7 @@ export interface LimsPerson { peopleId: number; name: string; role: string }
 
 export interface BuildContext {
   session: { session_id: number; session_name: string; year_start: number; year_end: number }
-  /** Councilmembers keyed by personKey(). */
+  /** Councilmembers, from indexPeople(). */
   people: Map<string, LimsPerson>
   today: string
 }
@@ -225,9 +258,17 @@ function supplementType(kind: string, name?: string): { type: string; typeId: nu
   return { type: label, typeId: 7 }
 }
 
-const HEARING_RE = /^Public (Hearing|Roundtable|Oversight)/i
-const MARKUP_RE = /^Committee Mark-?up/i
-const CANCEL_RE = /^Cancellation Notice of Public Hearing/i
+/**
+ * Event rows in bulk history, as LIMS words them: "Public Hearing on B26-0400",
+ * "Roundtable on PR26-0009", "Oversight Hearing on ...", "Roundtable Meeting -
+ * PR26-...", "Public Hearing Meeting - ...", "Committee Mark-up of B26-0400".
+ * Notices ("Notice of Public Hearing ...") and cancellations are not events.
+ */
+const HEARING_RE = /^(Public (Hearing|Roundtable)|Public Oversight (Hearing|Roundtable)|Oversight Hearing|Roundtable)( Meeting)?( on\b| -)/i
+const MARKUP_RE = /^Committee Mark-?up\b/i
+/** "Cancellation Notice of Roundtable ...", "Public Hearing Canceled", "Notice of Mark-up Cancellation ...". */
+const CANCEL_RE = /^(Cancellation Notice of (Public Hearing|Roundtable|Oversight Hearing)|(Public Hearing|Roundtable|Oversight Hearing) Cancell?ed)/i
+const MARKUP_CANCEL_RE = /^Notice of Mark-?up Cancellation/i
 
 function voteBucket(vote: string): { key: 'yea' | 'nay' | 'nv' | 'absent'; id: number } {
   const v = clean(vote).toLowerCase()
@@ -307,7 +348,9 @@ export async function buildLimsBill(
   const cancelledDates = new Set(
     (details?.committeeHearing ?? []).filter(h => h.cancellationHearingNotice).map(h => limsDate(h.hearingDate)),
   )
+  // Without details, drop the first event on or after each cancellation entry.
   const cancellationFilings = details ? [] : history.filter(h => CANCEL_RE.test(h.action)).map(h => h.date ?? '')
+  const markupCancellations = history.filter(h => MARKUP_CANCEL_RE.test(h.action)).map(h => h.date ?? '')
   const events: { type_id: number; type: string; date: string; description: string; location: string }[] = []
   if (isNoticeCategory(rec)) {
     const date = limsDate(rec.introductionDate)
@@ -315,24 +358,29 @@ export async function buildLimsBill(
   }
   for (const h of history) {
     if (!h.date) continue
-    if (HEARING_RE.test(h.action) && !/^Notice/i.test(h.action)) {
+    if (HEARING_RE.test(h.action)) {
       if (cancelledDates.has(h.date)) continue
-      // Without details, drop the first hearing on or after each cancellation filing.
       const cancelIdx = cancellationFilings.findIndex(f => f <= h.date!)
       if (cancelIdx >= 0) { cancellationFilings.splice(cancelIdx, 1); continue }
-      events.push({ type_id: 1, type: 'Hearing', date: h.date, description: h.action.replace(/ View Public Hearing Record$/i, ''), location: '' })
+      events.push({ type_id: 1, type: 'Hearing', date: h.date, description: h.action.replace(/ View (Public Hearing|Roundtable) Record$/i, ''), location: '' })
     } else if (MARKUP_RE.test(h.action)) {
+      const cancelIdx = markupCancellations.findIndex(f => f <= h.date!)
+      if (cancelIdx >= 0) { markupCancellations.splice(cancelIdx, 1); continue }
       events.push({ type_id: 3, type: 'Markup Session', date: h.date, description: h.action, location: '' })
     }
   }
   // Identity is type + description (lib/detect-changes.ts calendarIdentityKey), so two
   // entries with the same text on one bill need telling apart.
-  const descCount = new Map<string, number>()
-  for (const e of events) descCount.set(`${e.type_id}|${e.description.toLowerCase()}`, (descCount.get(`${e.type_id}|${e.description.toLowerCase()}`) ?? 0) + 1)
+  // The first keeps its bare text and later ones get an ordinal, so adding a
+  // second hearing never changes the first one's identity.
+  events.sort((a, b) => a.date.localeCompare(b.date))
+  const seenDesc = new Map<string, number>()
   const calendar: LegiscanCalendarEntry[] = []
   for (const e of events) {
-    const dup = (descCount.get(`${e.type_id}|${e.description.toLowerCase()}`) ?? 0) > 1
-    const description = dup ? `${e.description} (${e.date})` : e.description
+    const key = `${e.type_id}|${e.description.toLowerCase()}`
+    const n = (seenDesc.get(key) ?? 0) + 1
+    seenDesc.set(key, n)
+    const description = n > 1 ? `${e.description} (${n})` : e.description
     calendar.push({
       type_id: e.type_id, type: e.type, date: e.date, time: '', location: e.location, description,
       event_hash: (await sha256Hex(`${e.type_id}|${e.date}|${description}|${e.location}`)).slice(0, 32),
@@ -343,7 +391,7 @@ export async function buildLimsBill(
   const sponsors: LegiscanBill['sponsors'] = []
   const addSponsors = (members: LimsMember[] | null | undefined, typeId: number) => {
     for (const m of members ?? []) {
-      const person = ctx.people.get(personKey(m.memberName))
+      const person = findPerson(ctx.people, m.memberName)
       if (!person) {
         console.warn(`[lims-map] ${number}: no Councilmember matches sponsor "${clean(m.memberName)}"`)
         continue
@@ -368,14 +416,14 @@ export async function buildLimsBill(
     const memberVotes = (vd.votes ?? []).map(v => {
       const b = voteBucket(v.vote)
       counts[b.key]++
-      return { people_id: ctx.people.get(personKey(v.councilMember))?.peopleId ?? null, vote_id: b.id, vote_text: clean(v.vote) }
+      return { people_id: findPerson(ctx.people, v.councilMember)?.peopleId ?? null, vote_id: b.id, vote_text: clean(v.vote) }
     })
     const date = limsDate(a.actionDate) ?? ''
     votes.push({
       roll_call_id: limsRollCallId(billId, votes.length),
       date, desc: [clean(a.action), clean(vd.voteType)].filter(Boolean).join(' — '),
       yea: counts.yea, nay: counts.nay, nv: counts.nv, absent: counts.absent,
-      total: memberVotes.length, passed: /approv|adopt|pass/i.test(vd.voteResult ?? '') ? 1 : 0,
+      total: memberVotes.length, passed: /^(approved|adopted|passed|confirmed)\b/i.test(clean(vd.voteResult)) ? 1 : 0,
       chamber: 'C', chamber_id: 0, url: '', state_link: clean(a.videoLink),
       member_votes: memberVotes,
     })

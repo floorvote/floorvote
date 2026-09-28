@@ -172,3 +172,76 @@ describe('ingesting a LIMS bill', () => {
     expect(queued).not.toContain(B0400)
   })
 })
+
+describe('review fixes', () => {
+  async function passAndIngest(db: any) {
+    const run = makeEnv()
+    await runLimsSync(run.env, db)
+    const ids = run.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+    for (const billId of ids) {
+      await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
+    }
+    return ids
+  }
+
+  it('records a DC status change even though every LIMS pass is a full pass', async () => {
+    const db = drizzle(env.DB, { schema })
+    const mayoral = { ...bulk['B26-0400'], status: 'Under Mayoral Review' }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [mayoral] : []))
+    vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), status: 'Under Mayoral Review' })
+    await passAndIngest(db)
+
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [{ ...mayoral, status: 'Official Law' }] : []))
+    vi.mocked(lims.getLegislationDetails).mockResolvedValue(JSON.parse(details0400Raw))
+    const queued = await passAndIngest(db)
+
+    expect(queued).toEqual([B0400])
+    const changes = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, B0400)).all()
+    const status = changes.find(c => c.changeType === 'status_change')
+    expect(status).toMatchObject({ oldValue: 'Under Mayoral Review', newValue: 'Official Law' })
+  })
+
+  it('still records the latest action on a queued bill before the ingestor runs', async () => {
+    const db = drizzle(env.DB, { schema })
+    await passAndIngest(db)
+    const rec = bulk['B26-0400']
+    const newer = { ...rec, legislationHistory: [...rec.legislationHistory,
+      { legislationNumber: 'B26-0400', actionDate: 'Sep 01, 2026', actionDescription: 'Codified', downloadURL: '' }] }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [newer] : []))
+    const { env: e } = makeEnv()
+    await runLimsSync(e, db)
+    const row = await db.select().from(schema.bills).where(eq(schema.bills.billId, B0400)).get()
+    expect(row).toMatchObject({ lastAction: 'Codified', lastActionDate: '2026-09-01' })
+  })
+
+  it('refuses to run while LegiScan DC bills are linked to tenants', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values({ billId: 1_950_000, sessionId: 2150, state: 'DC', stateId: 51, billNumber: 'B26-0400', changeHash: 'h', title: 't' } as any)
+    await db.insert(schema.billTenants).values({ billId: 1_950_000, tenantId: 'oca', matchType: 'keyword' })
+    const { env: e, limsQueue } = makeEnv()
+
+    await expect(runLimsSync(e, db)).rejects.toThrow(/cut over/)
+    expect(lims.getBulkData).not.toHaveBeenCalled()
+    expect(limsQueue.sendBatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps syncing the previous Council Period for a year after it ends', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2027-03-02T15:00:00Z'))
+    try {
+      vi.mocked(lims.getCouncilPeriods).mockResolvedValue([
+        PERIOD,
+        { councilPeriodId: 27, councilPeriod: '27 (2027-28)', startDate: '2027-01-02T00:00:00', endDate: '2028-12-31T00:00:00' },
+      ])
+      const { env: e } = makeEnv()
+      await runLimsSync(e, db)
+      const periods = vi.mocked(lims.getBulkData).mock.calls.map(c => c[1])
+      expect(new Set(periods)).toEqual(new Set([26, 27]))
+      const s26 = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionId, limsSessionId(26))).get()
+      expect(s26?.prior).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

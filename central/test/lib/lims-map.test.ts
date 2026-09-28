@@ -6,7 +6,7 @@ import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 import {
   buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
-  councilPeriodName, type BuildContext, type LimsPerson,
+  councilPeriodName, indexPeople, type BuildContext, type LimsPerson,
 } from '../../src/lib/lims-map'
 import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../src/lib/lims-ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../src/lib/lims'
@@ -18,8 +18,7 @@ const dReprog = JSON.parse(detailsReprogRaw) as LimsLegislationDetails
 const members = JSON.parse(membersRaw) as LimsCouncilMember[]
 
 const TODAY = '2026-09-28'
-const people = new Map<string, LimsPerson>(members.map(m =>
-  [personKey(m.name), { peopleId: limsPeopleId(m.id), name: m.name, role: m.title }]))
+const people = indexPeople(members.map((m): LimsPerson => ({ peopleId: limsPeopleId(m.id), name: m.name, role: m.title })))
 const ctx: BuildContext = {
   session: { session_id: limsSessionId(26), session_name: '2025-2026 Council Period 26', year_start: 2025, year_end: 2026 },
   people,
@@ -184,5 +183,73 @@ describe('buildLimsBill: calendar edge cases', () => {
     const b = await buildLimsBill(twice, d0400, limsBillId('B26-0400')!, await bulkHash(twice), ctx)
     const descs = b.calendar.filter(c => c.type_id === 1).map(c => c.description)
     expect(new Set(descs).size).toBe(descs.length)
+  })
+})
+
+describe('review fixes', () => {
+  it('puts roundtables and other hearing wordings on the calendar, but not notices or cancellations', async () => {
+    const rec = {
+      ...bulk['PR26-0808'],
+      legislationHistory: [
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 01, 2026', actionDescription: 'Notice of Roundtable filed in the Office of Secretary', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 15, 2026', actionDescription: 'Roundtable on PR26-0808', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 16, 2026', actionDescription: 'Oversight Hearing on PR26-0808', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 17, 2026', actionDescription: 'Roundtable Meeting - PR26-0808', downloadURL: '' },
+      ],
+    }
+    const b = await buildLimsBill(rec, null, limsBillId('PR26-0808')!, await bulkHash(rec), ctx)
+    expect(b.calendar.map(c => [c.date, c.description])).toEqual([
+      ['2026-10-15', 'Roundtable on PR26-0808'],
+      ['2026-10-16', 'Oversight Hearing on PR26-0808'],
+      ['2026-10-17', 'Roundtable Meeting - PR26-0808'],
+    ])
+  })
+
+  it('drops a hearing a bulk cancellation entry covers when details are unavailable', async () => {
+    const rec = {
+      ...bulk['PR26-0808'],
+      legislationHistory: [
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 10, 2026', actionDescription: 'Roundtable Canceled', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Oct 15, 2026', actionDescription: 'Roundtable on PR26-0808', downloadURL: '' },
+      ],
+    }
+    const b = await buildLimsBill(rec, null, limsBillId('PR26-0808')!, await bulkHash(rec), ctx)
+    expect(b.calendar).toEqual([])
+  })
+
+  it('matches Councilmembers whose names carry Jr./Sr. or a middle initial', () => {
+    expect(personKey('White, Robert C. Jr.')).toBe(personKey('Robert C. White, Jr.'))
+    expect(personKey('White, Trayon Sr.')).toBe(personKey('Trayon White, Sr.'))
+    expect(personKey('Kenyan R.  McDuffie')).toBe('kenyan r mcduffie')
+  })
+
+  it('resolves sponsor and voter names through the people index', async () => {
+    const d = {
+      ...d0400,
+      introducers: [{ memberName: 'White, Robert C. Jr.', memberTitle: 'Councilmember' }],
+      coIntroducers: [{ memberName: 'McDuffie, Kenyan', memberTitle: 'Councilmember' }],
+      coSponsors: null,
+    }
+    const b = await build('B26-0400', d)
+    expect(b.sponsors.map(s => s.name)).toEqual(['Robert C. White, Jr.', 'Kenyan R.  McDuffie'])
+    const white = b.votes.flatMap(v => v.member_votes!).filter(m => m.people_id === limsPeopleId(members.find(x => x.name.startsWith('Robert'))!.id))
+    expect(white.length).toBeGreaterThan(0)
+  })
+
+  it('keeps the first hearing identity when a second same-text hearing appears', async () => {
+    const rec = bulk['B26-0400']
+    const before = await build('B26-0400', d0400)
+    const twice = { ...rec, legislationHistory: [...rec.legislationHistory, { ...rec.legislationHistory[5], actionDate: 'Dec 01, 2025' }] }
+    const after = await buildLimsBill(twice, d0400, limsBillId('B26-0400')!, await bulkHash(twice), ctx)
+    const first = before.calendar.find(c => c.type_id === 1)!
+    expect(after.calendar.find(c => c.date === first.date)?.description).toBe(first.description)
+    expect(after.calendar.find(c => c.date === '2025-12-01')?.description).toBe('Public Hearing on B26-0400 (2)')
+  })
+
+  it('does not count a disapproval as passing', async () => {
+    const actions = d0400.actions!.filter(a => a.voteDetails).slice(0, 1)
+      .map(a => ({ ...a, voteDetails: { ...a.voteDetails!, voteResult: 'Disapproved' } }))
+    const b = await build('B26-0400', { ...d0400, actions })
+    expect(b.votes[0].passed).toBe(0)
   })
 })
