@@ -22,6 +22,7 @@ const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
 // telling someone the right exists is the whole job.
 const LICENSE_NOTE = `${PRODUCT_NAME} is free software licensed under the ${LICENSE_NAME}, which means that users are entitled to the source code of the version they are being served.`
 const DATA_NOTE = 'Legislative data comes from LegiScan under the Creative Commons Attribution 4.0 license, which allows anyone to reuse it with credit.'
+const LIMS_NOTE = 'Legislative data comes from the Council of the District of Columbia\'s Legislative Information Management System (LIMS).'
 
 // The hover bubble in HoverTooltip's default archetype is aria-hidden — the
 // child's own name carries the accessible name — so on its own the sentence
@@ -29,6 +30,7 @@ const DATA_NOTE = 'Legislative data comes from LegiScan under the Creative Commo
 // via aria-describedby, so a screen reader announces the same explanation.
 const LICENSE_NOTE_ID = 'footer-license-note'
 const DATA_NOTE_ID = 'footer-data-note'
+const LIMS_NOTE_ID = 'footer-lims-note'
 
 /**
  * Pinned sidebar footer: the operator credit (logo + name, optionally linked) and
@@ -68,11 +70,13 @@ export function OperatorBranding({
   sourceUrl: propSourceUrl,
   showTerms: propShowTerms,
   showPrivacy: propShowPrivacy,
+  dataSources: propDataSources,
 }: {
   operator?: OperatorConfig
   sourceUrl?: string
   showTerms?: boolean
   showPrivacy?: boolean
+  dataSources?: string[]
 } = {}) {
   const { config } = useConfig()
   const { demoMode } = useDemo()
@@ -82,6 +86,11 @@ export function OperatorBranding({
   const visible = legalDocsVisible(demoMode)
   const showTerms = propShowTerms ?? visible.showTerms
   const showPrivacy = propShowPrivacy ?? visible.showPrivacy
+  const sources = new Set(propDataSources ?? config?.dataSources ?? ['legiscan'])
+  const showLims = sources.has('lims')
+  // LegiScan unless the tenant names only other known providers, so a list with
+  // nothing recognisable never drops the CC BY credit.
+  const showLegiscan = sources.has('legiscan') || !showLims
   const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
 
   const showName = Boolean(operator.name)
@@ -135,15 +144,29 @@ export function OperatorBranding({
         {')'}
         <span id={LICENSE_NOTE_ID} style={SR_ONLY}>{LICENSE_NOTE}</span>
       </div>
-      <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
-        Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
-        {' ('}
-        <HoverTooltip text={DATA_NOTE} maxWidth={280} placement="top-start">
-          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" aria-describedby={DATA_NOTE_ID} style={{ color: color.textMuted }}>CC BY 4.0</a>
-        </HoverTooltip>
-        {')'}
-        <span id={DATA_NOTE_ID} style={SR_ONLY}>{DATA_NOTE}</span>
-      </div>
+      {/* One credit per provider the tenant's data comes from (GET /config
+          dataSources). LegiScan carries its CC BY license; the DC Council's LIMS
+          publishes no license, so it is credited without one. */}
+      {showLegiscan && (
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
+          Data: <a href="https://legiscan.com" target="_blank" rel="noopener noreferrer" style={{ color: color.textMuted }}>LegiScan</a>
+          {' ('}
+          <HoverTooltip text={DATA_NOTE} maxWidth={280} placement="top-start">
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" aria-describedby={DATA_NOTE_ID} style={{ color: color.textMuted }}>CC BY 4.0</a>
+          </HoverTooltip>
+          {')'}
+          <span id={DATA_NOTE_ID} style={SR_ONLY}>{DATA_NOTE}</span>
+        </div>
+      )}
+      {showLims && (
+        <div style={{ fontSize: fontSize.xs, color: color.textMuted, marginTop: 4, textAlign: 'left' }}>
+          Data:{' '}
+          <HoverTooltip text={LIMS_NOTE} maxWidth={280} placement="top-start">
+            <a href="https://lims.dccouncil.gov" target="_blank" rel="noopener noreferrer" aria-describedby={LIMS_NOTE_ID} style={{ color: color.textMuted }}>DC Council LIMS</a>
+          </HoverTooltip>
+          <span id={LIMS_NOTE_ID} style={SR_ONLY}>{LIMS_NOTE}</span>
+        </div>
+      )}
       {/* A legal doc is a reference, not a destination: opening it alongside keeps
           whatever page the footer sits on — a half-filled form, a bill mid-scroll. */}
       {(showTerms || showPrivacy) && (
