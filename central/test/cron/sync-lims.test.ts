@@ -383,3 +383,12 @@ describe('POST /api/admin/lims-sync', () => {
     expect(lims.getBulkData).not.toHaveBeenCalled()
   })
 })
+
+describe('monitor stubs', () => {
+  it('link every LIMS bill to its Council page, matched or not', async () => {
+    const db = drizzle(env.DB, { schema })
+    await runLimsSync(makeEnv().env, db)
+    const stub = await db.select().from(schema.bills).where(eq(schema.bills.billId, limsBillId('B26-0001')!)).get()
+    expect(stub?.stateLink).toBe('https://lims.dccouncil.gov/Legislation/B26-0001')
+  })
+})

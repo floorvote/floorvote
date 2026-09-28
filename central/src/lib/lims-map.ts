@@ -205,6 +205,11 @@ export async function effectiveChangeHash(rec: LimsBulkRecord, bulk: string, tod
   return sha256Hex(`${bulk}|${dated.filter(d => d <= today).length}`)
 }
 
+/** The Council's public page for a measure. */
+export function limsBillUrl(number: string): string {
+  return `https://lims.dccouncil.gov/Legislation/${number}`
+}
+
 function isNoticeCategory(rec: { legislationCategory: string }): boolean {
   return /Oversight Hearing\/Roundtable Notice/i.test(rec.legislationCategory)
 }
@@ -241,6 +246,7 @@ export function toMasterListEntry(
     status_date: last?.date,
     last_action: last?.action,
     last_action_date: last?.date,
+    state_link: limsBillUrl(clean(rec.legislationNumber)),
   }
 }
 
@@ -467,7 +473,7 @@ export async function buildLimsBill(
     current_body: 'C',
     current_body_id: 0,
     url: '',
-    state_link: `https://lims.dccouncil.gov/Legislation/${number}`,
+    state_link: limsBillUrl(number),
     pending_committee_id: 0,
     session_id: ctx.session.session_id,
     session: ctx.session,

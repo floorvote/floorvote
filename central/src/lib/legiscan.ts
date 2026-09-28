@@ -19,6 +19,11 @@ export interface MasterListEntry {
   last_action?: string
   last_action_date?: string
   url?: string
+  /**
+   * The source's own page for the bill. LegiScan masterlists don't carry it
+   * (getBill fills it later); LIMS sets it so monitor stubs link out too.
+   */
+  state_link?: string
 }
 
 interface BillTextMeta {
