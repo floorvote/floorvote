@@ -308,3 +308,49 @@ describe('Codex review fixes', () => {
     }
   })
 })
+
+describe('cancellations', () => {
+  it('keeps the cancellation in history and documents, and alerts tenants that an upcoming hearing was cancelled', async () => {
+    const db = drizzle(env.DB, { schema })
+    const B0769 = limsBillId('B26-0769')!
+    const rec = bulk['B26-0769']   // "Public Hearing on B26-0769", Oct 23 2026
+    await db.insert(schema.keywordRegistry).values({ tenantId: 'oca', keyword: rec.title.split(' ')[0].toLowerCase() })
+    const d = JSON.parse(details0400Raw)
+    const hearing = { hearingDate: '2026-10-23T00:00:00', hearingType: 'Public Hearing', cancellationHearingNotice: null }
+    const detailsFor = (h: object) => ({ ...d, legislationNumber: 'B26-0769', status: 'Under Council Review', committeeHearing: [h], committeeMarkup: [], actions: [], otherDocuments: [] })
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [rec] : []))
+
+    const ingest = async (details: object, bulkRec: any) => {
+      vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [bulkRec] : []))
+      vi.mocked(lims.getLegislationDetails).mockResolvedValue(details as any)
+      const run = makeEnv()
+      await runLimsSync(run.env, db)
+      await processLsIngestorQueue({ messages: [{ body: { billId: B0769 }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
+      return run
+    }
+
+    await ingest(detailsFor(hearing), rec)
+    expect((await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0769)).all()).map(c => c.date)).toContain('2026-10-23')
+
+    // LIMS files a cancellation: new history lines in bulk, and details flag the hearing.
+    const cancelled = { ...rec, legislationHistory: [...rec.legislationHistory,
+      { legislationNumber: 'B26-0769', actionDate: 'Oct 01, 2026', actionDescription: 'Cancellation Notice of Public Hearing filed in the Office of Secretary', downloadURL: 'https://lims.dccouncil.gov/downloads/LIMS/1/Hearing_Cancellation_Notice/B26-0769-Hearing_Cancellation_Notice1.pdf?Id=999001' },
+      { legislationNumber: 'B26-0769', actionDate: 'Oct 02, 2026', actionDescription: 'Public Hearing Canceled', downloadURL: '' }] }
+    const run = await ingest(detailsFor({ ...hearing, cancellationHearingNotice: 'https://lims.dccouncil.gov/downloads/x.pdf?Id=999001' }), cancelled)
+
+    const history = (await db.select().from(schema.billHistory).where(eq(schema.billHistory.billId, B0769)).all()).map(h => h.action)
+    expect(history).toEqual(expect.arrayContaining(['Cancellation Notice of Public Hearing filed in the Office of Secretary', 'Public Hearing Canceled']))
+    const supps = await db.select().from(schema.billSupplements).where(eq(schema.billSupplements.billId, B0769)).all()
+    expect(supps.some(s => /Cancellation/i.test(s.type ?? ''))).toBe(true)
+    expect((await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0769)).all()).map(c => c.date)).not.toContain('2026-10-23')
+
+    const changes = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, B0769)).all()
+    expect(changes.map(c => c.changeType)).toContain('hearing_cancelled')
+    const sent = [
+      ...run.tenantQueue.send.mock.calls.map(c => c[0]),
+      ...run.tenantQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)),
+    ]
+    const msg = sent.find((m: any) => m.billId === `legiscan:${B0769}` && m.calendar)
+    expect(msg?.calendar?.changes.map((c: any) => c.changeType)).toContain('hearing_cancelled')
+  })
+})
