@@ -6,7 +6,7 @@ import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 import {
   buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
-  councilPeriodName, indexPeople, effectiveChangeHash, type BuildContext, type LimsPerson,
+  councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
 } from '../../src/lib/lims-map'
 import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../src/lib/lims-ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../src/lib/lims'
@@ -271,5 +271,19 @@ describe('effectiveChangeHash', () => {
     const rec = bulk['B26-0400']
     const h = await bulkHash(rec)
     expect(await effectiveChangeHash(rec, h, '2026-09-28')).toBe(h)
+  })
+})
+
+describe('limsMeasureStatus', () => {
+  const base = { status: '', lawNumber: null, actResNumber: null }
+  it('uses the stated status when there is one', () => {
+    expect(limsMeasureStatus({ ...base, status: 'Under Council Review' })).toBe(limsStatusCode('Under Council Review'))
+    expect(limsMeasureStatus({ ...base, status: '' }, 'Tabled')).toBe(limsStatusCode('Tabled'))
+  })
+  it('infers a blank or Not Applicable status from law, act, and resolution numbers (earlier periods)', () => {
+    expect(limsMeasureStatus({ ...base, lawNumber: 'L25-0175', actResNumber: 'A25-0415' })).toBe(limsStatusCode('Official Law'))
+    expect(limsMeasureStatus({ ...base, actResNumber: 'A25-0400' }, 'Not Applicable')).toBe(limsStatusCode('Enacted'))
+    expect(limsMeasureStatus({ ...base, actResNumber: 'R25-0100' })).toBe(limsStatusCode('Approved'))
+    expect(limsMeasureStatus(base)).toBe(100)
   })
 })

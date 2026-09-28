@@ -49,6 +49,25 @@ export function limsStatusCode(name: string | null | undefined): number {
   return LIMS_STATUS_BASE + (id ?? 0)
 }
 
+/**
+ * Status code for a measure. Earlier Council Periods leave `status` blank (every
+ * CP25 bill does) or "Not Applicable", but still carry the law and act or
+ * resolution numbers, so fall back to those: a law number means Official Law,
+ * an act number (A25-...) Enacted, a resolution number (R25-...) Approved.
+ */
+export function limsMeasureStatus(
+  rec: { status: string | null; lawNumber: string | null; actResNumber: string | null },
+  detailsStatus?: string | null,
+): number {
+  const code = limsStatusCode(clean(detailsStatus) || rec.status)
+  if (code !== LIMS_STATUS_BASE) return code
+  if (clean(rec.lawNumber)) return limsStatusCode('Official Law')
+  const actRes = clean(rec.actResNumber)
+  if (/^A\d/i.test(actRes)) return limsStatusCode('Enacted')
+  if (/^R\d/i.test(actRes)) return limsStatusCode('Approved')
+  return code
+}
+
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
 /** Trim and collapse whitespace; LIMS text carries trailing and doubled spaces. */
@@ -242,7 +261,7 @@ export function toMasterListEntry(
     change_hash: hash,
     title: clean(rec.title) || clean(rec.legislationNumber),
     description: description as string,
-    status: limsStatusCode(rec.status),
+    status: limsMeasureStatus(rec),
     status_date: last?.date,
     last_action: last?.action,
     last_action_date: last?.date,
@@ -464,7 +483,7 @@ export async function buildLimsBill(
     state: LIMS_STATE,
     state_id: DC_STATE_ID,
     change_hash: hash,
-    status: limsStatusCode(details?.status || rec.status),
+    status: limsMeasureStatus(rec, details?.status),
     status_date: last?.date ?? '',
     bill_type: clean(rec.legislationSubCategory) || clean(rec.legislationCategory),
     bill_type_id: /^[A-Z]+/.exec(number)?.[0] ?? '',
