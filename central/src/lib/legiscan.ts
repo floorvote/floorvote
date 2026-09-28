@@ -113,6 +113,13 @@ interface LegiscanVoteSummary {
   chamber_id: number
   url: string
   state_link: string
+  /**
+   * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
+   * per vote); sources that include them inline, such as DC LIMS, set this and
+   * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
+   * 3 NV, 4 Absent.
+   */
+  member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
 
 export interface LegiscanCalendarEntry {

@@ -186,3 +186,19 @@ export function getLegislationDetails(
   return limsFetch<LimsLegislationDetails>(
     `LegislationDetails/${encodeURIComponent(legislationNumber)}`, apiKey, {}, onRequest)
 }
+
+/** GET Members/{councilPeriodId}. */
+export interface LimsCouncilMember {
+  id: number
+  name: string        // "Zachary Parker"
+  firstName: string | null
+  lastName: string | null
+  middleName: string | null
+  title: string       // "Councilmember" | "Chairman"
+  startDate: string | null
+  endDate: string | null
+}
+
+export function getMembers(councilPeriodId: number, apiKey: string, onRequest?: () => void): Promise<LimsCouncilMember[]> {
+  return limsFetch<LimsCouncilMember[]>(`Members/${councilPeriodId}`, apiKey, {}, onRequest)
+}

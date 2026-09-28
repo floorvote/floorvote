@@ -7,6 +7,7 @@ import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { isLimsSessionId } from '../lib/lims-ids'
+import { limsStates } from '../lib/lims-config'
 import type { MasterListEntry } from '../lib/legiscan'
 
 const BATCH = 80
@@ -39,6 +40,9 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
       for (const s of coverage) trackedStates.add(s)
     }
   }
+
+  // States sourced from DC LIMS are synced by cron/sync-lims.ts, not here.
+  for (const state of limsStates(env)) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
 
@@ -172,6 +176,7 @@ export async function applyMasterList(
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
   env: LsEnv,
   db: LsDb,
+  ingestorQueue: Queue = env.INGESTOR_QUEUE,
 ): Promise<void> {
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
@@ -334,7 +339,7 @@ export async function applyMasterList(
 
   const queueIds = Array.from(toQueue)
   for (let i = 0; i < queueIds.length; i += 100) {
-    await env.INGESTOR_QUEUE.sendBatch(
+    await ingestorQueue.sendBatch(
       queueIds.slice(i, i + 100).map<LsIngestorMessage>(billId => ({ billId }))
         .map(body => ({ body }))
     )

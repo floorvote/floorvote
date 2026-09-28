@@ -1,0 +1,174 @@
+import { env } from 'cloudflare:test'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { drizzle } from 'drizzle-orm/d1'
+import { eq } from 'drizzle-orm'
+import * as schema from '../../src/db/schema-legiscan'
+import { setupLsDb } from '../helpers/setupLsDb'
+import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
+import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
+import membersRaw from '../fixtures/lims/members-26.json?raw'
+
+vi.mock('../../src/lib/lims', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/lims')>('../../src/lib/lims')
+  return { ...actual, getCouncilPeriods: vi.fn(), getMembers: vi.fn(), getBulkData: vi.fn(), getLegislationDetails: vi.fn() }
+})
+vi.mock('../../src/lib/legiscan', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+  return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
+    getMasterListBySession: vi.fn().mockResolvedValue([]), getMasterListRaw: vi.fn().mockResolvedValue([]) }
+})
+vi.mock('../../src/lib/sync-schedule', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/sync-schedule')>('../../src/lib/sync-schedule')
+  return { ...actual, getCurrentEtHour: vi.fn(() => 5) }
+})
+const fetchMock = vi.fn()
+vi.stubGlobal('fetch', fetchMock)
+
+import { runLimsSync } from '../../src/cron/sync-lims'
+import { runLsSync } from '../../src/cron/sync-legiscan'
+import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
+import * as lims from '../../src/lib/lims'
+import * as legiscan from '../../src/lib/legiscan'
+import { limsBillId, limsSessionId, isLimsDocId } from '../../src/lib/lims-ids'
+import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
+
+const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
+const PERIOD = { councilPeriodId: 26, councilPeriod: '26 (2025-26)', startDate: '2025-01-02T00:00:00', endDate: '2026-12-31T00:00:00' }
+const B0400 = limsBillId('B26-0400')!
+const PDF = '%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
+
+function makeEnv(extra: Record<string, unknown> = {}) {
+  const limsQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn() }
+  const tenantQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+  return {
+    limsQueue, tenantQueue,
+    env: {
+      ...(env as any),
+      LIMS_API_KEY: 'lims-key', LIMS_STATES: 'DC', LIMS_CATEGORIES: '1,18',
+      LIMS_INGESTOR_QUEUE: limsQueue,
+      INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() },
+      [tenantQueueBindingName('oca')]: tenantQueue,
+      ...extra,
+    },
+  }
+}
+
+beforeEach(async () => {
+  await setupLsDb()
+  vi.clearAllMocks()
+  vi.mocked(lims.getCouncilPeriods).mockResolvedValue([PERIOD])
+  vi.mocked(lims.getMembers).mockResolvedValue(JSON.parse(membersRaw))
+  vi.mocked(lims.getBulkData).mockImplementation(async (categoryId: number) =>
+    categoryId === 1 ? [bulk['B26-0400'], bulk['B26-0769'], bulk['B26-0001']]
+      : categoryId === 18 ? [bulk['HN26-0171']] : [])
+  vi.mocked(lims.getLegislationDetails).mockResolvedValue(JSON.parse(details0400Raw))
+  fetchMock.mockImplementation(async () => new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } }))
+  const db = drizzle(env.DB, { schema })
+  await db.insert(schema.tenants).values({ tenantId: 'oca', name: 'OCA', stateCoverage: '["DC"]', active: true })
+  await db.insert(schema.keywordRegistry).values([{ tenantId: 'oca', keyword: 'neglect' }, { tenantId: 'oca', keyword: 'behavioral health' }])
+})
+
+describe('runLimsSync', () => {
+  it('does nothing without a LIMS key', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv({ LIMS_API_KEY: undefined })
+    await runLimsSync(e, db)
+    expect(lims.getCouncilPeriods).not.toHaveBeenCalled()
+  })
+
+  it('seeds the Council Period and members, links bills, and queues matches to the LIMS queue', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e, limsQueue } = makeEnv()
+
+    await runLimsSync(e, db)
+
+    const session = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionId, limsSessionId(26))).get()
+    expect(session?.sessionName).toBe('2025-2026 Council Period 26')
+    expect(session?.state).toBe('DC')
+    expect((await db.select().from(schema.people).all()).length).toBe(15)
+    expect((await db.select().from(schema.limsRecords).all()).length).toBe(4)
+
+    const links = new Map((await db.select().from(schema.billTenants).all()).map(l => [l.billId, l.matchType]))
+    expect(links.get(B0400)).toBe('keyword')
+    expect(links.get(limsBillId('HN26-0171')!)).toBe('keyword')
+    expect(links.get(limsBillId('B26-0001')!)).toBeNull()
+
+    const queued = limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId)).sort()
+    expect(queued).toEqual([B0400, limsBillId('HN26-0171')!].sort())
+    expect(e.INGESTOR_QUEUE.sendBatch).not.toHaveBeenCalled()
+    expect(lims.getBulkData).toHaveBeenCalledTimes(2)
+  })
+
+  it('queues nothing on a second pass over unchanged data', async () => {
+    const db = drizzle(env.DB, { schema })
+    const first = makeEnv()
+    await runLimsSync(first.env, db)
+    // Stand in for the ingestor having run: it writes the same change_hash back.
+    const second = makeEnv()
+    await runLimsSync(second.env, db)
+    expect(second.limsQueue.sendBatch).not.toHaveBeenCalled()
+  })
+
+  it('stops the LegiScan sync from touching DC', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv()
+    await runLimsSync(e, db)
+    await runLsSync(e, db)
+    expect(legiscan.getSessionList).not.toHaveBeenCalled()
+    expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
+  })
+})
+
+describe('ingesting a LIMS bill', () => {
+  it('builds the bill from the stored record plus LegislationDetails and notifies the tenant', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e, tenantQueue } = makeEnv()
+    await runLimsSync(e, db)
+
+    const ack = vi.fn(); const retry = vi.fn()
+    await processLsIngestorQueue({ messages: [{ body: { billId: B0400 }, ack, retry }] } as any, e, db)
+
+    expect(retry).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalled()
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(lims.getLegislationDetails).toHaveBeenCalledWith('B26-0400', 'lims-key', expect.any(Function))
+
+    const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, B0400)).get()
+    expect(bill?.title).toBe('Statutory Neglect Amendment Act of 2025')
+    expect(bill?.changeHash).toBe((await db.select().from(schema.limsRecords).where(eq(schema.limsRecords.billId, B0400)).get())?.bulkHash)
+
+    const texts = await db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, B0400)).all()
+    expect(texts.length).toBeGreaterThan(3)
+    for (const t of texts) {
+      expect(isLimsDocId(t.docId)).toBe(true)
+      expect(t.textHash).toBeTruthy()
+      expect(t.r2Key).toBeTruthy()
+    }
+    expect(legiscan.getBillText).not.toHaveBeenCalled()
+
+    const rc = await db.select().from(schema.rollCalls).where(eq(schema.rollCalls.billId, B0400)).all()
+    expect(rc.length).toBeGreaterThan(0)
+    const memberVotes = await db.select().from(schema.rollCallVotes).where(eq(schema.rollCallVotes.rollCallId, rc[0].rollCallId)).all()
+    expect(memberVotes.length).toBe(rc[0].total)
+
+    const cal = await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0400)).all()
+    expect(cal.map(c => c.date).sort()).toEqual(['2025-11-13', '2026-01-27', '2026-02-23'])
+
+    const sent = [
+      ...tenantQueue.send.mock.calls.map(c => c[0]),
+      ...tenantQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)),
+    ]
+    expect(sent.some((m: any) => m.billId === `legiscan:${B0400}` && !m.stubOnly)).toBe(true)
+  })
+
+  it('does not requeue a bill after it has been ingested', async () => {
+    const db = drizzle(env.DB, { schema })
+    const first = makeEnv()
+    await runLimsSync(first.env, db)
+    await processLsIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, first.env, db)
+    const second = makeEnv()
+    await runLimsSync(second.env, db)
+    const queued = second.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+    expect(queued).not.toContain(B0400)
+  })
+})

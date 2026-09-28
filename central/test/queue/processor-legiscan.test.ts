@@ -484,7 +484,7 @@ describe('downloadTextToR2: bot-wall handling', () => {
 })
 
 describe('LIMS ids never reach LegiScan', () => {
-  const LIMS_BILL = limsBillId(60460)
+  const LIMS_BILL = limsBillId('B26-0400')!
   const limsPdf = {
     doc_id: limsDocId(224385), date: '2025-10-06', type: 'Introduction', type_id: 1,
     mime: 'application/pdf', mime_id: 2, url: '',

@@ -1,10 +1,11 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getBill, getBillText, type LegiscanBill } from '../lib/legiscan'
 import { isLimsBillId } from '../lib/lims-ids'
+import { fetchLimsBill } from '../lib/lims-ingest'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
-  billChangeLog, rollCalls, people, tenants,
+  billChangeLog, rollCalls, rollCallVotes, people, tenants,
 } from '../db/schema-legiscan'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
 import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage, CalendarBlock } from '../types-legiscan'
@@ -74,9 +75,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
  * (see lib/lims-ids.ts) are never sent to LegiScan.
  */
 async function fetchBillForIngest(billId: number, env: LsEnv, db: LsDb): Promise<LegiscanBill> {
-  if (isLimsBillId(billId)) {
-    throw new Error(`bill ${billId} is a LIMS bill and no LIMS fetcher is configured`)
-  }
+  if (isLimsBillId(billId)) return await fetchLimsBill(billId, env, db)
   return getBill(billId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getBill', { billId }))
 }
@@ -470,6 +469,16 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
         stateLink:   v.state_link || null,
       },
     })
+
+    if (v.member_votes) {
+      await db.delete(rollCallVotes).where(eq(rollCallVotes.rollCallId, v.roll_call_id))
+      for (const mv of v.member_votes) {
+        await db.insert(rollCallVotes).values({
+          id: crypto.randomUUID(), rollCallId: v.roll_call_id,
+          peopleId: mv.people_id, voteId: mv.vote_id, voteText: mv.vote_text,
+        })
+      }
+    }
   }
 
   const calendarBlock: CalendarBlock = {
