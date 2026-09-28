@@ -1,6 +1,6 @@
 import { eq, and, gte, lt } from 'drizzle-orm'
 import { getLegislationDetails, type LimsBulkRecord } from './lims'
-import { buildLimsBill, indexPeople } from './lims-map'
+import { buildLimsBill, effectiveChangeHash, indexPeople } from './lims-map'
 import { limsSessionId, LIMS_PEOPLE_ID_BASE } from './lims-ids'
 import { limsRecords, sessions, people, apiCallLog } from '../db/schema-legiscan'
 import { nowDb } from './dbTime'
@@ -41,5 +41,10 @@ export async function fetchLimsBill(billId: number, env: LsEnv, db: LsDb): Promi
     .all()
   const byKey = indexPeople(members.map(m => ({ peopleId: m.peopleId, name: m.name, role: m.role ?? '' })))
 
-  return buildLimsBill(rec, details, billId, row.bulkHash, { session, people: byKey, today: nowDb().slice(0, 10) })
+  await db.update(limsRecords).set({ detailsFetchedAt: nowDb() }).where(eq(limsRecords.billId, billId))
+
+  // The same change_hash the sync compares against (see effectiveChangeHash).
+  const today = nowDb().slice(0, 10)
+  const hash = await effectiveChangeHash(rec, row.bulkHash, today)
+  return buildLimsBill(rec, details, billId, hash, { session, people: byKey, today })
 }

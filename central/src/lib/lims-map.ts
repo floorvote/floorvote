@@ -192,6 +192,19 @@ function isOversightCategory(rec: { legislationCategory: string }): boolean {
 }
 
 /** Only notices go on the calendar; a hearing record would duplicate its notice. */
+/**
+ * The change_hash a LIMS bill is stored and compared under: the bulk hash, plus
+ * how many history entries are now in the past. The bulk record does not change
+ * when a future-dated hearing's day arrives, but the bill's latest action does,
+ * so the hash has to move with it. The sync and the ingestor both compute this
+ * for the same day, so it never re-queues a bill on its own.
+ */
+export async function effectiveChangeHash(rec: LimsBulkRecord, bulk: string, today: string): Promise<string> {
+  const dated = (rec.legislationHistory ?? []).map(h => limsDate(h.actionDate)).filter((d): d is string => !!d)
+  if (!dated.some(d => d > today)) return bulk
+  return sha256Hex(`${bulk}|${dated.filter(d => d <= today).length}`)
+}
+
 function isNoticeCategory(rec: { legislationCategory: string }): boolean {
   return /Oversight Hearing\/Roundtable Notice/i.test(rec.legislationCategory)
 }
@@ -266,9 +279,7 @@ function supplementType(kind: string, name?: string): { type: string; typeId: nu
  */
 const HEARING_RE = /^(Public (Hearing|Roundtable)|Public Oversight (Hearing|Roundtable)|Oversight Hearing|Roundtable)( Meeting)?( on\b| -)/i
 const MARKUP_RE = /^Committee Mark-?up\b/i
-/** "Cancellation Notice of Roundtable ...", "Public Hearing Canceled", "Notice of Mark-up Cancellation ...". */
-const CANCEL_RE = /^(Cancellation Notice of (Public Hearing|Roundtable|Oversight Hearing)|(Public Hearing|Roundtable|Oversight Hearing) Cancell?ed)/i
-const MARKUP_CANCEL_RE = /^Notice of Mark-?up Cancellation/i
+
 
 function voteBucket(vote: string): { key: 'yea' | 'nay' | 'nv' | 'absent'; id: number } {
   const v = clean(vote).toLowerCase()
@@ -345,12 +356,15 @@ export async function buildLimsBill(
   }
 
   // ── Calendar: hearings and mark-ups from history; notices are hearings themselves ──
+  // Cancellations come from details, which name the cancelled hearing's date.
+  // Bulk cancellation entries ("Cancellation Notice of Roundtable ...",
+  // "Roundtable Canceled") are not used: in Council Period 26 data a cancelled
+  // hearing has no event row of its own, and an event row after a cancellation
+  // is the rescheduled hearing (e.g. PR26-0264, cancelled Sep 18 2025 and held
+  // Sep 26 with a published record).
   const cancelledDates = new Set(
     (details?.committeeHearing ?? []).filter(h => h.cancellationHearingNotice).map(h => limsDate(h.hearingDate)),
   )
-  // Without details, drop the first event on or after each cancellation entry.
-  const cancellationFilings = details ? [] : history.filter(h => CANCEL_RE.test(h.action)).map(h => h.date ?? '')
-  const markupCancellations = history.filter(h => MARKUP_CANCEL_RE.test(h.action)).map(h => h.date ?? '')
   const events: { type_id: number; type: string; date: string; description: string; location: string }[] = []
   if (isNoticeCategory(rec)) {
     const date = limsDate(rec.introductionDate)
@@ -360,12 +374,8 @@ export async function buildLimsBill(
     if (!h.date) continue
     if (HEARING_RE.test(h.action)) {
       if (cancelledDates.has(h.date)) continue
-      const cancelIdx = cancellationFilings.findIndex(f => f <= h.date!)
-      if (cancelIdx >= 0) { cancellationFilings.splice(cancelIdx, 1); continue }
       events.push({ type_id: 1, type: 'Hearing', date: h.date, description: h.action.replace(/ View (Public Hearing|Roundtable) Record$/i, ''), location: '' })
     } else if (MARKUP_RE.test(h.action)) {
-      const cancelIdx = markupCancellations.findIndex(f => f <= h.date!)
-      if (cancelIdx >= 0) { markupCancellations.splice(cancelIdx, 1); continue }
       events.push({ type_id: 3, type: 'Markup Session', date: h.date, description: h.action, location: '' })
     }
   }

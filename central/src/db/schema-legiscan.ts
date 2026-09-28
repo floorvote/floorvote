@@ -366,5 +366,6 @@ export const limsRecords = sqliteTable('lims_records', {
   categoryId:        integer('category_id').notNull(),
   bulkJson:          text('bulk_json').notNull(),
   bulkHash:          text('bulk_hash').notNull(),
+  detailsFetchedAt:  text('details_fetched_at'),
   updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
 })

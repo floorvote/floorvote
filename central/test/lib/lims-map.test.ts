@@ -6,7 +6,7 @@ import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 import {
   buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
-  councilPeriodName, indexPeople, type BuildContext, type LimsPerson,
+  councilPeriodName, indexPeople, effectiveChangeHash, type BuildContext, type LimsPerson,
 } from '../../src/lib/lims-map'
 import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../src/lib/lims-ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../src/lib/lims'
@@ -205,16 +205,20 @@ describe('review fixes', () => {
     ])
   })
 
-  it('drops a hearing a bulk cancellation entry covers when details are unavailable', async () => {
+  it('keeps a rescheduled hearing that follows a bulk cancellation (PR26-0264 pattern)', async () => {
     const rec = {
       ...bulk['PR26-0808'],
       legislationHistory: [
-        { legislationNumber: 'PR26-0808', actionDate: 'Oct 10, 2026', actionDescription: 'Roundtable Canceled', downloadURL: '' },
-        { legislationNumber: 'PR26-0808', actionDate: 'Oct 15, 2026', actionDescription: 'Roundtable on PR26-0808', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Sep 18, 2025', actionDescription: 'Cancellation Notice of Roundtable filed in the Office of Secretary', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Sep 19, 2025', actionDescription: 'Roundtable Canceled', downloadURL: '' },
+        { legislationNumber: 'PR26-0808', actionDate: 'Sep 26, 2025', actionDescription: 'Roundtable on PR26-0808 View Roundtable Record', downloadURL: '' },
       ],
     }
-    const b = await buildLimsBill(rec, null, limsBillId('PR26-0808')!, await bulkHash(rec), ctx)
-    expect(b.calendar).toEqual([])
+    const withDetails = { ...dReprog, committeeHearing: [] }
+    for (const d of [null, withDetails]) {
+      const b = await buildLimsBill(rec, d, limsBillId('PR26-0808')!, await bulkHash(rec), ctx)
+      expect(b.calendar.map(c => [c.date, c.description])).toEqual([['2025-09-26', 'Roundtable on PR26-0808']])
+    }
   })
 
   it('matches Councilmembers whose names carry Jr./Sr. or a middle initial', () => {
@@ -251,5 +255,21 @@ describe('review fixes', () => {
       .map(a => ({ ...a, voteDetails: { ...a.voteDetails!, voteResult: 'Disapproved' } }))
     const b = await build('B26-0400', { ...d0400, actions })
     expect(b.votes[0].passed).toBe(0)
+  })
+})
+
+describe('effectiveChangeHash', () => {
+  it('moves when a future-dated entry passes, and only then', async () => {
+    const rec = bulk['B26-0769']   // last entry: Public Hearing on Oct 23, 2026
+    const h = await bulkHash(rec)
+    const sep28 = await effectiveChangeHash(rec, h, '2026-09-28')
+    expect(await effectiveChangeHash(rec, h, '2026-09-29')).toBe(sep28)
+    expect(await effectiveChangeHash(rec, h, '2026-10-23')).not.toBe(sep28)
+  })
+
+  it('is the plain bulk hash when nothing is future-dated', async () => {
+    const rec = bulk['B26-0400']
+    const h = await bulkHash(rec)
+    expect(await effectiveChangeHash(rec, h, '2026-09-28')).toBe(h)
   })
 })

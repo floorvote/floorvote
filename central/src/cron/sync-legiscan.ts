@@ -169,6 +169,7 @@ async function runFullPass(
  * ingestor, and send monitor stubs for the rest. Source-agnostic: any provider
  * that can express its bill list as `MasterListEntry` rows (with a
  * `change_hash` that moves when the bill does) can drive the full pass.
+ * Returns the bill ids it queued for the ingestor.
  */
 export async function applyMasterList(
   session: { sessionId: number; state: string; sessionName: string },
@@ -187,7 +188,7 @@ export async function applyMasterList(
      */
     deferQueuedUpdates?: boolean
   } = {},
-): Promise<void> {
+): Promise<number[]> {
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),
@@ -198,7 +199,7 @@ export async function applyMasterList(
       billsChanged: 0,
       billsQueued: 0,
     })
-    return
+    return []
   }
 
   // Per-tenant keyword sets
@@ -390,6 +391,7 @@ export async function applyMasterList(
   console.log(
     `[sync-ls] FULL ${session.state}/${session.sessionId}: ${list.length} bills, ${queueIds.length} queued`
   )
+  return queueIds
 }
 
 async function runRawPass(

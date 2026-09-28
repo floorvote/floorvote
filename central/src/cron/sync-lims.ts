@@ -1,6 +1,6 @@
-import { eq, and, inArray, gte, lt, sql } from 'drizzle-orm'
+import { eq, and, or, inArray, notInArray, gte, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { getBulkData, getCouncilPeriods, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from '../lib/lims'
-import { bulkHash, clean, councilPeriodName, DC_STATE_ID, LIMS_STATE, toMasterListEntry } from '../lib/lims-map'
+import { bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, LIMS_STATE, limsStatusCode, toMasterListEntry } from '../lib/lims-map'
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_BILL_ID_BASE, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
 import { limsCategories, limsStates } from '../lib/lims-config'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
@@ -27,6 +27,20 @@ import type { LsEnv, LsDb } from '../types-legiscan'
 
 const BATCH = 80
 const FLUSH_BATCH = 200
+
+/**
+ * LegislationDetails can change while the bulk record does not: a committee
+ * report is filed after its mark-up, a vote is recorded, a hearing is
+ * cancelled. So tracked bills get their details re-fetched when they are older
+ * than this, a bounded number per pass. With three passes a day that is at most
+ * 150 extra LIMS calls a day.
+ */
+const DETAILS_MAX_AGE = '-2 days'
+const DETAILS_REFRESH_PER_PASS = 50
+/** Final statuses: nothing further arrives in LegislationDetails. */
+const SETTLED_STATUSES = ['Official Law', 'Withdrawn', 'Failed', 'Disapproved', 'Deemed Disapproved', 'Expired', 'Approved', 'Deemed Approved']
+  .map(limsStatusCode)
+  .concat(limsStatusCode(''))  // oversight notices: details add nothing
 const MEMBER_BIO_URL = 'https://dccouncil.gov/councilmembers/'
 
 export async function runLimsSync(env: LsEnv, db: LsDb): Promise<void> {
@@ -223,13 +237,34 @@ async function runLimsPass(
       const { billId: _id, ...update } = values
       stmts.push(db.insert(limsRecords).values(values).onConflictDoUpdate({ target: limsRecords.billId, set: update }))
     }
-    entries.push(toMasterListEntry(rec, billId, hash, storedDesc.get(billId) ?? null, today))
+    entries.push(toMasterListEntry(rec, billId, await effectiveChangeHash(rec, hash, today), storedDesc.get(billId) ?? null, today))
   }
   for (let i = 0; i < stmts.length; i += FLUSH_BATCH) {
     const chunk = stmts.slice(i, i + FLUSH_BATCH) as [any, ...any[]]
     if (chunk.length > 0) await db.batch(chunk)
   }
 
-  await applyMasterList(session, entries, coveringTenants, env, db, env.LIMS_INGESTOR_QUEUE ?? env.INGESTOR_QUEUE,
-    { deferQueuedUpdates: true })
+  const queue = env.LIMS_INGESTOR_QUEUE ?? env.INGESTOR_QUEUE
+  const queued = new Set(await applyMasterList(session, entries, coveringTenants, env, db, queue,
+    { deferQueuedUpdates: true }))
+
+  // Re-fetch details for tracked, unsettled bills whose details are stale.
+  const stale = await db.selectDistinct({ billId: limsRecords.billId, fetchedAt: limsRecords.detailsFetchedAt })
+    .from(limsRecords)
+    .innerJoin(billTenants, eq(billTenants.billId, limsRecords.billId))
+    .innerJoin(bills, eq(bills.billId, limsRecords.billId))
+    .where(and(
+      eq(limsRecords.councilPeriodId, councilPeriodId),
+      isNotNull(billTenants.matchType),
+      notInArray(bills.status, SETTLED_STATUSES),
+      or(isNull(limsRecords.detailsFetchedAt), lt(limsRecords.detailsFetchedAt, sql`datetime('now', ${DETAILS_MAX_AGE})`)),
+    ))
+    .orderBy(asc(limsRecords.detailsFetchedAt))
+    .limit(DETAILS_REFRESH_PER_PASS + queued.size)
+    .all()
+  const refresh = stale.map(r => r.billId).filter(id => !queued.has(id)).slice(0, DETAILS_REFRESH_PER_PASS)
+  for (let i = 0; i < refresh.length; i += 100) {
+    await queue.sendBatch(refresh.slice(i, i + 100).map(billId => ({ body: { billId } })))
+  }
+  if (refresh.length > 0) console.log(`[sync-lims] refreshing details for ${refresh.length} tracked bills`)
 }

@@ -5,7 +5,9 @@
 -- no difference. This table keeps what those tables cannot: the raw BulkData
 -- record each LIMS bill was last built from, and its hash. The LIMS sync writes
 -- it, and the ingestor reads it back, adds LegislationDetails, and maps the pair to
--- a LegiScan-shaped bill.
+-- a LegiScan-shaped bill. details_fetched_at drives the periodic refresh of
+-- tracked bills, because LegislationDetails can change (a committee report is
+-- filed, a vote is recorded) while the bulk record stays the same.
 --
 -- A new table only. Nothing existing reads it, so deploy order does not matter.
 CREATE TABLE IF NOT EXISTS lims_records (
@@ -15,5 +17,6 @@ CREATE TABLE IF NOT EXISTS lims_records (
   category_id        INTEGER NOT NULL,
   bulk_json          TEXT NOT NULL,
   bulk_hash          TEXT NOT NULL,
+  details_fetched_at TEXT,
   updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
