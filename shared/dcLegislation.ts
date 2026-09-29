@@ -30,6 +30,12 @@ const TYPES: Record<string, string> = {
     'Emergency approval resolution: approves a matter, often a contract or financing, on an emergency basis.',
   'disapproval resolution':
     'Disapproval resolution: rejects a proposal sent to the Council for review, such as proposed rules or a reorganization plan.',
+  'oversight hearing/roundtable notice':
+    'Hearing notice: a committee\'s public notice of a hearing or roundtable on an agency, a budget, or an issue, with no bill attached. The notice says how to sign up to testify or submit written testimony.',
+  'reprogramming':
+    'Reprogramming: a request to move budgeted money from one program or purpose to another. It is deemed approved 14 days after the Council receives it, or 30 days if a Councilmember files a disapproval resolution, unless the Council disapproves it first (DC Code 47-363).',
+  'grant budget modification':
+    'Grant budget modification: notice of a change to an agency\'s grant-funded budget, such as accepting a new federal or private grant, filed with the Council for review.',
 }
 
 const STATUSES: Record<string, string> = {
