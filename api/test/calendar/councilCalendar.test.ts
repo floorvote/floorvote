@@ -8,7 +8,7 @@ import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendar
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
-import { syncCouncilCalendarEvents, COUNCIL_RULES_KEY, councilEventTitle } from '../../src/lib/councilCalendar'
+import { syncCouncilCalendarEvents, COUNCIL_RULES_KEY, councilEventTitle, councilEventMatches, parseCouncilRules } from '../../src/lib/councilCalendar'
 import { app } from '../../src/index'
 
 const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
@@ -132,3 +132,63 @@ describe('calendar display', () => {
       .toBe('Youth Affairs roundtable: A; and 2 more')
   })
 })
+
+describe('council calendar settings', () => {
+  let adminCookie: string
+  beforeEach(async () => {
+    adminCookie = `session=${await seedSession(await seedUser({ role: 'admin', email: 'a@example.com', name: 'A' }))}`
+  })
+  const call = (method: string, path: string, body?: unknown, who = adminCookie) => app.request(`/api/admin/council-calendar${path}`, {
+    method, headers: { Cookie: who, 'Content-Type': 'application/json' }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  }, env)
+
+  it('matches every event of a chosen hearing type, whichever committee holds it', () => {
+    expect(councilEventMatches(EVENTS[2] as any, { types: ['Budget Oversight Hearing'] }, new Set())).toBe(true)
+    expect(councilEventMatches(EVENTS[3] as any, { types: ['Budget Oversight Hearing'] }, new Set())).toBe(false)
+  })
+
+  it('validates and cleans rules', () => {
+    expect(parseCouncilRules({ include: [{ committee: ' Youth Affairs ', type: '' }], topicKeywords: ['dyrs', 'dyrs', ' cfsa '] }))
+      .toEqual({ include: [{ committee: 'Youth Affairs' }], types: [], topicKeywords: ['dyrs', 'cfsa'], trackedBills: false })
+    expect(parseCouncilRules({ include: [{ type: 'Hearing' }] })).toMatch(/committee/)
+    expect(parseCouncilRules({ topicKeywords: [''] })).toMatch(/non-empty/)
+    expect(parseCouncilRules([])).toMatch(/object/)
+  })
+
+  it('offers known and live committees and types, saves rules, and syncs right away', async () => {
+    serve(EVENTS)
+    const got = await (await call('GET', '')).json() as any
+    expect(got.rules).toBeNull()
+    expect(got.committees).toEqual(expect.arrayContaining(['Youth Affairs', 'Legislative Meeting', 'Business and Economic Development']))
+    expect(got.types).toEqual(expect.arrayContaining(['Performance Oversight Hearing', 'Budget Oversight Hearing']))
+
+    const put = await call('PUT', '', { rules: { include: [{ committee: 'Youth Affairs' }], trackedBills: false } })
+    expect(put.status).toBe(200)
+    expect((await put.json() as any).sync.upserted).toBe(1)
+    const rows = await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.source, 'council')).all()
+    expect(rows.map(r => r.uid)).toEqual(['council-1@lims.dccouncil.gov'])
+  })
+
+  it('previews without saving', async () => {
+    serve(EVENTS)
+    const res = await call('POST', '/preview', { rules: { types: ['Budget Oversight Hearing'] } })
+    const body = await res.json() as any
+    expect(body.events.map((e: any) => e.title)).toEqual(['Health budget oversight hearing: Office of the Attorney General'])
+    expect(await getDb(env.DB).select().from(associationConfig).where(eq(associationConfig.key, COUNCIL_RULES_KEY)).get()).toBeUndefined()
+  })
+
+  it('turning it off removes mirrored events and the rules', async () => {
+    serve(EVENTS)
+    await setRules(RULES)
+    await syncCouncilCalendarEvents(env as any, getDb(env.DB))
+    const res = await call('PUT', '', { rules: null })
+    expect(res.status).toBe(200)
+    expect(await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.source, 'council')).all()).toEqual([])
+    expect(await getDb(env.DB).select().from(associationConfig).where(eq(associationConfig.key, COUNCIL_RULES_KEY)).get()).toBeUndefined()
+  })
+
+  it('is admin-only', async () => {
+    expect((await call('PUT', '', { rules: {} }, cookie)).status).toBe(403)
+  })
+})
+
