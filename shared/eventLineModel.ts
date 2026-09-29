@@ -54,9 +54,11 @@ export interface EventSourceDescriptor {
 // Source marker for an event: gavel for data-pulled hearings, calendar_today
 // for custom/editable events. Replaces the old navy/blue left-edge color.
 export function eventSourceIcon(event: EventEdgeSource): EventSourceDescriptor {
-  return event.source === 'custom'
-    ? { icon: 'calendar_today', color: color.accentBlue,    tint: color.bgInfo, label: 'Custom event' }
-    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
+  if (event.source === 'custom') return { icon: 'calendar_today', color: color.accentBlue, tint: color.bgInfo, label: 'Custom event' }
+  // Council calendar events (DC LIMS) reuse the hearing glyph, so the week-ahead
+  // email's pre-rendered icon PNGs cover them too.
+  if (event.source === 'council') return { icon: 'gavel', color: color.billBadgeNavy, tint: color.bgInfo, label: 'DC Council calendar' }
+  return { icon: 'gavel', color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
 }
 
 // The tinted source-icon tile dimensions, shared by the web EventSourceIcon and

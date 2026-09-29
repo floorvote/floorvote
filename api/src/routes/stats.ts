@@ -43,6 +43,7 @@ statsRouter.get('/', async (c) => {
         or(
           and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
           eq(calendarEvents.source, 'custom'),
+          eq(calendarEvents.source, 'council'),
         ),
       ))
       .get(),
