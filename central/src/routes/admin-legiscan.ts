@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, isNotNull, inArray } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema-legiscan'
 import { bills, billTenants, tenants, keywordRegistry, sessions, apiCallLog } from '../db/schema-legiscan'
 import { matchesUnion } from '../lib/keywords'
@@ -365,6 +365,45 @@ adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   }
 
   return c.json({ ok: true, tenantId, queued, total: rows.length })
+})
+
+// POST /admin/refetch-fragment-texts — re-download every stored document whose
+// state_link selects its version with a URL fragment.
+//
+// A fragment never reaches the server, so those documents hold whatever version
+// was current when we fetched them rather than the version their doc_id names.
+// Selecting on the fragment rather than on a state keeps the endpoint a
+// description of the defect: 544 rows today, all California.
+//
+// skipFetch suppresses the getBill metadata call, so the spend is one
+// getBillText per document and nothing more.
+adminLsRoutes.post('/refetch-fragment-texts', async (c) => {
+  const dryRun = c.req.query('dryRun') === 'true'
+  const db = drizzle(c.env.DB, { schema })
+
+  const rows = await db.select({ billId: schema.billTexts.billId })
+    .from(schema.billTexts)
+    .where(and(
+      isNotNull(schema.billTexts.r2Key),
+      like(schema.billTexts.stateLink, '%#%'),
+    ))
+    .all()
+
+  const billIds = [...new Set(rows.map(r => r.billId))]
+  if (dryRun) return c.json({ ok: true, rows: rows.length, bills: billIds.length, queued: 0, dryRun: true })
+
+  let queued = 0
+  for (let i = 0; i < billIds.length; i += 100) {
+    await c.env.INGESTOR_QUEUE.sendBatch(
+      billIds.slice(i, i + 100).map(billId => ({
+        body: { billId, forceTextRefetch: true, skipFetch: true } as LsIngestorMessage,
+      }))
+    )
+    if (i + 100 < billIds.length) await new Promise(res => setTimeout(res, 200))
+    queued += Math.min(100, billIds.length - i)
+  }
+
+  return c.json({ ok: true, rows: rows.length, bills: billIds.length, queued, dryRun: false })
 })
 
 // Shared body for /refresh-stubs and /refresh-metadata: both queue a batch of

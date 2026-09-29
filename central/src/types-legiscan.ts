@@ -77,6 +77,12 @@ export type LsIngestorMessage = {
   forceAI?: boolean  // propagate to tenant notification so tenant re-runs AI even if text unchanged
   interactive?: boolean  // relay from tenant promote-bill request; false = background
   skipFetch?: boolean  // skip LegiScan getBill API call; use existing DB data + download text from state_link
+  /**
+   * Re-download bill text even when an r2_key is already stored. Both download
+   * guards otherwise skip a document that has text, which makes a corrective
+   * re-fetch a no-op. Used by /admin/refetch-fragment-texts.
+   */
+  forceTextRefetch?: boolean
 }
 
 export type CalendarBlock = {

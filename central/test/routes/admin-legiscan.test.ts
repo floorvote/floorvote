@@ -19,6 +19,7 @@ import migration0004 from '../../migrations-legiscan/0004_match_tracking.sql?raw
 import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_change_log.sql?raw'
 import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
+import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
 import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
 
 function parseMigration(sql: string, name: string) {
@@ -40,6 +41,7 @@ beforeEach(async () => {
     parseMigration(migration0005, '0005_bill_amendments_and_change_log'),
     parseMigration(migration0006, '0006_texts_fetched_at'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
+    parseMigration(migration0016, '0016_bill_texts_fetch_error'),
     parseMigration(migration0017, '0017_tenant_ai_personalized'),
   ])
 })
@@ -652,5 +654,118 @@ describe('POST /admin/refresh-metadata/:tenantId', () => {
     const messages = tenantSendBatch.mock.calls[0][0]
     const ids = messages.map((m: any) => m.body.billId).sort()
     expect(ids).toEqual(['legiscan:20', 'legiscan:21'])
+  })
+})
+
+// POST /admin/refetch-fragment-texts
+//
+// The endpoint describes the defect rather than the state: it selects stored
+// documents whose state_link selects a version with a URL fragment, which the
+// server never sees. Every assertion below is about that selection.
+describe('POST /admin/refetch-fragment-texts', () => {
+  const FRAGMENT_LINK =
+    'https://leginfo.legislature.ca.gov/faces/billTextClient.xhtml?bill_id=202520260AB2230#96AMD'
+  const PLAIN_LINK = 'https://capitol.texas.gov/tlodocs/89R/billtext/html/HB00376I.htm'
+
+  async function seedText(opts: {
+    docId: number
+    billId: number
+    stateLink: string | null
+    r2Key: string | null
+  }) {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values({
+      billId: opts.billId, sessionId: 1, state: 'CA', stateId: 5,
+      billNumber: `AB${opts.billId}`, title: `Bill ${opts.billId}`,
+      changeHash: 'hash', status: 1,
+    }).onConflictDoNothing()
+    await db.insert(schema.billTexts).values({
+      docId: opts.docId, billId: opts.billId,
+      date: '2026-04-23', type: 'Amended', typeId: 2,
+      mime: 'text/html', mimeId: 1,
+      stateLink: opts.stateLink, r2Key: opts.r2Key,
+    })
+  }
+
+  async function seedSession() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 1, state: 'CA', stateId: 5,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026', sessionTitle: '2025-2026', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+  }
+
+  it('returns 401 without admin secret', async () => {
+    const res = await app.request(
+      '/api/admin/refetch-fragment-texts',
+      { method: 'POST' },
+      env,
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('queues only bills whose stored documents carry a fragment state_link', async () => {
+    await seedSession()
+    await seedText({ docId: 3000, billId: 9001, stateLink: FRAGMENT_LINK, r2Key: 'r2/3000.html' })
+    await seedText({ docId: 3001, billId: 9002, stateLink: PLAIN_LINK, r2Key: 'r2/3001.html' })
+    await seedText({ docId: 3002, billId: 9003, stateLink: null, r2Key: 'r2/3002.html' })
+
+    const { env: mockEnv, sendBatch } = envWithMockedQueue()
+    const res = await app.request(
+      '/api/admin/refetch-fragment-texts',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, rows: 1, bills: 1, queued: 1, dryRun: false })
+
+    expect(sendBatch).toHaveBeenCalledTimes(1)
+    const messages = sendBatch.mock.calls[0][0]
+    expect(messages.map((m: any) => m.body.billId)).toEqual([9001])
+    // skipFetch keeps the backfill to one getBillText per document, with no
+    // getBill metadata call; forceTextRefetch defeats the stored-r2_key guard.
+    expect(messages[0].body).toMatchObject({ forceTextRefetch: true, skipFetch: true })
+  })
+
+  it('excludes a fragment row that has no r2_key', async () => {
+    // Those documents have never been stored, so the ordinary download path
+    // will pick them up. Re-queueing them here would spend quota twice.
+    await seedSession()
+    await seedText({ docId: 3003, billId: 9004, stateLink: FRAGMENT_LINK, r2Key: null })
+
+    const { env: mockEnv, sendBatch } = envWithMockedQueue()
+    const res = await app.request(
+      '/api/admin/refetch-fragment-texts',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body).toMatchObject({ ok: true, rows: 0, bills: 0, queued: 0 })
+    expect(sendBatch).not.toHaveBeenCalled()
+  })
+
+  it('reports the counts and queues nothing under dryRun', async () => {
+    await seedSession()
+    await seedText({ docId: 3004, billId: 9005, stateLink: FRAGMENT_LINK, r2Key: 'r2/3004.html' })
+    await seedText({ docId: 3005, billId: 9005, stateLink: FRAGMENT_LINK, r2Key: 'r2/3005.html' })
+
+    const { env: mockEnv, sendBatch } = envWithMockedQueue()
+    const res = await app.request(
+      '/api/admin/refetch-fragment-texts?dryRun=true',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    // Two documents on one bill: the spend is per document, the queue is per bill.
+    expect(body).toMatchObject({ ok: true, rows: 2, bills: 1, queued: 0, dryRun: true })
+    expect(sendBatch, 'dryRun must not queue anything').not.toHaveBeenCalled()
   })
 })

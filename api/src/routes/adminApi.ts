@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt } from 'drizzle-orm'
+import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like } from 'drizzle-orm'
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { hasLoggedInSelect } from '../lib/loginHistory'
@@ -977,12 +977,23 @@ adminApiRouter.post('/refresh-metadata', async (c) => {
 adminApiRouter.post('/reprocess-llm-all', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const scope = c.req.query('scope') === 'prioritized' ? 'prioritized' : 'all'
+  // Restrict to HTML-sourced bills. The markup-preservation change only affects
+  // the HTML path, so re-running PDF bills rewrites summaries it cannot improve.
+  // Reject anything else rather than ignoring it: silently treating `format=htlm`
+  // as "no filter" would reprocess the very PDF bills the filter exists to spare,
+  // so this is checked before any DB read or queue send.
+  const formatParam = c.req.query('format')
+  if (formatParam !== undefined && formatParam !== 'html') {
+    return c.json({ error: "unknown format; expected 'html'" }, 400)
+  }
+  const format = formatParam === 'html' ? 'html' : null
   const db = getDb(c.env.DB)
   const conditions = [
     isNotNull(bills.externalId),
     inArray(bills.matchType, ['keyword', 'manual']),
   ]
   if (scope === 'prioritized') conditions.push(isNotNull(bills.priority))
+  if (format === 'html') conditions.push(like(bills.textR2Key, '%.html'))
   const rows = await db
     .select({ externalId: bills.externalId })
     .from(bills)
@@ -996,7 +1007,7 @@ adminApiRouter.post('/reprocess-llm-all', async (c) => {
         .map(r => ({ body: { tenantId: c.env.TENANT_ID, billId: r.externalId!, forceAI: true } }))
     )
   }
-  return c.json({ queued: rows.length, scope })
+  return c.json({ queued: rows.length, scope, ...(format ? { format } : {}) })
 })
 
 // POST /admin/promote-bill/:billId — promote a stub bill to full tracking.
