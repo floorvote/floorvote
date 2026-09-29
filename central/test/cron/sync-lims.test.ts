@@ -7,10 +7,15 @@ import { setupLsDb } from '../helpers/setupLsDb'
 import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
+import councilRaw from '../fixtures/lims/council-calendar.json?raw'
 
 vi.mock('../../src/lib/lims', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/lims')>('../../src/lib/lims')
   return { ...actual, getCouncilPeriods: vi.fn(), getMembers: vi.fn(), getBulkData: vi.fn(), getLegislationDetails: vi.fn() }
+})
+vi.mock('../../src/lib/lims-hearings', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/lims-hearings')>('../../src/lib/lims-hearings')
+  return { ...actual, getHearingsCalendar: vi.fn().mockResolvedValue([]) }
 })
 vi.mock('../../src/lib/legiscan', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
@@ -447,5 +452,57 @@ describe('POST /api/admin/lims-import', () => {
     const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
     expect((await post(e, { tenantId: 'oca' })).status).toBe(400)
     expect((await post(e, { tenantId: 'nobody', numbers: ['B25-0345'] })).status).toBe(404)
+  })
+})
+
+describe('Council hearing calendar', () => {
+  it('stores every event in the window, marks dropped ones removed, and survives a failed month', async () => {
+    const hearings = await import('../../src/lib/lims-hearings')
+    const { syncCouncilCalendar } = await import('../../src/cron/sync-lims')
+    const cal = JSON.parse(councilRaw) as Record<string, any[]>
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(hearings.getHearingsCalendar).mockImplementation(async (m: number, y: number) => {
+      if (y === 2026 && m === 10) return cal['2026-10']
+      if (y === 2026 && m === 11) throw new Error('boom')
+      return []
+    })
+    const first = await syncCouncilCalendar(db, '2026-09-28')
+    expect(first.months).toBe(4)   // Aug–Dec, one failed
+    expect(first.events).toBe(cal['2026-10'].length)
+    const dyrs = (await db.select().from(schema.councilEvents).all()).find(e => e.topicsJson.includes('Fifth Rulemaking'))
+    expect(dyrs).toMatchObject({ date: '2026-10-07', time: '12:00', hearingType: 'Roundtable', title: 'Youth Affairs', location: 'Room 412 (Track B)' })
+
+    // The Council drops one October event; the next sync marks it removed.
+    const dropped = cal['2026-10'][0]
+    vi.mocked(hearings.getHearingsCalendar).mockImplementation(async (m: number, y: number) =>
+      (y === 2026 && m === 10) ? cal['2026-10'].slice(1) : [])
+    const second = await syncCouncilCalendar(db, '2026-09-28')
+    expect(second.removed).toBe(1)
+    const row = await db.select().from(schema.councilEvents).where(eq(schema.councilEvents.hearingId, dropped.hearingId)).get()
+    expect(row?.removedAt).toBeTruthy()
+  })
+
+  it('serves the window to tenants with the hearing page link', async () => {
+    const hearings = await import('../../src/lib/lims-hearings')
+    const { syncCouncilCalendar } = await import('../../src/cron/sync-lims')
+    const { app } = await import('../../src/index-legiscan')
+    const cal = JSON.parse(councilRaw) as Record<string, any[]>
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(hearings.getHearingsCalendar).mockImplementation(async (m: number, y: number) => (y === 2026 && m === 10 ? cal['2026-10'] : []))
+    await syncCouncilCalendar(db, '2026-09-28')
+    const res = await app.fetch(new Request('http://central/api/bills/council-events?from=2026-10-01&to=2026-10-31', { headers: { 'x-admin-secret': 'test-secret' } }), { ...(env as any), ADMIN_SECRET: 'test-secret' })
+    expect(res.status).toBe(200)
+    const rows = await res.json() as any[]
+    const r = rows.find(x => x.topics.some((t: any) => /Fifth Rulemaking/.test(t.topic)))
+    expect(r.url).toBe(`https://lims.dccouncil.gov/Hearings/hearings/${r.hearingId}`)
+    expect(rows.length).toBe(cal['2026-10'].length)
+  })
+
+  it('rides along with a forced LIMS sync', async () => {
+    const hearings = await import('../../src/lib/lims-hearings')
+    vi.mocked(hearings.getHearingsCalendar).mockResolvedValue([])
+    const db = drizzle(env.DB, { schema })
+    await runLimsSync(makeEnv().env, db, { force: true })
+    expect(hearings.getHearingsCalendar).toHaveBeenCalledTimes(5)
   })
 })

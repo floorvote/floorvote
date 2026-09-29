@@ -1,12 +1,13 @@
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, desc, inArray, gte, lte } from 'drizzle-orm'
 import * as schema from '../db/schema-legiscan'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
 import type { LsEnv } from '../types-legiscan'
 import { LIMS_STATUS_LABELS } from '../lib/lims-map'
+import { councilHearingUrl } from '../lib/lims-hearings'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
@@ -21,6 +22,37 @@ billsLsRoutes.use('*', async (c, next) => {
     return c.json({ error: 'unauthorized' }, 401)
   }
   return next()
+})
+
+// The DC Council hearing calendar (cron/sync-lims.ts syncCouncilCalendar), for
+// tenants to filter with their own calendar rules. Registered before '/:id' so
+// the literal segment is not read as a bill id. Removed events are returned with
+// removedAt set, so a tenant can cancel its copy.
+billsLsRoutes.get('/council-events', async (c) => {
+  const from = c.req.query('from') ?? ''
+  const to = c.req.query('to') ?? ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return c.json({ error: 'from and to (YYYY-MM-DD) are required' }, 400)
+  }
+  const db = drizzle(c.env.DB, { schema })
+  const rows = await db.select().from(schema.councilEvents)
+    .where(and(gte(schema.councilEvents.date, from), lte(schema.councilEvents.date, to)))
+    .orderBy(schema.councilEvents.date, schema.councilEvents.time)
+    .all()
+  return c.json(rows.map(r => ({
+    hearingId: r.hearingId,
+    date: r.date,
+    time: r.time,
+    hearingType: r.hearingType,
+    title: r.title,
+    jointWith: r.jointWith,
+    location: r.location,
+    topics: JSON.parse(r.topicsJson) as { topic: string; number: string | null }[],
+    witnessList: r.witnessJson ? JSON.parse(r.witnessJson) as { attachmentGuid: string; attachmentName: string } : null,
+    url: councilHearingUrl(r.hearingId),
+    eventHash: r.eventHash,
+    removedAt: r.removedAt,
+  })))
 })
 
 billsLsRoutes.get('/sessions', async (c) => {

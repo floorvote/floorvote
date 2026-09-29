@@ -369,3 +369,19 @@ export const limsRecords = sqliteTable('lims_records', {
   detailsFetchedAt:  text('details_fetched_at'),
   updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+/** DC Council hearing calendar; see migrations-legiscan/0021_council_events.sql. */
+export const councilEvents = sqliteTable('council_events', {
+  hearingId:   integer('hearing_id').primaryKey(),
+  date:        text('date').notNull(),
+  time:        text('time'),
+  hearingType: text('hearing_type').notNull(),
+  title:       text('title').notNull(),
+  jointWith:   text('joint_with'),
+  location:    text('location'),
+  topicsJson:  text('topics_json').notNull(),
+  witnessJson: text('witness_json'),
+  eventHash:   text('event_hash').notNull(),
+  removedAt:   text('removed_at'),
+  updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [index('idx_council_events_date').on(t.date)])

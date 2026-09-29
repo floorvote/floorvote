@@ -1,0 +1,1093 @@
+{
+ "2026-10": [
+  {
+   "hearingId": 2408,
+   "hearingDateTime": "2026-10-01T10:00:00",
+   "hearingTitle": "Housing",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4183,
+     "topic": "Improving Housing Conditions and Strengthening Landlord Accountability in the District",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 28,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2413,
+   "hearingDateTime": "2026-10-01T10:00:00",
+   "hearingTitle": "Transportation and the Environment",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4195,
+     "topic": "Department of Energy and Environment Reporting Requirements Amendment Act of 2026",
+     "legislationNumber": "B26-0697"
+    },
+    {
+     "hearingTopicId": 4196,
+     "topic": "Public Trust in Utility Regulation Act of 2026",
+     "legislationNumber": "B26-0704"
+    },
+    {
+     "hearingTopicId": 4197,
+     "topic": "Retail Energy Market Consumer Protection Amendment Act of 2026",
+     "legislationNumber": "B26-0750"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 120 (Track D)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 17,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2428,
+   "hearingDateTime": "2026-10-02T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4218,
+     "topic": "Public Oversight Roundtable on  Department of Behavioral Health\u2019s Financial Challenges",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2403,
+   "hearingDateTime": "2026-10-02T10:00:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4169,
+     "topic": "William Brockenberry Way Designation Act of 2026",
+     "legislationNumber": "B26-0589"
+    },
+    {
+     "hearingTopicId": 4170,
+     "topic": "Transfer of Jurisdiction over a Portion of Lot 1008 in Square 1299, being a Portion of Reservation 357, S.O. 25-01882, Approval Resolution of 2026",
+     "legislationNumber": "PR26-0544"
+    },
+    {
+     "hearingTopicId": 4171,
+     "topic": "Closing of a Portion of a Public Alley in Square 762, S.O. 23-01974,  Act of 2026",
+     "legislationNumber": "B26-0601"
+    },
+    {
+     "hearingTopicId": 4172,
+     "topic": "Dr. William Keelan Collins, Sr. Way Designation Act of 2026",
+     "legislationNumber": "B26-0626"
+    },
+    {
+     "hearingTopicId": 4173,
+     "topic": "Transfer of Jurisdiction Over a Portion of Reservation 360 and Reservation 639, S.O. 25-01393, Approval Resolution of 2026",
+     "legislationNumber": "PR26-0581"
+    },
+    {
+     "hearingTopicId": 4174,
+     "topic": "Closing of Portions of a Public Alley in Square 571, S.O. 25-01939, Act of 2026",
+     "legislationNumber": "B26-0642"
+    },
+    {
+     "hearingTopicId": 4175,
+     "topic": "Closing of a Portion of a Public Alley in Square 785, S.O. 21-03369, Act of 2026\n",
+     "legislationNumber": "B26-0689"
+    },
+    {
+     "hearingTopicId": 4176,
+     "topic": "William \u201cSpence\u201d Spencer, IV Way Designation Act of 2026",
+     "legislationNumber": "B26-0705"
+    },
+    {
+     "hearingTopicId": 4177,
+     "topic": "Closing of the Unimproved Portion of 35th Street N.W., Abutting Squares 1178 and 1179, S.O. 26-01008, Act of 2026",
+     "legislationNumber": "B26-0772"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 12,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2431,
+   "hearingDateTime": "2026-10-05T09:30:00",
+   "hearingTitle": "Public Works and Operations",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4222,
+     "topic": "Commission on Human Rights Monika Nemeth Confirmation Resolution of 2026",
+     "legislationNumber": "PR26-0718"
+    },
+    {
+     "hearingTopicId": 4223,
+     "topic": "Commission on Human Rights Niranjan Adhikari Confirmation Resolution of 2026",
+     "legislationNumber": "PR26-0717"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2045,
+   "hearingDateTime": "2026-10-06T12:00:00",
+   "hearingTitle": "Legislative Meeting",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3327,
+     "topic": "Legislative Meeting",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2415,
+   "hearingDateTime": "2026-10-07T12:00:00",
+   "hearingTitle": "Youth Affairs",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4199,
+     "topic": "DYRS' Fifth Rulemaking on the Community Placement of Juvenile Offenders",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 9,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2421,
+   "hearingDateTime": "2026-10-08T10:00:00",
+   "hearingTitle": "Human Services",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4205,
+     "topic": "The Eligibility Determination Process at the Virginia Williams Family Resource Center",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 16,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2420,
+   "hearingDateTime": "2026-10-08T10:30:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4204,
+     "topic": "Stuck on the Ground Floor: Out-of-Service Elevators in the District of Columbia\u2019s Public Schools",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Joint Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "Joint with Facilities",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2419,
+   "hearingDateTime": "2026-10-09T10:00:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4203,
+     "topic": "Technology in Schools",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 67,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2407,
+   "hearingDateTime": "2026-10-13T12:00:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4182,
+     "topic": "Restoration of Covenanted Roads and Alleys by the District Government Clarification Amendment Act of 2026",
+     "legislationNumber": "B26-0770"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2423,
+   "hearingDateTime": "2026-10-14T10:00:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4208,
+     "topic": "Streamlining Medicaid Credentialing Amendment Act of 2025",
+     "legislationNumber": "B26-0523"
+    },
+    {
+     "hearingTopicId": 4209,
+     "topic": "Captive Insurance Company Amendment Act of 2026",
+     "legislationNumber": "B26-0588"
+    },
+    {
+     "hearingTopicId": 4210,
+     "topic": "Rodent Education and Management Yields (\"REMY\") Results Amendment Act of 2026",
+     "legislationNumber": "B26-0707"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2427,
+   "hearingDateTime": "2026-10-14T10:00:00",
+   "hearingTitle": "Human Services",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4216,
+     "topic": "Fletcher-Johnson Surplus Declaration and Disposition Approval Act of 2026",
+     "legislationNumber": "B26-0720"
+    },
+    {
+     "hearingTopicId": 4217,
+     "topic": "Georgetown Boathouse Surplus Declaration and Disposition Approval Act of 2026",
+     "legislationNumber": "B26-0740"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2422,
+   "hearingDateTime": "2026-10-14T11:00:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4206,
+     "topic": "HealthCare Facilities Regulation Amendment Act of 2026",
+     "legislationNumber": "B26-0799"
+    },
+    {
+     "hearingTopicId": 4207,
+     "topic": "Health Benefit Exchange Authority Technical Amendment Act of 2026",
+     "legislationNumber": "B26-0809"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 2,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2398,
+   "hearingDateTime": "2026-10-15T13:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4156,
+     "topic": "A Public  Roundtable  on  Long-Term Care for District Residents with Complex Needs",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 12,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2400,
+   "hearingDateTime": "2026-10-16T10:00:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4158,
+     "topic": "Wealth Proceeds Tax Amendment Act of 2026",
+     "legislationNumber": "B26-0749"
+    },
+    {
+     "hearingTopicId": 4159,
+     "topic": "Revenue Stabilization and Land Value Assessment Amendment Act of 2026",
+     "legislationNumber": "B26-0777"
+    },
+    {
+     "hearingTopicId": 4160,
+     "topic": "Business Activity Tax",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 4161,
+     "topic": "Pied-a-Terre Tax",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 4162,
+     "topic": "Sales Tax ",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 4163,
+     "topic": "Real Property Tax",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 4164,
+     "topic": "Individual Income Tax",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2424,
+   "hearingDateTime": "2026-10-21T14:30:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4211,
+     "topic": "Career and Technical Education",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 4212,
+     "topic": "Advanced Technical Centers",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 13,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2426,
+   "hearingDateTime": "2026-10-22T11:00:00",
+   "hearingTitle": "Human Services",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4214,
+     "topic": "Health and Human Service Programs and Benefits Eligibility and Delivery Data-Sharing Clarifications Amendment Act of 2026",
+     "legislationNumber": "B26-0753"
+    },
+    {
+     "hearingTopicId": 4215,
+     "topic": "Green Workforce Pilot Amendment Act of 2026",
+     "legislationNumber": "B26-0808"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2405,
+   "hearingDateTime": "2026-10-23T10:00:00",
+   "hearingTitle": "Committee of the Whole",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4180,
+     "topic": "Soccer Stadium Redevelopment and Maintenance Act of 2026",
+     "legislationNumber": "B26-0769"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 7,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2430,
+   "hearingDateTime": "2026-10-29T10:00:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 4221,
+     "topic": "A Joint Public Oversight Roundtable on The DC Access System and Implementing SNAP and Medicaid Work Requirements ",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "Joint with Human Services and Health",
+   "witnessListAttachment": null
+  }
+ ],
+ "2026-02": [
+  {
+   "hearingId": 2126,
+   "hearingDateTime": "2026-02-02T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3522,
+     "topic": "Performance Oversight of the Department of Behavioral Health (Public Witnesses Only)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 61,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "1A50476F-2420-4A67-A07D-DDBEFE312E03",
+    "attachmentName": "FY25 DBH WL.docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2117,
+   "hearingDateTime": "2026-02-02T10:00:00",
+   "hearingTitle": "Youth Affairs",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3497,
+     "topic": "Department of Youth Rehabilitation Services Performance Oversight (Public Witnesses)",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3498,
+     "topic": "Office of the Attorney General (Juvenile Justice Related) Performance Oversight (Public Witnesses)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 15,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "0CB48DCE-263A-41BD-AC18-3A4532ECFFF9",
+    "attachmentName": "2-2 DYRS + OAG POH Agenda.pdf",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2054,
+   "hearingDateTime": "2026-02-03T09:00:00",
+   "hearingTitle": "Legislative Meeting",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3332,
+     "topic": "Breakfast Meeting",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Other",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2037,
+   "hearingDateTime": "2026-02-03T12:00:00",
+   "hearingTitle": "Legislative Meeting",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3319,
+     "topic": "Twenty-Fourth Legislative Meeting",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2090,
+   "hearingDateTime": "2026-02-04T09:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3443,
+     "topic": "Corrections Information Council",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3444,
+     "topic": "Department of Corrections",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 22,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "0AFF1725-963A-42D2-A121-732B9C91C6E5",
+    "attachmentName": "2026-02-04 CIC, DOC POH (2).docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2127,
+   "hearingDateTime": "2026-02-04T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3523,
+     "topic": "Performance Oversight of the Department of Behavioral Health (Government Witnesses Only)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "619D335F-7430-4CC8-AE3A-94127BBF97A7",
+    "attachmentName": "FY25 DBH Gov WL .docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2122,
+   "hearingDateTime": "2026-02-04T14:00:00",
+   "hearingTitle": "Youth Affairs",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3514,
+     "topic": "Child and Family Services Agency Performance Oversight (Government Witnesses)",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3515,
+     "topic": "Office of Ombudsperson for Children Performance Oversight (Government Witnesses)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "4603119C-6681-4641-8A2F-48408C2609E4",
+    "attachmentName": "02.04.26 POH 0CFSA OFC GOV WITNESSES (3).pdf",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2091,
+   "hearingDateTime": "2026-02-09T09:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3445,
+     "topic": "Homeland Security and Emergency Management Agency",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3446,
+     "topic": "Office of the Attorney General ",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 47,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "08C1452D-6587-4042-8843-9CE149A78DAF",
+    "attachmentName": "2026-02-09  HSEMA, OAG POH (3).docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2124,
+   "hearingDateTime": "2026-02-09T10:00:00",
+   "hearingTitle": "Youth Affairs",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3518,
+     "topic": "Department of Youth Rehabilitation Services Performance Oversight (Government Witnesses)",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3519,
+     "topic": "Office of the Attorney General (Juvenile Justice Related) (Government Witnesses)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "8AD94366-675E-4F4C-8E5E-CE03F30AE156",
+    "attachmentName": "2.9 POH OAG + DYRS Agenda.pdf",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2177,
+   "hearingDateTime": "2026-02-10T10:00:00",
+   "hearingTitle": "Legislative Meeting",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3629,
+     "topic": "Mayor-Council Breakfast",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Other",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": null
+  },
+  {
+   "hearingId": 2092,
+   "hearingDateTime": "2026-02-11T09:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3447,
+     "topic": "Department of Forensic Sciences ",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3448,
+     "topic": "Deputy Mayor for Public Safety and Justice ",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 120 (Track D)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 22,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "9F6665C4-34C8-46BD-A6A1-64D950C45138",
+    "attachmentName": "2026-02-11 DFS, DMPSJ POH (2).docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2149,
+   "hearingDateTime": "2026-02-11T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3563,
+     "topic": "Performance Oversight of the Food Policy Council ",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3564,
+     "topic": "Performance Oversight of the Board of Pharmacy",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3565,
+     "topic": "Performance Oversight of the Board of Dentistry",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3568,
+     "topic": "Performance Oversight of the Board of Optometry",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 16,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "1129DB87-BB4B-4906-96EB-418E7EF15B19",
+    "attachmentName": "FY25 Boards WL .docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2172,
+   "hearingDateTime": "2026-02-11T09:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3621,
+     "topic": "Chief Medical Examiner Francisco Diaz Confirmation Resolution of 2025",
+     "legislationNumber": "PR26-0404"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Roundtable",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 120 (Track D)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "Joint with Judiciary and Public Safety",
+   "witnessListAttachment": {
+    "attachmentGuid": "558ADE6E-DECF-4AB5-BE58-0F8B32F46F98",
+    "attachmentName": "2026-02-11  OCME Nominee (1).docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2138,
+   "hearingDateTime": "2026-02-12T14:00:00",
+   "hearingTitle": "Youth Affairs",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3542,
+     "topic": "Mayor's Office on African Affairs Performance Oversight ",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3543,
+     "topic": "Mayor's Office on African American Affairs Performance Oversight ",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 1,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "120AB788-6B39-4FD8-A016-2E334B81A418",
+    "attachmentName": "UPDATED 02.12.26 POH NOTICE MOAA MOAAA.pdf",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2128,
+   "hearingDateTime": "2026-02-18T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3524,
+     "topic": "Performance Oversight of Department of Health (Public Witnesses Only)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 70,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "08D3D5E1-F98E-4AE9-9708-61B897BB1E0A",
+    "attachmentName": "FY25 DCH WL .docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2093,
+   "hearingDateTime": "2026-02-19T09:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3449,
+     "topic": "Fire and Emergency Medical Services",
+     "legislationNumber": null
+    },
+    {
+     "hearingTopicId": 3450,
+     "topic": "Office of Neighborhood Safety and Engagement",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 500 (Track A)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 19,
+   "jointHearingCommittees": "Joint with Judiciary and Public Safety",
+   "witnessListAttachment": {
+    "attachmentGuid": "18E14CE0-BC8F-42A1-9B04-60183E24BA5C",
+    "attachmentName": "2026-02-19 FEMS, ONSE POH (5).docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2129,
+   "hearingDateTime": "2026-02-20T09:30:00",
+   "hearingTitle": "Health",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3525,
+     "topic": "Performance Oversight of the Department of Health (Government Only)",
+     "legislationNumber": null
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Performance Oversight Hearing",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 412 (Track B)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "",
+   "witnessListAttachment": {
+    "attachmentGuid": "B4E578D3-D942-4E6A-9D71-60E65B38F1B7",
+    "attachmentName": "FY25 DCH WL  GOV.docx",
+    "attachmentTypeCode": null
+   }
+  },
+  {
+   "hearingId": 2188,
+   "hearingDateTime": "2026-02-23T14:30:00",
+   "hearingTitle": "Judiciary and Public Safety",
+   "address": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "topics": [
+    {
+     "hearingTopicId": 3643,
+     "topic": "First Responder Retention Efforts Amendment Act of 2025",
+     "legislationNumber": "B26-0358"
+    },
+    {
+     "hearingTopicId": 3644,
+     "topic": "Statutory Neglect Amendment Act of 2025",
+     "legislationNumber": "B26-0400"
+    },
+    {
+     "hearingTopicId": 3645,
+     "topic": "Promoting Parental Engagement at DYRS Amendment Act of 2025",
+     "legislationNumber": "B26-0408"
+    },
+    {
+     "hearingTopicId": 3646,
+     "topic": "Child Fatality Review Committee Amendment Act of 2025",
+     "legislationNumber": "B26-0411"
+    },
+    {
+     "hearingTopicId": 3647,
+     "topic": "Chief Medical Examiner Francisco Diaz Confirmation Resolution of 2025",
+     "legislationNumber": "PR26-0404"
+    },
+    {
+     "hearingTopicId": 3648,
+     "topic": "Fire and Emergency Medical Services Department Medical Director Dr. Sean Morgan Confirmation Resolution of 2025",
+     "legislationNumber": "PR26-0481"
+    }
+   ],
+   "legislationUrl": "https://lims.dccouncil.gov/Legislation/",
+   "hearingType": "Meeting",
+   "hearingTypeBGColor": "#caf0f8",
+   "hearingTypeBorderColor": "#5fa8d3",
+   "location": "Room 123 (Track C)",
+   "locationAddress": "1350 Pennsylvania Ave NW, Washington DC 20004",
+   "witnessesCount": 0,
+   "jointHearingCommittees": "Joint with Judiciary and Public Safety",
+   "witnessListAttachment": null
+  }
+ ]
+}

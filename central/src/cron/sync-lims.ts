@@ -1,10 +1,11 @@
 import { eq, and, or, inArray, notInArray, gte, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { getBulkData, getCouncilPeriods, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from '../lib/lims'
-import { bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, LIMS_STATE, limsStatusCode, toMasterListEntry } from '../lib/lims-map'
+import { bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, LIMS_STATE, limsStatusCode, sha256Hex, toMasterListEntry } from '../lib/lims-map'
+import { getHearingsCalendar } from '../lib/lims-hearings'
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_BILL_ID_BASE, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
 import { limsCategories, limsStates } from '../lib/lims-config'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
-import { sessions, bills, billTenants, tenants, people, limsRecords } from '../db/schema-legiscan'
+import { sessions, bills, billTenants, tenants, people, limsRecords, councilEvents } from '../db/schema-legiscan'
 import { trackLimsCall } from '../lib/lims-ingest'
 import { nowDb } from '../lib/dbTime'
 import { applyMasterList } from './sync-legiscan'
@@ -98,6 +99,16 @@ export async function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean 
   const toSync = [current, ...(await limsSessionRows(db)).filter(r => r.prior === 1 && r.yearEnd >= year - 1)]
 
   const reports: LimsPassReport[] = []
+  // The Council's hearing calendar rides along with each full pass (and the
+  // forced one): five small requests covering last month through three ahead.
+  const anyFull = opts.force || toSync.some(session => decideMode(session, etHour) === 'full')
+  if (anyFull) {
+    try {
+      await syncCouncilCalendar(db, today)
+    } catch (err) {
+      console.error('[sync-lims] council calendar sync failed:', err)
+    }
+  }
   for (const session of toSync) {
     // LIMS has one kind of pull, so only the session's full-pass hours run it.
     if (!opts.force && decideMode(session, etHour) !== 'full') continue
@@ -390,4 +401,67 @@ export async function importLimsMeasures(
     result.imported.push(...found)
   }
   return result
+}
+
+/**
+ * Pull the Council's hearing calendar for last month through three months
+ * ahead into council_events. An event missing from a month the feed returned is
+ * marked removed (the Council dropped or moved it); a month that failed to load
+ * is left untouched, so an outage never empties the calendar.
+ */
+export async function syncCouncilCalendar(db: LsDb, today: string): Promise<{ months: number; events: number; removed: number }> {
+  const year = Number(today.slice(0, 4))
+  const month = Number(today.slice(5, 7))
+  let events = 0
+  let removed = 0
+  let months = 0
+  for (let offset = -1; offset <= 3; offset++) {
+    const d = new Date(Date.UTC(year, month - 1 + offset, 1))
+    const y = d.getUTCFullYear()
+    const m = d.getUTCMonth() + 1
+    let rows
+    try {
+      rows = await getHearingsCalendar(m, y, () => trackLimsCall(db, 'HearingsCalendar', { year: y, month: m }))
+    } catch (err) {
+      console.error(`[sync-lims] council calendar ${y}-${m} failed:`, err)
+      continue
+    }
+    months++
+    const monthPrefix = `${y}-${String(m).padStart(2, '0')}`
+    const seen: number[] = []
+    for (const h of rows) {
+      if (!h || typeof h.hearingId !== 'number' || typeof h.hearingDateTime !== 'string') continue
+      const date = h.hearingDateTime.slice(0, 10)
+      const hhmm = h.hearingDateTime.slice(11, 16)
+      const values = {
+        hearingId: h.hearingId,
+        date,
+        time: /^\d{2}:\d{2}$/.test(hhmm) && hhmm !== '00:00' ? hhmm : null,
+        hearingType: clean(h.hearingType) || 'Hearing',
+        title: clean(h.hearingTitle) || 'Council',
+        jointWith: clean(h.jointHearingCommittees) || null,
+        location: clean(h.location) || null,
+        topicsJson: JSON.stringify((h.topics ?? []).map(t => ({ topic: clean(t.topic), number: clean(t.legislationNumber) || null }))),
+        witnessJson: h.witnessListAttachment ? JSON.stringify(h.witnessListAttachment) : null,
+        eventHash: '',
+        removedAt: null,
+        updatedAt: nowDb(),
+      }
+      values.eventHash = (await sha256Hex(JSON.stringify([values.date, values.time, values.hearingType, values.title, values.jointWith, values.location, values.topicsJson]))).slice(0, 32)
+      const { hearingId: _id, ...update } = values
+      await db.insert(councilEvents).values(values).onConflictDoUpdate({ target: councilEvents.hearingId, set: update })
+      seen.push(h.hearingId)
+      events++
+    }
+    const stale = await db.select({ hearingId: councilEvents.hearingId }).from(councilEvents)
+      .where(and(sql`substr(${councilEvents.date}, 1, 7) = ${monthPrefix}`, isNull(councilEvents.removedAt)))
+      .all()
+    for (const r of stale) {
+      if (seen.includes(r.hearingId)) continue
+      await db.update(councilEvents).set({ removedAt: nowDb() }).where(eq(councilEvents.hearingId, r.hearingId))
+      removed++
+    }
+  }
+  console.log(`[sync-lims] council calendar: ${events} events over ${months} months, ${removed} removed`)
+  return { months, events, removed }
 }
