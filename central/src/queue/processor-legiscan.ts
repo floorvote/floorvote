@@ -224,6 +224,10 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
     target: bills.billId,
     set: {
       changeHash:         bill.change_hash,
+      // A bill first inserted from a masterlist (which carries no type) keeps the
+      // column default 'B' until this runs, so write the type on every ingest.
+      billType:           bill.bill_type,
+      billTypeId:         bill.bill_type_id,
       title:              bill.title,
       description:        bill.description || null,
       status:             bill.status,

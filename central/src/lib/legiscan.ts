@@ -24,6 +24,8 @@ export interface MasterListEntry {
    * (getBill fills it later); LIMS sets it so monitor stubs link out too.
    */
   state_link?: string
+  /** Bill type label, when the source's list carries one (LIMS: "Emergency Bill", "Permanent Bill", ...). */
+  bill_type?: string
 }
 
 interface BillTextMeta {

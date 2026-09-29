@@ -264,6 +264,7 @@ export async function applyMasterList(
           lastActionDate: entry.last_action_date ?? null,
           url: entry.url ?? null,
           stateLink: entry.state_link ?? null,
+          ...(entry.bill_type ? { billType: entry.bill_type } : {}),
           createdAt: now,
           updatedAt: now,
         }).onConflictDoNothing()
@@ -280,6 +281,7 @@ export async function applyMasterList(
           lastActionDate: entry.last_action_date ?? null,
           url: entry.url ?? null,
           ...(entry.state_link !== undefined ? { stateLink: entry.state_link } : {}),
+          ...(entry.bill_type ? { billType: entry.bill_type } : {}),
           updatedAt: now,
         }).where(eq(bills.billId, entry.bill_id))
       : null

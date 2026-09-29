@@ -266,6 +266,7 @@ export function toMasterListEntry(
     last_action: last?.action,
     last_action_date: last?.date,
     state_link: limsBillUrl(clean(rec.legislationNumber)),
+    bill_type: clean(rec.legislationSubCategory) || clean(rec.legislationCategory) || undefined,
   }
 }
 

@@ -551,3 +551,15 @@ describe('LIMS ids never reach LegiScan', () => {
     expect(row!.fetchError).toBeNull()
   })
 })
+
+describe('bill type on re-ingest', () => {
+  it('replaces the masterlist default with the type getBill reports', async () => {
+    const db = drizzle(env.DB, { schema })
+    // A masterlist-first stub: no type, so the column default 'B'.
+    await db.insert(schema.bills).values({ billId: 9001, changeHash: 'old', sessionId: 2154, state: 'WI', stateId: 50, billNumber: 'AR9', title: 't' } as any)
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ bill_type: 'R', bill_type_id: '2', bill_number: 'AR9' }))
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    const row = await db.select().from(schema.bills).where(eq(schema.bills.billId, 9001)).get()
+    expect(row).toMatchObject({ billType: 'R', billTypeId: '2' })
+  })
+})
