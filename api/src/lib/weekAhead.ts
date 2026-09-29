@@ -73,6 +73,9 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         isNotNull(calendarEvents.date),
         gte(calendarEvents.date, todayIso),
         lt(calendarEvents.date, endIso),
+        // Deadlines stay out of the digest: they link their bill by bill_id, not
+        // calendar_event_bills, so the digest would show them without a bill.
+        ne(calendarEvents.source, 'deadline'),
         or(
           ne(calendarEvents.source, 'hearing'),
           exists(

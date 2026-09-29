@@ -9,6 +9,38 @@
  */
 export const DC_LEGISLATION_GUIDE_URL = 'https://dccouncil.gov/how-a-bill-becomes-a-law/'
 
+/**
+ * Calendar type_id for a DC deadline (Mayor's response due, projected law date,
+ * expiration). LegiScan's own calendar types are 1-3. Central's LIMS mapper
+ * writes it and the tenant files these entries as calendar source 'deadline',
+ * shown for every tracked bill rather than only prioritized ones.
+ */
+export const DEADLINE_CALENDAR_TYPE_ID = 10
+export const DEADLINE_CALENDAR_TYPE = 'Deadline'
+
+/** True for a calendar identity key ("<type_id>|<description>") that names a deadline. */
+export function isDeadlineIdentityKey(key: string): boolean {
+  return key.startsWith(`${DEADLINE_CALENDAR_TYPE_ID}|`)
+}
+
+const DEADLINES: Record<string, string> = {
+  "mayor's response due":
+    'The Mayor has 10 working days from transmittal to sign or veto. If the Mayor does neither, the act takes effect as if signed. A veto can be overridden by two-thirds of the Council.',
+  'congressional review ends':
+    'The projected law date from the Council. Congress has 30 days (60 for certain criminal legislation) to disapprove, counting only days Congress is in session, so the date moves when Congress recesses. If Congress does not act, the act becomes law on this date.',
+  'emergency act expires':
+    'Emergency acts last no more than 90 days. To keep the policy in force, the Council has to pass a temporary or permanent version before this date.',
+  'temporary law expires':
+    'Temporary laws last no more than 225 days. To keep the policy in force, the Council has to pass a permanent version (or a new emergency and temporary pair) before this date.',
+  'expires':
+    'The date this measure stops having effect, as recorded by the Council.',
+}
+
+/** Explainer for a DC deadline description ("Mayor's response due", ...), or null. */
+export function dcDeadlineExplainer(description: string | null | undefined): string | null {
+  return DEADLINES[(description ?? '').trim().toLowerCase()] ?? null
+}
+
 const TYPES: Record<string, string> = {
   'emergency bill':
     'Emergency act: takes effect once the Mayor signs it (or the Council overrides a veto) and lasts no more than 90 days. It skips the second reading and Congressional review, so the Council usually passes a temporary version at the same time.',

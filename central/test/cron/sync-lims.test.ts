@@ -157,7 +157,9 @@ describe('ingesting a LIMS bill', () => {
     expect(memberVotes.length).toBe(rc[0].total)
 
     const cal = await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0400)).all()
-    expect(cal.map(c => c.date).sort()).toEqual(['2025-11-13', '2026-01-27', '2026-02-23'])
+    expect(cal.filter(c => c.typeId !== 10).map(c => c.date).sort()).toEqual(['2025-11-13', '2026-01-27', '2026-02-23'])
+    // "Transmitted to Mayor, Response Due on Apr 28, 2026" in the bulk history.
+    expect(cal.filter(c => c.typeId === 10).map(c => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
 
     const sent = [
       ...tenantQueue.send.mock.calls.map(c => c[0]),

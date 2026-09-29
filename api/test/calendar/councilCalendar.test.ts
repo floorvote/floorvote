@@ -114,6 +114,18 @@ describe('calendar display', () => {
     expect(clemency.bills.map((b: any) => b.billNumber)).toEqual(['B26-0038'])
   })
 
+  it('shows DC deadlines for any tracked bill, while bill hearings still need a priority', async () => {
+    const porchfest = (await getDb(env.DB).select().from((await import('../../src/db/schema')).bills).where(eq((await import('../../src/db/schema')).bills.billNumber, 'B26-0424')).get())!.id
+    await seedCalendarEvent(clemencyId, { source: 'deadline', date: day(5), time: undefined as any, location: undefined as any, description: "Mayor's response due", eventHash: 'd1' })
+    await seedCalendarEvent(clemencyId, { date: day(6), description: 'Public Hearing on B26-0038', eventHash: 'h1' })
+    // Untracked stub: its deadline stays off the calendar.
+    await seedCalendarEvent(porchfest, { source: 'deadline', date: day(7), time: undefined as any, location: undefined as any, description: 'Congressional review ends', eventHash: 'd2' })
+    const res = await app.request(`/api/calendar/events?from=${day(0)}&to=${day(30)}`, { headers: { Cookie: cookie } }, env)
+    const events = await res.json() as any[]
+    expect(events.map(e => [e.source, e.description])).toEqual([['deadline', "Mayor's response due"]])
+    expect(events[0].bills.map((b: any) => b.billNumber)).toEqual(['B26-0038'])
+  })
+
   it('titles an event by committee, type, and agenda', () => {
     expect(councilEventTitle(EVENTS[1] as any)).toBe('Legislative Meeting: Breakfast Meeting')
     expect(councilEventTitle({ ...(EVENTS[0] as any), topics: [{ topic: 'A', number: null }, { topic: 'B', number: null }, { topic: 'C', number: null }] }))

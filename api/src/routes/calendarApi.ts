@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { eq, and, isNotNull, gte, lte, or, asc, inArray } from 'drizzle-orm'
+import { visibleCalendarSource } from '../lib/calendarVisibility'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
@@ -107,11 +108,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       isNotNull(calendarEvents.date),
       gte(calendarEvents.date, from),
       lte(calendarEvents.date, to),
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-        eq(calendarEvents.source, 'council'),
-      ),
+      visibleCalendarSource,
       or(
         eq(calendarEvents.status, 'confirmed'),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),
@@ -179,8 +176,9 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const result: EventResult[] = []
   const hearingGroups = new Map<string, EventResult>()
   for (const e of entries) {
-    if (e.source !== 'hearing') { result.push(e); continue }
-    const key = `${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+    // Deadlines group the same way: two bills whose Congressional review ends the same day share one entry.
+    if (e.source !== 'hearing' && e.source !== 'deadline') { result.push(e); continue }
+    const key = `${e.source}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
     const g = hearingGroups.get(key)
     if (!g) {
       hearingGroups.set(key, e)
@@ -401,11 +399,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     .from(calendarEvents)
     .leftJoin(bills, eq(calendarEvents.billId, bills.id))
     .where(and(
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-        eq(calendarEvents.source, 'council'),
-      ),
+      visibleCalendarSource,
       or(
         and(eq(calendarEvents.status, 'confirmed'), gte(calendarEvents.date, confirmedCutoff)),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),

@@ -1,6 +1,7 @@
 import type { LegiscanBill, LegiscanCalendarEntry, MasterListEntry } from './legiscan'
 import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './lims'
 import { limsDocId, limsRollCallId, limsSessionId } from './lims-ids'
+import { DEADLINE_CALENDAR_TYPE, DEADLINE_CALENDAR_TYPE_ID } from '../../../shared/dcLegislation'
 
 /**
  * Pure mapping from DC Council LIMS records to the LegiScan shapes the central
@@ -205,6 +206,45 @@ export function bulkHash(rec: LimsBulkRecord): Promise<string> {
   return sha256Hex(JSON.stringify(norm))
 }
 
+const LIMS_DATE = '([A-Z][a-z]{2} \\d{1,2}, \\d{4})'
+const MAYOR_DUE_RE = new RegExp(`Response Due on ${LIMS_DATE}`, 'i')
+const PROJECTED_RE = new RegExp(`Projected Law Date is ${LIMS_DATE}`, 'i')
+const EXPIRES_RE = new RegExp(`Expires on ${LIMS_DATE}`, 'i')
+
+/**
+ * Deadlines the Council records in a measure's history: the Mayor's response
+ * due date, the projected law date at the end of Congressional review, and the
+ * expiration of an emergency act or temporary law. LIMS states each date, so
+ * nothing is computed here (the projected law date already reflects the 30- or
+ * 60-day review and the days Congress is in session). The latest mention of
+ * each wins, since a re-transmittal or a new publication restates it.
+ * Descriptions are fixed per kind so a moved date reads as a change, not a new event.
+ */
+export function limsDeadlines(rec: Pick<LimsBulkRecord, 'legislationSubCategory' | 'projectedLawDate' | 'legislationHistory'>): { date: string; description: string }[] {
+  const last = (re: RegExp): string | null => {
+    let found: string | null = null
+    for (const h of rec.legislationHistory ?? []) {
+      const m = re.exec(clean(h.actionDescription))
+      if (m) found = limsDate(m[1]) ?? found
+    }
+    return found
+  }
+  const out: { date: string; description: string }[] = []
+  const mayor = last(MAYOR_DUE_RE)
+  if (mayor) out.push({ date: mayor, description: "Mayor's response due" })
+  const projected = limsDate(clean(rec.projectedLawDate)) ?? last(PROJECTED_RE)
+  if (projected) out.push({ date: projected, description: 'Congressional review ends' })
+  const expires = last(EXPIRES_RE)
+  if (expires) {
+    const sub = clean(rec.legislationSubCategory).toLowerCase()
+    const description = sub.includes('emergency') ? 'Emergency act expires'
+      : sub.includes('temporary') ? 'Temporary law expires'
+      : 'Expires'
+    out.push({ date: expires, description })
+  }
+  return out
+}
+
 /** Oversight hearing/roundtable notices and records: the record itself is the event. */
 function isOversightCategory(rec: { legislationCategory: string }): boolean {
   return /Oversight Hearing\/Roundtable/i.test(rec.legislationCategory)
@@ -404,6 +444,9 @@ export async function buildLimsBill(
     } else if (MARKUP_RE.test(h.action)) {
       events.push({ type_id: 3, type: 'Markup Session', date: h.date, description: h.action, location: '' })
     }
+  }
+  for (const d of limsDeadlines(rec)) {
+    events.push({ type_id: DEADLINE_CALENDAR_TYPE_ID, type: DEADLINE_CALENDAR_TYPE, date: d.date, description: d.description, location: '' })
   }
   // Identity is type + description (lib/detect-changes.ts calendarIdentityKey), so two
   // entries with the same text on one bill need telling apart.

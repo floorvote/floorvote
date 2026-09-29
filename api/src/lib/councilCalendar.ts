@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNotNull, lte, or } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm'
 import { associationConfig, bills, calendarEventBills, calendarEvents } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import { matchesUnion } from './keywords'
@@ -156,7 +156,3 @@ export async function syncCouncilCalendarEvents(env: Env, db: AppDb): Promise<{ 
   }
   return { upserted, cancelled, deleted }
 }
-
-/** Calendar sources that are always shown, whatever the bill's priority. */
-export const ALWAYS_SHOWN_SOURCES = ['custom', 'council'] as const
-export const alwaysShown = or(eq(calendarEvents.source, 'custom'), eq(calendarEvents.source, 'council'))
