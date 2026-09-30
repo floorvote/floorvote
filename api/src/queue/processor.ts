@@ -1,4 +1,5 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { isDeadlineIdentityKey } from '../../../shared/dcLegislation'
 import { processBill } from '../lib/llm'
 import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
@@ -778,16 +779,19 @@ async function reconcileCalendar(
   const incomingUids = new Set<string>()
   const changedUids = new Set<string>()
 
-  // Upsert current events; bump sequence when event_hash changed.
+  // Upsert current events; bump sequence when event_hash changed. DC deadlines
+  // arrive in the same block and are filed as their own source (see
+  // lib/calendarVisibility.ts for why they show without a priority).
   for (const e of block.events) {
     const uid = hearingUid(msg.billId, e.identityKey, msg.tenantId)
+    const source = isDeadlineIdentityKey(e.identityKey) ? 'deadline' : 'hearing'
     incomingUids.add(uid)
     const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
 
     if (!existing) {
       await db.insert(calendarEvents).values({
-        id: crypto.randomUUID(), uid, billId: billInternalId, source: 'hearing', sequence: 0,
+        id: crypto.randomUUID(), uid, billId: billInternalId, source, sequence: 0,
         date: e.date, time: e.time, location: e.location, description: e.description,
         status: 'confirmed', eventHash: e.eventHash, createdAt: now, updatedAt: now,
       })
@@ -795,7 +799,7 @@ async function reconcileCalendar(
     } else {
       const bump = (existing.eventHash ?? '') !== (e.eventHash ?? '')
       await db.update(calendarEvents).set({
-        billId: billInternalId, status: 'confirmed',
+        billId: billInternalId, source, status: 'confirmed',
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
       }).where(eq(calendarEvents.uid, uid))
@@ -809,9 +813,9 @@ async function reconcileCalendar(
     }
   }
 
-  // Cancel rows for this bill (hearing source only) no longer present (bump sequence so iCal SEQUENCE advances).
+  // Cancel rows for this bill (hearing and deadline sources only) no longer present (bump sequence so iCal SEQUENCE advances).
   const existingRows = await db.select({ uid: calendarEvents.uid, sequence: calendarEvents.sequence, status: calendarEvents.status })
-    .from(calendarEvents).where(and(eq(calendarEvents.billId, billInternalId), eq(calendarEvents.source, 'hearing'))).all()
+    .from(calendarEvents).where(and(eq(calendarEvents.billId, billInternalId), inArray(calendarEvents.source, ['hearing', 'deadline']))).all()
   for (const row of existingRows) {
     if (!incomingUids.has(row.uid) && row.status !== 'cancelled') {
       await db.update(calendarEvents).set({ status: 'cancelled', sequence: row.sequence + 1, updatedAt: now })
@@ -826,6 +830,9 @@ async function reconcileCalendar(
   // on queue re-delivery: a re-delivered identical message leaves changedUids empty).
   if (!isNew) {
     for (const ch of block.changes) {
+      // A deadline change would read as "hearing added/changed" in the feed; the
+      // calendar and the bill page carry deadlines instead.
+      if (isDeadlineIdentityKey(ch.identityKey)) continue
       const uid = hearingUid(msg.billId, ch.identityKey, msg.tenantId)
       if (!changedUids.has(uid)) continue
       console.log('[calendar-reconcile] feed event', JSON.stringify({

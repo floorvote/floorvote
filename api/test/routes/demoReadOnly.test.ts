@@ -236,12 +236,15 @@ const DENIED = new Set([
   'DELETE /api/bills/:id',
   'DELETE /api/calendar/events/:id',
   'DELETE /api/comments/:id',
+  'DELETE /api/links/:id',
   'DELETE /api/users/me',
   'PATCH /api/admin/members/:id',
   'PATCH /api/admin/roles/:id',
   'PATCH /api/bills/:id/draft',
   'PATCH /api/users/me',
   'POST /api/admin/clear-interactions',
+  // A demo tenant is not DC and has no Council calendar to read.
+  'POST /api/admin/council-calendar/preview',
   'POST /api/admin/custom-fields',
   'POST /api/admin/heal-ai',
   'POST /api/admin/keyword-resync',
@@ -268,12 +271,19 @@ const DENIED = new Set([
   'POST /api/bills/bulk-dismiss',
   'POST /api/bills/draft',
   'POST /api/calendar/backfill',
+  // The deep-analysis queue is off on demo tenants and would hand work to an operator's worker.
+  'POST /api/deep/:kind/:subjectId/request',
+  'POST /api/deep/worker/requests/:id/claim',
+  'POST /api/deep/worker/requests/:id/release',
+  'POST /api/deep/worker/requests/:id/result',
   'POST /api/calendar/events',
   'POST /api/calendar/events/:id/restore',
   'POST /api/calendar/import',
   'POST /api/calendar/regenerate-slug',
   'POST /api/feedback',
+  'POST /api/links/:kind/:subjectId',
   'POST /api/users/me/deactivate',
+  'PUT /api/admin/council-calendar',
   'PUT /api/admin/custom-fields/:id',
   'PUT /api/admin/custom-fields/reorder',
   'PUT /api/admin/deletion-policy',
@@ -323,8 +333,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(49)
-    expect(registered().length).toBe(73)
+    expect(DENIED.size).toBe(57)
+    expect(registered().length).toBe(81)
   })
 
   it('refuses every denied route with the read-only message', async () => {

@@ -588,6 +588,31 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
             </>
           )}
         </NavLink>
+        {/* DC teams: the Council's committees and staff (pages/People.tsx). */}
+        {config?.states.includes('DC') && (
+          <NavLink
+            to="/people"
+            onClick={(e) => {
+              if (isModifiedClick(e)) return
+              onClose()
+            }}
+            onMouseEnter={() => setNavHover('people')}
+            onMouseLeave={() => setNavHover(null)}
+            style={({ isActive }) => ({
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 10px',
+              fontSize: fontSize.base,
+              fontWeight: fontWeight.medium,
+              color: isActive ? color.billBadgeNavy : color.textSlate,
+              background: isActive || navHover === 'people' ? color.bgAmberPriority : 'transparent',
+              textDecoration: 'none',
+              borderRadius: radius.md,
+              margin: '1px 10px',
+            })}
+          >
+            <span style={{ fontFamily: BRAND_FONT }}>People</span>
+          </NavLink>
+        )}
       </nav>
       </div>
 

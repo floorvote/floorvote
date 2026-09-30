@@ -331,6 +331,36 @@ export const calendarEvents = sqliteTable('calendar_events', {
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
+// Team documents linked to a bill or calendar event (migration 0072).
+export const teamLinks = sqliteTable('team_links', {
+  id: text('id').primaryKey(),
+  subjectKind: text('subject_kind', { enum: ['bill', 'event'] }).notNull(),
+  subjectId: text('subject_id').notNull(),
+  title: text('title').notNull(),
+  url: text('url').notNull(),
+  addedBy: text('added_by'),
+  addedAt: text('added_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [index('idx_team_links_subject').on(t.subjectKind, t.subjectId)])
+
+// Deep analyses and hearing briefs, filled by an external worker (migration 0071).
+export const deepAnalyses = sqliteTable('deep_analyses', {
+  id: text('id').primaryKey(),
+  kind: text('kind', { enum: ['bill', 'hearing'] }).notNull(),
+  subjectId: text('subject_id').notNull(),
+  status: text('status', { enum: ['pending', 'claimed', 'done', 'error'] }).notNull().default('pending'),
+  inputHash: text('input_hash').notNull(),
+  requestedBy: text('requested_by'),
+  requestedAt: text('requested_at').notNull().default(sql`(datetime('now'))`),
+  claimedAt: text('claimed_at'),
+  claimedBy: text('claimed_by'),
+  content: text('content'),
+  contentInputHash: text('content_input_hash'),
+  model: text('model'),
+  completedAt: text('completed_at'),
+  error: text('error'),
+  attempts: integer('attempts').notNull().default(0),
+}, (t) => [uniqueIndex('deep_analyses_kind_subject').on(t.kind, t.subjectId)])
+
 export const calendarEventBills = sqliteTable('calendar_event_bills', {
   eventId: text('event_id').notNull(),
   billId: text('bill_id').notNull(),

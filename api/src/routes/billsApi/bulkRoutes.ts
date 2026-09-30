@@ -7,6 +7,7 @@ import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
+import { requestDeepForPrioritized } from '../../lib/deepAnalysis'
 import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { decodeSubjectFilters } from '../../lib/billSubjects'
@@ -133,6 +134,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           .set({ priority, updatedAt: now })
           .where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)))
       }
+      // Request deep analyses at an automatic priority, or withdraw waiting ones below it.
+      c.executionCtx.waitUntil(requestDeepForPrioritized(c.env, db, billIds)
+        .catch(err => console.error('[deep] request after bulk priority change failed', err)))
       if (priority) {
         // Latch each newly-prioritized match as triaged (idempotent — first actor wins).
         for (let i = 0; i < billIds.length; i += BULK_CHUNK) {

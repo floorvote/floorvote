@@ -19,6 +19,13 @@ export interface MasterListEntry {
   last_action?: string
   last_action_date?: string
   url?: string
+  /**
+   * The source's own page for the bill. LegiScan masterlists don't carry it
+   * (getBill fills it later); LIMS sets it so monitor stubs link out too.
+   */
+  state_link?: string
+  /** Bill type label, when the source's list carries one (LIMS: "Emergency Bill", "Permanent Bill", ...). */
+  bill_type?: string
 }
 
 interface BillTextMeta {
@@ -113,6 +120,13 @@ interface LegiscanVoteSummary {
   chamber_id: number
   url: string
   state_link: string
+  /**
+   * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
+   * per vote); sources that include them inline, such as DC LIMS, set this and
+   * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
+   * 3 NV, 4 Absent.
+   */
+  member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
 
 export interface LegiscanCalendarEntry {

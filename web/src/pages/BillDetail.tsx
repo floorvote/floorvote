@@ -26,6 +26,9 @@ import { BillTextPanel } from '../components/BillTextPanel'
 import { BillTextChip } from '../components/BillTextChip'
 import { PersonalNote } from '../components/PersonalNote'
 import { InfoTooltip } from '../components/InfoTooltip'
+import { DeepAnalysisPanel } from '../components/DeepAnalysisPanel'
+import { TeamLinks } from '../components/TeamLinks'
+import { BillHearingBriefs } from '../components/BillHearingBriefs'
 import { ReactionPicker } from '../components/ReactionPicker'
 import { Picker, type PickerOption } from '../components/Picker'
 import { pickerFieldTriggerStyle, PickerFieldCaret } from '../lib/pickerFieldStyle'
@@ -38,6 +41,7 @@ import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
+import { dcTypeExplainer, dcStatusExplainer, dcDeadlineExplainer, DC_LEGISLATION_GUIDE_URL, DEADLINE_CALENDAR_TYPE_ID } from '../../../shared/dcLegislation'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
@@ -385,7 +389,7 @@ type Comment = {
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
-type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number }
+type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; memberVotes?: { name: string; vote: string }[] }
 type RelatedBill = { billId: number; billNumber: string; type: string; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
 type BillDetailData = {
@@ -1232,7 +1236,12 @@ export function BillDetail() {
               return `https://${instanceDomain}${window.location.pathname}`
             })()}
           />
-          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />}
+          {bill.isDraft ? <DraftChip /> : (() => {
+            const chip = <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+            // DC statuses (from the Council's LIMS) carry timing that matters: explain them.
+            const explainer = bill.state === 'DC' ? dcStatusExplainer(decodeStatus(bill.status)) : null
+            return explainer ? <HoverTooltip text={explainer} maxWidth={320}>{chip}</HoverTooltip> : chip
+          })()}
           {bill.session && (
             <SessionChip
               session={bill.session}
@@ -1522,7 +1531,35 @@ export function BillDetail() {
 
           // Collect all display items, then render with · separators only between items
           const metaItems: React.ReactNode[] = []
-          if (bodyLabel) metaItems.push(<span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+          // DC legislation types (emergency, temporary, permanent, ...) get a plain-language
+          // explainer, since the difference decides how long an act lasts and whether
+          // Congress reviews it.
+          const typeExplainer = bill.state === 'DC' ? dcTypeExplainer(bill.billType) : null
+          if (bodyLabel && typeExplainer) metaItems.push(
+            <span key="body" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              {bodyLabel}
+              <InfoTooltip text={typeExplainer} maxWidth={340} align="center" label={`What "${bill.billType}" means`} />
+            </span>
+          )
+          else if (bodyLabel) metaItems.push(<span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+          // The next DC deadline (Mayor's response due, Congressional review ends, an
+          // act expiring) sits up top, where it is hard to miss.
+          const nextDeadline = bill.state === 'DC'
+            ? (bill.calendar ?? []).filter(e => e.typeId === DEADLINE_CALENDAR_TYPE_ID && e.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date))[0]
+            : undefined
+          if (nextDeadline) {
+            const explainer = dcDeadlineExplainer(nextDeadline.description)
+            metaItems.push(
+              <span key="deadline" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4, color: color.textAmberDark, fontWeight: fontWeight.medium }}>
+                <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.base }}>schedule</span>
+                {nextDeadline.description}: {safeDate(nextDeadline.date) ?? nextDeadline.date}
+                {explainer && <InfoTooltip text={explainer} maxWidth={340} align="center" label={`About "${nextDeadline.description}"`} />}
+              </span>
+            )
+          }
+          if (typeExplainer) metaItems.push(
+            <a key="dc-guide" href={DC_LEGISLATION_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="blue-link" style={{ whiteSpace: 'nowrap' }}>How DC legislation works</a>
+          )
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
           grouped.forEach((related, type) => {
             const label = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
@@ -2304,6 +2341,11 @@ export function BillDetail() {
           </AnalysisBox>
         )}
 
+        {/* Deep analysis: a stronger model's write-up, filled by the operator's worker */}
+        {!bill.isDraft && <DeepAnalysisPanel key={bill.id} kind="bill" subjectId={bill.id} isAdmin={isAdmin} />}
+        {!bill.isDraft && <TeamLinks key={`links-${bill.id}`} kind="bill" subjectId={bill.id} isAdmin={isAdmin} />}
+        {!bill.isDraft && <BillHearingBriefs key={`hearings-${bill.id}`} billId={bill.id} isAdmin={isAdmin} />}
+
         {/* Draft summary + bill text — draft-only blocks replacing AI section */}
         {bill.isDraft && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 14 }}>
@@ -2505,10 +2547,11 @@ export function BillDetail() {
         {/* Hearings collapsible */}
         {(bill.calendar ?? []).length > 0 && (() => {
           const today = todayIso()
+          const hasDeadlines = bill.calendar.some(e => e.typeId === DEADLINE_CALENDAR_TYPE_ID)
           return (
             <CollapsibleSection
               id="section-hearings"
-              label="Hearings"
+              label={hasDeadlines ? 'Hearings and deadlines' : 'Hearings'}
               count={bill.calendar.length}
               open={showHearings}
               onToggle={() => setShowHearings(v => !v)}
@@ -2522,7 +2565,12 @@ export function BillDetail() {
                 // bill-number badge and the calendar/feed gavel — so a hearing
                 // reads the same everywhere. Chamber (Senate / House) is carried
                 // by the label text, not colour.
-                const chipColor = { color: color.billBadgeNavy, background: color.bgInfo }
+                // DC deadlines take the calendar's amber deadline identity instead.
+                const isDeadline = entry.typeId === DEADLINE_CALENDAR_TYPE_ID
+                const chipColor = isDeadline
+                  ? { color: color.textAmberDark, background: color.bgAmberPriority }
+                  : { color: color.billBadgeNavy, background: color.bgInfo }
+                const deadlineExplainer = isDeadline ? dcDeadlineExplainer(entry.description) : null
                 return (
                   <TabularRow
                     key={entry.eventHash || `hearing-${i}`}
@@ -2541,7 +2589,10 @@ export function BillDetail() {
                     }
                     content={
                       <div style={{ color: color.textSlate }}>
-                        <div style={{ fontWeight: fontWeight.medium }}>{entry.description || entry.type}</div>
+                        <div style={{ fontWeight: fontWeight.medium, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {entry.description || entry.type}
+                          {deadlineExplainer && <InfoTooltip text={deadlineExplainer} maxWidth={340} align="left" label={`About "${entry.description}"`} />}
+                        </div>
                         {entry.location && <div style={{ color: color.textSecondary, fontSize: fontSize.xs, marginTop: 1 }}>{entry.location}</div>}
                       </div>
                     }

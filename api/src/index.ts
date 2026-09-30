@@ -1,4 +1,9 @@
 import { Hono } from 'hono'
+import { syncCouncilCalendarEvents } from './lib/councilCalendar'
+import { deepRouter } from './routes/deepApi'
+import { directoryRouter } from './routes/directoryApi'
+import { linksRouter } from './routes/linksApi'
+import { fireDeepWorker, reconcileDeepRequests } from './lib/deepAnalysis'
 import { cors } from 'hono/cors'
 import { getCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
@@ -136,6 +141,9 @@ app.route('/api/stats', statsRouter)
 app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
+app.route('/api/deep', deepRouter)
+app.route('/api/directory', directoryRouter)
+app.route('/api/links', linksRouter)
 
 app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
 
@@ -310,6 +318,25 @@ export default {
           console.warn(
             `[heal-ai] ${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
           )
+        }
+      }))
+      // Council calendar (DC LIMS): no-op unless the team has council_calendar_rules.
+      // A failure is logged, not thrown: the next hourly run retries, and an alert
+      // per transient central blip would be the same fatigue heal-ai avoids above.
+      ctx.waitUntil(runJob(env, 'council-calendar', async () => {
+        try {
+          const r = await syncCouncilCalendarEvents(env, db)
+          if (r && (r.upserted || r.cancelled || r.deleted)) console.log(`[council-calendar] upserted=${r.upserted} cancelled=${r.cancelled} deleted=${r.deleted}`)
+        } catch (err) {
+          console.error(`[council-calendar] sync failed, skipping this run: ${describeErrorCauseChain(err)}`)
+        }
+        // After the calendar sync, so a new Council event gets its hearing brief request this hour.
+        try {
+          const d = await reconcileDeepRequests(env, db)
+          if (d && (d.bills || d.hearings || d.withdrawn)) console.log(`[deep] requested bills=${d.bills} hearings=${d.hearings} withdrawn=${d.withdrawn}`)
+          if (await fireDeepWorker(env, db)) console.log('[deep] started the worker')
+        } catch (err) {
+          console.error(`[deep] request sweep failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
       return

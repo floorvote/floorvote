@@ -1,15 +1,20 @@
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, desc, inArray, gte, lt, lte } from 'drizzle-orm'
+import { isCurrentMember } from '../lib/council-changes'
+import { LIMS_PEOPLE_ID_BASE, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
 import * as schema from '../db/schema-legiscan'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
 import type { LsEnv } from '../types-legiscan'
+import { LIMS_STATUS_LABELS } from '../lib/lims-map'
+import { councilHearingUrl } from '../lib/lims-hearings'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
   3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
+  ...LIMS_STATUS_LABELS,
 }
 
 export const billsLsRoutes = new Hono<{ Bindings: LsEnv }>()
@@ -19,6 +24,72 @@ billsLsRoutes.use('*', async (c, next) => {
     return c.json({ error: 'unauthorized' }, 401)
   }
   return next()
+})
+
+// The DC Council hearing calendar (cron/sync-lims.ts syncCouncilCalendar), for
+// tenants to filter with their own calendar rules. Registered before '/:id' so
+// the literal segment is not read as a bill id. Removed events are returned with
+// removedAt set, so a tenant can cancel its copy.
+// The Council's committees (chair, members, key staff, agencies) and staff
+// directory, from dccouncil.gov (cron/sync-lims.ts syncCouncilDirectory).
+billsLsRoutes.get('/council-directory', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const parse = <T>(s: string | null, fallback: T): T => { if (!s) return fallback; try { return JSON.parse(s) as T } catch { return fallback } }
+  const committees = await db.select().from(schema.councilCommittees).orderBy(schema.councilCommittees.name).all()
+  const people = await db.select().from(schema.councilDirectory).orderBy(schema.councilDirectory.name).all()
+  // The current Council Period's members with their terms, so a page or a brief
+  // can tell a sitting member from one who has left.
+  const today = new Date().toISOString().slice(0, 10)
+  const period = await db.select({ yearStart: schema.sessions.yearStart }).from(schema.sessions)
+    .where(and(eq(schema.sessions.state, 'DC'), gte(schema.sessions.sessionId, LIMS_SESSION_ID_BASE), eq(schema.sessions.prior, 0))).get()
+  const members = await db.select({ peopleId: schema.people.peopleId, name: schema.people.name, role: schema.people.role, termStart: schema.people.termStart, termEnd: schema.people.termEnd })
+    .from(schema.people).where(and(gte(schema.people.peopleId, LIMS_PEOPLE_ID_BASE), lt(schema.people.peopleId, LIMS_PEOPLE_ID_BASE * 2))).all()
+  const periodStart = period ? `${period.yearStart}-01-01` : null
+  const councilmembers = members
+    .filter(m => !periodStart || !m.termEnd || m.termEnd >= periodStart)
+    .map(m => ({ ...m, current: isCurrentMember(m, today) }))
+    .sort((a, b) => Number(b.current) - Number(a.current) || a.name.localeCompare(b.name))
+  const changes = await db.select().from(schema.councilChanges)
+    .where(gte(schema.councilChanges.detectedAt, new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10)))
+    .orderBy(desc(schema.councilChanges.detectedAt), desc(schema.councilChanges.id)).limit(100).all()
+  return c.json({
+    councilmembers,
+    changes: changes.map(ch => ({ kind: ch.kind, committee: ch.committee, person: ch.person, detail: ch.detail, detectedAt: ch.detectedAt })),
+    committees: committees.map(r => ({
+      slug: r.slug, name: r.name, url: r.url,
+      chair: parse(r.chairJson, null), members: parse(r.membersJson, []), staff: parse(r.staffJson, []), agencies: parse(r.agenciesJson, []),
+      updatedAt: r.updatedAt,
+    })),
+    people: people.map(r => ({ kind: r.kind, name: r.name, title: r.title, office: r.office, email: r.email, phone: r.phone })),
+    updatedAt: committees[0]?.updatedAt ?? null,
+  })
+})
+
+billsLsRoutes.get('/council-events', async (c) => {
+  const from = c.req.query('from') ?? ''
+  const to = c.req.query('to') ?? ''
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return c.json({ error: 'from and to (YYYY-MM-DD) are required' }, 400)
+  }
+  const db = drizzle(c.env.DB, { schema })
+  const rows = await db.select().from(schema.councilEvents)
+    .where(and(gte(schema.councilEvents.date, from), lte(schema.councilEvents.date, to)))
+    .orderBy(schema.councilEvents.date, schema.councilEvents.time)
+    .all()
+  return c.json(rows.map(r => ({
+    hearingId: r.hearingId,
+    date: r.date,
+    time: r.time,
+    hearingType: r.hearingType,
+    title: r.title,
+    jointWith: r.jointWith,
+    location: r.location,
+    topics: JSON.parse(r.topicsJson) as { topic: string; number: string | null }[],
+    witnessList: r.witnessJson ? JSON.parse(r.witnessJson) as { attachmentGuid: string; attachmentName: string } : null,
+    url: councilHearingUrl(r.hearingId),
+    eventHash: r.eventHash,
+    removedAt: r.removedAt,
+  })))
 })
 
 billsLsRoutes.get('/sessions', async (c) => {
@@ -103,8 +174,27 @@ billsLsRoutes.post('/rich-batch', async (c) => {
           mime: s.mime ?? null, url: s.url ?? null, stateLink: s.stateLink ?? null,
         })
       }
+      // Opt-in: each member's vote. The data export leaves it off.
+      const memberVotesByRc = new Map<number, { name: string; vote: string }[]>()
+      if ((body as { memberVotes?: unknown }).memberVotes === true && rollCalls.length > 0) {
+        const rcIds = rollCalls.map(rc => rc.rollCallId)
+        for (let i = 0; i < rcIds.length; i += 90) {
+          const rows = await db
+            .select({ rollCallId: schema.rollCallVotes.rollCallId, name: schema.people.name, vote: schema.rollCallVotes.voteText })
+            .from(schema.rollCallVotes)
+            .leftJoin(schema.people, eq(schema.people.peopleId, schema.rollCallVotes.peopleId))
+            .where(inArray(schema.rollCallVotes.rollCallId, rcIds.slice(i, i + 90)))
+            .all()
+          for (const r of rows) {
+            if (!r.name || !r.vote) continue
+            memberVotesByRc.set(r.rollCallId, [...(memberVotesByRc.get(r.rollCallId) ?? []), { name: r.name, vote: r.vote }])
+          }
+        }
+      }
+      for (const list of memberVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
       for (const rc of rollCalls) {
         byId[String(rc.billId)]?.votes.push({
+          ...(memberVotesByRc.has(rc.rollCallId) ? { memberVotes: memberVotesByRc.get(rc.rollCallId) } : {}),
           id: String(rc.rollCallId), motionText: rc.description, date: rc.date,
           result: rc.passed ? 'pass' : 'fail', chamber: rc.chamber,
           counts: [
@@ -164,6 +254,25 @@ billsLsRoutes.get('/:id', async (c) => {
     db.select().from(schema.billSubjects).where(eq(schema.billSubjects.billId, numeric)).all(),
     db.select().from(schema.billAmendments).where(eq(schema.billAmendments.billId, numeric)).orderBy(schema.billAmendments.date).all(),
   ])
+  const rcIds = rollCalls.map(rc => rc.rollCallId)
+  // Chunked: a big bill can have more roll calls than D1's 100 bound parameters.
+  const memberVoteRows: { rollCallId: number; name: string | null; vote: string | null }[] = []
+  for (let i = 0; i < rcIds.length; i += 90) {
+    memberVoteRows.push(...await db
+      .select({ rollCallId: schema.rollCallVotes.rollCallId, name: schema.people.name, vote: schema.rollCallVotes.voteText })
+      .from(schema.rollCallVotes)
+      .leftJoin(schema.people, eq(schema.people.peopleId, schema.rollCallVotes.peopleId))
+      .where(inArray(schema.rollCallVotes.rollCallId, rcIds.slice(i, i + 90)))
+      .all())
+  }
+  const memberVotesByRc = new Map<number, { name: string; vote: string }[]>()
+  for (const r of memberVoteRows) {
+    if (!r.name || !r.vote) continue
+    const list = memberVotesByRc.get(r.rollCallId) ?? []
+    list.push({ name: r.name, vote: r.vote })
+    memberVotesByRc.set(r.rollCallId, list)
+  }
+  for (const list of memberVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
   const textWithR2 = [...texts]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -252,6 +361,8 @@ billsLsRoutes.get('/:id', async (c) => {
     sponsors,
     votes: rollCalls.map(rc => ({
       id: String(rc.rollCallId),
+      // Each member's vote, where the provider records it (DC LIMS readings do).
+      memberVotes: (memberVotesByRc.get(rc.rollCallId) ?? []),
       motionText: rc.description,
       date: rc.date,
       result: rc.passed ? 'pass' : 'fail',

@@ -111,6 +111,26 @@ SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # published. Left unset, the footer offers the upstream repository, which is
 # accurate only while you run it unmodified. "" withdraws the offer.
 # OPERATOR_SOURCE_URL = "https://github.com/yourorg/floorvote"
+# Data providers credited in the sidebar footer, comma-separated. Unset means
+# "legiscan". A DC team whose central sources DC from the Council's LIMS
+# (central LIMS_STATES = "DC") sets "lims".
+# DATA_SOURCES = "lims"
+#
+# Deep analyses and hearing briefs: a queue of longer write-ups for high-stakes
+# bills and upcoming Council events. FloorVote never calls a model for these.
+# An external worker you run (a scheduled Claude Code routine on a subscription,
+# a Codex task, or an API-backed job) lists open requests at
+# /api/deep/worker/requests, claims one, and posts the result back, presenting
+# the DEEP_WORKER_TOKEN secret (`wrangler secret put DEEP_WORKER_TOKEN`) as a
+# bearer token. Priorities default to "high,medium".
+# DEEP_ANALYSIS_ENABLED = "true"
+# DEEP_ANALYSIS_PRIORITIES = "high,medium"
+# To start the worker only when requests are waiting (for example a Claude
+# Code routine's API trigger, whose runs are capped per day), set its URL here
+# and its token with `wrangler secret put DEEP_WORKER_FIRE_TOKEN`. The hourly
+# sweep POSTs to it at most once an hour, and an admin's request within ten
+# minutes.
+# DEEP_WORKER_FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/<id>/fire"
 #
 # Arms the terms-acceptance gate: every user must tick a checkbox agreeing to the
 # Legal Terms before the app is usable, and again whenever this date moves. Unset

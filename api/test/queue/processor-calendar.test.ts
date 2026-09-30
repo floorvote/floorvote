@@ -215,4 +215,27 @@ describe('processCentralNotification — calendar mirror', () => {
     const hearingAddedEvents = fe.filter(e => e.type === 'hearing_added')
     expect(hearingAddedEvents).toHaveLength(1)
   })
+
+  it('files a DC deadline as source deadline, with no feed event, and cancels it when it drops out', async () => {
+    const deadline = {
+      identityKey: "10|mayor's response due", date: '2026-06-20', time: null,
+      location: null, description: "Mayor's response due", eventHash: 'd1',
+    }
+    const db = getDb(env.DB)
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: { events: [deadline], changes: [{ changeType: 'hearing_added', ...deadline }] } } as any,
+      testEnv as any, db,
+    )
+    const rows = await db.select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).all()
+    expect(rows.map(r => [r.source, r.description, r.status])).toEqual([['deadline', "Mayor's response due", 'confirmed']])
+    const fe = await db.select().from(feedEvents).where(eq(feedEvents.billId, billId)).all()
+    expect(fe.some(e => e.type === 'hearing_added')).toBe(false)
+
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: { events: [], changes: [] } } as any,
+      testEnv as any, db,
+    )
+    const after = await db.select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).all()
+    expect(after.map(r => r.status)).toEqual(['cancelled'])
+  })
 })

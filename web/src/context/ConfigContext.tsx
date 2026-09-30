@@ -26,7 +26,11 @@ export interface AppConfig {
   demoLocked?: boolean
   demoBanner?: string
   operator?: OperatorConfig
+  /** Data providers the footer credits, e.g. ["legiscan"] or ["lims"]. Absent = LegiScan. */
+  dataSources?: string[]
   accountDeletionEnabled?: boolean
+  /** The operator runs the deep-analysis queue (deep analyses and hearing briefs). */
+  deepAnalysis?: boolean
 }
 
 interface ConfigValue {

@@ -4,12 +4,13 @@ import type { Context } from 'hono'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
-  bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts,
+  bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts, teamLinks,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
 import { nowDb } from '../../lib/dbTime'
+import { requestDeepForPrioritized } from '../../lib/deepAnalysis'
 import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
@@ -45,6 +46,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       db.delete(memberVotes).where(eq(memberVotes.billId, id)),
       db.delete(notes).where(eq(notes.billId, id)),
       db.delete(billTexts).where(eq(billTexts.billId, id)),
+      db.delete(teamLinks).where(and(eq(teamLinks.subjectKind, 'bill'), eq(teamLinks.subjectId, id))),
       db.delete(bills).where(eq(bills.id, id)),
     ])
     return new Response(null, { status: 204 })
@@ -145,6 +147,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     }
     ops.push(db.update(memberVotes).set({ billId: filedBillId }).where(eq(memberVotes.billId, draftId)))
     ops.push(db.update(feedEvents).set({ billId: filedBillId }).where(eq(feedEvents.billId, draftId)))
+    ops.push(db.update(teamLinks).set({ subjectId: filedBillId }).where(and(eq(teamLinks.subjectKind, 'bill'), eq(teamLinks.subjectId, draftId))))
     ops.push(db.delete(bills).where(eq(bills.id, draftId)))
 
     await db.batch(ops as unknown as Parameters<typeof db.batch>[0])
@@ -242,6 +245,9 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     }
     const priority = (body.priority ?? null) as 'high' | 'medium' | 'low' | null
     await db.update(bills).set({ priority, updatedAt: nowDb() }).where(eq(bills.id, id))
+    // Request a deep analysis at an automatic priority, or withdraw a waiting one below it.
+    c.executionCtx.waitUntil(requestDeepForPrioritized(c.env, db, [id])
+      .catch(err => console.error('[deep] request after priority change failed', err)))
     let promoted = false
     if (priority) {
       const userId = c.get('user').id

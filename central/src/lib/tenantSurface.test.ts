@@ -116,7 +116,7 @@ describe('tenantSurface allowlist matcher', () => {
     const callerOps: [string, string, string][] = [
       // [method, path, where it is called from in api/]
       ['GET',  '/api/bills/legiscan:123',                      'queue/processor.ts, billsApi/detail.ts'],
-      ['GET',  '/api/bills/legiscan:123/text',                 'queue/processor.ts (AI text fetch)'],
+      ['GET',  '/api/bills/legiscan:123/text',                 'queue/processor.ts (AI text fetch), lib/deepAnalysis.ts'],
       ['GET',  '/api/bills/legiscan:123/text/9',               'billsApi/textRoutes.ts (text panel)'],
       ['GET',  '/api/bills/legiscan:123/changes',              'billsApi/lookupRoutes.ts'],
       ['GET',  '/api/bills/sessions?state=RI',                 'routes/configApi.ts'],
@@ -127,7 +127,10 @@ describe('tenantSurface allowlist matcher', () => {
       ['POST', '/api/tenants/reprocess/ri',                    'lib/demoResetAndSeed.ts, lib/calendarBackfill.ts'],
       ['POST', '/api/tenants/promote-bill/ri/legiscan:123',    'routes/adminApi.ts, billsApi/draftRoutes.ts'],
       ['POST', '/api/tenants/promote-bills/ri',                'billsApi/bulkRoutes.ts'],
-      ['POST', '/api/bills/rich-batch',                        'routes/exportApi.ts'],
+      ['POST', '/api/bills/rich-batch',                        'routes/exportApi.ts, lib/deepAnalysis.ts'],
+      ['GET',  '/api/bills/council-events?from=2026-09-01&to=2026-12-31', 'lib/councilCalendar.ts'],
+      ['GET',  '/api/bills/council-directory',                 'routes/directoryApi.ts, lib/deepAnalysis.ts'],
+      ['GET',  '/api/tenants/current-session/DC',              'billsApi/draftRoutes.ts'],
       ['POST', '/api/admin/sync-keywords/ri',                  'routes/adminApi.ts'],
       ['POST', '/api/admin/update-bill-match-types/ri',        'routes/adminApi.ts'],
       ['POST', '/api/admin/reprocess-tenant/ri',               'lib/demoResetAndSeed.ts'],

@@ -1,4 +1,6 @@
 import type { CSSProperties, Ref, RefObject } from 'react'
+import { Link } from 'react-router-dom'
+import { useConfig } from '../../context/ConfigContext'
 import { color, fontSize, radius } from '../../styles/tokens'
 import type { CalendarEvent } from '../../lib/calendarGrid'
 import { PopPanel, type PopPanelHandle } from '../ui/PopPanel'
@@ -61,6 +63,7 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
   onRestore: (e: CalendarEvent) => void
 }) {
   const { demoLocked } = useDemo()
+  const deepAnalysis = useConfig().config?.deepAnalysis ?? false
   const canManage = isAdmin && event.source === 'custom'
   const iconBtn = {
     background: 'none', border: 'none', color: color.textMuted, cursor: 'pointer',
@@ -77,6 +80,12 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
         <div style={{ flex: 1, minWidth: 0 }}>
           {dateBlock && <div style={{ marginBottom: 6 }}>{dateBlock}</div>}
           <EventLines event={event} linkChips />
+          {/* Hearing briefs cover Council events only: a custom event is the team's own text. */}
+          {deepAnalysis && event.source === 'council' && event.status !== 'cancelled' && (
+            <Link to={`/calendar/brief/${event.id}`} className="blue-link" style={{ display: 'inline-block', marginTop: 6, fontSize: fontSize.sm }}>
+              Hearing brief
+            </Link>
+          )}
         </div>
         {canManage && (
           <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>

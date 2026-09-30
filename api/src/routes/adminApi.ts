@@ -19,6 +19,7 @@ import { countActiveOwners } from '../lib/owners'
 import { healStalledAiBills } from '../lib/healStalledAi'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
+import { councilCalendarAdminRouter } from './councilCalendarAdmin'
 import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppEnv } from '../types'
 
@@ -28,6 +29,7 @@ adminApiRouter.use('*', requireAuth, requireAdmin)
 
 adminApiRouter.route('/export', exportApiRouter)
 adminApiRouter.route('/custom-fields', customFieldsApiRouter)
+adminApiRouter.route('/council-calendar', councilCalendarAdminRouter)
 adminApiRouter.route('/views', adminSavedViewsRouter)
 
 // GET /admin/members

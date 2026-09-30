@@ -35,6 +35,9 @@ export const people = sqliteTable('people', {
   suffix:        text('suffix'),
   nickname:      text('nickname'),
   district:      text('district'),
+  // LIMS term dates (migration 0023). A member whose termEnd has passed is former.
+  termStart:     text('term_start'),
+  termEnd:       text('term_end'),
   ftmEid:        integer('ftm_eid'),
   votesmartId:   integer('votesmart_id'),
   opensecretsId: text('opensecrets_id'),
@@ -357,3 +360,77 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
   dailyUsed:   integer('daily_used').notNull(),
   updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+/** DC Council LIMS source records; see migrations-legiscan/0020_lims_records.sql. */
+export const limsRecords = sqliteTable('lims_records', {
+  billId:            integer('bill_id').primaryKey(),
+  legislationNumber: text('legislation_number').notNull().unique(),
+  councilPeriodId:   integer('council_period_id').notNull(),
+  categoryId:        integer('category_id').notNull(),
+  bulkJson:          text('bulk_json').notNull(),
+  bulkHash:          text('bulk_hash').notNull(),
+  detailsFetchedAt:  text('details_fetched_at'),
+  updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
+
+/** DC Council hearing calendar; see migrations-legiscan/0021_council_events.sql. */
+export const councilEvents = sqliteTable('council_events', {
+  hearingId:   integer('hearing_id').primaryKey(),
+  date:        text('date').notNull(),
+  time:        text('time'),
+  hearingType: text('hearing_type').notNull(),
+  title:       text('title').notNull(),
+  jointWith:   text('joint_with'),
+  location:    text('location'),
+  topicsJson:  text('topics_json').notNull(),
+  witnessJson: text('witness_json'),
+  eventHash:   text('event_hash').notNull(),
+  removedAt:   text('removed_at'),
+  updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [index('idx_council_events_date').on(t.date)])
+
+/** DC Council committees (chair, members, key staff, agencies); see migrations-legiscan/0022_council_directory.sql. */
+export const councilCommittees = sqliteTable('council_committees', {
+  slug:         text('slug').primaryKey(),
+  name:         text('name').notNull(),
+  url:          text('url').notNull(),
+  chairJson:    text('chair_json'),
+  membersJson:  text('members_json').notNull().default('[]'),
+  staffJson:    text('staff_json').notNull().default('[]'),
+  agenciesJson: text('agencies_json').notNull().default('[]'),
+  updatedAt:    text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
+
+/** The Council directory: every staffer and Councilmember with title, office, and contacts. */
+export const councilDirectory = sqliteTable('council_directory', {
+  entryKey:  text('entry_key').primaryKey(),
+  kind:      text('kind').notNull(),
+  name:      text('name').notNull(),
+  title:     text('title'),
+  office:    text('office'),
+  email:     text('email'),
+  phone:     text('phone'),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
+
+/** Each version of a committee's roster (migration 0023). The open row has validTo null. */
+export const councilCommitteeHistory = sqliteTable('council_committee_history', {
+  slug:        text('slug').notNull(),
+  validFrom:   text('valid_from').notNull(),
+  validTo:     text('valid_to'),
+  name:        text('name').notNull(),
+  chair:       text('chair'),
+  membersJson: text('members_json').notNull().default('[]'),
+  staffJson:   text('staff_json').notNull().default('[]'),
+}, (t) => [primaryKey({ columns: [t.slug, t.validFrom] })])
+
+/** Council changes, newest last: seats, chairs, memberships, key staff, committees. */
+export const councilChanges = sqliteTable('council_changes', {
+  id:         integer('id').primaryKey({ autoIncrement: true }),
+  detectedAt: text('detected_at').notNull().default(sql`(datetime('now'))`),
+  kind:       text('kind').notNull(),
+  committee:  text('committee'),
+  person:     text('person'),
+  detail:     text('detail'),
+})
+

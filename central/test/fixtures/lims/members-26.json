@@ -1,0 +1,152 @@
+[
+ {
+  "id": 188,
+  "name": "Phil Mendelson",
+  "firstName": "Phil",
+  "lastName": "Mendelson",
+  "middleName": null,
+  "title": "Chairman",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 189,
+  "name": "Charles Allen",
+  "firstName": "Charles",
+  "lastName": "Allen",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 190,
+  "name": "Anita Bonds",
+  "firstName": "Anita",
+  "lastName": "Bonds",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 191,
+  "name": "Brianne K. Nadeau",
+  "firstName": "Brianne",
+  "lastName": "Nadeau",
+  "middleName": "K.",
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 192,
+  "name": "Kenyan R.  McDuffie",
+  "firstName": "Kenyan",
+  "lastName": "McDuffie",
+  "middleName": "R. ",
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2026-01-05T00:00:00"
+ },
+ {
+  "id": 193,
+  "name": "Matthew Frumin",
+  "firstName": "Matthew",
+  "lastName": "Frumin",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 194,
+  "name": "Zachary Parker",
+  "firstName": "Zachary",
+  "lastName": "Parker",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2023-01-02T00:00:00",
+  "endDate": "2027-01-01T00:00:00"
+ },
+ {
+  "id": 195,
+  "name": "Brooke Pinto",
+  "firstName": "Brooke",
+  "lastName": "Pinto",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2029-01-02T00:00:00"
+ },
+ {
+  "id": 196,
+  "name": "Christina Henderson",
+  "firstName": "Christina",
+  "lastName": "Henderson",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2029-01-02T00:00:00"
+ },
+ {
+  "id": 197,
+  "name": "Janeese Lewis George",
+  "firstName": "Janeese",
+  "lastName": "Lewis George",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2029-01-01T00:00:00"
+ },
+ {
+  "id": 198,
+  "name": "Robert C. White, Jr.",
+  "firstName": "Robert",
+  "lastName": "White",
+  "middleName": "C.",
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2029-01-02T00:00:00"
+ },
+ {
+  "id": 199,
+  "name": "Trayon White, Sr.",
+  "firstName": "Trayon",
+  "lastName": "White",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2025-02-04T00:00:00"
+ },
+ {
+  "id": 200,
+  "name": "Wendell Felder",
+  "firstName": "Wendell",
+  "lastName": "Felder",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2025-01-02T00:00:00",
+  "endDate": "2029-01-02T00:00:00"
+ },
+ {
+  "id": 202,
+  "name": "Doni Crawford ",
+  "firstName": "Doni ",
+  "lastName": "Crawford",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2026-01-20T00:00:00",
+  "endDate": "2026-07-17T00:00:00"
+ },
+ {
+  "id": 203,
+  "name": "Elissa Silverman",
+  "firstName": "Elissa",
+  "lastName": "Silverman",
+  "middleName": null,
+  "title": "Councilmember",
+  "startDate": "2026-07-15T00:00:00",
+  "endDate": "2026-12-31T00:00:00"
+ }
+]
