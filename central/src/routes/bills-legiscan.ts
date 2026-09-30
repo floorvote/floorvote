@@ -103,8 +103,27 @@ billsLsRoutes.post('/rich-batch', async (c) => {
           mime: s.mime ?? null, url: s.url ?? null, stateLink: s.stateLink ?? null,
         })
       }
+      // Opt-in: each member's vote. The data export leaves it off.
+      const memberVotesByRc = new Map<number, { name: string; vote: string }[]>()
+      if ((body as { memberVotes?: unknown }).memberVotes === true && rollCalls.length > 0) {
+        const rcIds = rollCalls.map(rc => rc.rollCallId)
+        for (let i = 0; i < rcIds.length; i += 90) {
+          const rows = await db
+            .select({ rollCallId: schema.rollCallVotes.rollCallId, name: schema.people.name, vote: schema.rollCallVotes.voteText })
+            .from(schema.rollCallVotes)
+            .leftJoin(schema.people, eq(schema.people.peopleId, schema.rollCallVotes.peopleId))
+            .where(inArray(schema.rollCallVotes.rollCallId, rcIds.slice(i, i + 90)))
+            .all()
+          for (const r of rows) {
+            if (!r.name || !r.vote) continue
+            memberVotesByRc.set(r.rollCallId, [...(memberVotesByRc.get(r.rollCallId) ?? []), { name: r.name, vote: r.vote }])
+          }
+        }
+      }
+      for (const list of memberVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
       for (const rc of rollCalls) {
         byId[String(rc.billId)]?.votes.push({
+          ...(memberVotesByRc.has(rc.rollCallId) ? { memberVotes: memberVotesByRc.get(rc.rollCallId) } : {}),
           id: String(rc.rollCallId), motionText: rc.description, date: rc.date,
           result: rc.passed ? 'pass' : 'fail', chamber: rc.chamber,
           counts: [
@@ -164,6 +183,25 @@ billsLsRoutes.get('/:id', async (c) => {
     db.select().from(schema.billSubjects).where(eq(schema.billSubjects.billId, numeric)).all(),
     db.select().from(schema.billAmendments).where(eq(schema.billAmendments.billId, numeric)).orderBy(schema.billAmendments.date).all(),
   ])
+  const rcIds = rollCalls.map(rc => rc.rollCallId)
+  // Chunked: a big bill can have more roll calls than D1's 100 bound parameters.
+  const memberVoteRows: { rollCallId: number; name: string | null; vote: string | null }[] = []
+  for (let i = 0; i < rcIds.length; i += 90) {
+    memberVoteRows.push(...await db
+      .select({ rollCallId: schema.rollCallVotes.rollCallId, name: schema.people.name, vote: schema.rollCallVotes.voteText })
+      .from(schema.rollCallVotes)
+      .leftJoin(schema.people, eq(schema.people.peopleId, schema.rollCallVotes.peopleId))
+      .where(inArray(schema.rollCallVotes.rollCallId, rcIds.slice(i, i + 90)))
+      .all())
+  }
+  const memberVotesByRc = new Map<number, { name: string; vote: string }[]>()
+  for (const r of memberVoteRows) {
+    if (!r.name || !r.vote) continue
+    const list = memberVotesByRc.get(r.rollCallId) ?? []
+    list.push({ name: r.name, vote: r.vote })
+    memberVotesByRc.set(r.rollCallId, list)
+  }
+  for (const list of memberVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
   const textWithR2 = [...texts]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -252,6 +290,8 @@ billsLsRoutes.get('/:id', async (c) => {
     sponsors,
     votes: rollCalls.map(rc => ({
       id: String(rc.rollCallId),
+      // Each member's vote, where the provider records it (DC LIMS readings do).
+      memberVotes: (memberVotesByRc.get(rc.rollCallId) ?? []),
       motionText: rc.description,
       date: rc.date,
       result: rc.passed ? 'pass' : 'fail',
