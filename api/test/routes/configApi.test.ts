@@ -148,6 +148,13 @@ describe('GET /config', () => {
     })
   })
 
+  it('credits LegiScan by default and the configured providers when DATA_SOURCES is set', async () => {
+    const plain = await app.request('/api/config', { headers: { Cookie: cookie } }, env)
+    expect(((await plain.json()) as { dataSources: string[] }).dataSources).toEqual(['legiscan'])
+    const lims = await app.request('/api/config', { headers: { Cookie: cookie } }, { ...env, DATA_SOURCES: ' LIMS ' })
+    expect(((await lims.json()) as { dataSources: string[] }).dataSources).toEqual(['lims'])
+  })
+
   it('reports demoLocked even for a superadmin request', async () => {
     // The behavior under change: the superadmin exemption is removed, so a
     // superadmin no longer bypasses demo locks. This is the red case.

@@ -5,13 +5,27 @@ import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { billSlug } from '../../lib/sessionSlug'
+import { billSlug, legacySessionSlug } from '../../lib/sessionSlug'
 import { buildBillDetail } from './detail'
 import { nextDraftNumber } from '../../lib/draftNumber'
 import { defaultDraftYear } from './draftRoutes'
 
 // billSlug lives in lib/sessionSlug so the draft-number collision check can
 // compare the same notion of "answers to this URL" that these routes do.
+
+/**
+ * The bill a /STATE/SLUG/NUMBER URL names. An exact slug match wins; failing
+ * that, an older slug a Council Period used before it had its own (its year
+ * span). More than one match is ambiguous, never a guess.
+ */
+function resolveSlug<T extends { session: string; isDraft: boolean; yearStart: number | null }>(candidates: T[], slug: string):
+  { status: 200; match: T } | { status: 404 } | { status: 409; candidates: T[] } {
+  const exact = candidates.filter(b => billSlug(b) === slug)
+  const matches = exact.length > 0 ? exact : candidates.filter(b => !b.isDraft && legacySessionSlug(b.session) === slug)
+  if (matches.length === 0) return { status: 404 }
+  if (matches.length > 1) return { status: 409, candidates: matches }
+  return { status: 200, match: matches[0] }
+}
 
 export function registerLookupRoutes(router: Hono<AppEnv>) {
   // GET /bills/:id — composite detail by internal UUID
@@ -24,10 +38,13 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
       .from(bills)
       .where(and(eq(bills.billNumber, billNumber), eq(bills.state, stateUpper)))
       .all()
-    const match = candidates.find(b => billSlug(b) === slug)
-    if (!match) return c.json({ error: 'Not found' }, 404)
+    const found = resolveSlug(candidates, slug)
+    if (found.status === 404) return c.json({ error: 'Not found' }, 404)
+    if (found.status === 409) {
+      return c.json({ error: 'Ambiguous bill: more than one session matches', candidates: found.candidates.map(m => ({ state: m.state, sessionSlug: billSlug(m), billNumber })) }, 409)
+    }
     const user = c.get('user')
-    return c.json(await buildBillDetail(db, match.id, user, c.env))
+    return c.json(await buildBillDetail(db, found.match.id, user, c.env))
   })
 
   // GET /bills/resolve/:sessionSlug/:billNumber — legacy lookup without state.
@@ -41,8 +58,9 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     // A stateless draft (state = '') has no canonical URL to redirect to here —
     // it must keep resolving only via /bills/<uuid>, never via this state-less
     // legacy form (which would otherwise hand the client `state: ''`).
-    const matches = candidates.filter(b => b.state !== '' && billSlug(b) === slug)
-    if (matches.length === 0) return c.json({ error: 'Not found' }, 404)
+    const found = resolveSlug(candidates.filter(b => b.state !== ''), slug)
+    if (found.status === 404) return c.json({ error: 'Not found' }, 404)
+    const matches = found.status === 409 ? found.candidates : [found.match]
     if (matches.length > 1) {
       return c.json({
         error: 'Ambiguous bill — use state-prefixed URL',

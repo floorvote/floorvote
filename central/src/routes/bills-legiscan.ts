@@ -6,10 +6,12 @@ import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
 import type { LsEnv } from '../types-legiscan'
+import { LIMS_STATUS_LABELS } from '../lib/lims-map'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
   3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
+  ...LIMS_STATUS_LABELS,
 }
 
 export const billsLsRoutes = new Hono<{ Bindings: LsEnv }>()
