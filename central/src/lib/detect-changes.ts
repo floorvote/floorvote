@@ -1,3 +1,4 @@
+import { LIMS_STATUS_LABELS } from './lims-map'
 import type { LegiscanBill, LegiscanCalendarEntry } from './legiscan'
 import type { CalendarBlock } from '../types-legiscan'
 
@@ -42,6 +43,7 @@ const STATUS_LABELS: Record<number, string> = {
   4: 'Passed',
   5: 'Vetoed',
   6: 'Failed/Dead',
+  ...LIMS_STATUS_LABELS,
 }
 
 function statusLabel(status: number): string {

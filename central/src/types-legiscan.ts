@@ -13,6 +13,25 @@ export type LsEnv = {
    */
   DEAD_LETTER_QUEUE?: string
   LEGISCAN_API_KEY: string
+  /**
+   * DC Council LIMS developer key. With it set and "DC" in LIMS_STATES, DC comes
+   * from LIMS instead of LegiScan (cron/sync-lims.ts). Unset → LIMS is off.
+   */
+  LIMS_API_KEY?: string
+  /** Comma-separated states sourced from LIMS rather than LegiScan. Only "DC" is supported. */
+  LIMS_STATES?: string
+  /**
+   * Comma-separated LIMS category ids to sync (GET LegislationCategories).
+   * Default "1,6,13,14,18": bills, resolutions, grant budget modifications,
+   * reprogrammings, and oversight hearing/roundtable notices.
+   */
+  LIMS_CATEGORIES?: string
+  /**
+   * Ingestor queue for LIMS bills. LIMS answers 429 above about two concurrent
+   * requests, so this queue's consumer should run with max_concurrency = 1.
+   * Falls back to INGESTOR_QUEUE when unset.
+   */
+  LIMS_INGESTOR_QUEUE?: Queue
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   BILL_PROVIDER: 'legiscan'

@@ -1,9 +1,11 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getBill, getBillText } from '../lib/legiscan'
+import { getBill, getBillText, type LegiscanBill } from '../lib/legiscan'
+import { isLimsBillId } from '../lib/lims-ids'
+import { fetchLimsBill } from '../lib/lims-ingest'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
-  billChangeLog, rollCalls, people, tenants,
+  billChangeLog, rollCalls, rollCallVotes, people, tenants,
 } from '../db/schema-legiscan'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
 import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage, CalendarBlock } from '../types-legiscan'
@@ -56,7 +58,8 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
 
     for (const t of textsToDownload) {
       if (t.stateLink) {
-        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db, t.textSize, t.textHash)
+        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db, t.textSize, t.textHash,
+          !isLimsBillId(msg.billId))
       }
     }
 
@@ -64,8 +67,46 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     return
   }
 
-  const bill = await getBill(msg.billId, env.LEGISCAN_API_KEY, () =>
-    trackLsCall(db, 'getBill', { billId: msg.billId }))
+  const bill = await fetchBillForIngest(msg.billId, env, db)
+  await ingestLsBill(bill, env, db, {
+    forceMetadata, forceAI, interactive,
+    legiscanTextFallback: !isLimsBillId(bill.bill_id),
+    forceTextRefetch: msg.forceTextRefetch ?? false,
+  })
+}
+
+/**
+ * Fetch the full record for one bill in LegiScan's `getBill` shape. LIMS bills
+ * (see lib/lims-ids.ts) are never sent to LegiScan.
+ */
+async function fetchBillForIngest(billId: number, env: LsEnv, db: LsDb): Promise<LegiscanBill> {
+  if (isLimsBillId(billId)) return await fetchLimsBill(billId, env, db)
+  return getBill(billId, env.LEGISCAN_API_KEY, () =>
+    trackLsCall(db, 'getBill', { billId }))
+}
+
+export type IngestOptions = {
+  forceMetadata: boolean
+  forceAI: boolean
+  interactive: boolean
+  /**
+   * Whether a failed direct document download may fall back to LegiScan's
+   * getBillText. Only LegiScan documents exist there; for any other source the
+   * fallback would spend a quota call on an id LegiScan has never issued.
+   */
+  legiscanTextFallback: boolean
+  /** Re-download every text even when R2 already has it (admin refetch-fragment-texts). */
+  forceTextRefetch?: boolean
+}
+
+/**
+ * Write one bill (in LegiScan's `getBill` shape) into central: change
+ * detection, the bill row and its child tables, text downloads to R2, and the
+ * tenant notifications. Source-agnostic: callers fetch the record however they
+ * like and hand it here.
+ */
+export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opts: IngestOptions): Promise<void> {
+  const { forceMetadata, forceAI, interactive, legiscanTextFallback, forceTextRefetch } = opts
   const now = nowDb()
 
   // --- Change detection ---
@@ -190,6 +231,10 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     target: bills.billId,
     set: {
       changeHash:         bill.change_hash,
+      // A bill first inserted from a masterlist (which carries no type) keeps the
+      // column default 'B' until this runs, so write the type on every ingest.
+      billType:           bill.bill_type,
+      billTypeId:         bill.bill_type_id,
       title:              bill.title,
       description:        bill.description || null,
       status:             bill.status,
@@ -329,8 +374,9 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     // Download text if not already in R2
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
-    if ((msg.forceTextRefetch || !stored?.r2Key) && t.state_link) {
-      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db, t.text_size ?? null, t.text_hash ?? null)
+    if ((forceTextRefetch || !stored?.r2Key) && t.state_link) {
+      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db, t.text_size ?? null, t.text_hash ?? null,
+        legiscanTextFallback)
     }
   }
 
@@ -434,6 +480,16 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
         stateLink:   v.state_link || null,
       },
     })
+
+    if (v.member_votes) {
+      await db.delete(rollCallVotes).where(eq(rollCallVotes.rollCallId, v.roll_call_id))
+      for (const mv of v.member_votes) {
+        await db.insert(rollCallVotes).values({
+          id: crypto.randomUUID(), rollCallId: v.roll_call_id,
+          peopleId: mv.people_id, voteId: mv.vote_id, voteText: mv.vote_text,
+        })
+      }
+    }
   }
 
   const calendarBlock: CalendarBlock = {
@@ -526,6 +582,7 @@ async function downloadTextToR2(
   db: LsDb,
   declaredSize: number | null = null,
   declaredHash: string | null = null,
+  legiscanFallback = true,
 ): Promise<void> {
   const ext = mime.includes('pdf') ? 'pdf' : 'html'
   const r2Key = `bills/legiscan-${billId}/texts/${docId}.${ext}`
@@ -557,8 +614,9 @@ async function downloadTextToR2(
   }
 
   // Attempt 2: LegiScan's getBillText (base64). Costs one API call per document,
-  // so it only runs when the direct fetch produced nothing usable.
-  if (!body) {
+  // so it only runs when the direct fetch produced nothing usable, and only for
+  // documents LegiScan actually issued.
+  if (!body && legiscanFallback) {
     console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to getBillText`)
     try {
       const text = await getBillText(docId, env.LEGISCAN_API_KEY, () =>
