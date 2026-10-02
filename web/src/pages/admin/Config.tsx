@@ -21,6 +21,8 @@ import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
 import TagTaxonomyTable from './TagTaxonomyTable'
+import { CouncilCalendarSettings } from './CouncilCalendarSettings'
+import { useConfig } from '../../context/ConfigContext'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
 type ConfigData = {
@@ -61,6 +63,8 @@ export function Config() {
   usePageTitle('Settings')
   const { user } = useAuth()
   const { demoLocked } = useDemo()
+  // DC teams read the Council's own calendar (LIMS), so they choose which of its events to show.
+  const isDcTeam = useConfig().config?.states.includes('DC') ?? false
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -951,6 +955,8 @@ export function Config() {
           </>
         )}
       </div>
+
+      {isDcTeam && <CouncilCalendarSettings demoLocked={demoLocked} />}
 
       {/* Custom fields */}
       <div style={sectionCard}>

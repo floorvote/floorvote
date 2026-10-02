@@ -43,7 +43,7 @@ export const EVENT_CARD_BASE = {
 } as const
 
 export interface EventSourceDescriptor {
-  icon: 'gavel' | 'calendar_today'
+  icon: 'gavel' | 'calendar_today' | 'schedule'
   color: string  // icon fill: navy (hearing) | blue (custom)
   tint: string   // tile background behind the icon
   /** Human label — used by the web aria-label/hover tip AND the email title
@@ -54,9 +54,13 @@ export interface EventSourceDescriptor {
 // Source marker for an event: gavel for data-pulled hearings, calendar_today
 // for custom/editable events. Replaces the old navy/blue left-edge color.
 export function eventSourceIcon(event: EventEdgeSource): EventSourceDescriptor {
-  return event.source === 'custom'
-    ? { icon: 'calendar_today', color: color.accentBlue,    tint: color.bgInfo, label: 'Custom event' }
-    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
+  if (event.source === 'custom') return { icon: 'calendar_today', color: color.accentBlue, tint: color.bgInfo, label: 'Custom event' }
+  // Council calendar events (DC LIMS) reuse the hearing glyph, so the week-ahead
+  // email's pre-rendered icon PNGs cover them too.
+  if (event.source === 'council') return { icon: 'gavel', color: color.billBadgeNavy, tint: color.bgInfo, label: 'DC Council calendar' }
+  // Web-only: deadlines are left out of the week-ahead email, so no email PNG is needed.
+  if (event.source === 'deadline') return { icon: 'schedule', color: color.textAmberDark, tint: color.bgAmberPriority, label: 'Deadline' }
+  return { icon: 'gavel', color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
 }
 
 // The tinted source-icon tile dimensions, shared by the web EventSourceIcon and

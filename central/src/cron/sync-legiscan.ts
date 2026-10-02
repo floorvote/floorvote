@@ -6,6 +6,9 @@ import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
+import { isLimsSessionId } from '../lib/lims-ids'
+import { limsStates } from '../lib/lims-config'
+import type { MasterListEntry } from '../lib/legiscan'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -37,6 +40,9 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
       for (const s of coverage) trackedStates.add(s)
     }
   }
+
+  // States sourced from DC LIMS are synced by cron/sync-lims.ts, not here.
+  for (const state of limsStates(env)) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
 
@@ -85,7 +91,10 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
   // (D1 reads, queue sends, LegiScan calls) interleave across sessions instead
   // of stacking serially. Promise.allSettled ensures one session's failure
   // doesn't reject the whole batch.
+  // LIMS sessions share this table but are synced by their own cron; LegiScan
+  // has never heard of their ids.
   const sessionsToProcess = sessionRows
+    .filter(session => !isLimsSessionId(session.sessionId))
     .map(session => ({ session, mode: decideMode(session, etHour) }))
     .filter(({ mode }) => mode !== 'skip')
 
@@ -151,6 +160,35 @@ async function runFullPass(
 ): Promise<void> {
   const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId }))
+  await applyMasterList(session, list, coveringTenants, env, db)
+}
+
+/**
+ * Reconcile one session's masterlist against central: upsert bill rows, update
+ * each covering tenant's keyword links, queue matched-and-changed bills to the
+ * ingestor, and send monitor stubs for the rest. Source-agnostic: any provider
+ * that can express its bill list as `MasterListEntry` rows (with a
+ * `change_hash` that moves when the bill does) can drive the full pass.
+ * Returns the bill ids it queued for the ingestor.
+ */
+export async function applyMasterList(
+  session: { sessionId: number; state: string; sessionName: string },
+  list: MasterListEntry[],
+  coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
+  env: LsEnv,
+  db: LsDb,
+  ingestorQueue: Queue = env.INGESTOR_QUEUE,
+  opts: {
+    /**
+     * Leave the bills row of a changed bill that is being queued for the
+     * ingestor to update, instead of writing the masterlist's status and title
+     * first. The ingestor diffs against the stored row, so a status written
+     * here is a status_change it can no longer see. LIMS sets this, because every
+     * LIMS pass is a full pass.
+     */
+    deferQueuedUpdates?: boolean
+  } = {},
+): Promise<number[]> {
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),
@@ -161,7 +199,7 @@ async function runFullPass(
       billsChanged: 0,
       billsQueued: 0,
     })
-    return
+    return []
   }
 
   // Per-tenant keyword sets
@@ -225,13 +263,15 @@ async function runFullPass(
           lastAction: entry.last_action ?? null,
           lastActionDate: entry.last_action_date ?? null,
           url: entry.url ?? null,
+          stateLink: entry.state_link ?? null,
+          ...(entry.bill_type ? { billType: entry.bill_type } : {}),
           createdAt: now,
           updatedAt: now,
         }).onConflictDoNothing()
       )
-    } else if (billChanged) {
-      billStmts.push(
-        db.update(bills).set({
+    }
+    const changedUpdate = !isNew && billChanged
+      ? db.update(bills).set({
           changeHash: entry.change_hash,
           title: entry.title ?? entry.number,
           description: entry.description ?? null,
@@ -240,10 +280,11 @@ async function runFullPass(
           lastAction: entry.last_action ?? null,
           lastActionDate: entry.last_action_date ?? null,
           url: entry.url ?? null,
+          ...(entry.state_link !== undefined ? { stateLink: entry.state_link } : {}),
+          ...(entry.bill_type ? { billType: entry.bill_type } : {}),
           updatedAt: now,
         }).where(eq(bills.billId, entry.bill_id))
-      )
-    }
+      : null
 
     // If the masterlist has no title for this bill, queue it for a getBill() call so we
     // can populate real metadata (title, description, sponsor, history, etc.) on first ingest.
@@ -299,6 +340,18 @@ async function runFullPass(
         stubMessagesByTenant.set(t.tenantId, msgs)
       }
     }
+
+    if (changedUpdate && opts.deferQueuedUpdates && toQueue.has(entry.bill_id)) {
+      // Still record the latest action: the ingestor's getBill-shaped record has
+      // none, and detectChanges does not diff it. change_hash stays behind so a
+      // failed ingest is re-queued on the next pass.
+      billStmts.push(db.update(bills).set({
+        lastAction: entry.last_action ?? null,
+        lastActionDate: entry.last_action_date ?? null,
+      }).where(eq(bills.billId, entry.bill_id)))
+    } else if (changedUpdate) {
+      billStmts.push(changedUpdate)
+    }
   }
 
   for (let i = 0; i < billStmts.length; i += FLUSH_BATCH) {
@@ -312,7 +365,7 @@ async function runFullPass(
 
   const queueIds = Array.from(toQueue)
   for (let i = 0; i < queueIds.length; i += 100) {
-    await env.INGESTOR_QUEUE.sendBatch(
+    await ingestorQueue.sendBatch(
       queueIds.slice(i, i + 100).map<LsIngestorMessage>(billId => ({ billId }))
         .map(body => ({ body }))
     )
@@ -342,6 +395,7 @@ async function runFullPass(
   console.log(
     `[sync-ls] FULL ${session.state}/${session.sessionId}: ${list.length} bills, ${queueIds.length} queued`
   )
+  return queueIds
 }
 
 async function runRawPass(

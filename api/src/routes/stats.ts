@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { users, bills, memberVotes, associationConfig, calendarEvents } from '../db/schema'
 import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'drizzle-orm'
+import { visibleCalendarSource } from '../lib/calendarVisibility'
 import type { AppEnv } from '../types'
 import { sessionToSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
@@ -40,10 +41,7 @@ statsRouter.get('/', async (c) => {
         isNotNull(calendarEvents.date),
         gte(calendarEvents.date, today),
         lte(calendarEvents.date, in30),
-        or(
-          and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-          eq(calendarEvents.source, 'custom'),
-        ),
+        visibleCalendarSource,
       ))
       .get(),
   ])

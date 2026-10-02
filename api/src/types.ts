@@ -31,6 +31,7 @@ export type Env = {
   OPERATOR_NAME?: string            // sidebar footer operator label; empty = no name line
   LEGAL_TERMS_UPDATED?: string      // YYYY-MM-DD of the last MATERIAL change to the legal documents. Unset or empty disarms the acceptance gate entirely, which is the correct state for upstream forks and demo tenants. Bump by hand for material changes only -- never derive it from the documents' "Last updated" line, which moves for typo fixes and would re-prompt everyone.
   OPERATOR_SOURCE_URL?: string      // AGPLv3 §13 source offer; unset = built-in default, '' = none offered
+  DATA_SOURCES?: string             // comma-separated data providers credited in the footer: "legiscan" (default), "lims" (DC Council)
   OPERATOR_URL?: string             // operator credit link target; empty = unlinked
   OPERATOR_CONTACT_EMAILS?: string  // comma-separated support recipients; empty = no contact / feedback disabled
   STATE?: string

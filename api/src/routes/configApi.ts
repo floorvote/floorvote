@@ -187,6 +187,12 @@ configRouter.get('/', async (c) => {
     sourceUrl: c.env.OPERATOR_SOURCE_URL,
   }
 
+  // Which data providers the footer credits. Central decides the source per
+  // state (a DC team fed from the DC Council's LIMS sees no LegiScan data), so
+  // the tenant is told. Unset means LegiScan, the default provider.
+  const dataSources = (c.env.DATA_SOURCES ?? '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+
   const tagTaxonomy = taxonomyItems.map(t => t.name)
 
   let demoBanner: string | undefined
@@ -205,7 +211,7 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, accountDeletionEnabled, tagTaxonomy, demoBanner })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, dataSources: dataSources.length > 0 ? dataSources : ['legiscan'], accountDeletionEnabled, tagTaxonomy, demoBanner })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central
