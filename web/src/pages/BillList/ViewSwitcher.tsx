@@ -9,7 +9,7 @@ import { countBadge } from '../../lib/chipStyles'
 import { VIEW_STYLE } from '../../../../shared/viewStyle'
 import { useDemo } from '../../context/DemoContext'
 import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
-import { BlankValueMessage, useBlankValueGuard } from '../../components/RequiredField'
+import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 
 // Fixed dropdown width (FIX 2): the menu used to be content-sized off a
 // `minWidth: 232` floor, so revealing Rename/Delete on hover widened the whole
@@ -57,10 +57,11 @@ export function ViewSwitcher({
   const [open, setOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
-  // A blank rename is refused with an inline "View name is required", not
-  // silently ignored. The message renders only inside the row being renamed,
-  // and beginRename/cancelRename clear it.
-  const blankName = useBlankValueGuard()
+  // A blank rename is gated (RequiredField.tsx): Save looks disabled and
+  // explains itself on hover, focus, click, or Enter. The message renders only
+  // inside the row being renamed; beginRename and cancelRename reset the gate,
+  // since Save unmounts without a leave or blur event.
+  const renameGate = useRequiredSubmit({ missingRequired: !draftName.trim() })
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   // Separate from confirmingId (delete's confirm state) — overwrite is a
   // distinct destructive action with its own wording, and a row must not be
@@ -174,16 +175,16 @@ export function ViewSwitcher({
     setConfirmingId(null)
     setRenamingId(v.id)
     setDraftName(v.name)
-    blankName.reset()
+    renameGate.reset()
   }
 
   function cancelRename() {
     setRenamingId(null)
-    blankName.reset()
+    renameGate.reset()
   }
 
   async function commitRename() {
-    if (!renamingId || blankName.refuse(draftName)) return
+    if (!renamingId) return
     const next = draftName.trim()
     try {
       await onRename(renamingId, next)
@@ -295,11 +296,12 @@ export function ViewSwitcher({
                   <div style={{ ...rowStyle(false), cursor: 'default', gap: 6, ...dnd.sourceStyle(i) }} {...dropHandlers}>
                     <input
                       aria-label="View name"
-                      {...blankName.fieldProps}
+                      aria-required="true"
+                      {...renameGate.fieldProps}
                       value={draftName}
-                      onChange={e => { setDraftName(e.target.value); blankName.onValue(e.target.value) }}
+                      onChange={e => setDraftName(e.target.value)}
                       onKeyDown={e => {
-                        if (e.key === 'Enter') commitRename()
+                        if (e.key === 'Enter' && !renameGate.refuse()) void commitRename()
                         if (e.key === 'Escape') cancelRename()
                       }}
                       style={{
@@ -308,7 +310,7 @@ export function ViewSwitcher({
                         borderRadius: radius.sm, color: color.textPrimary,
                       }}
                     />
-                    <button onClick={commitRename} style={inlineEditSaveStyle()}>Save</button>
+                    <button {...renameGate.buttonProps(() => { void commitRename() })} style={inlineEditSaveStyle(renameGate.disabled)}>Save</button>
                     {/* Escape still cancels, but a keyboard-only affordance is
                         not a visible one — and the custom-fields form this now
                         matches has always shown the button. */}
@@ -316,7 +318,7 @@ export function ViewSwitcher({
                   </div>
                   {/* Below the row, not in it: the menu has a fixed width and
                       the row is already input + Save + Cancel. */}
-                  <BlankValueMessage {...blankName.messageProps} name="View name" style={{ display: 'block', padding: '0 12px 7px' }} />
+                  <MissingRequiredReason {...renameGate.reasonProps} style={{ padding: '0 12px 7px' }} />
                 </div>
               )
             }

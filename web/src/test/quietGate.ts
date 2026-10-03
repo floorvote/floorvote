@@ -1,5 +1,7 @@
+import type { CSSProperties } from 'react'
+import { createElement } from 'react'
 import { it, expect } from 'vitest'
-import { act, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
 import { REQUIRED_MESSAGE } from '../components/RequiredField'
 
@@ -131,4 +133,19 @@ export function itGatesQuietly(setup: () => Promise<QuietGateSetup>) {
     expect(s.submitted()).toBe(0)
     expectMessageShown(s.button(), scopeOf(s))
   })
+}
+
+function declarations(el: HTMLElement): string[] {
+  return el.style.cssText.split(';').map(d => d.trim()).filter(Boolean).sort()
+}
+
+/**
+ * Asserts `button`'s inline style is exactly `style` (e.g. a shared
+ * inlineEditSaveStyle(disabled)), however React ordered the declarations.
+ */
+export function expectButtonStyle(button: HTMLElement, style: CSSProperties) {
+  const { container, unmount } = render(createElement('button', { style }))
+  const expected = declarations(container.firstChild as HTMLElement)
+  unmount()
+  expect(declarations(button)).toEqual(expected)
 }

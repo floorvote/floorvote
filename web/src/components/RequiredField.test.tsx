@@ -49,6 +49,11 @@ describe('REQUIRED_MESSAGE', () => {
   it('no longer has a legend component', () => {
     expect('RequiredLegend' in RequiredField).toBe(false)
   })
+
+  it('no longer has the per-editor blank-value guard', () => {
+    expect('useBlankValueGuard' in RequiredField).toBe(false)
+    expect('BlankValueMessage' in RequiredField).toBe(false)
+  })
 })
 
 describe('useRequiredSubmit: a button-type submit', () => {
@@ -147,6 +152,104 @@ describe('useRequiredSubmit: a submit-type button inside a form', () => {
     await s.user.type(screen.getByLabelText('Value'), 'x')
     await s.user.click(s.button())
     expect(s.onSubmit).toHaveBeenCalledTimes(1)
+  })
+})
+
+// An inline editor: Enter in the field asks the gate first, and the editor
+// (owned by a parent that outlives it) resets the gate on open and close.
+function InlineHarness({ onSave }: { onSave: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const gate = useRequiredSubmit({ missingRequired: !value.trim() })
+  if (!open) {
+    return <button type="button" onClick={() => { setValue('Old'); setOpen(true); gate.reset() }}>Edit</button>
+  }
+  return (
+    <>
+      <input
+        aria-label="Value"
+        aria-required="true"
+        {...gate.fieldProps}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && !gate.refuse()) { onSave(value); setOpen(false) } }}
+      />
+      <button type="button" {...gate.buttonProps(() => { onSave(value); setOpen(false) })} style={{ cursor: gate.disabled ? 'not-allowed' : 'pointer' }}>Save</button>
+      <button type="button" onClick={() => { setOpen(false); gate.reset() }}>Cancel</button>
+      <MissingRequiredReason {...gate.reasonProps} />
+    </>
+  )
+}
+
+describe('useRequiredSubmit: an inline editor', () => {
+  async function openEditor() {
+    const onSave = vi.fn()
+    const user = userEvent.setup()
+    render(<InlineHarness onSave={onSave} />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const input = screen.getByRole('textbox', { name: 'Value' })
+    await user.clear(input)
+    return { user, onSave, input, button: () => screen.getByRole('button', { name: 'Save' }) }
+  }
+
+  itGatesQuietly(async () => {
+    const s = await openEditor()
+    return { user: s.user, button: s.button, submitted: () => s.onSave.mock.calls.length }
+  })
+
+  it('refuses Enter on a blank value, revealing the message tied to the field and the button', async () => {
+    const s = await openEditor()
+    await s.user.type(s.input, '{Enter}')
+    expect(s.onSave).not.toHaveBeenCalled()
+    expectMessageShown(s.button())
+    expect(s.input).toHaveAttribute('aria-describedby', s.button().getAttribute('aria-describedby'))
+    expect(s.input).toHaveAccessibleDescription(REQUIRED_MESSAGE)
+  })
+
+  it('keeps a refused Enter\'s message after the button is hovered and left', async () => {
+    const s = await openEditor()
+    await s.user.type(s.input, '{Enter}')
+    await s.user.hover(s.button())
+    await s.user.unhover(s.button())
+    expectMessageShown(s.button())
+  })
+
+  it('hides a refused Enter\'s message once the value is filled, and does not bring it back when cleared', async () => {
+    const s = await openEditor()
+    await s.user.type(s.input, '{Enter}')
+    await s.user.type(s.input, 'x')
+    expectMessageHidden(s.button())
+    expect(s.input).not.toHaveAttribute('aria-describedby')
+    await s.user.clear(s.input)
+    expectMessageHidden(s.button())
+  })
+
+  it('saves on Enter once the value is filled', async () => {
+    const s = await openEditor()
+    await s.user.type(s.input, 'New{Enter}')
+    expect(s.onSave).toHaveBeenCalledWith('New')
+  })
+
+  it('does not carry an attempt over to the next opening, after Cancel', async () => {
+    const s = await openEditor()
+    await s.user.click(s.button())
+    expectMessageShown(s.button())
+    await s.user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await s.user.click(screen.getByRole('button', { name: 'Edit' }))
+    await s.user.clear(screen.getByRole('textbox', { name: 'Value' }))
+    expectMessageHidden(s.button())
+  })
+
+  it('does not carry a hover over to the next opening, though the button unmounted while hovered', async () => {
+    const s = await openEditor()
+    await s.user.hover(s.button())
+    expectMessageShown(s.button())
+    // skipClick: the pointer stays on Save while Enter saves and closes.
+    await s.user.type(s.input, 'New{Enter}', { skipClick: true })
+    expect(s.onSave).toHaveBeenCalledWith('New')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Value' }), { target: { value: '' } })
+    expectMessageHidden(s.button())
   })
 })
 
