@@ -11,6 +11,7 @@ import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { displayName, userDisplayNameSql } from '../../lib/displayName'
 
 type CentralBillRich = {
   billType?: string | null
@@ -98,7 +99,7 @@ export async function buildBillDetail(
       .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
       .get(),
     db.select().from(billTexts).where(eq(billTexts.billId, billId)).orderBy(desc(billTexts.date)).all(),
-    db.select({ setByName: users.name, createdAt: feedEvents.createdAt })
+    db.select({ setByName: userDisplayNameSql, createdAt: feedEvents.createdAt })
       .from(feedEvents)
       .innerJoin(users, eq(feedEvents.userId, users.id))
       .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'priority_set'), activeUser))
@@ -129,7 +130,7 @@ export async function buildBillDetail(
     if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, userReacted: false, reactors: [] })
     const entry = emojiMap.get(r.emoji)!
     entry.count++
-    entry.reactors.push({ name: reactor.name, subtitle: reactor.subtitle })
+    entry.reactors.push({ name: displayName(reactor), subtitle: reactor.subtitle })
     if (r.userId === currentUser.id) entry.userReacted = true
   }
 
@@ -147,10 +148,10 @@ export async function buildBillDetail(
 
   let positionWithName: { position: string; setByName: string; updatedAt: string } | null = null
   if (positionRow) {
-    const setter = await db.select({ name: users.name }).from(users).where(eq(users.id, positionRow.setBy)).get()
+    const setter = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, positionRow.setBy)).get()
     positionWithName = {
       position: positionRow.position,
-      setByName: setter?.name ?? 'Unknown',
+      setByName: setter ? displayName(setter) : 'Unknown',
       updatedAt: positionRow.updatedAt,
     }
   }
@@ -316,7 +317,7 @@ export async function buildBillDetail(
     .select({
       fieldId: billCustomFieldValues.fieldId,
       value: billCustomFieldValues.value,
-      setBy: users.name,
+      setBy: userDisplayNameSql,
       updatedAt: billCustomFieldValues.updatedAt,
     })
     .from(billCustomFieldValues)

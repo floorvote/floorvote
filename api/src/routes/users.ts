@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, ne, and, inArray, isNull, exists, desc } from 'drizzle-orm'
+import { eq, ne, and, inArray, isNull, exists, desc, sql } from 'drizzle-orm'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { users, bills, memberVotes, comments, notes, officialPositions, roles, userRoles, sessions, magicLinks, feedEvents, commentReactions, authEvents } from '../db/schema'
@@ -9,6 +9,7 @@ import { dbTsToEpoch } from '../../../shared/time'
 import { getAccountDeletionEnabled, activeUser } from '../lib/accountDeletion'
 import { nowDb } from '../lib/dbTime'
 import { countActiveOwners } from '../lib/owners'
+import { userDisplayNameSql } from '../lib/displayName'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -22,7 +23,9 @@ usersRouter.get('/', async (c) => {
     .select({ id: users.id, name: users.name, email: users.email, subtitle: users.subtitle, role: users.role })
     .from(users)
     .where(activeUser)
-    .orderBy(users.name)
+    // By the name as shown, ignoring case: a member with no name sorts by their
+    // (lowercase) email among the capitalized names.
+    .orderBy(sql`${userDisplayNameSql} collate nocase`)
     .all()
 
   const userIds = rows.map(u => u.id)
@@ -43,34 +46,52 @@ usersRouter.get('/', async (c) => {
   return c.json(rows.map(u => ({ ...u, roles: rolesByUser.get(u.id) ?? [] })))
 })
 
-// PATCH /users/me — update subtitle, name, and/or emailDigestEnabled
+// PATCH /users/me — update subtitle, name, and/or the email settings.
+// Each field changes only when its key is present: a missing key means "no
+// change", so saving only the email settings leaves the name and subtitle alone.
+// A present but blank (or null) name clears it, stored as an empty string; the
+// user then shows by email wherever a name would appear. A blank subtitle
+// clears it to null.
 usersRouter.patch('/me', async (c) => {
   const db = getDb(c.env.DB)
   const currentUser = c.get('user')
-  const body = await c.req.json<{ subtitle?: string; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean }>().catch(() => ({} as { subtitle?: string; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean }))
-  const subtitle = body.subtitle?.trim() || null
-  const trimmedName = body.name?.trim() || undefined
-  if (subtitle && subtitle.length > 200) {
-    return c.json({ error: 'Subtitle too long (max 200 characters)' }, 400)
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>))
+  const raw = body && typeof body === 'object' ? body : {}
+  const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number } = {}
+  const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean } = {}
+
+  if ('name' in raw) {
+    if (raw.name !== null && typeof raw.name !== 'string') {
+      return c.json({ error: 'Name must be a string' }, 400)
+    }
+    const name = (raw.name ?? '').trim()
+    if (name.length > 100) {
+      return c.json({ error: 'Name too long (max 100 characters)' }, 400)
+    }
+    updates.name = echo.name = name
   }
-  if (trimmedName && trimmedName.length > 100) {
-    return c.json({ error: 'Name too long (max 100 characters)' }, 400)
+  if ('subtitle' in raw) {
+    if (raw.subtitle !== null && typeof raw.subtitle !== 'string') {
+      return c.json({ error: 'Subtitle must be a string' }, 400)
+    }
+    const subtitle = (raw.subtitle ?? '').trim() || null
+    if (subtitle && subtitle.length > 200) {
+      return c.json({ error: 'Subtitle too long (max 200 characters)' }, 400)
+    }
+    updates.subtitle = echo.subtitle = subtitle
   }
-  const updates: { subtitle: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number } = { subtitle }
-  if (trimmedName) updates.name = trimmedName
-  if (typeof body.emailDigestEnabled === 'boolean') {
-    updates.emailDigestEnabled = body.emailDigestEnabled ? 1 : 0
+  if (typeof raw.emailDigestEnabled === 'boolean') {
+    updates.emailDigestEnabled = raw.emailDigestEnabled ? 1 : 0
+    echo.emailDigestEnabled = raw.emailDigestEnabled
   }
-  if (typeof body.emailWeekAheadEnabled === 'boolean') {
-    updates.emailWeekAheadEnabled = body.emailWeekAheadEnabled ? 1 : 0
+  if (typeof raw.emailWeekAheadEnabled === 'boolean') {
+    updates.emailWeekAheadEnabled = raw.emailWeekAheadEnabled ? 1 : 0
+    echo.emailWeekAheadEnabled = raw.emailWeekAheadEnabled
   }
-  await db.update(users).set(updates).where(eq(users.id, currentUser.id))
-  return c.json({
-    subtitle,
-    ...(trimmedName ? { name: trimmedName } : {}),
-    ...(typeof body.emailDigestEnabled === 'boolean' ? { emailDigestEnabled: body.emailDigestEnabled } : {}),
-    ...(typeof body.emailWeekAheadEnabled === 'boolean' ? { emailWeekAheadEnabled: body.emailWeekAheadEnabled } : {}),
-  })
+  if (Object.keys(updates).length > 0) {
+    await db.update(users).set(updates).where(eq(users.id, currentUser.id))
+  }
+  return c.json(echo)
 })
 
 // DELETE /users/me — delete own account

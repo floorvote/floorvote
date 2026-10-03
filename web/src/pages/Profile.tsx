@@ -176,12 +176,10 @@ export function Profile() {
         method: 'PATCH',
         body: JSON.stringify(payload),
       })
-      // Name is optional, but a set name can't be cleared: the server ignores a
-      // blank name and keeps the stored one. Show what was actually saved
-      // rather than a blank field the server never applied.
-      const trimmedName = nameInput.trim()
-      if (trimmedName) setName(trimmedName)
-      else setNameInput(user?.name ?? '')
+      // A blank name clears it; the user then shows by email wherever a name
+      // would appear. The field shows what was saved (trimmed, or blank).
+      setName(payload.name)
+      setNameInput(payload.name)
       setSubtitle(payload.subtitle)
       setSaved(true)
       setSaveError(null)

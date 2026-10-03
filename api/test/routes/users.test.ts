@@ -56,21 +56,6 @@ describe('PATCH /users/me', () => {
     expect(row.name).toBe('New Name')
   })
 
-  it('does NOT change name when empty string is provided', async () => {
-    const memberId = await seedUser({ name: 'Stays The Same' })
-    const token = await seedSession(memberId)
-    const res = await SELF.fetch('http://localhost/api/users/me', {
-      method: 'PATCH',
-      headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: '' }),
-    })
-    expect(res.status).toBe(200)
-    // confirm DB name is unchanged
-    const db = getDb(env.DB)
-    const [row] = await db.select({ name: users.name }).from(users).where(eq(users.id, memberId)).all()
-    expect(row.name).toBe('Stays The Same')
-  })
-
   it('rejects name > 100 characters with 400', async () => {
     const res = await SELF.fetch('http://localhost/api/users/me', {
       method: 'PATCH',
@@ -111,47 +96,178 @@ describe('PATCH /users/me', () => {
     expect(body.subtitle).toBe('b'.repeat(200))
   })
 
-  // The Profile page blocks a blank name client-side; the server's own
-  // behavior, ignoring a blank name and keeping the stored one, is the
-  // backstop and must not change.
-  describe('blank name backstop', () => {
-    async function patchMe(token: string, body: Record<string, unknown>) {
+  // A `name` key that's present and blank clears the stored name (stored as an
+  // empty string). A missing `name` key means "no change", so saving only the
+  // subtitle or the email settings never touches the name.
+  describe('clearing the name', () => {
+    async function patchMe(token: string, body: unknown) {
       return SELF.fetch('http://localhost/api/users/me', {
         method: 'PATCH',
         headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
     }
-    async function storedName(id: string) {
+    async function storedRow(id: string) {
       const db = getDb(env.DB)
-      const [row] = await db.select({ name: users.name }).from(users).where(eq(users.id, id)).all()
-      return row.name
+      const [row] = await db.select({
+        name: users.name, subtitle: users.subtitle,
+        emailDigestEnabled: users.emailDigestEnabled, emailWeekAheadEnabled: users.emailWeekAheadEnabled,
+      }).from(users).where(eq(users.id, id)).all()
+      return row
     }
 
-    it('leaves the stored name unchanged for a whitespace-only name', async () => {
-      const id = await seedUser({ name: 'Kept Name' })
-      const res = await patchMe(await seedSession(id), { name: '   ' })
-      expect(res.status).toBe(200)
-      expect(await storedName(id)).toBe('Kept Name')
-    })
-
-    it('does not echo a blank name back in the response', async () => {
-      const id = await seedUser({ name: 'Kept Name' })
+    it('clears the stored name for an empty-string name', async () => {
+      const id = await seedUser({ name: 'Old Name' })
       const res = await patchMe(await seedSession(id), { name: '' })
       expect(res.status).toBe(200)
-      const body = await res.json() as Record<string, unknown>
-      expect(body).not.toHaveProperty('name')
+      expect((await storedRow(id)).name).toBe('')
     })
 
-    it('still saves the subtitle sent alongside a blank name, keeping the name', async () => {
-      const id = await seedUser({ name: 'Kept Name' })
+    it('clears the stored name for a whitespace-only name', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const res = await patchMe(await seedSession(id), { name: ' \t  ' })
+      expect(res.status).toBe(200)
+      expect((await storedRow(id)).name).toBe('')
+    })
+
+    it('clears the stored name for a null name', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const res = await patchMe(await seedSession(id), { name: null })
+      expect(res.status).toBe(200)
+      expect((await storedRow(id)).name).toBe('')
+    })
+
+    it('echoes the cleared name as an empty string', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const res = await patchMe(await seedSession(id), { name: '   ' })
+      expect(await res.json()).toMatchObject({ name: '' })
+    })
+
+    it('is a no-op success when clearing a name that is already blank', async () => {
+      const id = await seedUser({ name: '' })
+      const res = await patchMe(await seedSession(id), { name: '' })
+      expect(res.status).toBe(200)
+      expect((await storedRow(id)).name).toBe('')
+    })
+
+    it('clears the name and saves the subtitle sent with it', async () => {
+      const id = await seedUser({ name: 'Old Name' })
       const res = await patchMe(await seedSession(id), { name: '', subtitle: 'New subtitle' })
       expect(res.status).toBe(200)
-      expect((await res.json() as Record<string, unknown>).subtitle).toBe('New subtitle')
-      expect(await storedName(id)).toBe('Kept Name')
-      const db = getDb(env.DB)
-      const [row] = await db.select({ subtitle: users.subtitle }).from(users).where(eq(users.id, id)).all()
-      expect(row.subtitle).toBe('New subtitle')
+      expect(await res.json()).toMatchObject({ name: '', subtitle: 'New subtitle' })
+      expect(await storedRow(id)).toMatchObject({ name: '', subtitle: 'New subtitle' })
+    })
+
+    it('a cleared name can be set again', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const token = await seedSession(id)
+      await patchMe(token, { name: '' })
+      const res = await patchMe(token, { name: '  Fresh Name ' })
+      expect(res.status).toBe(200)
+      expect((await storedRow(id)).name).toBe('Fresh Name')
+    })
+
+    it('leaves the name unchanged on a subtitle-only save', async () => {
+      const id = await seedUser({ name: 'Kept Name' })
+      const res = await patchMe(await seedSession(id), { subtitle: 'Only subtitle' })
+      expect(res.status).toBe(200)
+      expect(await res.json()).not.toHaveProperty('name')
+      expect(await storedRow(id)).toMatchObject({ name: 'Kept Name', subtitle: 'Only subtitle' })
+    })
+
+    it('leaves the name unchanged when the digest setting is saved', async () => {
+      const id = await seedUser({ name: 'Kept Name' })
+      const res = await patchMe(await seedSession(id), { emailDigestEnabled: false })
+      expect(res.status).toBe(200)
+      expect(await res.json()).not.toHaveProperty('name')
+      expect(await storedRow(id)).toMatchObject({ name: 'Kept Name', emailDigestEnabled: 0 })
+    })
+
+    it('leaves the name unchanged when the week-ahead setting is saved', async () => {
+      const id = await seedUser({ name: 'Kept Name' })
+      const res = await patchMe(await seedSession(id), { emailWeekAheadEnabled: false })
+      expect(res.status).toBe(200)
+      expect(await storedRow(id)).toMatchObject({ name: 'Kept Name', emailWeekAheadEnabled: 0 })
+    })
+
+    // Same "missing key means no change" rule for the subtitle: an email-setting
+    // toggle used to wipe the stored subtitle because it was always written.
+    it('leaves the subtitle unchanged when only an email setting is saved', async () => {
+      const id = await seedUser({ name: 'Kept Name', subtitle: 'Kept subtitle' })
+      const token = await seedSession(id)
+      await patchMe(token, { emailDigestEnabled: false })
+      await patchMe(token, { emailWeekAheadEnabled: false })
+      expect(await storedRow(id)).toMatchObject({ name: 'Kept Name', subtitle: 'Kept subtitle' })
+    })
+
+    it('leaves the subtitle unchanged on a name-only save', async () => {
+      const id = await seedUser({ name: 'Old Name', subtitle: 'Kept subtitle' })
+      await patchMe(await seedSession(id), { name: '' })
+      expect(await storedRow(id)).toMatchObject({ name: '', subtitle: 'Kept subtitle' })
+    })
+
+    it('still clears the subtitle for a null or blank subtitle', async () => {
+      const id = await seedUser({ subtitle: 'Old subtitle' })
+      const token = await seedSession(id)
+      await patchMe(token, { subtitle: null })
+      expect((await storedRow(id)).subtitle).toBeNull()
+      await patchMe(token, { subtitle: 'Again' })
+      await patchMe(token, { subtitle: '  ' })
+      expect((await storedRow(id)).subtitle).toBeNull()
+    })
+
+    it('leaves everything unchanged for an empty body', async () => {
+      const id = await seedUser({ name: 'Kept Name', subtitle: 'Kept subtitle' })
+      const res = await patchMe(await seedSession(id), {})
+      expect(res.status).toBe(200)
+      expect(await storedRow(id)).toMatchObject({ name: 'Kept Name', subtitle: 'Kept subtitle' })
+    })
+
+    it('saves a non-blank name trimmed', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const res = await patchMe(await seedSession(id), { name: '  Trimmed Name  ' })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ name: 'Trimmed Name' })
+      expect((await storedRow(id)).name).toBe('Trimmed Name')
+    })
+
+    it('applies the length limit after trimming', async () => {
+      const id = await seedUser({ name: 'Old Name' })
+      const token = await seedSession(id)
+      const ok = await patchMe(token, { name: `  ${'a'.repeat(100)}  ` })
+      expect(ok.status).toBe(200)
+      const tooLong = await patchMe(token, { name: 'a'.repeat(101) })
+      expect(tooLong.status).toBe(400)
+      expect((await storedRow(id)).name).toBe('a'.repeat(100))
+    })
+
+    it('rejects a non-string name with 400 and keeps the stored one', async () => {
+      const id = await seedUser({ name: 'Kept Name' })
+      const res = await patchMe(await seedSession(id), { name: 42 })
+      expect(res.status).toBe(400)
+      expect((await storedRow(id)).name).toBe('Kept Name')
+    })
+
+    it('lists a cleared user in GET /users with a blank name and their email', async () => {
+      const id = await seedUser({ name: 'Old Name', email: 'cleared@example.com' })
+      const token = await seedSession(id)
+      await patchMe(token, { name: '' })
+      const res = await SELF.fetch('http://localhost/api/users', { headers: { Cookie: `session=${token}` } })
+      const list = await res.json() as Array<{ id: string; name: string; email: string }>
+      expect(list.find(u => u.id === id)).toMatchObject({ name: '', email: 'cleared@example.com' })
+    })
+
+    it('orders GET /users by the name as shown, so a cleared user sorts by email', async () => {
+      const viewer = await seedUser({ name: 'Mid Name', email: 'viewer@example.com' })
+      const token = await seedSession(viewer)
+      await seedUser({ name: 'Zed Last', email: 'aaa@example.com' })
+      const cleared = await seedUser({ name: 'Old Name', email: 'nnn@example.com' })
+      await patchMe(await seedSession(cleared), { name: '' })
+      const res = await SELF.fetch('http://localhost/api/users', { headers: { Cookie: `session=${token}` } })
+      const shown = (await res.json() as Array<{ name: string; email: string }>).map(u => u.name || u.email)
+      const pos = (label: string) => shown.indexOf(label)
+      expect(pos('Mid Name')).toBeLessThan(pos('nnn@example.com'))
+      expect(pos('nnn@example.com')).toBeLessThan(pos('Zed Last'))
     })
   })
 })

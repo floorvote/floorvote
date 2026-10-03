@@ -44,4 +44,31 @@ describe('MemberNameCell', () => {
     expect(screen.getByRole('link', { name: 'ada@example.com' }).style.wordBreak).toBe('break-all')
     expect(screen.getByText('Ada Lovelace').style.wordBreak).toBe('')
   })
+
+  describe('with no name (never set, or cleared)', () => {
+    it('shows the email in the name\'s place, as the mailto link', () => {
+      const { container } = render(<MemberNameCell name="" email="cleared@example.com" subtitle="Analyst" />)
+      const links = screen.getAllByRole('link')
+      expect(links).toHaveLength(1)
+      expect(links[0]).toHaveTextContent('cleared@example.com')
+      expect(links[0]).toHaveAttribute('href', 'mailto:cleared@example.com')
+      // The email leads, and isn't repeated under the subtitle.
+      const text = container.textContent ?? ''
+      expect(text.indexOf('cleared@example.com')).toBeLessThan(text.indexOf('Analyst'))
+      expect(text.split('cleared@example.com')).toHaveLength(2)
+    })
+
+    it('keeps the email breakable and the ME badge beside it', () => {
+      render(<MemberNameCell name="" email="cleared@example.com" isSelf />)
+      const link = screen.getByRole('link', { name: 'cleared@example.com' })
+      expect(link.style.wordBreak).toBe('break-all')
+      expect(link.parentElement).toContainElement(screen.getByText('ME'))
+    })
+
+    it('renders no empty name element', () => {
+      const { container } = render(<MemberNameCell name="" email="cleared@example.com" />)
+      const spans = [...container.querySelectorAll('span')]
+      expect(spans.every(s => (s.textContent ?? '').trim() !== '')).toBe(true)
+    })
+  })
 })

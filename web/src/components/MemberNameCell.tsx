@@ -18,11 +18,21 @@ export interface MemberNameCellProps {
 // break-all lives on the email alone, never on the cell: an address has no
 // break opportunities and must wrap inside a fixed-width column, but the same
 // rule on the cell would also split the member's name mid-word.
+//
+// A member with no name (never set, or cleared) shows by email: the email link
+// takes the name's place on the first line, and isn't repeated below.
 export function MemberNameCell({ name, email, subtitle, isSelf = false }: MemberNameCellProps) {
+  const emailLink = (style: React.CSSProperties) => (
+    <a href={`mailto:${email}`} className="blue-link" style={{ wordBreak: 'break-all', ...style }}>
+      {email}
+    </a>
+  )
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, color: color.textPrimary }}>{name}</span>
+        {name
+          ? <span style={{ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, color: color.textPrimary }}>{name}</span>
+          : emailLink({ fontWeight: isSelf ? fontWeight.bold : fontWeight.medium, minWidth: 0 })}
         {isSelf && (
           <span style={{
             fontSize: fontSize.xs, fontWeight: fontWeight.bold, color: color.countChipText,
@@ -34,13 +44,7 @@ export function MemberNameCell({ name, email, subtitle, isSelf = false }: Member
       {subtitle && (
         <div style={{ fontSize: fontSize.sm, color: color.textSlate500, marginTop: 1 }}>{subtitle}</div>
       )}
-      <a
-        href={`mailto:${email}`}
-        className="blue-link"
-        style={{ fontSize: fontSize.sm, display: 'block', wordBreak: 'break-all' }}
-      >
-        {email}
-      </a>
+      {name && emailLink({ fontSize: fontSize.sm, display: 'block' })}
     </>
   )
 }

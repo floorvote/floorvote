@@ -5,10 +5,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { Profile } from './Profile'
 import * as api from '../lib/api'
 
-// The Profile name is optional: a user with no name can still save the rest of
-// the card. But a set name can't be cleared (the server ignores a blank name and
-// keeps the stored one), so the page used to show a blank name locally that the
-// server never applied. Now a blank name snaps back to the stored one on save.
+// The Profile name is optional, and a set name can be cleared (#233): saving
+// with a blank name sends it as a clear, shows "Saved", and leaves the field
+// blank. The user then shows by email wherever a name would appear.
 
 const auth = vi.hoisted(() => ({ setName: vi.fn(), setSubtitle: vi.fn() }))
 vi.mock('../context/AuthContext', () => ({
@@ -95,24 +94,59 @@ describe('Profile name is optional', () => {
     expect(await within(card).findByText('Saved')).toBeInTheDocument()
   })
 
-  it('snaps a cleared name back to the stored one after saving, and never clears it locally', async () => {
-    mockApi()
+  it('sends a cleared name as a blank name, shows "Saved", and leaves the field blank', async () => {
+    const { patches } = mockApi()
     const { user, card } = setup()
     await user.clear(nameInput())
     await user.click(saveButton(card))
-    await within(card).findByText('Saved')
-    expect(nameInput()).toHaveValue('Current Name')
-    expect(auth.setName).not.toHaveBeenCalled()
+    expect(await within(card).findByText('Saved')).toBeInTheDocument()
+    expect(patches).toEqual([{ name: '', subtitle: null }])
+    expect(nameInput()).toHaveValue('')
+    expect(auth.setName).toHaveBeenCalledWith('')
   })
 
-  it('snaps a whitespace-only name back to the stored one after saving', async () => {
-    mockApi()
+  it('treats a whitespace-only name as a clear and blanks the field after saving', async () => {
+    const { patches } = mockApi()
     const { user, card } = setup()
     await user.clear(nameInput())
     await user.type(nameInput(), '   ')
     await user.click(saveButton(card))
+    expect(await within(card).findByText('Saved')).toBeInTheDocument()
+    expect(patches[0].name).toBe('')
+    expect(nameInput()).toHaveValue('')
+    expect(auth.setName).toHaveBeenCalledWith('')
+  })
+
+  it('never puts the old name back after clearing it', async () => {
+    mockApi()
+    const { user, card } = setup()
+    await user.clear(nameInput())
+    await user.click(saveButton(card))
     await within(card).findByText('Saved')
-    expect(nameInput()).toHaveValue('Current Name')
+    expect(nameInput()).not.toHaveValue('Current Name')
+    expect(auth.setName).not.toHaveBeenCalledWith('Current Name')
+  })
+
+  it('clears the name and saves the subtitle in the same request', async () => {
+    const { patches } = mockApi()
+    const { user, card } = setup()
+    await user.clear(nameInput())
+    await user.type(subtitleInput(card), 'Policy lead')
+    await user.click(saveButton(card))
+    await within(card).findByText('Saved')
+    expect(patches).toEqual([{ name: '', subtitle: 'Policy lead' }])
+    expect(auth.setName).toHaveBeenCalledWith('')
+    expect(auth.setSubtitle).toHaveBeenCalledWith('Policy lead')
+  })
+
+  it('sends no name when only the digest setting is toggled', async () => {
+    const { patches } = mockApi()
+    setup()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('switch', { name: 'Toggle Email digest of recent bill activity' }))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    expect(patches[0]).not.toHaveProperty('name')
+    expect(patches[0]).not.toHaveProperty('subtitle')
     expect(auth.setName).not.toHaveBeenCalled()
   })
 
@@ -125,10 +159,10 @@ describe('Profile name is optional', () => {
     await waitFor(() => expect(patches).toHaveLength(1))
     expect(patches[0].name).toBe('New Name')
     expect(auth.setName).toHaveBeenCalledWith('New Name')
-    expect(nameInput()).toHaveValue('  New Name  ')
+    expect(nameInput()).toHaveValue('New Name')
   })
 
-  it('does not snap the name back when the save fails', async () => {
+  it('keeps the blank field and does not clear the name locally when the save fails', async () => {
     vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === '/users/me' && init?.method === 'PATCH') throw new Error('boom')
       return {} as never

@@ -8,6 +8,7 @@ import { stripHtml } from '../lib/mentions'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
+import { userDisplayNameSql } from '../lib/displayName'
 
 export const notificationsRouter = new Hono<AppEnv>()
 notificationsRouter.use('*', requireAuth)
@@ -26,7 +27,7 @@ notificationsRouter.get('/', async (c) => {
       createdAt: commentMentions.createdAt,
       commentContent: comments.content,
       authorId: users.id,
-      authorName: users.name,
+      authorName: userDisplayNameSql,
       authorSubtitle: users.subtitle,
       billId: bills.id,
       billNumber: bills.billNumber,
