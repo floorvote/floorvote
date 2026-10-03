@@ -130,6 +130,27 @@ function relativeTimeFromEpoch(ts: string): string {
   return days === 1 ? 'Yesterday' : `${days}d ago`
 }
 
+// How long the count line's copy feedback stays up before clearing itself.
+const COPIED_FEEDBACK_MS = 2000
+const COPY_ERROR_FEEDBACK_MS = 4000
+
+// Emails the copy button writes: shown members who aren't deactivated
+// (invitees who never logged in are included), each address once, compared
+// case-insensitively, in the order given.
+function uniqueActiveEmails(shown: Member[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const m of shown) {
+    if (m.deactivatedAt) continue
+    const email = m.email.trim()
+    const key = email.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(email)
+  }
+  return out
+}
+
 export function Members() {
   usePageTitle('Members')
   const { user } = useAuth()
@@ -504,7 +525,7 @@ export function Members() {
     // matches, to keep Role searches from pulling in Members outside the Role.
     const fields = [displayName(m), m.email, accountRoleLabel(m.role), ...m.roles.map(r => r.name)]
     if (fields.some(f => f.toLowerCase().includes(q))) return true
-    return m.role === 'owner' && 'admin'.includes(q)
+    return m.role === 'owner' && accountRoleLabel('admin').toLowerCase().includes(q)
   }
 
   type MenuItem = { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void; tooltip?: string; warn?: boolean }
@@ -630,20 +651,7 @@ export function Members() {
       if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
       return displayName(a).localeCompare(displayName(b))
     })
-  // Emails the copy button writes: shown members who aren't deactivated
-  // (invitees who never logged in are included), each address once,
-  // compared case-insensitively.
-  const copyableEmails: string[] = []
-  {
-    const seen = new Set<string>()
-    for (const m of shownMembers) {
-      if (m.deactivatedAt) continue
-      const key = m.email.trim().toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      copyableEmails.push(m.email.trim())
-    }
-  }
+  const copyableEmails = uniqueActiveEmails(shownMembers)
 
   async function handleCopyEmails() {
     if (copyableEmails.length === 0) return
@@ -651,10 +659,10 @@ export function Members() {
     try {
       await navigator.clipboard.writeText(copyableEmails.join(', '))
       setCopyEmailsStatus('copied')
-      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), 2000)
+      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), COPIED_FEEDBACK_MS)
     } catch {
       setCopyEmailsStatus('error')
-      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), 4000)
+      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), COPY_ERROR_FEEDBACK_MS)
     }
   }
 
