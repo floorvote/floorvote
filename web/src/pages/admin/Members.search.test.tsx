@@ -170,6 +170,12 @@ describe('Members search', () => {
       expect(shownEmails()).toEqual(emails(OWNER, ADMIN))
     })
 
+    it('an Owner matches a fragment from the middle of "admin"', async () => {
+      await renderPage()
+      search('dmi')
+      expect(shownEmails()).toEqual(emails(OWNER, ADMIN))
+    })
+
     it('"owner" shows only Owners, not Admins', async () => {
       await renderPage()
       search('owner')
