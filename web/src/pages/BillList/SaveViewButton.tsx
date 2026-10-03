@@ -3,7 +3,8 @@ import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens
 import { useDismissOnOutsideClick } from '../../hooks/useDismissOnOutsideClick'
 import { normalizeViewQuery } from '../../lib/savedViews'
 import { VIEW_STYLE } from '../../../../shared/viewStyle'
-import { BlankValueMessage, useBlankValueGuard } from '../../components/RequiredField'
+import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
+import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
 
 export function SaveViewButton({
   currentSearch, onSave,
@@ -16,18 +17,20 @@ export function SaveViewButton({
   const [saving, setSaving] = useState(false)
   const ref = useDismissOnOutsideClick(open, () => setOpen(false))
   const inputRef = useRef<HTMLInputElement>(null)
-  const guard = useBlankValueGuard()
-  const resetBlank = guard.reset
+  // Save view is gated while the name is blank (RequiredField.tsx): it looks
+  // disabled and explains itself on hover, focus, click, or Enter.
+  const gate = useRequiredSubmit({ missingRequired: !name.trim(), blocked: saving })
+  const resetGate = gate.reset
 
   useEffect(() => {
     if (open) {
       inputRef.current?.focus()
     } else {
-      // However the popover closed (Cancel, its trigger, an outside click),
-      // reopening starts without a stale "required" message.
-      resetBlank()
+      // However the popover closed (Cancel, its trigger, an outside click, a
+      // save), reopening starts quiet.
+      resetGate()
     }
-  }, [open, resetBlank])
+  }, [open, resetGate])
 
   // Count what is actually being captured, so the summary can say it. Uses the
   // same normalization the divergence check uses (view and page params are
@@ -38,7 +41,6 @@ export function SaveViewButton({
     .filter(([key]) => key !== 'sort' && key !== 'dir').length
 
   async function commit() {
-    if (saving || guard.refuse(name)) return
     const trimmed = name.trim()
     setSaving(true)
     try {
@@ -84,17 +86,17 @@ export function SaveViewButton({
           <input
             ref={inputRef}
             aria-label="View name"
-            {...guard.fieldProps}
+            aria-required="true"
+            {...gate.fieldProps}
             value={name}
-            onChange={e => { setName(e.target.value); guard.onValue(e.target.value) }}
-            onKeyDown={e => { if (e.key === 'Enter') commit() }}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !gate.refuse()) void commit() }}
             style={{
               width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: fontSize.sm,
               padding: '4px 8px', border: `1px solid ${color.accentBlue}`,
               borderRadius: radius.sm, color: color.textPrimary,
             }}
           />
-          <BlankValueMessage {...guard.messageProps} name="View name" style={{ display: 'block', marginTop: 6 }} />
           <p style={{
             margin: '9px 0 0', paddingTop: 9, borderTop: `1px solid ${color.borderDefault}`,
             fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.5,
@@ -103,27 +105,12 @@ export function SaveViewButton({
             Everyone in your organization will see it beside the page title.
           </p>
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 11 }}>
-            <button
-              onClick={() => setOpen(false)}
-              style={{
-                fontFamily: 'inherit', fontSize: fontSize.xs, padding: '3px 9px', borderRadius: radius.sm,
-                border: `1px solid ${color.borderDefault}`, background: color.white,
-                color: color.textSecondary, cursor: 'pointer',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={commit}
-              style={{
-                fontFamily: 'inherit', fontSize: fontSize.xs, padding: '3px 9px', borderRadius: radius.sm,
-                border: `1px solid ${color.billBadgeNavy}`, background: color.billBadgeNavy,
-                color: color.white, fontWeight: fontWeight.semibold, cursor: 'pointer',
-              }}
-            >
+            <button onClick={() => setOpen(false)} style={inlineEditCancelStyle()}>Cancel</button>
+            <button {...gate.buttonProps(() => { void commit() })} style={inlineEditSaveStyle(gate.disabled)}>
               Save view
             </button>
           </div>
+          <MissingRequiredReason {...gate.reasonProps} style={{ marginTop: 6, textAlign: 'right' }} />
         </div>
       )}
     </div>

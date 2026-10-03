@@ -22,13 +22,15 @@ import { FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
 // the missing items, and is the same everywhere.
 //
 // An inline editor (one value edited in place, saved with Enter or a Save
-// button) that refuses a blank value is the other case. It keeps Save enabled
-// and, on a blank save, stays open and says why: useBlankValueGuard() supplies
-// the field's aria-required/aria-invalid/aria-describedby, and
-// <BlankValueMessage {...guard.messageProps} name="..." /> renders
-// "* <name> is required" beside the field as an alert, so a screen reader
-// announces it the moment the save is refused. The message clears once the
-// value is no longer blank, and on cancel or reopen (guard.reset()).
+// button) uses the same gate on its Save button. Enter in the field does not go
+// through the button, so the field's Enter handler asks the gate first:
+// `if (gate.refuse()) return` (in a <form>, also preventDefault the keydown so
+// the browser's implicit submission does not run). A refused Enter reveals the
+// message and ties it to the field too (spread gate.fieldProps on it) until the
+// value is filled. The hook lives in the component that owns the editor, so
+// call gate.reset() whenever the editor opens or closes: the Save button
+// unmounts without a leave or blur event, and its state would otherwise carry
+// over to the next opening.
 
 /** The one message a blocked submit button reveals. */
 export const REQUIRED_MESSAGE = 'Fill in the required items first.'
@@ -102,16 +104,26 @@ export function useRequiredSubmit({ missingRequired, blocked = false }: { missin
   // A click or tap that did not focus the button (Safari does not focus
   // buttons on click) still reveals the message, until leave or blur.
   const [pressed, setPressed] = useState(false)
+  // An attempt that did not go through the button (Enter in an inline
+  // editor's field): reveals the message until the value is filled or reset().
+  const [tried, setTried] = useState(false)
   // A natively disabled button may get no leave or blur event, so forget any
   // attempt once the button is blocked: after a submit finishes and the form
   // resets, it starts quiet again.
-  if (blocked && (hovered || focused || pressed)) {
+  if (blocked && (hovered || focused || pressed || tried)) {
     setHovered(false)
     setFocused(false)
     setPressed(false)
+    setTried(false)
+  }
+  // An attempt is spent once the value is filled: clearing it again does not
+  // bring the message back unless the button is still hovered or focused.
+  if (!missingRequired && (pressed || tried)) {
+    setPressed(false)
+    setTried(false)
   }
   const quiet = missingRequired && !blocked
-  const show = quiet && (hovered || focused || pressed)
+  const show = quiet && (hovered || focused || pressed || tried)
   const buttonProps = (onClick?: (e: MouseEvent<HTMLButtonElement>) => void) => ({
     disabled: blocked,
     'aria-disabled': quiet ? ('true' as const) : undefined,
@@ -129,64 +141,29 @@ export function useRequiredSubmit({ missingRequired, blocked = false }: { missin
     onFocus: () => setFocused(true),
     onBlur: () => { setFocused(false); setPressed(false) },
   })
+  /**
+   * For a submit path that bypasses the button (Enter in a field): true when
+   * the submit must not go ahead. While a required value is missing (and not
+   * blocked) it also reveals the message.
+   */
+  const refuse = (): boolean => {
+    if (quiet) setTried(true)
+    return missingRequired || blocked
+  }
+  /** Forget every attempt; call when an inline editor opens or closes. */
+  const reset = useCallback(() => {
+    setHovered(false)
+    setFocused(false)
+    setPressed(false)
+    setTried(false)
+  }, [])
   return {
     disabled: missingRequired || blocked,
     buttonProps,
+    refuse,
+    reset,
+    /** For the field whose Enter was refused: ties the message to it while shown. */
+    fieldProps: { 'aria-describedby': show && tried ? id : undefined },
     reasonProps: { id, show },
   }
-}
-
-/**
- * Guard for an inline editor that refuses a blank value.
- *
- *   const guard = useBlankValueGuard()
- *   // on open or cancel: guard.reset()
- *   // on save:           if (guard.refuse(value)) return
- *   <input {...guard.fieldProps} onChange={e => { setValue(e.target.value); guard.onValue(e.target.value) }} />
- *   <BlankValueMessage {...guard.messageProps} name="Role name" />
- *
- * A field whose control is a button (a Picker trigger), which cannot carry
- * aria-required or aria-invalid, spreads `triggerProps` instead and names
- * itself with requiredName().
- */
-export function useBlankValueGuard() {
-  const id = useId()
-  const [shown, setShown] = useState(false)
-  /** On save: true when `value` is blank, showing the message; the caller then saves nothing. */
-  const refuse = useCallback((value: string): boolean => {
-    const blank = !value.trim()
-    setShown(blank)
-    return blank
-  }, [])
-  /** On every change: hides the message once the value is no longer blank. */
-  const onValue = useCallback((value: string) => {
-    if (value.trim()) setShown(false)
-  }, [])
-  /** On opening or cancelling the editor. */
-  const reset = useCallback(() => setShown(false), [])
-  return {
-    refuse,
-    onValue,
-    reset,
-    fieldProps: {
-      'aria-required': true,
-      'aria-invalid': shown || undefined,
-      'aria-describedby': shown ? id : undefined,
-    },
-    triggerProps: { 'aria-describedby': shown ? id : undefined },
-    messageProps: { id, show: shown },
-  } as const
-}
-
-/**
- * Inline "* <name> is required" for an editor that refused a blank save.
- * Renders nothing unless `show`. Spread useBlankValueGuard's messageProps.
- */
-export function BlankValueMessage({ id, show, name, style }: { id: string; show: boolean; name: string; style?: CSSProperties }) {
-  if (!show) return null
-  return (
-    <span id={id} role="alert" style={{ ...HELPER_TEXT, ...style }}>
-      <RequiredMarker /> {name} is required
-    </span>
-  )
 }

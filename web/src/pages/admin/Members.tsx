@@ -15,7 +15,8 @@ import { usePageTitle } from '../../hooks/usePageTitle'
 import { useDemo } from '../../context/DemoContext'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { orgRolesLabel } from '../../lib/orgNoun'
-import { BlankValueMessage, MissingRequiredReason, useBlankValueGuard, useRequiredSubmit } from '../../components/RequiredField'
+import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
+import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
 
 type Role = { id: string; name: string }
 
@@ -169,9 +170,11 @@ export function Members() {
   const [addingRole, setAddingRole] = useState(false)
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
   const [editingRoleName, setEditingRoleName] = useState('')
-  // A blank rename keeps the editor open with "Role name is required" rather
-  // than closing and silently putting the old name back.
-  const blankRoleName = useBlankValueGuard()
+  // A blank rename is gated (RequiredField.tsx): Save looks disabled and
+  // explains itself on hover, focus, click, or Enter, and the editor stays open
+  // rather than closing and silently putting the old name back. Opening and
+  // cancelling reset the gate, since Save unmounts without a leave or blur.
+  const roleRenameGate = useRequiredSubmit({ missingRequired: !editingRoleName.trim() })
   const [openRoleDropdown, setOpenRoleDropdown] = useState<string | null>(null)
   const [dropdownAnchor, setDropdownAnchor] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
   const [rolesLabel, setRolesLabel] = useState('Team roles')
@@ -405,8 +408,12 @@ export function Members() {
     }
   }
 
+  function cancelRoleRename() {
+    setEditingRoleId(null)
+    roleRenameGate.reset()
+  }
+
   async function handleRenameRole(roleId: string, newName: string) {
-    if (blankRoleName.refuse(newName)) return
     const name = newName.trim()
     const original = orgRoles.find(r => r.id === roleId)?.name
     setEditingRoleId(null)
@@ -677,72 +684,85 @@ export function Members() {
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {orgRoles.map(role => (
-            <span key={role.id} style={ROLE_CHIP}>
-              {editingRoleId === role.id ? (
-                <input
-                  // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into rename mode, out of scope for this task's focus-management redesign
-                  autoFocus
-                  aria-label="Role name"
-                  {...blankRoleName.fieldProps}
-                  value={editingRoleName}
-                  onChange={e => {
-                    const next = e.target.value.replace(/@/g, '')
-                    setEditingRoleName(next)
-                    blankRoleName.onValue(next)
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleRenameRole(role.id, editingRoleName)
-                    if (e.key === 'Escape') { setEditingRoleId(null); blankRoleName.reset() }
-                  }}
-                  style={{
-                    fontSize: fontSize.sm, border: 'none', background: 'transparent', outline: 'none',
-                    width: Math.max(60, editingRoleName.length * 8),
-                    fontFamily: 'inherit', color: 'inherit', fontWeight: 'inherit',
-                  }}
-                />
-              ) : (
+            <Fragment key={role.id}>
+              <span style={ROLE_CHIP}>
+                {editingRoleId === role.id ? (
+                  <input
+                    // eslint-disable-next-line jsx-a11y/no-autofocus -- pre-existing: focus follows the user's own click/Enter into rename mode, out of scope for this task's focus-management redesign
+                    autoFocus
+                    aria-label="Role name"
+                    aria-required="true"
+                    {...roleRenameGate.fieldProps}
+                    value={editingRoleName}
+                    onChange={e => setEditingRoleName(e.target.value.replace(/@/g, ''))}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !roleRenameGate.refuse()) void handleRenameRole(role.id, editingRoleName)
+                      if (e.key === 'Escape') cancelRoleRename()
+                    }}
+                    style={{
+                      fontSize: fontSize.sm, border: 'none', background: 'transparent', outline: 'none',
+                      width: Math.max(60, editingRoleName.length * 8),
+                      fontFamily: 'inherit', color: 'inherit', fontWeight: 'inherit',
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={demoLocked}
+                    aria-label={`Rename role ${role.name}`}
+                    onClick={demoLocked ? undefined : () => { setEditingRoleId(role.id); setEditingRoleName(role.name); roleRenameGate.reset() }}
+                    title={demoLocked ? undefined : 'Click to rename'}
+                    style={{
+                      margin: 0,
+                      padding: 0,
+                      background: 'none',
+                      border: 'none',
+                      font: 'inherit',
+                      color: 'inherit',
+                      cursor: demoLocked ? 'default' : 'text',
+                    }}
+                  >
+                    {role.name}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={demoLocked}
-                  aria-label={`Rename role ${role.name}`}
-                  onClick={demoLocked ? undefined : () => { setEditingRoleId(role.id); setEditingRoleName(role.name); blankRoleName.reset() }}
-                  title={demoLocked ? undefined : 'Click to rename'}
+                  aria-label={`Delete role ${role.name}`}
+                  onClick={demoLocked ? undefined : () => handleDeleteRole(role.id)}
+                  title={demoLocked ? undefined : `Delete role "${role.name}"`}
                   style={{
-                    margin: 0,
+                    ...(demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X),
                     padding: 0,
+                    margin: 0,
+                    marginLeft: 1,
                     background: 'none',
                     border: 'none',
                     font: 'inherit',
-                    color: 'inherit',
-                    cursor: demoLocked ? 'default' : 'text',
+                    fontSize: fontSize.sm,
+                    lineHeight: '1',
                   }}
-                >
-                  {role.name}
-                </button>
+                >✕</button>
+              </span>
+              {/* Beside the chip, not in it: a chip is too small to hold them. */}
+              {editingRoleId === role.id && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Save role name"
+                    {...roleRenameGate.buttonProps(() => { void handleRenameRole(role.id, editingRoleName) })}
+                    style={inlineEditSaveStyle(roleRenameGate.disabled)}
+                  >
+                    Save
+                  </button>
+                  <button type="button" aria-label="Cancel renaming role" onClick={cancelRoleRename} style={inlineEditCancelStyle()}>Cancel</button>
+                </>
               )}
-              <button
-                type="button"
-                disabled={demoLocked}
-                aria-label={`Delete role ${role.name}`}
-                onClick={demoLocked ? undefined : () => handleDeleteRole(role.id)}
-                title={demoLocked ? undefined : `Delete role "${role.name}"`}
-                style={{
-                  ...(demoLocked ? { ...ROLE_CHIP_X, color: color.borderBlueDash, cursor: 'not-allowed' } : ROLE_CHIP_X),
-                  padding: 0,
-                  margin: 0,
-                  marginLeft: 1,
-                  background: 'none',
-                  border: 'none',
-                  font: 'inherit',
-                  fontSize: fontSize.sm,
-                  lineHeight: '1',
-                }}
-              >✕</button>
-            </span>
+            </Fragment>
           ))}
-          {/* Its own line under the chips: a chip is too small to hold it. */}
+          {/* Its own line under the chips. */}
           {editingRoleId !== null && (
-            <BlankValueMessage {...blankRoleName.messageProps} name="Role name" style={{ flexBasis: '100%' }} />
+            <MissingRequiredReason {...roleRenameGate.reasonProps} style={{ flexBasis: '100%' }} />
           )}
           {orgRoles.length === 0 && (
             <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>No roles yet.</span>

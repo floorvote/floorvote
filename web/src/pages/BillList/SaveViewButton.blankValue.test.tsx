@@ -2,10 +2,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SaveViewButton } from './SaveViewButton'
+import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, expectButtonStyle } from '../../test/quietGate'
 
-// "Save as view" refuses a blank name. Saving one blank must say why (an
-// inline "View name is required" message, announced to screen readers and
-// tied to the input), keep the popover open, and save nothing.
+// "Save as view" refuses a blank name with the shared quiet gate: while the
+// name is blank or whitespace, "Save view" looks disabled (aria-disabled) and
+// reveals "Fill in the required items first." on hover, focus, click/tap, or
+// Enter in the field, never saving and keeping the popover open. "Save view"
+// is the standard blue inline-edit Save, greyed while blocked, beside the
+// standard Cancel.
 
 function renderButton(onSave = vi.fn().mockResolvedValue(undefined)) {
   const user = userEvent.setup()
@@ -15,120 +20,165 @@ function renderButton(onSave = vi.fn().mockResolvedValue(undefined)) {
 
 async function openPopover(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /save as view/i }))
-  return screen.getByRole('textbox', { name: 'View name' })
+  return screen.getByRole('textbox', { name: 'View name' }) as HTMLInputElement
 }
 
-describe('SaveViewButton: blank name', () => {
-  it('marks the name input as required and shows no message on open', async () => {
-    const { user } = renderButton()
-    const input = await openPopover(user)
-    expect(input).toHaveAttribute('aria-required', 'true')
-    expect(input).not.toHaveAttribute('aria-invalid')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
 
-  it('keeps Save view enabled, so clicking it can explain itself', async () => {
-    const { user } = renderButton()
-    await openPopover(user)
-    expect(screen.getByRole('button', { name: /^save view$/i })).toBeEnabled()
-  })
+const saveView = () => screen.getByRole('button', { name: /^save view$/i })
 
-  it('saving blank shows an inline "required" message and saves nothing', async () => {
+describe('SaveViewButton: Save view gated while the name is empty', () => {
+  itGatesQuietly(async () => {
     const { user, onSave } = renderButton()
     await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
-    expect(onSave).not.toHaveBeenCalled()
+    return { user, button: saveView, submitted: () => onSave.mock.calls.length }
   })
+})
 
-  it('saving whitespace only is treated as blank', async () => {
+describe('SaveViewButton: Save view gated while the name is whitespace', () => {
+  itGatesQuietly(async () => {
     const { user, onSave } = renderButton()
     const input = await openPopover(user)
     await user.type(input, '   ')
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
+    return { user, button: saveView, submitted: () => onSave.mock.calls.length }
+  })
+})
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
-    expect(onSave).not.toHaveBeenCalled()
+describe('SaveViewButton: blank name', () => {
+  it('marks the name input as required', async () => {
+    const { user } = renderButton()
+    const input = await openPopover(user)
+    expect(input).toHaveAttribute('aria-required', 'true')
   })
 
-  it('saving blank with Enter shows the message too', async () => {
+  it('no longer uses the old per-editor "View name is required" text or an alert', async () => {
+    const { user } = renderButton()
+    const input = await openPopover(user)
+    await user.click(saveView())
+    await user.type(input, '{Enter}')
+    expect(screen.queryByText(/is required/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('Enter on a blank name does not save, and reveals the message tied to the field', async () => {
     const { user, onSave } = renderButton()
     const input = await openPopover(user)
     await user.type(input, '{Enter}')
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
     expect(onSave).not.toHaveBeenCalled()
+    expectMessageShown(saveView())
+    expect(input).toHaveAccessibleDescription('Fill in the required items first.')
   })
 
-  it('announces the message and ties it to the input', async () => {
-    const { user } = renderButton()
+  it('Enter on a whitespace-only name does not save, and reveals the message', async () => {
+    const { user, onSave } = renderButton()
     const input = await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-
-    const alert = await screen.findByRole('alert')
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    expect(input).toHaveAttribute('aria-describedby', alert.id)
-    expect(input).toHaveAccessibleDescription('View name is required')
+    await user.type(input, '   {Enter}')
+    expect(onSave).not.toHaveBeenCalled()
+    expectMessageShown(saveView())
   })
 
-  it('keeps the popover open after a blank save', async () => {
+  it('keeps the popover open after a refused save', async () => {
     const { user } = renderButton()
     const input = await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-
-    await screen.findByRole('alert')
+    await user.click(saveView())
+    await user.type(input, '{Enter}')
     expect(screen.getByRole('textbox', { name: 'View name' })).toBe(input)
   })
 
-  it('clears the message once a name is typed, and then saves it', async () => {
+  it('hides the message once a name is typed, and then saves it', async () => {
     const { user, onSave } = renderButton()
     const input = await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveView())
 
     await user.type(input, 'Clerk bills')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(input).not.toHaveAttribute('aria-invalid')
+    expectMessageHidden(saveView())
+    expect(saveView()).not.toHaveAttribute('aria-disabled')
+    expect(input).not.toHaveAttribute('aria-describedby')
 
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
+    await user.click(saveView())
     await waitFor(() => expect(onSave).toHaveBeenCalledWith('Clerk bills'))
     await waitFor(() => expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument())
   })
 
-  it('keeps the message while only whitespace is typed', async () => {
-    const { user } = renderButton()
+  it('saves with Enter once a name is typed', async () => {
+    const { user, onSave } = renderButton()
     const input = await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-    await screen.findByRole('alert')
-
-    await user.type(input, '  ')
-    expect(screen.getByRole('alert')).toHaveTextContent('View name is required')
+    await user.type(input, '  Clerk bills  {Enter}')
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith('Clerk bills'))
   })
 
-  it('Cancel closes the popover and clears the message, which stays gone on reopening', async () => {
+  it('Cancel closes the popover; reopening shows no message', async () => {
     const { user } = renderButton()
-    await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-    await screen.findByRole('alert')
+    const input = await openPopover(user)
+    await user.type(input, '{Enter}')
+    await user.click(saveView())
+    expectMessageShown(saveView())
 
-    await user.click(screen.getByRole('button', { name: /cancel/i }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
     expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument()
 
-    const input = await openPopover(user)
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(input).not.toHaveAttribute('aria-invalid')
+    await openPopover(user)
+    expectMessageHidden(saveView())
   })
 
-  it('closing the popover from its trigger also clears the message', async () => {
+  it('closing from the trigger, then reopening, shows no message', async () => {
     const { user } = renderButton()
-    await openPopover(user)
-    await user.click(screen.getByRole('button', { name: /^save view$/i }))
-    await screen.findByRole('alert')
+    const input = await openPopover(user)
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveView())
 
     await user.click(screen.getByRole('button', { name: /save as view/i }))
     await openPopover(user)
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expectMessageHidden(saveView())
+  })
+
+  it('reopening after a save while Save view was hovered shows no message', async () => {
+    const { user } = renderButton()
+    const input = await openPopover(user)
+    await user.type(input, 'Clerk bills')
+    await user.hover(saveView())
+    await user.type(input, '{Enter}', { skipClick: true })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument())
+
+    await openPopover(user)
+    expectQuietlyBlocked(saveView())
+    expectMessageHidden(saveView())
+  })
+})
+
+describe('SaveViewButton: button styles', () => {
+  it('"Save view" is the standard Save, greyed while the name is blank', async () => {
+    const { user } = renderButton()
+    await openPopover(user)
+    expectButtonStyle(saveView(), inlineEditSaveStyle(true))
+  })
+
+  it('"Save view" turns standard blue once a name is typed', async () => {
+    const { user } = renderButton()
+    const input = await openPopover(user)
+    await user.type(input, 'Clerk bills')
+    expectButtonStyle(saveView(), inlineEditSaveStyle(false))
+    expect(saveView().style.cursor).toBe('pointer')
+  })
+
+  it('its Cancel is the standard Cancel', async () => {
+    const { user } = renderButton()
+    await openPopover(user)
+    expectButtonStyle(screen.getByRole('button', { name: /^cancel$/i }), inlineEditCancelStyle())
+  })
+
+  it('Save view is natively disabled, with no message, while a save is in flight', async () => {
+    let finish: () => void = () => {}
+    const onSave = vi.fn(() => new Promise<void>(resolve => { finish = resolve }))
+    const { user } = renderButton(onSave)
+    const input = await openPopover(user)
+    await user.type(input, 'Clerk bills')
+    await user.click(saveView())
+    expect(saveView()).toBeDisabled()
+    expect(saveView()).not.toHaveAttribute('aria-disabled')
+    await user.hover(saveView())
+    expectMessageHidden(saveView())
+    finish()
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument())
   })
 })

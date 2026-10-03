@@ -4,11 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { REQUIRED_MESSAGE } from '../components/RequiredField'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked } from '../test/quietGate'
 
-// The draft bill-number and State inline editors refuse a blank value. Saving
-// one blank must say why (an inline "... is required" message, announced to
-// screen readers and tied to the field), keep the editor open, and send
-// nothing. Harness mirrors BillDetail.draftState.test.tsx.
+// The draft bill-number and State inline editors refuse a blank value with the
+// shared quiet gate: while the value is blank or whitespace, Save looks
+// disabled (aria-disabled) and reveals "Fill in the required items first." on
+// hover, focus, click/tap, or Enter in the field, sending nothing and keeping
+// the editor open. Harness mirrors BillDetail.draftState.test.tsx.
 const navigateMock = vi.hoisted(() => vi.fn())
 const routerMock = vi.hoisted(() => ({
   params: { billId: '42' } as Record<string, string | undefined>,
@@ -165,6 +168,9 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+const saveButton = () => screen.getByRole('button', { name: 'Save' })
+const cancelButton = () => screen.getByRole('button', { name: 'Cancel' })
+
 describe('BillDetail draft bill-number editor: blank value', () => {
   async function openEditor() {
     const user = userEvent.setup()
@@ -174,78 +180,88 @@ describe('BillDetail draft bill-number editor: blank value', () => {
     return { user, input: screen.getByRole('textbox', { name: /bill number/i }) as HTMLInputElement }
   }
 
-  it('marks the bill number input as required', async () => {
-    const { input } = await openEditor()
-    expect(input).toHaveAttribute('aria-required', 'true')
+  describe('Save gated while the bill number is empty', () => {
+    itGatesQuietly(async () => {
+      const { user, input } = await openEditor()
+      await user.clear(input)
+      return { user, button: saveButton, submitted: () => patchCalls().length }
+    })
   })
 
-  it('shows no message before a blank save', async () => {
+  describe('Save gated while the bill number is whitespace', () => {
+    itGatesQuietly(async () => {
+      const { user, input } = await openEditor()
+      await user.clear(input)
+      await user.type(input, '   ')
+      return { user, button: saveButton, submitted: () => patchCalls().length }
+    })
+  })
+
+  it('opens with the current number, a required input, Save enabled, and no message', async () => {
     const { input } = await openEditor()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(input).not.toHaveAttribute('aria-invalid')
+    expect(input).toHaveValue('D1')
+    expect(input).toHaveAttribute('aria-required', 'true')
+    expect(saveButton()).not.toHaveAttribute('aria-disabled')
+    expect(saveButton().style.cursor).toBe('pointer')
+    expectMessageHidden(saveButton())
     expect(input).not.toHaveAttribute('aria-describedby')
   })
 
-  it('saving blank shows an inline "required" message and sends nothing', async () => {
+  it('greys Save as soon as the number is cleared, without showing the message', async () => {
     const { user, input } = await openEditor()
+    const enabledBackground = saveButton().style.background
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bill number is required')
-    expect(patchCalls()).toHaveLength(0)
+    expectQuietlyBlocked(saveButton())
+    expect(saveButton().style.background).not.toBe(enabledBackground)
+    expectMessageHidden(saveButton())
   })
 
-  it('saving whitespace only is treated as blank', async () => {
+  it('no longer uses the old "Bill number is required" text or an alert', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.type(input, '   ')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bill number is required')
-    expect(patchCalls()).toHaveLength(0)
+    await user.click(saveButton())
+    await user.type(input, '{Enter}')
+    expect(screen.queryByText(/is required/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('saving blank with Enter shows the message too', async () => {
+  it('Enter on a blank number does not save, and reveals the message tied to the field', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
     await user.type(input, '{Enter}')
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('Bill number is required')
     expect(patchCalls()).toHaveLength(0)
+    expectMessageShown(saveButton())
+    expect(input).toHaveAccessibleDescription(REQUIRED_MESSAGE)
   })
 
-  it('announces the message and ties it to the input', async () => {
+  it('Enter on a whitespace-only number does not save, and reveals the message', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    const alert = await screen.findByRole('alert')
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    expect(input).toHaveAttribute('aria-describedby', alert.id)
-    expect(input).toHaveAccessibleDescription('Bill number is required')
+    await user.type(input, '   {Enter}')
+    expect(patchCalls()).toHaveLength(0)
+    expectMessageShown(saveButton())
   })
 
-  it('keeps the editor open after a blank save', async () => {
+  it('keeps the editor open after a refused save', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    await screen.findByRole('alert')
+    await user.click(saveButton())
+    await user.type(input, '{Enter}')
     expect(screen.getByRole('textbox', { name: /bill number/i })).toBe(input)
     expect(screen.queryByRole('button', { name: 'Edit bill number' })).not.toBeInTheDocument()
   })
 
-  it('clears the message once a value is entered, and then saves it', async () => {
+  it('hides the message once a value is entered, and then saves it', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
 
     await user.type(input, 'D9')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(input).not.toHaveAttribute('aria-invalid')
+    expectMessageHidden(saveButton())
+    expect(input).not.toHaveAttribute('aria-describedby')
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(saveButton())
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
       '/bills/42/draft',
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ billNumber: 'D9' }) }),
@@ -253,41 +269,56 @@ describe('BillDetail draft bill-number editor: blank value', () => {
     expect(await screen.findByRole('button', { name: 'Edit bill number' })).toHaveTextContent('Bill number: D9')
   })
 
-  it('keeps the message while only whitespace is typed', async () => {
+  it('saves a trimmed value with Enter', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
-
-    await user.type(input, '  ')
-    expect(screen.getByRole('alert')).toHaveTextContent('Bill number is required')
+    await user.type(input, ' D7 {Enter}')
+    await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
+      '/bills/42/draft',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ billNumber: 'D7' }) }),
+    ))
   })
 
-  it('Cancel closes the editor and clears the message, which stays gone on reopening', async () => {
+  it('Cancel closes the editor; reopening shows no message', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    await user.click(saveButton())
+    expectMessageShown(saveButton())
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(cancelButton())
+    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit bill number' })).toHaveTextContent('Bill number: D1')
 
     await user.click(screen.getByRole('button', { name: 'Edit bill number' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: /bill number/i })).not.toHaveAttribute('aria-invalid')
+    const again = screen.getByRole('textbox', { name: /bill number/i })
+    expect(again).toHaveValue('D1')
+    await user.clear(again)
+    expectMessageHidden(saveButton())
   })
 
-  it('Escape closes the editor and clears the message', async () => {
+  it('Escape closes the editor; reopening shows no message', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
 
     await user.type(input, '{Escape}')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Edit bill number' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.clear(screen.getByRole('textbox', { name: /bill number/i }))
+    expectMessageHidden(saveButton())
+  })
+
+  it('reopening after a save made while Save was hovered starts quiet', async () => {
+    const { user, input } = await openEditor()
+    await user.hover(saveButton())
+    await user.type(input, '9{Enter}', { skipClick: true })
+    const edit = await screen.findByRole('button', { name: 'Edit bill number' })
+
+    fireEvent.click(edit)
+    fireEvent.change(screen.getByRole('textbox', { name: /bill number/i }), { target: { value: '' } })
+    expectMessageHidden(saveButton())
   })
 })
 
@@ -300,61 +331,81 @@ describe('BillDetail draft State editor (free text): blank value', () => {
     return { user, input: screen.getByRole('textbox', { name: /state/i }) as HTMLInputElement }
   }
 
-  it('marks the state input as required', async () => {
+  describe('Save gated while the state is empty', () => {
+    itGatesQuietly(async () => {
+      const { user, input } = await openEditor()
+      await user.clear(input)
+      return { user, button: saveButton, submitted: () => patchCalls().length }
+    })
+  })
+
+  describe('Save gated while the state is whitespace', () => {
+    itGatesQuietly(async () => {
+      const { user, input } = await openEditor()
+      await user.clear(input)
+      await user.type(input, ' ')
+      return { user, button: saveButton, submitted: () => patchCalls().length }
+    })
+  })
+
+  it('opens with the current state, a required input, Save enabled, and no message', async () => {
     const { input } = await openEditor()
+    expect(input).toHaveValue('RI')
     expect(input).toHaveAttribute('aria-required', 'true')
+    expect(saveButton()).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(saveButton())
+  })
+
+  it('greys Save as soon as the state is cleared, without showing the message', async () => {
+    const { user, input } = await openEditor()
+    await user.clear(input)
+    expectQuietlyBlocked(saveButton())
+    expectMessageHidden(saveButton())
+  })
+
+  it('no longer uses the old "State is required" text or an alert', async () => {
+    const { user, input } = await openEditor()
+    await user.clear(input)
+    await user.click(saveButton())
+    await user.type(input, '{Enter}')
+    expect(screen.queryByText(/is required/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('saving blank shows an inline "required" message and sends nothing', async () => {
+  it('Enter on a blank state does not save, and reveals the message tied to the field', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('State is required')
+    await user.type(input, '{Enter}')
     expect(patchCalls()).toHaveLength(0)
+    expectMessageShown(saveButton())
+    expect(input).toHaveAccessibleDescription(REQUIRED_MESSAGE)
   })
 
-  it('saving whitespace only is treated as blank', async () => {
+  it('Enter on a whitespace-only state does not save, and reveals the message', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.type(input, ' ')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('State is required')
+    await user.type(input, ' {Enter}')
     expect(patchCalls()).toHaveLength(0)
+    expectMessageShown(saveButton())
   })
 
-  it('announces the message and ties it to the input', async () => {
+  it('keeps the editor open after a refused save', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    const alert = await screen.findByRole('alert')
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    expect(input).toHaveAttribute('aria-describedby', alert.id)
-    expect(input).toHaveAccessibleDescription('State is required')
-  })
-
-  it('keeps the editor open after a blank save', async () => {
-    const { user, input } = await openEditor()
-    await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    await screen.findByRole('alert')
+    await user.click(saveButton())
     expect(screen.getByRole('textbox', { name: /state/i })).toBe(input)
     expect(screen.queryByRole('button', { name: 'Edit state' })).not.toBeInTheDocument()
   })
 
-  it('clears the message once a value is entered, and then saves it', async () => {
+  it('hides the message once a value is entered, and then saves it', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.click(saveButton())
+    expectMessageShown(saveButton())
 
     await user.type(input, 'TX')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expectMessageHidden(saveButton())
+    await user.click(saveButton())
 
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
       '/bills/42/draft',
@@ -363,28 +414,52 @@ describe('BillDetail draft State editor (free text): blank value', () => {
     expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: TX')
   })
 
-  it('Cancel closes the editor and clears the message, which stays gone on reopening', async () => {
+  it('saves with Enter once a value is entered', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
-
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Edit state' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.type(input, 'tx{Enter}')
+    await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
+      '/bills/42/draft',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ state: 'TX' }) }),
+    ))
   })
 
-  it('a blank state does not leave the bill-number editor showing a message', async () => {
+  it('Cancel closes the editor; reopening shows no message', async () => {
     const { user, input } = await openEditor()
     await user.clear(input)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
+
+    await user.click(cancelButton())
+    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit state' }))
+    await user.clear(screen.getByRole('textbox', { name: /state/i }))
+    expectMessageHidden(saveButton())
+  })
+
+  it('Escape closes the editor; reopening shows no message', async () => {
+    const { user, input } = await openEditor()
+    await user.clear(input)
+    await user.type(input, '{Enter}')
+    await user.type(input, '{Escape}')
+    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit state' }))
+    await user.clear(screen.getByRole('textbox', { name: /state/i }))
+    expectMessageHidden(saveButton())
+  })
+
+  it('a refused blank state does not leave the bill-number editor showing a message', async () => {
+    const { user, input } = await openEditor()
+    await user.clear(input)
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
+    await user.click(cancelButton())
 
     await user.click(screen.getByRole('button', { name: 'Edit bill number' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.clear(screen.getByRole('textbox', { name: /bill number/i }))
+    expectMessageHidden(saveButton())
   })
 })
 
@@ -403,44 +478,50 @@ describe('BillDetail draft State editor (Picker): blank value', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Select a state…' }))
   }
 
-  it('names the State picker as required', async () => {
+  describe('Save gated with no state chosen', () => {
+    itGatesQuietly(async () => {
+      const { user, trigger } = await openEditor()
+      await chooseNone(user, trigger)
+      return { user, button: saveButton, submitted: () => patchCalls().length }
+    })
+  })
+
+  it('names the State picker as required, with Save enabled and no message on open', async () => {
     const { trigger } = await openEditor()
     expect(trigger).toHaveTextContent('RI')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(saveButton()).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(saveButton())
   })
 
-  it('saving with no state chosen shows an inline "required" message and sends nothing', async () => {
+  it('greys Save once no state is chosen, without showing the message', async () => {
     const { user, trigger } = await openEditor()
     await chooseNone(user, trigger)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expectQuietlyBlocked(saveButton())
+    expectMessageHidden(saveButton())
+  })
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('State is required')
+  it('clicking Save with no state chosen sends nothing, keeps the editor open, and shows the message', async () => {
+    const { user, trigger } = await openEditor()
+    await chooseNone(user, trigger)
+    await user.click(saveButton())
+
     expect(patchCalls()).toHaveLength(0)
-  })
-
-  it('ties the message to the picker trigger and keeps the editor open', async () => {
-    const { user, trigger } = await openEditor()
-    await chooseNone(user, trigger)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    const alert = await screen.findByRole('alert')
-    const current = screen.getByRole('button', { name: 'State (required)' })
-    expect(current).toHaveAttribute('aria-describedby', alert.id)
-    expect(current).toHaveAccessibleDescription('State is required')
+    expectMessageShown(saveButton())
+    expect(screen.queryByText(/is required/i)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit state' })).not.toBeInTheDocument()
   })
 
-  it('clears the message once a state is chosen, and then saves it', async () => {
+  it('hides the message once a state is chosen, and then saves it', async () => {
     const { user, trigger } = await openEditor()
     await chooseNone(user, trigger)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.click(saveButton())
+    expectMessageShown(saveButton())
 
     await user.click(screen.getByRole('button', { name: 'State (required)' }))
     fireEvent.click(screen.getByRole('radio', { name: 'TX' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expectMessageHidden(saveButton())
 
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(saveButton())
     await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith(
       '/bills/42/draft',
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ state: 'TX' }) }),
@@ -448,15 +529,16 @@ describe('BillDetail draft State editor (Picker): blank value', () => {
     expect(await screen.findByRole('button', { name: 'Edit state' })).toHaveTextContent('State: TX')
   })
 
-  it('Cancel clears the message', async () => {
+  it('Cancel closes the editor; reopening shows no message', async () => {
     const { user, trigger } = await openEditor()
     await chooseNone(user, trigger)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-    await screen.findByRole('alert')
+    await user.click(saveButton())
+    expectMessageShown(saveButton())
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(cancelButton())
+    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Edit state' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await chooseNone(user, await screen.findByRole('button', { name: 'State (required)' }))
+    expectMessageHidden(saveButton())
   })
 })

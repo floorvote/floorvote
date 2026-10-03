@@ -3,10 +3,13 @@ import { render, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ViewSwitcher, type SavedView } from './ViewSwitcher'
 import * as api from '../../lib/api'
+import { inlineEditSaveStyle } from '../../lib/inlineEditStyles'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, expectButtonStyle } from '../../test/quietGate'
 
-// Renaming a saved view refuses a blank name. Saving one blank must say why
-// (an inline "View name is required" message, announced to screen readers and
-// tied to the input), keep the row in its editing state, and rename nothing.
+// Renaming a saved view refuses a blank name with the shared quiet gate: while
+// the name is blank or whitespace, Save looks disabled (aria-disabled) and
+// reveals "Fill in the required items first." on hover, focus, click/tap, or
+// Enter in the field, never renaming and keeping the row in its editing state.
 
 vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: false, settled: true }),
@@ -17,7 +20,7 @@ const VIEWS: SavedView[] = [
   { id: 'v2', name: 'Auditor bills', query: 'subject=UT%3AAudits' },
 ]
 
-function renderSwitcher(onRename = vi.fn()) {
+function renderSwitcher(onRename = vi.fn().mockResolvedValue(undefined)) {
   const user = userEvent.setup()
   render(
     <ViewSwitcher
@@ -35,152 +38,178 @@ function renderSwitcher(onRename = vi.fn()) {
 }
 
 async function beginRename(user: ReturnType<typeof userEvent.setup>, name = 'Clerk bills') {
-  await user.click(screen.getByRole('button', { name: /views/i }))
+  if (!screen.queryByRole('group', { name: 'Saved views' })) {
+    await user.click(screen.getByRole('button', { name: /views/i }))
+  }
   fireEvent.mouseEnter(screen.getByText(name).closest('div')!)
   await user.click(screen.getByRole('button', { name: `Rename "${name}"` }))
   return screen.getByRole('textbox', { name: 'View name' }) as HTMLInputElement
 }
 
-function saveButton() {
-  return screen.getByRole('button', { name: /^save$/i })
-}
+const saveButton = () => screen.getByRole('button', { name: /^save$/i })
 
-describe('ViewSwitcher rename: blank name', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    vi.spyOn(api, 'apiFetch').mockResolvedValue({ pagination: { total: 1 } } as never)
-  })
 
-  it('marks the name input as required and shows no message on open', async () => {
-    const { user } = renderSwitcher()
-    const input = await beginRename(user)
-    expect(input).toHaveValue('Clerk bills')
-    expect(input).toHaveAttribute('aria-required', 'true')
-    expect(input).not.toHaveAttribute('aria-invalid')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(api, 'apiFetch').mockResolvedValue({ pagination: { total: 1 } } as never)
+})
 
-  it('saving blank shows an inline "required" message and renames nothing', async () => {
+describe('ViewSwitcher rename: Save gated while the name is empty', () => {
+  itGatesQuietly(async () => {
     const { user, onRename } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
-    await user.click(saveButton())
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
-    expect(onRename).not.toHaveBeenCalled()
+    return { user, button: saveButton, submitted: () => onRename.mock.calls.length }
   })
+})
 
-  it('saving whitespace only is treated as blank', async () => {
+describe('ViewSwitcher rename: Save gated while the name is whitespace', () => {
+  itGatesQuietly(async () => {
     const { user, onRename } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
     await user.type(input, '   ')
-    await user.click(saveButton())
+    return { user, button: saveButton, submitted: () => onRename.mock.calls.length }
+  })
+})
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
-    expect(onRename).not.toHaveBeenCalled()
+describe('ViewSwitcher rename: blank name', () => {
+  it('opens with the current name, Save enabled and no message', async () => {
+    const { user } = renderSwitcher()
+    const input = await beginRename(user)
+    expect(input).toHaveValue('Clerk bills')
+    expect(input).toHaveAttribute('aria-required', 'true')
+    expect(saveButton()).not.toHaveAttribute('aria-disabled')
+    expectButtonStyle(saveButton(), inlineEditSaveStyle(false))
+    expectMessageHidden(saveButton())
   })
 
-  it('saving blank with Enter shows the message too', async () => {
+  it('greys Save as soon as the name is cleared, without showing the message', async () => {
+    const { user } = renderSwitcher()
+    const input = await beginRename(user)
+    await user.clear(input)
+    expectQuietlyBlocked(saveButton())
+    expectButtonStyle(saveButton(), inlineEditSaveStyle(true))
+    expectMessageHidden(saveButton())
+  })
+
+  it('no longer uses the old per-editor "View name is required" text or an alert', async () => {
+    const { user } = renderSwitcher()
+    const input = await beginRename(user)
+    await user.clear(input)
+    await user.click(saveButton())
+    await user.type(input, '{Enter}')
+    expect(screen.queryByText(/is required/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('Enter on a blank name does not rename, and reveals the message tied to the field', async () => {
     const { user, onRename } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
     await user.type(input, '{Enter}')
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('View name is required')
     expect(onRename).not.toHaveBeenCalled()
+    expectMessageShown(saveButton())
+    expect(input).toHaveAccessibleDescription('Fill in the required items first.')
   })
 
-  it('announces the message and ties it to the input', async () => {
+  it('Enter on a whitespace-only name does not rename, and reveals the message', async () => {
+    const { user, onRename } = renderSwitcher()
+    const input = await beginRename(user)
+    await user.clear(input)
+    await user.type(input, '  {Enter}')
+    expect(onRename).not.toHaveBeenCalled()
+    expectMessageShown(saveButton())
+  })
+
+  it('keeps the row in its editing state after a refused save', async () => {
     const { user } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
     await user.click(saveButton())
-
-    const alert = await screen.findByRole('alert')
-    expect(input).toHaveAttribute('aria-invalid', 'true')
-    expect(input).toHaveAttribute('aria-describedby', alert.id)
-    expect(input).toHaveAccessibleDescription('View name is required')
-  })
-
-  it('keeps the row in its editing state after a blank save', async () => {
-    const { user } = renderSwitcher()
-    const input = await beginRename(user)
-    await user.clear(input)
-    await user.click(saveButton())
-
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
     expect(screen.getByRole('textbox', { name: 'View name' })).toBe(input)
     expect(screen.getByRole('group', { name: 'Saved views' })).toBeInTheDocument()
   })
 
-  it('clears the message once a name is typed, and then renames', async () => {
+  it('hides the message once a name is typed, and then renames', async () => {
     const { user, onRename } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
-    await user.click(saveButton())
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
 
     await user.type(input, 'County clerk bills')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(input).not.toHaveAttribute('aria-invalid')
+    expectMessageHidden(saveButton())
+    expect(input).not.toHaveAttribute('aria-describedby')
 
     await user.click(saveButton())
     await waitFor(() => expect(onRename).toHaveBeenCalledWith('v1', 'County clerk bills'))
     await waitFor(() => expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument())
   })
 
-  it('keeps the message while only whitespace is typed', async () => {
-    const { user } = renderSwitcher()
+  it('renames with Enter once a name is typed, trimmed', async () => {
+    const { user, onRename } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
-    await user.click(saveButton())
-    await screen.findByRole('alert')
-
-    await user.type(input, '  ')
-    expect(screen.getByRole('alert')).toHaveTextContent('View name is required')
+    await user.type(input, ' County clerk bills {Enter}')
+    await waitFor(() => expect(onRename).toHaveBeenCalledWith('v1', 'County clerk bills'))
   })
 
-  it('Cancel ends the rename and clears the message, which stays gone on renaming again', async () => {
+  it('Cancel ends the rename; renaming again shows no message', async () => {
     const { user } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
+    await user.type(input, '{Enter}')
     await user.click(saveButton())
-    await screen.findByRole('alert')
+    expectMessageShown(saveButton())
 
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument()
 
-    fireEvent.mouseEnter(screen.getByText('Clerk bills').closest('div')!)
-    await user.click(screen.getByRole('button', { name: 'Rename "Clerk bills"' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'View name' })).not.toHaveAttribute('aria-invalid')
+    const again = await beginRename(user)
+    await user.clear(again)
+    expectMessageHidden(saveButton())
   })
 
-  it('Escape ends the rename and clears the message', async () => {
+  it('Escape ends the rename; renaming again shows no message', async () => {
     const { user } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
-    await user.click(saveButton())
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
+    expectMessageShown(saveButton())
 
     await user.type(input, '{Escape}')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument()
+    const again = await beginRename(user)
+    await user.clear(again)
+    expectMessageHidden(saveButton())
   })
 
-  it('renaming a different view starts without the message', async () => {
+  it('renaming a different view starts quiet', async () => {
     const { user } = renderSwitcher()
     const input = await beginRename(user)
     await user.clear(input)
-    await user.click(saveButton())
-    await screen.findByRole('alert')
+    await user.type(input, '{Enter}')
     await user.click(screen.getByRole('button', { name: /^cancel$/i }))
 
-    fireEvent.mouseEnter(screen.getByText('Auditor bills').closest('div')!)
-    await user.click(screen.getByRole('button', { name: 'Rename "Auditor bills"' }))
-    expect(screen.getByRole('textbox', { name: 'View name' })).toHaveValue('Auditor bills')
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const other = await beginRename(user, 'Auditor bills')
+    expect(other).toHaveValue('Auditor bills')
+    await user.clear(other)
+    expectMessageHidden(saveButton())
+  })
+
+  it('renaming again after a save made while Save was hovered starts quiet', async () => {
+    const { user } = renderSwitcher()
+    const input = await beginRename(user)
+    await user.click(input)
+    await user.hover(saveButton())
+    // skipClick: the pointer stays on Save while Enter renames and closes.
+    await user.type(input, '2{Enter}', { skipClick: true })
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'View name' })).not.toBeInTheDocument())
+
+    const again = await beginRename(user)
+    fireEvent.change(again, { target: { value: '' } })
+    expectMessageHidden(saveButton())
   })
 })
