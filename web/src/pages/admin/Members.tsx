@@ -186,7 +186,14 @@ export function Members() {
   // Feedback for the count line's "Copy N emails" button.
   const [copyEmailsStatus, setCopyEmailsStatus] = useState<'copied' | 'error' | null>(null)
   const copyEmailsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => { if (copyEmailsTimer.current) clearTimeout(copyEmailsTimer.current) }, [])
+  // Bumped on every click and on unmount; a clipboard write that settles
+  // after a newer click, or after the page is gone, sees a different value
+  // and leaves the feedback alone.
+  const copyEmailsRequest = useRef(0)
+  useEffect(() => () => {
+    copyEmailsRequest.current++
+    if (copyEmailsTimer.current) clearTimeout(copyEmailsTimer.current)
+  }, [])
 
   // Role management state
   const [orgRoles, setOrgRoles] = useState<Role[]>([])
@@ -655,15 +662,21 @@ export function Members() {
 
   async function handleCopyEmails() {
     if (copyableEmails.length === 0) return
+    const request = ++copyEmailsRequest.current
     if (copyEmailsTimer.current) clearTimeout(copyEmailsTimer.current)
+    let status: 'copied' | 'error'
     try {
       await navigator.clipboard.writeText(copyableEmails.join(', '))
-      setCopyEmailsStatus('copied')
-      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), COPIED_FEEDBACK_MS)
+      status = 'copied'
     } catch {
-      setCopyEmailsStatus('error')
-      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), COPY_ERROR_FEEDBACK_MS)
+      status = 'error'
     }
+    if (request !== copyEmailsRequest.current) return
+    setCopyEmailsStatus(status)
+    copyEmailsTimer.current = setTimeout(
+      () => setCopyEmailsStatus(null),
+      status === 'copied' ? COPIED_FEEDBACK_MS : COPY_ERROR_FEEDBACK_MS,
+    )
   }
 
   return (
@@ -913,9 +926,11 @@ export function Members() {
             >
               Copy {copyableEmails.length} {copyableEmails.length === 1 ? 'email' : 'emails'}
             </button>
-            {copyEmailsStatus === 'copied' && (
-              <span role="status" style={{ color: color.textSuccess, fontWeight: fontWeight.medium }}>Copied</span>
-            )}
+            {/* Rendered unconditionally, with only its text changing, so assistive
+                tech has registered the live region before "Copied" appears. */}
+            <span role="status" style={{ color: color.textSuccess, fontWeight: fontWeight.medium }}>
+              {copyEmailsStatus === 'copied' ? 'Copied' : ''}
+            </span>
             {copyEmailsStatus === 'error' && (
               <span role="alert" style={{ color: color.textErrorRed }}>Couldn't copy — select the emails from the table instead.</span>
             )}

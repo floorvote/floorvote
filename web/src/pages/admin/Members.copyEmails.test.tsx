@@ -101,6 +101,18 @@ async function renderPage(members: TestMember[]) {
   return view
 }
 
+function copiedStatus() {
+  return screen.getByRole('status')
+}
+
+// A clipboard write the test settles by hand, to interleave clicks.
+function deferred() {
+  let resolve!: () => void
+  let reject!: (e: Error) => void
+  const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
 function search(q: string) {
   fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: q } })
 }
@@ -252,6 +264,72 @@ describe('Members copy shown emails', () => {
       vi.advanceTimersByTime(5000)
     })
     expect(screen.queryByText('Copied')).not.toBeInTheDocument()
+  })
+
+  it('keeps one polite live region on screen and only changes its text, so "Copied" is announced', async () => {
+    await renderPage([OWNER, ACTIVE])
+    vi.useFakeTimers()
+    // Present and empty before any click, so assistive tech has registered it.
+    const region = copiedStatus()
+    expect(region).toHaveTextContent(/^$/)
+    await act(async () => {
+      fireEvent.click(copyButton())
+    })
+    expect(copiedStatus()).toBe(region)
+    expect(region).toHaveTextContent(/^Copied$/)
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    // Cleared, not removed.
+    expect(copiedStatus()).toBe(region)
+    expect(region).toHaveTextContent(/^$/)
+  })
+
+  it('lets the latest of two overlapping clicks decide the feedback', async () => {
+    const first = deferred()
+    const second = deferred()
+    const pending = [first, second]
+    mockClipboard(() => pending.shift()!.promise)
+    await renderPage([OWNER, ACTIVE])
+    fireEvent.click(copyButton())
+    fireEvent.click(copyButton())
+    expect(writeText).toHaveBeenCalledTimes(2)
+    // The newer click succeeds first…
+    await act(async () => { second.resolve() })
+    expect(copiedStatus()).toHaveTextContent('Copied')
+    // …and the older one failing afterward must not overwrite it.
+    await act(async () => { first.reject(new Error('denied')) })
+    expect(copiedStatus()).toHaveTextContent('Copied')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('ignores a stale success that lands after a newer failure', async () => {
+    const first = deferred()
+    const second = deferred()
+    const pending = [first, second]
+    mockClipboard(() => pending.shift()!.promise)
+    await renderPage([OWNER, ACTIVE])
+    fireEvent.click(copyButton())
+    fireEvent.click(copyButton())
+    await act(async () => { second.reject(new Error('denied')) })
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn.t copy/i)
+    await act(async () => { first.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn.t copy/i)
+    expect(copiedStatus()).not.toHaveTextContent('Copied')
+  })
+
+  it('does nothing when the clipboard write settles after the page is gone', async () => {
+    const write = deferred()
+    mockClipboard(() => write.promise)
+    const { unmount } = await renderPage([OWNER, ACTIVE])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.useFakeTimers()
+    fireEvent.click(copyButton())
+    unmount()
+    await act(async () => { write.resolve() })
+    // No feedback timer was scheduled for a page that no longer exists.
+    expect(vi.getTimerCount()).toBe(0)
+    expect(errors).not.toHaveBeenCalled()
   })
 
   it('shows an inline error and no "Copied" when the clipboard write fails', async () => {
