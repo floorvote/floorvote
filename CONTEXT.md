@@ -4,7 +4,7 @@
 
 **Link**: the admin action that folds a draft bill's engagement (votes, positions, comments, notes, custom fields, calendar events) into its filed bill and deletes the draft. Where both carry the same engagement, the filed bill's wins. Avoid: "merge" as the name of the action.
 
-**Instance**: one organization's own FloorVote deployment, with its own data, people, and settings. Avoid: "tenant" outside operator docs; "site"; "workspace."
+**Instance**: one organization's own FloorVote deployment, with its own data, people, and settings. Avoid: "tenant" in product copy; "site"; "workspace."
 
 **Member**: anyone with a login in an instance, whatever their permission level. Avoid: "user" in product copy; "group member."
 
