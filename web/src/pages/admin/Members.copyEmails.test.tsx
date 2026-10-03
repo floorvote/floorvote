@@ -121,9 +121,20 @@ function copyButton() {
   return screen.getByRole('button', { name: /^copy \d+ emails?$/i })
 }
 
+// The clipboard holds `"Name" <address>` entries (bare addresses for members
+// with no name). Pull out just the addresses, respecting quoted names that
+// contain commas.
+const RECIPIENT = /"(?:[^"\\]|\\.)*"\s*<([^>]+)>|([^\s,"<>]+@[^\s,"<>]+)/g
+
 function copiedEmails(): string[] {
   expect(writeText).toHaveBeenCalledTimes(1)
-  return (writeText.mock.calls[0][0] as string).split(', ')
+  const text = writeText.mock.calls[0][0] as string
+  return [...text.matchAll(RECIPIENT)].map(m => m[1] ?? m[2])
+}
+
+function copiedText(): string {
+  expect(writeText).toHaveBeenCalledTimes(1)
+  return writeText.mock.calls[0][0] as string
 }
 
 describe('Members copy shown emails', () => {
@@ -136,7 +147,7 @@ describe('Members copy shown emails', () => {
     vi.useRealTimers()
   })
 
-  it('shows the button on the count line and copies every shown email, comma-and-space separated', async () => {
+  it('shows the button on the count line and copies every shown member as "Name" <email>, comma-and-space separated', async () => {
     await renderPage([OWNER, ADMIN, ACTIVE])
     const btn = copyButton()
     expect(btn).toHaveTextContent('Copy 3 emails')
@@ -148,7 +159,7 @@ describe('Members copy shown emails', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     expect(writeText.mock.calls[0][0]).toBe(
       // Order follows the table: owners, admins, then members.
-      'olive@example.com, alpha@example.com, active@example.com',
+      '"Olive Oak" <olive@example.com>, "Alpha Ash" <alpha@example.com>, "Active Avery" <active@example.com>',
     )
   })
 
@@ -362,7 +373,7 @@ describe('Members copy shown emails', () => {
       expect(copyButton()).toHaveTextContent(/^Copy 1 email$/)
       fireEvent.click(copyButton())
       await waitFor(() => expect(writeText).toHaveBeenCalled())
-      expect(writeText.mock.calls[0][0]).toBe('casey@example.com')
+      expect(writeText.mock.calls[0][0]).toBe('"Casey Cole" <casey@example.com>')
     })
 
     it('copies Admins and Owners, not Standard members, for "admin"', async () => {
@@ -384,5 +395,63 @@ describe('Members copy shown emails', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     // The viewer's own row is pinned first, and the copy follows the table.
     expect(copiedEmails()).toEqual(['alpha@example.com', 'olive@example.com', 'active@example.com'])
+  })
+
+  describe('display names', () => {
+    async function copyOnly(name: string): Promise<string> {
+      const m = member({ id: 'named-1', email: 'named@example.com', name })
+      await renderPage([OWNER, m])
+      search('named@')
+      expect(copyButton()).toHaveTextContent(/^Copy 1 email$/)
+      fireEvent.click(copyButton())
+      await waitFor(() => expect(writeText).toHaveBeenCalled())
+      return copiedText()
+    }
+
+    it('quotes a name that contains a comma, so it stays one recipient', async () => {
+      expect(await copyOnly('Doe, Jane')).toBe('"Doe, Jane" <named@example.com>')
+    })
+
+    it('quotes a name that contains periods', async () => {
+      expect(await copyOnly('J. R. Smith Jr.')).toBe('"J. R. Smith Jr." <named@example.com>')
+    })
+
+    it('escapes double quotes and backslashes inside a name', async () => {
+      expect(await copyOnly('Robert "Bob" Back\\slash')).toBe('"Robert \\"Bob\\" Back\\\\slash" <named@example.com>')
+    })
+
+    it('keeps non-ASCII names as they are', async () => {
+      expect(await copyOnly('Zoë Ñúñez')).toBe('"Zoë Ñúñez" <named@example.com>')
+    })
+
+    it('trims surrounding spaces and folds line breaks in a name to spaces', async () => {
+      expect(await copyOnly('  Line\nBreak  ')).toBe('"Line Break" <named@example.com>')
+    })
+
+    it('copies a bare address for a member with no name', async () => {
+      const unnamed = member({ id: 'unnamed-1', email: 'unnamed@example.com', name: '' })
+      await renderPage([OWNER, unnamed])
+      fireEvent.click(copyButton())
+      await waitFor(() => expect(writeText).toHaveBeenCalled())
+      expect(copiedText()).toBe('"Olive Oak" <olive@example.com>, unnamed@example.com')
+    })
+
+    it('copies a bare address for a member whose name is only spaces', async () => {
+      const blank = member({ id: 'blank-1', email: 'blank@example.com', name: '   ' })
+      await renderPage([OWNER, blank])
+      fireEvent.click(copyButton())
+      await waitFor(() => expect(writeText).toHaveBeenCalled())
+      expect(copiedText()).toBe('"Olive Oak" <olive@example.com>, blank@example.com')
+    })
+
+    it('counts and parses comma-containing names as one recipient each', async () => {
+      const a = member({ id: 'c-1', email: 'doe@example.com', name: 'Doe, Jane' })
+      const b = member({ id: 'c-2', email: 'roe@example.com', name: 'Roe, Rick' })
+      await renderPage([OWNER, a, b])
+      expect(copyButton()).toHaveTextContent('Copy 3 emails')
+      fireEvent.click(copyButton())
+      await waitFor(() => expect(writeText).toHaveBeenCalled())
+      expect(copiedEmails()).toEqual(['olive@example.com', 'doe@example.com', 'roe@example.com'])
+    })
   })
 })

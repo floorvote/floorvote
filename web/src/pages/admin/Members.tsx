@@ -137,7 +137,16 @@ const COPY_ERROR_FEEDBACK_MS = 4000
 // Emails the copy button writes: shown members who aren't deactivated
 // (invitees who never logged in are included), each address once, compared
 // case-insensitively, in the order given.
-function uniqueActiveEmails(shown: Member[]): string[] {
+// `"Name" <address>`, or the bare address when there's no name. The name is
+// always quoted so commas and periods in it can't split or break the
+// recipient when pasted into a mail client's To/CC/BCC field.
+function formatRecipient(m: Member, email: string): string {
+  const name = (m.name ?? '').replace(/[\r\n]+/g, ' ').trim()
+  if (!name) return email
+  return `"${name.replace(/[\\"]/g, '\\$&')}" <${email}>`
+}
+
+function uniqueActiveRecipients(shown: Member[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   for (const m of shown) {
@@ -146,7 +155,7 @@ function uniqueActiveEmails(shown: Member[]): string[] {
     const key = email.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    out.push(email)
+    out.push(formatRecipient(m, email))
   }
   return out
 }
@@ -658,7 +667,7 @@ export function Members() {
       if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
       return displayName(a).localeCompare(displayName(b))
     })
-  const copyableEmails = uniqueActiveEmails(shownMembers)
+  const copyableEmails = uniqueActiveRecipients(shownMembers)
 
   async function handleCopyEmails() {
     if (copyableEmails.length === 0) return
