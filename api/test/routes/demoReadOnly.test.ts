@@ -242,6 +242,8 @@ const DENIED = new Set([
   'PATCH /api/bills/:id/draft',
   'PATCH /api/users/me',
   'POST /api/admin/clear-interactions',
+  // A demo tenant is not DC and has no Council calendar to read.
+  'POST /api/admin/council-calendar/preview',
   'POST /api/admin/custom-fields',
   'POST /api/admin/heal-ai',
   'POST /api/admin/keyword-resync',
@@ -274,6 +276,7 @@ const DENIED = new Set([
   'POST /api/calendar/regenerate-slug',
   'POST /api/feedback',
   'POST /api/users/me/deactivate',
+  'PUT /api/admin/council-calendar',
   'PUT /api/admin/custom-fields/:id',
   'PUT /api/admin/custom-fields/reorder',
   'PUT /api/admin/deletion-policy',
@@ -323,8 +326,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(18)
-    expect(DENIED.size).toBe(49)
-    expect(registered().length).toBe(73)
+    expect(DENIED.size).toBe(51)
+    expect(registered().length).toBe(75)
   })
 
   it('refuses every denied route with the read-only message', async () => {

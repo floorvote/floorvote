@@ -20,6 +20,7 @@ import { Config } from './pages/admin/Config'
 import { Notifications } from './pages/admin/Notifications'
 import { DraftBills } from './pages/admin/DraftBills'
 import { Calendar, calendarLoader } from './pages/Calendar'
+import { People } from './pages/People'
 import { useAuth } from './hooks/useAuth'
 import { SidebarRefreshProvider } from './context/SidebarRefreshContext'
 import { FeedUnreadProvider } from './context/FeedUnreadContext'
@@ -189,6 +190,7 @@ export const routes = createRoutesFromElements(
         <Route path="bills" element={<BillList />} loader={billListLoader} />
         <Route path="bills/:billId" element={<BillDetail />} loader={billDetailLoader} errorElement={<BillDetailError />} />
         <Route path="calendar" element={<Calendar />} loader={calendarLoader} />
+        <Route path="people" element={<People />} />
         <Route path="profile" element={<Profile />} />
         <Route element={<RequireAdmin />}>
           <Route path="admin" element={<Navigate to="/admin/members" replace />} />

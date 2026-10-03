@@ -12,6 +12,8 @@ import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?r
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
 import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
 import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
+import migration0023 from '../../migrations-legiscan/0023_council_history.sql?raw'
+import migration0024 from '../../migrations-legiscan/0024_council_seated.sql?raw'
 
 // Mock the LegiScan API surface. The processor calls getBill at the top of
 // processLsBill. We don't want real network calls.
@@ -28,7 +30,8 @@ vi.mock('../../src/lib/legiscan', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { processLsIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor-legiscan'
+import { processLsIngestorQueue, validateTextPayload, ingestLsBill, isVersionAddressable } from '../../src/queue/processor-legiscan'
+import { limsBillId, limsDocId, limsSessionId } from '../../src/lib/lims-ids'
 import * as legiscan from '../../src/lib/legiscan'
 
 function parseMigration(sql: string, name: string) {
@@ -52,6 +55,8 @@ beforeEach(async () => {
     parseMigration(migration0013, '0013_tenants_queue_id'),
     parseMigration(migration0016, '0016_bill_texts_fetch_error'),
     parseMigration(migration0017, '0017_tenant_ai_personalized'),
+    parseMigration(migration0023, '0023_council_history'),
+    parseMigration(migration0024, '0024_council_seated'),
   ])
   fetchMock.mockReset()
   // Default: text downloads succeed with empty html so r2_key gets stamped.
@@ -493,6 +498,87 @@ describe('downloadTextToR2: bot-wall handling', () => {
     expect(row!.fetchError).toMatch(/expected a PDF/)
     expect(row!.fetchError).toMatch(/403/)
     expect(row!.fetchAttemptedAt).toBeTruthy()
+  })
+})
+
+describe('LIMS ids never reach LegiScan', () => {
+  const LIMS_BILL = limsBillId('B26-0400')!
+  const limsPdf = {
+    doc_id: limsDocId(224385), date: '2025-10-06', type: 'Introduction', type_id: 1,
+    mime: 'application/pdf', mime_id: 2, url: '',
+    state_link: 'https://lims.dccouncil.gov/downloads/LIMS/60460/Introduction/B26-0400-Introduction.pdf?Id=224385',
+    text_size: 0, text_hash: '',
+    alt_bill_text: 0, alt_mime: '', alt_mime_id: 0, alt_state_link: '', alt_text_size: 0, alt_text_hash: '',
+  }
+  const limsBill = () => buildFixtureBill({
+    bill_id: LIMS_BILL, session_id: limsSessionId(26), state: 'DC', bill_number: 'B26-0400',
+    texts: [limsPdf], votes: [], amendments: [], supplements: [], sasts: [],
+  })
+  const ingestOpts = { forceMetadata: false, forceAI: false, interactive: false, legiscanTextFallback: false }
+
+  it('does not call getBill for a LIMS bill id, and retries the message', async () => {
+    const db = drizzle(env.DB, { schema })
+    const batch = makeBatch(LIMS_BILL)
+
+    await processLsIngestorQueue(batch, makeEnv(), db)
+
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(batch.messages[0].retry).toHaveBeenCalled()
+    expect(batch.messages[0].ack).not.toHaveBeenCalled()
+  })
+
+  it('skips the getBillText fallback when legiscanTextFallback is false', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(legiscan.getBillText).mockClear()
+    fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
+      status: 200, headers: { 'content-type': 'text/html' },
+    }))
+
+    await ingestLsBill(limsBill(), makeEnv(), db, ingestOpts)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, limsPdf.doc_id)).get()
+    expect(legiscan.getBillText).not.toHaveBeenCalled()
+    expect(row!.r2Key).toBeNull()
+    expect(row!.fetchError).toMatch(/expected a PDF/)
+  })
+
+  it('skips the getBillText fallback on a skipFetch re-download of a LIMS bill', async () => {
+    const db = drizzle(env.DB, { schema })
+    fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
+      status: 200, headers: { 'content-type': 'text/html' },
+    }))
+    await ingestLsBill(limsBill(), makeEnv(), db, ingestOpts)
+    vi.mocked(legiscan.getBillText).mockClear()
+
+    await processLsIngestorQueue(makeBatch(LIMS_BILL, { skipFetch: true }), makeEnv(), db)
+
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(legiscan.getBillText).not.toHaveBeenCalled()
+  })
+
+  it('stores a LIMS document fetched directly', async () => {
+    const db = drizzle(env.DB, { schema })
+    fetchMock.mockResolvedValue(new Response(REAL_PDF, {
+      status: 200, headers: { 'content-type': 'application/pdf' },
+    }))
+
+    await ingestLsBill(limsBill(), makeEnv(), db, ingestOpts)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, limsPdf.doc_id)).get()
+    expect(row!.r2Key).toBe(`bills/legiscan-${LIMS_BILL}/texts/${limsPdf.doc_id}.pdf`)
+    expect(row!.fetchError).toBeNull()
+  })
+})
+
+describe('bill type on re-ingest', () => {
+  it('replaces the masterlist default with the type getBill reports', async () => {
+    const db = drizzle(env.DB, { schema })
+    // A masterlist-first stub: no type, so the column default 'B'.
+    await db.insert(schema.bills).values({ billId: 9001, changeHash: 'old', sessionId: 2154, state: 'WI', stateId: 50, billNumber: 'AR9', title: 't' } as any)
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ bill_type: 'R', bill_type_id: '2', bill_number: 'AR9' }))
+    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    const row = await db.select().from(schema.bills).where(eq(schema.bills.billId, 9001)).get()
+    expect(row).toMatchObject({ billType: 'R', billTypeId: '2' })
   })
 })
 

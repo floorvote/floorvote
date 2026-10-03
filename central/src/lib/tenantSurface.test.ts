@@ -128,6 +128,8 @@ describe('tenantSurface allowlist matcher', () => {
       ['POST', '/api/tenants/promote-bill/ri/legiscan:123',    'routes/adminApi.ts, billsApi/draftRoutes.ts'],
       ['POST', '/api/tenants/promote-bills/ri',                'billsApi/bulkRoutes.ts'],
       ['POST', '/api/bills/rich-batch',                        'routes/exportApi.ts'],
+      ['GET',  '/api/bills/council-events?from=2026-09-01&to=2026-12-31', 'lib/councilCalendar.ts'],
+      ['GET',  '/api/bills/council-directory',                 'routes/directoryApi.ts'],
       ['POST', '/api/admin/sync-keywords/ri',                  'routes/adminApi.ts'],
       ['POST', '/api/admin/update-bill-match-types/ri',        'routes/adminApi.ts'],
       ['POST', '/api/admin/reprocess-tenant/ri',               'lib/demoResetAndSeed.ts'],

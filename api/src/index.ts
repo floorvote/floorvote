@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { syncCouncilCalendarEvents } from './lib/councilCalendar'
+import { directoryRouter } from './routes/directoryApi'
 import { cors } from 'hono/cors'
 import { getCookie } from 'hono/cookie'
 import { bodyLimit } from 'hono/body-limit'
@@ -137,6 +139,7 @@ app.route('/api/stats', statsRouter)
 app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
+app.route('/api/directory', directoryRouter)
 
 app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
 
@@ -323,6 +326,17 @@ export default {
           console.warn(
             `[heal-ai] ${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
           )
+        }
+      }))
+      // Council calendar (DC LIMS): no-op unless the team has council_calendar_rules.
+      // A failure is logged, not thrown: the next hourly run retries, and an alert
+      // per transient central blip would be the same fatigue heal-ai avoids above.
+      ctx.waitUntil(runJob(env, 'council-calendar', async () => {
+        try {
+          const r = await syncCouncilCalendarEvents(env, db)
+          if (r && (r.upserted || r.cancelled || r.deleted)) console.log(`[council-calendar] upserted=${r.upserted} cancelled=${r.cancelled} deleted=${r.deleted}`)
+        } catch (err) {
+          console.error(`[council-calendar] sync failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
       return

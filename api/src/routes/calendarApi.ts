@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { eq, and, isNotNull, gte, lte, or, asc, inArray } from 'drizzle-orm'
+import { visibleCalendarSource } from '../lib/calendarVisibility'
 import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
@@ -108,10 +109,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       isNotNull(calendarEvents.date),
       gte(calendarEvents.date, from),
       lte(calendarEvents.date, to),
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-      ),
+      visibleCalendarSource,
       or(
         eq(calendarEvents.status, 'confirmed'),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),
@@ -120,7 +118,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     .all()
 
   // Linked bills for custom events come from the join table.
-  const customIds = rows.filter(r => r.source === 'custom').map(r => r.id)
+  const customIds = rows.filter(r => r.source === 'custom' || r.source === 'council').map(r => r.id)
   const linkMap = new Map<string, Array<{ id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }>>()
   if (customIds.length > 0) {
     const links = await db
@@ -156,7 +154,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   }
 
   const entries: EventResult[] = rows.map(r => {
-    const billsArr: EventBill[] = r.source === 'custom'
+    const billsArr: EventBill[] = r.source === 'custom' || r.source === 'council'
       ? (linkMap.get(r.id) ?? [])
       : (r.billNumber
           ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false }]
@@ -179,8 +177,9 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const result: EventResult[] = []
   const hearingGroups = new Map<string, EventResult>()
   for (const e of entries) {
-    if (e.source !== 'hearing') { result.push(e); continue }
-    const key = `${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+    // Deadlines group the same way: two bills whose Congressional review ends the same day share one entry.
+    if (e.source !== 'hearing' && e.source !== 'deadline') { result.push(e); continue }
+    const key = `${e.source}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
     const g = hearingGroups.get(key)
     if (!g) {
       hearingGroups.set(key, e)
@@ -197,7 +196,14 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     if (e.status === 'confirmed') g.status = 'confirmed'
   }
 
-  return c.json(result)
+  // A Council calendar event carries the time and room LIMS's bill history
+  // lacks, so it supersedes a date-only bill hearing on the same day for the
+  // same bill: drop the bill hearing rather than show the event twice.
+  const councilDays = new Set(result.filter(e => e.source === 'council').flatMap(e => e.bills.map(b => `${e.date}|${b.id}`)))
+  const deduped = councilDays.size === 0 ? result : result.filter(e =>
+    e.source !== 'hearing' || !e.bills.length || !e.bills.every(b => councilDays.has(`${e.date}|${b.id}`)))
+
+  return c.json(deduped)
 })
 
 calendarRouter.get('/bill-options', requireAuth, async (c) => {
@@ -394,10 +400,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     .from(calendarEvents)
     .leftJoin(bills, eq(calendarEvents.billId, bills.id))
     .where(and(
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-      ),
+      visibleCalendarSource,
       or(
         and(eq(calendarEvents.status, 'confirmed'), gte(calendarEvents.date, confirmedCutoff)),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),
@@ -413,7 +416,9 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
   }
   const calName = `${assocName} — Tracked Hearings`
 
-  const customUids = rows.filter(r => r.source === 'custom').map(r => r.uid)
+  // Council events (DC LIMS) link bills through the join table, like custom ones.
+  const linked = (source: string) => source === 'custom' || source === 'council'
+  const customUids = rows.filter(r => linked(r.source)).map(r => r.uid)
   const numbersByUid = new Map<string, string[]>()
   const stateByUid = new Map<string, string>() // custom event → first linked bill's state
   const firstBillByUid = new Map<string, { id: string; state: string | null; session: string | null; billNumber: string }>()
@@ -439,11 +444,13 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
   const host = new URL(c.req.url).host
   const calendarHref = `https://${host}/calendar`
 
-  const events: IcalEvent[] = rows.map(r => {
+  // Same rule as GET /events: a Council event supersedes a date-only bill hearing on its day.
+  const councilDays = new Set(rows.filter(r => r.source === 'council').flatMap(r => (numbersByUid.get(r.uid) ?? []).map(n => `${r.date}|${n}`)))
+  const events: IcalEvent[] = rows.filter(r => r.source !== 'hearing' || !r.billNumber || !councilDays.has(`${r.date}|${r.billNumber}`)).map(r => {
     const customNumbers = numbersByUid.get(r.uid) ?? []
     let summary: string
     // Title first, then bill number(s): "<description> — <bills>".
-    if (r.source === 'custom') {
+    if (linked(r.source)) {
       const desc = (r.description ?? '').trim() || 'Event'
       const suffix = customNumbers.length > 0 ? ` — ${customNumbers.join(', ')}` : ''
       summary = `${desc}${suffix}`
@@ -458,11 +465,11 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     // When no state resolves (multi-state instance + custom event with no linked
     // bill), use the creator's captured browser zone, then the configured
     // default — never a floating time (which calendar clients misread as UTC).
-    const state = (r.source === 'custom' ? stateByUid.get(r.uid) : r.state) || c.env.STATE || null
+    const state = (linked(r.source) ? stateByUid.get(r.uid) : r.state) || c.env.STATE || null
 
     let description: string | null = null
     let url: string | null = null
-    if (r.source === 'custom') {
+    if (linked(r.source)) {
       const fb = firstBillByUid.get(r.uid)
       const billHref = fb ? encodeURI(`https://${host}${billUrl({ id: fb.id, state: fb.state, session: fb.session, billNumber: fb.billNumber })}`) : null
       description = customBody({ details: r.details, url: r.url, billNumbers: customNumbers, billHref, calendarHref, assoc: assocName })

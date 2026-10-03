@@ -12,6 +12,8 @@ import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_ch
 import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
 import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
 import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
+import migration0023 from '../../migrations-legiscan/0023_council_history.sql?raw'
+import migration0024 from '../../migrations-legiscan/0024_council_seated.sql?raw'
 
 // Mock the legiscan module — runFullPass uses getMasterListBySession + refreshLsSessions
 // (which calls getSessionList); runRawPass uses getMasterListRaw.
@@ -34,6 +36,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
 import { runLsSync } from '../../src/cron/sync-legiscan'
 import * as legiscan from '../../src/lib/legiscan'
 import * as queuesRest from '../../src/lib/queuesRest'
+import { limsSessionId } from '../../src/lib/lims-ids'
 
 function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -66,6 +69,8 @@ beforeEach(async () => {
     parseMigration(migration0006, '0006_texts_fetched_at'),
     parseMigration(migration0013, '0013_tenants_queue_id'),
     parseMigration(migration0017, '0017_tenant_ai_personalized'),
+    parseMigration(migration0023, '0023_council_history'),
+    parseMigration(migration0024, '0024_council_seated'),
   ])
   vi.clearAllMocks()
   // Re-establish the default for getSessionList after clearAllMocks wipes implementations.
@@ -660,5 +665,25 @@ describe('runLsSync → wildcard stateCoverage', () => {
     // No sync log entries — nothing to sync
     const logRows = await db.select().from(schema.sessionSyncLog).all()
     expect(logRows).toHaveLength(0)
+  })
+})
+
+describe('runLsSync: LIMS sessions', () => {
+  it('never asks LegiScan for the masterlist of a LIMS session', async () => {
+    const db = drizzle(env.DB, { schema })
+    const etHour = getCurrentEtHour()
+    const both = { state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2026, sessionTitle: 'T', sessionName: 'T',
+      fullSyncHoursEt: JSON.stringify([etHour]), rawSyncHoursEt: JSON.stringify([]) }
+    await db.insert(sessions).values([
+      { sessionId: 9300, ...both },
+      { sessionId: limsSessionId(26), ...both },
+    ])
+    await db.insert(tenants).values({ tenantId: 'test-lims', name: 'T', stateCoverage: JSON.stringify(['DC']), active: true })
+    vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([])
+
+    await runLsSync({ ...(env as any), INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() } }, db)
+
+    const asked = vi.mocked(legiscan.getMasterListBySession).mock.calls.map(c => c[0])
+    expect(asked).toEqual([9300])
   })
 })

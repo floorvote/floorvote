@@ -35,6 +35,8 @@ const ALLOW: SurfacePattern[] = [
   { method: 'GET', segments: ['api', 'bills', ':id', 'text', ':docId'] },
   { method: 'GET', segments: ['api', 'bills', ':id', 'changes'] },
   { method: 'GET', segments: ['api', 'bills', 'sessions'] },
+  { method: 'GET', segments: ['api', 'bills', 'council-events'] },
+  { method: 'GET', segments: ['api', 'bills', 'council-directory'] },
   { method: 'POST', segments: ['api', 'bills', 'rich-batch'] },
   { method: 'POST', segments: ['api', 'tenants', 'register'] },
   { method: 'POST', segments: ['api', 'tenants', 'reprocess', ':id'] },

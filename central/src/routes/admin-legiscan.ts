@@ -5,11 +5,13 @@ import * as schema from '../db/schema-legiscan'
 import { bills, billTenants, tenants, keywordRegistry, sessions, apiCallLog } from '../db/schema-legiscan'
 import { matchesUnion } from '../lib/keywords'
 import { getMasterListBySession } from '../lib/legiscan'
+import { isLimsSessionId } from '../lib/lims-ids'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runLsSync } from '../cron/sync-legiscan'
+import { runLimsSync, importLimsMeasures } from '../cron/sync-lims'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
@@ -39,6 +41,34 @@ adminLsRoutes.post('/trigger-sync', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   await runLsSync(c.env, db)
   return c.json({ ok: true, message: 'sync triggered' })
+})
+
+// Run the DC LIMS sync now instead of waiting for its full-pass hours (see
+// cron/sync-lims.ts). Refreshes the Council Period and members, then runs a full
+// pass: a handful of BulkData calls plus queueing, so it finishes in seconds.
+adminLsRoutes.post('/lims-sync', async (c) => {
+  if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const passes = await runLimsSync(c.env, db, { force: true })
+  return c.json({ ok: true, passes })
+})
+
+// Import specific LIMS measures from any Council Period and track them for one
+// tenant as manual picks (full ingest + AI). Body: { "tenantId": "oca",
+// "numbers": ["B25-0345", "B25-0291"] }. See importLimsMeasures in cron/sync-lims.ts.
+adminLsRoutes.post('/lims-import', async (c) => {
+  if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
+  const body = await c.req.json<{ tenantId?: string; numbers?: unknown }>().catch(() => ({} as { tenantId?: string; numbers?: unknown }))
+  const numbers = Array.isArray(body.numbers) ? body.numbers.filter((n): n is string => typeof n === 'string') : []
+  if (!body.tenantId || numbers.length === 0) return c.json({ error: 'tenantId and a non-empty numbers array are required' }, 400)
+  if (numbers.length > 200) return c.json({ error: 'at most 200 numbers per request' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  try {
+    const result = await importLimsMeasures(c.env, db, body.tenantId, numbers)
+    return c.json({ ok: true, ...result })
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 404)
+  }
 })
 
 // Superadmin email check (login-request path). Central is the SOLE issuer of the
@@ -493,6 +523,8 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   let refreshed = 0
 
   for (const sessionId of sessionIds) {
+    // LIMS sessions have no LegiScan masterlist; their stubs refresh on the LIMS sync.
+    if (isLimsSessionId(sessionId)) continue
     // 1 LegiScan call per session — logged from the egress callback so the row
     // records the outbound attempt, not the intent to make one.
     const trackCall = () => {

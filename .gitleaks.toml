@@ -25,6 +25,9 @@ regexes = [
   # deployment-specific. Only the throwaway TEST keypair above is allowlisted.
   # LegiScan API reference sample access_key (per-dataset download token, not a secret).
   '''3Qd0kRszXtZuRloonDQx63''',
+  # dccouncil.gov's New Relic browser key, embedded in every page the Council
+  # serves to the public; saved pages under central/test/fixtures/dccouncil/ carry it.
+  '''NRJS-3fa9fc504ef297f468c''',
 ]
 paths = [
   '''.env.secrets''',
