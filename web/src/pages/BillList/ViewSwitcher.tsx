@@ -317,8 +317,9 @@ export function ViewSwitcher({
                     <button onClick={cancelRename} style={inlineEditCancelStyle()}>Cancel</button>
                   </div>
                   {/* Below the row, not in it: the menu has a fixed width and
-                      the row is already input + Save + Cancel. */}
-                  <MissingRequiredReason {...renameGate.reasonProps} style={{ padding: '0 12px 7px' }} />
+                      the row is already input + Save + Cancel, and revealing it
+                      must not move Save. */}
+                  <MissingRequiredReason {...renameGate.reasonProps} style={{ padding: '0 12px 7px', marginTop: 0 }} />
                 </div>
               )
             }

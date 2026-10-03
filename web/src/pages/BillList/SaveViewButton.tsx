@@ -110,6 +110,7 @@ export function SaveViewButton({
               Save view
             </button>
           </div>
+          {/* Below the button row, not in it: revealing it must not move Save view. */}
           <MissingRequiredReason {...gate.reasonProps} style={{ marginTop: 6, textAlign: 'right' }} />
         </div>
       )}

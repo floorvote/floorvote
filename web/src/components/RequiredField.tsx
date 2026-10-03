@@ -12,7 +12,9 @@ import { FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
 //      required, an empty box speaks for itself.
 //   2. gates its submit button with useRequiredSubmit(), passing the
 //      missing-required check separately from every other disabled reason, and
-//      renders <MissingRequiredReason {...gate.reasonProps} /> beside the button.
+//      renders <MissingRequiredReason {...gate.reasonProps} /> on its own line
+//      BELOW the button's row: after the row element, never inside it, and
+//      never inline before or beside the button.
 //
 // The gate is quiet until tried. While a required value is missing the button
 // looks disabled and carries aria-disabled, but stays hoverable, focusable, and
@@ -20,6 +22,14 @@ import { FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
 // focusing, or clicking it reveals REQUIRED_MESSAGE; leaving or blurring hides
 // it. Nothing shows before that. The wording is generic on purpose, never names
 // the missing items, and is the same everywhere.
+//
+// Revealing the message never moves the button or anything above it (#237).
+// It used to mount on reveal, inline before Save in a right-aligned wrapping
+// row: hovering Save reflowed the row, Save slid out from under the cursor,
+// mouseleave hid the message, Save slid back, and the page jittered forever.
+// So MissingRequiredReason is always mounted and always takes its line; only
+// its visibility changes. And it goes below the button's row, so even its own
+// line cannot push the button.
 //
 // An inline editor (one value edited in place, saved with Enter or a Save
 // button) uses the same gate on its Save button. Enter in the field does not go
@@ -62,14 +72,25 @@ export function requiredName(name: string): string {
   return `${name} (required)`
 }
 
+// A compact helper-text line. display/flexBasis make it a full line of its
+// own wherever it lands; visibility (not mounting) is the only thing a reveal
+// changes, so the line's space is reserved from the start.
+const REASON_LINE: CSSProperties = { ...HELPER_TEXT, display: 'block', flexBasis: '100%', lineHeight: 1.4, marginTop: 4 }
+
 /**
- * REQUIRED_MESSAGE, for beside a gated submit button. Renders nothing unless
- * `show`. Spread useRequiredSubmit's reasonProps.
+ * REQUIRED_MESSAGE, on its own line below a gated submit button's row.
+ * Spread useRequiredSubmit's reasonProps. Always rendered: hidden, it keeps
+ * its space with `visibility: hidden`, is aria-hidden, and has no id (so no
+ * aria-describedby can reach it); shown, it takes the id the button and field
+ * point at. `style` can adjust spacing or color, never visibility.
  */
 export function MissingRequiredReason({ id, show, style }: { id: string; show: boolean; style?: CSSProperties }) {
-  if (!show) return null
   return (
-    <div id={id} style={{ ...HELPER_TEXT, ...style }}>
+    <div
+      id={show ? id : undefined}
+      aria-hidden={show ? undefined : 'true'}
+      style={{ ...REASON_LINE, ...style, visibility: show ? 'visible' : 'hidden' }}
+    >
       {REQUIRED_MESSAGE}
     </div>
   )
@@ -94,7 +115,9 @@ export function MissingRequiredReason({ id, show, style }: { id: string; show: b
  * - neither: an ordinary enabled button that calls `onClick`.
  *
  *   const gate = useRequiredSubmit({ missingRequired: !name.trim(), blocked: saving || demoLocked })
- *   <button {...gate.buttonProps(handleSave)} style={actionBtnBlue(gate.disabled)}>Save</button>
+ *   <div style={{ display: 'flex', gap: 8 }}>
+ *     <button {...gate.buttonProps(handleSave)} style={actionBtnBlue(gate.disabled)}>Save</button>
+ *   </div>
  *   <MissingRequiredReason {...gate.reasonProps} />
  */
 export function useRequiredSubmit({ missingRequired, blocked = false }: { missingRequired: boolean; blocked?: boolean }) {
@@ -164,6 +187,7 @@ export function useRequiredSubmit({ missingRequired, blocked = false }: { missin
     reset,
     /** For the field whose Enter was refused: ties the message to it while shown. */
     fieldProps: { 'aria-describedby': show && tried ? id : undefined },
+    /** For MissingRequiredReason; it uses the id only while shown. */
     reasonProps: { id, show },
   }
 }

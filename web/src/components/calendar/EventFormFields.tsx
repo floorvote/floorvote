@@ -121,7 +121,6 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
       <BillPicker options={billOptions} value={billIds} onChange={setBillIds} multiState={multiState} />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 16 }}>
-        <MissingRequiredReason {...gate.reasonProps} style={{ marginRight: 'auto' }} />
         <button type="button" onClick={onClose} style={{ background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '7px 14px', cursor: 'pointer', fontSize: fontSize.sm }}>Cancel</button>
         <button type="button" {...gate.buttonProps(submit)} style={{
           background: !gate.disabled ? color.accentBlue : color.accentBlueMuted, color: color.white, border: 'none',
@@ -129,6 +128,10 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
           fontSize: fontSize.sm, fontWeight: fontWeight.medium,
         }}>Save</button>
       </div>
+      {/* Its own line below the buttons, right-aligned under Save. It used to sit
+          inline before Save in this right-aligned wrapping row, so revealing it
+          on hover pushed Save out from under the cursor and back, forever (#237). */}
+      <MissingRequiredReason {...gate.reasonProps} style={{ textAlign: 'right' }} />
     </div>
   )
 }

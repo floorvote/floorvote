@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
 import { REQUIRED_MESSAGE } from '../components/RequiredField'
-import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked } from '../test/quietGate'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, gateMessage } from '../test/quietGate'
 
 // The draft bill-number and State inline editors refuse a blank value with the
 // shared quiet gate: while the value is blank or whitespace, Save looks
@@ -287,7 +287,7 @@ describe('BillDetail draft bill-number editor: blank value', () => {
     expectMessageShown(saveButton())
 
     await user.click(cancelButton())
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     expect(screen.getByRole('button', { name: 'Edit bill number' })).toHaveTextContent('Bill number: D1')
 
     await user.click(screen.getByRole('button', { name: 'Edit bill number' }))
@@ -304,7 +304,7 @@ describe('BillDetail draft bill-number editor: blank value', () => {
     expectMessageShown(saveButton())
 
     await user.type(input, '{Escape}')
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Edit bill number' }))
     await user.clear(screen.getByRole('textbox', { name: /bill number/i }))
     expectMessageHidden(saveButton())
@@ -431,7 +431,7 @@ describe('BillDetail draft State editor (free text): blank value', () => {
     expectMessageShown(saveButton())
 
     await user.click(cancelButton())
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Edit state' }))
     await user.clear(screen.getByRole('textbox', { name: /state/i }))
@@ -443,7 +443,7 @@ describe('BillDetail draft State editor (free text): blank value', () => {
     await user.clear(input)
     await user.type(input, '{Enter}')
     await user.type(input, '{Escape}')
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Edit state' }))
     await user.clear(screen.getByRole('textbox', { name: /state/i }))
@@ -536,7 +536,7 @@ describe('BillDetail draft State editor (Picker): blank value', () => {
     expectMessageShown(saveButton())
 
     await user.click(cancelButton())
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Edit state' }))
     await chooseNone(user, await screen.findByRole('button', { name: 'State (required)' }))
     expectMessageHidden(saveButton())

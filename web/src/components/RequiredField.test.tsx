@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import * as RequiredField from './RequiredField'
 import { MissingRequiredReason, REQUIRED_MESSAGE, useRequiredSubmit } from './RequiredField'
-import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, tabTo } from '../test/quietGate'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, expectHiddenMessageNode, tabTo } from '../test/quietGate'
 
 // The shared quiet gate for submit buttons, exercised through a minimal form.
 
@@ -24,7 +24,7 @@ function Harness({ blocked = false, onSubmit, asFormSubmit = false }: { blocked?
     <>
       <label htmlFor="v">Value</label>
       <input id="v" aria-required="true" value={value} onChange={e => setValue(e.target.value)} />
-      {button}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>{button}</div>
       <MissingRequiredReason {...gate.reasonProps} />
       <button type="button">After</button>
     </>
@@ -174,8 +174,10 @@ function InlineHarness({ onSave }: { onSave: (v: string) => void }) {
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter' && !gate.refuse()) { onSave(value); setOpen(false) } }}
       />
-      <button type="button" {...gate.buttonProps(() => { onSave(value); setOpen(false) })} style={{ cursor: gate.disabled ? 'not-allowed' : 'pointer' }}>Save</button>
-      <button type="button" onClick={() => { setOpen(false); gate.reset() }}>Cancel</button>
+      <div style={{ display: 'inline-flex', gap: 6 }}>
+        <button type="button" {...gate.buttonProps(() => { onSave(value); setOpen(false) })} style={{ cursor: gate.disabled ? 'not-allowed' : 'pointer' }}>Save</button>
+        <button type="button" onClick={() => { setOpen(false); gate.reset() }}>Cancel</button>
+      </div>
       <MissingRequiredReason {...gate.reasonProps} />
     </>
   )
@@ -254,15 +256,54 @@ describe('useRequiredSubmit: an inline editor', () => {
 })
 
 describe('MissingRequiredReason', () => {
-  it('renders nothing unless shown', () => {
-    const { container } = render(<MissingRequiredReason id="r" show={false} />)
-    expect(container).toBeEmptyDOMElement()
+  // jsdom does no layout, so "revealing it moves nothing" is checked through
+  // what guarantees it: the node is always mounted and only its visibility
+  // changes (see the layout note in test/quietGate.ts).
+  it('keeps the message mounted while hidden: visibility hidden, aria-hidden, and no id', () => {
+    render(<MissingRequiredReason id="r" show={false} />)
+    const el = screen.getByText(REQUIRED_MESSAGE)
+    expectHiddenMessageNode(el)
+    expect(el.style.visibility).toBe('hidden')
+    expect(document.getElementById('r')).toBeNull()
   })
 
-  it('renders exactly the message, with no asterisk', () => {
+  it('renders exactly the message when shown, visible, with its id and no aria-hidden', () => {
     render(<MissingRequiredReason id="r" show />)
     const el = screen.getByText(REQUIRED_MESSAGE)
     expect(el.id).toBe('r')
     expect(el.textContent).toBe(REQUIRED_MESSAGE)
+    expect(el).toBeVisible()
+    expect(el).not.toHaveAttribute('aria-hidden')
+  })
+
+  it('is the same element, in the same box, shown or hidden: only visibility changes', () => {
+    const { rerender } = render(<MissingRequiredReason id="r" show={false} />)
+    const hidden = screen.getByText(REQUIRED_MESSAGE)
+    const boxOf = (el: HTMLElement) => {
+      const { display, lineHeight, fontSize, margin, marginTop, padding, flexBasis } = el.style
+      return { display, lineHeight, fontSize, margin, marginTop, padding, flexBasis }
+    }
+    const hiddenBox = boxOf(hidden)
+    rerender(<MissingRequiredReason id="r" show />)
+    const shown = screen.getByText(REQUIRED_MESSAGE)
+    expect(shown).toBe(hidden)
+    expect(boxOf(shown)).toEqual(hiddenBox)
+  })
+
+  it('is its own block line at a compact helper-text line height', () => {
+    render(<MissingRequiredReason id="r" show={false} />)
+    const el = screen.getByText(REQUIRED_MESSAGE)
+    expect(el.tagName).toBe('DIV')
+    expect(el.style.display).toBe('block')
+    expect(el.style.lineHeight).toBe('1.4')
+    // Even if someone drops it into a wrapping flex row, it takes a full line.
+    expect(el.style.flexBasis).toBe('100%')
+  })
+
+  it('cannot be made to show or hide by a caller style', () => {
+    const { rerender } = render(<MissingRequiredReason id="r" show={false} style={{ visibility: 'visible' }} />)
+    expect(screen.getByText(REQUIRED_MESSAGE)).not.toBeVisible()
+    rerender(<MissingRequiredReason id="r" show style={{ visibility: 'hidden' }} />)
+    expect(screen.getByText(REQUIRED_MESSAGE)).toBeVisible()
   })
 })

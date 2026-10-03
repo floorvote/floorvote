@@ -1448,7 +1448,8 @@ export function BillDetail() {
                     {linking ? 'Linking…' : 'Link & merge into filed bill'}
                   </button>
                 </div>
-                <MissingRequiredReason {...linkGate.reasonProps} style={{ color: color.textAmberWarning, alignSelf: 'flex-end' }} />
+                {/* Below the picker-and-button row, never in it: revealing it must not move the button. */}
+                <MissingRequiredReason {...linkGate.reasonProps} style={{ color: color.textAmberWarning, alignSelf: 'flex-end', marginTop: -4 }} />
               </div>
             ) : null}
           </div>
@@ -1743,8 +1744,12 @@ export function BillDetail() {
             rather than losing it to an uncaught rejection. */}
         {bill.isDraft && isAdmin && (
           <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginTop: 4, marginBottom: 0, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-            <span>
+            {/* A div, not a span: while editing it holds the form and, on its own
+                line below the form's buttons, the required message. (As a flex
+                item it is blockified either way, so nothing else changes.) */}
+            <div>
               {editingDraftField === 'billNumber' ? (
+                <>
                 <form
                   onSubmit={async (e) => {
                     e.preventDefault()
@@ -1791,8 +1796,10 @@ export function BillDetail() {
                   />
                   <button type="submit" {...draftNumberGate.buttonProps()} style={draftSaveStyle(draftNumberGate.disabled)}>Save</button>
                   <button type="button" onClick={closeDraftEditor} style={DRAFT_CANCEL_STYLE}>Cancel</button>
-                  <MissingRequiredReason {...draftNumberGate.reasonProps} />
                 </form>
+                {/* Below the form's row, never in it: revealing it must not move Save. */}
+                <MissingRequiredReason {...draftNumberGate.reasonProps} />
+                </>
               ) : (
                 // The label is folded into the button's own text (rather than a
                 // preceding sibling, as the sponsor row above uses) so this
@@ -1823,7 +1830,7 @@ export function BillDetail() {
                   {`Bill number: ${bill.billNumber}`}
                 </button>
               )}
-            </span>
+            </div>
 
             <span>
               {editingDraftField === 'year' ? (
@@ -1938,8 +1945,10 @@ export function BillDetail() {
                 DraftBills.tsx); it falls back to free text when facets yields
                 nothing usable. */}
             {tenantState === null && (
-              <span>
+              // A div for the same reason as the bill-number one above.
+              <div>
                 {editingDraftField === 'state' ? (
+                  <>
                   <form
                     onSubmit={async (e) => {
                       e.preventDefault()
@@ -2023,8 +2032,10 @@ export function BillDetail() {
                     )}
                     <button type="submit" {...draftStateGate.buttonProps()} style={draftSaveStyle(draftStateGate.disabled)}>Save</button>
                     <button type="button" onClick={closeDraftEditor} style={DRAFT_CANCEL_STYLE}>Cancel</button>
-                    <MissingRequiredReason {...draftStateGate.reasonProps} />
                   </form>
+                  {/* Below the form's row, never in it: revealing it must not move Save. */}
+                  <MissingRequiredReason {...draftStateGate.reasonProps} />
+                  </>
                 ) : (
                   // Same fold-the-label-in reasoning as the two buttons above:
                   // a bare "UT" would collide with the state shown in the chip
@@ -2061,7 +2072,7 @@ export function BillDetail() {
                       : <>State: <span style={{ color: color.textMuted, fontStyle: 'italic' }}>None — click to add</span></>}
                   </button>
                 )}
-              </span>
+              </div>
             )}
 
             {draftFieldError && (

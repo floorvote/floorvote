@@ -6,7 +6,7 @@ import { Members } from './Members'
 import * as api from '../../lib/api'
 import { REQUIRED_MESSAGE } from '../../components/RequiredField'
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
-import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, expectButtonStyle } from '../../test/quietGate'
+import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, expectButtonStyle, gateMessage } from '../../test/quietGate'
 
 const OWNER = {
   id: 'owner-1',
@@ -226,7 +226,7 @@ describe('Members role rename: blank name', () => {
     expectMessageShown(saveButton())
 
     await user.type(input, '{Escape}')
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     await user.click(screen.getByRole('button', { name: /rename role finance committee/i }))
     const again = screen.getByRole('textbox', { name: 'Role name' })
     expect(again).toHaveValue('Finance Committee')
@@ -242,7 +242,7 @@ describe('Members role rename: blank name', () => {
     expectMessageShown(saveButton())
 
     await user.click(cancelButton())
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     expect(screen.queryByRole('textbox', { name: 'Role name' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /rename role finance committee/i }))
     const again = screen.getByRole('textbox', { name: 'Role name' })
@@ -267,7 +267,7 @@ describe('Members role rename: blank name', () => {
     await user.type(input, '{Enter}')
 
     expect(await screen.findByRole('button', { name: /rename role finance committee/i })).toBeInTheDocument()
-    expect(screen.queryByText(REQUIRED_MESSAGE)).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
     expect(patchCalls()).toHaveLength(0)
   })
 })

@@ -355,8 +355,9 @@ export function DraftBills() {
               >
                 Cancel
               </button>
-              <MissingRequiredReason {...createGate.reasonProps} />
             </div>
+            {/* Below the button row, never in it: revealing it must not move the buttons. */}
+            <MissingRequiredReason {...createGate.reasonProps} style={{ marginTop: -6 }} />
           </div>
         )}
         {draftList !== null && (

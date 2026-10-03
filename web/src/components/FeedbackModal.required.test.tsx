@@ -114,6 +114,6 @@ describe('FeedbackModal: once filled, and other disabled reasons', () => {
     fireEvent.change(message(), { target: { value: 'Hello' } })
     fireEvent.click(sendButton())
     await screen.findByText(/feedback sent/i)
-    expect(gateMessage()).not.toBeInTheDocument()
+    expect(gateMessage()).toBeNull()
   })
 })

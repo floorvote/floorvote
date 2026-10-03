@@ -1228,8 +1228,9 @@ export function Config() {
           >
             {cfAdding ? 'Adding…' : 'Add field'}
           </button>
-          <MissingRequiredReason {...cfGate.reasonProps} style={{ paddingBottom: 8 }} />
         </div>
+        {/* Below the fields-and-button row, never in it: revealing it must not move Add field. */}
+        <MissingRequiredReason {...cfGate.reasonProps} />
         </div>
 
       </div>

@@ -682,7 +682,8 @@ export function Members() {
         <div style={{ ...HELPER_TEXT, marginTop: 4, marginBottom: 14 }}>
           Assign roles to members (e.g., by committee, office, or region). In comments, any member can @-mention a role to notify everyone with that particular role. Role labels also appear as badges when you hover a commenter's name.
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+        <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {orgRoles.map(role => (
             <Fragment key={role.id}>
               <span style={ROLE_CHIP}>
@@ -760,13 +761,15 @@ export function Members() {
               )}
             </Fragment>
           ))}
-          {/* Its own line under the chips. */}
-          {editingRoleId !== null && (
-            <MissingRequiredReason {...roleRenameGate.reasonProps} style={{ flexBasis: '100%' }} />
-          )}
           {orgRoles.length === 0 && (
             <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>No roles yet.</span>
           )}
+        </div>
+        {/* Its own line under the chips, outside their wrapping row: revealing
+            it must not reflow the chips and move Save. */}
+        {editingRoleId !== null && (
+          <MissingRequiredReason {...roleRenameGate.reasonProps} />
+        )}
         </div>
         <div role="group" aria-label="Add role">
           <label htmlFor="new-role-name" style={FORM_LABEL}>New role name</label>
@@ -787,8 +790,9 @@ export function Members() {
             >
               {addingRole ? 'Adding…' : 'Add'}
             </button>
-            <MissingRequiredReason {...addRoleGate.reasonProps} />
           </div>
+          {/* Below the input-and-button row, never in it: revealing it must not move Add. */}
+          <MissingRequiredReason {...addRoleGate.reasonProps} />
         </div>
       </div>
       {/* Members table card */}

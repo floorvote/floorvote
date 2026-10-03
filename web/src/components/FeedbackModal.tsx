@@ -108,13 +108,14 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
             >
               {status === 'sending' ? 'Sending…' : 'Send feedback'}
             </button>
-            <MissingRequiredReason {...gate.reasonProps} />
             {status !== 'sending' && !isMobile && (
               <span style={{ fontSize: fontSize.sm, color: color.textMuted }}>
                 {isMac() ? '⌘↵' : 'Ctrl+Enter'} to send
               </span>
             )}
           </div>
+          {/* Below the button row, never in it: revealing it must not move Send. */}
+          <MissingRequiredReason {...gate.reasonProps} />
         </>
       )}
     </Dialog>
