@@ -3,11 +3,12 @@ import { render, screen, within, waitFor, act } from '@testing-library/react'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
 
-// The required-field pattern on the "Add custom field" form: Name is always
-// required, and a dropdown field also needs at least one option. "Add field"
-// stays disabled with the visible "Missing a required field (*)" reason until
-// both are present, instead of letting the server reject an option-less
-// dropdown and surfacing that rejection as a browser alert.
+// The quiet required-field gate on the "Add custom field" form: Name is always
+// required, and a dropdown also needs at least one option. "Add field" looks
+// disabled until both are present and says "Fill in the required items first."
+// only when someone tries it, instead of letting the server reject an
+// option-less dropdown and surfacing that rejection as a browser alert. The
+// form shows no asterisks or legend; aria-required stays on its inputs.
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
@@ -44,9 +45,9 @@ vi.mock('../../lib/exportData', () => ({ exportAllData: vi.fn() }))
 
 import { apiFetch } from '../../lib/api'
 import { Config } from './Config'
+import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked } from '../../test/quietGate'
 
 const mockFetch = vi.mocked(apiFetch)
-const REASON = 'Missing a required field (*)'
 
 const BASE_CONFIG = {
   keywords: [],
@@ -87,10 +88,6 @@ function addButton(f: HTMLElement) {
   return within(f).getByRole('button', { name: /^(add field|adding…)$/i })
 }
 
-function reason(f: HTMLElement) {
-  return within(f).queryByText('Missing a required field')
-}
-
 async function setup() {
   const user = userEvent.setup()
   render(<Config />)
@@ -113,18 +110,36 @@ beforeEach(() => {
 })
 afterEach(() => { alertSpy.mockRestore() })
 
-describe('Config "Add custom field" required fields', () => {
-  it('shows a "* Required" legend on the form', async () => {
-    const { f } = await setup()
-    expect(within(f).getByText('Required').parentElement).toHaveTextContent('* Required')
+describe('Config "Add custom field": quiet gate while Name is empty', () => {
+  itGatesQuietly(async () => {
+    const { user, f } = await setup()
+    return { user, button: () => addButton(f), submitted: () => posts().length, scope: () => f }
+  })
+})
+
+describe('Config "Add custom field": quiet gate for a named dropdown with no options', () => {
+  itGatesQuietly(async () => {
+    const { user, f } = await setup()
+    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
+    await chooseDropdown(user, f)
+    return { user, button: () => addButton(f), submitted: () => posts().length, scope: () => f }
+  })
+})
+
+describe('Config "Add custom field": markers', () => {
+  it('shows no "* Required" legend and no asterisks', async () => {
+    const { user, f } = await setup()
+    await chooseDropdown(user, f)
+    expect(within(f).queryByText('Required')).not.toBeInTheDocument()
+    expect(f.textContent).not.toContain('*')
   })
 
-  it('labels the Name input and marks it required', async () => {
+  it('labels the Name input and keeps aria-required on it', async () => {
     const { f } = await setup()
     const name = within(f).getByLabelText(/^name/i)
     expect(name.tagName).toBe('INPUT')
     expect(name).toHaveAttribute('aria-required', 'true')
-    expect(within(f).getAllByText(/^Name/).find(el => el.tagName === 'LABEL')).toHaveTextContent('Name *')
+    expect(name).toHaveAccessibleName('Name')
   })
 
   it('labels the Type select and does not mark it required', async () => {
@@ -134,104 +149,86 @@ describe('Config "Add custom field" required fields', () => {
     expect(type).not.toHaveAttribute('aria-required')
   })
 
-  it('shows the reason beside the disabled button while Name is empty', async () => {
-    const { f } = await setup()
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)?.closest('[id]')).toHaveTextContent(REASON)
+  it('keeps aria-required on the Options input once Dropdown is chosen', async () => {
+    const { user, f } = await setup()
+    await chooseDropdown(user, f)
+    const options = within(f).getByLabelText(/^options/i)
+    expect(options).toHaveAttribute('aria-required', 'true')
+    expect(options).toHaveAccessibleName('Options (comma-separated)')
+  })
+})
+
+describe('Config "Add custom field": Name', () => {
+  it('lifts the gate once Name is typed, with no message on hover', async () => {
+    const { user, f } = await setup()
+    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
+    expect(addButton(f)).toBeEnabled()
+    expect(addButton(f)).not.toHaveAttribute('aria-disabled')
+    await user.hover(addButton(f))
+    expectMessageHidden(addButton(f), f)
   })
 
-  it('links the disabled button to the reason with aria-describedby', async () => {
-    const { f } = await setup()
-    expect(addButton(f)).toHaveAccessibleDescription('Missing a required field')
-    const id = addButton(f).getAttribute('aria-describedby')
-    expect(document.getElementById(id!)).toHaveTextContent(REASON)
-  })
-
-  it('hides the reason once Name is typed, and brings it back when cleared', async () => {
+  it('blocks quietly again when Name is cleared', async () => {
     const { user, f } = await setup()
     const name = within(f).getByLabelText(/^name/i)
     await user.type(name, 'Committee')
-    expect(addButton(f)).toBeEnabled()
-    expect(reason(f)).not.toBeInTheDocument()
-    expect(addButton(f)).not.toHaveAttribute('aria-describedby')
-
     await user.clear(name)
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(f))
+    expectMessageHidden(addButton(f), f)
+  })
+
+  it('hides a shown message once Name is typed', async () => {
+    const { user, f } = await setup()
+    await user.hover(addButton(f))
+    expectMessageShown(addButton(f), f)
+    await user.type(within(f).getByLabelText(/^name/i), 'C')
+    expectMessageHidden(addButton(f), f)
   })
 
   it('treats a whitespace-only Name as missing', async () => {
     const { user, f } = await setup()
     await user.type(within(f).getByLabelText(/^name/i), '   ')
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).toBeInTheDocument()
-  })
-
-  it('does not show the reason when the button is disabled only by demo lock', async () => {
-    demo.demoLocked = true
-    const { user, f } = await setup()
-    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).not.toBeInTheDocument()
-    expect(addButton(f)).not.toHaveAttribute('aria-describedby')
-  })
-
-  it('does not show the reason under demo lock even while Name is empty', async () => {
-    demo.demoLocked = true
-    const { f } = await setup()
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).not.toBeInTheDocument()
-  })
-
-  it('does not show the reason while the create request is in flight', async () => {
-    mockApi({ hold: true })
-    const { user, f } = await setup()
-    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
+    expectQuietlyBlocked(addButton(f))
     await user.click(addButton(f))
-    await waitFor(() => expect(posts()).toHaveLength(1))
-    const busy = within(f).getByRole('button', { name: /adding/i })
-    expect(busy).toBeDisabled()
-    expect(reason(f)).not.toBeInTheDocument()
-    expect(busy).not.toHaveAttribute('aria-describedby')
-    await act(async () => { holdCreate?.release() })
+    expect(posts()).toHaveLength(0)
+    expectMessageShown(addButton(f), f)
   })
 
-  it('shows the reason again after a field is added and the form resets', async () => {
+  it('does not send a blank Name on Enter', async () => {
+    const { user, f } = await setup()
+    await user.type(within(f).getByLabelText(/^name/i), '  {Enter}')
+    expect(posts()).toHaveLength(0)
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it('is quiet again after a field is added and the form resets', async () => {
     const { user, f } = await setup()
     await user.type(within(f).getByLabelText(/^name/i), 'Committee')
     await user.click(addButton(f))
     await waitFor(() => expect(posts()).toHaveLength(1))
     await waitFor(() => expect(within(f).getByLabelText(/^name/i)).toHaveValue(''))
-    expect(reason(f)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(f))
+    expectMessageHidden(addButton(f), f)
   })
 })
 
 describe('Config "Add custom field": a dropdown needs at least one option', () => {
-  it('marks the Options input required once Dropdown is chosen', async () => {
-    const { user, f } = await setup()
-    await chooseDropdown(user, f)
-    const options = within(f).getByLabelText(/^options/i)
-    expect(options).toHaveAttribute('aria-required', 'true')
-    expect(within(f).getAllByText(/^Options/).find(el => el.tagName === 'LABEL')).toHaveTextContent('*')
-  })
-
-  it('blocks "Add field" with the reason for a named dropdown with no options', async () => {
+  it('blocks "Add field" quietly for a named dropdown with no options', async () => {
     const { user, f } = await setup()
     await user.type(within(f).getByLabelText(/^name/i), 'Committee')
     await chooseDropdown(user, f)
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).toBeInTheDocument()
-    expect(addButton(f)).toHaveAccessibleDescription('Missing a required field')
+    expectQuietlyBlocked(addButton(f))
+    expectMessageHidden(addButton(f), f)
   })
 
-  it('never calls window.alert or the server for an option-less dropdown, even on Enter', async () => {
+  it('never calls window.alert or the server for an option-less dropdown, on Enter or click', async () => {
     const { user, f } = await setup()
     await chooseDropdown(user, f)
-    const name = within(f).getByLabelText(/^name/i)
-    await user.type(name, 'Committee{Enter}')
+    await user.type(within(f).getByLabelText(/^name/i), 'Committee{Enter}')
     await user.click(addButton(f))
     expect(alertSpy).not.toHaveBeenCalled()
     expect(posts()).toHaveLength(0)
+    expectMessageShown(addButton(f), f)
   })
 
   it('treats options that are only commas and spaces as no options', async () => {
@@ -239,25 +236,25 @@ describe('Config "Add custom field": a dropdown needs at least one option', () =
     await user.type(within(f).getByLabelText(/^name/i), 'Committee')
     await chooseDropdown(user, f)
     await user.type(within(f).getByLabelText(/^options/i), ' , ,  ')
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(f))
     await user.type(within(f).getByLabelText(/^options/i), '{Enter}')
+    await user.click(addButton(f))
     expect(alertSpy).not.toHaveBeenCalled()
     expect(posts()).toHaveLength(0)
   })
 
-  it('enables "Add field" once an option is typed, and blocks it again when cleared', async () => {
+  it('lifts the gate once an option is typed, and blocks quietly again when cleared', async () => {
     const { user, f } = await setup()
     await user.type(within(f).getByLabelText(/^name/i), 'Committee')
     await chooseDropdown(user, f)
     const options = within(f).getByLabelText(/^options/i)
     await user.type(options, 'Finance')
     expect(addButton(f)).toBeEnabled()
-    expect(reason(f)).not.toBeInTheDocument()
+    expect(addButton(f)).not.toHaveAttribute('aria-disabled')
 
     await user.clear(options)
-    expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(f))
+    expectMessageHidden(addButton(f), f)
   })
 
   it('sends the dropdown once it has a name and an option', async () => {
@@ -277,18 +274,52 @@ describe('Config "Add custom field": a dropdown needs at least one option', () =
     const { user, f } = await setup()
     await user.type(within(f).getByLabelText(/^name/i), 'Committee')
     await chooseDropdown(user, f)
-    expect(addButton(f)).toBeDisabled()
+    expectQuietlyBlocked(addButton(f))
     await user.selectOptions(within(f).getByLabelText('Type'), 'text')
     expect(within(f).queryByLabelText(/^options/i)).not.toBeInTheDocument()
     expect(addButton(f)).toBeEnabled()
-    expect(reason(f)).not.toBeInTheDocument()
+    expect(addButton(f)).not.toHaveAttribute('aria-disabled')
+  })
+})
+
+describe('Config "Add custom field": other disabled reasons show no message', () => {
+  it('demo lock with Name typed: natively disabled, quiet', async () => {
+    demo.demoLocked = true
+    const { user, f } = await setup()
+    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
+    expect(addButton(f)).toBeDisabled()
+    expect(addButton(f)).not.toHaveAttribute('aria-disabled')
+    await user.hover(addButton(f))
+    expectMessageHidden(addButton(f), f)
   })
 
-  it('does not show the reason for an option-less dropdown under demo lock', async () => {
+  it('demo lock while Name is empty: natively disabled, quiet', async () => {
+    demo.demoLocked = true
+    const { user, f } = await setup()
+    expect(addButton(f)).toBeDisabled()
+    await user.hover(addButton(f))
+    expectMessageHidden(addButton(f), f)
+  })
+
+  it('demo lock for an option-less dropdown: natively disabled, quiet', async () => {
     demo.demoLocked = true
     const { user, f } = await setup()
     await chooseDropdown(user, f)
     expect(addButton(f)).toBeDisabled()
-    expect(reason(f)).not.toBeInTheDocument()
+    await user.hover(addButton(f))
+    expectMessageHidden(addButton(f), f)
+  })
+
+  it('a create request in flight: natively disabled, quiet', async () => {
+    mockApi({ hold: true })
+    const { user, f } = await setup()
+    await user.type(within(f).getByLabelText(/^name/i), 'Committee')
+    await user.click(addButton(f))
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    const busy = within(f).getByRole('button', { name: /adding/i })
+    expect(busy).toBeDisabled()
+    expect(busy).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(busy, f)
+    await act(async () => { holdCreate?.release() })
   })
 })

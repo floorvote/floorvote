@@ -166,12 +166,14 @@ describe('DraftBills state field on multi-state tenants', () => {
     await user.type(await screen.findByLabelText(/title/i), 'Multi-state draft')
 
     const submitBtn = screen.getByRole('button', { name: /create draft/i })
-    expect(submitBtn).toBeDisabled()
+    // Blocked quietly while State is missing (#231): aria-disabled, not native disabled.
+    expect(submitBtn).toHaveAttribute('aria-disabled', 'true')
 
     const stateTrigger = await screen.findByLabelText(/state/i)
     await user.click(stateTrigger)
     fireEvent.click(screen.getByRole('radio', { name: 'UT' }))
     expect(submitBtn).toBeEnabled()
+    expect(submitBtn).not.toHaveAttribute('aria-disabled')
 
     await user.click(submitBtn)
     expect(posted[0]).toMatchObject({ state: 'UT' })

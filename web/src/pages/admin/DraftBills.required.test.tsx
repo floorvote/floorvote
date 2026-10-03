@@ -4,19 +4,19 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { DraftBills } from './DraftBills'
 import * as api from '../../lib/api'
+import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked, gateMessage } from '../../test/quietGate'
 
-// The required-field pattern on the create-draft form: a "* Required" legend,
-// a red asterisk plus aria-required on each required field, and a visible
-// "Missing a required field (*)" reason next to the disabled Create draft
-// button while a required value is missing. On this form the only required
-// field is State, and only on a tenant that covers more than one state.
+// The quiet required-field gate on the create-draft form. The only required
+// field is State, and only on a tenant that covers more than one state; there
+// the form mixes required and optional inputs, so State keeps its red asterisk
+// (and aria-required, or "(required)" in a picker's name). "Create draft"
+// looks disabled while State is missing and says "Fill in the required items
+// first." only when someone tries it. No "* Required" legend anywhere.
 
 const demoState = vi.hoisted(() => ({ demoLocked: false }))
 vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
 }))
-
-const REASON = 'Missing a required field (*)'
 
 type Opts = {
   tenantState?: string | null
@@ -71,22 +71,34 @@ async function pickState(user: ReturnType<typeof userEvent.setup>, abbr: string)
   fireEvent.click(screen.getByRole('radio', { name: abbr }))
 }
 
-describe('DraftBills required fields: multi-state tenant (State is required)', () => {
+describe('DraftBills: quiet gate while State is missing (State picker)', () => {
   beforeEach(() => vi.restoreAllMocks())
-  afterEach(() => { demoState.demoLocked = false })
+  itGatesQuietly(async () => {
+    const { posted } = mockApi()
+    renderPage()
+    const user = await openForm()
+    return { user, button: submitButton, submitted: () => posted.length }
+  })
+})
 
-  it('shows a "* Required" legend on the form', async () => {
+describe('DraftBills: quiet gate while State is missing (free-text State)', () => {
+  beforeEach(() => vi.restoreAllMocks())
+  itGatesQuietly(async () => {
+    const { posted } = mockApi({ states: 'fail' })
+    renderPage()
+    const user = await openForm()
+    await screen.findByLabelText(/^state/i)
+    return { user, button: submitButton, submitted: () => posted.length }
+  })
+})
+
+describe('DraftBills: markers on a multi-state tenant', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('shows no "* Required" legend', async () => {
     mockApi()
     renderPage()
     await openForm()
-    const legend = screen.getByText('Required')
-    expect(legend.parentElement).toHaveTextContent('* Required')
-  })
-
-  it('does not show the legend before the form is opened', async () => {
-    mockApi()
-    renderPage()
-    await screen.findByRole('button', { name: /add draft bill/i })
     expect(screen.queryByText('Required')).not.toBeInTheDocument()
   })
 
@@ -95,6 +107,10 @@ describe('DraftBills required fields: multi-state tenant (State is required)', (
     renderPage()
     await openForm()
     expect(stateLabel()).toHaveTextContent('State *')
+    const marker = stateLabel().querySelector('span') as HTMLElement
+    expect(marker.textContent).toBe('*')
+    expect(marker).toHaveAttribute('aria-hidden', 'true')
+    expect(marker.style.color).toBeTruthy()
   })
 
   it('announces the State picker as required', async () => {
@@ -120,114 +136,105 @@ describe('DraftBills required fields: multi-state tenant (State is required)', (
     renderPage()
     await openForm()
     for (const label of [/bill number/i, /^title/i, /sponsor/i]) {
-      expect(screen.getByLabelText(label)).not.toHaveAttribute('aria-required')
+      const el = screen.getByLabelText(label)
+      expect(el).not.toHaveAttribute('aria-required')
+      expect(document.querySelector(`label[for="${el.id}"]`)!.textContent).not.toContain('*')
     }
-    expect(screen.getByLabelText(/^title/i).closest('div')?.querySelector('label')?.textContent).not.toContain('*')
   })
 
-  it('shows the reason next to the disabled button while State is missing', async () => {
+  it('never names the missing field in the message', async () => {
     mockApi()
     renderPage()
-    await openForm()
-    expect(submitButton()).toBeDisabled()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
-    expect(screen.getByText('Missing a required field').closest('[id]')).toHaveTextContent(REASON)
+    const user = await openForm()
+    await user.hover(submitButton())
+    expect(gateMessage()!.textContent).not.toMatch(/state/i)
   })
+})
 
-  it('links the disabled button to the reason with aria-describedby', async () => {
-    mockApi()
-    renderPage()
-    await openForm()
-    // The "(*)" points sighted users at the marker; the asterisk is hidden
-    // from assistive tech, so a screen reader hears the sentence alone.
-    expect(submitButton()).toHaveAccessibleDescription('Missing a required field')
-    const id = submitButton().getAttribute('aria-describedby')
-    expect(id).toBeTruthy()
-    expect(document.getElementById(id!)).toHaveTextContent(REASON)
-  })
+describe('DraftBills: filling and clearing State', () => {
+  beforeEach(() => vi.restoreAllMocks())
 
-  it('renders the reason asterisk in the same red as the field marker', async () => {
-    mockApi()
-    renderPage()
-    await openForm()
-    const marker = stateLabel().querySelector('span') as HTMLElement
-    const reason = document.getElementById(submitButton().getAttribute('aria-describedby')!) as HTMLElement
-    const reasonStar = Array.from(reason.querySelectorAll('span')).find(s => s.textContent === '*') as HTMLElement
-    const legendStar = Array.from((screen.getByText('Required').parentElement as HTMLElement).querySelectorAll('span'))
-      .find(s => s.textContent === '*') as HTMLElement
-    expect(marker.textContent).toBe('*')
-    expect(marker.style.color).toBeTruthy()
-    expect(reasonStar.style.color).toBe(marker.style.color)
-    expect(legendStar.style.color).toBe(marker.style.color)
-  })
-
-  it('does not name the missing field in the reason', async () => {
-    mockApi()
-    renderPage()
-    await openForm()
-    const reason = document.getElementById(submitButton().getAttribute('aria-describedby')!) as HTMLElement
-    expect(reason.textContent).toBe(REASON)
-    expect(reason.textContent).not.toMatch(/state/i)
-  })
-
-  it('hides the reason and enables the button once State is chosen', async () => {
-    mockApi()
+  it('lifts the gate once State is chosen, with no message on hover, and creates the draft', async () => {
+    const { posted } = mockApi()
     renderPage()
     const user = await openForm()
     await pickState(user, 'AA')
     expect(submitButton()).toBeEnabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
-    expect(submitButton()).not.toHaveAttribute('aria-describedby')
+    expect(submitButton()).not.toHaveAttribute('aria-disabled')
+    await user.hover(submitButton())
+    expectMessageHidden(submitButton())
+    await user.click(submitButton())
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toMatchObject({ state: 'AA' })
   })
 
-  it('brings the reason back when State is cleared again', async () => {
+  it('hides a shown message once State is chosen', async () => {
+    mockApi()
+    renderPage()
+    const user = await openForm()
+    await user.click(submitButton())
+    expectMessageShown(submitButton())
+    await pickState(user, 'AA')
+    expectMessageHidden(submitButton())
+  })
+
+  it('blocks quietly again when State is cleared', async () => {
     mockApi()
     renderPage()
     const user = await openForm()
     await pickState(user, 'AA')
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
-
     await user.click(screen.getByRole('button', { name: /^state/i }))
     fireEvent.click(screen.getByRole('radio', { name: 'Select a state…' }))
-    expect(submitButton()).toBeDisabled()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
-    expect(submitButton()).toHaveAccessibleDescription('Missing a required field')
+    expectQuietlyBlocked(submitButton())
+    expectMessageHidden(submitButton())
   })
 
-  it('tracks the free-text State input: shown while empty, gone when typed, back when erased', async () => {
+  it('tracks the free-text State input: blocked while empty, open when typed, blocked again when erased', async () => {
     mockApi({ states: 'fail' })
     renderPage()
     const user = await openForm()
     const input = await screen.findByLabelText(/^state/i)
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
+    expectQuietlyBlocked(submitButton())
 
     await user.type(input, 'aa')
     expect(submitButton()).toBeEnabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
+    expect(submitButton()).not.toHaveAttribute('aria-disabled')
 
     await user.clear(input)
-    expect(submitButton()).toBeDisabled()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
+    expectQuietlyBlocked(submitButton())
+    expectMessageHidden(submitButton())
   })
 
   it('treats a whitespace-only State as missing', async () => {
-    mockApi({ states: 'fail' })
+    const { posted } = mockApi({ states: 'fail' })
     renderPage()
     const user = await openForm()
     await user.type(await screen.findByLabelText(/^state/i), ' ')
-    expect(submitButton()).toBeDisabled()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
+    expectQuietlyBlocked(submitButton())
+    await user.click(submitButton())
+    expect(posted).toHaveLength(0)
+    expectMessageShown(submitButton())
   })
 
-  it('keeps the legend after State is filled: it explains the marker, not the error', async () => {
+  it('is quiet again when the form is reopened after Cancel', async () => {
     mockApi()
     renderPage()
     const user = await openForm()
-    await pickState(user, 'AA')
-    expect(screen.getByText('Required')).toBeInTheDocument()
-  })
+    await user.hover(submitButton())
+    expectMessageShown(submitButton())
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
 
-  it('does not show the reason when the button is disabled only by demo lock', async () => {
+    await openForm()
+    expectQuietlyBlocked(submitButton())
+    expectMessageHidden(submitButton())
+  })
+})
+
+describe('DraftBills: other disabled reasons show no message', () => {
+  beforeEach(() => vi.restoreAllMocks())
+  afterEach(() => { demoState.demoLocked = false })
+
+  it('demo lock with State chosen: natively disabled, quiet', async () => {
     mockApi()
     const { rerender } = renderPage()
     const user = await openForm()
@@ -236,23 +243,26 @@ describe('DraftBills required fields: multi-state tenant (State is required)', (
     demoState.demoLocked = true
     rerender(<MemoryRouter><DraftBills /></MemoryRouter>)
     expect(submitButton()).toBeDisabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
-    expect(submitButton()).not.toHaveAttribute('aria-describedby')
+    expect(submitButton()).not.toHaveAttribute('aria-disabled')
+    fireEvent.mouseEnter(submitButton())
+    fireEvent.focus(submitButton())
+    expectMessageHidden(submitButton())
   })
 
-  it('does not show the reason under demo lock even while State is missing, since filling it would not help', async () => {
+  it('demo lock while State is missing: natively disabled, quiet, even after an earlier attempt', async () => {
     mockApi()
     const { rerender } = renderPage()
-    await openForm()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
+    const user = await openForm()
+    await user.hover(submitButton())
+    expectMessageShown(submitButton())
 
     demoState.demoLocked = true
     rerender(<MemoryRouter><DraftBills /></MemoryRouter>)
     expect(submitButton()).toBeDisabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
+    expectMessageHidden(submitButton())
   })
 
-  it('does not show the reason while the create request is in flight', async () => {
+  it('a create request in flight: natively disabled, quiet', async () => {
     const { posted, release } = mockApi({ holdCreate: true })
     renderPage()
     const user = await openForm()
@@ -262,41 +272,30 @@ describe('DraftBills required fields: multi-state tenant (State is required)', (
     await waitFor(() => expect(posted).toHaveLength(1))
     const busy = screen.getByRole('button', { name: /creating/i })
     expect(busy).toBeDisabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
-    expect(busy).not.toHaveAttribute('aria-describedby')
+    expect(busy).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(busy)
     await act(async () => { release() })
-  })
-
-  it('shows the legend and reason again when the form is reopened after Cancel', async () => {
-    mockApi()
-    renderPage()
-    const user = await openForm()
-    await pickState(user, 'AA')
-    await user.click(screen.getByRole('button', { name: /^cancel$/i }))
-    expect(screen.queryByText('Required')).not.toBeInTheDocument()
-
-    await openForm()
-    expect(screen.getByText('Required')).toBeInTheDocument()
-    expect(screen.getByText('Missing a required field')).toBeInTheDocument()
   })
 })
 
-describe('DraftBills required fields: single-state tenant (nothing is required)', () => {
+describe('DraftBills: single-state tenant (nothing is required)', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('shows no legend, no reason, and no aria-required', async () => {
+  it('shows no legend, no asterisk, no message, and no aria-required, and the button is open', async () => {
     mockApi({ tenantState: 'AA', states: { AA: 5 } })
     renderPage()
-    await openForm()
+    const user = await openForm()
     await waitFor(() => expect(screen.queryByText(/^state/i)).not.toBeInTheDocument())
     expect(screen.queryByText('Required')).not.toBeInTheDocument()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
     expect(document.querySelector('[aria-required]')).toBeNull()
+    for (const label of Array.from(document.querySelectorAll('label'))) expect(label.textContent).not.toContain('*')
     expect(submitButton()).toBeEnabled()
-    expect(submitButton()).not.toHaveAttribute('aria-describedby')
+    expect(submitButton()).not.toHaveAttribute('aria-disabled')
+    await user.hover(submitButton())
+    expectMessageHidden(submitButton())
   })
 
-  it('shows no reason when the button is disabled by demo lock', async () => {
+  it('shows no message when the button is disabled by demo lock', async () => {
     mockApi({ tenantState: 'AA', states: { AA: 5 } })
     const { rerender } = renderPage()
     await openForm()
@@ -304,7 +303,8 @@ describe('DraftBills required fields: single-state tenant (nothing is required)'
     demoState.demoLocked = true
     rerender(<MemoryRouter><DraftBills /></MemoryRouter>)
     expect(submitButton()).toBeDisabled()
-    expect(screen.queryByText('Missing a required field')).not.toBeInTheDocument()
+    fireEvent.mouseEnter(submitButton())
+    expectMessageHidden(submitButton())
     demoState.demoLocked = false
   })
 })

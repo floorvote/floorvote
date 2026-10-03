@@ -4,11 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
+import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked } from '../test/quietGate'
 
-// The required-field pattern on the "Link draft" control: a filed bill must be
-// chosen before the draft can be linked. The picker's search input carries
-// aria-required, and the disabled link button explains itself with
-// "Missing a required field (*)".
+// The quiet required-field gate on the "Link draft" control: a filed bill must
+// be chosen before the draft can be linked. The picker's search input keeps
+// aria-required; this single-input control shows no asterisk or legend. The
+// link button looks disabled until a bill is chosen and says "Fill in the
+// required items first." only when someone tries it.
 
 const navigateMock = vi.hoisted(() => vi.fn())
 const routerMock = vi.hoisted(() => ({
@@ -125,8 +127,6 @@ const FILED = [
   { id: 'f2', billNumber: 'S 200', title: 'Filed records bill', state: 'RI', isDraft: false },
 ]
 
-const REASON = 'Missing a required field (*)'
-
 function mockApi({ holdLink = false }: { holdLink?: boolean } = {}) {
   let release: () => void = () => {}
   const links: unknown[] = []
@@ -158,7 +158,6 @@ async function setup() {
 
 const linkButton = () => screen.getByRole('button', { name: /^(link & merge into filed bill|linking…)$/i })
 const search = () => screen.getByRole('textbox', { name: /filed bill/i })
-const reason = () => screen.queryByText('Missing a required field')
 
 async function pick(user: ReturnType<typeof userEvent.setup>, query: string, number: string) {
   await user.type(search(), query)
@@ -176,49 +175,70 @@ beforeEach(() => {
 })
 afterEach(() => { vi.restoreAllMocks(); demoState.demoLocked = false })
 
-describe('BillDetail link draft: a filed bill is required', () => {
-  it('shows a "* Required" legend in the link control', async () => {
+describe('BillDetail link draft: quiet gate while no filed bill is chosen', () => {
+  itGatesQuietly(async () => {
+    const { links } = mockApi()
+    const { user, group } = await setup()
+    // Trying the button must not even reach the confirm dialog.
+    return { user, button: linkButton, submitted: () => links.length + confirmSpy.mock.calls.length, scope: () => group }
+  })
+})
+
+describe('BillDetail link draft: markers', () => {
+  it('shows no "* Required" legend and no asterisk', async () => {
     mockApi()
-    await setup()
-    expect(screen.getByText('Required').parentElement).toHaveTextContent('* Required')
+    const { group } = await setup()
+    expect(screen.queryByText('Required')).not.toBeInTheDocument()
+    expect(group.textContent).not.toContain('*')
   })
 
-  it('labels the filed-bill search with a red asterisk and aria-required', async () => {
+  it('keeps aria-required on the filed-bill search, with a plain label', async () => {
     mockApi()
     await setup()
     expect(search()).toHaveAttribute('aria-required', 'true')
     expect(search()).toHaveAccessibleName('Filed bill')
     const label = document.querySelector(`label[for="${search().id}"]`) as HTMLLabelElement
-    expect(label).toHaveTextContent('Filed bill *')
+    expect(label.textContent).toBe('Filed bill')
   })
+})
 
-  it('shows the reason beside the disabled link button while no bill is chosen', async () => {
-    mockApi()
-    await setup()
-    expect(linkButton()).toBeDisabled()
-    expect(reason()?.closest('[id]')).toHaveTextContent(REASON)
-    expect(linkButton()).toHaveAccessibleDescription('Missing a required field')
-  })
-
-  it('keeps the reason while a search is typed but nothing is chosen', async () => {
+describe('BillDetail link draft: choosing and removing a bill', () => {
+  it('stays blocked, quietly, while a search is typed but nothing is chosen', async () => {
     mockApi()
     const { user } = await setup()
     await user.type(search(), 'H 1')
-    expect(linkButton()).toBeDisabled()
-    expect(reason()).toBeInTheDocument()
+    expectQuietlyBlocked(linkButton())
+    expectMessageHidden(linkButton())
   })
 
-  it('hides the reason once a filed bill is chosen, and brings it back when removed', async () => {
+  it('lifts the gate once a filed bill is chosen, with no message on hover', async () => {
     mockApi()
     const { user } = await setup()
     await pick(user, 'H 1', 'H 100')
     expect(linkButton()).toBeEnabled()
-    expect(reason()).not.toBeInTheDocument()
-    expect(linkButton()).not.toHaveAttribute('aria-describedby')
+    expect(linkButton()).not.toHaveAttribute('aria-disabled')
+    await user.hover(linkButton())
+    expectMessageHidden(linkButton())
+  })
 
+  it('hides a shown message once a filed bill is chosen', async () => {
+    mockApi()
+    const { user } = await setup()
+    await user.hover(linkButton())
+    expectMessageShown(linkButton())
+    await user.unhover(linkButton())
+    await pick(user, 'H 1', 'H 100')
+    await user.hover(linkButton())
+    expectMessageHidden(linkButton())
+  })
+
+  it('blocks quietly again when the chosen bill is removed', async () => {
+    mockApi()
+    const { user } = await setup()
+    await pick(user, 'H 1', 'H 100')
     await user.click(screen.getByRole('button', { name: 'Remove H 100' }))
-    expect(linkButton()).toBeDisabled()
-    expect(reason()).toBeInTheDocument()
+    expectQuietlyBlocked(linkButton())
+    expectMessageHidden(linkButton())
   })
 
   it('links to the chosen bill', async () => {
@@ -229,26 +249,30 @@ describe('BillDetail link draft: a filed bill is required', () => {
     await waitFor(() => expect(links).toEqual([{ filedBillId: 'f2' }]))
     expect(confirmSpy).toHaveBeenCalled()
   })
+})
 
-  it('does not show the reason when the button is disabled only by demo lock', async () => {
+describe('BillDetail link draft: other disabled reasons show no message', () => {
+  it('demo lock with a bill chosen: natively disabled, quiet', async () => {
     demoState.demoLocked = true
     mockApi()
     const { user } = await setup()
     await pick(user, 'H 1', 'H 100')
     expect(linkButton()).toBeDisabled()
-    expect(reason()).not.toBeInTheDocument()
-    expect(linkButton()).not.toHaveAttribute('aria-describedby')
+    expect(linkButton()).not.toHaveAttribute('aria-disabled')
+    await user.hover(linkButton())
+    expectMessageHidden(linkButton())
   })
 
-  it('does not show the reason under demo lock even with no bill chosen', async () => {
+  it('demo lock with no bill chosen: natively disabled, quiet', async () => {
     demoState.demoLocked = true
     mockApi()
-    await setup()
+    const { user } = await setup()
     expect(linkButton()).toBeDisabled()
-    expect(reason()).not.toBeInTheDocument()
+    await user.hover(linkButton())
+    expectMessageHidden(linkButton())
   })
 
-  it('does not show the reason while the link request is in flight', async () => {
+  it('a link request in flight: natively disabled, quiet', async () => {
     const { links, release } = mockApi({ holdLink: true })
     const { user } = await setup()
     await pick(user, 'H 1', 'H 100')
@@ -256,8 +280,8 @@ describe('BillDetail link draft: a filed bill is required', () => {
     await waitFor(() => expect(links).toHaveLength(1))
     const busy = screen.getByRole('button', { name: /linking/i })
     expect(busy).toBeDisabled()
-    expect(reason()).not.toBeInTheDocument()
-    expect(busy).not.toHaveAttribute('aria-describedby')
+    expect(busy).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(busy)
     await act(async () => { release() })
   })
 })

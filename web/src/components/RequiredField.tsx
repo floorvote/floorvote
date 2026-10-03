@@ -1,21 +1,25 @@
-import { useCallback, useId, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useId, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { color, fontWeight } from '../styles/tokens'
 import { FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
 
-// The shared required-field pattern. A form with a required field:
+// The shared required-field pattern. A form with a required value:
 //
-//   1. renders <RequiredLegend /> at the top, so the asterisk has a stated meaning;
-//   2. labels each required field with <RequiredLabel> (or puts <RequiredMarker />
-//      in its own label) and sets aria-required on the field's input. A field
-//      whose control is a button (a Picker trigger) cannot carry aria-required,
-//      so it puts the requirement in its accessible name with requiredName();
-//   3. gates its submit button with useRequiredSubmit(), passing the
+//   1. sets aria-required on each required input. A field whose control is a
+//      button (a Picker trigger) cannot carry aria-required, so it puts the
+//      requirement in its accessible name with requiredName(). Only a form that
+//      mixes required and optional inputs also marks the required ones visibly,
+//      with <RequiredLabel> or <RequiredMarker />; on a form whose inputs are all
+//      required, an empty box speaks for itself.
+//   2. gates its submit button with useRequiredSubmit(), passing the
 //      missing-required check separately from every other disabled reason, and
 //      renders <MissingRequiredReason {...gate.reasonProps} /> beside the button.
 //
-// The reason is visible text, not a tooltip: a natively disabled button gets no
-// hover or focus events, and phones have no hover. The wording is generic on
-// purpose and never names the missing fields.
+// The gate is quiet until tried. While a required value is missing the button
+// looks disabled and carries aria-disabled, but stays hoverable, focusable, and
+// tappable (a natively disabled button gets none of those events). Hovering,
+// focusing, or clicking it reveals REQUIRED_MESSAGE; leaving or blurring hides
+// it. Nothing shows before that. The wording is generic on purpose, never names
+// the missing items, and is the same everywhere.
 //
 // An inline editor (one value edited in place, saved with Enter or a Save
 // button) that refuses a blank value is the other case. It keeps Save enabled
@@ -25,6 +29,9 @@ import { FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
 // "* <name> is required" beside the field as an alert, so a screen reader
 // announces it the moment the save is refused. The message clears once the
 // value is no longer blank, and on cancel or reopen (guard.reset()).
+
+/** The one message a blocked submit button reveals. */
+export const REQUIRED_MESSAGE = 'Fill in the required items first.'
 
 const MARK_STYLE: CSSProperties = { fontWeight: fontWeight.semibold, color: color.textDanger }
 
@@ -45,15 +52,6 @@ export function RequiredLabel({ htmlFor, children, style }: { htmlFor?: string; 
   )
 }
 
-/** "* Required", shown at the top of a form that has at least one required field. */
-export function RequiredLegend({ style }: { style?: CSSProperties }) {
-  return (
-    <div style={{ ...HELPER_TEXT, ...style }}>
-      <RequiredMarker /> <span>Required</span>
-    </div>
-  )
-}
-
 /**
  * Accessible name for a required field whose control is a button (e.g. a
  * Picker trigger), which cannot carry aria-required.
@@ -63,14 +61,14 @@ export function requiredName(name: string): string {
 }
 
 /**
- * Visible "Missing a required field (*)" line for beside a disabled submit
- * button. Renders nothing unless `show`. Spread useRequiredSubmit's reasonProps.
+ * REQUIRED_MESSAGE, for beside a gated submit button. Renders nothing unless
+ * `show`. Spread useRequiredSubmit's reasonProps.
  */
 export function MissingRequiredReason({ id, show, style }: { id: string; show: boolean; style?: CSSProperties }) {
   if (!show) return null
   return (
     <div id={id} style={{ ...HELPER_TEXT, ...style }}>
-      Missing a required field<span aria-hidden="true"> (<span style={MARK_STYLE}>*</span>)</span>
+      {REQUIRED_MESSAGE}
     </div>
   )
 }
@@ -82,21 +80,58 @@ export function MissingRequiredReason({ id, show, style }: { id: string; show: b
  * - `blocked`: true while the button is disabled for any other reason
  *   (demo lock, a request in flight, ...).
  *
- * The button is disabled when either holds. The reason shows only when the
- * missing value is what stands in the way: not while `blocked`, since filling
- * the field would not enable the button then.
+ * `disabled` is true when either holds; use it for the button's disabled look
+ * and as the submit handler's own guard (Enter in a field, keyboard shortcuts).
+ *
+ * `buttonProps(onClick)` returns the button's props:
+ * - blocked: native `disabled`, exactly as before; no message ever.
+ * - missing a required value (and not blocked): `aria-disabled="true"`, and
+ *   `onClick` is never called (a submit button's default action is prevented
+ *   too). Hover, focus, or click reveals the message and ties it to the
+ *   button with aria-describedby; mouse leave and blur hide it.
+ * - neither: an ordinary enabled button that calls `onClick`.
  *
  *   const gate = useRequiredSubmit({ missingRequired: !name.trim(), blocked: saving || demoLocked })
- *   <button {...gate.buttonProps} style={actionBtnBlue(gate.disabled)}>Save</button>
+ *   <button {...gate.buttonProps(handleSave)} style={actionBtnBlue(gate.disabled)}>Save</button>
  *   <MissingRequiredReason {...gate.reasonProps} />
  */
 export function useRequiredSubmit({ missingRequired, blocked = false }: { missingRequired: boolean; blocked?: boolean }) {
   const id = useId()
-  const disabled = missingRequired || blocked
-  const show = missingRequired && !blocked
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  // A click or tap that did not focus the button (Safari does not focus
+  // buttons on click) still reveals the message, until leave or blur.
+  const [pressed, setPressed] = useState(false)
+  // A natively disabled button may get no leave or blur event, so forget any
+  // attempt once the button is blocked: after a submit finishes and the form
+  // resets, it starts quiet again.
+  if (blocked && (hovered || focused || pressed)) {
+    setHovered(false)
+    setFocused(false)
+    setPressed(false)
+  }
+  const quiet = missingRequired && !blocked
+  const show = quiet && (hovered || focused || pressed)
+  const buttonProps = (onClick?: (e: MouseEvent<HTMLButtonElement>) => void) => ({
+    disabled: blocked,
+    'aria-disabled': quiet ? ('true' as const) : undefined,
+    'aria-describedby': show ? id : undefined,
+    onClick: (e: MouseEvent<HTMLButtonElement>) => {
+      if (missingRequired || blocked) {
+        e.preventDefault()
+        if (quiet) setPressed(true)
+        return
+      }
+      onClick?.(e)
+    },
+    onMouseEnter: () => setHovered(true),
+    onMouseLeave: () => { setHovered(false); setPressed(false) },
+    onFocus: () => setFocused(true),
+    onBlur: () => { setFocused(false); setPressed(false) },
+  })
   return {
-    disabled,
-    buttonProps: { disabled, 'aria-describedby': show ? id : undefined },
+    disabled: missingRequired || blocked,
+    buttonProps,
     reasonProps: { id, show },
   }
 }

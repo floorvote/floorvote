@@ -108,11 +108,13 @@ describe('DraftBills create form: Title is optional', () => {
     const user = await openForm()
 
     const submit = screen.getByRole('button', { name: /create draft/i })
-    expect(submit).toBeDisabled()
+    // Blocked quietly while State is missing (#231): aria-disabled, not native disabled.
+    expect(submit).toHaveAttribute('aria-disabled', 'true')
 
     await user.click(await screen.findByLabelText(/^state/i))
     fireEvent.click(screen.getByRole('radio', { name: 'UT' }))
     expect(submit).toBeEnabled()
+    expect(submit).not.toHaveAttribute('aria-disabled')
 
     await user.click(submit)
     await waitFor(() => expect(posted).toHaveLength(1))
