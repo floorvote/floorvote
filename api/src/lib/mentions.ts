@@ -10,6 +10,7 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateTime } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sanitizeCommentHtml } from './sanitizeHtml'
+import { displayName } from './displayName'
 
 /** @mention emails are on unless an admin explicitly disabled them. */
 export async function mentionEmailsEnabled(db: ReturnType<typeof getDb>): Promise<boolean> {
@@ -312,7 +313,7 @@ async function sendMentionEmails(
 ): Promise<void> {
   const db = getDb(env.DB)
   const [author] = await db
-    .select({ name: users.name, subtitle: users.subtitle })
+    .select({ name: users.name, email: users.email, subtitle: users.subtitle })
     .from(users)
     .where(eq(users.id, authorUserId))
     .all()
@@ -356,7 +357,7 @@ async function sendMentionEmails(
     // renderMentionEmail, which styles it via tiptapToEmailHtml.
     const rendered = renderMentionEmail({
       appUrl: env.APP_URL,
-      author: { name: author.name, subtitle: author.subtitle },
+      author: { name: displayName(author), subtitle: author.subtitle },
       bill: {
         id: bill.id, billNumber: bill.billNumber, title: bill.title, isDraft: bill.isDraft,
         state: bill.state, session: bill.session, priority: bill.priority,

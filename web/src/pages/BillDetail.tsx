@@ -1272,7 +1272,7 @@ export function BillDetail() {
                           current={priority}
                           onChange={(p, result) => {
                             setPriority(p)
-                            setPriorityMeta(p ? { setByName: user!.name, updatedAt: new Date().toISOString() } : null)
+                            setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
                             refreshSidebar()
                             if (result?.promoted) startAnalyzingPoll()
                           }}
@@ -1284,7 +1284,7 @@ export function BillDetail() {
                   <HoverTooltip text="This bill's priority level">
                     <CompactPrioritySelect billId={bill.id} current={priority} onChange={(p, result) => {
                       setPriority(p)
-                      setPriorityMeta(p ? { setByName: user!.name, updatedAt: new Date().toISOString() } : null)
+                      setPriorityMeta(p ? { setByName: displayName(user!), updatedAt: new Date().toISOString() } : null)
                       refreshSidebar()
                       if (result?.promoted) startAnalyzingPoll()
                     }} placeholder="Priority not set" />
@@ -2852,7 +2852,7 @@ export function BillDetail() {
                     onChange={(p) => {
                       setPosition(p)
                       if (p) {
-                        setPositionMeta({ setByName: user!.name, updatedAt: new Date().toISOString() })
+                        setPositionMeta({ setByName: displayName(user!), updatedAt: new Date().toISOString() })
                       } else {
                         setPositionMeta(null)
                       }

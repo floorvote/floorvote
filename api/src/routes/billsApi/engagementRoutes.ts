@@ -13,6 +13,7 @@ import type { AppEnv } from '../../types'
 import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
+import { displayName } from '../../lib/displayName'
 
 // Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
 // per-IP limiter in demoReadOnly bounds the *rate* an anonymous visitor can
@@ -175,7 +176,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, userReacted: false, reactors: [] })
       const entry = emojiMap.get(r.emoji)!
       entry.count++
-      entry.reactors.push({ name: reactor.name, subtitle: reactor.subtitle })
+      entry.reactors.push({ name: displayName(reactor), subtitle: reactor.subtitle })
       if (r.userId === currentUser.id) entry.userReacted = true
     }
 

@@ -97,4 +97,17 @@ describe('MembersPopup', () => {
     expect(table.querySelectorAll('td.members-name-cell').length).toBe(3)
     expect(document.querySelectorAll('td[data-label="Role"]').length).toBe(3)
   })
+
+  it('shows a member with a cleared name by email, sorted by that email', () => {
+    renderPopup([
+      member({ id: 'u1', name: 'Alice Anders' }),
+      member({ id: 'u4', name: 'Zed Zane' }),
+      member({ id: 'u5', name: '', email: 'beth@example.org' }),
+    ])
+    const rows = screen.getAllByRole('row').slice(1)
+    // Self first, then by name, with the email standing in for the blank name.
+    expect(rows.map(r => r.querySelector('td.members-name-cell')?.firstElementChild?.textContent))
+      .toEqual(['Alice AndersME', 'beth@example.org', 'Zed Zane'])
+    expect(within(rows[1]).getByRole('link', { name: 'beth@example.org' })).toHaveAttribute('href', 'mailto:beth@example.org')
+  })
 })
