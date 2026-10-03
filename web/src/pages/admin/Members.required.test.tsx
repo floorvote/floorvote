@@ -3,11 +3,13 @@ import { render, screen, within, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { Members } from './Members'
+import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked } from '../../test/quietGate'
 import * as api from '../../lib/api'
 
-// The required-field pattern on the "Add role" form: the role name is
-// required, gets a real accessible name and aria-required, and the disabled
-// Add button explains itself with "Missing a required field (*)".
+// The quiet required-field gate on the "Add role" form: the role name is
+// required and keeps aria-required, but this single-input form shows no
+// asterisk or legend. Add looks disabled while the name is blank and says
+// "Fill in the required items first." only when someone tries it.
 
 const OWNER = {
   id: 'owner-1',
@@ -36,8 +38,6 @@ const demoState = vi.hoisted(() => ({ demoLocked: false }))
 vi.mock('../../context/DemoContext', () => ({
   useDemo: () => ({ demoMode: false, demoLocked: demoState.demoLocked }),
 }))
-
-const REASON = 'Missing a required field (*)'
 
 function mockApi({ holdCreate = false }: { holdCreate?: boolean } = {}) {
   let release: () => void = () => {}
@@ -70,17 +70,23 @@ function nameInput(form: HTMLElement) {
 function addButton(form: HTMLElement) {
   return within(form).getByRole('button', { name: /^(add|adding…)$/i })
 }
-function reason(form: HTMLElement) {
-  return within(form).queryByText('Missing a required field')
-}
 
 afterEach(() => { vi.restoreAllMocks(); demoState.demoLocked = false })
 
-describe('Members "Add role" required field', () => {
-  it('shows a "* Required" legend on the form', async () => {
+describe('Members "Add role": quiet gate while the name is blank', () => {
+  itGatesQuietly(async () => {
+    const { posted } = mockApi()
+    const { user, form } = await setup()
+    return { user, button: () => addButton(form), submitted: () => posted.length, scope: () => form }
+  })
+})
+
+describe('Members "Add role": markers', () => {
+  it('shows no "* Required" legend and no asterisk', async () => {
     mockApi()
     const { form } = await setup()
-    expect(within(form).getByText('Required').parentElement).toHaveTextContent('* Required')
+    expect(within(form).queryByText('Required')).not.toBeInTheDocument()
+    expect(form.textContent).not.toContain('*')
   })
 
   it('gives the role name input an accessible name and aria-required', async () => {
@@ -88,44 +94,56 @@ describe('Members "Add role" required field', () => {
     const { form } = await setup()
     const input = nameInput(form)
     expect(input).toHaveAttribute('aria-required', 'true')
-    expect(within(form).getAllByText(/role name/i).find(el => el.tagName === 'LABEL')).toHaveTextContent('*')
+    expect(input).toHaveAccessibleName('New role name')
   })
+})
 
-  it('shows the reason beside the disabled Add button while the name is empty', async () => {
-    mockApi()
-    const { form } = await setup()
-    expect(addButton(form)).toBeDisabled()
-    expect(reason(form)?.closest('[id]')).toHaveTextContent(REASON)
-    expect(addButton(form)).toHaveAccessibleDescription('Missing a required field')
-  })
-
-  it('hides the reason once a name is typed, and brings it back when cleared', async () => {
-    mockApi()
+describe('Members "Add role": filling and clearing', () => {
+  it('lifts the gate once a name is typed, with no message on hover, and adds the role', async () => {
+    const { posted } = mockApi()
     const { user, form } = await setup()
     await user.type(nameInput(form), 'Finance')
     expect(addButton(form)).toBeEnabled()
-    expect(reason(form)).not.toBeInTheDocument()
-    expect(addButton(form)).not.toHaveAttribute('aria-describedby')
+    expect(addButton(form)).not.toHaveAttribute('aria-disabled')
+    await user.hover(addButton(form))
+    expectMessageHidden(addButton(form), form)
+    await user.click(addButton(form))
+    await waitFor(() => expect(posted).toEqual([{ name: 'Finance' }]))
+  })
 
+  it('blocks quietly again when the name is cleared', async () => {
+    mockApi()
+    const { user, form } = await setup()
+    await user.type(nameInput(form), 'Finance')
     await user.clear(nameInput(form))
-    expect(addButton(form)).toBeDisabled()
-    expect(reason(form)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(form))
+    expectMessageHidden(addButton(form), form)
+  })
+
+  it('hides a shown message once a name is typed', async () => {
+    mockApi()
+    const { user, form } = await setup()
+    await user.hover(addButton(form))
+    expectMessageShown(addButton(form), form)
+    await user.type(nameInput(form), 'F')
+    expectMessageHidden(addButton(form), form)
   })
 
   it('treats a whitespace-only name as missing', async () => {
-    mockApi()
+    const { posted } = mockApi()
     const { user, form } = await setup()
     await user.type(nameInput(form), '   ')
-    expect(addButton(form)).toBeDisabled()
-    expect(reason(form)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(form))
+    await user.click(addButton(form))
+    expect(posted).toHaveLength(0)
+    expectMessageShown(addButton(form), form)
   })
 
   it('treats a name made only of stripped "@" characters as missing', async () => {
     mockApi()
     const { user, form } = await setup()
     await user.type(nameInput(form), '@@')
-    expect(addButton(form)).toBeDisabled()
-    expect(reason(form)).toBeInTheDocument()
+    expectQuietlyBlocked(addButton(form))
   })
 
   it('does not send a request for a blank name on Enter', async () => {
@@ -135,25 +153,40 @@ describe('Members "Add role" required field', () => {
     expect(posted).toHaveLength(0)
   })
 
-  it('does not show the reason when the button is disabled only by demo lock', async () => {
+  it('is quiet again after a role is added and the input resets', async () => {
+    const { posted } = mockApi()
+    const { user, form } = await setup()
+    await user.type(nameInput(form), 'Finance')
+    await user.click(addButton(form))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    await waitFor(() => expect(nameInput(form)).toHaveValue(''))
+    expectQuietlyBlocked(addButton(form))
+    expectMessageHidden(addButton(form), form)
+  })
+})
+
+describe('Members "Add role": other disabled reasons show no message', () => {
+  it('demo lock with a name typed: natively disabled, quiet', async () => {
     demoState.demoLocked = true
     mockApi()
     const { user, form } = await setup()
     await user.type(nameInput(form), 'Finance')
     expect(addButton(form)).toBeDisabled()
-    expect(reason(form)).not.toBeInTheDocument()
-    expect(addButton(form)).not.toHaveAttribute('aria-describedby')
+    expect(addButton(form)).not.toHaveAttribute('aria-disabled')
+    await user.hover(addButton(form))
+    expectMessageHidden(addButton(form), form)
   })
 
-  it('does not show the reason under demo lock even while the name is empty', async () => {
+  it('demo lock while the name is blank: natively disabled, quiet', async () => {
     demoState.demoLocked = true
     mockApi()
-    const { form } = await setup()
+    const { user, form } = await setup()
     expect(addButton(form)).toBeDisabled()
-    expect(reason(form)).not.toBeInTheDocument()
+    await user.hover(addButton(form))
+    expectMessageHidden(addButton(form), form)
   })
 
-  it('does not show the reason while the create request is in flight', async () => {
+  it('a create request in flight: natively disabled, quiet', async () => {
     const { posted, release } = mockApi({ holdCreate: true })
     const { user, form } = await setup()
     await user.type(nameInput(form), 'Finance')
@@ -161,18 +194,8 @@ describe('Members "Add role" required field', () => {
     await waitFor(() => expect(posted).toHaveLength(1))
     const busy = within(form).getByRole('button', { name: /adding/i })
     expect(busy).toBeDisabled()
-    expect(reason(form)).not.toBeInTheDocument()
-    expect(busy).not.toHaveAttribute('aria-describedby')
+    expect(busy).not.toHaveAttribute('aria-disabled')
+    expectMessageHidden(busy, form)
     await act(async () => { release() })
-  })
-
-  it('shows the reason again after a role is added and the input resets', async () => {
-    const { posted } = mockApi()
-    const { user, form } = await setup()
-    await user.type(nameInput(form), 'Finance')
-    await user.click(addButton(form))
-    await waitFor(() => expect(posted).toHaveLength(1))
-    await waitFor(() => expect(nameInput(form)).toHaveValue(''))
-    expect(reason(form)).toBeInTheDocument()
   })
 })

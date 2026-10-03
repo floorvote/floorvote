@@ -15,7 +15,7 @@ import { usePageTitle } from '../../hooks/usePageTitle'
 import { useDemo } from '../../context/DemoContext'
 import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens'
 import { orgRolesLabel } from '../../lib/orgNoun'
-import { BlankValueMessage, RequiredLabel, RequiredLegend, MissingRequiredReason, useBlankValueGuard, useRequiredSubmit } from '../../components/RequiredField'
+import { BlankValueMessage, MissingRequiredReason, useBlankValueGuard, useRequiredSubmit } from '../../components/RequiredField'
 
 type Role = { id: string; name: string }
 
@@ -749,8 +749,7 @@ export function Members() {
           )}
         </div>
         <div role="group" aria-label="Add role">
-          <RequiredLegend style={{ marginBottom: 6 }} />
-          <RequiredLabel htmlFor="new-role-name">New role name</RequiredLabel>
+          <label htmlFor="new-role-name" style={FORM_LABEL}>New role name</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <input
               id="new-role-name"
@@ -763,8 +762,7 @@ export function Members() {
               style={{ fontSize: fontSize.sm, padding: '5px 10px', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, width: 200, fontFamily: 'inherit', color: color.textSlate }}
             />
             <button
-              onClick={handleAddRole}
-              {...addRoleGate.buttonProps}
+              {...addRoleGate.buttonProps(handleAddRole)}
               style={{ fontSize: fontSize.sm, padding: '5px 14px', borderRadius: radius.md, border: 'none', background: !addRoleGate.disabled ? color.accentBlue : color.borderDefault, color: !addRoleGate.disabled ? color.white : color.textMuted, cursor: !addRoleGate.disabled ? 'pointer' : 'not-allowed', fontWeight: fontWeight.medium }}
             >
               {addingRole ? 'Adding…' : 'Add'}

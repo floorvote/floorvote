@@ -15,7 +15,7 @@ import { pickerFieldTriggerStyle, PickerFieldCaret } from '../../lib/pickerField
 import { billDisplayTitle } from '../../../../shared/billTitle'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
 import { CustomFieldsSection, type CustomFieldDef } from '../../components/CustomFieldsSection'
-import { RequiredLabel, RequiredLegend, MissingRequiredReason, requiredName, useRequiredSubmit } from '../../components/RequiredField'
+import { RequiredLabel, MissingRequiredReason, requiredName, useRequiredSubmit } from '../../components/RequiredField'
 
 type CollectedValues = Record<string, { value: string; setBy: string | null; updatedAt: string }>
 
@@ -209,7 +209,6 @@ export function DraftBills() {
         )}
         {showDraftForm && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {needsState && <RequiredLegend />}
             <div style={{ display: 'flex', gap: 14 }}>
               <div style={{ flex: 1 }}>
                 <label htmlFor="draft-number" style={FORM_LABEL}>Bill number</label>
@@ -345,8 +344,7 @@ export function DraftBills() {
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
               <button
-                onClick={handleCreateDraft}
-                {...createGate.buttonProps}
+                {...createGate.buttonProps(handleCreateDraft)}
                 style={actionBtnBlue(createGate.disabled)}
               >
                 {creatingDraft ? 'Creating…' : 'Create draft'}

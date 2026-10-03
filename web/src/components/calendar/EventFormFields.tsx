@@ -3,7 +3,7 @@ import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { BillPicker, type BillOption } from '../BillPicker'
 import { todayIso } from '../../lib/calendarGrid'
 import { useDemo } from '../../context/DemoContext'
-import { RequiredLegend, RequiredMarker, MissingRequiredReason, useRequiredSubmit } from '../RequiredField'
+import { RequiredMarker, MissingRequiredReason, useRequiredSubmit } from '../RequiredField'
 
 export interface EventFormValues {
   id?: string
@@ -82,7 +82,6 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
 
   return (
     <div style={{ padding: 14 }} onKeyDown={handleKeyDown}>
-      <RequiredLegend style={{ fontSize: fontSize.xs, marginBottom: 8 }} />
       <label style={{ ...labelStyle, display: 'block' }}>
         Title <RequiredMarker />
         <input autoFocus={autoFocus} aria-label="Title" aria-required="true" placeholder="New event" style={{ ...field, fontWeight: fontWeight.semibold }} value={description} onChange={e => setDescription(e.target.value)} />
@@ -124,7 +123,7 @@ export function EventFormFields({ initial, billOptions, multiState, onSave, onCl
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 16 }}>
         <MissingRequiredReason {...gate.reasonProps} style={{ marginRight: 'auto' }} />
         <button type="button" onClick={onClose} style={{ background: color.white, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, padding: '7px 14px', cursor: 'pointer', fontSize: fontSize.sm }}>Cancel</button>
-        <button type="button" {...gate.buttonProps} onClick={submit} style={{
+        <button type="button" {...gate.buttonProps(submit)} style={{
           background: !gate.disabled ? color.accentBlue : color.accentBlueMuted, color: color.white, border: 'none',
           borderRadius: radius.md, padding: '7px 14px', cursor: !gate.disabled ? 'pointer' : 'not-allowed',
           fontSize: fontSize.sm, fontWeight: fontWeight.medium,

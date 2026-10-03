@@ -36,7 +36,7 @@ import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
-import { SECTION_LABEL, CHROME_TEXT, FONT_SANS } from '../lib/textStyles'
+import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
@@ -61,7 +61,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
-import { BlankValueMessage, RequiredLabel, RequiredLegend, MissingRequiredReason, requiredName, useBlankValueGuard, useRequiredSubmit } from '../components/RequiredField'
+import { BlankValueMessage, MissingRequiredReason, requiredName, useBlankValueGuard, useRequiredSubmit } from '../components/RequiredField'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -1397,8 +1397,7 @@ export function BillDetail() {
             </p>
             {isAdmin ? (
               <div role="group" aria-label="Link to filed bill" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <RequiredLegend style={{ color: color.textAmberWarning }} />
-                <RequiredLabel htmlFor="link-draft-target" style={{ color: color.textAmberWarning, marginBottom: 0 }}>Filed bill</RequiredLabel>
+                <label htmlFor="link-draft-target" style={{ ...FORM_LABEL, color: color.textAmberWarning, marginBottom: 0 }}>Filed bill</label>
                 {/* Picker + link button on one row */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1 }}>
@@ -1414,8 +1413,7 @@ export function BillDetail() {
                   </div>
                   <button
                     type="button"
-                    onClick={handleLinkDraft}
-                    {...linkGate.buttonProps}
+                    {...linkGate.buttonProps(handleLinkDraft)}
                     style={{
                       background: linkGate.disabled ? color.accentBlueMuted : color.accentBlue,
                       color: color.white, border: 'none', borderRadius: radius.md,

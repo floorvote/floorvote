@@ -20,7 +20,7 @@ import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncW
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
-import { RequiredLabel, RequiredLegend, MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
+import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { rowsFromTaxonomy, rowsToTaxonomy, type TaxonomyRow } from './taxonomyRows'
 
@@ -1168,10 +1168,9 @@ export function Config() {
 
         {/* Add new field form */}
         <div role="group" aria-label="Add custom field">
-        <RequiredLegend style={{ marginBottom: 6 }} />
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div>
-            <RequiredLabel htmlFor="cf-new-name" style={CF_LABEL}>Name</RequiredLabel>
+            <label htmlFor="cf-new-name" style={{ ...FORM_LABEL, ...CF_LABEL }}>Name</label>
             <input
               id="cf-new-name"
               type="text"
@@ -1200,7 +1199,7 @@ export function Config() {
           {cfType === 'dropdown' && (
             <>
               <div>
-                <RequiredLabel htmlFor="cf-new-options" style={CF_LABEL}>Options (comma-separated)</RequiredLabel>
+                <label htmlFor="cf-new-options" style={{ ...FORM_LABEL, ...CF_LABEL }}>Options (comma-separated)</label>
                 <input
                   id="cf-new-options"
                   type="text"
@@ -1224,8 +1223,7 @@ export function Config() {
             </>
           )}
           <button
-            onClick={handleAddCustomField}
-            {...cfGate.buttonProps}
+            {...cfGate.buttonProps(handleAddCustomField)}
             style={{ background: !cfGate.disabled ? color.accentBlue : color.borderDefault, color: !cfGate.disabled ? color.white : color.textMuted, border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
           >
             {cfAdding ? 'Adding…' : 'Add field'}
