@@ -1,6 +1,7 @@
 import { inArray } from 'drizzle-orm'
 import type { getDb } from '../db/client'
 import { customFieldDefinitions } from '../db/schema'
+import { DOCUMENTS_PER_FIELD_MAX, normalizeDocument, type DocumentLink } from '../../../shared/customFieldValues'
 
 /** One resolved custom field write: a string to store, or null to clear. */
 export type ResolvedCustomFieldValue = { fieldId: string; value: string | null }
@@ -31,12 +32,27 @@ function parseOptions(raw: string | null): string[] {
 }
 
 /** Validates one value against its field definition, in the request format the
- *  bill page sends: a string, a string array (multi-select dropdown only), or
- *  null to clear. Returns the string to store (multi-select as a JSON array;
- *  an empty array clears) or an error body for a 400. */
+ *  bill page sends: a string, a string array (multi-select dropdown only), an
+ *  array of { title, url } (document fields only), or null to clear. Returns the
+ *  string to store (multi-select and document values as a JSON array; an empty
+ *  array clears) or an error body for a 400. */
 function resolveOne(def: FieldDef, raw: unknown): { ok: true; value: string | null } | { ok: false; error: Record<string, unknown> } {
   const fieldId = def.id
   if (raw === null) return { ok: true, value: null }
+
+  if (def.type === 'document') {
+    if (!Array.isArray(raw)) return { ok: false, error: { error: `field ${fieldId} requires an array of { title, url }` } }
+    if (raw.length > DOCUMENTS_PER_FIELD_MAX) {
+      return { ok: false, error: { error: `field ${fieldId} takes at most ${DOCUMENTS_PER_FIELD_MAX} documents` } }
+    }
+    const docs: DocumentLink[] = []
+    for (const entry of raw) {
+      const r = normalizeDocument(entry)
+      if (!r.ok) return { ok: false, error: { error: `field ${fieldId}: ${r.reason}` } }
+      docs.push(r.doc)
+    }
+    return { ok: true, value: docs.length === 0 ? null : JSON.stringify(docs) }
+  }
 
   if (def.multiple) {
     if (!Array.isArray(raw)) return { ok: false, error: { error: `field ${fieldId} requires an array value` } }

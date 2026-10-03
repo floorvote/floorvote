@@ -107,3 +107,79 @@ describe('CustomFieldsSection saving vs collecting', () => {
     spy.mockRestore()
   })
 })
+
+const DOC_FIELD: CustomFieldDef = {
+  id: 'f3', name: 'Testimony', slug: 'testimony', type: 'document', options: null, multiple: false, displayOrder: 0, pinned: false,
+}
+
+const DOCS = {
+  f3: {
+    value: JSON.stringify([
+      { title: 'Written testimony', url: 'https://docs.google.com/document/d/abc' },
+      { title: 'Not a link', url: 'javascript:alert(1)' },
+    ]),
+    setBy: 'Admin',
+    updatedAt: '2025-01-01 00:00:00',
+  },
+}
+
+describe('CustomFieldsSection document field', () => {
+  it('renders each https document as a link that opens in a new tab, and drops anything else', () => {
+    render(<CustomFieldsSection fields={[DOC_FIELD]} billId="b1" values={DOCS} isAdmin={false} onUpdate={vi.fn()} />)
+    const link = screen.getByRole('link', { name: 'Written testimony' })
+    expect(link).toHaveAttribute('href', 'https://docs.google.com/document/d/abc')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.queryByText('Not a link')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add/i })).not.toBeInTheDocument()
+  })
+
+  it('lets an admin add a document, saving the whole list', async () => {
+    const spy = vi.spyOn(api, 'apiFetch').mockResolvedValue({ ok: true } as never)
+    const user = userEvent.setup()
+    const onUpdate = vi.fn()
+    render(<CustomFieldsSection fields={[DOC_FIELD]} billId="b1" values={{}} isAdmin onUpdate={onUpdate} />)
+
+    await user.click(screen.getByRole('button', { name: /add a document/i }))
+    await user.type(screen.getByLabelText('Testimony document title'), 'Comment letter')
+    await user.type(screen.getByLabelText('Testimony document link'), 'https://example.org/letter.pdf')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    const expected = [{ title: 'Comment letter', url: 'https://example.org/letter.pdf' }]
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('f3', JSON.stringify(expected), 'You'))
+    expect(spy).toHaveBeenCalledWith('/bills/b1/custom-fields', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify({ f3: expected }),
+    }))
+    spy.mockRestore()
+  })
+
+  it('refuses a link that is not https before saving', async () => {
+    const spy = vi.spyOn(api, 'apiFetch').mockResolvedValue({ ok: true } as never)
+    const user = userEvent.setup()
+    render(<CustomFieldsSection fields={[DOC_FIELD]} billId="b1" values={{}} isAdmin onUpdate={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /add a document/i }))
+    await user.type(screen.getByLabelText('Testimony document title'), 'Letter')
+    await user.type(screen.getByLabelText('Testimony document link'), 'http://example.org/letter')
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/https/)
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it('removing the last document clears the field', async () => {
+    const spy = vi.spyOn(api, 'apiFetch').mockResolvedValue({ ok: true } as never)
+    const user = userEvent.setup()
+    const onUpdate = vi.fn()
+    const one = { f3: { ...DOCS.f3, value: JSON.stringify([{ title: 'Letter', url: 'https://example.org/l' }]) } }
+    render(<CustomFieldsSection fields={[DOC_FIELD]} billId="b1" values={one} isAdmin onUpdate={onUpdate} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove Letter from Testimony' }))
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('f3', null, 'You'))
+    expect(spy).toHaveBeenCalledWith('/bills/b1/custom-fields', expect.objectContaining({
+      method: 'PUT', body: JSON.stringify({ f3: null }),
+    }))
+    spy.mockRestore()
+  })
+})

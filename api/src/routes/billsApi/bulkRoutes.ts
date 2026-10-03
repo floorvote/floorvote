@@ -74,6 +74,16 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       return c.json({ error: 'priority must be high, medium, low, or null' }, 400)
     }
 
+    // Document fields hold a list of links validated one bill at a time
+    // (PUT /bills/:id/custom-fields); bulk edit offers only checkbox and dropdown
+    // fields, so refuse a document field here rather than store an unchecked value.
+    if (hasCf) {
+      const cfIds = body.customFields!.map(e => e.fieldId)
+      const docField = await db.select({ id: customFieldDefinitions.id }).from(customFieldDefinitions)
+        .where(and(inArray(customFieldDefinitions.id, cfIds), eq(customFieldDefinitions.type, 'document'))).get()
+      if (docField) return c.json({ error: 'Document fields cannot be bulk edited' }, 400)
+    }
+
     // Resolve bill IDs
     let billIds: string[]
     if (hasIds) {

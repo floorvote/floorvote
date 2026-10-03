@@ -27,7 +27,7 @@ export type DemoSeedCustomField = {
   id: string
   name: string
   slug: string
-  type: 'dropdown' | 'text' | 'date' | 'binary'
+  type: 'dropdown' | 'text' | 'date' | 'binary' | 'document'
   options: string[] | null
   displayOrder: number
   pinned?: boolean

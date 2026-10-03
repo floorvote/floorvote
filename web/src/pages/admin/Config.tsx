@@ -40,7 +40,7 @@ type CustomFieldDef = {
   id: string
   name: string
   slug: string | null
-  type: 'binary' | 'dropdown' | 'text' | 'date'
+  type: 'binary' | 'dropdown' | 'text' | 'date' | 'document'
   options: string[] | null
   multiple?: boolean
   displayOrder: number
@@ -140,7 +140,7 @@ export function Config() {
 
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
   const [cfName, setCfName] = useState('')
-  const [cfType, setCfType] = useState<'binary' | 'dropdown' | 'text' | 'date'>('text')
+  const [cfType, setCfType] = useState<'binary' | 'dropdown' | 'text' | 'date' | 'document'>('text')
   const [cfOptions, setCfOptions] = useState('')
   const [cfMultiple, setCfMultiple] = useState(false)
   const [cfAdding, setCfAdding] = useState(false)
@@ -1118,11 +1118,12 @@ export function Config() {
                         }}
                       >
                         <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>
-                          {field.type === 'binary' ? 'check_box' : field.type === 'dropdown' ? 'list' : field.type === 'text' ? 'notes' : 'event'}
+                          {field.type === 'binary' ? 'check_box' : field.type === 'dropdown' ? 'list' : field.type === 'text' ? 'notes' : field.type === 'document' ? 'description' : 'event'}
                         </span>
                         {field.type === 'binary' ? 'Checkbox'
                           : field.type === 'dropdown' ? `${field.multiple ? 'Multi-dropdown' : 'Dropdown'} · ${field.options?.length ?? 0} options`
                           : field.type === 'text' ? 'Text'
+                          : field.type === 'document' ? 'Documents'
                           : 'Date'}
                       </span>
                       <button
@@ -1142,6 +1143,7 @@ export function Config() {
                             : (field.type === 'binary' ? 'Yes/no toggle'
                               : field.type === 'dropdown' ? 'Pick from a predefined list'
                               : field.type === 'text' ? 'Free-form text with markdown; URLs auto-linked'
+                              : field.type === 'document' ? 'Titled links to documents the team keeps elsewhere, such as testimony or comment letters'
                               : 'Date picker')
                         return (
                           <span style={{ ...tooltipPosition(cfTooltip), ...TOOLTIP_STYLE, maxWidth: 280, whiteSpace: 'normal' }}>
@@ -1195,6 +1197,7 @@ export function Config() {
               <option value="binary">Checkbox</option>
               <option value="dropdown">Dropdown</option>
               <option value="date">Date</option>
+              <option value="document">Documents</option>
             </select>
           </div>
           {cfType === 'dropdown' && (

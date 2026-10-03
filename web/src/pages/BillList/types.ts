@@ -42,7 +42,7 @@ export type CustomFieldDef = {
   id: string
   name: string
   slug: string | null
-  type: 'binary' | 'dropdown' | 'text' | 'date'
+  type: 'binary' | 'dropdown' | 'text' | 'date' | 'document'
   options: string[] | null
   multiple?: boolean
   displayOrder: number

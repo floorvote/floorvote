@@ -7,7 +7,7 @@ import type { AppEnv } from '../types'
 
 export const customFieldsApiRouter = new Hono<AppEnv>()
 
-const VALID_TYPES = ['binary', 'dropdown', 'text', 'date'] as const
+const VALID_TYPES = ['binary', 'dropdown', 'text', 'date', 'document'] as const
 
 function parseOptions(raw: string | null): string[] | null {
   if (!raw) return null

@@ -7,12 +7,13 @@ import { CommentContent } from './CommentContent'
 import { Picker } from './Picker'
 import { InfoTooltip } from './InfoTooltip'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
+import { normalizeDocument, parseStoredDocuments, DOCUMENTS_PER_FIELD_MAX, type DocumentLink } from '../../../shared/customFieldValues'
 
 export type CustomFieldDef = {
   id: string
   name: string
   slug: string | null
-  type: 'binary' | 'dropdown' | 'text' | 'date'
+  type: 'binary' | 'dropdown' | 'text' | 'date' | 'document'
   options: string[] | null
   multiple?: boolean
   displayOrder: number
@@ -111,7 +112,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate,
 
   const sorted = [...fields].sort((a, b) => a.displayOrder - b.displayOrder)
 
-  async function save(fieldId: string, value: string | string[] | null) {
+  async function save(fieldId: string, value: string | string[] | DocumentLink[] | null) {
     if (!collect) {
       await apiFetch(`/bills/${billId}/custom-fields`, {
         method: 'PUT',
@@ -371,6 +372,24 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate,
       )
     }
 
+    if (field.type === 'document') {
+      const docs = parseStoredDocuments(currentValue)
+      return (
+        <div key={field.id} style={{ ...ROW, alignItems: 'start' }}>
+          <span style={{ ...labelStyle, paddingTop: 2 }}>{field.name}</span>
+          <div>
+            <DocumentList
+              fieldName={field.name}
+              docs={docs}
+              isAdmin={isAdmin}
+              onChange={next => save(field.id, next.length === 0 ? null : next)}
+            />
+            {entry && !collect && auditLine(entry)}
+          </div>
+        </div>
+      )
+    }
+
     return null
   }
 
@@ -383,6 +402,89 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate,
       <div>
         {sorted.map(renderField)}
       </div>
+    </div>
+  )
+}
+
+/** A document field: titled links, each opening in a new tab. Admins can add
+ *  and remove them; the server checks every link again (https only). */
+function DocumentList({ fieldName, docs, isAdmin, onChange }: {
+  fieldName: string
+  docs: DocumentLink[]
+  isAdmin: boolean
+  onChange: (next: DocumentLink[]) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [title, setTitle] = useState('')
+  const [url, setUrl] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  function reset() {
+    setAdding(false); setTitle(''); setUrl(''); setError(null)
+  }
+
+  function add() {
+    const r = normalizeDocument({ title, url })
+    if (!r.ok) { setError(r.reason.charAt(0).toUpperCase() + r.reason.slice(1) + '.'); return }
+    onChange([...docs, r.doc])
+    reset()
+  }
+
+  return (
+    <div>
+      {docs.length === 0 && !adding && !isAdmin && <span style={notSetStyle}>Not set</span>}
+      {docs.length > 0 && (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {docs.map((d, i) => (
+            <li key={`${d.url}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: fontSize.sm }}>
+              <a href={d.url} target="_blank" rel="noopener noreferrer" style={{ color: color.linkBlue, overflowWrap: 'anywhere' }}>{d.title}</a>
+              {isAdmin && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${d.title} from ${fieldName}`}
+                  onClick={() => onChange(docs.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: color.textMuted, display: 'inline-flex' }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: fontSize.base }}>delete</span>
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {isAdmin && adding && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: docs.length > 0 ? 6 : 0 }}>
+          <input
+            aria-label={`${fieldName} document title`}
+            placeholder="Title"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            style={inputStyle}
+          />
+          <input
+            aria-label={`${fieldName} document link`}
+            placeholder="https://"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
+            style={inputStyle}
+          />
+          {error && <span role="alert" style={{ fontSize: fontSize.xs, color: color.textErrorRed }}>{error}</span>}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={add} style={{ ...pickerTriggerStyle(true), cursor: 'pointer' }}>Add</button>
+            <button type="button" onClick={reset} style={{ ...pickerTriggerStyle(false), cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {isAdmin && !adding && docs.length < DOCUMENTS_PER_FIELD_MAX && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          style={{ background: 'none', border: 'none', padding: 0, marginTop: docs.length > 0 ? 4 : 0, cursor: 'pointer', color: color.linkBlue, fontSize: fontSize.sm, fontFamily: 'inherit' }}
+        >
+          {docs.length === 0 ? 'Add a document…' : 'Add another…'}
+        </button>
+      )}
     </div>
   )
 }

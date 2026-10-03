@@ -138,10 +138,12 @@ export function DraftBills() {
       if (draftNumber.trim()) body.billNumber = draftNumber.trim()
       if (draftYear.trim()) body.year = Number(draftYear)
       if (draftState.trim()) body.state = draftState.trim()
-      const multipleById = new Map(customFieldDefs.map(f => [f.id, !!f.multiple]))
+      // Multi-select and document values are held as JSON array strings (the
+      // form shares CustomFieldsSection with the bill page); the API takes arrays.
+      const arrayValued = new Map(customFieldDefs.map(f => [f.id, !!f.multiple || f.type === 'document']))
       const customFields = Object.fromEntries(
         Object.entries(customFieldValues).map(([fieldId, { value }]) =>
-          [fieldId, multipleById.get(fieldId) ? parseStoredMulti(value) : value]),
+          [fieldId, arrayValued.get(fieldId) ? parseStoredMulti(value) : value]),
       )
       if (Object.keys(customFields).length > 0) body.customFields = customFields
       const created = await apiFetch<{ id: string }>('/bills/draft', {

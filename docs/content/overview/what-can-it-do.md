@@ -43,6 +43,8 @@ Once the team has talked a bill through, admins can set the team's official posi
 
 Track whatever else matters to your team with custom fields you define yourself: perhaps a "Testimony submitted" checkbox, a "Lead person" dropdown, or a "Draft amendment" text field.
 
+A documents field holds links to the team's own documents about a bill, each with a title: testimony, comment letters, redlines. FloorVote stores only the title and the link, so each document keeps the sharing settings it has wherever it lives.
+
 ## Roles and permissions
 
 Not everyone on a team needs the same level of access. FloorVote has three built-in roles—owner, admin, and member—plus team roles you define yourself, like committees, so you can group members however your team actually works.
