@@ -162,6 +162,10 @@ export function Members() {
   const [listError, setListError] = useState<string | null>(null)
   const [memberSearch, setMemberSearch] = useState('')
   const [troubleFilter, setTroubleFilter] = useState(false)
+  // Feedback for the count line's "Copy N emails" button.
+  const [copyEmailsStatus, setCopyEmailsStatus] = useState<'copied' | 'error' | null>(null)
+  const copyEmailsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (copyEmailsTimer.current) clearTimeout(copyEmailsTimer.current) }, [])
 
   // Role management state
   const [orgRoles, setOrgRoles] = useState<Role[]>([])
@@ -604,6 +608,50 @@ export function Members() {
     display: 'inline-flex', alignItems: 'center',
     whiteSpace: 'nowrap', cursor: 'pointer',
   }
+  // The members currently shown in the table, in table order: filtered by
+  // search and the login-trouble toggle, then sorted.
+  const filtering = memberSearch.trim() !== '' || troubleFilter
+  const shownMembers = [...members]
+    .filter(memberMatchesFilters)
+    .sort((a, b) => {
+      // Pin the signed-in user to the top, but only in the unfiltered
+      // list — a search for someone else must not staple self on top.
+      if (!filtering) {
+        if (a.id === user?.id) return -1
+        if (b.id === user?.id) return 1
+      }
+      const rolePriority = { owner: 0, admin: 1, member: 2 } as const
+      if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
+      return displayName(a).localeCompare(displayName(b))
+    })
+  // Emails the copy button writes: shown members who aren't deactivated
+  // (invitees who never logged in are included), each address once,
+  // compared case-insensitively.
+  const copyableEmails: string[] = []
+  {
+    const seen = new Set<string>()
+    for (const m of shownMembers) {
+      if (m.deactivatedAt) continue
+      const key = m.email.trim().toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      copyableEmails.push(m.email.trim())
+    }
+  }
+
+  async function handleCopyEmails() {
+    if (copyableEmails.length === 0) return
+    if (copyEmailsTimer.current) clearTimeout(copyEmailsTimer.current)
+    try {
+      await navigator.clipboard.writeText(copyableEmails.join(', '))
+      setCopyEmailsStatus('copied')
+      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), 2000)
+    } catch {
+      setCopyEmailsStatus('error')
+      copyEmailsTimer.current = setTimeout(() => setCopyEmailsStatus(null), 4000)
+    }
+  }
+
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900, margin: '0 auto' }}>
       <SettingsNav />
@@ -828,12 +876,35 @@ export function Members() {
           })()}
         </div>
         {!listLoading && !listError && (
-          <div style={{ ...HELPER_TEXT, marginTop: 14, marginBottom: 8 }}>
-            {(() => {
-              const shown = members.filter(memberMatchesFilters).length
-              const filtering = memberSearch.trim() !== '' || troubleFilter
-              return filtering ? `Showing ${shown} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`
-            })()}
+          <div style={{ ...HELPER_TEXT, marginTop: 14, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span>
+              {filtering ? `Showing ${shownMembers.length} of ${members.length}` : `${members.length} ${members.length === 1 ? 'member' : 'members'}`}
+            </span>
+            <button
+              type="button"
+              onClick={handleCopyEmails}
+              disabled={copyableEmails.length === 0}
+              title="Copy these members' emails, separated by commas, to paste into your email's BCC field. Deactivated members are left out."
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: fontSize.sm,
+                color: copyableEmails.length === 0 ? color.textMuted : color.accentBlue,
+                background: 'none',
+                border: 'none',
+                cursor: copyableEmails.length === 0 ? 'not-allowed' : 'pointer',
+                padding: '2px 4px',
+              }}
+            >
+              Copy {copyableEmails.length} {copyableEmails.length === 1 ? 'email' : 'emails'}
+            </button>
+            {copyEmailsStatus === 'copied' && (
+              <span role="status" style={{ color: color.textSuccess, fontWeight: fontWeight.medium }}>Copied</span>
+            )}
+            {copyEmailsStatus === 'error' && (
+              <span role="alert" style={{ color: color.textErrorRed }}>Couldn't copy — select the emails from the table instead.</span>
+            )}
           </div>
         )}
         {listLoading && <div style={{ color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>}
@@ -863,19 +934,7 @@ export function Members() {
               </tr>
             </thead>
             <tbody>
-              {[...members]
-                .filter(memberMatchesFilters)
-                .sort((a, b) => {
-                  // Pin the signed-in user to the top, but only in the unfiltered
-                  // list — a search for someone else must not staple self on top.
-                  if (!(memberSearch.trim() !== '' || troubleFilter)) {
-                    if (a.id === user?.id) return -1
-                    if (b.id === user?.id) return 1
-                  }
-                  const rolePriority = { owner: 0, admin: 1, member: 2 } as const
-                  if (a.role !== b.role) return rolePriority[a.role] - rolePriority[b.role]
-                  return displayName(a).localeCompare(displayName(b))
-                })
+              {shownMembers
                 .map((member) => {
                 const isSelf = member.id === user?.id
                 const isDeactivated = !!member.deactivatedAt
