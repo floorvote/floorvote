@@ -494,7 +494,13 @@ export function Members() {
     if (troubleFilter && !m.loginTrouble) return false
     const q = memberSearch.trim().toLowerCase()
     if (!q) return true
-    return displayName(m).toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
+    // Name, email, any Role name, or the permission label as displayed. An
+    // Owner is an Admin with extra powers, so Owners also match queries inside
+    // "admin"; "owner" still matches only Owners. Subtitle deliberately never
+    // matches, to keep Role searches from pulling in Members outside the Role.
+    const fields = [displayName(m), m.email, accountRoleLabel(m.role), ...m.roles.map(r => r.name)]
+    if (fields.some(f => f.toLowerCase().includes(q))) return true
+    return m.role === 'owner' && 'admin'.includes(q)
   }
 
   type MenuItem = { kind: 'action'; label: string; danger?: boolean; disabled?: boolean; onClick: () => void; tooltip?: string; warn?: boolean }
@@ -796,7 +802,7 @@ export function Members() {
             type="text"
             value={memberSearch}
             onChange={(e) => setMemberSearch(e.target.value)}
-            placeholder="Search members by name or email…"
+            placeholder="Search by name, email, role, or permission level…"
             style={{ ...inputStyle, maxWidth: 320 }}
           />
           {!listLoading && !listError && members.some(m => m.loginTrouble) && (() => {

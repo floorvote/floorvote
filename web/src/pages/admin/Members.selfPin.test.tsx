@@ -70,8 +70,9 @@ describe('Members table self-pinning', () => {
     const { container } = renderMembers()
     await screen.findByText('Sole Owner')
     const user = userEvent.setup()
-    await user.type(screen.getByPlaceholderText(/search members by name or email/i), 'admin')
-    // Plain role-then-name order: Alice sorts before Zed, self is not hoisted.
-    expect(nameOrder(container)).toEqual(['Alice Admin', 'Zed Admin'])
+    await user.type(screen.getByPlaceholderText(/search by name, email, role, or permission level/i), 'admin')
+    // "admin" also matches the Owner. Plain role-then-name order: Owner first,
+    // then Alice before Zed; self is not hoisted.
+    expect(nameOrder(container)).toEqual(['Sole Owner', 'Alice Admin', 'Zed Admin'])
   })
 })
