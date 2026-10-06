@@ -19,6 +19,7 @@ import { orgRolesLabel } from '../../lib/orgNoun'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
 import { ChangeEmailDialog } from '../../components/ChangeEmailDialog'
+import { emailChangedLabel, type EmailChangedFields } from '../../lib/emailChangedLabel'
 
 type Role = { id: string; name: string }
 
@@ -41,19 +42,22 @@ type Member = {
   emailBounce?: { reason: string | null } | null
 }
 
-interface AuthEvent {
+// A pending invite, as the server defines it: someone invited them, and they
+// have never signed in and aren't deactivated. A member with no inviter
+// joined another way. Gates the "Invite pending" and "Email bounced" labels
+// and the invite actions alike.
+function isPendingInvite(m: Pick<Member, 'invitedBy' | 'hasLoggedIn' | 'deactivatedAt'>): boolean {
+  return m.invitedBy !== null && !m.hasLoggedIn && !m.deactivatedAt
+}
+
+interface AuthEvent extends EmailChangedFields {
   id: string
   event: string
-  reason: string | null
   linkType: string | null
   provider: string | null
   ipCountry: string | null
   createdAt: string
   messageId?: string | null
-  /** The address the event concerns; for email_changed, the new one (the old is in `reason`). */
-  email?: string
-  /** For email_changed: the admin who made the change, or null once they're gone. */
-  actorName?: string | null
 }
 
 interface DeliveryEntry {
@@ -94,7 +98,7 @@ function authEventLabel(event: AuthEvent): string {
     case 'email_complained':
       return 'Spam complaint'
     case 'email_changed':
-      return `Email changed from ${event.reason} to ${event.email}${event.actorName ? ` by ${event.actorName}` : ''}`
+      return emailChangedLabel(event)
     default:
       return event.event
   }
@@ -598,7 +602,7 @@ export function Members() {
       onClick: () => { close(); openActivity(member) },
     })
 
-    if (!isSelf && !member.hasLoggedIn && !isDeactivated && member.invitedBy !== null) {
+    if (!isSelf && isPendingInvite(member)) {
       items.push({ kind: 'action', label: 'Resend invite', disabled: demoLocked, onClick: () => { close(); handleResendInvite(member) } })
       // Only an Owner may change a pending Owner's address (the server refuses it too).
       if (canManageThisMember) {
@@ -1120,7 +1124,7 @@ export function Members() {
                           }}>
                             Deactivated
                           </span>
-                        ) : !member.hasLoggedIn && member.emailBounce ? (
+                        ) : isPendingInvite(member) && member.emailBounce ? (
                           // A toggletip, not a `title`, so the reason opens on tap
                           // (touch screens) and keyboard focus as well as hover.
                           <HoverTooltip
@@ -1139,7 +1143,7 @@ export function Members() {
                               Email bounced
                             </span>
                           </HoverTooltip>
-                        ) : !member.hasLoggedIn && member.invitedBy !== null ? (
+                        ) : isPendingInvite(member) ? (
                           <span style={{
                             fontSize: fontSize.sm,
                             padding: '2px 8px',

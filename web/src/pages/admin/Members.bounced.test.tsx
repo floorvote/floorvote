@@ -117,13 +117,14 @@ describe('Members "Email bounced" status', () => {
     expect(screen.getByRole('tooltip').textContent).toMatch(/couldn't be delivered/i)
   })
 
-  it('shows "Email bounced" for a never-signed-in member with no inviter whose email bounced', async () => {
+  it('never labels a member with no inviter "Email bounced", even if the API reports a bounce', async () => {
     mockApi([OWNER, BOUNCED_NO_INVITER])
     renderMembers()
 
     const cell = await statusCell('Uninvited Bounce')
-    expect(within(cell).getByText('Email bounced')).toBeInTheDocument()
-    expect(within(cell).queryByText('Active')).not.toBeInTheDocument()
+    expect(within(cell).queryByText('Email bounced')).not.toBeInTheDocument()
+    expect(within(cell).queryByText('Invite pending')).not.toBeInTheDocument()
+    expect(within(cell).getByText('Active')).toBeInTheDocument()
   })
 
   it('keeps the amber "Invite pending" label for a pending invite whose email did not bounce', async () => {
