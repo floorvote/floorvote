@@ -25,6 +25,10 @@ type AccountAuthEvent = {
   provider: string | null
   ipCountry: string | null
   createdAt: string
+  /** The address the event concerns; for email_changed, the new one (the old is in `reason`). */
+  email?: string
+  /** For email_changed: the admin who made the change, or null once they're gone. */
+  actorName?: string | null
 }
 
 function accountEventLabel(e: AccountAuthEvent): string {
@@ -49,6 +53,8 @@ function accountEventLabel(e: AccountAuthEvent): string {
       return 'Email delivered'
     case 'email_complained':
       return 'Spam complaint'
+    case 'email_changed':
+      return `Email changed from ${e.reason} to ${e.email}${e.actorName ? ` by ${e.actorName}` : ''}`
     default:
       return e.event
   }

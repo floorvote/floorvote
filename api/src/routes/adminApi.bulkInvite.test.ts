@@ -296,6 +296,16 @@ describe('POST /admin/members/bulk-invite address checks', () => {
     expect(q._batches.flat()).toHaveLength(0)
   })
 
+  it('reports a member whose stored address has mixed case as exists and creates no second member', async () => {
+    // Sign-in paths that predate normalization can store an address as typed.
+    await seedUser({ email: 'Pat.Lee@Example.COM' })
+    const q = mockQueue()
+    const body = await bulkInvite([{ email: 'pat.lee@example.com' }], q)
+    expect(body.results).toEqual([{ email: 'pat.lee@example.com', status: 'exists' }])
+    expect((await allMembers()).filter(u => u.email.toLowerCase() === 'pat.lee@example.com')).toHaveLength(1)
+    expect(q._batches.flat()).toHaveLength(0)
+  })
+
   it('stores the address lowercased and trimmed, and the name trimmed to 100 characters', async () => {
     const body = await bulkInvite([{ name: `  ${'x'.repeat(150)}  `, email: '  Mixed.Case@Example.ORG ' }], mockQueue(), 'admin')
     expect(body.results).toEqual([{ email: 'mixed.case@example.org', status: 'invited', userId: expect.any(String) }])

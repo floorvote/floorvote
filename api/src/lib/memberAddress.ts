@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm'
+import { inArray, sql } from 'drizzle-orm'
 import { users } from '../db/schema'
 import type { AppDb } from '../types'
 import { isValidEmail } from '../../../shared/email'
@@ -12,7 +12,7 @@ import { isValidEmail } from '../../../shared/email'
 export type MemberAddressCheck =
   /** Lowercased and trimmed, but not a deliverable address. Never rewritten further. */
   | { email: string; status: 'invalid' }
-  /** Already a member's address. Deactivated members count. */
+  /** Already a member's address, compared without regard to case. Deactivated members count. */
   | { email: string; status: 'taken'; userId: string }
   | { email: string; status: 'available' }
 
@@ -36,14 +36,18 @@ export async function checkMemberAddresses(
   const emails = rawEmails.map(normalizeMemberAddress)
   const candidates = [...new Set(emails.filter(isValidEmail))]
 
+  // Compared on lower(email), not the stored value: the superadmin sign-in
+  // path stores an address as the identity provider sent it, mixed case and
+  // all. Not index-backed, but the members table is small.
+  const storedLower = sql<string>`lower(${users.email})`
   const takenBy = new Map<string, string>()
   for (let i = 0; i < candidates.length; i += LOOKUP_CHUNK) {
     const rows = await db
-      .select({ id: users.id, email: users.email })
+      .select({ id: users.id, email: storedLower })
       .from(users)
-      .where(inArray(users.email, candidates.slice(i, i + LOOKUP_CHUNK)))
+      .where(inArray(storedLower, candidates.slice(i, i + LOOKUP_CHUNK)))
       .all()
-    for (const r of rows) takenBy.set(r.email, r.id)
+    for (const r of rows) if (!takenBy.has(r.email)) takenBy.set(r.email, r.id)
   }
 
   return emails.map((email): MemberAddressCheck => {

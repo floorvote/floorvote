@@ -34,6 +34,16 @@ describe('checkMemberAddresses', () => {
     ])
   })
 
+  it('finds a member whose stored address has mixed case', async () => {
+    // Sign-in paths that predate normalization can store an address as typed.
+    const id = await seedUser({ email: 'Pat.Lee@Example.COM' })
+    const results = await checkMemberAddresses(getDb(env.DB), ['pat.lee@example.com', ' PAT.LEE@EXAMPLE.COM '])
+    expect(results).toEqual([
+      { email: 'pat.lee@example.com', status: 'taken', userId: id },
+      { email: 'pat.lee@example.com', status: 'taken', userId: id },
+    ])
+  })
+
   it('marks malformed, blank, missing, and trailing-punctuation addresses invalid without stripping punctuation', async () => {
     const results = await checkMemberAddresses(getDb(env.DB), [
       'not-an-email',
