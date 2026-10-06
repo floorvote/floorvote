@@ -5,9 +5,6 @@
 --
 -- SQLite can't ALTER a CHECK, so rebuild the table. Mirrors migration 0056.
 --
--- Numbered 0075 rather than 0074 because open PR floorvote/floorvote#229
--- claims 0074.
---
 -- No semicolons in these comments. api/test/helpers.ts splits migration files
 -- on the statement terminator before it strips comment lines.
 CREATE TABLE auth_events_new (
