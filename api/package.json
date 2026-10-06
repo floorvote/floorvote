@@ -18,7 +18,7 @@
     "hono": "^4.13.12"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/vitest-pool-workers": "^0.16.20",
     "@cloudflare/workers-types": "^5.20261006.1",
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",

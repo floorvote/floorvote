@@ -9,6 +9,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # 0.22 hangs at exit after api's suite finishes on Linux CI (passes on
+      # macOS, and central's smaller suite exits fine). Re-test before lifting.
+      - dependency-name: "@cloudflare/vitest-pool-workers"
     groups:
       minor-and-patch:
         update-types:
