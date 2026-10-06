@@ -109,3 +109,52 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
   }
   return bounces
 }
+
+/**
+ * Bounce state per pending invite (never signed in, not deactivated): set when
+ * their latest invite or sign-in email, by send time, bounced. A send is an
+ * `email_sent` row, or an `email_bounced` row with no message id (the provider
+ * refused a suppressed address at send time). A sent email counts as bounced
+ * once the hourly check records `email_bounced` for its message id; a newer
+ * send with no outcome yet clears the state.
+ */
+export async function pendingInviteBounces(db: AppDb): Promise<Map<string, { reason: string | null }>> {
+  const rows = await db
+    .select({
+      userId: authEvents.userId,
+      event: authEvents.event,
+      reason: authEvents.reason,
+      messageId: authEvents.messageId,
+    })
+    .from(authEvents)
+    .innerJoin(users, eq(users.id, authEvents.userId))
+    .where(and(
+      inArray(authEvents.event, ['email_sent', 'email_bounced']),
+      inArray(authEvents.linkType, ['invite', 'login']),
+      isNull(users.deactivatedAt),
+      not(hasLoggedInWhere(db)),
+    ))
+    .orderBy(authEvents.createdAt)
+    .all()
+
+  type Latest = { messageId: string | null; reason: string | null; bounced: boolean }
+  const latestByUser = new Map<string, Latest>()
+  const bounceByMessage = new Map<string, string | null>()
+  for (const r of rows) {
+    if (!r.userId) continue
+    if (r.event === 'email_bounced' && r.messageId) {
+      bounceByMessage.set(r.messageId, r.reason)
+    } else if (r.event === 'email_bounced') {
+      latestByUser.set(r.userId, { messageId: null, reason: r.reason, bounced: true })
+    } else {
+      latestByUser.set(r.userId, { messageId: r.messageId, reason: null, bounced: false })
+    }
+  }
+
+  const out = new Map<string, { reason: string | null }>()
+  for (const [userId, latest] of latestByUser) {
+    if (latest.bounced) out.set(userId, { reason: latest.reason })
+    else if (latest.messageId && bounceByMessage.has(latest.messageId)) out.set(userId, { reason: bounceByMessage.get(latest.messageId) ?? null })
+  }
+  return out
+}

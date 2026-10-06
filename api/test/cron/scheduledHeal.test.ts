@@ -11,13 +11,13 @@ vi.mock('../../src/lib/weekAhead', () => ({ runWeekAhead: vi.fn(async () => unde
 const sendEmail = vi.fn(async () => ({ ok: true, provider: 'resend' as const }))
 vi.mock('../../src/lib/email', () => ({ sendEmail: (env: any, msg: any) => sendEmail(env, msg) }))
 vi.mock('../../src/lib/emailHealthJob', () => ({ runEmailHealth: vi.fn(async () => 'none') }))
-vi.mock('../../src/lib/inviteBounceJob', () => ({ runInviteBounceCheck: vi.fn(async () => []) }))
+vi.mock('../../src/lib/inviteBounces', () => ({ runInviteBounceCheck: vi.fn(async () => []) }))
 
 import worker from '../../src/index'
 import { healStalledAiBills } from '../../src/lib/healStalledAi'
 import { registerWithCentral } from '../../src/cron/sync'
 import { runEmailHealth } from '../../src/lib/emailHealthJob'
-import { runInviteBounceCheck } from '../../src/lib/inviteBounceJob'
+import { runInviteBounceCheck } from '../../src/lib/inviteBounces'
 
 async function runScheduled(cron: string, scheduledTime?: number) {
   const ctx = createExecutionContext()

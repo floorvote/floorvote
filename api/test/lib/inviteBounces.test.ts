@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedAuthEvent, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { authEvents } from '../../src/db/schema'
-import { runInviteBounceCheck } from '../../src/lib/inviteBounceJob'
+import { runInviteBounceCheck } from '../../src/lib/inviteBounces'
 
 const NOW = new Date('2026-09-23T21:00:00Z')
 const HOUR_AGO = '2026-09-23 20:00:00'
