@@ -9,8 +9,12 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # 0.22 hangs at exit after api's suite finishes on Linux CI (passes on
-      # macOS, and central's smaller suite exits fine). Re-test before lifting.
+      # api's suite hangs after its last test file on Linux CI from 0.18.6 on
+      # (0.18.5 is fine): the pool buffers console output from waitUntil work
+      # behind SELF.fetch and never flushes it. Upstream bug
+      # cloudflare/workers-sdk#15498, fix pending in #15565. The package is now
+      # @cloudflare/vitest-plugin 1.x (0.22 was the last pool-workers release),
+      # so lifting this means migrating api to that package once the fix ships.
       - dependency-name: "@cloudflare/vitest-pool-workers"
     groups:
       minor-and-patch:
