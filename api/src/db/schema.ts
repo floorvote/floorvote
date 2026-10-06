@@ -57,6 +57,8 @@ export const authEvents = sqliteTable('auth_events', {
   userAgent: text('user_agent'),
   ipCountry: text('ip_country'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+  // Who caused the event when it isn't the member it's about (migration 0075).
+  actorId: text('actor_id'),
 })
 
 // Per-hour, per-provider send counters for the email-health job (migration 0073).

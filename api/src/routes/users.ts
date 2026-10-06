@@ -10,6 +10,7 @@ import { getAccountDeletionEnabled, activeUser } from '../lib/accountDeletion'
 import { nowDb } from '../lib/dbTime'
 import { countActiveOwners } from '../lib/owners'
 import { userDisplayNameSql } from '../lib/displayName'
+import { authEventActor, authEventActorName } from '../lib/authEvents'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -240,8 +241,11 @@ usersRouter.get('/me/auth-events', async (c) => {
       provider: authEvents.provider,
       ipCountry: authEvents.ipCountry,
       createdAt: authEvents.createdAt,
+      email: authEvents.email,
+      actorName: authEventActorName,
     })
     .from(authEvents)
+    .leftJoin(authEventActor, eq(authEventActor.id, authEvents.actorId))
     .where(eq(authEvents.userId, userId))
     .orderBy(desc(authEvents.createdAt))
     .limit(50)

@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like } from 'drizzle-orm'
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
@@ -13,14 +13,14 @@ import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { nowDb } from '../lib/dbTime'
-import { recordAuthEvent, authReqContext } from '../lib/authEvents'
+import { recordAuthEvent, authReqContext, authEventActor, authEventActorName } from '../lib/authEvents'
 import { getAccountDeletionEnabled, ACCOUNT_DELETION_KEY } from '../lib/accountDeletion'
 import { countActiveOwners } from '../lib/owners'
 import { healStalledAiBills } from '../lib/healStalledAi'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import { adminSavedViewsRouter } from './savedViewsApi'
-import type { AppEnv } from '../types'
+import type { AppDb, AppEnv } from '../types'
 import { checkMemberAddresses } from '../lib/memberAddress'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -211,20 +211,10 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
   return c.json({ summary, results })
 })
 
-// POST /admin/members/:id/resend-invite
-adminApiRouter.post('/members/:id/resend-invite', async (c) => {
-  const targetId = c.req.param('id')
-  const db = getDb(c.env.DB)
-
-  const target = await db
-    .select({ id: users.id, email: users.email, deactivatedAt: users.deactivatedAt })
-    .from(users)
-    .where(eq(users.id, targetId))
-    .get()
-
-  if (!target) return c.json({ error: 'User not found' }, 404)
-  if (target.deactivatedAt) return c.json({ error: 'Cannot resend invite to a deactivated user' }, 400)
-
+// A new seven-day invite link for a pending invite, sent the way every
+// admin-initiated invite is: link_requested first, then the email in the
+// background so the response doesn't wait on the mail provider.
+async function sendInvite(c: Context<AppEnv>, db: AppDb, target: { id: string; email: string }): Promise<void> {
   const INVITE_DURATION_MS = 7 * 24 * 60 * 60 * 1000
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
@@ -244,8 +234,101 @@ adminApiRouter.post('/members/:id/resend-invite', async (c) => {
   } catch {
     sendMagicLink(target.email, url, c.env, 'invite', db, target.id).catch(console.error)
   }
+}
 
+// POST /admin/members/:id/resend-invite
+adminApiRouter.post('/members/:id/resend-invite', async (c) => {
+  const targetId = c.req.param('id')
+  const db = getDb(c.env.DB)
+
+  const target = await db
+    .select({ id: users.id, email: users.email, deactivatedAt: users.deactivatedAt })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .get()
+
+  if (!target) return c.json({ error: 'User not found' }, 404)
+  if (target.deactivatedAt) return c.json({ error: 'Cannot resend invite to a deactivated user' }, 400)
+
+  await sendInvite(c, db, target)
   return c.json({ ok: true })
+})
+
+const CHANGE_EMAIL_ERRORS = {
+  unchanged: "That's already their address. Check it for a typo, or use Resend invite to send to it again.",
+  inUse: 'Another member already uses that address.',
+  suppressed: 'This address has bounced before. Check it for a typo.',
+  invalid: 'Invalid email address',
+} as const
+
+// POST /admin/members/:id/change-email  { email }
+// Fixes a pending invite's address and sends a new invite in one step. Only a
+// pending invite: once a member has signed in, moving their login to another
+// inbox needs account-takeover safeguards this route doesn't have.
+adminApiRouter.post('/members/:id/change-email', async (c) => {
+  const targetId = c.req.param('id')
+  const currentUser = c.get('user')
+  const db = getDb(c.env.DB)
+
+  if (targetId === currentUser.id) return c.json({ error: "You can't change your own address here" }, 400)
+
+  const target = await db
+    .select({
+      id: users.id, email: users.email, role: users.role, deactivatedAt: users.deactivatedAt,
+      invitedBy: users.invitedBy, hasLoggedIn: hasLoggedInSelect,
+    })
+    .from(users)
+    .where(eq(users.id, targetId))
+    .get()
+
+  if (!target) return c.json({ error: 'User not found' }, 404)
+  if (target.role === 'owner' && currentUser.role !== 'owner') {
+    return c.json({ error: "Only owners can change an owner's address" }, 403)
+  }
+  if (target.deactivatedAt) return c.json({ error: 'Cannot change the address of a deactivated member' }, 400)
+  // Same test as the Members page's "Invite pending": invited, and never
+  // signed in with a link. A member nobody invited signed in another way.
+  if (target.hasLoggedIn || target.invitedBy === null) {
+    return c.json({ error: 'Only a pending invite\'s address can be changed' }, 400)
+  }
+
+  const body = await c.req.json<{ email?: unknown }>().catch(() => ({} as { email?: unknown }))
+  const raw = typeof body.email === 'string' ? body.email : ''
+  const [check] = await checkMemberAddresses(db, [raw])
+  if (check.status === 'invalid') return c.json({ error: CHANGE_EMAIL_ERRORS.invalid }, 400)
+  // Compared to the stored address lowercased: a stored address can have
+  // mixed case, and the check above matches it to this member either way.
+  if (check.email === target.email.toLowerCase().trim()) return c.json({ error: CHANGE_EMAIL_ERRORS.unchanged }, 400)
+  if (check.status === 'taken') return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
+  const email = check.email
+
+  // Refuse an address the provider already drops. If the lookup can't answer,
+  // let the change through: the hourly bounce check catches a bad address.
+  try {
+    const central = c.env.CENTRAL as { emailSuppression?: (email: string) => Promise<{ suppressed: boolean | null }> } | undefined
+    if (central?.emailSuppression && (await central.emailSuppression(email)).suppressed === true) {
+      return c.json({ error: CHANGE_EMAIL_ERRORS.suppressed }, 400)
+    }
+  } catch (e) { console.error('[change-email] suppression lookup failed', e) }
+
+  // Two changes racing to the same address both pass the check above; the
+  // unique index on users.email lets only one write land.
+  try {
+    await db.update(users).set({ email }).where(eq(users.id, target.id))
+  } catch (e) {
+    if (/UNIQUE constraint failed/i.test(`${e} ${(e as { cause?: unknown })?.cause ?? ''}`)) {
+      return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
+    }
+    throw e
+  }
+
+  // Links sent to the old address must not let anyone in.
+  await db.delete(magicLinks).where(and(eq(magicLinks.userId, target.id), isNull(magicLinks.usedAt)))
+  await recordAuthEvent(db, {
+    event: 'email_changed', email, reason: target.email, userId: target.id, actorId: currentUser.id, ...authReqContext(c),
+  })
+  await sendInvite(c, db, { id: target.id, email })
+  return c.json({ ok: true, email })
 })
 
 // POST /admin/members/:id/resend-login
@@ -545,8 +628,11 @@ adminApiRouter.get('/members/:id/auth-events', async (c) => {
       userAgent: authEvents.userAgent,
       createdAt: authEvents.createdAt,
       messageId: authEvents.messageId,
+      email: authEvents.email,
+      actorName: authEventActorName,
     })
     .from(authEvents)
+    .leftJoin(authEventActor, eq(authEventActor.id, authEvents.actorId))
     .where(eq(authEvents.userId, userId))
     .orderBy(desc(authEvents.createdAt))
     .limit(50)
