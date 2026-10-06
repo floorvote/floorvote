@@ -303,6 +303,19 @@ describe('runInviteBounceCheck', () => {
     expect(await outcomes()).toHaveLength(0)
   })
 
+  it('does not return a bounce it failed to record, so the next run records and returns it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const memberId = await seedPendingInvite('a@example.test')
+    await seedSent(memberId, 'a@example.test', 'm-1')
+    const { e } = returning({ 'm-1': { status: 'deliveryFailed', isSpam: false, errorCause: 'x' } })
+    const db = getDb(env.DB)
+    const insert = vi.spyOn(db, 'insert').mockImplementationOnce(() => { throw new Error('D1 write failed') })
+
+    expect(await runInviteBounceCheck(e, db, NOW)).toEqual([])
+    insert.mockRestore()
+    expect(await runInviteBounceCheck(e, db, NOW)).toHaveLength(1)
+  })
+
   it('ignores statuses for message ids it did not ask about', async () => {
     const memberId = await seedPendingInvite('a@example.test')
     await seedSent(memberId, 'a@example.test', 'm-1')
