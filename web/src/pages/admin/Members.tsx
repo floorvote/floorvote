@@ -35,6 +35,8 @@ type Member = {
   canVote: boolean
   voteCount: number
   loginTrouble?: boolean
+  /** Set when this pending invite's latest invite or sign-in email bounced. */
+  emailBounce?: { reason: string | null } | null
 }
 
 interface AuthEvent {
@@ -1090,6 +1092,25 @@ export function Members() {
                           }}>
                             Deactivated
                           </span>
+                        ) : !member.hasLoggedIn && member.emailBounce ? (
+                          // A toggletip, not a `title`, so the reason opens on tap
+                          // (touch screens) and keyboard focus as well as hover.
+                          <HoverTooltip
+                            toggletip
+                            maxWidth={280}
+                            text={member.emailBounce.reason ?? "The email couldn't be delivered"}
+                          >
+                            <span style={{
+                              fontSize: fontSize.sm,
+                              padding: '2px 8px',
+                              borderRadius: radius.sm,
+                              fontWeight: fontWeight.semibold,
+                              background: color.bgDangerSoft,
+                              color: color.textDanger,
+                            }}>
+                              Email bounced
+                            </span>
+                          </HoverTooltip>
                         ) : !member.hasLoggedIn && member.invitedBy !== null ? (
                           <span style={{
                             fontSize: fontSize.sm,
