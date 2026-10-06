@@ -535,7 +535,9 @@ export function Members() {
 
   function handleEmailChanged(member: Member, email: string) {
     setChangeEmailMember(null)
-    setMembers(prev => prev.map(m => (m.id === member.id ? { ...m, email } : m)))
+    // The new invite is now the latest email, with no outcome yet, so the
+    // row is a plain pending invite again (as the next members fetch says).
+    setMembers(prev => prev.map(m => (m.id === member.id ? { ...m, email, emailBounce: null } : m)))
     setToast(`New invite sent to ${email}.`)
     setTimeout(() => setToast(null), 4000)
     actionsTriggerRefs.current[member.id]?.focus()

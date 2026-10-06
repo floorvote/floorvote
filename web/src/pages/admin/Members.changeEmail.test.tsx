@@ -267,6 +267,25 @@ describe('Members "Change email…" action', () => {
       expect(within(row).getByRole('button', { name: '···' })).toHaveFocus()
     })
 
+    it('moves a bounced row from "Email bounced" back to "Invite pending"', async () => {
+      const bounced = { ...PENDING, emailBounce: { reason: '550 5.1.1 user unknown' } }
+      mockApi([OWNER, bounced], {
+        '/admin/members/pending-1/change-email': () => ({ ok: true, email: 'jane@example.com' }),
+      })
+      renderMembers()
+      const before = (await screen.findByText('Jane Pending')).closest('tr')!
+      expect(within(before).getByText('Email bounced')).toBeInTheDocument()
+
+      const dialog = await openDialog()
+      fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'jane@example.com' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send new invite' }))
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+      const row = screen.getByText('Jane Pending').closest('tr')!
+      expect(within(row).getByText('Invite pending')).toBeInTheDocument()
+      expect(within(row).queryByText('Email bounced')).not.toBeInTheDocument()
+    })
+
     it('submits on Enter in the field', async () => {
       const spy = mockApi(undefined, {
         '/admin/members/pending-1/change-email': () => ({ ok: true, email: 'jane@example.com' }),
