@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { and, eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedAuthEvent, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { authEvents } from '../../src/db/schema'
+import { authEvents, users } from '../../src/db/schema'
 import { runInviteBounceCheck } from '../../src/lib/inviteBounces'
 
 const NOW = new Date('2026-09-23T21:00:00Z')
@@ -29,8 +29,11 @@ async function outcomes() {
     .where(inArray(authEvents.event, ['email_bounced', 'email_delivered'])).all()
 }
 
-async function seedPendingInvite(email: string, opts: { invitedBy?: string | null } = {}) {
-  return seedUser({ email, invitedBy: opts.invitedBy ?? null })
+// Every pending invite has an inviter; tests that need none seed the member directly.
+let inviterId: string
+
+async function seedPendingInvite(email: string, opts: { invitedBy?: string } = {}) {
+  return seedUser({ email, invitedBy: opts.invitedBy ?? inviterId })
 }
 
 async function seedSent(userId: string, email: string, messageId: string, opts: { linkType?: 'invite' | 'login'; createdAt?: string; provider?: string } = {}) {
@@ -41,7 +44,6 @@ async function seedSent(userId: string, email: string, messageId: string, opts: 
 }
 
 describe('runInviteBounceCheck', () => {
-  let inviterId: string
   beforeEach(async () => {
     await resetDb(); await applyMigrations()
     inviterId = await seedUser({ role: 'admin', email: 'inviter@example.test' })
@@ -74,7 +76,6 @@ describe('runInviteBounceCheck', () => {
     const [bounce] = await runInviteBounceCheck(e, getDb(env.DB), NOW)
 
     expect(bounce.reason).toBe('deliveryFailed')
-    expect(bounce.inviterId).toBeNull()
   })
 
   it('treats a rejected status as a bounce', async () => {
@@ -129,8 +130,78 @@ describe('runInviteBounceCheck', () => {
 
     expect(emailDeliveryStatus).toHaveBeenCalledOnce()
     expect(emailDeliveryStatus.mock.calls[0][0]).toEqual(['m-edge'])
-    // The lookup window covers the whole 7 days.
+    // The lookup window starts at the oldest send it asks about.
     expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-16T21:00:00.000Z')
+  })
+
+  it('starts the lookup window at the oldest pending send, not 7 days back', async () => {
+    // Central returns at most 10,000 messages, newest first, so a window no
+    // longer than it needs to be keeps an older send from falling off the end.
+    const a = await seedPendingInvite('a@example.test')
+    const b = await seedPendingInvite('b@example.test')
+    await seedSent(a, 'a@example.test', 'm-older', { createdAt: '2026-09-23 18:30:00' })
+    await seedSent(b, 'b@example.test', 'm-newer', { createdAt: HOUR_AGO })
+    const { e, emailDeliveryStatus } = returning({})
+
+    await runInviteBounceCheck(e, getDb(env.DB), NOW)
+
+    expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-23T18:30:00.000Z')
+  })
+
+  it('leaves a send that already has an outcome out of the window', async () => {
+    const a = await seedPendingInvite('a@example.test')
+    await seedSent(a, 'a@example.test', 'm-settled', { createdAt: SIX_DAYS_AGO })
+    await seedAuthEvent(a, 'email_delivered', { email: 'a@example.test', messageId: 'm-settled', linkType: 'invite' })
+    await seedSent(a, 'a@example.test', 'm-open', { createdAt: HOUR_AGO })
+    const { e, emailDeliveryStatus } = returning({})
+
+    await runInviteBounceCheck(e, getDb(env.DB), NOW)
+
+    expect(emailDeliveryStatus.mock.calls[0]).toEqual([['m-open'], '2026-09-23T20:00:00.000Z'])
+  })
+
+  it('never checks a member with no inviter (one who joined another way)', async () => {
+    const selfMade = await seedUser({ email: 'self@example.test', invitedBy: null })
+    await seedSent(selfMade, 'self@example.test', 'm-self')
+    const { e, emailDeliveryStatus } = returning({ 'm-self': { status: 'deliveryFailed', isSpam: false, errorCause: 'x' } })
+
+    expect(await runInviteBounceCheck(e, getDb(env.DB), NOW)).toEqual([])
+    expect(emailDeliveryStatus).not.toHaveBeenCalled()
+    expect(await outcomes()).toHaveLength(0)
+  })
+
+  it('skips a send to an address the member no longer has', async () => {
+    const memberId = await seedPendingInvite('typo@exmaple.test')
+    await seedSent(memberId, 'typo@exmaple.test', 'm-old', { createdAt: SIX_DAYS_AGO })
+    await seedAuthEvent(memberId, 'email_changed', { email: 'typo@example.test', reason: 'typo@exmaple.test', createdAt: '2026-09-23 19:00:00' })
+    await getDb(env.DB).update(users).set({ email: 'typo@example.test' }).where(eq(users.id, memberId))
+    await seedSent(memberId, 'typo@example.test', 'm-new')
+    const { e, emailDeliveryStatus } = returning({
+      'm-old': { status: 'deliveryFailed', isSpam: false, errorCause: 'user unknown' },
+      'm-new': { status: 'sent', isSpam: false },
+    })
+
+    expect(await runInviteBounceCheck(e, getDb(env.DB), NOW)).toEqual([])
+    expect(emailDeliveryStatus.mock.calls[0][0]).toEqual(['m-new'])
+    expect(await outcomes()).toHaveLength(0)
+  })
+
+  it('skips the old address\'s send even before the new invite has gone out', async () => {
+    const memberId = await seedPendingInvite('typo@exmaple.test')
+    await seedSent(memberId, 'typo@exmaple.test', 'm-old')
+    await getDb(env.DB).update(users).set({ email: 'typo@example.test' }).where(eq(users.id, memberId))
+    const { e, emailDeliveryStatus } = returning({ 'm-old': { status: 'deliveryFailed', isSpam: false, errorCause: 'user unknown' } })
+
+    expect(await runInviteBounceCheck(e, getDb(env.DB), NOW)).toEqual([])
+    expect(emailDeliveryStatus).not.toHaveBeenCalled()
+  })
+
+  it('matches the member\'s current address without regard to case', async () => {
+    const memberId = await seedPendingInvite('Jane.Doe@Example.test')
+    await seedSent(memberId, 'jane.doe@example.test', 'm-1')
+    const { e } = returning({ 'm-1': { status: 'deliveryFailed', isSpam: false, errorCause: 'x' } })
+
+    expect((await runInviteBounceCheck(e, getDb(env.DB), NOW)).map(b => b.messageId)).toEqual(['m-1'])
   })
 
   it('does not call central at all when nothing needs checking', async () => {
@@ -160,9 +231,9 @@ describe('runInviteBounceCheck', () => {
 
   it('only checks members who have never signed in and are not deactivated', async () => {
     const pending = await seedPendingInvite('pending@example.test')
-    const signedIn = await seedUser({ email: 'in@example.test' })
+    const signedIn = await seedUser({ email: 'in@example.test', invitedBy: inviterId })
     await seedMagicLink(signedIn, { used: true })
-    const deactivated = await seedUser({ email: 'gone@example.test', deactivatedAt: '2026-09-20 00:00:00' })
+    const deactivated = await seedUser({ email: 'gone@example.test', invitedBy: inviterId, deactivatedAt: '2026-09-20 00:00:00' })
     await seedSent(pending, 'pending@example.test', 'm-pending')
     await seedSent(signedIn, 'in@example.test', 'm-in', { linkType: 'login' })
     await seedSent(deactivated, 'gone@example.test', 'm-gone')

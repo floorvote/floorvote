@@ -125,6 +125,52 @@ describe('GET /admin/members — emailBounce', () => {
     expect(await bounceOf(member)).toBeNull()
   })
 
+  it('is null for a member with no inviter (one who joined another way), even if an email to them bounced', async () => {
+    const selfMade = await seedUser({ email: 's@example.test', invitedBy: null })
+    await sent(selfMade, 'm-1', T1)
+    await bounced(selfMade, 'm-1', 'user unknown', T2)
+    expect(await bounceOf(selfMade)).toBeNull()
+  })
+
+  async function changed(userId: string, createdAt: string) {
+    await seedAuthEvent(userId, 'email_changed', { email: 'new@example.test', reason: 'x@example.test', createdAt })
+  }
+
+  it('clears once the address is changed, before the new invite is sent', async () => {
+    const pending = await seedUser({ email: 'p@example.test', invitedBy: adminId })
+    await sent(pending, 'm-1', T1)
+    await bounced(pending, 'm-1', 'user unknown', T2)
+    await changed(pending, T3)
+    expect(await bounceOf(pending)).toBeNull()
+  })
+
+  it('stays clear after a change when the new invite\'s send fails before it goes out', async () => {
+    const pending = await seedUser({ email: 'p@example.test', invitedBy: adminId })
+    await sent(pending, 'm-1', T1)
+    await bounced(pending, 'm-1', 'user unknown', T2)
+    await changed(pending, T3)
+    await seedAuthEvent(pending, 'email_send_failed', { email: 'new@example.test', linkType: 'invite', provider: 'cloudflare', reason: 'provider down', createdAt: T4 })
+    expect(await bounceOf(pending)).toBeNull()
+  })
+
+  it('stays clear after a change when the old address\'s bounce is recorded later', async () => {
+    const pending = await seedUser({ email: 'p@example.test', invitedBy: adminId })
+    await sent(pending, 'm-1', T1)
+    await changed(pending, T2)
+    await bounced(pending, 'm-1', 'user unknown', T3)
+    expect(await bounceOf(pending)).toBeNull()
+  })
+
+  it('reports a bounce of the new address\'s invite after a change', async () => {
+    const pending = await seedUser({ email: 'p@example.test', invitedBy: adminId })
+    await sent(pending, 'm-1', T1)
+    await bounced(pending, 'm-1', 'first reason', T2)
+    await changed(pending, T3)
+    await sent(pending, 'm-2', T3)
+    await bounced(pending, 'm-2', 'second reason', T4)
+    expect(await bounceOf(pending)).toEqual({ reason: 'second reason' })
+  })
+
   it('is null for a deactivated member', async () => {
     const gone = await seedUser({ email: 'g@example.test', invitedBy: adminId, deactivatedAt: T4 })
     await sent(gone, 'm-1', T1)

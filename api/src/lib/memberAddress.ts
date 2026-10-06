@@ -20,7 +20,7 @@ export type MemberAddressCheck =
 const LOOKUP_CHUNK = 90
 
 /** Lowercase and trim. Punctuation is not stripped: a malformed address is rejected, not repaired. */
-function normalizeMemberAddress(raw: string | null | undefined): string {
+export function normalizeMemberAddress(raw: string | null | undefined): string {
   return (raw ?? '').toLowerCase().trim()
 }
 

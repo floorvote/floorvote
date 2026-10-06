@@ -1,8 +1,8 @@
 import { Hono, type Context } from 'hono'
-import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like, not } from 'drizzle-orm'
+import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like } from 'drizzle-orm'
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
-import { hasLoggedInSelect, hasLoggedInWhere } from '../lib/loginHistory'
+import { hasLoggedInSelect } from '../lib/loginHistory'
 import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
@@ -22,7 +22,9 @@ import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppDb, AppEnv } from '../types'
-import { checkMemberAddresses } from '../lib/memberAddress'
+import { checkMemberAddresses, normalizeMemberAddress } from '../lib/memberAddress'
+import { isPendingInvite, pendingInviteWhere } from '../lib/pendingInvite'
+import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -264,6 +266,7 @@ const CHANGE_EMAIL_ERRORS = {
   inUse: 'Another member already uses that address.',
   suppressed: 'This address has bounced before. Check it for a typo.',
   invalid: 'Invalid email address',
+  pendingOnly: "Only a pending invite's address can be changed",
 } as const
 
 // POST /admin/members/:id/change-email  { email }
@@ -291,27 +294,23 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     return c.json({ error: "Only owners can change an owner's address" }, 403)
   }
   if (target.deactivatedAt) return c.json({ error: 'Cannot change the address of a deactivated member' }, 400)
-  // Same test as the Members page's "Invite pending": invited, and never
-  // signed in with a link. A member nobody invited signed in another way.
-  if (target.hasLoggedIn || target.invitedBy === null) {
-    return c.json({ error: 'Only a pending invite\'s address can be changed' }, 400)
-  }
+  if (!isPendingInvite(target)) return c.json({ error: CHANGE_EMAIL_ERRORS.pendingOnly }, 400)
 
   const body = await c.req.json<{ email?: unknown }>().catch(() => ({} as { email?: unknown }))
   const raw = typeof body.email === 'string' ? body.email : ''
   const [check] = await checkMemberAddresses(db, [raw])
   if (check.status === 'invalid') return c.json({ error: CHANGE_EMAIL_ERRORS.invalid }, 400)
-  // Compared to the stored address lowercased: a stored address can have
+  // Compared to the stored address normalized: a stored address can have
   // mixed case, and the check above matches it to this member either way.
-  if (check.email === target.email.toLowerCase().trim()) return c.json({ error: CHANGE_EMAIL_ERRORS.unchanged }, 400)
+  if (check.email === normalizeMemberAddress(target.email)) return c.json({ error: CHANGE_EMAIL_ERRORS.unchanged }, 400)
   if (check.status === 'taken') return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
   const email = check.email
 
   // Refuse an address the provider already drops. If the lookup can't answer,
   // let the change through: the hourly bounce check catches a bad address.
   try {
-    const central = c.env.CENTRAL as { emailSuppression?: (email: string) => Promise<{ suppressed: boolean | null }> } | undefined
-    if (central?.emailSuppression && (await central.emailSuppression(email)).suppressed === true) {
+    const central = centralEmail(c.env)
+    if (central.emailSuppression && (await central.emailSuppression(email)).suppressed === true) {
       return c.json({ error: CHANGE_EMAIL_ERRORS.suppressed }, 400)
     }
   } catch (e) { console.error('[change-email] suppression lookup failed', e) }
@@ -329,8 +328,7 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     const [updated] = await db.batch([
       db.update(users).set({ email }).where(and(
         eq(users.id, target.id),
-        isNull(users.deactivatedAt),
-        not(hasLoggedInWhere(db)),
+        pendingInviteWhere(db),
       )).returning({ id: users.id }),
       db.delete(magicLinks).where(and(
         eq(magicLinks.userId, target.id),
@@ -345,7 +343,7 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     }
     throw e
   }
-  if (!changed) return c.json({ error: 'Only a pending invite\'s address can be changed' }, 409)
+  if (!changed) return c.json({ error: CHANGE_EMAIL_ERRORS.pendingOnly }, 409)
 
   await recordAuthEvent(db, {
     event: 'email_changed', email, reason: target.email, userId: target.id, actorId: currentUser.id, ...authReqContext(c),
@@ -661,16 +659,15 @@ adminApiRouter.get('/members/:id/auth-events', async (c) => {
     .limit(50)
     .all()
   const member = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).get()
-  let suppression: { suppressed: boolean | null; reason?: string; createdAt?: string } = { suppressed: null }
+  const central = centralEmail(c.env)
+  let suppression: SuppressionStatus = { suppressed: null }
   try {
-    const central = c.env.CENTRAL as { emailSuppression?: (email: string) => Promise<typeof suppression> } | undefined
-    if (member?.email && central?.emailSuppression) suppression = await central.emailSuppression(member.email)
+    if (member?.email && central.emailSuppression) suppression = await central.emailSuppression(member.email)
   } catch (e) { console.error('[auth-events] suppression lookup failed', e) }
   const sentMsgIds = events.filter(e => e.event === 'email_sent' && e.messageId).map(e => e.messageId as string)
-  let delivery: Record<string, { status: string; isSpam: boolean; errorCause?: string; datetime?: string }> = {}
+  let delivery: Record<string, DeliveryStatus> = {}
   try {
-    const central = c.env.CENTRAL as { emailDeliveryStatus?: (ids: string[], since: string) => Promise<typeof delivery> } | undefined
-    if (sentMsgIds.length && central?.emailDeliveryStatus) {
+    if (sentMsgIds.length && central.emailDeliveryStatus) {
       const since = new Date(Date.now() - 31 * 86400_000).toISOString()
       delivery = await central.emailDeliveryStatus(sentMsgIds, since)
     }

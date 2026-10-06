@@ -6,6 +6,7 @@ import { PRODUCT_NAME } from '../../../shared/brand'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sendEmail, resolveAssocName } from './email'
 import type { RecordedBounce } from './inviteBounces'
+import { normalizeMemberAddress } from './memberAddress'
 
 /** One bounced address as the email lists it. */
 export type BouncedAddress = { email: string; reason: string }
@@ -82,13 +83,15 @@ type Recipient = { id: string; email: string; bounces: BouncedAddress[] }
 
 /**
  * Who hears about each bounce: the inviter while they are an active Admin or
- * Owner, otherwise every active Owner. Grouped so each recipient gets one email
+ * Owner, otherwise (deactivated, or demoted to Standard member) every active
+ * Owner. Every bounce has an inviter: the check only covers pending invites.
+ * Grouped so each recipient gets one email
  * for the run, and an address bounced twice in one run (its invite and a
  * sign-in link) is listed once.
  */
 async function routeBounces(db: AppDb, bounces: RecordedBounce[]): Promise<Recipient[]> {
-  const inviterIds = [...new Set(bounces.map(b => b.inviterId).filter((id): id is string => !!id))]
-  const inviters = inviterIds.length === 0 ? [] : await db
+  const inviterIds = [...new Set(bounces.map(b => b.inviterId))]
+  const inviters = await db
     .select({ id: users.id, email: users.email, role: users.role, deactivatedAt: users.deactivatedAt })
     .from(users)
     .where(inArray(users.id, inviterIds))
@@ -101,14 +104,14 @@ async function routeBounces(db: AppDb, bounces: RecordedBounce[]): Promise<Recip
   const recipients = new Map<string, Recipient>()
   const add = (r: { id: string; email: string }, b: RecordedBounce) => {
     const entry = recipients.get(r.id) ?? { id: r.id, email: r.email, bounces: [] }
-    if (!entry.bounces.some(x => x.email.toLowerCase() === b.email.toLowerCase())) {
+    if (!entry.bounces.some(x => normalizeMemberAddress(x.email) === normalizeMemberAddress(b.email))) {
       entry.bounces.push({ email: b.email, reason: b.reason })
     }
     recipients.set(r.id, entry)
   }
 
   for (const b of bounces) {
-    const inviter = b.inviterId ? activeAdmin.get(b.inviterId) : undefined
+    const inviter = activeAdmin.get(b.inviterId)
     if (inviter) { add(inviter, b); continue }
     owners ??= await db
       .select({ id: users.id, email: users.email })

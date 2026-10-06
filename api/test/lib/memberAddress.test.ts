@@ -2,7 +2,22 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { checkMemberAddresses } from '../../src/lib/memberAddress'
+import { checkMemberAddresses, normalizeMemberAddress } from '../../src/lib/memberAddress'
+
+describe('normalizeMemberAddress', () => {
+  it('lowercases and trims', () => {
+    expect(normalizeMemberAddress('  Jane.Doe@Example.ORG ')).toBe('jane.doe@example.org')
+  })
+
+  it('treats a missing address as empty', () => {
+    expect(normalizeMemberAddress(null)).toBe('')
+    expect(normalizeMemberAddress(undefined)).toBe('')
+  })
+
+  it('does not strip punctuation', () => {
+    expect(normalizeMemberAddress(' jane@example.org; ')).toBe('jane@example.org;')
+  })
+})
 
 describe('checkMemberAddresses', () => {
   beforeEach(async () => {

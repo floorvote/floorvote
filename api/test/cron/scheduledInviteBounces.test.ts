@@ -161,20 +161,33 @@ describe('hourly run: emailing the inviter about bounced invites', () => {
     expect(mailFor(send, otherOwner).html).toContain('typo@example.test')
   })
 
-  it('sends to every active Owner when the invite has no inviter on record', async () => {
+  it('never checks or emails about a member with no inviter (one who joined another way)', async () => {
     await seedPendingInvite('no-inviter@example.test', null, 'm-1')
-    const { e, send } = stubs({ 'm-1': bounced('r1') })
+    const { e, send, emailDeliveryStatus } = stubs({ 'm-1': bounced('r1') })
 
     await runHourly(e)
 
-    expect(sentTo(send)).toEqual(['owner@example.test'])
-    expect(mailFor(send, 'owner@example.test').html).toContain('no-inviter@example.test')
+    expect(emailDeliveryStatus).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(await getDb(env.DB).select().from(authEvents).where(eq(authEvents.event, 'email_bounced')).all()).toHaveLength(0)
+  })
+
+  it('does not email about a send to an address the member no longer has', async () => {
+    const adminId = await seedUser({ role: 'admin', email: 'admin@example.test' })
+    const memberId = await seedPendingInvite('typo@exmaple.test', adminId, 'm-old')
+    await getDb(env.DB).update(users).set({ email: 'typo@example.test' }).where(eq(users.id, memberId))
+    const { e, send } = stubs({ 'm-old': bounced('user unknown') })
+
+    await runHourly(e)
+
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('sends nothing, and still records the bounce, when there is no active Owner to fall back to', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const formerAdmin = await seedUser({ role: 'member', email: 'former-admin@example.test' })
     await getDb(env.DB).update(users).set({ deactivatedAt: '2026-09-01 00:00:00' }).where(eq(users.id, ownerId))
-    await seedPendingInvite('no-inviter@example.test', null, 'm-1')
+    await seedPendingInvite('orphan@example.test', formerAdmin, 'm-1')
     const { e, send } = stubs({ 'm-1': bounced('r1') })
 
     await runHourly(e)

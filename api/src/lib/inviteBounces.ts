@@ -1,9 +1,10 @@
-import { and, eq, gte, inArray, isNotNull, isNull, not, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import type { Env, AppDb } from '../types'
 import { authEvents, users } from '../db/schema'
-import { hasLoggedInWhere } from './loginHistory'
+import { pendingInviteWhere } from './pendingInvite'
 import { recordAuthEvent } from './authEvents'
 import { toDbTs } from './dbTime'
+import { centralEmail, type DeliveryStatus } from './centralEmail'
 
 /** Lifetime of an invite link; older sends to a pending invite aren't checked. */
 export const BOUNCE_CHECK_WINDOW_DAYS = 7
@@ -15,13 +16,10 @@ export type RecordedBounce = {
   email: string
   /** The provider's error cause, or its status when it gave none. */
   reason: string
-  /** Who invited the member, or null (for example the first admin of an instance). */
-  inviterId: string | null
+  /** Who invited the member. Every pending invite has an inviter. */
+  inviterId: string
   messageId: string
 }
-
-type DeliveryStatus = { status: string; isSpam?: boolean; errorCause?: string; datetime?: string }
-type DeliveryLookup = (messageIds: string[], since: string) => Promise<Record<string, DeliveryStatus>>
 
 /**
  * Cloudflare Email Sending's final statuses (emailSendingAdaptive `status`).
@@ -43,7 +41,11 @@ export function classifyDeliveryStatus(status: string): 'bounced' | 'delivered' 
  * that the email is settled, so each outcome is recorded (and returned) once.
  *
  * Only Cloudflare sends are checked: a Resend fallback send has no Cloudflare
- * delivery record.
+ * delivery record. Only sends to the member's current address are checked: a
+ * bounce of an address they no longer have is nothing to act on. That is
+ * matched on the address rather than on the time of the latest
+ * `email_changed`, so it holds however the address changed and doesn't hang
+ * on a same-second tie between a change and the send that follows it.
  *
  * Never throws on a failed or unavailable lookup — it writes nothing and the
  * next run retries. Returns the bounces recorded by this run.
@@ -57,6 +59,7 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
       linkType: authEvents.linkType,
       messageId: authEvents.messageId,
       inviterId: users.invitedBy,
+      sentAt: authEvents.createdAt,
     })
     .from(authEvents)
     .innerJoin(users, eq(users.id, authEvents.userId))
@@ -66,8 +69,8 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
       inArray(authEvents.linkType, ['invite', 'login']),
       isNotNull(authEvents.messageId),
       gte(authEvents.createdAt, toDbTs(since)),
-      isNull(users.deactivatedAt),
-      not(hasLoggedInWhere(db)),
+      pendingInviteWhere(db),
+      sql`lower(${authEvents.email}) = lower(${users.email})`,
       sql`NOT EXISTS (
         SELECT 1 FROM auth_events o
         WHERE o.user_id = ${authEvents.userId} AND o.message_id = ${authEvents.messageId}
@@ -80,11 +83,17 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
   for (const row of pending) if (row.messageId && !byMessage.has(row.messageId)) byMessage.set(row.messageId, row)
   if (byMessage.size === 0) return []
 
-  const lookup = (env.CENTRAL as { emailDeliveryStatus?: DeliveryLookup } | undefined)?.emailDeliveryStatus
-  if (!lookup) return []
+  // Central's lookup returns at most 10,000 messages, newest first, so the
+  // window starts at the oldest send asked about rather than a fixed 7 days
+  // back: a longer window could crowd that send out of the results.
+  const oldestSentAt = pending.reduce((min, r) => (r.sentAt < min ? r.sentAt : min), pending[0].sentAt)
+  const lookupSince = new Date(`${oldestSentAt.replace(' ', 'T')}Z`)
+
+  const central = centralEmail(env)
+  if (!central.emailDeliveryStatus) return []
   let delivery: unknown
   try {
-    delivery = await lookup([...byMessage.keys()], since.toISOString())
+    delivery = await central.emailDeliveryStatus([...byMessage.keys()], lookupSince.toISOString())
   } catch (err) {
     console.error('[invite-bounces] delivery lookup failed; retrying next run', err)
     return []
@@ -104,19 +113,21 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
       linkType: row.linkType as 'invite' | 'login', provider: 'cloudflare', messageId,
     })
     if (outcome === 'bounced' && recorded) {
-      bounces.push({ memberId: row.memberId!, email: row.email, reason: reason!, inviterId: row.inviterId, messageId })
+      bounces.push({ memberId: row.memberId!, email: row.email, reason: reason!, inviterId: row.inviterId!, messageId })
     }
   }
   return bounces
 }
 
 /**
- * Bounce state per pending invite (never signed in, not deactivated): set when
- * their latest invite or sign-in email, by send time, bounced. A send is an
- * `email_sent` row, or an `email_bounced` row with no message id (the provider
- * refused a suppressed address at send time). A sent email counts as bounced
- * once the hourly check records `email_bounced` for its message id; a newer
- * send with no outcome yet clears the state.
+ * Bounce state per pending invite: set when their latest invite or sign-in
+ * email, by send time, bounced. A send is an `email_sent` row, or an
+ * `email_bounced` row with no message id (the provider refused a suppressed
+ * address at send time). A sent email counts as bounced once the hourly check
+ * records `email_bounced` for its message id; a newer send with no outcome
+ * yet clears the state. So does an `email_changed` row: whatever bounced went
+ * to the old address, so the state stays clear until the new address's own
+ * send bounces, even while that send is queued or if it fails to go out.
  */
 export async function pendingInviteBounces(db: AppDb): Promise<Map<string, { reason: string | null }>> {
   const rows = await db
@@ -129,10 +140,11 @@ export async function pendingInviteBounces(db: AppDb): Promise<Map<string, { rea
     .from(authEvents)
     .innerJoin(users, eq(users.id, authEvents.userId))
     .where(and(
-      inArray(authEvents.event, ['email_sent', 'email_bounced']),
-      inArray(authEvents.linkType, ['invite', 'login']),
-      isNull(users.deactivatedAt),
-      not(hasLoggedInWhere(db)),
+      or(
+        and(inArray(authEvents.event, ['email_sent', 'email_bounced']), inArray(authEvents.linkType, ['invite', 'login'])),
+        eq(authEvents.event, 'email_changed'),
+      ),
+      pendingInviteWhere(db),
     ))
     // created_at has one-second precision; rowid (insertion order) breaks a
     // same-second tie, such as a quick resend, so "latest" is always defined.
@@ -148,6 +160,8 @@ export async function pendingInviteBounces(db: AppDb): Promise<Map<string, { rea
       bounceByMessage.set(r.messageId, r.reason)
     } else if (r.event === 'email_bounced') {
       latestByUser.set(r.userId, { messageId: null, reason: r.reason, bounced: true })
+    } else if (r.event === 'email_changed') {
+      latestByUser.set(r.userId, { messageId: null, reason: null, bounced: false })
     } else {
       latestByUser.set(r.userId, { messageId: r.messageId, reason: null, bounced: false })
     }
