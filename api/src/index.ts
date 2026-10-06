@@ -286,10 +286,13 @@ export default {
         }
       }))
       // Bounced invites: record delivery outcomes of emails to pending invites,
-      // then email whoever should hear about the new bounces. A failed lookup
-      // already writes nothing; a D1 error here is equally retried next hour
-      // rather than emailed to ALERT_EMAILS. Bounces are recorded before any
-      // email goes out, so a failed send never stops them being recorded.
+      // then email whoever should hear about the new bounces. Only the check's
+      // initial D1 query can throw, before anything is recorded, so that run is
+      // retried next hour rather than emailed to ALERT_EMAILS. Once recording
+      // starts nothing throws (a failed lookup or insert writes nothing and is
+      // retried), so every recorded bounce reaches the notification. Bounces are
+      // recorded before any email goes out, so a failed send never stops them
+      // being recorded.
       ctx.waitUntil(runJob(env, 'invite-bounces', async () => {
         try {
           const bounces = await runInviteBounceCheck(env, db, new Date(event.scheduledTime))
