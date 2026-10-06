@@ -37,7 +37,14 @@ dashRoutes.get('/overview', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const legiscanLimit = await getSettingNumber(db, 'legiscan_monthly_limit', 30000)
 
-  const tenantsRows = await db.select({ tenantId: schema.tenants.tenantId }).from(schema.tenants).all()
+  const tenantsRows = await db
+    .select({ id: schema.tenants.tenantId, name: schema.tenants.name, url: schema.tenants.apiUrl, active: schema.tenants.active })
+    .from(schema.tenants)
+    .all()
+  // apiUrl is the tenant's APP_URL, which serves its SPA, so it doubles as the home page link.
+  const tenantList = tenantsRows
+    .map(t => ({ id: t.id, name: t.name, url: t.url ?? null, active: t.active }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
   // Bills tracked: count distinct billId in bill_tenants by match type
   const fullyTrackedRow = await db
@@ -72,7 +79,7 @@ dashRoutes.get('/overview', async (c) => {
 
   return c.json({
     data: {
-      tenants: { total: tenantsRows.length },
+      tenants: { total: tenantsRows.length, list: tenantList },
       bills: {
         fullyTracked: Number(fullyTrackedRow?.n ?? 0),
         lightweight: Number(lightweightRow?.n ?? 0),

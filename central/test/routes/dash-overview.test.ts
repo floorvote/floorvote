@@ -48,4 +48,28 @@ describe('GET /admin/dash/overview', () => {
     expect(body.data.lastSync.billsChanged).toBe(2)
     expect(body.meta.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
+
+  it('lists tenants with team name and home URL, sorted by name', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values([
+      { tenantId: 'zeta', name: 'Zeta Team', apiUrl: 'https://zeta.example.org', stateCoverage: '["RI"]', active: true } as any,
+      { tenantId: 'alpha', name: 'alpha team', apiUrl: 'https://alpha.example.org', stateCoverage: '["NJ"]', active: false } as any,
+      { tenantId: 'mid', name: 'Middle Team', stateCoverage: '["NJ"]', active: true } as any,
+    ])
+
+    const res = await app.fetch(new Request('http://central/admin/dash/overview', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    expect(body.data.tenants.total).toBe(3)
+    expect(body.data.tenants.list).toEqual([
+      { id: 'alpha', name: 'alpha team', url: 'https://alpha.example.org', active: false },
+      { id: 'mid', name: 'Middle Team', url: null, active: true },
+      { id: 'zeta', name: 'Zeta Team', url: 'https://zeta.example.org', active: true },
+    ])
+  })
+
+  it('returns an empty tenant list when no tenants are registered', async () => {
+    const res = await app.fetch(new Request('http://central/admin/dash/overview', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    expect(body.data.tenants).toEqual({ total: 0, list: [] })
+  })
 })

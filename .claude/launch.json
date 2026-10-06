@@ -15,6 +15,13 @@
       "autoPort": false
     },
     {
+      "name": "central-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "central/web", "--", "--port", "5176", "--strictPort"],
+      "port": 5176,
+      "autoPort": false
+    },
+    {
       "name": "dev:local",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:local"],

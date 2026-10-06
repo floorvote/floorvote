@@ -29,7 +29,15 @@ beforeEach(() => {
     if (u.includes('overview')) {
       return new Response(JSON.stringify({
         data: {
-          tenants: { total: 2 },
+          tenants: {
+            total: 4,
+            list: [
+              { id: 'alpha', name: 'Alpha Team', url: 'https://alpha.example.org', active: true },
+              { id: 'beta', name: 'Beta Team', url: null, active: true },
+              { id: 'gamma', name: 'Gamma Team', url: 'javascript:alert(1)', active: true },
+              { id: 'delta', name: 'Delta Team', url: 'https://delta.example.org', active: false },
+            ],
+          },
           bills: { fullyTracked: 100, lightweight: 50 },
           apiBudget: { used: 1200, limit: 30000, pct: 4.0 },
           lastSync: { syncedAt: '2026-05-28T10:00:00Z', ageSeconds: 60, state: 'RI', billsChecked: 10, billsChanged: 2, billsQueued: 1 },
@@ -57,5 +65,44 @@ describe('Overview page', () => {
     await waitFor(() => expect(screen.getByText('6')).toBeInTheDocument()) // active_members_7d
     expect(screen.getByText('45')).toBeInTheDocument()                      // votes_cast
     expect(screen.getByText('20')).toBeInTheDocument()                      // bills_with_engagement
+  })
+
+  it('lists tenants with team name and a link to their home page', async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>)
+    const link = await screen.findByRole('link', { name: 'https://alpha.example.org' })
+    expect(link).toHaveAttribute('href', 'https://alpha.example.org')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.getByText('Alpha Team')).toBeInTheDocument()
+  })
+
+  it('links the team name to the home page too', async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>)
+    const nameLink = await screen.findByRole('link', { name: 'Alpha Team' })
+    expect(nameLink).toHaveAttribute('href', 'https://alpha.example.org')
+  })
+
+  it('shows a dash and no link when a tenant has not reported a URL', async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>)
+    await screen.findByText('Beta Team')
+    expect(screen.queryByRole('link', { name: 'Beta Team' })).not.toBeInTheDocument()
+    const row = screen.getByText('Beta Team').closest('tr')!
+    expect(row).toHaveTextContent('—')
+  })
+
+  it('does not render non-http URLs as links', async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>)
+    await screen.findByText('Gamma Team')
+    expect(screen.queryByRole('link', { name: 'Gamma Team' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /javascript:/ })).not.toBeInTheDocument()
+  })
+
+  it('marks inactive tenants', async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>)
+    await screen.findByText('Delta Team')
+    const row = screen.getByText('Delta Team').closest('tr')!
+    expect(row).toHaveTextContent(/inactive/i)
+    const active = screen.getByText('Alpha Team').closest('tr')!
+    expect(active).not.toHaveTextContent(/inactive/i)
   })
 })

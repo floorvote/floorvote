@@ -3,8 +3,9 @@ import { api } from '../lib/api'
 import { SummaryCard } from '../components/SummaryCard'
 import { DataTable, Column } from '../components/DataTable'
 
+type TenantLink = { id: string; name: string; url: string | null; active: boolean }
 type OverviewData = {
-  tenants: { total: number }
+  tenants: { total: number; list: TenantLink[] }
   bills: { fullyTracked: number; lightweight: number }
   apiBudget: { used: number; limit: number; pct: number }
 }
@@ -16,6 +17,22 @@ type EngagementOverview = {
 }
 
 const PAGE_SIZE = 50
+
+// Tenants self-report their URL, so only link http(s) values.
+function safeHref(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' || u.protocol === 'http:' ? url : null
+  } catch {
+    return null
+  }
+}
+
+function ExternalLink({ href, children }: { href: string | null; children: string }) {
+  if (!href) return <>{children}</>
+  return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+}
 
 export default function Overview() {
   const [data, setData] = useState<OverviewData | null>(null)
@@ -70,6 +87,20 @@ export default function Overview() {
     { key: 'when', header: 'When', cell: r => new Date(r.detectedAt).toLocaleString() },
   ]
 
+  const tenantColumns: Column<TenantLink>[] = [
+    {
+      key: 'name',
+      header: 'Team',
+      cell: r => (
+        <>
+          <ExternalLink href={safeHref(r.url)}>{r.name}</ExternalLink>
+          {!r.active && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }}>(inactive)</span>}
+        </>
+      ),
+    },
+    { key: 'url', header: 'URL', cell: r => r.url ? <ExternalLink href={safeHref(r.url)}>{r.url}</ExternalLink> : '—' },
+  ]
+
   return (
     <div>
       <h1 style={{ marginTop: 0, fontSize: 24 }}>Overview</h1>
@@ -105,6 +136,14 @@ export default function Overview() {
             value={engagement.totals.bills_with_engagement.toLocaleString()}
           />
         </div>
+      )}
+      {data && (
+        <>
+          <h2 style={{ fontSize: 16, marginBottom: 12 }}>Tenants</h2>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 24 }}>
+            <DataTable rows={data.tenants.list ?? []} columns={tenantColumns} rowKey={r => r.id} empty="No tenants registered." />
+          </div>
+        </>
       )}
       <h2 style={{ fontSize: 16, marginBottom: 12 }}>Recent bill changes</h2>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6 }}>
