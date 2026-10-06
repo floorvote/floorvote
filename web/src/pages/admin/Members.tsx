@@ -17,6 +17,7 @@ import { color, radius, fontSize, fontWeight, shadow } from '../../styles/tokens
 import { orgRolesLabel } from '../../lib/orgNoun'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
+import { ChangeEmailDialog } from '../../components/ChangeEmailDialog'
 
 type Role = { id: string; name: string }
 
@@ -46,6 +47,10 @@ interface AuthEvent {
   ipCountry: string | null
   createdAt: string
   messageId?: string | null
+  /** The address the event concerns; for email_changed, the new one (the old is in `reason`). */
+  email?: string
+  /** For email_changed: the admin who made the change, or null once they're gone. */
+  actorName?: string | null
 }
 
 interface DeliveryEntry {
@@ -85,6 +90,8 @@ function authEventLabel(event: AuthEvent): string {
       return 'Email delivered'
     case 'email_complained':
       return 'Spam complaint'
+    case 'email_changed':
+      return `Email changed from ${event.reason} to ${event.email}${event.actorName ? ` by ${event.actorName}` : ''}`
     default:
       return event.event
   }
@@ -237,6 +244,9 @@ export function Members() {
 
   // Toast state
   const [toast, setToast] = useState<string | null>(null)
+
+  // "Change email…" dialog: the pending invite being edited, if any.
+  const [changeEmailMember, setChangeEmailMember] = useState<Member | null>(null)
 
   // Owner-only account-deletion policy toggle
   const [accountDeletionEnabled, setAccountDeletionEnabled] = useState(false)
@@ -521,6 +531,14 @@ export function Members() {
     }
   }
 
+  function handleEmailChanged(member: Member, email: string) {
+    setChangeEmailMember(null)
+    setMembers(prev => prev.map(m => (m.id === member.id ? { ...m, email } : m)))
+    setToast(`New invite sent to ${email}.`)
+    setTimeout(() => setToast(null), 4000)
+    actionsTriggerRefs.current[member.id]?.focus()
+  }
+
   async function handleSetMemberRoles(memberId: string, roleIds: string[]) {
     try {
       await apiFetch(`/admin/members/${memberId}/roles`, {
@@ -574,6 +592,10 @@ export function Members() {
 
     if (!isSelf && !member.hasLoggedIn && !isDeactivated && member.invitedBy !== null) {
       items.push({ kind: 'action', label: 'Resend invite', disabled: demoLocked, onClick: () => { close(); handleResendInvite(member) } })
+      // Only an Owner may change a pending Owner's address (the server refuses it too).
+      if (canManageThisMember) {
+        items.push({ kind: 'action', label: 'Change email…', disabled: demoLocked, onClick: () => { close(); setChangeEmailMember(member) } })
+      }
     }
 
     if (!isSelf && member.hasLoggedIn && !isDeactivated) {
@@ -1499,6 +1521,13 @@ export function Members() {
             )}
           </div>
         </div>
+      )}
+      {changeEmailMember && (
+        <ChangeEmailDialog
+          member={changeEmailMember}
+          onClose={() => { const id = changeEmailMember.id; setChangeEmailMember(null); actionsTriggerRefs.current[id]?.focus() }}
+          onChanged={(email) => handleEmailChanged(changeEmailMember, email)}
+        />
       )}
       {/* Toast notification */}
       {toast && (

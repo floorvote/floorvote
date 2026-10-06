@@ -88,6 +88,27 @@ describe('Profile Account section', () => {
     expect(await screen.findByText('Signed in')).toBeInTheDocument()
   })
 
+  it('labels an address change with the old address, the new one, and the admin who made it', async () => {
+    mockApi({
+      '/users/me/auth-events': () => ({
+        events: [
+          {
+            id: 'e1', event: 'email_changed', reason: 'jane@exmaple.com', email: 'jane@example.com', actorName: 'Ada Admin',
+            linkType: null, provider: null, ipCountry: null, createdAt: new Date().toISOString(),
+          },
+          {
+            id: 'e2', event: 'email_changed', reason: 'old@exmaple.com', email: 'old@example.com', actorName: null,
+            linkType: null, provider: null, ipCountry: null, createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    })
+    renderProfile(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show my login activity' }))
+    expect(await screen.findByText('Email changed from jane@exmaple.com to jane@example.com by Ada Admin')).toBeInTheDocument()
+    expect(screen.getByText('Email changed from old@exmaple.com to old@example.com')).toBeInTheDocument()
+  })
+
   it('renders the "Deactivate my account" description verbatim', async () => {
     mockApi()
     renderProfile(false)
