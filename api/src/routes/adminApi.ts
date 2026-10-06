@@ -311,19 +311,36 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     }
   } catch (e) { console.error('[change-email] suppression lookup failed', e) }
 
-  // Two changes racing to the same address both pass the check above; the
-  // unique index on users.email lets only one write land.
+  // One batch, so it lands whole or not at all. The update re-checks that the
+  // member is still a pending invite: a sign-in or deactivation can land
+  // while the lookup above is in flight. The link delete runs only if the
+  // update did, so links sent to the old address stop working at the same
+  // moment the address changes. Two changes racing to the same address both
+  // pass the checks above, and the unique index on users.email lets only one
+  // write land.
+  let changed: boolean
   try {
-    await db.update(users).set({ email }).where(eq(users.id, target.id))
+    const [updated] = await db.batch([
+      db.update(users).set({ email }).where(and(
+        eq(users.id, target.id),
+        isNull(users.deactivatedAt),
+        sql`NOT EXISTS (SELECT 1 FROM magic_links WHERE user_id = ${users.id} AND used_at IS NOT NULL)`,
+      )).returning({ id: users.id }),
+      db.delete(magicLinks).where(and(
+        eq(magicLinks.userId, target.id),
+        isNull(magicLinks.usedAt),
+        sql`(SELECT email FROM users WHERE id = ${target.id}) = ${email}`,
+      )),
+    ])
+    changed = updated.length > 0
   } catch (e) {
     if (/UNIQUE constraint failed/i.test(`${e} ${(e as { cause?: unknown })?.cause ?? ''}`)) {
       return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
     }
     throw e
   }
+  if (!changed) return c.json({ error: 'Only a pending invite\'s address can be changed' }, 409)
 
-  // Links sent to the old address must not let anyone in.
-  await db.delete(magicLinks).where(and(eq(magicLinks.userId, target.id), isNull(magicLinks.usedAt)))
   await recordAuthEvent(db, {
     event: 'email_changed', email, reason: target.email, userId: target.id, actorId: currentUser.id, ...authReqContext(c),
   })

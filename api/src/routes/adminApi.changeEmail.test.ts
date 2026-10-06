@@ -293,6 +293,42 @@ describe('POST /admin/members/:id/change-email', () => {
       expect(sendMagicLink).not.toHaveBeenCalled()
     })
 
+    it('refuses, and cancels nothing, when the member signs in between the check and the write', async () => {
+      await seedMagicLink(pendingId)
+      await seedMagicLink(pendingId)
+      // The suppression lookup runs between the checks and the write; a
+      // sign-in that lands while it's in flight uses one of the links.
+      const central = {
+        emailSuppression: vi.fn(async () => {
+          await env.DB.prepare(
+            "UPDATE magic_links SET used_at = datetime('now') WHERE id = (SELECT id FROM magic_links WHERE user_id = ? LIMIT 1)",
+          ).bind(pendingId).run()
+          return { suppressed: false }
+        }),
+      }
+      const r = await changeEmail(pendingId, 'jane@example.com', { central })
+      expect(r.status).toBe(409)
+      expect(r.body.error).toMatch(/pending invite/i)
+      expect((await memberRow(pendingId)).email).toBe('jane@exmaple.com')
+      const links = await getDb(env.DB).select().from(magicLinks).where(eq(magicLinks.userId, pendingId)).all()
+      expect(links).toHaveLength(2)
+      expect(await eventsFor(pendingId, 'email_changed')).toHaveLength(0)
+      expect(sendMagicLink).not.toHaveBeenCalled()
+    })
+
+    it('refuses when the member is deactivated between the check and the write', async () => {
+      const central = {
+        emailSuppression: vi.fn(async () => {
+          await env.DB.prepare("UPDATE users SET deactivated_at = datetime('now') WHERE id = ?").bind(pendingId).run()
+          return { suppressed: false }
+        }),
+      }
+      const r = await changeEmail(pendingId, 'jane@example.com', { central })
+      expect(r.status).toBe(409)
+      expect((await memberRow(pendingId)).email).toBe('jane@exmaple.com')
+      expect(sendMagicLink).not.toHaveBeenCalled()
+    })
+
     it('lets exactly one of two concurrent changes to the same address through', async () => {
       const other = await seedPending('pat@exmaple.com')
       const results = await Promise.all([
