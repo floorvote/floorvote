@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, Fragment } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../../lib/api'
 import { parseInvitees } from '../../lib/parseInvitees'
 import { useAuth } from '../../hooks/useAuth'
@@ -193,7 +194,10 @@ export function Members() {
   const [members, setMembers] = useState<Member[]>([])
   const [listLoading, setListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
-  const [memberSearch, setMemberSearch] = useState('')
+  // ?search= pre-fills the box: the bounced-invite email links here with the
+  // address when exactly one bounced, so the admin lands on that row.
+  const [searchParams] = useSearchParams()
+  const [memberSearch, setMemberSearch] = useState(() => searchParams.get('search') ?? '')
   const [troubleFilter, setTroubleFilter] = useState(false)
   // Feedback for the count line's "Copy N emails" button.
   const [copyEmailsStatus, setCopyEmailsStatus] = useState<'copied' | 'error' | null>(null)

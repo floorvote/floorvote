@@ -62,14 +62,14 @@ function mockApi() {
 
 const PLACEHOLDER = 'Search by name, email, role, or permission level…'
 
-async function renderPage() {
+async function renderPage(initialPath = '/admin/members', loaded: string | RegExp = 'Toby Trent') {
   mockApi()
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <Members />
     </MemoryRouter>,
   )
-  await screen.findByText('Toby Trent')
+  await screen.findByText(loaded)
 }
 
 function search(q: string) {
@@ -212,5 +212,48 @@ describe('Members search', () => {
       expect(shownEmails()).toEqual([])
       expect(screen.getByText(/Showing 0 of 6/)).toBeInTheDocument()
     })
+  })
+})
+
+// The bounced-invite email links here with ?search=<address> when exactly one
+// address bounced, so the admin lands on that row.
+describe('Members search URL parameter', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('pre-fills the search box from the search parameter and filters to it', async () => {
+    await renderPage(`/admin/members?search=${encodeURIComponent(TOBY.email)}`)
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue('toby@example.com')
+    expect(shownEmails()).toEqual(emails(TOBY))
+    expect(screen.getByText(/Showing 1 of 6/)).toBeInTheDocument()
+  })
+
+  it('decodes an encoded plus sign as a plus, not a space', async () => {
+    await renderPage(`/admin/members?search=${encodeURIComponent('first.last+tag@example.com')}`, /Showing 0 of 6/)
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue('first.last+tag@example.com')
+  })
+
+  it('leaves the search box empty without the parameter', async () => {
+    await renderPage('/admin/members')
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue('')
+    expect(shownEmails()).toEqual([...ALL_EMAILS].sort())
+  })
+
+  it('leaves the search box empty for an empty parameter', async () => {
+    await renderPage('/admin/members?search=')
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue('')
+    expect(shownEmails()).toEqual([...ALL_EMAILS].sort())
+  })
+
+  it('ignores other parameters', async () => {
+    await renderPage('/admin/members?q=toby')
+    expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveValue('')
+  })
+
+  it('keeps the pre-filled box editable', async () => {
+    await renderPage(`/admin/members?search=${encodeURIComponent(TOBY.email)}`)
+    search('')
+    expect(shownEmails()).toEqual([...ALL_EMAILS].sort())
+    search('nora')
+    expect(shownEmails()).toEqual(emails(NORA))
   })
 })
