@@ -1,8 +1,8 @@
 import { Hono, type Context } from 'hono'
-import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like } from 'drizzle-orm'
+import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like, not } from 'drizzle-orm'
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
-import { hasLoggedInSelect } from '../lib/loginHistory'
+import { hasLoggedInSelect, hasLoggedInWhere } from '../lib/loginHistory'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendMagicLink } from '../lib/email'
@@ -317,14 +317,15 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
   // update did, so links sent to the old address stop working at the same
   // moment the address changes. Two changes racing to the same address both
   // pass the checks above, and the unique index on users.email lets only one
-  // write land.
+  // write land. That index is case-sensitive, so it holds here only because
+  // this route always writes the address lowercased.
   let changed: boolean
   try {
     const [updated] = await db.batch([
       db.update(users).set({ email }).where(and(
         eq(users.id, target.id),
         isNull(users.deactivatedAt),
-        sql`NOT EXISTS (SELECT 1 FROM magic_links WHERE user_id = ${users.id} AND used_at IS NOT NULL)`,
+        not(hasLoggedInWhere(db)),
       )).returning({ id: users.id }),
       db.delete(magicLinks).where(and(
         eq(magicLinks.userId, target.id),
