@@ -1,5 +1,6 @@
 // Single source of truth for "does this look like a deliverable email
-// address?" — used by the invite paste parser (web), bulk invite, and the
+// address?" — used by the invite paste parser (web), the member-address check
+// behind bulk invite (api/src/lib/memberAddress.ts), and the
 // magic-link request (api).
 //
 // Deliberately stricter than RFC 5322: the domain must be dot-separated

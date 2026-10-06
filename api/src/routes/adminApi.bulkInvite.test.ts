@@ -305,4 +305,14 @@ describe('POST /admin/members/bulk-invite address checks', () => {
     expect(row.role).toBe('admin')
   })
 
+  it('finds existing members across a batch larger than one lookup can bind', async () => {
+    // D1 caps a query at 100 bound parameters, so a 150-address batch has to
+    // be looked up in more than one query.
+    for (const i of [0, 99, 149]) await seedUser({ email: `big${i}@example.com` })
+    const invitees = Array.from({ length: 150 }, (_, i) => ({ email: `big${i}@example.com` }))
+    const body = await bulkInvite(invitees)
+    expect(body.summary).toEqual({ invited: 147, exists: 3, duplicate: 0, invalid: 0 })
+    expect(body.results.filter(r => r.status === 'exists').map(r => r.email))
+      .toEqual(['big0@example.com', 'big99@example.com', 'big149@example.com'])
+  })
 })

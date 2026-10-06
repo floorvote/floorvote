@@ -21,7 +21,7 @@ import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppEnv } from '../types'
-import { isValidEmail } from '../../../shared/email'
+import { checkMemberAddresses } from '../lib/memberAddress'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -158,18 +158,9 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
   const db = getDb(c.env.DB)
   const inviterId = c.get('user').id
 
-  // Normalize once.
-  const normalized = invitees.map((inv) => ({
-    email: (inv.email ?? '').toLowerCase().trim(),
-    name: (inv.name ?? '').trim().slice(0, 100),
-  }))
-
-  // One lookup for all existing emails in the batch.
-  const candidateEmails = [...new Set(normalized.filter(n => isValidEmail(n.email)).map(n => n.email))]
-  const existingRows = candidateEmails.length > 0
-    ? await db.select({ email: users.email }).from(users).where(inArray(users.email, candidateEmails)).all()
-    : []
-  const existingSet = new Set(existingRows.map(r => r.email))
+  // Address checks are shared with every other caller that sets a member's
+  // address; repeats within this batch are bulk invite's own concern.
+  const checks = await checkMemberAddresses(db, invitees.map(inv => inv.email))
 
   type RowStatus = 'invited' | 'exists' | 'duplicate' | 'invalid'
   const results: { email: string; status: RowStatus; userId?: string }[] = []
@@ -177,16 +168,17 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
   const created: { userId: string; email: string }[] = []
   const seen = new Set<string>()
 
-  for (const n of normalized) {
-    if (!n.email || !isValidEmail(n.email)) { results.push({ email: n.email, status: 'invalid' }); continue }
-    if (seen.has(n.email)) { results.push({ email: n.email, status: 'duplicate' }); continue }
-    seen.add(n.email)
-    if (existingSet.has(n.email)) { results.push({ email: n.email, status: 'exists' }); continue }
+  invitees.forEach((inv, i) => {
+    const { email, status } = checks[i]
+    if (status === 'invalid') { results.push({ email, status: 'invalid' }); return }
+    if (seen.has(email)) { results.push({ email, status: 'duplicate' }); return }
+    seen.add(email)
+    if (status === 'taken') { results.push({ email, status: 'exists' }); return }
     const id = crypto.randomUUID()
-    toInsert.push({ id, email: n.email, name: n.name, role, invitedBy: inviterId })
-    created.push({ userId: id, email: n.email })
-    results.push({ email: n.email, status: 'invited', userId: id })
-  }
+    toInsert.push({ id, email, name: (inv.name ?? '').trim().slice(0, 100), role, invitedBy: inviterId })
+    created.push({ userId: id, email })
+    results.push({ email, status: 'invited', userId: id })
+  })
 
   // Chunked inserts (D1 bound-param ceiling).
   for (let i = 0; i < toInsert.length; i += USER_INSERT_CHUNK) {
