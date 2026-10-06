@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { Members } from './Members'
 import * as api from '../../lib/api'
@@ -25,6 +26,7 @@ const BOUNCED = { ...base, id: 'b-1', email: 'typo@example.com', name: 'Bounced 
 const BOUNCED_NO_REASON = { ...base, id: 'b-2', email: 'quiet@example.com', name: 'Reasonless Bounce', hasLoggedIn: false, invitedBy: inviter, emailBounce: { reason: null } }
 const PENDING = { ...base, id: 'p-1', email: 'pending@example.com', name: 'Pending Invite', hasLoggedIn: false, invitedBy: inviter }
 const ACTIVE = { ...base, id: 'a-1', email: 'active@example.com', name: 'Active Member', hasLoggedIn: true, invitedBy: inviter }
+const BOUNCED_NO_INVITER = { ...base, id: 'n-1', email: 'noinviter@example.com', name: 'Uninvited Bounce', hasLoggedIn: false, invitedBy: null, emailBounce: { reason: 'user unknown' } }
 const DEACTIVATED_BOUNCED = { ...base, id: 'd-1', email: 'gone@example.com', name: 'Gone Member', hasLoggedIn: false, invitedBy: inviter, deactivatedAt: '2024-02-01T00:00:00Z', emailBounce: { reason: 'user unknown' } }
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -59,23 +61,69 @@ function renderMembers() {
 describe('Members "Email bounced" status', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('shows a red "Email bounced" label with the reason on hover in place of "Invite pending"', async () => {
+  it('shows a red "Email bounced" label in place of "Invite pending"', async () => {
     mockApi([OWNER, BOUNCED])
     renderMembers()
 
     const cell = await statusCell('Bounced Invite')
     const label = within(cell).getByText('Email bounced')
-    expect(label).toHaveAttribute('title', '550 5.1.1 user unknown')
     expect(label).toHaveStyle({ color: color.textDanger, background: color.bgDangerSoft })
     expect(within(cell).queryByText('Invite pending')).not.toBeInTheDocument()
   })
 
-  it('gives a generic hover text when the provider gave no reason', async () => {
+  it('reveals the reason on mouse hover', async () => {
+    mockApi([OWNER, BOUNCED])
+    renderMembers()
+
+    const trigger = within(await statusCell('Bounced Invite')).getByRole('button', { name: /email bounced/i })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    fireEvent.pointerEnter(trigger, { pointerType: 'mouse' })
+    expect(screen.getByRole('tooltip')).toHaveTextContent('550 5.1.1 user unknown')
+  })
+
+  it('reveals the reason on tap, so it is reachable on a touch screen, and links it via aria-describedby', async () => {
+    const user = userEvent.setup()
+    mockApi([OWNER, BOUNCED])
+    renderMembers()
+
+    const trigger = within(await statusCell('Bounced Invite')).getByRole('button', { name: /email bounced/i })
+    // A touch pointerenter alone must not be what reveals it; the tap (click) does.
+    fireEvent.pointerEnter(trigger, { pointerType: 'touch' })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    await user.click(trigger)
+    const tip = screen.getByRole('tooltip')
+    expect(tip).toHaveTextContent('550 5.1.1 user unknown')
+    expect(trigger).toHaveAttribute('aria-describedby', tip.id)
+
+    await user.click(trigger)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
+  it('reveals the reason on keyboard focus', async () => {
+    mockApi([OWNER, BOUNCED])
+    renderMembers()
+
+    const trigger = within(await statusCell('Bounced Invite')).getByRole('button', { name: /email bounced/i })
+    fireEvent.focus(trigger)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('550 5.1.1 user unknown')
+  })
+
+  it('gives a generic reason when the provider gave none', async () => {
+    const user = userEvent.setup()
     mockApi([OWNER, BOUNCED_NO_REASON])
     renderMembers()
 
-    const label = within(await statusCell('Reasonless Bounce')).getByText('Email bounced')
-    expect(label.getAttribute('title')).toMatch(/couldn't be delivered/i)
+    await user.click(within(await statusCell('Reasonless Bounce')).getByRole('button', { name: /email bounced/i }))
+    expect(screen.getByRole('tooltip').textContent).toMatch(/couldn't be delivered/i)
+  })
+
+  it('shows "Email bounced" for a never-signed-in member with no inviter whose email bounced', async () => {
+    mockApi([OWNER, BOUNCED_NO_INVITER])
+    renderMembers()
+
+    const cell = await statusCell('Uninvited Bounce')
+    expect(within(cell).getByText('Email bounced')).toBeInTheDocument()
+    expect(within(cell).queryByText('Active')).not.toBeInTheDocument()
   })
 
   it('keeps the amber "Invite pending" label for a pending invite whose email did not bounce', async () => {

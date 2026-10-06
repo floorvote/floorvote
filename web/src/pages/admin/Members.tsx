@@ -1093,20 +1093,24 @@ export function Members() {
                             Deactivated
                           </span>
                         ) : !member.hasLoggedIn && member.emailBounce ? (
-                          <span
-                            title={member.emailBounce.reason ?? "The email couldn't be delivered"}
-                            style={{
+                          // A toggletip, not a `title`, so the reason opens on tap
+                          // (touch screens) and keyboard focus as well as hover.
+                          <HoverTooltip
+                            toggletip
+                            maxWidth={280}
+                            text={member.emailBounce.reason ?? "The email couldn't be delivered"}
+                          >
+                            <span style={{
                               fontSize: fontSize.sm,
                               padding: '2px 8px',
                               borderRadius: radius.sm,
                               fontWeight: fontWeight.semibold,
                               background: color.bgDangerSoft,
                               color: color.textDanger,
-                              cursor: 'help',
-                            }}
-                          >
-                            Email bounced
-                          </span>
+                            }}>
+                              Email bounced
+                            </span>
+                          </HoverTooltip>
                         ) : !member.hasLoggedIn && member.invitedBy !== null ? (
                           <span style={{
                             fontSize: fontSize.sm,
