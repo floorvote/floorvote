@@ -37,6 +37,7 @@ import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
 import { nowDb } from './lib/dbTime'
 import { runEmailHealth } from './lib/emailHealthJob'
 import { runInviteBounceCheck } from './lib/inviteBounces'
+import { notifyInviteBounces } from './lib/inviteBounceEmail'
 import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
@@ -284,12 +285,15 @@ export default {
           console.error(`[email-health] check failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
-      // Bounced invites: record delivery outcomes of emails to pending invites.
-      // A failed lookup already writes nothing; a D1 error here is equally
-      // retried next hour rather than emailed to ALERT_EMAILS.
+      // Bounced invites: record delivery outcomes of emails to pending invites,
+      // then email whoever should hear about the new bounces. A failed lookup
+      // already writes nothing; a D1 error here is equally retried next hour
+      // rather than emailed to ALERT_EMAILS. Bounces are recorded before any
+      // email goes out, so a failed send never stops them being recorded.
       ctx.waitUntil(runJob(env, 'invite-bounces', async () => {
         try {
-          await runInviteBounceCheck(env, db, new Date(event.scheduledTime))
+          const bounces = await runInviteBounceCheck(env, db, new Date(event.scheduledTime))
+          await notifyInviteBounces(env, db, bounces)
         } catch (err) {
           console.error(`[invite-bounces] check failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }

@@ -226,6 +226,54 @@ exports[`email conformance — every sample type shares the shell contract > inv
 </html>"
 `;
 
+exports[`email conformance — every sample type shares the shell contract > invite-bounced > matches its committed snapshot 1`] = `
+"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tbody><tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+        <tbody>
+          <tr><td style="padding:0 20px 18px;">
+            
+  <div style="margin-bottom:4px;">
+    <img src="https://sample.test/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
+  </div>
+
+            <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">2 invites couldn't be delivered</p>
+            
+          </td></tr>
+          <tr><td style="padding:6px 20px 28px;">
+            
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">These invites bounced at the receiving mail servers, so they never arrived. The reason each server gave is below.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+        <tbody>
+      <tr><td style="padding:12px 16px;">
+        <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;word-break:break-all;">jordan.lee@exmaple.org</p>
+        <p style="margin:4px 0 0;font-size:12px;line-height:1.5;color:#5e697d;word-break:break-word;">550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not found by SMTP address lookup</p>
+      </td></tr>
+      <tr><td style="padding:12px 16px;border-top:1px solid #e2e8f0;">
+        <p style="margin:0;font-size:14px;font-weight:600;color:#0f172a;word-break:break-all;">casey.morgan@example.org</p>
+        <p style="margin:4px 0 0;font-size:12px;line-height:1.5;color:#5e697d;word-break:break-word;">552 5.2.2 The email account that you tried to reach is over quota</p>
+      </td></tr>
+        </tbody>
+      </table>
+      <p style="margin:14px 0 0;font-size:14px;line-height:1.6;color:#374151;">Check each address for a typo. On Members, open each member's Actions menu and choose Change email… to send a new invite to the corrected address.</p>
+            <div style="margin-top:18px;"><a href="https://sample.test/admin/members" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">Open Members</a></div>
+          </td></tr>
+          <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
+            <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#667386;">Sent to the Admin who sent the invite, or to every Owner when that Admin no longer manages members.</p><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+          </td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</body>
+</html>"
+`;
+
 exports[`email conformance — every sample type shares the shell contract > login > matches its committed snapshot 1`] = `
 "<!DOCTYPE html>
 <html>

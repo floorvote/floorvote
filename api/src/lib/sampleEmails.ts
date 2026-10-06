@@ -10,6 +10,7 @@ import { sendEmail, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
 import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
+import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
 
 export const SAMPLE_ASSOC_NAME = 'Rhode Island Association of Local Election Officials'
 
@@ -60,10 +61,17 @@ export const SAMPLE_NEW_MATCHES: NewMatchDigestItem[] = [
   { billId: 'b7', billNumber: 'HB 1455', billTitle: 'Poll worker compensation increase', billState: 'RI', billSession: '2026', relevanceScore: 5 },
 ]
 
-export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention'
+// Bounced invites from one hourly check: a typo the receiving server rejected,
+// and a full mailbox whose retries ran out.
+export const SAMPLE_INVITE_BOUNCES: BouncedAddress[] = [
+  { email: 'jordan.lee@exmaple.org', reason: '550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not found by SMTP address lookup' },
+  { email: 'casey.morgan@example.org', reason: '552 5.2.2 The email account that you tried to reach is over quota' },
+]
+
+export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention' | 'invite-bounced'
 
 export function isSampleEmailType(t: string): t is SampleEmailType {
-  return t === 'login' || t === 'invite' || t === 'week-ahead' || t === 'digest' || t === 'digest-new-only' || t === 'mention'
+  return (ALL_SAMPLE_EMAIL_TYPES as string[]).includes(t)
 }
 
 export interface SampleSendResult { ok: boolean; provider?: string; error?: string }
@@ -114,6 +122,10 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
           via: 'user',
         }),
       }
+    case 'invite-bounced': {
+      const { subject, html } = renderInviteBounceEmail({ appUrl, instanceName: SAMPLE_ASSOC_NAME, bounces: SAMPLE_INVITE_BOUNCES })
+      return { subject: `[Sample] ${subject}`, html }
+    }
   }
 }
 
@@ -125,4 +137,4 @@ export async function sendSampleEmail(env: Env, db: AppDb, to: string, type: Sam
 }
 
 /** Every sample email type — drives the conformance test's iteration. */
-export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention']
+export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention', 'invite-bounced']
