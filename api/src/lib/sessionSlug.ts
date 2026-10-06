@@ -2,9 +2,9 @@
 // previously duplicated verbatim here, at risk of drifting from the shared
 // copy. shared/sessionSlug.ts is now the single source of truth (it also
 // exports billUrl, used by web routing).
-import { sessionToSlug } from '../../../shared/sessionSlug'
+import { legacySessionSlug, sessionToSlug } from '../../../shared/sessionSlug'
 
-export { sessionToSlug }
+export { legacySessionSlug, sessionToSlug }
 
 /** The slug a bill answers to in /STATE/SLUG/NUMBER.
  *

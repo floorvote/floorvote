@@ -357,3 +357,31 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
   dailyUsed:   integer('daily_used').notNull(),
   updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+/** DC Council LIMS source records; see migrations-legiscan/0020_lims_records.sql. */
+export const limsRecords = sqliteTable('lims_records', {
+  billId:            integer('bill_id').primaryKey(),
+  legislationNumber: text('legislation_number').notNull().unique(),
+  councilPeriodId:   integer('council_period_id').notNull(),
+  categoryId:        integer('category_id').notNull(),
+  bulkJson:          text('bulk_json').notNull(),
+  bulkHash:          text('bulk_hash').notNull(),
+  detailsFetchedAt:  text('details_fetched_at'),
+  updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
+
+/** DC Council hearing calendar; see migrations-legiscan/0021_council_events.sql. */
+export const councilEvents = sqliteTable('council_events', {
+  hearingId:   integer('hearing_id').primaryKey(),
+  date:        text('date').notNull(),
+  time:        text('time'),
+  hearingType: text('hearing_type').notNull(),
+  title:       text('title').notNull(),
+  jointWith:   text('joint_with'),
+  location:    text('location'),
+  topicsJson:  text('topics_json').notNull(),
+  witnessJson: text('witness_json'),
+  eventHash:   text('event_hash').notNull(),
+  removedAt:   text('removed_at'),
+  updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [index('idx_council_events_date').on(t.date)])
