@@ -77,7 +77,7 @@ describe('Members table, member with no name', () => {
     renderMembers()
     await screen.findByText('Named Member')
     const user = userEvent.setup()
-    await user.type(screen.getByPlaceholderText(/search members by name or email/i), 'cleared')
+    await user.type(screen.getByPlaceholderText(/search by name, email, role, or permission level/i), 'cleared')
     expect(screen.getByRole('link', { name: 'cleared@example.com' })).toBeInTheDocument()
     expect(screen.queryByText('Named Member')).not.toBeInTheDocument()
   })
