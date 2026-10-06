@@ -11,11 +11,13 @@ vi.mock('../../src/lib/weekAhead', () => ({ runWeekAhead: vi.fn(async () => unde
 const sendEmail = vi.fn(async () => ({ ok: true, provider: 'resend' as const }))
 vi.mock('../../src/lib/email', () => ({ sendEmail: (env: any, msg: any) => sendEmail(env, msg) }))
 vi.mock('../../src/lib/emailHealthJob', () => ({ runEmailHealth: vi.fn(async () => 'none') }))
+vi.mock('../../src/lib/inviteBounceJob', () => ({ runInviteBounceCheck: vi.fn(async () => []) }))
 
 import worker from '../../src/index'
 import { healStalledAiBills } from '../../src/lib/healStalledAi'
 import { registerWithCentral } from '../../src/cron/sync'
 import { runEmailHealth } from '../../src/lib/emailHealthJob'
+import { runInviteBounceCheck } from '../../src/lib/inviteBounceJob'
 
 async function runScheduled(cron: string, scheduledTime?: number) {
   const ctx = createExecutionContext()
@@ -41,6 +43,33 @@ describe('scheduled() heal branch', () => {
     const scheduledTime = Date.parse('2026-09-30T12:00:00Z')
     await runScheduled('0 * * * *', scheduledTime)
     expect(vi.mocked(runEmailHealth).mock.calls[0][2]).toEqual(new Date(scheduledTime))
+  })
+
+  it('runs the invite bounce check on the hourly cron only, with the scheduled time', async () => {
+    const scheduledTime = Date.parse('2026-09-30T12:00:00Z')
+    await runScheduled('0 * * * *', scheduledTime)
+    expect(runInviteBounceCheck).toHaveBeenCalledOnce()
+    expect(vi.mocked(runInviteBounceCheck).mock.calls[0][2]).toEqual(new Date(scheduledTime))
+    vi.clearAllMocks()
+    await runScheduled('0 11 * * *')
+    await runScheduled('*/5 * * * *')
+    expect(runInviteBounceCheck).not.toHaveBeenCalled()
+  })
+
+  it('does not alert when the invite bounce check rejects, and the other hourly jobs still run', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const inner = new Error('D1_ERROR: database is locked')
+    vi.mocked(runInviteBounceCheck).mockRejectedValueOnce(new Error('Failed query: select ...', { cause: inner }))
+
+    await runScheduled('0 * * * *')
+
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(runEmailHealth).toHaveBeenCalledOnce()
+    expect(healStalledAiBills).toHaveBeenCalledOnce()
+    const logged = error.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('[invite-bounces] check failed, skipping this run')
+    expect(logged).toContain('database is locked')
+    error.mockRestore()
   })
 
   it('does not alert when email-health rejects, and the heal still runs', async () => {

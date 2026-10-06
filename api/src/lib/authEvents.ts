@@ -20,9 +20,10 @@ export interface AuthEventInput {
 
 /**
  * Append one auth event (best-effort) and emit a structured Workers Logs line.
- * Never throws — auth flows must not break because logging failed.
+ * Never throws — auth flows must not break because logging failed. Returns
+ * whether the row was written, for callers that treat the row as a marker.
  */
-export async function recordAuthEvent(db: AppDb, e: AuthEventInput): Promise<void> {
+export async function recordAuthEvent(db: AppDb, e: AuthEventInput): Promise<boolean> {
   // Log first so there's a trail even if the DB write fails. PII (email) is
   // intentional for diagnosis; Workers Logs are access-controlled.
   console.log(JSON.stringify({ tag: 'auth_event', ...e }))
@@ -39,8 +40,10 @@ export async function recordAuthEvent(db: AppDb, e: AuthEventInput): Promise<voi
       userAgent: e.userAgent ?? null,
       ipCountry: e.ipCountry ?? null,
     })
+    return true
   } catch (err) {
     console.error('[auth_event] insert failed', err)
+    return false
   }
 }
 
