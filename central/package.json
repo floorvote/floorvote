@@ -23,13 +23,20 @@
     "hono": "^4.13.12"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.16.20",
-    "@cloudflare/workers-types": "^4.20260702.1",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20261006.1",
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.6.1",
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
     "wrangler": "^4.147.0"
+  },
+  "overrides": {
+    "undici": "^7.30.0",
+    "sharp": "^0.35.5",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

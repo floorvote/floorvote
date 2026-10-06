@@ -30,6 +30,17 @@
     "vite": "^8.3.2",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
-    "wrangler": "^4"
+    "wrangler": "^4.147.0"
+  },
+  "overrides": {
+    "undici": "^7.30.0",
+    "sharp": "^0.35.5",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    },
+    "vitepress": {
+      "vite": "^6.4.4"
+    },
+    "katex": "^0.19.0"
   }
 }

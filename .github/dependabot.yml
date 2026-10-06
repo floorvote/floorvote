@@ -9,7 +9,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@cloudflare/vitest-pool-workers"
     groups:
       minor-and-patch:
         update-types:
@@ -27,7 +26,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "@cloudflare/vitest-pool-workers"
     groups:
       minor-and-patch:
         update-types:
