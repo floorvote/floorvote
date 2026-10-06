@@ -132,6 +132,29 @@ describe('GET /admin/members — emailBounce', () => {
     expect(await bounceOf(gone)).toBeNull()
   })
 
+  // created_at has one-second precision, so a quick resend can share a second
+  // with the send it follows. Within a second, the later-recorded row is latest.
+  async function sendTimeBounce(userId: string, createdAt: string) {
+    await seedAuthEvent(userId, 'email_bounced', {
+      email: 'x@example.test', linkType: 'invite', provider: 'cloudflare',
+      reason: 'E_RECIPIENT_SUPPRESSED', createdAt,
+    })
+  }
+
+  it('breaks a same-second tie by recording order: a send-time bounce after a send is latest', async () => {
+    const members: string[] = []
+    for (let i = 0; i < 6; i++) members.push(await seedUser({ email: `t${i}@example.test`, invitedBy: adminId }))
+    for (const m of members) { await sent(m, `m-${m}`, T1); await sendTimeBounce(m, T1) }
+    for (const m of members) expect(await bounceOf(m)).toEqual({ reason: 'E_RECIPIENT_SUPPRESSED' })
+  })
+
+  it('breaks a same-second tie by recording order: a send after a send-time bounce clears it', async () => {
+    const members: string[] = []
+    for (let i = 0; i < 6; i++) members.push(await seedUser({ email: `t${i}@example.test`, invitedBy: adminId }))
+    for (const m of members) { await sendTimeBounce(m, T1); await sent(m, `m-${m}`, T1) }
+    for (const m of members) expect(await bounceOf(m)).toBeNull()
+  })
+
   it('keeps each member\'s bounce state separate', async () => {
     const a = await seedUser({ email: 'a@example.test', invitedBy: adminId })
     const b = await seedUser({ email: 'b@example.test', invitedBy: adminId })

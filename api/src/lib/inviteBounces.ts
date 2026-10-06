@@ -134,7 +134,9 @@ export async function pendingInviteBounces(db: AppDb): Promise<Map<string, { rea
       isNull(users.deactivatedAt),
       not(hasLoggedInWhere(db)),
     ))
-    .orderBy(authEvents.createdAt)
+    // created_at has one-second precision; rowid (insertion order) breaks a
+    // same-second tie, such as a quick resend, so "latest" is always defined.
+    .orderBy(authEvents.createdAt, sql`auth_events.rowid`)
     .all()
 
   type Latest = { messageId: string | null; reason: string | null; bounced: boolean }
