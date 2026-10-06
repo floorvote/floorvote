@@ -20,7 +20,7 @@
   "dependencies": {
     "drizzle-orm": "^0.45.3",
     "fflate": "^0.8.3",
-    "hono": "^4.13.9"
+    "hono": "^4.13.12"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.20",
@@ -30,6 +30,6 @@
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "wrangler": "^4.141.0"
+    "wrangler": "^4.147.0"
   }
 }
