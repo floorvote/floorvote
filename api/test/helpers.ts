@@ -195,6 +195,7 @@ export async function seedUser(overrides?: {
   canVote?: boolean
   emailDigestEnabled?: boolean
   deactivatedAt?: string | null
+  invitedBy?: string | null
 }): Promise<string> {
   const db = getDb(env.DB)
   const id = crypto.randomUUID()
@@ -207,6 +208,7 @@ export async function seedUser(overrides?: {
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
+    invitedBy: overrides?.invitedBy ?? null,
   })
   return id
 }
@@ -432,7 +434,7 @@ export async function seedCalendarEvent(
 export async function seedAuthEvent(
   userId: string,
   event: string,
-  overrides: { email?: string; reason?: string; linkType?: string } = {},
+  overrides: { email?: string; reason?: string; linkType?: string; provider?: string; messageId?: string; createdAt?: string } = {},
 ): Promise<void> {
   const db = getDb(env.DB)
   await db.insert(authEvents).values({
@@ -442,5 +444,8 @@ export async function seedAuthEvent(
     event,
     reason: overrides.reason ?? null,
     linkType: overrides.linkType ?? null,
+    provider: overrides.provider ?? null,
+    messageId: overrides.messageId ?? null,
+    ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   })
 }

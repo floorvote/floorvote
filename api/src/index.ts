@@ -36,6 +36,7 @@ import { runJob } from './lib/jobAlert'
 import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
 import { nowDb } from './lib/dbTime'
 import { runEmailHealth } from './lib/emailHealthJob'
+import { runInviteBounceCheck } from './lib/inviteBounces'
 import { ensureDemoSession, demoSessionCookie } from './lib/demoSession'
 import { demoReadOnly } from './middleware/auth'
 import type { Env, AppEnv, QueueMessage, InviteEmailMessage, TenantQueueMessage } from './types'
@@ -281,6 +282,16 @@ export default {
           // tenant running before migration 0073) must not email ALERT_EMAILS
           // "cron failed: email-health". Log the cause chain and try next hour.
           console.error(`[email-health] check failed, skipping this run: ${describeErrorCauseChain(err)}`)
+        }
+      }))
+      // Bounced invites: record delivery outcomes of emails to pending invites.
+      // A failed lookup already writes nothing; a D1 error here is equally
+      // retried next hour rather than emailed to ALERT_EMAILS.
+      ctx.waitUntil(runJob(env, 'invite-bounces', async () => {
+        try {
+          await runInviteBounceCheck(env, db, new Date(event.scheduledTime))
+        } catch (err) {
+          console.error(`[invite-bounces] check failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
       ctx.waitUntil(runJob(env, 'heal-ai', async () => {

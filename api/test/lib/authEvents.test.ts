@@ -21,9 +21,13 @@ describe('recordAuthEvent', () => {
     expect(row.ipCountry).toBe('US')
   })
 
-  it('never throws on a DB failure (best-effort)', async () => {
+  it('never throws on a DB failure (best-effort), and reports that nothing was written', async () => {
     const fakeDb = { insert: () => ({ values: () => Promise.reject(new Error('boom')) }) } as never
-    await expect(recordAuthEvent(fakeDb, { event: 'logout', email: 'a@b.com' })).resolves.toBeUndefined()
+    await expect(recordAuthEvent(fakeDb, { event: 'logout', email: 'a@b.com' })).resolves.toBe(false)
+  })
+
+  it('reports that the row was written', async () => {
+    await expect(recordAuthEvent(getDb(env.DB), { event: 'logout', email: 'a@b.com' })).resolves.toBe(true)
   })
 
   it('authReqContext pulls UA and cf-ipcountry', () => {

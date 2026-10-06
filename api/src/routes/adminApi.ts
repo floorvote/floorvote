@@ -3,6 +3,7 @@ import { eq, desc, sql, and, or, isNull, isNotNull, inArray, ne, gt, like, not }
 import { requireAuth, requireAdmin, requireOwner } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { hasLoggedInSelect, hasLoggedInWhere } from '../lib/loginHistory'
+import { pendingInviteBounces } from '../lib/inviteBounces'
 import { users, sessions, magicLinks, associationConfig, bills, comments, commentReactions, memberVotes, notes, feedEvents, officialPositions, roles, userRoles, authEvents } from '../db/schema'
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendMagicLink } from '../lib/email'
@@ -109,6 +110,9 @@ adminApiRouter.get('/members', async (c) => {
     (r.loginRequests ?? 0) >= 2 && (!r.lastSuccess || (r.lastLoginRequest ?? '') > r.lastSuccess),
   ]))
 
+  // Pending invites whose latest invite or sign-in email bounced.
+  const bounceByUser = await pendingInviteBounces(db)
+
   return c.json(
     rows.map((u) => ({
       id: u.id,
@@ -125,6 +129,7 @@ adminApiRouter.get('/members', async (c) => {
       invitedBy: u.invitedBy ? (inviterMap[u.invitedBy] ?? null) : null,
       roles: rolesByUser.get(u.id) ?? [],
       loginTrouble: troubleByUser.get(u.id) ?? false,
+      emailBounce: bounceByUser.get(u.id) ?? null,
     })),
   )
 })
