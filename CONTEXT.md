@@ -17,3 +17,9 @@
 **Standard member**: the default permission level: follows bills, comments, and can be mentioned, with no administrative access. Avoid: plain "member" when contrasting with Admin.
 
 **Role**: a named group of members that an admin defines, which can be @-mentioned together. Avoid: "group"; "team" when meaning a subset of members.
+
+**Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.
+
+**Pending invite**: a member who was invited and hasn't signed in yet.
+
+**Bounced invite**: a pending invite whose latest invite or sign-in email couldn't be delivered. Shown as "Email bounced." Avoid: "failed invite" (the email failed, not the invite); "undeliverable."
