@@ -779,8 +779,8 @@ export function Members() {
               <div style={{ color: color.textSecondary }}>
                 {[
                   `${inviteResult.summary.invited} invited`,
-                  inviteResult.summary.exists ? `${inviteResult.summary.exists} already members` : null,
-                  inviteResult.summary.duplicate ? `${inviteResult.summary.duplicate} duplicates` : null,
+                  inviteResult.summary.exists ? `${inviteResult.summary.exists} ${inviteResult.summary.exists === 1 ? 'already a member' : 'already members'}` : null,
+                  inviteResult.summary.duplicate ? `${inviteResult.summary.duplicate} ${inviteResult.summary.duplicate === 1 ? 'duplicate' : 'duplicates'}` : null,
                   inviteResult.summary.invalid ? `${inviteResult.summary.invalid} invalid` : null,
                   inviteResult.summary.bounced ? `${inviteResult.summary.bounced} previously bounced` : null,
                 ].filter(Boolean).join(' · ')}
