@@ -197,8 +197,9 @@ export function Members() {
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member')
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState<string | null>(null)
-  type BulkResult = { email: string; status: 'invited' | 'exists' | 'duplicate' | 'invalid'; userId?: string }
-  type BulkSummary = { invited: number; exists: number; duplicate: number; invalid: number }
+  type BulkResult = { email: string; status: 'invited' | 'exists' | 'duplicate' | 'invalid' | 'bounced'; userId?: string }
+  // `bounced` is optional: an older API leaves it out.
+  type BulkSummary = { invited: number; exists: number; duplicate: number; invalid: number; bounced?: number }
   const [inviteResult, setInviteResult] = useState<{ summary: BulkSummary; results: BulkResult[] } | null>(null)
 
   // Members list state
@@ -781,12 +782,13 @@ export function Members() {
                   inviteResult.summary.exists ? `${inviteResult.summary.exists} already members` : null,
                   inviteResult.summary.duplicate ? `${inviteResult.summary.duplicate} duplicates` : null,
                   inviteResult.summary.invalid ? `${inviteResult.summary.invalid} invalid` : null,
+                  inviteResult.summary.bounced ? `${inviteResult.summary.bounced} previously bounced` : null,
                 ].filter(Boolean).join(' · ')}
               </div>
               {inviteResult.results.some(r => r.status !== 'invited') && (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: color.textMuted }}>
                   {inviteResult.results.filter(r => r.status !== 'invited').map((r, i) => (
-                    <li key={i}>{r.email || '(no email)'} — {r.status}</li>
+                    <li key={i}>{r.email || '(no email)'} — {r.status === 'bounced' ? 'previously bounced, not invited' : r.status}</li>
                   ))}
                 </ul>
               )}
