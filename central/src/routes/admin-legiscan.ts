@@ -678,7 +678,7 @@ adminLsRoutes.post('/reingest-bill/:billId', async (c) => {
 // API quota for data the UI doesn't surface.
 //
 // SAFETY: defaults to dry run. Pass ?confirm=true to actually queue. Each queued
-// message triggers one getBill() LegiScan call — be mindful of the 30k/month quota.
+// message triggers one getBill() LegiScan call — be mindful of the monthly quota (10k on the free tier).
 adminLsRoutes.post('/reingest-tenant/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const confirm = c.req.query('confirm') === 'true'

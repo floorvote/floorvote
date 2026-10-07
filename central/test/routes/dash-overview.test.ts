@@ -43,7 +43,7 @@ describe('GET /admin/dash/overview', () => {
     expect(body.data.bills.fullyTracked).toBe(2)
     expect(body.data.bills.lightweight).toBe(1)
     expect(body.data.apiBudget.used).toBe(2)
-    expect(body.data.apiBudget.limit).toBe(30000)
+    expect(body.data.apiBudget.limit).toBe(10000)
     expect(body.data.lastSync.ageSeconds).toBeGreaterThanOrEqual(0)
     expect(body.data.lastSync.billsChanged).toBe(2)
     expect(body.meta.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)

@@ -451,7 +451,7 @@ tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam()
 // POST /tenants/promote-bills/:tenantId — bulk-promote stub bills to full tracking.
 // Body: { billIds: number[] }. Upserts bill_tenants.match_type='manual' for each and
 // queues the ingestor with forceAI:true. Zero LegiScan API calls here, but the
-// ingestor makes one getBill() per bill against the shared 30k/month quota — so
+// ingestor makes one getBill() per bill against the shared monthly quota — so
 // the per-request count is capped at REPROCESS_LIMIT. (H4 quota guard: the
 // deny-by-default TenantApi forwarder still lets a tenant reach this allowlisted
 // route, so the cap, not the forwarder, is what bounds quota burn here.)

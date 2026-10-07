@@ -317,7 +317,7 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
 
   it('rejects over-limit billIds with 400 and queues nothing (H4 quota guard)', async () => {
     // Each promoted bill drives one getBill() in the ingestor against the shared
-    // 30k/month LegiScan quota — so the per-request count is capped at 1000.
+    // monthly LegiScan quota — so the per-request count is capped at 1000.
     const { env2, sent } = ingestorEnv()
     const billIds = Array.from({ length: 1001 }, (_, i) => i + 1)
     const res = await app.fetch(

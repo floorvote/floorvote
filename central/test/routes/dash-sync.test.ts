@@ -71,7 +71,7 @@ describe('GET /admin/dash/sync/api-budget', () => {
     const res = await app.fetch(new Request('http://central/admin/dash/sync/api-budget', { headers: AUTH }), TEST_ENV)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.data.limit).toBe(30000)
+    expect(body.data.limit).toBe(10000)
     expect(body.data.monthToDate).toBe(3)
     const todayEntry = body.data.daily.find((d: any) => d.date === today)
     expect(todayEntry?.calls).toBe(3)

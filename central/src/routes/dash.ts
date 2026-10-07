@@ -35,7 +35,7 @@ function normalizeHours(input: unknown): number[] | null {
 
 dashRoutes.get('/overview', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const legiscanLimit = await getSettingNumber(db, 'legiscan_monthly_limit', 30000)
+  const legiscanLimit = await getSettingNumber(db, 'legiscan_monthly_limit', 10000)
 
   const tenantsRows = await db
     .select({ id: schema.tenants.tenantId, name: schema.tenants.name, url: schema.tenants.apiUrl, active: schema.tenants.active })
@@ -305,7 +305,7 @@ dashRoutes.get('/sync/states', async (c) => {
 
 dashRoutes.get('/sync/api-budget', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const legiscanLimit = await getSettingNumber(db, 'legiscan_monthly_limit', 30000)
+  const legiscanLimit = await getSettingNumber(db, 'legiscan_monthly_limit', 10000)
   const days = Math.min(Number(c.req.query('days') ?? 30), 90)
 
   // Monthly total

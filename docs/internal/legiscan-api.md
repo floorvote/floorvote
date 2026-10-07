@@ -12,7 +12,7 @@ Successful response: `{"status":"OK", ...}`. Error: `{"status":"ERROR", "alert":
 
 | Mode | Description |
 |---|---|
-| **Pull** | Client-driven HTTP requests. Our mode. 30k queries/month free. |
+| **Pull** | Client-driven HTTP requests. Our mode. 10k queries/month free (30k before October 1, 2026). |
 | **Push** | Paid. LegiScan POSTs to your endpoint every 15min–4hr when bills change. Adds `last_push` + `reasons[]` array (25 change flags) to bill payload. |
 | **Bulk** | Weekly ZIP datasets via `getDataset`. Contains all `getBill`/`getRollCall`/`getPerson` records as individual JSON files. Best for initial load. |
 
