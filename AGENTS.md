@@ -111,7 +111,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
 | `CF_ANALYTICS_TOKEN` | Cloudflare API token for two features: D1 anomaly watch (Account → D1: Read) and Login Activity delivery status (Zone → Analytics: Read, scoped to `CF_FLOORVOTE_ZONE_ID`'s zone). Both permission groups can live on one token. (optional) |
 | `CF_FLOORVOTE_ZONE_ID` | Cloudflare zone ID (not account ID — found on the domain's Overview page) for the Login Activity delivery-status GraphQL query. Required alongside `CF_ANALYTICS_TOKEN`'s zone permission for that feature; otherwise it silently no-ops. (optional) |
-| `CF_EMAIL_TOKEN` | Cloudflare API token (Email Sending: Read) for login-activity suppression banner (optional) |
+| `CF_EMAIL_TOKEN` | Cloudflare API token (Email Sending: Read) for reading the suppression list: the login-activity suppression banner, and the previously-bounced check in bulk invite and change-email. Without it, that check counts only bounces the instance recorded. (optional) |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile for dashboard login (optional) |
 
 **Central vars** (in `[env.legiscan.vars]` in `central/wrangler.toml`):
