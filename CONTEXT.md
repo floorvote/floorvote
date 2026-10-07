@@ -23,3 +23,5 @@
 **Pending invite**: a member who was invited and hasn't signed in yet.
 
 **Bounced invite**: a pending invite whose latest invite or sign-in email couldn't be delivered. Shown as "Email bounced." Avoid: "failed invite" (the email failed, not the invite); "undeliverable."
+
+**Previously bounced address**: an address that bounced before: an email to it bounced in this instance, whoever it was sent to, or the email provider's suppression list has it. Bulk invite skips it and changing a pending invite to it is refused. Shown as "previously bounced."

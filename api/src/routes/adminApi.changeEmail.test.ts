@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { app } from '../index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../../test/helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedAuthEvent } from '../../test/helpers'
 import { getDb } from '../db/client'
 import { users, magicLinks, authEvents } from '../db/schema'
 import { sendMagicLink } from '../lib/email'
@@ -15,17 +15,17 @@ vi.mock('../lib/email', () => ({ sendMagicLink: vi.fn().mockResolvedValue(undefi
 
 const UNCHANGED = "That's already their address. Check it for a typo, or use Resend invite to send to it again."
 const IN_USE = 'Another member already uses that address.'
-const SUPPRESSED = 'This address has bounced before. Check it for a typo.'
+const BOUNCED = 'This address has bounced before. Check it for a typo.'
 const INVALID = 'Invalid email address'
 
 type Suppression = { suppressed: boolean | null; reason?: string }
 
-/** A central binding whose suppression lookup answers with `answer` (or throws it). */
+/** A central binding whose suppression lookup answers `answer` for every address (or throws it). */
 function centralWith(answer: Suppression | Error) {
   return {
-    emailSuppression: vi.fn(async () => {
+    emailSuppressionMany: vi.fn(async (emails: string[]) => {
       if (answer instanceof Error) throw answer
-      return answer
+      return Object.fromEntries(emails.map(e => [e, answer]))
     }),
   }
 }
@@ -149,10 +149,21 @@ describe('POST /admin/members/:id/change-email', () => {
       expect((await changeEmail(other, 'pat@example.com', { central: {} })).status).toBe(200)
     })
 
-    it('asks the suppression lookup about the new, normalized address', async () => {
+    it('asks the suppression lookup once, about the new, normalized address', async () => {
       const central = centralWith({ suppressed: false })
       await changeEmail(pendingId, ' Jane@Example.com', { central })
-      expect(central.emailSuppression).toHaveBeenCalledWith('jane@example.com')
+      expect(central.emailSuppressionMany).toHaveBeenCalledOnce()
+      expect(central.emailSuppressionMany).toHaveBeenCalledWith(['jane@example.com'])
+    })
+
+    it('goes through when central lacks the batch lookup (an older central)', async () => {
+      const r = await changeEmail(pendingId, 'jane@example.com', { central: { emailSuppression: vi.fn(async () => ({ suppressed: true })) } })
+      expect(r.status).toBe(200)
+    })
+
+    it.each(['email_delivered', 'email_send_failed'])('goes through when the address has only a %s event', async (event) => {
+      await seedAuthEvent(adminId, event, { email: 'jane@example.com' })
+      expect((await changeEmail(pendingId, 'jane@example.com')).status).toBe(200)
     })
   })
 
@@ -218,8 +229,37 @@ describe('POST /admin/members/:id/change-email', () => {
 
     it('refuses a suppressed address', async () => {
       const central = centralWith({ suppressed: true, reason: 'hard bounce' })
-      expect(await changeEmail(pendingId, 'jane@example.com', { central })).toEqual({ status: 400, body: { error: SUPPRESSED } })
+      expect(await changeEmail(pendingId, 'jane@example.com', { central })).toEqual({ status: 400, body: { error: BOUNCED } })
       await expectUntouched(pendingId, 'jane@exmaple.com')
+    })
+
+    it('refuses an address with only a recorded bounce, which the suppression list lacks', async () => {
+      const otherId = await seedUser({ email: 'other@example.com' })
+      await seedAuthEvent(otherId, 'email_bounced', { email: 'Jane@Example.com' })
+      expect(await changeEmail(pendingId, 'jane@example.com')).toEqual({ status: 400, body: { error: BOUNCED } })
+      await expectUntouched(pendingId, 'jane@exmaple.com')
+    })
+
+    it.each([
+      ['fails', centralWith(new Error('lookup down'))],
+      ['cannot tell', centralWith({ suppressed: null })],
+      ['is missing', {}],
+    ])('refuses an address with a recorded bounce when the suppression lookup %s', async (_label, central) => {
+      const goneId = await seedUser({ email: 'gone@example.com', deactivatedAt: '2026-01-01 00:00:00' })
+      await seedAuthEvent(goneId, 'email_bounced', { email: 'jane@example.com' })
+      expect(await changeEmail(pendingId, 'jane@example.com', { central })).toEqual({ status: 400, body: { error: BOUNCED } })
+      await expectUntouched(pendingId, 'jane@exmaple.com')
+    })
+
+    it('checks in-use before a recorded bounce', async () => {
+      await seedUser({ email: 'taken@example.com' })
+      await seedAuthEvent(adminId, 'email_bounced', { email: 'taken@example.com' })
+      expect(await changeEmail(pendingId, 'taken@example.com')).toEqual({ status: 409, body: { error: IN_USE } })
+    })
+
+    it('checks unchanged before a recorded bounce', async () => {
+      await seedAuthEvent(pendingId, 'email_bounced', { email: 'jane@exmaple.com' })
+      expect(await changeEmail(pendingId, 'jane@exmaple.com')).toEqual({ status: 400, body: { error: UNCHANGED } })
     })
 
     it('refuses a member who has signed in', async () => {
@@ -299,11 +339,11 @@ describe('POST /admin/members/:id/change-email', () => {
       // The suppression lookup runs between the checks and the write; a
       // sign-in that lands while it's in flight uses one of the links.
       const central = {
-        emailSuppression: vi.fn(async () => {
+        emailSuppressionMany: vi.fn(async () => {
           await env.DB.prepare(
             "UPDATE magic_links SET used_at = datetime('now') WHERE id = (SELECT id FROM magic_links WHERE user_id = ? LIMIT 1)",
           ).bind(pendingId).run()
-          return { suppressed: false }
+          return {}
         }),
       }
       const r = await changeEmail(pendingId, 'jane@example.com', { central })
@@ -318,9 +358,9 @@ describe('POST /admin/members/:id/change-email', () => {
 
     it('refuses when the member is deactivated between the check and the write', async () => {
       const central = {
-        emailSuppression: vi.fn(async () => {
+        emailSuppressionMany: vi.fn(async () => {
           await env.DB.prepare("UPDATE users SET deactivated_at = datetime('now') WHERE id = ?").bind(pendingId).run()
-          return { suppressed: false }
+          return {}
         }),
       }
       const r = await changeEmail(pendingId, 'jane@example.com', { central })

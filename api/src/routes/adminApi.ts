@@ -24,6 +24,7 @@ import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppDb, AppEnv } from '../types'
 import { checkMemberAddresses, normalizeMemberAddress } from '../lib/memberAddress'
 import { isPendingInvite, pendingInviteWhere } from '../lib/pendingInvite'
+import { previouslyBouncedAddresses } from '../lib/bouncedAddresses'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -169,7 +170,13 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
   // address; repeats within this batch are bulk invite's own concern.
   const checks = await checkMemberAddresses(db, invitees.map(inv => inv.email))
 
-  type RowStatus = 'invited' | 'exists' | 'duplicate' | 'invalid'
+  // One lookup for every new address in the batch. A failed lookup of the
+  // provider's list falls back to recorded bounces and never blocks the batch.
+  const bounced = await previouslyBouncedAddresses(
+    c.env, db, checks.filter(ch => ch.status === 'available').map(ch => ch.email),
+  )
+
+  type RowStatus = 'invited' | 'exists' | 'duplicate' | 'invalid' | 'bounced'
   const results: { email: string; status: RowStatus; userId?: string }[] = []
   const toInsert: { id: string; email: string; name: string; role: 'admin' | 'member'; invitedBy: string }[] = []
   const created: { userId: string; email: string }[] = []
@@ -181,6 +188,7 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
     if (seen.has(email)) { results.push({ email, status: 'duplicate' }); return }
     seen.add(email)
     if (status === 'taken') { results.push({ email, status: 'exists' }); return }
+    if (bounced.has(email)) { results.push({ email, status: 'bounced' }); return }
     const id = crypto.randomUUID()
     toInsert.push({ id, email, name: (inv.name ?? '').trim().slice(0, 100), role, invitedBy: inviterId })
     created.push({ userId: id, email })
@@ -214,6 +222,7 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
     exists: results.filter(r => r.status === 'exists').length,
     duplicate: results.filter(r => r.status === 'duplicate').length,
     invalid: results.filter(r => r.status === 'invalid').length,
+    bounced: results.filter(r => r.status === 'bounced').length,
   }
   return c.json({ summary, results })
 })
@@ -264,7 +273,7 @@ adminApiRouter.post('/members/:id/resend-invite', async (c) => {
 const CHANGE_EMAIL_ERRORS = {
   unchanged: "That's already their address. Check it for a typo, or use Resend invite to send to it again.",
   inUse: 'Another member already uses that address.',
-  suppressed: 'This address has bounced before. Check it for a typo.',
+  bounced: 'This address has bounced before. Check it for a typo.',
   invalid: 'Invalid email address',
   pendingOnly: "Only a pending invite's address can be changed",
 } as const
@@ -306,14 +315,11 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
   if (check.status === 'taken') return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
   const email = check.email
 
-  // Refuse an address the provider already drops. If the lookup can't answer,
-  // let the change through: the hourly bounce check catches a bad address.
-  try {
-    const central = centralEmail(c.env)
-    if (central.emailSuppression && (await central.emailSuppression(email)).suppressed === true) {
-      return c.json({ error: CHANGE_EMAIL_ERRORS.suppressed }, 400)
-    }
-  } catch (e) { console.error('[change-email] suppression lookup failed', e) }
+  // Refuse an address that bounced before. If the provider's list can't
+  // answer, only recorded bounces count: the hourly bounce check catches the rest.
+  if ((await previouslyBouncedAddresses(c.env, db, [email])).has(email)) {
+    return c.json({ error: CHANGE_EMAIL_ERRORS.bounced }, 400)
+  }
 
   // One batch, so it lands whole or not at all. The update re-checks that the
   // member is still a pending invite: a sign-in or deactivation can land
