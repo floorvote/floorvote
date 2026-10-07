@@ -9,6 +9,9 @@ import { centralEmail, type DeliveryStatus } from './centralEmail'
 /** Lifetime of an invite link; older sends to a pending invite aren't checked. */
 export const BOUNCE_CHECK_WINDOW_DAYS = 7
 
+/** How far before the oldest send the delivery lookup's window opens. */
+const LOOKUP_MARGIN_MS = 15 * 60_000
+
 /** A bounce this run recorded, for anything that reports it (e.g. the inviter email). */
 export type RecordedBounce = {
   memberId: string
@@ -84,10 +87,13 @@ export async function runInviteBounceCheck(env: Pick<Env, 'CENTRAL'>, db: AppDb,
   if (byMessage.size === 0) return []
 
   // Central's lookup returns at most 10,000 messages, newest first, so the
-  // window starts at the oldest send asked about rather than a fixed 7 days
-  // back: a longer window could crowd that send out of the results.
+  // window starts near the oldest send asked about rather than a fixed 7 days
+  // back: a longer window could crowd that send out of the results. It opens a
+  // margin early because the provider can log an outcome before the send's row
+  // is written (a recipient server that rejects at once), and that row's time
+  // is cut to the whole second.
   const oldestSentAt = pending.reduce((min, r) => (r.sentAt < min ? r.sentAt : min), pending[0].sentAt)
-  const lookupSince = new Date(`${oldestSentAt.replace(' ', 'T')}Z`)
+  const lookupSince = new Date(new Date(`${oldestSentAt.replace(' ', 'T')}Z`).getTime() - LOOKUP_MARGIN_MS)
 
   const central = centralEmail(env)
   if (!central.emailDeliveryStatus) return []

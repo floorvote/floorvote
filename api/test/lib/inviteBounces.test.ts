@@ -23,6 +23,20 @@ function returning(delivery: Delivery) {
   return centralEnv(async () => delivery)
 }
 
+// Mirrors central: only provider events at or after `since` come back, and the
+// latest event per message wins.
+function honoringSince(events: Array<{ messageId: string; status: string; errorCause?: string; datetime: string }>) {
+  return centralEnv(async (ids, since) => {
+    const out: Delivery = {}
+    for (const ev of [...events].sort((x, y) => y.datetime.localeCompare(x.datetime))) {
+      if (ids.includes(ev.messageId) && ev.datetime >= since && !out[ev.messageId]) {
+        out[ev.messageId] = { status: ev.status, isSpam: false, errorCause: ev.errorCause, datetime: ev.datetime }
+      }
+    }
+    return out
+  })
+}
+
 async function outcomes() {
   const db = getDb(env.DB)
   return db.select().from(authEvents)
@@ -130,11 +144,39 @@ describe('runInviteBounceCheck', () => {
 
     expect(emailDeliveryStatus).toHaveBeenCalledOnce()
     expect(emailDeliveryStatus.mock.calls[0][0]).toEqual(['m-edge'])
-    // The lookup window starts at the oldest send it asks about.
-    expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-16T21:00:00.000Z')
+    // The lookup window starts 15 minutes before the oldest send it asks about.
+    expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-16T20:45:00.000Z')
   })
 
-  it('starts the lookup window at the oldest pending send, not 7 days back', async () => {
+  it('finds a bounce the provider logged before the send was recorded', async () => {
+    // A recipient server that rejects at once lets the provider log the failure
+    // a moment before the send's own row is written, and that row's time is cut
+    // to the whole second. A window starting exactly at the send misses it.
+    const memberId = await seedPendingInvite('typo@example.test')
+    await seedSent(memberId, 'typo@example.test', 'm-1', { createdAt: '2026-09-23 20:00:00' })
+    const { e } = honoringSince([
+      { messageId: 'm-1', status: 'deliveryFailed', errorCause: '550 5.1.1 user unknown', datetime: '2026-09-23T19:59:59.000Z' },
+    ])
+
+    const bounces = await runInviteBounceCheck(e, getDb(env.DB), NOW)
+
+    expect(bounces.map(b => b.reason)).toEqual(['550 5.1.1 user unknown'])
+    expect((await outcomes())[0]).toMatchObject({ event: 'email_bounced', messageId: 'm-1' })
+  })
+
+  it('finds a delivery the provider logged in the same second as the send', async () => {
+    const memberId = await seedPendingInvite('ok@example.test')
+    await seedSent(memberId, 'ok@example.test', 'm-1', { createdAt: '2026-09-23 20:00:00' })
+    const { e } = honoringSince([
+      { messageId: 'm-1', status: 'delivered', datetime: '2026-09-23T19:59:59.400Z' },
+    ])
+
+    await runInviteBounceCheck(e, getDb(env.DB), NOW)
+
+    expect((await outcomes())[0]).toMatchObject({ event: 'email_delivered', messageId: 'm-1' })
+  })
+
+  it('starts the lookup window just before the oldest pending send, not 7 days back', async () => {
     // Central returns at most 10,000 messages, newest first, so a window no
     // longer than it needs to be keeps an older send from falling off the end.
     const a = await seedPendingInvite('a@example.test')
@@ -145,7 +187,7 @@ describe('runInviteBounceCheck', () => {
 
     await runInviteBounceCheck(e, getDb(env.DB), NOW)
 
-    expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-23T18:30:00.000Z')
+    expect(emailDeliveryStatus.mock.calls[0][1]).toBe('2026-09-23T18:15:00.000Z')
   })
 
   it('leaves a send that already has an outcome out of the window', async () => {
@@ -157,7 +199,7 @@ describe('runInviteBounceCheck', () => {
 
     await runInviteBounceCheck(e, getDb(env.DB), NOW)
 
-    expect(emailDeliveryStatus.mock.calls[0]).toEqual([['m-open'], '2026-09-23T20:00:00.000Z'])
+    expect(emailDeliveryStatus.mock.calls[0]).toEqual([['m-open'], '2026-09-23T19:45:00.000Z'])
   })
 
   it('never checks a member with no inviter (one who joined another way)', async () => {
