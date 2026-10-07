@@ -24,4 +24,4 @@
 
 **Bounced invite**: a pending invite whose latest invite or sign-in email couldn't be delivered. Shown as "Email bounced." Avoid: "failed invite" (the email failed, not the invite); "undeliverable."
 
-**Previously bounced address**: an address that an email from this instance has bounced from before, or that the email provider refuses to send to. Shown as "previously bounced." Avoid: "suppressed" in product copy.
+**Previously bounced address**: an address whose most recent delivery outcome from this instance was a bounce (a later delivery clears it), or that the email provider refuses to send to. Shown as "previously bounced." Avoid: "suppressed" in product copy.

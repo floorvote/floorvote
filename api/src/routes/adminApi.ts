@@ -24,7 +24,7 @@ import { adminSavedViewsRouter } from './savedViewsApi'
 import type { AppDb, AppEnv } from '../types'
 import { checkMemberAddresses, normalizeMemberAddress } from '../lib/memberAddress'
 import { isPendingInvite, pendingInviteWhere } from '../lib/pendingInvite'
-import { previouslyBouncedAddresses } from '../lib/bouncedAddresses'
+import { isPreviouslyBounced, previouslyBouncedAddresses } from '../lib/bouncedAddresses'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -317,7 +317,7 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
 
   // Refuse an address that bounced before. If the provider's list can't
   // answer, only recorded bounces count: the hourly bounce check catches the rest.
-  if ((await previouslyBouncedAddresses(c.env, db, [email])).has(email)) {
+  if (await isPreviouslyBounced(c.env, db, email)) {
     return c.json({ error: CHANGE_EMAIL_ERRORS.bounced }, 400)
   }
 

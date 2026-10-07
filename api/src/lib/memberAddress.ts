@@ -16,8 +16,11 @@ export type MemberAddressCheck =
   | { email: string; status: 'taken'; userId: string }
   | { email: string; status: 'available' }
 
-// D1 caps a query at 100 bound parameters.
-const LOOKUP_CHUNK = 90
+/**
+ * How many addresses one `IN (...)` lookup binds. D1 caps a query at 100 bound
+ * parameters; this leaves room for a few more in the same query.
+ */
+export const ADDRESS_LOOKUP_CHUNK = 90
 
 /** Lowercase and trim. Punctuation is not stripped: a malformed address is rejected, not repaired. */
 export function normalizeMemberAddress(raw: string | null | undefined): string {
@@ -41,11 +44,11 @@ export async function checkMemberAddresses(
   // all. Not index-backed, but the members table is small.
   const storedLower = sql<string>`lower(${users.email})`
   const takenBy = new Map<string, string>()
-  for (let i = 0; i < candidates.length; i += LOOKUP_CHUNK) {
+  for (let i = 0; i < candidates.length; i += ADDRESS_LOOKUP_CHUNK) {
     const rows = await db
       .select({ id: users.id, email: storedLower })
       .from(users)
-      .where(inArray(storedLower, candidates.slice(i, i + LOOKUP_CHUNK)))
+      .where(inArray(storedLower, candidates.slice(i, i + ADDRESS_LOOKUP_CHUNK)))
       .all()
     for (const r of rows) if (!takenBy.has(r.email)) takenBy.set(r.email, r.id)
   }

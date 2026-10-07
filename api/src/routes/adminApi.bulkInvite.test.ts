@@ -341,7 +341,7 @@ describe('POST /admin/members/bulk-invite previously bounced addresses', () => {
 
   type Status = { suppressed: boolean | null }
 
-  /** A central binding whose batch suppression lookup lists `listed` (or throws/returns `answer`). */
+  /** A central binding whose batch suppression lookup reports exactly the addresses in `listed` as suppressed. */
   function centralListing(listed: string[]) {
     return {
       emailSuppressionMany: vi.fn(async (emails: string[]): Promise<Record<string, Status>> =>
@@ -429,6 +429,18 @@ describe('POST /admin/members/bulk-invite previously bounced addresses', () => {
     expect(body.summary).toEqual({ invited: 0, exists: 1, duplicate: 0, invalid: 0, bounced: 0 })
   })
 
+  it('invites an address delivered to after it bounced, and refuses one that bounced after a delivery', async () => {
+    await seedAuthEvent(adminId, 'email_bounced', { email: 'back@example.com', createdAt: '2026-01-01 00:00:00' })
+    await seedAuthEvent(adminId, 'email_delivered', { email: 'back@example.com', createdAt: '2026-01-02 00:00:00' })
+    await seedAuthEvent(adminId, 'email_delivered', { email: 'gone-bad@example.com', createdAt: '2026-01-01 00:00:00' })
+    await seedAuthEvent(adminId, 'email_bounced', { email: 'gone-bad@example.com', createdAt: '2026-01-02 00:00:00' })
+    const { body } = await bulkInvite([{ email: 'back@example.com' }, { email: 'gone-bad@example.com' }])
+    expect(body.results.map(r => [r.email, r.status])).toEqual([
+      ['back@example.com', 'invited'],
+      ['gone-bad@example.com', 'bounced'],
+    ])
+  })
+
   it.each(['email_delivered', 'email_send_failed'])('invites an address with only a %s event', async (event) => {
     await seedAuthEvent(adminId, event, { email: 'fine@example.com' })
     const { body } = await bulkInvite([{ email: 'fine@example.com' }])
@@ -438,6 +450,10 @@ describe('POST /admin/members/bulk-invite previously bounced addresses', () => {
   it.each([
     ['is missing (an older central)', { emailSuppression: vi.fn(async () => ({ suppressed: true })) }],
     ['throws', { emailSuppressionMany: vi.fn(async () => { throw new Error('lookup down') }) }],
+    ['throws because a deployed central lacks it', {
+      emailSuppressionMany: vi.fn(async () => { throw new TypeError('The RPC receiver does not implement the method') }),
+      emailSuppression: vi.fn(async () => ({ suppressed: true })),
+    }],
     ['returns unknown', { emailSuppressionMany: vi.fn(async (emails: string[]) => Object.fromEntries(emails.map(e => [e, { suppressed: null }]))) }],
     ['returns nothing', { emailSuppressionMany: vi.fn(async () => undefined) }],
     ['is unbound', undefined],

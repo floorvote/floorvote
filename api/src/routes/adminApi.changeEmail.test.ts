@@ -156,9 +156,21 @@ describe('POST /admin/members/:id/change-email', () => {
       expect(central.emailSuppressionMany).toHaveBeenCalledWith(['jane@example.com'])
     })
 
-    it('goes through when central lacks the batch lookup (an older central)', async () => {
-      const r = await changeEmail(pendingId, 'jane@example.com', { central: { emailSuppression: vi.fn(async () => ({ suppressed: true })) } })
+    it.each([
+      ['is undefined (an older central)', undefined],
+      ['throws when called, as a deployed binding without it does', vi.fn(async () => { throw new TypeError('The RPC receiver does not implement the method') })],
+    ])('goes through when the batch lookup %s and the single-address lookup throws', async (_label, emailSuppressionMany) => {
+      const emailSuppression = vi.fn(async () => { throw new Error('lookup down') })
+      const r = await changeEmail(pendingId, 'jane@example.com', { central: { emailSuppressionMany, emailSuppression } })
       expect(r.status).toBe(200)
+      expect(emailSuppression).toHaveBeenCalledWith('jane@example.com')
+      expect((await memberRow(pendingId)).email).toBe('jane@example.com')
+    })
+
+    it('goes through when an address that bounced was delivered to since', async () => {
+      await seedAuthEvent(adminId, 'email_bounced', { email: 'jane@example.com', createdAt: '2026-01-01 00:00:00' })
+      await seedAuthEvent(adminId, 'email_delivered', { email: 'jane@example.com', createdAt: '2026-01-02 00:00:00' })
+      expect((await changeEmail(pendingId, 'jane@example.com')).status).toBe(200)
     })
 
     it.each(['email_delivered', 'email_send_failed'])('goes through when the address has only a %s event', async (event) => {
@@ -230,6 +242,18 @@ describe('POST /admin/members/:id/change-email', () => {
     it('refuses a suppressed address', async () => {
       const central = centralWith({ suppressed: true, reason: 'hard bounce' })
       expect(await changeEmail(pendingId, 'jane@example.com', { central })).toEqual({ status: 400, body: { error: BOUNCED } })
+      await expectUntouched(pendingId, 'jane@exmaple.com')
+    })
+
+    it.each([
+      ['is undefined (an older central)', undefined],
+      ['throws when called, as a deployed binding without it does', vi.fn(async () => { throw new TypeError('The RPC receiver does not implement the method') })],
+    ])('refuses a suppressed address via the single-address lookup when the batch lookup %s', async (_label, emailSuppressionMany) => {
+      const emailSuppression = vi.fn(async () => ({ suppressed: true, reason: 'hard bounce' }))
+      const central = { emailSuppressionMany, emailSuppression }
+      expect(await changeEmail(pendingId, ' Jane@Example.com', { central })).toEqual({ status: 400, body: { error: BOUNCED } })
+      expect(emailSuppression).toHaveBeenCalledOnce()
+      expect(emailSuppression).toHaveBeenCalledWith('jane@example.com')
       await expectUntouched(pendingId, 'jane@exmaple.com')
     })
 
