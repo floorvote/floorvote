@@ -1,25 +1,65 @@
 export interface SuppressionStatus { suppressed: boolean | null; reason?: string; createdAt?: string }
 
+type SuppressionEnv = { CF_EMAIL_TOKEN?: string; CF_ACCOUNT_ID?: string }
+type SuppressionEntry = { email: string; reason?: string; created_at?: string }
+
+/**
+ * One fetch of Cloudflare's account-wide Email Sending suppression list, newest
+ * first. `complete` is false when the list is larger than one page: no email
+ * filter exists, so a partial scan can prove an address is on the list but not
+ * that it's absent. Returns null when the list can't be read (creds missing, API
+ * error, network error).
+ */
+async function fetchSuppressionList(env: SuppressionEnv): Promise<{ entries: SuppressionEntry[]; complete: boolean } | null> {
+  if (!env.CF_EMAIL_TOKEN || !env.CF_ACCOUNT_ID) return null
+  try {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/email/sending/suppression?per_page=1000&order=created_at&direction=desc`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${env.CF_EMAIL_TOKEN}` } })
+    if (!res.ok) { console.error('[suppression]', res.status, await res.text().catch(() => '')); return null }
+    const body = await res.json() as { total?: number; result?: SuppressionEntry[] }
+    const entries = body.result ?? []
+    const complete = (body.total ?? 0) <= entries.length
+    if (!complete) console.warn('[suppression] list exceeds one page; absences are unknown')
+    return { entries, complete }
+  } catch (e) { console.error('[suppression] error', e); return null }
+}
+
+const normalize = (email: string) => email.toLowerCase().trim()
+
+/**
+ * Check many addresses against the suppression list with one fetch. Returns an
+ * entry for every requested address, keyed by its lowercased, trimmed form:
+ * `suppressed: true` (with reason) when listed, `false` when the whole list was
+ * read and it's absent, and `null` ("unknown") when the list couldn't be read or
+ * didn't fit one page.
+ */
+export async function checkEmailSuppressions(
+  env: SuppressionEnv,
+  emails: readonly string[],
+): Promise<Record<string, SuppressionStatus>> {
+  const targets = [...new Set(emails.map(normalize))]
+  const out: Record<string, SuppressionStatus> = {}
+  if (targets.length === 0) return out
+  const list = await fetchSuppressionList(env)
+  const byEmail = new Map<string, SuppressionEntry>()
+  for (const e of list?.entries ?? []) {
+    const key = normalize(e.email)
+    if (!byEmail.has(key)) byEmail.set(key, e)
+  }
+  for (const t of targets) {
+    const hit = byEmail.get(t)
+    if (hit) out[t] = { suppressed: true, reason: hit.reason, createdAt: hit.created_at }
+    else out[t] = { suppressed: list?.complete ? false : null }
+  }
+  return out
+}
+
 /**
  * Check Cloudflare's account-wide Email Sending suppression list for one address.
  * { suppressed: null } means "unknown" — creds missing, API error, or the list is
  * larger than one page (no email filter exists, so a partial scan can't prove absence).
  */
-export async function checkEmailSuppression(
-  env: { CF_EMAIL_TOKEN?: string; CF_ACCOUNT_ID?: string },
-  email: string,
-): Promise<SuppressionStatus> {
-  if (!env.CF_EMAIL_TOKEN || !env.CF_ACCOUNT_ID) return { suppressed: null }
-  const target = email.toLowerCase().trim()
-  try {
-    const url = `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/email/sending/suppression?per_page=1000&order=created_at&direction=desc`
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${env.CF_EMAIL_TOKEN}` } })
-    if (!res.ok) { console.error('[suppression]', res.status, await res.text().catch(() => '')); return { suppressed: null } }
-    const body = await res.json() as { total?: number; result?: Array<{ email: string; reason?: string; created_at?: string }> }
-    const list = body.result ?? []
-    const hit = list.find(r => r.email.toLowerCase() === target)
-    if (hit) return { suppressed: true, reason: hit.reason, createdAt: hit.created_at }
-    if ((body.total ?? 0) > list.length) { console.warn('[suppression] list exceeds one page; unknown for', target); return { suppressed: null } }
-    return { suppressed: false }
-  } catch (e) { console.error('[suppression] error', e); return { suppressed: null } }
+export async function checkEmailSuppression(env: SuppressionEnv, email: string): Promise<SuppressionStatus> {
+  const target = normalize(email)
+  return (await checkEmailSuppressions(env, [target]))[target]
 }

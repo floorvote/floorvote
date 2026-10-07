@@ -19,7 +19,7 @@ import { runAnomalyWatch } from './lib/anomalyWatch'
 import { pruneRevokedSuperadminJtis } from './lib/superadminRevocation'
 import type { LsEnv, LsIngestorMessage } from './types-legiscan'
 import { errorHandler } from './lib/errorHandler'
-import { checkEmailSuppression } from './lib/emailSuppression'
+import { checkEmailSuppression, checkEmailSuppressions } from './lib/emailSuppression'
 import { getEmailDeliveryStatus } from './lib/emailDelivery'
 import { isTenantSurfaceAllowed } from './lib/tenantSurface'
 import { CALLER_TENANT_HEADER } from './lib/callerTenant'
@@ -137,6 +137,11 @@ export class TenantApi extends WorkerEntrypoint<LsEnv, { tenantId?: string }> {
 
   async emailSuppression(email: string): Promise<{ suppressed: boolean | null; reason?: string; createdAt?: string }> {
     return checkEmailSuppression(this.env, email)
+  }
+
+  /** Many addresses, one fetch of the suppression list; keyed by lowercased, trimmed address. */
+  async emailSuppressionMany(emails: string[]): Promise<Record<string, { suppressed: boolean | null; reason?: string; createdAt?: string }>> {
+    return checkEmailSuppressions(this.env, emails)
   }
 
   async emailDeliveryStatus(messageIds: string[], since: string): Promise<Record<string, { status: string; isSpam: boolean; errorCause?: string; datetime?: string }>> {
