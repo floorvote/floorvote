@@ -4,6 +4,19 @@ import { checkEmailSuppression, checkEmailSuppressions } from '../../src/lib/ema
 const creds = { CF_EMAIL_TOKEN: 'tok', CF_ACCOUNT_ID: 'acct' }
 afterEach(() => vi.restoreAllMocks())
 
+/** Payloads that parse as JSON but aren't the shape the API documents. */
+const malformedPayloads: Array<[string, unknown]> = [
+  ['an entry with no email', { total: 2, result: [{ email: 'x@example.com' }, { reason: 'hard_bounce' }] }],
+  ['an entry whose email is not a string', { total: 1, result: [{ email: 42 }] }],
+  ['an entry that is null', { total: 1, result: [null] }],
+  ['a result that is not an array', { total: 1, result: { email: 'a@example.com' } }],
+  ['a result that is a string', { total: 1, result: 'a@example.com' }],
+  ['a body that is null', null],
+  ['a body that is an array', [{ email: 'a@example.com' }]],
+]
+const respondWith = (payload: unknown) =>
+  vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+
 describe('checkEmailSuppression', () => {
   it('returns suppressed:null when creds are missing', async () => {
     expect(await checkEmailSuppression({}, 'a@b.com')).toEqual({ suppressed: null })
@@ -21,6 +34,11 @@ describe('checkEmailSuppression', () => {
   it('returns suppressed:null when the list exceeds one page (partial scan)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ total: 2000, result: [{ email: 'x@y.com' }] }), { status: 200 })))
     expect(await checkEmailSuppression(creds, 'a@b.com')).toEqual({ suppressed: null })
+  })
+  it.each(malformedPayloads)('returns suppressed:null, not a throw, for %s', async (_label, payload) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', respondWith(payload))
+    expect(await checkEmailSuppression(creds, 'a@example.com')).toEqual({ suppressed: null })
   })
 })
 
@@ -70,6 +88,15 @@ describe('checkEmailSuppressions', () => {
     expect(await checkEmailSuppressions(creds, ['a@example.com', 'b@example.com'])).toEqual({
       'a@example.com': { suppressed: true, reason: 'hard_bounce' },
       'b@example.com': { suppressed: null },
+    })
+  })
+
+  it.each(malformedPayloads)('returns unknown for every address, not a throw, for %s', async (_label, payload) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', respondWith(payload))
+    expect(await checkEmailSuppressions(creds, ['a@example.com', 'x@example.com'])).toEqual({
+      'a@example.com': { suppressed: null },
+      'x@example.com': { suppressed: null },
     })
   })
 })
