@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { detectChanges, type BillSnapshot, detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow, calendarBlockFromRows, type StoredCalendarRow } from '../../src/lib/detect-changes'
-import type { LegiscanBill, LegiscanCalendarEntry } from '../../src/lib/legiscan'
+import type { LegiscanBill, LegiscanCalendarEntry } from '../../src/providers/legiscan/client'
 
 const baseSnapshot: BillSnapshot = {
   status: 1,

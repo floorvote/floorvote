@@ -2,15 +2,15 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 
 // Mock the LegiScan API surface. The processor calls getBill at the top of
 // processLsBill. We don't want real network calls.
 // getBillText must be mocked too: it is the fallback when a state's own link
 // won't yield the document, and the real one would hit api.legiscan.com (and
 // burn a quota call) from the test suite.
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getBill: vi.fn(), getBillText: vi.fn() }
 })
 
@@ -19,8 +19,8 @@ vi.mock('../../src/lib/legiscan', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { processLsIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor-legiscan'
-import * as legiscan from '../../src/lib/legiscan'
+import { processLsIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor'
+import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
 
 beforeEach(async () => {
@@ -194,7 +194,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     })
     // No people row pre-seeded — the WI case. The sponsor name lives in the
     // getBill payload; ingest must persist it into `people` so the read-time
-    // join in bills-legiscan resolves a name instead of falling back to the id.
+    // join in routes/bills resolves a name instead of falling back to the id.
     const fixture = buildFixtureBill()
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 

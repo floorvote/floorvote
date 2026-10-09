@@ -2,16 +2,16 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
 
 // backfill-stub-actions re-pulls getMasterListBySession; mock it. (reingest-tenant tests below
 // don't touch the legiscan lib, so this mock is inert for them.)
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getMasterListBySession: vi.fn() }
 })
-import * as legiscan from '../../src/lib/legiscan'
+import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
 
 beforeEach(async () => {

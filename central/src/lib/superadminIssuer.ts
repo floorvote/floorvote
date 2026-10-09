@@ -1,6 +1,6 @@
 import { isSuperAdmin } from './adminAuth'
 import { signSuperadminJwt } from './superadminJwt'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 /** Mint an ES256 superadmin token for `email` iff it is on the allowlist and a private key is set. */
 export async function mintSuperadminToken(env: LsEnv, email: string, name: string): Promise<string | null> {

@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 export type EngagementSnapshotData = {
   computedAt: string

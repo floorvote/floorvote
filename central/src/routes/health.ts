@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 export const healthRoutes = new Hono<{ Bindings: LsEnv }>()
 

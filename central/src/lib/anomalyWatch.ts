@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 import { listTrackedD1Dbs, fetchDailyRowsRead, type DailyRowsRead } from './d1Analytics'
 import { sendOpsAlert } from './jobAlert'
 import { PRODUCT_NAME } from '../../../shared/brand'

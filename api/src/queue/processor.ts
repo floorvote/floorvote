@@ -461,7 +461,7 @@ export async function processCentralNotification(
   // Determine if AI should run
   const kwRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
   const keywords: string[] = kwRow ? JSON.parse(kwRow.value) : []
-  // Empty means "match nothing", matching central: tenants-legiscan.ts:218 is an
+  // Empty means "match nothing", matching central: routes/tenants.ts is an
   // explicit `keywords.length > 0 ? matchesUnion(...) : false`. Treating empty as
   // match-everything here would stamp match_type='keyword' on a keyword-less tenant
   // during a forceAI re-queue, and empty keywords are now the documented default.

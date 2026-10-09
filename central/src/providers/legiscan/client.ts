@@ -1,4 +1,4 @@
-import { rateLimitedFetch } from './rateLimitedFetch'
+import { rateLimitedFetch } from '../../lib/rateLimitedFetch'
 
 const BASE_URL = 'https://api.legiscan.com/'
 

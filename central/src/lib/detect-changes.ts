@@ -1,5 +1,5 @@
-import type { LegiscanBill, LegiscanCalendarEntry } from './legiscan'
-import type { CalendarBlock } from '../types-legiscan'
+import type { LegiscanBill, LegiscanCalendarEntry } from '../providers/legiscan/client'
+import type { CalendarBlock } from '../types'
 
 export type ChangeRecord = {
   changeType:

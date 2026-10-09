@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, gt, sql } from 'drizzle-orm'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import {
   generateToken,
   hashToken,

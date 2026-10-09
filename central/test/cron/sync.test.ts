@@ -2,13 +2,13 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
-import { sessions, bills, billTenants, tenants, keywordRegistry } from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
+import { sessions, bills, billTenants, tenants, keywordRegistry } from '../../src/db/schema'
 
 // Mock the legiscan module — runFullPass uses getMasterListBySession + refreshLsSessions
 // (which calls getSessionList); runRawPass uses getMasterListRaw.
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return {
     ...actual,
     getMasterListBySession: vi.fn(),
@@ -23,8 +23,8 @@ vi.mock('../../src/lib/queuesRest', () => ({
   queuesRestEnabled: () => true,
 }))
 
-import { runLsSync } from '../../src/cron/sync-legiscan'
-import * as legiscan from '../../src/lib/legiscan'
+import { runLsSync } from '../../src/cron/sync'
+import * as legiscan from '../../src/providers/legiscan/client'
 import * as queuesRest from '../../src/lib/queuesRest'
 import { setupLsDb } from '../helpers/setupLsDb'
 

@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 type AnalyticsEnv = Pick<LsEnv, 'CF_ANALYTICS_TOKEN' | 'CF_ACCOUNT_ID'>
 

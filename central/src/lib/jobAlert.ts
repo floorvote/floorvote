@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 import { sendEmail } from './email'
 import { PRODUCT_NAME } from '../../../shared/brand'
 

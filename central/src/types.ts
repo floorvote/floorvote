@@ -1,5 +1,5 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
-import type * as schema from './db/schema-legiscan'
+import type * as schema from './db/schema'
 import type { RateLimiter } from '../../shared/rateLimit'
 
 export type LsEnv = {

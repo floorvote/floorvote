@@ -100,8 +100,8 @@ function runInChunks(statements: string[], chunkSize = 50): void {
   process.stdout.write('\n')
 }
 
-// Column list matches central/src/db/schema-legiscan.ts `people` (bio_json omitted:
-// preserved on conflict). Keep in sync with the ingest upsert in processor-legiscan.ts.
+// Column list matches central/src/db/schema.ts `people` (bio_json omitted:
+// preserved on conflict). Keep in sync with the ingest upsert in central/src/queue/processor.ts.
 const COLS = [
   'people_id', 'person_hash', 'state_id', 'party_id', 'party', 'role_id', 'role',
   'name', 'first_name', 'middle_name', 'last_name', 'suffix', 'nickname', 'district',

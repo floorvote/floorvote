@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 /**
  * Object-level authorization for tenant-scoped central routes reachable via the
