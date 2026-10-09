@@ -1,5 +1,5 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
-import { getMasterListBySession, getMasterListRaw, getSessionList } from '../providers/legiscan/client'
+import { getMasterListBySession, getMasterListRaw, getSessionList, type SyncEntry } from '../providers/legiscan/client'
 import { sessions, bills, billTenants, tenants, keywordRegistry, apiCallLog, sessionSyncLog } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
@@ -151,6 +151,23 @@ async function runFullPass(
 ): Promise<void> {
   const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId }))
+  await applyMasterList(session, list, coveringTenants, env, db)
+}
+
+/**
+ * Reconcile one session's master list against central: upsert bill rows,
+ * update each covering tenant's keyword links, queue matched-and-changed bills
+ * to the ingestor, and send monitor stubs for the rest. Provider-neutral: any
+ * provider that can list a session's measures as `SyncEntry` rows, with a
+ * `change_hash` that moves when the measure does, can drive the full pass.
+ */
+async function applyMasterList(
+  session: { sessionId: number; state: string; sessionName: string },
+  list: SyncEntry[],
+  coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
+  env: Env,
+  db: Db,
+): Promise<void> {
   if (list.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),
