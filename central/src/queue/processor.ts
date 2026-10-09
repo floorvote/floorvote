@@ -1,21 +1,16 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getBill, getBillText, type CentralMeasure } from '../providers/legiscan/client'
+import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type Provider } from '../providers'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
-  billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
+  billSasts, billSubjects, billReferrals, billCalendar, billTenants,
   billChangeLog, rollCalls, people, tenants,
 } from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
 import type { Env, Db, IngestorMessage, NotificationMessage, CalendarBlock } from '../types'
 import { nowDb } from '../lib/dbTime'
+import { providerContext } from '../lib/providerContext'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
-
-function trackLsCall(db: Db, callType: string, params: Record<string, unknown>): void {
-  db.insert(apiCallLog)
-    .values({ loggedAt: nowDb(), callType, params: JSON.stringify(params) })
-    .catch(err => console.error('[rate-limit] failed to log API call:', err))
-}
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -37,9 +32,11 @@ async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
+  // Bills don't record their provider yet, so every bill is the default provider's.
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
 
   if (msg.skipFetch) {
-    // Data already in DB from bulk seed — skip LegiScan API call, just download text and notify
+    // Data already in DB from bulk seed — skip the provider's API, just download text and notify
     const textsToDownload = await db.select({
       docId: billTexts.docId,
       stateLink: billTexts.stateLink,
@@ -56,7 +53,7 @@ async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void
 
     for (const t of textsToDownload) {
       if (t.stateLink) {
-        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db, t.textSize, t.textHash)
+        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', provider, env, db, t.textSize, t.textHash)
       }
     }
 
@@ -64,9 +61,12 @@ async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void
     return
   }
 
-  const bill = await getBill(msg.billId, env.LEGISCAN_API_KEY, () =>
-    trackLsCall(db, 'getBill', { billId: msg.billId }))
-  await ingestMeasure(bill, env, db, {
+  const known = await db.select({ sessionId: bills.sessionId }).from(bills).where(eq(bills.billId, msg.billId)).get()
+  const measure = await provider.fetchMeasure(
+    { billId: msg.billId, sessionId: known?.sessionId ?? null },
+    providerContext(provider, env, db),
+  )
+  await ingestMeasure(measure, provider, env, db, {
     forceMetadata, forceAI, interactive,
     forceTextRefetch: msg.forceTextRefetch ?? false,
   })
@@ -85,7 +85,13 @@ type IngestOptions = {
  * tables, text downloads to R2, and the tenant notifications. Provider-neutral:
  * the caller fetches the measure from its provider and hands it here.
  */
-async function ingestMeasure(bill: CentralMeasure, env: Env, db: Db, opts: IngestOptions): Promise<void> {
+async function ingestMeasure(
+  bill: CentralMeasure,
+  provider: Provider,
+  env: Env,
+  db: Db,
+  opts: IngestOptions,
+): Promise<void> {
   const { forceMetadata, forceAI, interactive, forceTextRefetch } = opts
   const now = nowDb()
 
@@ -138,7 +144,7 @@ async function ingestMeasure(bill: CentralMeasure, env: Env, db: Db, opts: Inges
       sponsorDetailByKey,
     }
 
-    detectedChanges = detectChanges(snapshot, bill)
+    detectedChanges = detectChanges(snapshot, bill, provider)
 
     // Write change records
     if (detectedChanges.length > 0) {
@@ -351,7 +357,7 @@ async function ingestMeasure(bill: CentralMeasure, env: Env, db: Db, opts: Inges
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
     if ((forceTextRefetch || !stored?.r2Key) && t.state_link) {
-      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db, t.text_size ?? null, t.text_hash ?? null)
+      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash ?? null)
     }
   }
 
@@ -543,6 +549,7 @@ async function downloadTextToR2(
   docId: number,
   stateLink: string,
   mime: string,
+  provider: Provider,
   env: Env,
   db: Db,
   declaredSize: number | null = null,
@@ -577,30 +584,29 @@ async function downloadTextToR2(
     failure = `state_link fetch threw: ${err instanceof Error ? err.message : String(err)}`
   }
 
-  // Attempt 2: LegiScan's getBillText (base64). Costs one API call per document,
-  // so it only runs when the direct fetch produced nothing usable.
-  if (!body) {
-    console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to getBillText`)
+  // Attempt 2: the provider's own copy, when it keeps one (LegiScan's
+  // getBillText). That can cost an API call per document, so it only runs when
+  // the direct fetch produced nothing usable.
+  if (!body && provider.fetchDocument) {
+    console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to the ${provider.id} copy`)
     try {
-      const text = await getBillText(docId, env.LEGISCAN_API_KEY, () =>
-        trackLsCall(db, 'getBillText', { docId }))
-      const decoded = base64ToBytes(text.doc)
-      const invalid = validateTextPayload(decoded.buffer as ArrayBuffer, text.mime || mime, text.text_size ?? declaredSize)
+      const doc = await provider.fetchDocument(docId, providerContext(provider, env, db))
+      const invalid = validateTextPayload(doc.bytes, doc.mime || mime, doc.size ?? declaredSize)
       if (invalid) {
-        failure = `${failure}; getBillText also returned ${invalid}`
-      } else if (declaredHash && await md5Hex(decoded.buffer as ArrayBuffer) !== declaredHash) {
-        // getBillText returns byte-exact what LegiScan catalogued, so a
-        // mismatch means we did not get the document we asked for. Deliberately
-        // NOT applied to the state_link path: a live page never reproduces this
+        failure = `${failure}; ${provider.id} copy also returned ${invalid}`
+      } else if (declaredHash && await md5Hex(doc.bytes) !== declaredHash) {
+        // The provider's copy is byte-exact what it catalogued, so a mismatch
+        // means we did not get the document we asked for. Deliberately NOT
+        // applied to the state_link path: a live page never reproduces this
         // hash, even when it is the correct version.
-        failure = `${failure}; getBillText hash mismatch against text_hash`
+        failure = `${failure}; ${provider.id} copy hash mismatch against text_hash`
       } else {
-        body = decoded.buffer as ArrayBuffer
-        contentType = text.mime || contentType
+        body = doc.bytes
+        contentType = doc.mime || contentType
         failure = null
       }
     } catch (err) {
-      failure = `${failure}; getBillText threw: ${err instanceof Error ? err.message : String(err)}`
+      failure = `${failure}; ${provider.id} copy threw: ${err instanceof Error ? err.message : String(err)}`
     }
   }
 
@@ -639,14 +645,6 @@ async function downloadTextToR2(
 async function md5Hex(bytes: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('MD5', bytes)
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** Decode base64 (as LegiScan returns document bytes) without Node Buffer. */
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64)
-  const out = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
-  return out
 }
 
 async function notifyTenants(

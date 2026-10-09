@@ -357,6 +357,24 @@ describe('POST /admin/backfill-stub-actions/:tenantId', () => {
     expect(body).toMatchObject({ ok: false, error: 'masterlist_fetch_failed', sessionId: 10 })
   })
 
+  it('returns 404 without calling LegiScan for a sessionId central has no row for', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values({
+      tenantId: 'bf-none', name: 'bf-none', active: true, stateCoverage: '["RI"]',
+    })
+    vi.mocked(legiscan.getMasterListBySession).mockReset()
+    const mockEnv = { ...(env as any), TENANT_QUEUE_BF_NONE: { sendBatch: vi.fn(), send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/backfill-stub-actions/bf-none?sessionId=999',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(404)
+    expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
+  })
+
   it('returns typed 429 with Retry-After header when queue.sendBatch throws', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.tenants).values({

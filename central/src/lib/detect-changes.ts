@@ -1,4 +1,4 @@
-import type { CentralMeasure, MeasureCalendarEntry } from '../providers/legiscan/client'
+import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureCalendarEntry, type Provider } from '../providers'
 import type { CalendarBlock } from '../types'
 
 export type ChangeRecord = {
@@ -34,20 +34,6 @@ export type BillSnapshot = {
   sponsorDetailByKey: Map<string, string>
 }
 
-const STATUS_LABELS: Record<number, string> = {
-  0: 'Pre-filed',
-  1: 'Introduced',
-  2: 'Engrossed',
-  3: 'Enrolled',
-  4: 'Passed',
-  5: 'Vetoed',
-  6: 'Failed/Dead',
-}
-
-function statusLabel(status: number): string {
-  return STATUS_LABELS[status] ?? String(status)
-}
-
 function sponsorKey(peopleId: number | null | undefined, name: string): string {
   return peopleId ? `p${peopleId}` : `n${name}`
 }
@@ -57,8 +43,14 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
   return `${role}${sponsor.name} (${sponsor.party})`
 }
 
-export function detectChanges(snapshot: BillSnapshot, bill: CentralMeasure): ChangeRecord[] {
+export function detectChanges(
+  snapshot: BillSnapshot,
+  bill: CentralMeasure,
+  provider: Provider = getProvider(DEFAULT_PROVIDER_ID),
+): ChangeRecord[] {
   const changes: ChangeRecord[] = []
+  const statusLabels = provider.statusChangeLabels ?? provider.statusLabels
+  const statusLabel = (status: number) => statusLabels[status] ?? String(status)
 
   // 1. Status change (skip when snapshot.status is null — bill is new/unknown)
   if (snapshot.status !== null && bill.status !== snapshot.status) {
