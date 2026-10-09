@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow } from './detect-changes'
-import type { MeasureCalendarEntry } from '../providers/legiscan/client'
+import type { MeasureCalendarEntry } from '../providers'
 
 const TODAY = '2026-06-05'
 

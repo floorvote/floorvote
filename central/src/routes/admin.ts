@@ -2,9 +2,9 @@ import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
-import { bills, billTenants, tenants, keywordRegistry, sessions, apiCallLog } from '../db/schema'
+import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
-import { getMasterListBySession } from '../providers/legiscan/client'
+import { DEFAULT_PROVIDER_ID, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
@@ -12,6 +12,7 @@ import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
+import { providerContext } from '../lib/providerContext'
 import type { Env, IngestorMessage, NotificationMessage } from '../types'
 import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
@@ -465,12 +466,19 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const hasDeliveryPath = !!getTenantQueue(c.env, tenantId) || (!!tenant.queueId && queuesRestEnabled(c.env))
   if (!hasDeliveryPath) return c.json({ error: `no delivery path for tenant ${tenantId} (no binding, no queue_id)` }, 400)
 
-  // Resolve which sessions to check.
-  let sessionIds: number[]
+  // Resolve which sessions to check, as the provider needs them.
+  const sessionRef = {
+    sessionId: sessions.sessionId, state: sessions.state, sessionTag: sessions.sessionTag,
+    yearStart: sessions.yearStart, yearEnd: sessions.yearEnd,
+  }
+  let sessionRefs: SessionRef[]
   if (sessionIdParam) {
     const sid = parseInt(sessionIdParam, 10)
     if (isNaN(sid)) return c.json({ error: 'invalid sessionId' }, 400)
-    sessionIds = [sid]
+    // A session central has no row for has no synced bills, so no stubs to heal.
+    const row = await db.select(sessionRef).from(sessions).where(eq(sessions.sessionId, sid)).get()
+    if (!row) return c.json({ error: 'session not found' }, 404)
+    sessionRefs = [row]
   } else {
     let coverage: string[]
     try { coverage = JSON.parse(tenant.stateCoverage) } catch { coverage = [] }
@@ -480,10 +488,10 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
     if (coverage.length === 0) {
       return c.json({ ok: true, tenantId, sessionsChecked: 0, refreshed: 0, notified: 0 })
     }
-    const rows = await db.select({ sessionId: sessions.sessionId })
+    sessionRefs = await db.select(sessionRef)
       .from(sessions).where(inArray(sessions.state, coverage)).all()
-    sessionIds = rows.map(r => r.sessionId)
   }
+  const sessionIds = sessionRefs.map(s => s.sessionId)
 
   const now = nowDb()
   // notifyIds accumulates all in-scope stub bill IDs (regardless of staleness) so
@@ -492,22 +500,20 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const notifyIds = new Set<number>()
   let refreshed = 0
 
-  for (const sessionId of sessionIds) {
-    // 1 LegiScan call per session — logged from the egress callback so the row
-    // records the outbound attempt, not the intent to make one.
-    const trackCall = () => {
-      db.insert(apiCallLog).values({
-        loggedAt: nowDb(),
-        callType: 'getMasterListBySession',
-        params: JSON.stringify({ sessionId, reason: 'backfill-stub-actions', tenantId }),
-      }).catch(err => console.error('[backfill-stub-actions] failed to log API call:', err))
-    }
+  // Sessions don't record their provider yet, so every session is the default provider's.
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
+  // The provider logs each call as it goes out, so the row records the outbound
+  // attempt, not the intent to make one; these params say why it was spent.
+  const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
 
-    let list: Awaited<ReturnType<typeof getMasterListBySession>>
+  for (const session of sessionRefs) {
+    const { sessionId } = session
+    // 1 LegiScan call per session.
+    let list: SyncEntry[]
     try {
-      list = await getMasterListBySession(sessionId, c.env.LEGISCAN_API_KEY, trackCall)
+      list = await provider.listMeasures(session, ctx)
     } catch (err) {
-      console.error('[backfill-stub-actions] getMasterListBySession failed for session', sessionId, err)
+      console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)
     }
     if (list.length === 0) continue

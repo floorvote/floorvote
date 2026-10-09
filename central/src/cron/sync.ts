@@ -1,20 +1,15 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
-import { getMasterListBySession, getMasterListRaw, getSessionList, type SyncEntry } from '../providers/legiscan/client'
-import { sessions, bills, billTenants, tenants, keywordRegistry, apiCallLog, sessionSyncLog } from '../db/schema'
+import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type SyncEntry } from '../providers'
+import { sessions, bills, billTenants, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
+import { providerContext } from '../lib/providerContext'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
-
-function trackLsCall(db: Db, callType: string, params: Record<string, unknown>): void {
-  db.insert(apiCallLog)
-    .values({ loggedAt: nowDb(), callType, params: JSON.stringify(params) })
-    .catch(err => console.error('[rate-limit] failed to log API call:', err))
-}
 
 export async function runSync(env: Env, db: Db): Promise<void> {
   const activeTenants = await db.select().from(tenants).where(eq(tenants.active, true)).all()
@@ -40,6 +35,9 @@ export async function runSync(env: Env, db: Db): Promise<void> {
 
   if (trackedStates.size === 0) return
 
+  // States don't record their provider yet, so every state syncs from the default.
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
+
   const etHour = getCurrentEtHour()
   console.log(`[sync-ls] tick at ET hour ${etHour}`)
 
@@ -49,7 +47,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   if (etHour === 5) {
     for (const state of trackedStates) {
       try {
-        await refreshSessions(state, env.LEGISCAN_API_KEY, db)
+        await refreshSessions(state, provider, env, db)
       } catch (err) {
         console.error(`[sync-ls] failed to refresh sessions for ${state}:`, err)
       }
@@ -60,6 +58,9 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     sessionId: sessions.sessionId,
     state: sessions.state,
     sessionName: sessions.sessionName,
+    sessionTag: sessions.sessionTag,
+    yearStart: sessions.yearStart,
+    yearEnd: sessions.yearEnd,
     sineDie: sessions.sineDie,
     syncEnabled: sessions.syncEnabled,
     fullSyncHoursEt: sessions.fullSyncHoursEt,
@@ -87,7 +88,9 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   // doesn't reject the whole batch.
   const sessionsToProcess = sessionRows
     .map(session => ({ session, mode: decideMode(session, etHour) }))
-    .filter(({ mode }) => mode !== 'skip')
+    // A provider with no cheap hash list has no raw pass: its sessions sync in
+    // full-pass hours only.
+    .filter(({ mode }) => mode === 'full' || (mode === 'raw' && !!provider.listChangeHashes))
 
   const tasks = sessionsToProcess.map(async ({ session, mode }) => {
     const coveringTenants = tenantsByState.get(session.state) ?? []
@@ -99,9 +102,9 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     console.log(`[sync-ls] ${mode} pass: ${session.state}/${session.sessionId}`)
     try {
       if (mode === 'full') {
-        await runFullPass(session, coveringTenants, env, db)
+        await runFullPass(session, coveringTenants, provider, env, db)
       } else {
-        await runRawPass(session, coveringTenants, env, db)
+        await runRawPass(session, coveringTenants, provider, env, db)
       }
       await db.update(sessions)
         .set({ lastSyncedAt: nowDb() })
@@ -114,21 +117,20 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   await Promise.allSettled(tasks)
 }
 
-async function refreshSessions(state: string, apiKey: string, db: Db): Promise<void> {
-  const lsSessions = await getSessionList(state, apiKey, () =>
-    trackLsCall(db, 'getSessionList', { state }))
-  for (const s of lsSessions) {
+async function refreshSessions(state: string, provider: Provider, env: Env, db: Db): Promise<void> {
+  const providerSessions = await provider.listSessions(state, providerContext(provider, env, db))
+  for (const s of providerSessions) {
     await db.insert(sessions).values({
       sessionId:    s.session_id,
       state,
-      stateId:      0,
+      stateId:      s.state_id ?? 0,
       yearStart:    s.year_start,
       yearEnd:      s.year_end,
-      prefile:      (s as any).prefile ?? 0,
+      prefile:      s.prefile ?? 0,
       sineDie:      s.sine_die ?? 0,
       prior:        s.prior ?? 0,
       special:      s.special ?? 0,
-      sessionTag:   '',
+      sessionTag:   s.session_tag ?? '',
       sessionTitle: s.session_name,
       sessionName:  s.session_name,
     }).onConflictDoUpdate({
@@ -144,13 +146,13 @@ async function refreshSessions(state: string, apiKey: string, db: Db): Promise<v
 }
 
 async function runFullPass(
-  session: { sessionId: number; state: string; sessionName: string },
+  session: SessionRef & { sessionName: string },
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
+  provider: Provider,
   env: Env,
   db: Db,
 ): Promise<void> {
-  const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY, () =>
-    trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId }))
+  const list = await provider.listMeasures(session, providerContext(provider, env, db))
   await applyMasterList(session, list, coveringTenants, env, db)
 }
 
@@ -362,14 +364,15 @@ async function applyMasterList(
 }
 
 async function runRawPass(
-  session: { sessionId: number; state: string; sessionName: string },
+  session: SessionRef & { sessionName: string },
   coveringTenants: { tenantId: string; stateCoverage: string }[],
+  provider: Provider,
   env: Env,
   db: Db,
 ): Promise<void> {
   void coveringTenants
-  const rawList = await getMasterListRaw(session.sessionId, env.LEGISCAN_API_KEY, () =>
-    trackLsCall(db, 'getMasterListRaw', { sessionId: session.sessionId }))
+  // runSync schedules a raw pass only for a provider that has listChangeHashes.
+  const rawList = await provider.listChangeHashes!(session, providerContext(provider, env, db))
   if (rawList.length === 0) {
     await db.insert(sessionSyncLog).values({
       syncedAt: nowDb(),

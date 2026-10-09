@@ -5,12 +5,8 @@ import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
+import { DEFAULT_PROVIDER_ID, getProvider } from '../providers'
 import type { Env } from '../types'
-
-const STATUS_LABELS: Record<number, string> = {
-  0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
-  3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
-}
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
 
@@ -149,6 +145,8 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
+  // Bills don't record their provider yet, so every bill is the default provider's.
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
 
   const session = bill.sessionId
     ? await db.select({
@@ -241,7 +239,7 @@ billsRoutes.get('/:id', async (c) => {
           url = bio.social?.biography ?? null
         } catch { /* ignore */ }
       }
-      if (!url && s.peopleId) url = `https://legiscan.com/${bill.state}/people/${name.replace(/ /g, '-')}/id/${s.peopleId}`
+      if (!url && s.peopleId) url = provider.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
       return {
         name,
         party: s.party ?? null,
@@ -272,7 +270,7 @@ billsRoutes.get('/:id', async (c) => {
     number: bill.billNumber,
     title: bill.title,
     abstract: bill.description ?? null,
-    status: STATUS_LABELS[bill.status] ?? String(bill.status),
+    status: provider.statusLabels[bill.status] ?? String(bill.status),
     statusDate: bill.statusDate ?? null,
     lastAction: bill.lastAction ?? null,
     lastActionDate: bill.lastActionDate ?? null,
