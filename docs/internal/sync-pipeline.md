@@ -2,7 +2,7 @@
 
 Canonical, code-grounded description of how legislative data flows from LegiScan into tenant DBs. Update this file whenever the pipeline changes. The visual companion is [`architecture.html`](../content/public/internal/architecture.html), served at `floorvote.org/docs/internal/architecture.html` — keep both in sync, but treat this file as the source of truth.
 
-> **Scope:** the LegiScan central env (`floorvote-central-legiscan`). The OpenStates env is structurally similar but lighter; this doc describes the LegiScan path.
+> **Scope:** the LegiScan central env (`floorvote-central-legiscan`), the only central.
 
 ---
 
@@ -181,7 +181,7 @@ So `POST /tenants/reprocess/:tenantId` (`forceMetadata: true`) gets past the ear
 
 - **Tenant D1** — the `bills` row (with denormalized JSON for actions/sponsors), member votes, official positions, comments, notes, feed events, custom fields, AI summary + tags + relevance.
 - **Central D1 (LS)** — bills + all relational children (`bill_history`, `bill_sponsors`, `bill_texts`, `bill_supplements`, `bill_amendments`, `bill_sasts`, `bill_subjects`, `bill_calendar`, `bill_referrals`, `roll_calls`, `roll_call_votes`*, people, committees, sessions, `bill_change_log`, `api_call_log`, `session_sync_log`).
-- **Central R2** — bill text files at `bills/legiscan-{billId}/texts/{docId}.{ext}` and masterlist cache at `sessions/{id}/masterlist.json`.
+- **Central R2** — bill text files at `bills/legiscan-{billId}/texts/{docId}.{ext}`.
 
 *`roll_call_votes` are populated only by the bulk-seed script (see §B4 note).
 

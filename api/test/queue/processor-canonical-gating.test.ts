@@ -43,7 +43,6 @@ const nonKeywordCentralBill = {
   status: 'introduced',
   statusDate: '2026-01-01',
   updatedAt: '2026-01-10T12:00:00Z',
-  openstatesUrl: 'https://openstates.org/ri/bills/2026/HB999/',
   stateUrl: 'https://legisinfo.ri.gov/bills/HB999',
   textHash: 'text-hash-v1',
   textR2Key: 'bills/test-canonical-gating/ver-001.html',

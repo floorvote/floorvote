@@ -37,7 +37,6 @@ export type Env = {
   TENANT_ID: string
   CENTRAL_API_URL: string
   CENTRAL_ADMIN_SECRET?: string
-  PROVIDER?: string
   CENTRAL?: Fetcher
   ASSETS: Fetcher
   ALERT_EMAILS?: string  // recipients of ops/cron-failure alerts

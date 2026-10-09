@@ -62,7 +62,7 @@ The repo ships a manual deploy workflow at `.github/workflows/deploy.yml` (`work
 ```bash
 # From your default branch — deploy one tenant, or central:
 gh workflow run deploy.yml --ref main -f target=tenant -f tenant=<slug>
-gh workflow run deploy.yml --ref main -f target=central
+gh workflow run deploy.yml --ref main -f target=central-legiscan
 gh run watch
 ```
 

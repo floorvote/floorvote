@@ -13,10 +13,10 @@ export class SsrfError extends Error {
 /**
  * SSRF-guarded fetch for provider-supplied document URLs (finding M1).
  *
- * Central downloads bill text from URLs that LegiScan / OpenStates return
- * (`state_link`, version `links[].url`). Those upstreams are first-party-trusted,
- * but the link fields are attacker-influenceable in principle, so before — and
- * on every redirect hop — we enforce:
+ * Central downloads bill text from URLs that LegiScan returns (a text's
+ * `state_link`). That upstream is first-party-trusted, but the link fields are
+ * attacker-influenceable in principle, so before — and on every redirect hop —
+ * we enforce:
  *   - http/https scheme and a PUBLIC host (no localhost / `.local` / bare host /
  *     raw IP literal), so the fetch can't be pointed at an internal address;
  *   - a bounded redirect count, following manually so each hop is re-validated

@@ -213,7 +213,6 @@ type CentralBill = {
   lastAction?: string | null
   lastActionDate?: string | null
   updatedAt: string
-  openstatesUrl: string | null
   stateUrl: string | null
   textHash: string | null
   textR2Key: string | null
@@ -303,7 +302,7 @@ export async function processCentralNotification(
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
       abstract: centralBill.abstract ?? null,
-      url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+      url: centralBill.stateUrl ?? null,
       stateUrl: centralBill.stateUrl ?? null,
       providerUpdatedAt: centralBill.updatedAt,
       sponsor: primarySponsorStub?.name ?? null,
@@ -358,7 +357,7 @@ export async function processCentralNotification(
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
       abstract: centralBill.abstract ?? null,
-      url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+      url: centralBill.stateUrl ?? null,
       stateUrl: centralBill.stateUrl ?? null,
       providerUpdatedAt: centralBill.updatedAt,
       sponsor: primarySponsorMd?.name ?? null,
@@ -403,7 +402,7 @@ export async function processCentralNotification(
     return
   }
 
-  // Map normalized sponsors — OpenStates marks all as primary:true, so treat first as primary, rest as co-sponsors
+  // Map normalized sponsors: the first primary sponsor (or the first listed) is the sponsor, the rest are co-sponsors
   const primarySponsor = centralBill.sponsors.find(s => s.primary) ?? centralBill.sponsors[0] ?? null
   const coSponsorList = centralBill.sponsors
     .filter(s => s !== primarySponsor)
@@ -442,7 +441,7 @@ export async function processCentralNotification(
     yearStart: centralBill.yearStart ?? null,
     yearEnd:   centralBill.yearEnd   ?? null,
     abstract: centralBill.abstract ?? null,
-    url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+    url: centralBill.stateUrl ?? null,
     stateUrl: centralBill.stateUrl ?? null,
     providerUpdatedAt: centralBill.updatedAt,
     sponsor: primarySponsor?.name ?? null,

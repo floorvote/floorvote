@@ -6,8 +6,8 @@
  * its bills are silently dropped — callers must treat `undefined` as a
  * misconfiguration, not a normal case.
  *
- * Shared by both central envs (OpenStates `Env` and LegiScan `LsEnv`); takes a
- * loosely-typed env so neither type needs an index signature.
+ * Takes a loosely-typed env so callers and tests can pass any object that
+ * carries the bindings.
  */
 
 /** The wrangler binding name central uses to reach a tenant's delivery queue. */

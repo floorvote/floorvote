@@ -1,6 +1,6 @@
 /**
- * Keyword matching. THE single implementation — `api`, `central` and the
- * openstates scripts all import from here.
+ * Keyword matching. THE single implementation — `api` and `central` both
+ * import from here.
  *
  * This replaced a hand-mirrored pair of matchers plus four script copies, and a
  * hardcoded `WORD_BOUNDARY_KEYWORDS = new Set(['election'])` that existed

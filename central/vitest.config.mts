@@ -4,7 +4,7 @@ import { cloudflarePool, cloudflareTest } from '@cloudflare/vitest-pool-workers'
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      main: './src/index.ts',
+      main: './src/index-legiscan.ts',
       miniflare: {
         compatibilityDate: '2025-01-01',
         compatibilityFlags: ['nodejs_compat'],
@@ -16,11 +16,9 @@ export default defineConfig({
         },
         bindings: {
           LEGISCAN_API_KEY: 'test-key',
-          OPENSTATES_API_KEY: 'test-openstates-key',
           ANTHROPIC_API_KEY: 'test-key',
           ADMIN_SECRET: 'test-secret',
           OPERATOR_NAME: 'TestOperator',
-          BILL_PROVIDER: 'openstates',
         },
       },
     }),

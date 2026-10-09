@@ -24,7 +24,7 @@ import type { Env } from '../types'
  * Central's machine API is mounted under `/api/*` (so its prefixes no longer
  * shadow the dashboard SPA's client routes). Callers still pass the bare path
  * (`/bills/...`, `/tenants/...`, `/admin/...`); this is the single place that
- * prepends `/api`. Both central envs (legiscan + OpenStates) serve `/api/*`.
+ * prepends `/api`.
  *
  * IMPORTANT: the LegiScan central `TenantApi` entrypoint is DENY-BY-DEFAULT
  * (central/src/lib/tenantSurface.ts). A path NOT on that allowlist is 403'd

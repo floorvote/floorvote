@@ -6,16 +6,13 @@ import { applyD1Migrations, env, reset, type D1Migration } from 'cloudflare:test
 // returns. Only the file's basename matters, so any folder can be loaded.
 export type MigrationFiles = Record<string, string>
 
-// Every file in each central migrations directory, so a new migration is
+// Every file in central's migrations directory, so a new migration is
 // applied by the tests the moment it lands, with no list to update.
 // import.meta.glob needs a literal pattern: to load another folder (a fork's
 // migrations, say), call it in the test with that folder's path and pass the
 // result to setupDb().
 export const legiscanMigrations: MigrationFiles = import.meta.glob<string>(
   '../../migrations-legiscan/*.sql', { query: '?raw', import: 'default', eager: true },
-)
-export const openStatesMigrations: MigrationFiles = import.meta.glob<string>(
-  '../../migrations/*.sql', { query: '?raw', import: 'default', eager: true },
 )
 
 // Split a migration into statements on `;`, dropping `--` and `/* */`

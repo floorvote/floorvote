@@ -18,6 +18,7 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | `tenant-automation.md` | What can and can't be scripted when adding a tenant (agent-facing). |
 | `legiscan-notes.md` | LegiScan operational + licensing notes (quota, `skipFetch`, attribution). |
 | `rebranding.md` | Renaming resources via `RESOURCE_PREFIX` for forks. |
+| `openstates.md` | The removed OpenStates central: where to find it (`openstates-final` tag), what it knew, and why it was removed. |
 
 ## Previewing the docs site locally
 

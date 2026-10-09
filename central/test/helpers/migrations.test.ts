@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect } from 'vitest'
-import { legiscanMigrations, openStatesMigrations, parseMigrations, setupDb, splitStatements } from './migrations'
+import { legiscanMigrations, parseMigrations, setupDb, splitStatements } from './migrations'
 
 describe('splitStatements', () => {
   it('ignores semicolons in comments and string literals', () => {
@@ -32,14 +32,11 @@ describe('parseMigrations', () => {
 })
 
 describe('setupDb', () => {
-  it.each([
-    ['migrations-legiscan', legiscanMigrations],
-    ['migrations', openStatesMigrations],
-  ])('applies every file in %s', async (_dir, files) => {
-    await setupDb(files)
+  it('applies every file in migrations-legiscan', async () => {
+    await setupDb(legiscanMigrations)
     const applied = await env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()
-    expect(applied.results.map(r => r.name)).toEqual(parseMigrations(files).map(m => m.name))
-    expect(applied.results.length).toBe(Object.keys(files).length)
+    expect(applied.results.map(r => r.name)).toEqual(parseMigrations(legiscanMigrations).map(m => m.name))
+    expect(applied.results.length).toBe(Object.keys(legiscanMigrations).length)
   })
 
   it('applies the 0015 calendar date index, whose comment contains a semicolon', async () => {

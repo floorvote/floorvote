@@ -15,7 +15,6 @@ export type LsEnv = {
   LEGISCAN_API_KEY: string
   ADMIN_SECRET: string
   OPERATOR_NAME: string
-  BILL_PROVIDER: 'legiscan'
   RESEND_API_KEY?: string
   EMAIL?: import('./lib/email').CloudflareEmailBinding
   EMAIL_PROVIDER?: string
