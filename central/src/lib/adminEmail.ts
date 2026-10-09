@@ -1,11 +1,11 @@
 import { sendEmail } from './email'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 export async function sendAdminMagicLink(
   to: string,
   magicLinkUrl: string,
-  env: Pick<LsEnv, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL'>,
+  env: Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL'>,
 ): Promise<void> {
   const html = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; color: #0f172a;">

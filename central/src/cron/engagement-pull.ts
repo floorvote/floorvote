@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { nowDb } from '../lib/dbTime'
 import { getSetting } from '../lib/settings'
 import { resolveTenantRpc, type EngagementSnapshotData } from '../lib/tenantRpc'
@@ -12,7 +12,7 @@ type DB = ReturnType<typeof drizzle<typeof schema>>
 
 const DEFAULT_LATENCY_THRESHOLD_MS = 3000
 
-function latencyThresholdMs(env: LsEnv): number {
+function latencyThresholdMs(env: Env): number {
   const n = Number(env.D_LATENCY_THRESHOLD_MS ?? DEFAULT_LATENCY_THRESHOLD_MS)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_LATENCY_THRESHOLD_MS
 }
@@ -55,7 +55,7 @@ async function getExcludeDomains(db: DB): Promise<string[]> {
   } catch { return [] }
 }
 
-async function getTenantSnapshot(env: LsEnv, tenantId: string, apiUrl: string, excludeDomains: string[]): Promise<Snapshot> {
+async function getTenantSnapshot(env: Env, tenantId: string, apiUrl: string, excludeDomains: string[]): Promise<Snapshot> {
   const rpc = resolveTenantRpc(env, tenantId)
   if (rpc) return snapshotToMetrics(await rpc.engagementStats(excludeDomains))
   // Fallback: HTTP + shared secret (local dev, un-bound tenants, self-host)
@@ -113,7 +113,7 @@ async function upsertRow(
 }
 
 export async function pullEngagementStatsForTenant(
-  env: LsEnv,
+  env: Env,
   db: DB,
   tenantId: string,
 ): Promise<typeof schema.tenantStats.$inferSelect> {
@@ -138,7 +138,7 @@ type ProbeResult = {
   error?: string
 } & ({ ok: true; metrics: Record<MetricKey, number>; excluded: Record<string, number> | null } | { ok: false })
 
-export async function pullEngagementStats(env: LsEnv, db: DB): Promise<void> {
+export async function pullEngagementStats(env: Env, db: DB): Promise<void> {
   const tenants = await db.select().from(schema.tenants).all()
   const date = todayUtcDate()
   const excludeDomains = await getExcludeDomains(db)
@@ -203,7 +203,7 @@ export async function pullEngagementStats(env: LsEnv, db: DB): Promise<void> {
   }
 }
 
-async function sendSlowTenantAlert(env: LsEnv, flagged: ProbeResult[], threshold: number): Promise<void> {
+async function sendSlowTenantAlert(env: Env, flagged: ProbeResult[], threshold: number): Promise<void> {
   const lines = flagged.map((r) => {
     const status = r.ok ? `slow (${r.latencyMs}ms)` : `FAILED${r.error ? ` — ${r.error}` : ''}`
     return `${r.tenant.tenantId} (${r.tenant.name ?? '?'}): ${status}, latency ${r.latencyMs}ms, ok=${r.ok ? 1 : 0}`

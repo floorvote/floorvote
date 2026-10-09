@@ -9,10 +9,10 @@ import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
-import { runLsSync } from '../cron/sync'
+import { runSync } from '../cron/sync'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
-import type { LsEnv, LsIngestorMessage, LsNotificationMessage } from '../types'
+import type { Env, IngestorMessage, NotificationMessage } from '../types'
 import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
@@ -26,18 +26,18 @@ const SYNC_KEYWORDS_COOLDOWN_MS = 60_000
 const SYNC_KEYWORDS_CAP = 1000
 const lastSyncKeywordsAt = new Map<string, number>()
 
-export const adminLsRoutes = new Hono<{ Bindings: LsEnv }>()
+export const adminRoutes = new Hono<{ Bindings: Env }>()
 
-adminLsRoutes.use('*', async (c, next) => {
+adminRoutes.use('*', async (c, next) => {
   if (!(await secretsMatch(c.req.header('x-admin-secret'), c.env.ADMIN_SECRET))) {
     return c.json({ error: 'unauthorized' }, 401)
   }
   await next()
 })
 
-adminLsRoutes.post('/trigger-sync', async (c) => {
+adminRoutes.post('/trigger-sync', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  await runLsSync(c.env, db)
+  await runSync(c.env, db)
   return c.json({ ok: true, message: 'sync triggered' })
 })
 
@@ -48,7 +48,7 @@ adminLsRoutes.post('/trigger-sync', async (c) => {
 // superadmin session for any allowlisted email without a real login (finding H2).
 // Tenants only ask whether an email is a superadmin so they can auto-provision a
 // local admin when that person magic-links into the tenant directly.
-adminLsRoutes.get('/superadmin/check', (c) => {
+adminRoutes.get('/superadmin/check', (c) => {
   const email = c.req.query('email') ?? ''
   return c.json({ isSuperadmin: isSuperadminEmail(c.env, email) })
 })
@@ -59,7 +59,7 @@ adminLsRoutes.get('/superadmin/check', (c) => {
 // central call each. Hashes (not plaintext) so a compromised tenant gains no
 // more than the existing per-email `check` oracle: it can confirm a *guessed*
 // address but isn't handed a clean reversible list.
-adminLsRoutes.get('/superadmin/emails', async (c) => {
+adminRoutes.get('/superadmin/emails', async (c) => {
   const emails = (c.env.SUPERADMIN_EMAILS ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -95,7 +95,7 @@ function decodeJwtPayload(token: string): { jti?: unknown; exp?: unknown } | nul
 // it defaults to now + the max token TTL. Takes effect immediately on central;
 // tenants honor it only within the token's remaining TTL (they have no link to
 // this store). See docs/superadmin-revocation.md (Case A0).
-adminLsRoutes.post('/superadmin/revoke', async (c) => {
+adminRoutes.post('/superadmin/revoke', async (c) => {
   const body = await c.req.json<{ jti?: string; token?: string; exp?: number }>().catch(() => ({} as { jti?: string; token?: string; exp?: number }))
   let jti = typeof body.jti === 'string' ? body.jti.trim() : ''
   let exp = typeof body.exp === 'number' && Number.isFinite(body.exp) ? Math.floor(body.exp) : 0
@@ -122,7 +122,7 @@ adminLsRoutes.post('/superadmin/revoke', async (c) => {
 //   ?factor=N&floor=N  override the thresholds (e.g. factor=1&floor=0 to confirm a
 //                       lowered threshold WOULD fire on otherwise-normal traffic)
 //   ?send=1            actually send the ops-alert email when something is flagged
-adminLsRoutes.post('/anomaly-watch', async (c) => {
+adminRoutes.post('/anomaly-watch', async (c) => {
   const factorRaw = c.req.query('factor')
   const floorRaw = c.req.query('floor')
   const factor = factorRaw !== undefined && factorRaw !== '' ? Number(factorRaw) : undefined
@@ -135,7 +135,7 @@ adminLsRoutes.post('/anomaly-watch', async (c) => {
   return c.json(result)
 })
 
-adminLsRoutes.post('/backfill-match-types', async (c) => {
+adminRoutes.post('/backfill-match-types', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const allTenants = await db.select({ tenantId: tenants.tenantId }).from(tenants).all()
 
@@ -205,7 +205,7 @@ adminLsRoutes.post('/backfill-match-types', async (c) => {
 // text fetched and full-text AI run on the tenant side.
 //
 // Rate-limited per tenant (60s cooldown) and capped at 1000 newly-matched bills per call.
-adminLsRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c) => {
+adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -279,7 +279,7 @@ adminLsRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (
   // download text, then notify the tenant with forceAI so the tenant runs AI on full text.
   for (let i = 0; i < newlyMatched.length; i += 100) {
     const batch = newlyMatched.slice(i, i + 100).map(billId => ({
-      body: { billId, forceAI: true } as LsIngestorMessage,
+      body: { billId, forceAI: true } as IngestorMessage,
     }))
     await c.env.INGESTOR_QUEUE.sendBatch(batch)
   }
@@ -298,7 +298,7 @@ adminLsRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (
 // queues each to the ingestor (skipFetch omitted → calls getBill()).
 // Uses forceMetadata:true so the post-download tenant notification passes
 // through DEMO_MODE queue gates.  ~1 LegiScan API call per bill.
-adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
+adminRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -327,7 +327,7 @@ adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
   for (let i = 0; i < rows.length; i += 100) {
     await c.env.INGESTOR_QUEUE.sendBatch(
       rows.slice(i, i + 100).map(r => ({
-        body: { billId: r.billId, forceMetadata: true } as LsIngestorMessage,
+        body: { billId: r.billId, forceMetadata: true } as IngestorMessage,
       }))
     )
     if (i + 100 < rows.length) await new Promise(res => setTimeout(res, 200))
@@ -347,7 +347,7 @@ adminLsRoutes.post('/fetch-missing-texts/:tenantId', async (c) => {
 //
 // skipFetch suppresses the getBill metadata call, so the spend is one
 // getBillText per document and nothing more.
-adminLsRoutes.post('/refetch-fragment-texts', async (c) => {
+adminRoutes.post('/refetch-fragment-texts', async (c) => {
   const dryRun = c.req.query('dryRun') === 'true'
   const db = drizzle(c.env.DB, { schema })
 
@@ -366,7 +366,7 @@ adminLsRoutes.post('/refetch-fragment-texts', async (c) => {
   for (let i = 0; i < billIds.length; i += 100) {
     await c.env.INGESTOR_QUEUE.sendBatch(
       billIds.slice(i, i + 100).map(billId => ({
-        body: { billId, forceTextRefetch: true, skipFetch: true } as LsIngestorMessage,
+        body: { billId, forceTextRefetch: true, skipFetch: true } as IngestorMessage,
       }))
     )
     if (i + 100 < billIds.length) await new Promise(res => setTimeout(res, 200))
@@ -381,7 +381,7 @@ adminLsRoutes.post('/refetch-fragment-texts', async (c) => {
 // by match_type (stub vs. matched) and optionally by state, differing only in
 // which notification flag they set. No LegiScan calls, no AI runs either way.
 async function refreshTenantLinks(
-  c: Context<{ Bindings: LsEnv }>,
+  c: Context<{ Bindings: Env }>,
   // tenantId is passed in rather than read from `c` here: this helper takes a
   // generic Context, so Hono cannot narrow `c.req.param('tenantId')` to string
   // the way it does inside a route handler that declares the path.
@@ -413,7 +413,7 @@ async function refreshTenantLinks(
     tenantId,
     billId: `legiscan:${l.billId}`,
     [opts.flag]: true,
-  } as LsNotificationMessage))
+  } as NotificationMessage))
 
   // Binding-first, HTTP fallback by queue_id for tenants without a static binding.
   const outcome = await deliverBatchToTenant(c.env, tenantId, tenant.queueId ?? null, bodies)
@@ -429,14 +429,14 @@ async function refreshTenantLinks(
 // so the tenant refreshes its metadata from central's bills table.
 // No LegiScan calls, no AI runs. Optional ?state=<two-letter state> scopes
 // the sweep to one state instead of all of the tenant's unmatched bills.
-adminLsRoutes.post('/refresh-stubs/:tenantId', async (c) => {
+adminRoutes.post('/refresh-stubs/:tenantId', async (c) => {
   return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: false, flag: 'stubOnly' })
 })
 
 // Sibling of /refresh-stubs for already-matched bills: sends metadataOnly
 // (refresh from central, skip text fetch + AI) instead of stubOnly. Same
 // LegiScan-free guarantee, same optional ?state= filter.
-adminLsRoutes.post('/refresh-metadata/:tenantId', async (c) => {
+adminRoutes.post('/refresh-metadata/:tenantId', async (c) => {
   return refreshTenantLinks(c, { tenantId: c.req.param('tenantId'), matched: true, flag: 'metadataOnly' })
 })
 
@@ -452,7 +452,7 @@ adminLsRoutes.post('/refresh-metadata/:tenantId', async (c) => {
 // Scope with ?sessionId=<id> to limit to one session (cheapest, 1 call). Without it, every
 // session in the tenant's stateCoverage is checked; wildcard ('*') coverage REQUIRES an
 // explicit ?sessionId to avoid an unbounded masterlist sweep.
-adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
+adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
   const sessionIdParam = c.req.query('sessionId')
@@ -588,7 +588,7 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   // one tenant's run freshens central, a subsequent run for a different tenant
   // still notifies that tenant's stubs even though refreshed === 0.
   const notifyBodies = [...notifyIds].map(billId => (
-    { tenantId, billId: `legiscan:${billId}`, stubOnly: true } as LsNotificationMessage
+    { tenantId, billId: `legiscan:${billId}`, stubOnly: true } as NotificationMessage
   ))
 
   let notified = 0
@@ -611,7 +611,7 @@ adminLsRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
 // POST /admin/update-bill-match-types/:tenantId
 // Batch-update bill_tenants.match_type for a tenant. Accepts only 'manual' or null —
 // 'keyword' promotion is handled by sync-keywords. Never downgrades 'manual' rows.
-adminLsRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(), async (c) => {
+adminRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -661,11 +661,11 @@ adminLsRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(
 
 // Re-ingest a single bill by LegiScan bill_id. Triggers a fresh getBill call
 // and refreshes all child rows. Used to backfill data for individual bills.
-adminLsRoutes.post('/reingest-bill/:billId', async (c) => {
+adminRoutes.post('/reingest-bill/:billId', async (c) => {
   const billId = parseInt(c.req.param('billId'), 10)
   if (isNaN(billId)) return c.json({ error: 'invalid billId' }, 400)
 
-  await c.env.INGESTOR_QUEUE.send({ billId } as LsIngestorMessage)
+  await c.env.INGESTOR_QUEUE.send({ billId } as IngestorMessage)
   return c.json({ ok: true, billId, queued: true })
 })
 
@@ -679,7 +679,7 @@ adminLsRoutes.post('/reingest-bill/:billId', async (c) => {
 //
 // SAFETY: defaults to dry run. Pass ?confirm=true to actually queue. Each queued
 // message triggers one getBill() LegiScan call — be mindful of the monthly quota (10k on the free tier).
-adminLsRoutes.post('/reingest-tenant/:tenantId', async (c) => {
+adminRoutes.post('/reingest-tenant/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const confirm = c.req.query('confirm') === 'true'
   const db = drizzle(c.env.DB, { schema })
@@ -709,7 +709,7 @@ adminLsRoutes.post('/reingest-tenant/:tenantId', async (c) => {
   const BATCH = 100
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH).map(r => ({
-      body: { billId: r.billId } as LsIngestorMessage,
+      body: { billId: r.billId } as IngestorMessage,
     }))
     if (batch.length > 0) {
       await c.env.INGESTOR_QUEUE.sendBatch(batch)

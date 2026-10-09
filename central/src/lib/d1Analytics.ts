@@ -1,6 +1,6 @@
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 
-type AnalyticsEnv = Pick<LsEnv, 'CF_ANALYTICS_TOKEN' | 'CF_ACCOUNT_ID'>
+type AnalyticsEnv = Pick<Env, 'CF_ANALYTICS_TOKEN' | 'CF_ACCOUNT_ID'>
 
 const CF_API_BASE = 'https://api.cloudflare.com/client/v4'
 const GRAPHQL_ENDPOINT = `${CF_API_BASE}/graphql`

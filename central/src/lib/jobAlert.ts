@@ -1,10 +1,10 @@
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { sendEmail } from './email'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 // Structural subset of the env that jobAlert needs, so callers and tests can
-// pass a minimal env rather than a full `LsEnv`.
-type AlertEnv = Pick<LsEnv, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'ALERT_EMAILS'>
+// pass a minimal env rather than a full `Env`.
+type AlertEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'ALERT_EMAILS'>
 
 /**
  * Scheduled jobs run via `ctx.waitUntil(promise)`; a rejected promise vanishes

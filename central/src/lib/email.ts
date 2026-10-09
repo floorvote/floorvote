@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { htmlToText } from './htmlToText'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
@@ -7,10 +7,10 @@ export type EmailMessage = { to: string[]; subject: string; html: string; text?:
 export type EmailSendResult = { ok: boolean; provider: ProviderName; error?: string }
 
 const FALLBACK_EMAIL = 'notifications@example.com'
-function resolveFrom(env: Pick<LsEnv, 'EMAIL_FROM'>): string {
+function resolveFrom(env: Pick<Env, 'EMAIL_FROM'>): string {
   return `${PRODUCT_NAME} <${env.EMAIL_FROM ?? FALLBACK_EMAIL}>`
 }
-function resolveReplyTo(env: Pick<LsEnv, 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>): string {
+function resolveReplyTo(env: Pick<Env, 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>): string {
   return env.EMAIL_REPLY_TO ?? env.EMAIL_FROM ?? FALLBACK_EMAIL
 }
 
@@ -20,9 +20,9 @@ export interface CloudflareEmailBinding {
 
 // `text` is always resolved (derived from html when not supplied).
 type ResolvedMessage = EmailMessage & { from: string; replyTo: string; text: string }
-type SendEnv = Pick<LsEnv, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>
+type SendEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'EMAIL_FROM' | 'EMAIL_REPLY_TO'>
 
-export function activeProvider(env: Pick<LsEnv, 'EMAIL_PROVIDER' | 'EMAIL'>): ProviderName {
+export function activeProvider(env: Pick<Env, 'EMAIL_PROVIDER' | 'EMAIL'>): ProviderName {
   if (env.EMAIL_PROVIDER === 'cloudflare' && env.EMAIL) return 'cloudflare'
   return 'resend'
 }

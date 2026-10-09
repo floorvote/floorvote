@@ -8,7 +8,7 @@ const BASE_URL = 'https://api.legiscan.com/'
  */
 const LEGISCAN_RATE_PER_SEC = 1.5
 
-export interface MasterListEntry {
+export interface SyncEntry {
   bill_id: number
   number: string
   change_hash: string
@@ -21,7 +21,7 @@ export interface MasterListEntry {
   url?: string
 }
 
-interface BillTextMeta {
+interface MeasureText {
   doc_id: number
   date: string
   type: string
@@ -51,7 +51,7 @@ export interface LegiscanSession {
   sort_order?: number
 }
 
-interface LegiscanSponsor {
+interface MeasureSponsor {
   people_id: number
   name: string
   party: string
@@ -84,7 +84,7 @@ interface LegiscanSponsor {
   }
 }
 
-interface LegiscanHistoryEntry {
+interface MeasureHistoryEntry {
   date: string
   action: string
   chamber: string
@@ -92,14 +92,14 @@ interface LegiscanHistoryEntry {
   importance: number  // 1=major, 2=minor
 }
 
-interface LegiscanSast {
+interface MeasureSast {
   type_id: number
   type: string            // "Same As", "Carry Over", etc.
   sast_bill_number: string
   sast_bill_id: number
 }
 
-interface LegiscanVoteSummary {
+interface MeasureVote {
   roll_call_id: number
   date: string
   desc: string
@@ -115,7 +115,7 @@ interface LegiscanVoteSummary {
   state_link: string
 }
 
-export interface LegiscanCalendarEntry {
+export interface MeasureCalendarEntry {
   type_id: number
   type: string
   date: string
@@ -125,7 +125,7 @@ export interface LegiscanCalendarEntry {
   event_hash: string
 }
 
-interface LegiscanAmendment {
+interface MeasureAmendment {
   amendment_id: number
   adopted: number
   chamber: string
@@ -139,7 +139,7 @@ interface LegiscanAmendment {
   amendment_hash: string
 }
 
-interface LegiscanSupplement {
+interface MeasureSupplement {
   supplement_id: number
   date: string
   type_id: number
@@ -153,12 +153,12 @@ interface LegiscanSupplement {
   supplement_hash: string
 }
 
-interface LegiscanSubject {
+interface MeasureSubject {
   subject_id: number
   subject_name: string
 }
 
-export interface LegiscanBill {
+export interface CentralMeasure {
   bill_id: number
   bill_number: string
   title: string
@@ -182,15 +182,15 @@ export interface LegiscanBill {
   committee: { committee_id: number; chamber: string; chamber_id: number; name: string } | null | []
   referrals: { date: string; committee_id: number; chamber: string; chamber_id: number; name: string }[]
   progress: { date: string; event: number }[]
-  sponsors: LegiscanSponsor[]
-  history: LegiscanHistoryEntry[]
-  sasts: LegiscanSast[]
-  subjects: LegiscanSubject[]
-  votes: LegiscanVoteSummary[]
-  texts: BillTextMeta[]
-  calendar: LegiscanCalendarEntry[]
-  amendments: LegiscanAmendment[]
-  supplements: LegiscanSupplement[]
+  sponsors: MeasureSponsor[]
+  history: MeasureHistoryEntry[]
+  sasts: MeasureSast[]
+  subjects: MeasureSubject[]
+  votes: MeasureVote[]
+  texts: MeasureText[]
+  calendar: MeasureCalendarEntry[]
+  amendments: MeasureAmendment[]
+  supplements: MeasureSupplement[]
 }
 
 /**
@@ -223,7 +223,7 @@ export async function getMasterList(
   state: string,
   apiKey: string,
   onRequest?: () => void,
-): Promise<MasterListEntry[]> {
+): Promise<SyncEntry[]> {
   const data = await legiscanFetch<{ masterlist: Record<string, unknown> }>(
     'getMasterList',
     { state },
@@ -231,7 +231,7 @@ export async function getMasterList(
     onRequest,
   )
   return Object.values(data.masterlist).filter(
-    (v): v is MasterListEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
+    (v): v is SyncEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
   )
 }
 
@@ -239,8 +239,8 @@ export async function getBill(
   billId: number,
   apiKey: string,
   onRequest?: () => void,
-): Promise<LegiscanBill> {
-  const data = await legiscanFetch<{ bill: LegiscanBill }>('getBill', { id: String(billId) }, apiKey, onRequest)
+): Promise<CentralMeasure> {
+  const data = await legiscanFetch<{ bill: CentralMeasure }>('getBill', { id: String(billId) }, apiKey, onRequest)
   return data.bill
 }
 
@@ -290,7 +290,7 @@ export async function getMasterListBySession(
   sessionId: number,
   apiKey: string,
   onRequest?: () => void,
-): Promise<MasterListEntry[]> {
+): Promise<SyncEntry[]> {
   const data = await legiscanFetch<{ masterlist: Record<string, unknown> }>(
     'getMasterList',
     { id: String(sessionId) },
@@ -298,7 +298,7 @@ export async function getMasterListBySession(
     onRequest,
   )
   return Object.values(data.masterlist).filter(
-    (v): v is MasterListEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
+    (v): v is SyncEntry => typeof v === 'object' && v !== null && 'bill_id' in v,
   )
 }
 

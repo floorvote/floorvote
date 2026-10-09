@@ -6,25 +6,25 @@ import {
   billChangeLog, rollCalls, people, tenants,
 } from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
-import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage, CalendarBlock } from '../types'
+import type { Env, Db, IngestorMessage, NotificationMessage, CalendarBlock } from '../types'
 import { nowDb } from '../lib/dbTime'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
 
-function trackLsCall(db: LsDb, callType: string, params: Record<string, unknown>): void {
+function trackLsCall(db: Db, callType: string, params: Record<string, unknown>): void {
   db.insert(apiCallLog)
     .values({ loggedAt: nowDb(), callType, params: JSON.stringify(params) })
     .catch(err => console.error('[rate-limit] failed to log API call:', err))
 }
 
-export async function processLsIngestorQueue(
-  batch: MessageBatch<LsIngestorMessage>,
-  env: LsEnv,
-  db: LsDb,
+export async function processIngestorQueue(
+  batch: MessageBatch<IngestorMessage>,
+  env: Env,
+  db: Db,
 ): Promise<void> {
   for (const message of batch.messages) {
     try {
-      await processLsBill(message.body, env, db)
+      await processBill(message.body, env, db)
       message.ack()
     } catch (err) {
       console.error('[processor-ls] failed for billId', message.body.billId, err)
@@ -33,7 +33,7 @@ export async function processLsIngestorQueue(
   }
 }
 
-async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Promise<void> {
+async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
@@ -60,7 +60,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
       }
     }
 
-    await notifyLsTenants(msg.billId, env, db, nowDb(), forceMetadata, forceAI, [], undefined, interactive)
+    await notifyTenants(msg.billId, env, db, nowDb(), forceMetadata, forceAI, [], undefined, interactive)
     return
   }
 
@@ -447,7 +447,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     })),
     changes: calendarChanges,
   }
-  await notifyLsTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
+  await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
 }
 
 /**
@@ -522,8 +522,8 @@ async function downloadTextToR2(
   docId: number,
   stateLink: string,
   mime: string,
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
   declaredSize: number | null = null,
   declaredHash: string | null = null,
 ): Promise<void> {
@@ -628,10 +628,10 @@ function base64ToBytes(b64: string): Uint8Array {
   return out
 }
 
-async function notifyLsTenants(
+async function notifyTenants(
   billId: number,
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
   now: string,
   forceMetadata = false,
   forceAI = false,
@@ -647,7 +647,7 @@ async function notifyLsTenants(
     .all()
 
   for (const t of matchingTenants) {
-    const body: LsNotificationMessage = {
+    const body: NotificationMessage = {
       tenantId: t.tenantId,
       billId: `legiscan:${billId}`,
       forceMetadata,

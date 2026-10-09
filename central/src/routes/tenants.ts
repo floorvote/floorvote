@@ -5,7 +5,7 @@ import { matchesUnion } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { calendarBlockFromRows, type StoredCalendarRow } from '../lib/detect-changes'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
@@ -17,9 +17,9 @@ import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTena
 
 const REPROCESS_LIMIT = 1000
 
-export const tenantsLsRoutes = new Hono<{ Bindings: LsEnv }>()
+export const tenantsRoutes = new Hono<{ Bindings: Env }>()
 
-tenantsLsRoutes.use('*', async (c, next) => {
+tenantsRoutes.use('*', async (c, next) => {
   if (!(await secretsMatch(c.req.header('x-admin-secret'), c.env.ADMIN_SECRET))) {
     return c.json({ error: 'unauthorized' }, 401)
   }
@@ -31,7 +31,7 @@ tenantsLsRoutes.use('*', async (c, next) => {
 // draft bill. The central schema has no is_current column, so "current" is the
 // highest-yearStart non-special session; sineDie tells the caller whether that
 // session has already adjourned, which is when a draft belongs to the NEXT one.
-tenantsLsRoutes.get('/current-session/:state', async (c) => {
+tenantsRoutes.get('/current-session/:state', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const state = c.req.param('state').toUpperCase()
   const row = await db
@@ -49,7 +49,7 @@ tenantsLsRoutes.get('/current-session/:state', async (c) => {
   return c.json({ yearStart: row.yearStart, yearEnd: row.yearEnd, sineDie: row.sineDie === 1 })
 })
 
-tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
+tenantsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
   const body = await c.req.json<{
     tenantId: string
     name: string
@@ -203,7 +203,7 @@ tenantsLsRoutes.post('/register', guardCallerTenantBody(), async (c) => {
 //
 // ?skipQueue=true  — only create bill_tenants, skip all queue sends. Use when queues are
 //                    rate-limited; follow up with reprocess once queues are clear.
-tenantsLsRoutes.post('/seed-session/:tenantId', async (c) => {
+tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
   const tenantId  = c.req.param('tenantId')
   const sessionId = parseInt(c.req.query('sessionId')  ?? '0',     10)
   const offset    = parseInt(c.req.query('offset')     ?? '0',     10)
@@ -386,7 +386,7 @@ tenantsLsRoutes.post('/seed-session/:tenantId', async (c) => {
 // the description.) match_type is the canonical classification; re-deriving it
 // anywhere is how the two drift apart. The tenant processor learned the same
 // lesson — see the match_type gate in api/src/queue/processor.ts.
-tenantsLsRoutes.post('/redownload-texts/:tenantId', async (c) => {
+tenantsRoutes.post('/redownload-texts/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -424,7 +424,7 @@ tenantsLsRoutes.post('/redownload-texts/:tenantId', async (c) => {
 // POST /tenants/promote-bill/:tenantId/:billId — promote a stub bill to full tracking
 // Sets bill_tenants.match_type='manual' (insert-or-update) and queues the ingestor
 // with forceAI:true so the tenant re-runs the full AI pipeline on next process.
-tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), async (c) => {
+tenantsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
   const billIdStr = c.req.param('billId')
@@ -455,7 +455,7 @@ tenantsLsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam()
 // the per-request count is capped at REPROCESS_LIMIT. (H4 quota guard: the
 // deny-by-default TenantApi forwarder still lets a tenant reach this allowlisted
 // route, so the cap, not the forwarder, is what bounds quota burn here.)
-tenantsLsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (c) => {
+tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
   const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
@@ -481,7 +481,7 @@ tenantsLsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async
   return c.json({ ok: true, tenantId, promoted: billIds.length })
 })
 
-tenantsLsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
+tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const daysRaw = Number(c.req.query('days') ?? '30')
   const days = Math.max(1, Math.min(365, Number.isFinite(daysRaw) ? daysRaw : 30))
@@ -533,7 +533,7 @@ tenantsLsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), as
   return c.json(rows.results ?? [])
 })
 
-tenantsLsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) => {
+tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
 
@@ -631,7 +631,7 @@ tenantsLsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c)
 // tenant-side throw into a clean 502 (instead of a bare 500) so operators get a
 // readable message (e.g. "demo mode not enabled", "Queue not configured").
 async function tenantRpcCall<T>(
-  c: Context<{ Bindings: LsEnv }>,
+  c: Context<{ Bindings: Env }>,
   fn: (rpc: import('../lib/tenantRpc').TenantRpc) => Promise<T>,
 ): Promise<Response> {
   const tenantId = c.req.param('tenantId')
@@ -645,19 +645,19 @@ async function tenantRpcCall<T>(
   }
 }
 
-tenantsLsRoutes.post('/:tenantId/force-register', (c) =>
+tenantsRoutes.post('/:tenantId/force-register', (c) =>
   tenantRpcCall(c, async (rpc) => ({ ok: await rpc.forceRegister() })))
 
-tenantsLsRoutes.post('/:tenantId/demo-reset', (c) =>
+tenantsRoutes.post('/:tenantId/demo-reset', (c) =>
   tenantRpcCall(c, (rpc) => rpc.demoReset()))
 
-tenantsLsRoutes.post('/:tenantId/run-digest', (c) =>
+tenantsRoutes.post('/:tenantId/run-digest', (c) =>
   tenantRpcCall(c, (rpc) => rpc.runDigestNow()))
 
-tenantsLsRoutes.post('/:tenantId/refresh-metadata', (c) =>
+tenantsRoutes.post('/:tenantId/refresh-metadata', (c) =>
   tenantRpcCall(c, (rpc) => rpc.refreshMetadata()))
 
-tenantsLsRoutes.post('/:tenantId/send-sample-email', async (c) => {
+tenantsRoutes.post('/:tenantId/send-sample-email', async (c) => {
   const rpc = resolveTenantRpc(c.env, c.req.param('tenantId'))
   if (!rpc) return c.json({ error: 'tenant not bound' }, 501)
   const body = await c.req.json<{ to?: string; type?: string }>().catch(() => ({} as { to?: string; type?: string }))

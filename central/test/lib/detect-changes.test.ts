@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { detectChanges, type BillSnapshot, detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow, calendarBlockFromRows, type StoredCalendarRow } from '../../src/lib/detect-changes'
-import type { LegiscanBill, LegiscanCalendarEntry } from '../../src/providers/legiscan/client'
+import type { CentralMeasure, MeasureCalendarEntry } from '../../src/providers/legiscan/client'
 
 const baseSnapshot: BillSnapshot = {
   status: 1,
@@ -15,7 +15,7 @@ const baseSnapshot: BillSnapshot = {
   sponsorDetailByKey: new Map([['p1234', 'Rep. Jane Smith (D)']]),
 }
 
-function baseBill(overrides: Partial<LegiscanBill> = {}): LegiscanBill {
+function baseBill(overrides: Partial<CentralMeasure> = {}): CentralMeasure {
   return {
     bill_id: 999,
     bill_number: 'A1',
@@ -392,7 +392,7 @@ describe('detectChanges', () => {
   })
 })
 
-function cal(overrides: Partial<LegiscanCalendarEntry> = {}): LegiscanCalendarEntry {
+function cal(overrides: Partial<MeasureCalendarEntry> = {}): MeasureCalendarEntry {
   return {
     type_id: 1, type: 'Hearing', date: '2026-06-04', time: '14:00:00',
     location: 'Room 35', description: 'House Cmte on Elections', event_hash: 'h1',

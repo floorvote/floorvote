@@ -2,13 +2,13 @@ import { Hono } from 'hono'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
-import { runLsSync } from './cron/sync'
+import { runSync } from './cron/sync'
 import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
-import { processLsIngestorQueue } from './queue/processor'
+import { processIngestorQueue } from './queue/processor'
 import { processDeadLetterQueue } from './queue/deadLetters'
-import { billsLsRoutes } from './routes/bills'
-import { tenantsLsRoutes } from './routes/tenants'
-import { adminLsRoutes } from './routes/admin'
+import { billsRoutes } from './routes/bills'
+import { tenantsRoutes } from './routes/tenants'
+import { adminRoutes } from './routes/admin'
 import { healthRoutes } from './routes/health'
 import { dashAuthRoutes } from './routes/dash-auth'
 import { dashRoutes } from './routes/dash'
@@ -17,7 +17,7 @@ import { dashUnknownLoginsRoutes } from './routes/dash-unknown-logins'
 import { runJob } from './lib/jobAlert'
 import { runAnomalyWatch } from './lib/anomalyWatch'
 import { pruneRevokedSuperadminJtis } from './lib/superadminRevocation'
-import type { LsEnv, LsIngestorMessage } from './types'
+import type { Env, IngestorMessage } from './types'
 import { errorHandler } from './lib/errorHandler'
 import { checkEmailSuppression, checkEmailSuppressions } from './lib/emailSuppression'
 import { getEmailDeliveryStatus } from './lib/emailDelivery'
@@ -25,7 +25,7 @@ import { isTenantSurfaceAllowed } from './lib/tenantSurface'
 import { CALLER_TENANT_HEADER } from './lib/callerTenant'
 import { setSecurityHeaders } from '../../shared/securityHeaders'
 
-export const app = new Hono<{ Bindings: LsEnv }>()
+export const app = new Hono<{ Bindings: Env }>()
 
 // Safety net for uncaught errors: structured 500, no detail leak (HTTPExceptions
 // pass through). Route-level error responses still win.
@@ -50,9 +50,9 @@ app.route('/admin/dash', dashRoutes)
 // which made hard-refresh / deep-link to those pages return raw API JSON. All
 // callers (tenant centralFetch, operator tooling) target /api/*; bare /tenants,
 // /bills, /admin now fall through to the SPA catch-all below.
-app.route('/api/tenants', tenantsLsRoutes)
-app.route('/api/bills', billsLsRoutes)
-app.route('/api/admin', adminLsRoutes)
+app.route('/api/tenants', tenantsRoutes)
+app.route('/api/bills', billsRoutes)
+app.route('/api/admin', adminRoutes)
 app.route('/api/health', healthRoutes)
 
 app.get('*', (c) => {
@@ -63,7 +63,7 @@ app.get('*', (c) => {
 export default {
   fetch: app.fetch,
 
-  async queue(batch: MessageBatch, env: LsEnv): Promise<void> {
+  async queue(batch: MessageBatch, env: Env): Promise<void> {
     // Central consumes two queues: its own ingestor, and the tenants' shared
     // dead-letter queue. Dispatch on the queue name rather than assuming, so a
     // dead letter is never handed to the ingestor as if it were a bill to fetch.
@@ -73,16 +73,16 @@ export default {
     }
 
     const db = drizzle(env.DB, { schema })
-    await processLsIngestorQueue(
-      batch as MessageBatch<LsIngestorMessage>,
+    await processIngestorQueue(
+      batch as MessageBatch<IngestorMessage>,
       env,
       db,
     )
   },
 
-  async scheduled(_event: ScheduledEvent, env: LsEnv, ctx: ExecutionContext): Promise<void> {
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const db = drizzle(env.DB, { schema })
-    ctx.waitUntil(runJob(env, 'ls-sync', () => runLsSync(env, db)))
+    ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
     if (shouldRunEngagementPull(new Date())) {
       ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
       ctx.waitUntil(runJob(env, 'd1-anomaly-watch', () => runAnomalyWatch(env)))
@@ -115,7 +115,7 @@ export default {
  * first so a tenant cannot assert another's identity; a tenant without the prop
  * yet (rollout window) simply carries no header and is treated leniently.
  */
-export class TenantApi extends WorkerEntrypoint<LsEnv, { tenantId?: string }> {
+export class TenantApi extends WorkerEntrypoint<Env, { tenantId?: string }> {
   fetch(req: Request): Response | Promise<Response> {
     const { pathname } = new URL(req.url)
     if (!isTenantSurfaceAllowed(req.method, pathname)) {
