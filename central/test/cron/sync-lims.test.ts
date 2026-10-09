@@ -384,6 +384,27 @@ describe('POST /api/admin/lims-sync', () => {
   })
 })
 
+describe('POST /api/admin/sources/:id/sync', () => {
+  const post = async (id: string) => {
+    const { app } = await import('../../src/index-legiscan')
+    const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    return app.fetch(new Request(`http://central/api/admin/sources/${id}/sync`, {
+      method: 'POST', headers: { 'x-admin-secret': 'test-secret' },
+    }), e)
+  }
+
+  it('runs the named source', async () => {
+    const res = await post('lims')
+    expect(res.status).toBe(200)
+    const body = await res.json() as { passes: { sessionId: number }[] }
+    expect(body.passes.map(p => p.sessionId)).toEqual([limsSessionId(26)])
+  })
+
+  it('answers 404 for a source central does not know', async () => {
+    expect((await post('nope')).status).toBe(404)
+  })
+})
+
 describe('monitor stubs', () => {
   it('link every LIMS bill to its Council page, matched or not', async () => {
     const db = drizzle(env.DB, { schema })

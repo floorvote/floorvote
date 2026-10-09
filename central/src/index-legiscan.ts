@@ -3,7 +3,8 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema-legiscan'
 import { runLsSync } from './cron/sync-legiscan'
-import { runLimsSync } from './cron/sync-lims'
+import { runSourceSync } from './cron/sync-sources'
+import { SOURCES } from './sources'
 import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
 import { processLsIngestorQueue } from './queue/processor-legiscan'
 import { processDeadLetterQueue } from './queue/deadLetters'
@@ -84,7 +85,10 @@ export default {
   async scheduled(_event: ScheduledEvent, env: LsEnv, ctx: ExecutionContext): Promise<void> {
     const db = drizzle(env.DB, { schema })
     ctx.waitUntil(runJob(env, 'ls-sync', () => runLsSync(env, db)))
-    ctx.waitUntil(runJob(env, 'lims-sync', () => runLimsSync(env, db)))
+    // One job per direct source, so one source failing never stops another.
+    for (const source of SOURCES) {
+      ctx.waitUntil(runJob(env, `${source.id}-sync`, () => runSourceSync(source, env, db)))
+    }
     if (shouldRunEngagementPull(new Date())) {
       ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
       ctx.waitUntil(runJob(env, 'd1-anomaly-watch', () => runAnomalyWatch(env)))

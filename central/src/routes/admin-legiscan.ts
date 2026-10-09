@@ -10,7 +10,9 @@ import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runLsSync } from '../cron/sync-legiscan'
-import { runLimsSync, importLimsMeasures } from '../cron/sync-lims'
+import { importLimsMeasures } from '../cron/sync-lims'
+import { runSourceSync } from '../cron/sync-sources'
+import { directSource } from '../sources'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
@@ -42,15 +44,19 @@ adminLsRoutes.post('/trigger-sync', async (c) => {
   return c.json({ ok: true, message: 'sync triggered' })
 })
 
-// Run the DC LIMS sync now instead of waiting for its full-pass hours (see
-// cron/sync-lims.ts). Refreshes the Council Period and members, then runs a full
-// pass: a handful of BulkData calls plus queueing, so it finishes in seconds.
-adminLsRoutes.post('/lims-sync', async (c) => {
-  if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
+// Run a direct source's sync now (src/sources, cron/sync-sources.ts) instead of
+// waiting for its full-pass hours: the source refreshes its sessions, then every
+// synced session gets a full pass. /lims-sync is the original name for DC.
+async function runSourceNow(c: Context<{ Bindings: LsEnv }>, id: string) {
+  const source = directSource(id)
+  if (!source) return c.json({ error: `unknown source "${id}"` }, 404)
+  if (!source.enabled(c.env)) return c.json({ error: `source "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
-  const passes = await runLimsSync(c.env, db, { force: true })
+  const passes = await runSourceSync(source, c.env, db, { force: true })
   return c.json({ ok: true, passes })
-})
+}
+adminLsRoutes.post('/sources/:id/sync', c => runSourceNow(c, c.req.param('id')))
+adminLsRoutes.post('/lims-sync', c => runSourceNow(c, 'lims'))
 
 // Import specific LIMS measures from any Council Period and track them for one
 // tenant as manual picks (full ingest + AI). Body: { "tenantId": "oca",
