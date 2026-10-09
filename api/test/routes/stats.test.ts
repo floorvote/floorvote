@@ -131,6 +131,51 @@ describe('GET /stats/sidebar — DEMO_MODE upcoming hearings', () => {
   })
 })
 
+describe('GET /stats/sidebar — upcoming hearings from central', () => {
+  let memberToken: string
+
+  const dateFromNow = (n: number) => new Date(Date.now() + n * 86400_000).toISOString().slice(0, 10)
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    memberToken = await seedSession(await seedUser())
+
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({
+      key: 'modules',
+      value: JSON.stringify({ 'upcoming-hearings': { enabled: true } }),
+    })
+    await seedBill({ externalId: 'legiscan:2099974', billNumber: 'A1129', title: 'Drop boxes', state: 'NJ', priority: 'high' })
+  })
+
+  it('loads hearings for a tenant with no PROVIDER setting', async () => {
+    const requested: string[] = []
+    const central = {
+      fetch: async (req: Request) => {
+        requested.push(new URL(req.url).pathname)
+        return Response.json([{
+          eventHash: 'eh1', type: 'Hearing', date: dateFromNow(3), time: '10:00:00',
+          location: 'Room 11', description: 'Committee hearing',
+          billId: 2099974, billNumber: 'A1129', billTitle: 'Drop boxes', state: 'NJ', sessionName: null,
+        }])
+      },
+    }
+    const { PROVIDER: _omit, ...envWithoutProvider } = env as typeof env & { PROVIDER?: string }
+    expect(envWithoutProvider).not.toHaveProperty('PROVIDER')
+
+    const res = await app.request('/api/stats/sidebar',
+      { headers: { Cookie: `session=${memberToken}` } },
+      { ...envWithoutProvider, CENTRAL: central } as never)
+    expect(res.status).toBe(200)
+    const body = await res.json() as { upcomingHearings: Array<{ date: string; bills: Array<{ billNumber: string }> }> }
+    expect(requested.some(p => p.endsWith('/upcoming-hearings'))).toBe(true)
+    expect(body.upcomingHearings).toHaveLength(1)
+    expect(body.upcomingHearings[0].date).toBe(dateFromNow(3))
+    expect(body.upcomingHearings[0].bills[0].billNumber).toBe('A1129')
+  })
+})
+
 describe('GET /api/stats memberCount', () => {
   let token: string
   beforeEach(async () => {
