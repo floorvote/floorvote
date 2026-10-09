@@ -14,4 +14,4 @@ Uses the five default triage labels (`needs-triage`, `needs-info`, `ready-for-ag
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` at the repo root. Decisions live in GitHub issues and PR descriptions, not ADR files. See `docs/agents/domain.md`.
