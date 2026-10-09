@@ -1,16 +1,12 @@
 # central/wrangler.example.toml — example configuration for the central worker.
 # Copy to central/wrangler.toml and fill in your resource IDs.
 #
-# The central worker supports two legislative data providers:
-#   - LegiScan ([env.legiscan], `npm run deploy:legiscan`) — the recommended,
-#     actively-maintained path with the fuller feature set (BILL_PROVIDER = "legiscan").
-#   - OpenStates (top-level env, `npm run deploy`) — an alternative that is not
-#     actively maintained and lacks features present in the LegiScan path.
-# Deploy whichever you need.
+# Central pulls legislative data from LegiScan. It is configured as the
+# `legiscan` wrangler environment and deployed with `npm run deploy:legiscan`
+# (`npm run deploy` is an alias). The worker is named after the top-level name
+# plus the environment: "floorvote-central-legiscan".
 
-# ── OpenStates central (top-level env) — alternative, not actively maintained ─
 name = "floorvote-central"
-main = "src/index.ts"
 compatibility_date = "2026-06-18"
 compatibility_flags = ["nodejs_compat"]
 
@@ -18,24 +14,46 @@ compatibility_flags = ["nodejs_compat"]
 enabled = true
 head_sampling_rate = 1
 
-[[d1_databases]]
+[env.legiscan]
+main = "src/index-legiscan.ts"
+# routes = [{ pattern = "admin.example.com", custom_domain = true }]
+# workers_dev = true
+
+[[env.legiscan.d1_databases]]
 binding = "DB"
-database_name = "central-bills"
+database_name = "central-bills-ls"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
-migrations_dir = "migrations"
+migrations_dir = "migrations-legiscan"
 
-[[r2_buckets]]
+[[env.legiscan.r2_buckets]]
 binding = "BILLS_BUCKET"
-bucket_name = "central-bill-texts"
+bucket_name = "central-bill-texts-ls"
 
-[[queues.producers]]
+[[env.legiscan.queues.producers]]
 binding = "INGESTOR_QUEUE"
-queue = "central-ingestor"
+queue = "central-legiscan-ingestor"
 
-[[queues.consumers]]
-queue = "central-ingestor"
+[[env.legiscan.queues.consumers]]
+queue = "central-legiscan-ingestor"
 max_batch_size = 5
 max_batch_timeout = 30
+# One consumer invocation at a time. LegiScan's ~2 req/sec sliding window
+# (October 1, 2026) is metered client-side by src/lib/rateLimitedFetch.ts, but
+# that bucket is per-isolate: concurrent invocations would each hold their own
+# and the aggregate rate would scale with concurrency. Keep this at 1.
+max_concurrency = 1
+
+# Optional: a separate ingestor queue for DC LIMS bills, so a LegiScan backlog
+# never delays DC. Without it LIMS bills share INGESTOR_QUEUE. LIMS answers 429
+# above about two concurrent requests, so keep max_concurrency at 1 here too.
+# [[env.legiscan.queues.producers]]
+# binding = "LIMS_INGESTOR_QUEUE"
+# queue = "central-lims-ingestor"
+# [[env.legiscan.queues.consumers]]
+# queue = "central-lims-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_concurrency = 1
 
 # Optional: drain the tenants' shared dead-letter queue.
 #
@@ -50,143 +68,81 @@ max_batch_timeout = 30
 # one database, so it cannot mark the right bill. Tenants already record the
 # failure on the bill before the message dead-letters.
 #
-# [[queues.consumers]]
+# [[env.legiscan.queues.consumers]]
 # queue = "your-tenant-dlq"
 # max_batch_size = 10
 # max_batch_timeout = 30
 
-[triggers]
-crons = ["0 * * * *"]
+# Per-tenant queue bindings (optional — without these, central uses HTTP publish
+# via CF_QUEUES_TOKEN if set, which requires no central redeploy per new tenant):
+# [[env.legiscan.queues.producers]]
+# binding = "TENANT_QUEUE_MY_ORG"
+# queue = "floorvote-my-org-queue"
 
-[vars]
-# DEAD_LETTER_QUEUE = "your-tenant-dlq"   # must match the consumer above
+# Per-tenant service bindings for central→tenant RPC:
+# [[env.legiscan.services]]
+# binding = "TENANT_MY_ORG"
+# service = "floorvote-my-org"
+# entrypoint = "CentralApi"
+
+[env.legiscan.vars]
 OPERATOR_NAME = "Your Org"
-BILL_PROVIDER = "openstates"
 EMAIL_PROVIDER = "cloudflare"
+# DEAD_LETTER_QUEUE = "your-tenant-dlq"              # must match the consumer above
 # ADMIN_APP_URL = "https://admin.example.com"       # base URL for admin dashboard magic-link emails
 # EMAIL_FROM = "notifications@example.com"           # sender address for admin email
 # ALERT_EMAILS = "ops@example.com"                   # comma-separated ops alert recipients
-# CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # for D1 anomaly watch analytics
+# CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
+# CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
+# DC Council LIMS (lims.dccouncil.gov) as DC's source instead of LegiScan.
+# Needs the LIMS_API_KEY secret too; without it LIMS stays off and DC comes
+# from LegiScan as before. See src/cron/sync-lims.ts.
+# LIMS_STATES = "DC"
+# LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
+# The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
+# source instead of LegiScan. No key needed. See src/sources/mga.ts.
+# MGA_STATES = "MD"
+# Virginia's Legislative Information System data files (lis.virginia.gov) as
+# VA's source instead of LegiScan. No key needed; bill text needs the LIS
+# API, which is not used yet. See src/sources/lis.ts.
+# LIS_STATES = "VA"
 
-[[send_email]]
+[env.legiscan.triggers]
+crons = ["0 * * * *"]
+
+[[env.legiscan.send_email]]
 name = "EMAIL"
 
-# Secrets (set via `wrangler secret put`):
-# OPENSTATES_API_KEY    — OpenStates bill data
+# Dashboard SPA. Without this block c.env.ASSETS is undefined and the
+# catch-all route returns 404 for every non-API path — the dashboard
+# won't load. run_worker_first must be true (not a path list) because
+# the magic-link callback (GET /admin/dash/auth/callback) is a top-level
+# browser navigation handled by a Hono route; without Worker-first the
+# SPA not_found_handling intercepts it and the auth handler never runs.
+[env.legiscan.assets]
+directory = "./web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# Dashboard login rate limiter. routes/dash-auth.ts rate-limits the magic-link
+# path, but checkRateLimit fails OPEN when nothing is bound — so without this
+# block central's dashboard login has no limit at all, while every tenant does.
+# namespace_id must not be shared with a tenant's, or the counters pool.
+[[env.legiscan.ratelimits]]
+name = "LOGIN_RATE_LIMITER"
+namespace_id = "3001"
+  [env.legiscan.ratelimits.simple]
+  limit = 10
+  period = 60
+
+# Secrets (set via `wrangler secret put <NAME> --env legiscan`):
+# LEGISCAN_API_KEY      — LegiScan bill data
+# LIMS_API_KEY          — DC Council LIMS developer key (optional; see LIMS_STATES)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
+# CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
 # RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)
-
-# ── LegiScan central (recommended, actively-maintained provider) ─────────────
-# Uncomment and fill in to run the recommended LegiScan path (deployed with
-# `--env legiscan` / `npm run deploy:legiscan`).
-#
-# [env.legiscan]
-# main = "src/index-legiscan.ts"
-# # routes = [{ pattern = "admin.example.com", custom_domain = true }]
-# # workers_dev = true
-#
-# [[env.legiscan.d1_databases]]
-# binding = "DB"
-# database_name = "central-bills-ls"
-# database_id = "REPLACE_WITH_D1_DATABASE_ID"
-# migrations_dir = "migrations-legiscan"
-#
-# [[env.legiscan.r2_buckets]]
-# binding = "BILLS_BUCKET"
-# bucket_name = "central-bill-texts-ls"
-#
-# [[env.legiscan.queues.producers]]
-# binding = "INGESTOR_QUEUE"
-# queue = "central-legiscan-ingestor"
-#
-# [[env.legiscan.queues.consumers]]
-# queue = "central-legiscan-ingestor"
-# max_batch_size = 5
-# max_batch_timeout = 30
-# # One consumer invocation at a time. LegiScan's ~2 req/sec sliding window
-# # (October 1, 2026) is metered client-side by src/lib/rateLimitedFetch.ts, but
-# # that bucket is per-isolate: concurrent invocations would each hold their own
-# # and the aggregate rate would scale with concurrency. Keep this at 1.
-# max_concurrency = 1
-#
-# # Optional: a separate ingestor queue for DC LIMS bills, so a LegiScan backlog
-# # never delays DC. Without it LIMS bills share INGESTOR_QUEUE. LIMS answers 429
-# # above about two concurrent requests, so keep max_concurrency at 1 here too.
-# # [[env.legiscan.queues.producers]]
-# # binding = "LIMS_INGESTOR_QUEUE"
-# # queue = "central-lims-ingestor"
-# # [[env.legiscan.queues.consumers]]
-# # queue = "central-lims-ingestor"
-# # max_batch_size = 5
-# # max_batch_timeout = 30
-# # max_concurrency = 1
-#
-# # Per-tenant queue bindings (optional — without these, central uses HTTP publish
-# # via CF_QUEUES_TOKEN if set, which requires no central redeploy per new tenant):
-# # [[env.legiscan.queues.producers]]
-# # binding = "TENANT_QUEUE_MY_ORG"
-# # queue = "floorvote-my-org-queue"
-#
-# # Per-tenant service bindings for central→tenant RPC:
-# # [[env.legiscan.services]]
-# # binding = "TENANT_MY_ORG"
-# # service = "floorvote-my-org"
-# # entrypoint = "CentralApi"
-#
-# [env.legiscan.vars]
-# OPERATOR_NAME = "Your Org"
-# BILL_PROVIDER = "legiscan"
-# EMAIL_PROVIDER = "cloudflare"
-# # ADMIN_APP_URL = "https://admin.example.com"
-# # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
-# # CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
-# # DC Council LIMS (lims.dccouncil.gov) as DC's source instead of LegiScan.
-# # Needs the LIMS_API_KEY secret too; without it LIMS stays off and DC comes
-# # from LegiScan as before. See src/cron/sync-lims.ts.
-# # LIMS_STATES = "DC"
-# # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
-# # The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
-# # source instead of LegiScan. No key needed. See src/sources/mga.ts.
-# # MGA_STATES = "MD"
-# # Virginia's Legislative Information System data files (lis.virginia.gov) as
-# # VA's source instead of LegiScan. No key needed; bill text needs the LIS
-# # API, which is not used yet. See src/sources/lis.ts.
-# # LIS_STATES = "VA"
-#
-# [env.legiscan.triggers]
-# crons = ["0 * * * *"]
-#
-# [[env.legiscan.send_email]]
-# name = "EMAIL"
-#
-# # Dashboard SPA. Without this block c.env.ASSETS is undefined and the
-# # catch-all route returns 404 for every non-API path — the dashboard
-# # won't load. run_worker_first must be true (not a path list) because
-# # the magic-link callback (GET /admin/dash/auth/callback) is a top-level
-# # browser navigation handled by a Hono route; without Worker-first the
-# # SPA not_found_handling intercepts it and the auth handler never runs.
-# [env.legiscan.assets]
-# directory = "./web/dist"
-# binding = "ASSETS"
-# not_found_handling = "single-page-application"
-# run_worker_first = true
-#
-# # Dashboard login rate limiter. routes/dash-auth.ts rate-limits the magic-link
-# # path, but checkRateLimit fails OPEN when nothing is bound — so without this
-# # block central's dashboard login has no limit at all, while every tenant does.
-# # namespace_id must not be shared with a tenant's, or the counters pool.
-# [[env.legiscan.ratelimits]]
-# name = "LOGIN_RATE_LIMITER"
-# namespace_id = "3001"
-#   [env.legiscan.ratelimits.simple]
-#   limit = 10
-#   period = 60
-#
-# # Additional secrets for LegiScan env (set via `wrangler secret put --env legiscan`):
-# # LEGISCAN_API_KEY      — LegiScan bill data
-# # LIMS_API_KEY          — DC Council LIMS developer key (optional; see LIMS_STATES)
-# # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery

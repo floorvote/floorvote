@@ -1,4 +1,4 @@
-import type { LegiscanBill, MasterListEntry } from './legiscan'
+import type { CentralMeasure, SyncEntry } from '../providers'
 import { MGA_BASE, type MgaRecord } from './mga'
 import { sha256Hex } from './lims-map'
 
@@ -164,7 +164,7 @@ export async function mgaRecordHash(r: MgaRecord): Promise<string> {
 
 export function toMgaMasterListEntry(
   r: MgaRecord, sessionCode: string, billId: number, hash: string, storedDescription: string | null,
-): MasterListEntry {
+): SyncEntry {
   const status = mgaStatus(r)
   const history = milestones(r)
   return {
@@ -220,7 +220,7 @@ export interface MgaSession { session_id: number; session_name: string; year_sta
 
 export async function buildMgaBill(
   r: MgaRecord, sessionCode: string, billId: number, hash: string, session: MgaSession, ids: MgaIds,
-): Promise<LegiscanBill> {
+): Promise<CentralMeasure> {
   const number = mgaDisplayNumber(r.BillNumber)
   const origin = originChamber(r)
   const status = mgaStatus(r)
@@ -235,7 +235,7 @@ export async function buildMgaBill(
     T: r.ThirdReadingDateHouseOfOrigin ?? r.SecondReadingDateHouseOfOrigin ?? r.FirstReadingDateHouseOfOrigin ?? yearStart,
     E: r.ThirdReadingDateOppositeHouse ?? r.ThirdReadingDateHouseOfOrigin ?? yearStart,
   }
-  const texts: LegiscanBill['texts'] = mgaTextVersions(r).map(letter => {
+  const texts: CentralMeasure['texts'] = mgaTextVersions(r).map(letter => {
     const v = VERSIONS.find(x => x.letter === letter)!
     return {
       doc_id: ids.doc(`${sessionCode}/${r.BillNumber}${letter}`), date: versionDate[letter], type: v.type, type_id: v.typeId,
@@ -246,7 +246,7 @@ export async function buildMgaBill(
   })
 
   // Every bill and joint resolution gets a fiscal and policy note.
-  const supplements: LegiscanBill['supplements'] = r.FirstReadingDateHouseOfOrigin ? [{
+  const supplements: CentralMeasure['supplements'] = r.FirstReadingDateHouseOfOrigin ? [{
     supplement_id: ids.doc(`${sessionCode}/${r.BillNumber}/fiscal-note`), date: r.FirstReadingDateHouseOfOrigin,
     type_id: 1, type: 'Fiscal Note', title: 'Fiscal and Policy Note', description: '',
     mime: 'application/pdf', url: '', state_link: paths.fiscalNote, supplement_size: 0, supplement_hash: '',
@@ -258,7 +258,7 @@ export async function buildMgaBill(
     { at: r.HearingDateTimePrimaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteePrimaryOpposite },
     { at: r.HearingDateTimeSecondaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteeSecondaryOpposite },
   ]
-  const calendar: LegiscanBill['calendar'] = []
+  const calendar: CentralMeasure['calendar'] = []
   for (const h of hearings) {
     if (!h.at) continue
     const date = h.at.slice(0, 10)
@@ -270,7 +270,7 @@ export async function buildMgaBill(
     })
   }
 
-  const sponsors: LegiscanBill['sponsors'] = mgaSponsorNames(r).map((full, i) => {
+  const sponsors: CentralMeasure['sponsors'] = mgaSponsorNames(r).map((full, i) => {
     const { role, name } = splitSponsor(full)
     return {
       people_id: ids.person(full), name, party: '', role, role_id: role === 'Senator' ? 2 : role === 'Delegate' ? 1 : 0,
@@ -278,7 +278,7 @@ export async function buildMgaBill(
     }
   })
 
-  const referrals: LegiscanBill['referrals'] = []
+  const referrals: CentralMeasure['referrals'] = []
   const firstOrigin = r.FirstReadingDateHouseOfOrigin
   const firstOpposite = r.FirstReadingDateOppositeHouse
   for (const [date, c, names] of [
@@ -293,12 +293,12 @@ export async function buildMgaBill(
 
   const crossfile = r.CrossfileBillNumber?.trim()
   const crossfileId = crossfile ? ids.bill(crossfile) : undefined
-  const sasts: LegiscanBill['sasts'] = crossfile && crossfileId
+  const sasts: CentralMeasure['sasts'] = crossfile && crossfileId
     ? [{ type_id: 1, type: 'Cross-filed', sast_bill_number: mgaDisplayNumber(crossfile), sast_bill_id: crossfileId }]
     : []
 
   const subjectCodes = [...(r.BroadSubjects ?? []), ...(r.NarrowSubjects ?? [])]
-  const subjects: LegiscanBill['subjects'] = await Promise.all(subjectCodes.map(async s => ({
+  const subjects: CentralMeasure['subjects'] = await Promise.all(subjectCodes.map(async s => ({
     // Subjects carry a short code, not a number; this keeps the id stable per code.
     subject_id: parseInt((await sha256Hex(`mga-subject|${s.Code}`)).slice(0, 7), 16),
     subject_name: s.Name,

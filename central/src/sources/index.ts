@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm'
-import { bills, sourceRecords } from '../db/schema-legiscan'
+import { bills, sourceRecords } from '../db/schema'
 import { limsSource } from './lims'
 import { mgaSource } from './mga'
 import { lisSource } from './lis'
 import type { DirectSource } from './types'
-import type { LsEnv, LsDb } from '../types-legiscan'
+import type { Env, Db } from '../types'
 
 export type { DirectSource } from './types'
 
@@ -16,7 +16,7 @@ export function directSource(id: string | null | undefined): DirectSource | unde
 }
 
 /** States this deployment reads from a direct source rather than LegiScan. */
-export function directStates(env: LsEnv): Set<string> {
+export function directStates(env: Env): Set<string> {
   return new Set(SOURCES.filter(s => s.enabled(env)).flatMap(s => s.states))
 }
 
@@ -26,7 +26,7 @@ export function directStates(env: LsEnv): Set<string> {
  * row's own column covers a bill whose record has gone missing, so it still
  * never reaches LegiScan.
  */
-export async function billSource(db: LsDb, billId: number): Promise<string> {
+export async function billSource(db: Db, billId: number): Promise<string> {
   const rec = await db.select({ source: sourceRecords.source }).from(sourceRecords)
     .where(eq(sourceRecords.billId, billId)).get()
   if (rec) return rec.source

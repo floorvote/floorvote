@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
 import { setupLsDb } from '../helpers/setupLsDb'
 
@@ -104,5 +104,62 @@ describe('POST /bills/rich-batch', () => {
     // 0000-00-00 + full date in description → inferred (year inference needs the session join)
     const sup23 = body.byId['102'].supplements.find((s: any) => s.supplementId === 23)
     expect(sup23).toMatchObject({ dateResolved: '2026-05-21', dateInferred: true })
+  })
+})
+
+describe('legislator votes', () => {
+  async function seedLegislatorVotes() {
+    await seed()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.people).values([
+      { peopleId: 1, name: 'Zachary Parker', stateId: 0 },
+      { peopleId: 2, name: 'Brooke Pinto', stateId: 0 },
+    ] as any)
+    await db.insert(schema.rollCallVotes).values([
+      { id: 'v1', rollCallId: 31, peopleId: 1, voteId: 1, voteText: 'Yes' },
+      { id: 'v2', rollCallId: 31, peopleId: 2, voteId: 2, voteText: 'No' },
+    ])
+  }
+  const post = (body: unknown) => app.request('/api/bills/rich-batch', {
+    method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }, env)
+
+  it('leaves legislator votes out of the batch, which only the data export reads', async () => {
+    await seedLegislatorVotes()
+    const body = await (await post({ ids: [102] })).json() as any
+    expect(body.byId['102'].votes[0].legislatorVotes).toBeUndefined()
+  })
+
+  it('returns legislator votes, sorted by name and keyed by person id, on the bill detail', async () => {
+    await seedLegislatorVotes()
+    const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.votes[0].legislatorVotes).toEqual([
+      { personId: '2', name: 'Brooke Pinto', vote: 'No' },
+      { personId: '1', name: 'Zachary Parker', vote: 'Yes' },
+    ])
+  })
+
+  it('returns an empty list for a roll call with no legislator votes', async () => {
+    await seed()
+    const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
+    const body = await res.json() as any
+    expect(body.votes[0].legislatorVotes).toEqual([])
+  })
+})
+
+describe('bill detail with many roll calls', () => {
+  it('loads a bill with more roll calls than D1 allows parameters (100)', async () => {
+    await seed()
+    const db = drizzle(env.DB, { schema })
+    const rcs = Array.from({ length: 130 }, (_, i) => ({ rollCallId: 1000 + i, billId: 102, date: '2026-01-05', description: `Vote ${i}`, yea: 1, nay: 0, nv: 0, absent: 0, total: 1, passed: 1, chamber: 'H' }))
+    for (let i = 0; i < rcs.length; i += 5) await db.insert(schema.rollCalls).values(rcs.slice(i, i + 5))
+    await db.insert(schema.people).values([{ peopleId: 1, name: 'Zachary Parker', stateId: 0 }] as any)
+    await db.insert(schema.rollCallVotes).values([{ id: 'v-last', rollCallId: 1129, peopleId: 1, voteId: 1, voteText: 'Yes' }])
+    const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.votes.find((v: any) => v.id === '1129').legislatorVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes' }])
   })
 })

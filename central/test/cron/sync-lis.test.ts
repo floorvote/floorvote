@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import sampleRaw from '../fixtures/lis/20261-sample.json?raw'
 
@@ -10,8 +10,8 @@ vi.mock('../../src/lib/lis', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/lis')>('../../src/lib/lis')
   return { ...actual, getLisFile: vi.fn(), lisSessionExists: vi.fn() }
 })
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
     getMasterListBySession: vi.fn().mockResolvedValue([]), getMasterListRaw: vi.fn().mockResolvedValue([]) }
 })
@@ -22,10 +22,10 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 vi.stubGlobal('fetch', vi.fn())
 
 import { runSourceSync } from '../../src/cron/sync-sources'
-import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
+import { processIngestorQueue } from '../../src/queue/processor'
 import { lisSource } from '../../src/sources/lis'
 import * as lis from '../../src/lib/lis'
-import * as legiscan from '../../src/lib/legiscan'
+import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { nowDb } from '../../src/lib/dbTime'
 
@@ -92,7 +92,7 @@ describe('ingesting a Virginia bill', () => {
     vi.mocked(lis.getLisFile).mockClear()
 
     const ack = vi.fn(); const retry = vi.fn()
-    await processLsIngestorQueue({ messages: [{ body: { billId: hb1.billId }, ack, retry }] } as any, e, db)
+    await processIngestorQueue({ messages: [{ body: { billId: hb1.billId }, ack, retry }] } as any, e, db)
     expect(retry).not.toHaveBeenCalled()
     expect(ack).toHaveBeenCalled()
     expect(legiscan.getBill).not.toHaveBeenCalled()

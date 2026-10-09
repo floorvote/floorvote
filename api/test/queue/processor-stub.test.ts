@@ -32,7 +32,6 @@ const fakeCentralBill = {
   status: 'introduced',
   statusDate: '2026-05-01',
   updatedAt: '2026-05-21T00:00:00Z',
-  openstatesUrl: null,
   stateUrl: 'https://state.ri.us/S2655',
   textHash: 'h-stub',
   textR2Key: null,

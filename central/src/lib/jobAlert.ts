@@ -1,11 +1,10 @@
-import type { LsEnv } from '../types-legiscan'
+import type { Env } from '../types'
 import { sendEmail } from './email'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
-// Structural subset of the env that jobAlert needs. Both the LegiScan `LsEnv`
-// and the OpenStates `Env` satisfy it (the OS env carries these as optional),
-// so the same helper wraps scheduled jobs in either central entry file.
-type AlertEnv = Pick<LsEnv, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'ALERT_EMAILS'>
+// Structural subset of the env that jobAlert needs, so callers and tests can
+// pass a minimal env rather than a full `Env`.
+type AlertEnv = Pick<Env, 'RESEND_API_KEY' | 'EMAIL_PROVIDER' | 'EMAIL' | 'ALERT_EMAILS'>
 
 /**
  * Scheduled jobs run via `ctx.waitUntil(promise)`; a rejected promise vanishes

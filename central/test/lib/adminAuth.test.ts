@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import {
   isSuperAdmin,

@@ -1,10 +1,9 @@
 import { env } from 'cloudflare:test'
-import { setupLsDb } from '../helpers/setupLsDb'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { app } from '../../src/index-legiscan'
-
+import { setupLsDb } from '../helpers/setupLsDb'
 
 beforeEach(async () => {
   await setupLsDb()

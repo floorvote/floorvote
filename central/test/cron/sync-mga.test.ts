@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import sampleRaw from '../fixtures/mga/2026RS-sample.json?raw'
 
@@ -10,8 +10,8 @@ vi.mock('../../src/lib/mga', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/mga')>('../../src/lib/mga')
   return { ...actual, getMgaSession: vi.fn(), mgaSessionExists: vi.fn() }
 })
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
     getMasterListBySession: vi.fn().mockResolvedValue([]), getMasterListRaw: vi.fn().mockResolvedValue([]) }
 })
@@ -23,11 +23,11 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { runSourceSync } from '../../src/cron/sync-sources'
-import { runLsSync } from '../../src/cron/sync-legiscan'
-import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
+import { runSync } from '../../src/cron/sync'
+import { processIngestorQueue } from '../../src/queue/processor'
 import { mgaSource } from '../../src/sources/mga'
 import * as mga from '../../src/lib/mga'
-import * as legiscan from '../../src/lib/legiscan'
+import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { nowDb } from '../../src/lib/dbTime'
 
@@ -113,7 +113,7 @@ describe('the Maryland sync', () => {
   it('stops the LegiScan sync from touching Maryland', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.sessions).values({ sessionId: 2200, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR, sessionTitle: 'T', sessionName: 'T' })
-    await runLsSync(makeEnv().env, db)
+    await runSync(makeEnv().env, db)
     expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
     expect(legiscan.getMasterListRaw).not.toHaveBeenCalled()
   })
@@ -136,7 +136,7 @@ describe('ingesting a Maryland bill', () => {
     vi.mocked(mga.getMgaSession).mockClear()
 
     const ack = vi.fn(); const retry = vi.fn()
-    await processLsIngestorQueue({ messages: [{ body: { billId: hb1.billId }, ack, retry }] } as any, e, db)
+    await processIngestorQueue({ messages: [{ body: { billId: hb1.billId }, ack, retry }] } as any, e, db)
     expect(retry).not.toHaveBeenCalled()
     expect(ack).toHaveBeenCalled()
     expect(legiscan.getBill).not.toHaveBeenCalled()

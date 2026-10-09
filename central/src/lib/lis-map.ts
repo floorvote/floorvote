@@ -1,4 +1,4 @@
-import type { LegiscanBill, MasterListEntry } from './legiscan'
+import type { CentralMeasure, SyncEntry } from '../providers'
 import type { LisFiles } from './lis'
 import { forEachCsvRecord, forEachCsvRow } from './csv'
 import { htmlToText } from './htmlToText'
@@ -233,7 +233,7 @@ function description(rec: LisRecord): string {
   return rec.summary?.text || rec.bill.Bill_description
 }
 
-export function toLisMasterListEntry(rec: LisRecord, sessionCode: string, billId: number, hash: string): MasterListEntry {
+export function toLisMasterListEntry(rec: LisRecord, sessionCode: string, billId: number, hash: string): SyncEntry {
   const last = lastHistory(rec)
   return {
     bill_id: billId,
@@ -273,27 +273,27 @@ function billType(number: string): { type: string; typeId: string } {
 
 export async function buildLisBill(
   rec: LisRecord, sessionCode: string, billId: number, hash: string, session: LisSession, ids: LisIds,
-): Promise<LegiscanBill> {
+): Promise<CentralMeasure> {
   const number = rec.bill.Bill_id
   const origin = number.startsWith('S') ? 'S' : 'H'
   const last = lastHistory(rec)
   const status = lisStatus(rec, Number(sessionCode.slice(0, 4)))
   const type = billType(number)
 
-  const history: LegiscanBill['history'] = rec.history
+  const history: CentralMeasure['history'] = rec.history
     .filter(([date, desc]) => date && desc.trim())
     .map(([date, desc]) => {
       const { chamber, action } = splitAction(desc)
       return { date, action, chamber, chamber_id: 0, importance: MAJOR.test(action) ? 1 : 2 }
     })
 
-  const referrals: LegiscanBill['referrals'] = []
+  const referrals: CentralMeasure['referrals'] = []
   for (const h of history) {
     const m = /^Referred to Committee (?:on|for) (.+)$/i.exec(h.action)
     if (m) referrals.push({ date: h.date, committee_id: 0, chamber: h.chamber, chamber_id: 0, name: m[1].trim() })
   }
 
-  const sponsors: LegiscanBill['sponsors'] = rec.sponsors.map(([memberId, name, type], i) => {
+  const sponsors: CentralMeasure['sponsors'] = rec.sponsors.map(([memberId, name, type], i) => {
     const order = Number.parseInt(type, 10) || i + 1
     return {
       people_id: ids.person(memberId), name: name.trim(), party: '',
@@ -302,7 +302,7 @@ export async function buildLisBill(
     }
   }).sort((a, b) => a.sponsor_order - b.sponsor_order)
 
-  const votes: LegiscanBill['votes'] = []
+  const votes: CentralMeasure['votes'] = []
   for (const [date, desc, refid] of rec.history) {
     const members = refid && rec.votes[refid] ? parseVotes(rec.votes[refid]) : []
     if (members.length === 0 || votes.some(v => v.roll_call_id === ids.rollCall(refid))) continue
@@ -321,13 +321,13 @@ export async function buildLisBill(
   }
 
   const firstDateFor = (refid: string) => rec.history.find(h => h[2] === refid)?.[0]
-  const supplements: LegiscanBill['supplements'] = rec.fiscal.map(([refid, url]) => ({
+  const supplements: CentralMeasure['supplements'] = rec.fiscal.map(([refid, url]) => ({
     supplement_id: ids.doc(url), date: firstDateFor(refid) || lisDate(rec.bill.Introduction_date) || `${session.year_start}-01-01`,
     type_id: 1, type: 'Fiscal Note', title: 'Fiscal Impact Statement', description: '',
     mime: 'application/pdf', url: '', state_link: url, supplement_size: 0, supplement_hash: '',
   }))
 
-  const calendar: LegiscanBill['calendar'] = []
+  const calendar: CentralMeasure['calendar'] = []
   for (const [date, desc] of rec.dockets) {
     if (!date || calendar.some(c => c.date === date && c.description === desc)) continue
     calendar.push({
@@ -336,7 +336,7 @@ export async function buildLisBill(
     })
   }
 
-  const sasts: LegiscanBill['sasts'] = ids.carriedFrom
+  const sasts: CentralMeasure['sasts'] = ids.carriedFrom
     ? [{ type_id: 4, type: 'Carry Over', sast_bill_number: number, sast_bill_id: ids.carriedFrom }]
     : []
 

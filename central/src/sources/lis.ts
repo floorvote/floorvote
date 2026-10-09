@@ -2,9 +2,9 @@ import { eq, and, lt } from 'drizzle-orm'
 import { getLisFile, lisSessionExists, type LisFile } from '../lib/lis'
 import { buildLisBill, LisAssembler, LIS_FILE_ORDER, LIS_STATE, LIS_STATUS_LABELS, lisCarriedOver, lisNativeKey, lisRecordHash, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisMember, type LisRecord } from '../lib/lis-map'
 import { sourceIdFor, sourceIdsFor } from '../lib/sourceIds'
-import { people, sessions, sourceRecords } from '../db/schema-legiscan'
+import { people, sessions, sourceRecords } from '../db/schema'
 import type { DirectSource, SessionRow, SourceRecord } from './types'
-import type { LsDb } from '../types-legiscan'
+import type { Db } from '../types'
 
 /**
  * Virginia's Legislative Information System public data files (lib/lis.ts,
@@ -84,7 +84,7 @@ export const lisSource: DirectSource = {
   statusLabels: LIS_STATUS_LABELS,
 }
 
-function lisSessionRows(db: LsDb): Promise<SessionRow[]> {
+function lisSessionRows(db: Db): Promise<SessionRow[]> {
   return db.select().from(sessions).where(and(eq(sessions.state, LIS_STATE), eq(sessions.source, 'lis'))).all()
 }
 
@@ -102,7 +102,7 @@ function sessionName(code: string): string {
  * regular session and up to two special sessions this year, and next year's
  * regular session once its prefiles appear. Earlier years' sessions become prior.
  */
-async function refreshLisSessions(db: LsDb, year: number): Promise<void> {
+async function refreshLisSessions(db: Db, year: number): Promise<void> {
   for (const code of [`${year}1`, `${year}2`, `${year}3`, `${year + 1}1`]) {
     if (!(await lisSessionExists(code))) continue
     const sessionYear = Number(code.slice(0, 4))
@@ -129,7 +129,7 @@ async function refreshLisSessions(db: LsDb, year: number): Promise<void> {
 }
 
 /** Members as people, so votes and patrons resolve to names. Member ids are stable across sessions. */
-async function upsertMembers(db: LsDb, members: LisMember[]): Promise<void> {
+async function upsertMembers(db: Db, members: LisMember[]): Promise<void> {
   if (members.length === 0) return
   const ids = await sourceIdsFor(db, 'lis', 'person', members.map(m => m.id))
   const stmts = members.map(m => {

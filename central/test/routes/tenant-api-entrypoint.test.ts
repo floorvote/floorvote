@@ -1,15 +1,6 @@
 import { env, createExecutionContext } from 'cloudflare:test'
 import { describe, it, expect } from 'vitest'
 import { app as lsApp, TenantApi as LsTenantApi } from '../../src/index-legiscan'
-import { app as osApp, TenantApi as OsTenantApi } from '../../src/index'
-
-// An authenticated request to GET /tenants passes the `use('*')` auth
-// middleware and then finds no matching route, so the sub-router returns 404.
-// Asserting on 404 (not merely "not 401") makes these tests falsifiable: if
-// the entrypoint stopped injecting the secret, the middleware would 401 and
-// the assertion would fail. (Used by the OpenStates env, whose TenantApi is
-// still a generic forwarder.)
-const AUTHED_NO_ROUTE = 404
 
 describe('LegiScan TenantApi entrypoint', () => {
   it('rejects a direct app request that omits the secret', async () => {
@@ -35,28 +26,5 @@ describe('LegiScan TenantApi entrypoint', () => {
       new Request('https://central/api/tenants', { headers: { 'x-admin-secret': 'wrong' } }),
     )
     expect(res.status).toBe(403)
-  })
-})
-
-describe('OpenStates TenantApi entrypoint', () => {
-  it('rejects a direct app request that omits the secret', async () => {
-    const res = await osApp.request('/tenants', {}, env)
-    expect(res.status).toBe(401)
-  })
-
-  it('injects the admin secret so a binding-path request is authorized without a header', async () => {
-    const ctx = createExecutionContext()
-    const entry = new OsTenantApi(ctx, env)
-    const res = await entry.fetch(new Request('https://central/api/tenants', { method: 'GET' }))
-    expect(res.status).toBe(AUTHED_NO_ROUTE)
-  })
-
-  it('overrides a spoofed/empty secret header with the real one', async () => {
-    const ctx = createExecutionContext()
-    const entry = new OsTenantApi(ctx, env)
-    const res = await entry.fetch(
-      new Request('https://central/api/tenants', { headers: { 'x-admin-secret': 'wrong' } }),
-    )
-    expect(res.status).toBe(AUTHED_NO_ROUTE)
   })
 })

@@ -38,7 +38,6 @@ export type Env = {
   TENANT_ID: string
   CENTRAL_API_URL: string
   CENTRAL_ADMIN_SECRET?: string
-  PROVIDER?: string
   CENTRAL?: Fetcher
   ASSETS: Fetcher
   ALERT_EMAILS?: string  // recipients of ops/cron-failure alerts
@@ -74,7 +73,7 @@ export type AppDb = DrizzleD1Database<typeof schema>
 
 export type TenantQueueMessage = {
   tenantId: string
-  billId: string // "legiscan:{bill_id}" or "ocd-bill/{uuid}"
+  billId: string // "legiscan:{bill_id}" (older data and tests may hold legacy "ocd-bill/{uuid}" ids)
   forceMetadata?: boolean // Skip providerUpdatedAt dedup; re-upsert metadata; still gates AI on keywords
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred

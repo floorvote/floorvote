@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { Env } from '../types'
 
 export type EngagementSnapshotData = {
   computedAt: string
@@ -19,7 +19,7 @@ export interface TenantRpc {
 }
 
 /** Resolve the per-tenant service binding, or null if this tenant isn't bound. */
-export function resolveTenantRpc(env: LsEnv, tenantId: string): TenantRpc | null {
+export function resolveTenantRpc(env: Env, tenantId: string): TenantRpc | null {
   const key = `TENANT_${tenantId.toUpperCase().replaceAll('-', '_')}`
   const binding = env[key]
   return binding ? (binding as unknown as TenantRpc) : null

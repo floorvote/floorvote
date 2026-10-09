@@ -1,6 +1,6 @@
-import type { LegiscanBill, MasterListEntry } from '../lib/legiscan'
-import type { sessions } from '../db/schema-legiscan'
-import type { LsEnv, LsDb } from '../types-legiscan'
+import type { CentralMeasure, SyncEntry } from '../providers'
+import type { sessions } from '../db/schema'
+import type { Env, Db } from '../types'
 
 /**
  * A legislature's own feed, read directly instead of through LegiScan. See
@@ -17,21 +17,21 @@ export interface DirectSource {
   /** States this source covers when enabled; the LegiScan sync leaves them alone. */
   states: readonly string[]
   /** Whether this deployment is configured to read the source (keys, flags). */
-  enabled(env: LsEnv): boolean
+  enabled(env: Env): boolean
   /** Ingestor queue for this source's bills, when it needs its own (rate limits). */
-  ingestQueue?(env: LsEnv): Queue | undefined
+  ingestQueue?(env: Env): Queue | undefined
 
   /**
    * The sessions to sync, after refreshing session (and member) data when it is
    * due. Rows of the `sessions` table, written with this source's id.
    */
-  syncSessions(env: LsEnv, db: LsDb, ctx: SyncContext): Promise<SessionRow[]>
+  syncSessions(env: Env, db: Db, ctx: SyncContext): Promise<SessionRow[]>
   /** Every record the source lists for one session: its current snapshot. */
-  snapshot(session: SessionRow, env: LsEnv, db: LsDb, ctx: SyncContext): Promise<SourceRecord[]>
+  snapshot(session: SessionRow, env: Env, db: Db, ctx: SyncContext): Promise<SourceRecord[]>
   /** The masterlist entry for one record, for keyword matching and change gating. */
-  toEntry(record: SourceRecord, stored: { description: string | null }, ctx: SyncContext): Promise<MasterListEntry>
+  toEntry(record: SourceRecord, stored: { description: string | null }, ctx: SyncContext): Promise<SyncEntry>
   /** The full record for one bill, in LegiScan's `getBill` shape. */
-  buildBill(billId: number, env: LsEnv, db: LsDb): Promise<LegiscanBill>
+  buildBill(billId: number, env: Env, db: Db): Promise<CentralMeasure>
 
   /**
    * For sources whose per-bill details can change while the listed record does

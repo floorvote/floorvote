@@ -49,12 +49,12 @@ Each of these is explained in full on the docs site: **[What can FloorVote do?](
 |---|---|
 | Backend | Hono on Cloudflare Workers—tenant API, central API |
 | Database | Cloudflare D1 (SQLite via Drizzle ORM)—separate databases for central and each tenant |
-| Storage | Cloudflare R2—bill text and masterlist cache, stored centrally |
+| Storage | Cloudflare R2—bill text, stored centrally |
 | Queues | Cloudflare Queues—central ingestor, per-tenant bill delivery |
 | Frontend | React 19 + React Router 7 + Vite 8, served via Workers Assets |
 | Email | Cloudflare Email Service, with Resend available as a fallback |
 | AI | Google Gemini 2.5 Flash via Cloudflare AI Gateway. *Chosen for its affordability, accuracy, and ability to handle long PDFs, which is how many bills arrive. The default lives in [`api/src/lib/llm.ts`](api/src/lib/llm.ts), and the `GEMINI_MODEL` and `GEMINI_THINKING_BUDGET` vars override it per environment.* |
-| Legislative data | LegiScan. *An OpenStates provider exists alongside it, but is experimental and not at feature parity.* |
+| Legislative data | LegiScan |
 | Testing | Vitest with `@cloudflare/vitest-pool-workers`; Vitest + jsdom for the frontend |
 
 ---

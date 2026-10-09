@@ -1,10 +1,10 @@
 import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
-import { sessions, bills, billTenants, tenants, sourceRecords } from '../db/schema-legiscan'
+import { sessions, bills, billTenants, tenants, sourceRecords } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
-import { applyMasterList } from './sync-legiscan'
+import { applyMasterList } from './sync'
 import type { DirectSource, SessionRow, SourceRecord, SyncContext } from '../sources/types'
-import type { LsEnv, LsDb } from '../types-legiscan'
+import type { Env, Db } from '../types'
 
 /**
  * The sync for every direct source (src/sources), run on central's hourly cron
@@ -29,7 +29,7 @@ type Covering = { tenantId: string; stateCoverage: string; queueId: string | nul
  * refreshes its sessions and every synced session gets a full pass.
  */
 export async function runSourceSync(
-  source: DirectSource, env: LsEnv, db: LsDb, opts: { force?: boolean } = {},
+  source: DirectSource, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SourcePassReport[]> {
   if (!source.enabled(env)) return []
 
@@ -85,8 +85,8 @@ async function runSourcePass(
   source: DirectSource,
   session: SessionRow,
   covering: Covering[],
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
   ctx: SyncContext,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
   const records = await source.snapshot(session, env, db, ctx)
@@ -104,7 +104,7 @@ async function runSourcePass(
   return { records: records.length, queued: queued.size, refreshed }
 }
 
-export function sourceQueue(source: DirectSource, env: LsEnv): Queue {
+export function sourceQueue(source: DirectSource, env: Env): Queue {
   return source.ingestQueue?.(env) ?? env.INGESTOR_QUEUE
 }
 
@@ -113,7 +113,7 @@ export function sourceQueue(source: DirectSource, env: LsEnv): Queue {
  * masterlist entries for all of them.
  */
 export async function storeRecords(
-  source: DirectSource, session: SessionRow, records: SourceRecord[], db: LsDb, ctx: SyncContext,
+  source: DirectSource, session: SessionRow, records: SourceRecord[], db: Db, ctx: SyncContext,
 ) {
   // Stored hashes (to skip unchanged records) and stored descriptions (a list
   // record may have none; the ingestor fills them, and the pass would
@@ -161,7 +161,7 @@ async function refreshStaleDetails(
   sessionId: number,
   queued: Set<number>,
   queue: Queue,
-  db: LsDb,
+  db: Db,
 ): Promise<number> {
   const stale = await db.selectDistinct({ billId: sourceRecords.billId, fetchedAt: sourceRecords.detailsFetchedAt })
     .from(sourceRecords)

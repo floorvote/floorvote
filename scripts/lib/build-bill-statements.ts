@@ -2,9 +2,10 @@
 // dependencies so this module can be unit-tested with vitest in a node env.
 //
 // Invariant: `buildBillStatements` must write every child collection that
-// LegiScan's getBill response includes. New collections added to LegiscanBill
-// must also be added here, and a test fixture row with that collection should
-// be added to scripts/lib/build-bill-statements.test.ts.
+// LegiScan's getBill response includes. New collections added to CentralMeasure
+// (central/src/providers/types.ts) must also be added here, and a test fixture
+// row with that collection should be added to
+// scripts/lib/build-bill-statements.test.ts.
 
 export function esc(v: string | null | undefined): string {
   if (v == null) return 'NULL'

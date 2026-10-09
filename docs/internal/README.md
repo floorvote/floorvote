@@ -17,8 +17,10 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | `dates.md` | Date and time storage and display convention. |
 | `domains-and-email.md` | `APP_DOMAINS` / `EMAIL_FROM` nuance (CORS, cookie scope, domain migration). |
 | `tenant-automation.md` | What can and can't be scripted when adding a tenant (agent-facing). |
+| `legiscan-member-votes.md` | Weekly per-member votes from LegiScan's bulk datasets, and backfilling older sessions. |
 | `legiscan-notes.md` | LegiScan operational + licensing notes (quota, `skipFetch`, attribution). |
 | `rebranding.md` | Renaming resources via `RESOURCE_PREFIX` for forks. |
+| `openstates.md` | The removed OpenStates central: where to find it (`openstates-final` tag), what it knew, and why it was removed. |
 
 ## Previewing the docs site locally
 

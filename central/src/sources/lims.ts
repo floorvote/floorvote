@@ -4,9 +4,9 @@ import { bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, L
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
 import { limsCategories } from '../lib/lims-config'
 import { fetchLimsBill, trackLimsCall } from '../lib/lims-ingest'
-import { sessions, people, sourceRecords } from '../db/schema-legiscan'
+import { sessions, people, sourceRecords } from '../db/schema'
 import type { DirectSource, SessionRow, SourceRecord } from './types'
-import type { LsDb } from '../types-legiscan'
+import type { Db } from '../types'
 
 /**
  * The DC Council's Legislative Information Management System (lib/lims*.ts).
@@ -92,11 +92,11 @@ export async function limsRecord(rec: LimsBulkRecord): Promise<SourceRecord | nu
   return { billId, nativeKey: clean(rec.legislationNumber), raw: rec, hash: await bulkHash(rec) }
 }
 
-function limsSessionRows(db: LsDb): Promise<SessionRow[]> {
+function limsSessionRows(db: Db): Promise<SessionRow[]> {
   return db.select().from(sessions).where(and(eq(sessions.state, LIMS_STATE), eq(sessions.source, 'lims'))).all()
 }
 
-async function currentLimsSession(db: LsDb, today: string): Promise<SessionRow | null> {
+async function currentLimsSession(db: Db, today: string): Promise<SessionRow | null> {
   const rows = await limsSessionRows(db)
   const year = Number(today.slice(0, 4))
   return rows.find(r => r.prior === 0 && r.yearStart <= year && year <= r.yearEnd)
@@ -127,7 +127,7 @@ export function limsSessionValues(cp: LimsCouncilPeriod, prior: 0 | 1, sineDie: 
   }
 }
 
-async function upsertPeriod(db: LsDb, cp: LimsCouncilPeriod, prior: 0 | 1): Promise<void> {
+async function upsertPeriod(db: Db, cp: LimsCouncilPeriod, prior: 0 | 1): Promise<void> {
   const values = limsSessionValues(cp, prior)
   await db.insert(sessions).values(values).onConflictDoUpdate({
     target: sessions.sessionId,
@@ -139,7 +139,7 @@ async function upsertPeriod(db: LsDb, cp: LimsCouncilPeriod, prior: 0 | 1): Prom
  * Upsert the current Council Period as a session (plus the previous one while
  * it is within a year of ending), and the current Councilmembers as people.
  */
-export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: string): Promise<void> {
+export async function refreshCouncilPeriod(apiKey: string, db: Db, today: string): Promise<void> {
   const periods = await getCouncilPeriods(apiKey, () => trackLimsCall(db, 'CouncilPeriods', {}))
   const cp = pickCurrentPeriod(periods, today)
   if (!cp) return
@@ -164,7 +164,7 @@ export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: stri
   for (const periodId of periodIds) await upsertMembers(apiKey, db, periodId)
 }
 
-async function upsertMembers(apiKey: string, db: LsDb, councilPeriodId: number): Promise<void> {
+async function upsertMembers(apiKey: string, db: Db, councilPeriodId: number): Promise<void> {
   const members = await getMembers(councilPeriodId, apiKey,
     () => trackLimsCall(db, 'Members', { councilPeriodId }))
   for (const m of members) {

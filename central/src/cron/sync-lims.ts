@@ -2,19 +2,19 @@ import { eq } from 'drizzle-orm'
 import { getBulkData, getCouncilPeriods } from '../lib/lims'
 import { clean, councilPeriodName } from '../lib/lims-map'
 import { limsBillId, limsSessionId } from '../lib/lims-ids'
-import { sessions, billTenants, tenants } from '../db/schema-legiscan'
+import { sessions, billTenants, tenants } from '../db/schema'
 import { trackLimsCall } from '../lib/lims-ingest'
 import { nowDb } from '../lib/dbTime'
 import { limsRecord, limsSessionValues, limsSource } from '../sources/lims'
 import { runSourceSync, sourceQueue, storeRecords, type SourcePassReport } from './sync-sources'
-import { applyMasterList } from './sync-legiscan'
+import { applyMasterList } from './sync'
 import type { SourceRecord } from '../sources/types'
-import type { LsEnv, LsDb } from '../types-legiscan'
+import type { Env, Db } from '../types'
 
 export { refreshCouncilPeriod } from '../sources/lims'
 
 /** The DC Council LIMS sync (src/sources/lims.ts), through the common source sync. */
-export function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean } = {}): Promise<SourcePassReport[]> {
+export function runLimsSync(env: Env, db: Db, opts: { force?: boolean } = {}): Promise<SourcePassReport[]> {
   return runSourceSync(limsSource, env, db, opts)
 }
 
@@ -39,8 +39,8 @@ export interface LimsImportResult {
  * importing the whole period. One BulkData call per (period, category) group.
  */
 export async function importLimsMeasures(
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
   tenantId: string,
   numbers: string[],
 ): Promise<LimsImportResult> {

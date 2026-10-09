@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow } from './detect-changes'
-import type { LegiscanCalendarEntry } from './legiscan'
+import type { MeasureCalendarEntry } from '../providers'
 
 const TODAY = '2026-06-05'
 
-function entry(o: Partial<LegiscanCalendarEntry> & { description: string }): LegiscanCalendarEntry {
+function entry(o: Partial<MeasureCalendarEntry> & { description: string }): MeasureCalendarEntry {
   return {
     type_id: o.type_id ?? 1,
     type: o.type ?? 'Hearing',
@@ -46,14 +46,14 @@ describe('detectCalendarChanges — past-hearing suppression', () => {
 
   it('suppresses hearing_cancelled for a past hearing', () => {
     const priors = [prior({ description: 'Old hearing', date: '2026-01-15', eventHash: 'h1' })]
-    const incoming: LegiscanCalendarEntry[] = []
+    const incoming: MeasureCalendarEntry[] = []
     const changes = detectCalendarChanges(priors, incoming, TODAY)
     expect(changes.find(c => c.changeType === 'hearing_cancelled')).toBeUndefined()
   })
 
   it('keeps hearing_cancelled for a future hearing', () => {
     const priors = [prior({ description: 'Future hearing', date: '2026-09-01', eventHash: 'h1' })]
-    const incoming: LegiscanCalendarEntry[] = []
+    const incoming: MeasureCalendarEntry[] = []
     const changes = detectCalendarChanges(priors, incoming, TODAY)
     expect(changes.find(c => c.changeType === 'hearing_cancelled')).toBeDefined()
   })

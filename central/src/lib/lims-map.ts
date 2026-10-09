@@ -1,10 +1,10 @@
-import type { LegiscanBill, LegiscanCalendarEntry, MasterListEntry } from './legiscan'
+import type { CentralMeasure, MeasureCalendarEntry, SyncEntry } from '../providers'
 import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './lims'
 import { limsDocId, limsRollCallId, limsSessionId } from './lims-ids'
 
 /**
  * Pure mapping from DC Council LIMS records to the LegiScan shapes the central
- * pipeline already ingests (`MasterListEntry` for the sync, `LegiscanBill` for
+ * pipeline already ingests (`SyncEntry` for the sync, `CentralMeasure` for
  * the ingestor). No I/O here; the sync and ingestor fetch, this translates.
  *
  * Source split, from comparing the two endpoints on live data:
@@ -177,7 +177,7 @@ export function councilPeriodSession(cp: LimsCouncilPeriod) {
   }
 }
 
-// ── BulkData → MasterListEntry ────────────────────────────────────────────────
+// ── BulkData → SyncEntry ────────────────────────────────────────────────
 
 /**
  * Hash of the normalized bulk record. It is the bill's `change_hash`: the sync
@@ -251,7 +251,7 @@ export function toMasterListEntry(
   hash: string,
   storedDescription: string | null,
   today: string,
-): MasterListEntry {
+): SyncEntry {
   const last = lastAction(rec, today)
   const description = storedDescription
     ?? (isOversightCategory(rec) ? clean(rec.committeeReferral) || null : null)
@@ -270,7 +270,7 @@ export function toMasterListEntry(
   }
 }
 
-// ── BulkData + LegislationDetails → LegiscanBill ──────────────────────────────
+// ── BulkData + LegislationDetails → CentralMeasure ──────────────────────────────
 
 export interface LimsPerson { peopleId: number; name: string; role: string }
 
@@ -321,15 +321,15 @@ export async function buildLimsBill(
   billId: number,
   hash: string,
   ctx: BuildContext,
-): Promise<LegiscanBill> {
+): Promise<CentralMeasure> {
   const number = clean(rec.legislationNumber)
   const history = (rec.legislationHistory ?? [])
     .map(h => ({ date: limsDate(h.actionDate), action: clean(h.actionDescription), doc: parseDocUrl(h.downloadURL) }))
 
   // ── Documents: every download URL, de-duplicated by its Id ──
-  const texts: LegiscanBill['texts'] = []
-  const supplements: LegiscanBill['supplements'] = []
-  const amendments: LegiscanBill['amendments'] = []
+  const texts: CentralMeasure['texts'] = []
+  const supplements: CentralMeasure['supplements'] = []
+  const amendments: CentralMeasure['amendments'] = []
   const seen = new Set<number>()
   const addDoc = async (doc: LimsDocRef | null, date: string | null, title: string, typeName?: string) => {
     if (!doc || seen.has(doc.id)) return
@@ -411,7 +411,7 @@ export async function buildLimsBill(
   // second hearing never changes the first one's identity.
   events.sort((a, b) => a.date.localeCompare(b.date))
   const seenDesc = new Map<string, number>()
-  const calendar: LegiscanCalendarEntry[] = []
+  const calendar: MeasureCalendarEntry[] = []
   for (const e of events) {
     const key = `${e.type_id}|${e.description.toLowerCase()}`
     const n = (seenDesc.get(key) ?? 0) + 1
@@ -424,7 +424,7 @@ export async function buildLimsBill(
   }
 
   // ── Sponsors ──
-  const sponsors: LegiscanBill['sponsors'] = []
+  const sponsors: CentralMeasure['sponsors'] = []
   const addSponsors = (members: LimsMember[] | null | undefined, typeId: number) => {
     for (const m of members ?? []) {
       const person = findPerson(ctx.people, m.memberName)
@@ -444,7 +444,7 @@ export async function buildLimsBill(
   addSponsors(details?.coSponsors, 2)
 
   // ── Councilmember votes (on floor readings) ──
-  const votes: LegiscanBill['votes'] = []
+  const votes: CentralMeasure['votes'] = []
   for (const a of details?.actions ?? []) {
     const vd = a.voteDetails
     if (!vd) continue

@@ -452,14 +452,10 @@
                     </div>
                     <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
                       <div class="step-num" style="background:#22c55e;color:#fff;">3</div>
-                      <div class="step-text"><strong>Save to R2 cache</strong> at <code>sessions/{id}/masterlist.json</code><br><span class="dim">Used by keyword-resync for instant matching without an API call</span></div>
-                    </div>
-                    <div class="step" style="background:#dcfce7; border-radius:6px; margin-bottom:4px;">
-                      <div class="step-num" style="background:#22c55e;color:#fff;">4</div>
                       <div class="step-text"><strong>Keyword match</strong> title + description against per-tenant union<br><span class="dim">Matching → <code>bill_tenants.match_type='keyword'</code>; non-matching → <code>match_type=null</code> stub link (still tracked metadata-wise, no AI).</span></div>
                     </div>
                     <div class="step" style="background:#dcfce7; border-radius:6px;">
-                      <div class="step-num" style="background:#22c55e;color:#fff;">5</div>
+                      <div class="step-num" style="background:#22c55e;color:#fff;">4</div>
                       <div class="step-text"><strong>Dispatch:</strong> writes new <code>change_hash</code> + masterlist fields to central <code>bills</code> table, then:
                         <ul style="margin-left:14px; margin-top:4px;">
                           <li><strong>→ ingestor queue</strong> (will fire <code>getBill</code>): newly-matched bills, OR matched bills with changed hash.</li>
@@ -482,7 +478,7 @@
 
     <div class="stage-connector">
       <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
-      <div class="stage-connector-text">→ ingestor queue (central-ingestor, batches of 5)</div>
+      <div class="stage-connector-text">→ ingestor queue (central-legiscan-ingestor, batches of 5)</div>
       <div class="stage-connector-line"><div class="line"></div><div class="head"></div></div>
     </div>
 
@@ -490,7 +486,7 @@
     <div class="stage">
       <div class="box theme-purple collapsible" style="flex:1">
         <div class="box-title collapsible-header" onclick="toggle(this)">
-          ⚙️ Central Ingestor Queue — <code>central-ingestor</code>
+          ⚙️ Central Ingestor Queue — <code>central-legiscan-ingestor</code>
           <span class="chevron">▼</span>
         </div>
         <div class="collapsed-summary">getBill + persist child tables + store text in R2 → notify tenant queues.</div>
@@ -606,11 +602,10 @@
             </ol>
             <div style="font-size:11px; font-weight:600; color:#0f766e; margin-bottom:2px;">Forward pass (add new)</div>
             <ol style="margin-left:14px; font-size:11px; line-height:1.5;">
-              <li><code>POST central/admin/keyword-resync-tenant</code></li>
-              <li>Central scans bills table + R2 masterlist cache</li>
+              <li><code>POST central/admin/sync-keywords/:tenantId</code></li>
+              <li>Central scans its bills table</li>
               <li>New matches → bill_tenants + ingestor queue → AI</li>
             </ol>
-            <div class="note" style="font-size:10px; margin-top:3px;">R2 cache catches bills never previously fetched. Warm after first full sync (~24h of tracking a state).</div>
           </div>
         </div>
 
@@ -635,9 +630,8 @@
       </div>
       <div class="collapsed-summary">Central R2 + D1 (central-bills-ls) and one D1 per tenant.</div>
       <div class="box-body collapsible-body" style="margin-top:6px; font-size:11px; line-height:1.7;">
-        <strong>Central R2</strong> (<code>central-bill-texts</code>)<br>
-        &nbsp;• <code>bills/{id}/{docId}.html|pdf</code> — bill text<br>
-        &nbsp;• <code>sessions/{id}/masterlist.json</code> — masterlist cache<br><br>
+        <strong>Central R2</strong> (<code>central-bill-texts-ls</code>)<br>
+        &nbsp;• <code>bills/legiscan-{billId}/texts/{docId}.html|pdf</code> — bill text<br><br>
         <strong>Central D1</strong> (<code>central-bills-ls</code>, LegiScan env)<br>
         &nbsp;Core: <code>sessions</code>, <code>bills</code>, <code>bill_tenants</code>, <code>tenants</code>, <code>keyword_registry</code><br>
         &nbsp;Rich: <code>people</code>, <code>committees</code>, <code>roll_calls</code>, <code>bill_sponsors</code>, <code>bill_history</code>, <code>bill_texts</code>, <code>bill_amendments</code>, <code>bill_change_log</code>, <code>session_sync_log</code>, <code>api_call_log</code><br><br>
@@ -691,11 +685,6 @@
           <td class="event-col">Keywords updated → add bills (in central DB)</td>
           <td>keyword-resync scans central bills table</td>
           <td><span class="badge badge-green">immediate</span></td>
-        </tr>
-        <tr>
-          <td class="event-col">Keywords updated → add bills (never fetched)</td>
-          <td>keyword-resync scans R2 masterlist cache (populated by first full sync)</td>
-          <td><span class="badge badge-green">immediate</span> <span style="font-size:11px;color:#9ca3af">if cache warm, else up to 24h</span></td>
         </tr>
         <tr>
           <td class="event-col">Manual "Add bill" by number</td>

@@ -19,7 +19,7 @@ type CentralBillRich = {
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
-  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }> }>
+  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string }> }>
   relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
@@ -270,6 +270,7 @@ export async function buildBillDetail(
       nv: v.counts.find(c => c.option === 'not voting')?.value ?? 0,
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
+      legislatorVotes: v.legislatorVotes ?? [],
     })) ?? undefined,
     subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'

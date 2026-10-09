@@ -23,7 +23,7 @@ const centralBill = {
   billId: BILL_ID, sessionId: 'nj:2026', state: 'NJ', number: 'A1',
   title: 'An Act concerning elections', abstract: 'Concerns election administration.',
   status: 'introduced', statusDate: '2026-01-01', updatedAt: '2026-01-10T12:00:00Z',
-  openstatesUrl: null, stateUrl: 'https://njleg.gov/A1',
+  stateUrl: 'https://njleg.gov/A1',
   textHash: 'hash-v1', textR2Key: 'bills/a1/v1.html',
   texts: [{ docId: 'doc-1', note: 'Introduced', date: '2026-01-01', links: [{ url: 'https://njleg.gov/A1.html', mediaType: 'text/html' }] }],
   actions: [{ description: 'Introduced', date: '2026-01-01', chamber: 'lower', classification: ['introduction'], order: 1 }],

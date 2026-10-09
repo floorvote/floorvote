@@ -2,9 +2,9 @@ import { eq, and, lt } from 'drizzle-orm'
 import { getMgaSession, mgaSessionExists, type MgaRecord } from '../lib/mga'
 import { buildMgaBill, MD_STATE_ID, MGA_STATE, MGA_STATUS_LABELS, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, toMgaMasterListEntry } from '../lib/mga-map'
 import { sourceIdFor, sourceIdsFor } from '../lib/sourceIds'
-import { sessions, sourceRecords } from '../db/schema-legiscan'
+import { sessions, sourceRecords } from '../db/schema'
 import type { DirectSource, SessionRow, SourceRecord } from './types'
-import type { LsDb } from '../types-legiscan'
+import type { Db } from '../types'
 
 /**
  * The Maryland General Assembly's open data (lib/mga.ts, lib/mga-map.ts): one
@@ -73,7 +73,7 @@ export const mgaSource: DirectSource = {
   statusLabels: MGA_STATUS_LABELS,
 }
 
-function mgaSessionRows(db: LsDb): Promise<SessionRow[]> {
+function mgaSessionRows(db: Db): Promise<SessionRow[]> {
   return db.select().from(sessions).where(and(eq(sessions.state, MGA_STATE), eq(sessions.source, 'mga'))).all()
 }
 
@@ -90,7 +90,7 @@ function sessionName(code: string): string {
  * each), and next year's regular session once its prefiles appear. Earlier
  * years' sessions become prior.
  */
-async function refreshMgaSessions(db: LsDb, year: number): Promise<void> {
+async function refreshMgaSessions(db: Db, year: number): Promise<void> {
   const candidates = [`${year}RS`, `${year}S1`, `${year}S2`, `${year + 1}RS`]
   for (const code of candidates) {
     if (!(await mgaSessionExists(code))) continue
