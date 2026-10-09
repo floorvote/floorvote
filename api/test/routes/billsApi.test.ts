@@ -2403,3 +2403,37 @@ describe('GET /bills — bill-number ranking', () => {
     expect(order[0]).toBe('SB 977')
   })
 })
+
+describe('GET /bills/:id legislator votes', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it("carries central's per-legislator votes into the bill's vote summary", async () => {
+    const token = await seedSession(await seedUser({ role: 'member' }))
+    const billId = await seedBill({ externalId: 'legiscan:102' })
+    const legislatorVotes = [
+      { personId: '2', name: 'Bo Baker', vote: 'Nay' },
+      { personId: '1', name: 'Ann Able', vote: 'Yea' },
+    ]
+    const counts = [{ option: 'yes', value: 1 }, { option: 'no', value: 1 }, { option: 'not voting', value: 0 }, { option: 'absent', value: 0 }]
+    const central = {
+      fetch: vi.fn(async (req: Request) => new URL(req.url).pathname === '/api/bills/legiscan:102'
+        ? Response.json({ votes: [
+          { id: '31', motionText: 'Third Reading', date: '2026-03-01', result: 'pass', chamber: 'H', counts, legislatorVotes },
+          // A central from before legislator votes sends none.
+          { id: '32', motionText: 'Concurrence', date: '2026-03-08', result: 'pass', chamber: 'H', counts },
+        ] })
+        : Response.json({}, { status: 404 })),
+    }
+
+    const res = await app.request(`/api/bills/${billId}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { voteSummary: { desc: string; legislatorVotes: unknown[] }[] }
+    expect(body.voteSummary.map(v => [v.desc, v.legislatorVotes])).toEqual([
+      ['Third Reading', legislatorVotes],
+      ['Concurrence', []],
+    ])
+  })
+})
