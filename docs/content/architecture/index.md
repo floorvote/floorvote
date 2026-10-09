@@ -11,7 +11,7 @@ flowchart TB
     LS[(LegiScan API)]
     subgraph CENTRAL [Central Worker]
         Cron[Cron<br/>0 * * * *]
-        Ingestor[Ingestor<br/>processLsBill]
+        Ingestor[Ingestor<br/>processBill]
     end
     CentralDB[("Central D1<br/>bills + children")]
     CentralR2[("Central R2<br/>bill text files")]
@@ -32,7 +32,7 @@ flowchart TB
     Ingestor -->|"getBill"| LS
     Ingestor -->|"writes everything"| CentralDB
     Ingestor -->|"downloads bill text"| CentralR2
-    Ingestor -->|"notifyLsTenants"| TQ
+    Ingestor -->|"notifyTenants"| TQ
     TQ --> TenantProc
     TenantProc -->|"GET /bills/:id<br/>(no API call)"| CentralDB
     TenantProc -->|"upserts row + AI"| TenantDB

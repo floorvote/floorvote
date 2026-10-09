@@ -142,7 +142,7 @@ flowchart LR
     LS[(LegiScan API)]
     subgraph CENTRAL [Central Worker]
         Cron[Cron<br/>0 * * * *]
-        Ingestor[Ingestor<br/>processLsBill]
+        Ingestor[Ingestor<br/>processBill]
     end
     CentralDB[("Central D1<br/>bills + children")]
     CentralR2[("Central R2<br/>bill text files")]
@@ -163,7 +163,7 @@ flowchart LR
     Ingestor -->|"getBill"| LS
     Ingestor -->|"writes everything"| CentralDB
     Ingestor -->|"downloads bill text"| CentralR2
-    Ingestor -->|"notifyLsTenants"| TQ
+    Ingestor -->|"notifyTenants"| TQ
     TQ --> TenantProc
     TenantProc -->|"GET /bills/:id<br/>(no API call)"| CentralDB
     TenantProc -->|"upserts row + AI"| TenantDB
@@ -261,7 +261,7 @@ flowchart TD
     Replace --> UpsertChildren["Upsert (preserves r2_key):<br/>bill_texts<br/>bill_supplements<br/>bill_amendments<br/>roll_calls"]
     UpsertChildren --> TextDL[Download new text versions to R2<br/>bills/legiscan-billId/texts/docId.ext]
     TextDL --> Stamp[Stamp bills.texts_fetched_at<br/>derives text_status]
-    Stamp --> Notify[notifyLsTenants<br/>for each covering tenant]
+    Stamp --> Notify[notifyTenants<br/>for each covering tenant]
     Notify --> End[ack message]
 
     classDef apicall fill:#fef3c7,stroke:#f59e0b
@@ -276,7 +276,7 @@ flowchart TD
 </div>
 
 <div class="note">
-<strong>roll_call_votes note:</strong> <code>getBill</code> returns vote summaries (<code>LegiscanVoteSummary</code>), not per-legislator records. Live-ingested bills have summary <code>roll_calls</code> rows but no <code>roll_call_votes</code> rows. Bulk-seeded bills have both.
+<strong>roll_call_votes note:</strong> <code>getBill</code> returns vote summaries (<code>MeasureVote</code>), not per-legislator records. Live-ingested bills have summary <code>roll_calls</code> rows but no <code>roll_call_votes</code> rows. Bulk-seeded bills have both.
 </div>
 
 <h2>4. Phase 3 — Tenant consumer</h2>
