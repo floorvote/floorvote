@@ -47,6 +47,20 @@ describe('rateLimitedFetch pacing', () => {
     await Promise.all(calls)
   })
 
+  it('paces callers with different bucket keys separately, even at the same rate', async () => {
+    mockFetch.mockResolvedValue(ok())
+
+    const calls = [
+      rateLimitedFetch('https://x.test/a', undefined, { ratePerSec: 43, bucketKey: 'provider-a' }),
+      rateLimitedFetch('https://x.test/b', undefined, { ratePerSec: 43, bucketKey: 'provider-b' }),
+    ]
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockFetch, 'each key has its own full bucket').toHaveBeenCalledTimes(2)
+
+    await Promise.all(calls)
+  })
+
   it('does not delay a single call when the bucket is full', async () => {
     mockFetch.mockResolvedValue(ok())
 
