@@ -378,3 +378,11 @@ export const sourceRecords = sqliteTable('source_records', {
   detailsFetchedAt: text('details_fetched_at'),
   updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+/** Central ids for direct-source records; see migrations-legiscan/0026_source_ids.sql and lib/sourceIds.ts. */
+export const sourceIds = sqliteTable('source_ids', {
+  id:        integer('id').primaryKey({ autoIncrement: true }),
+  source:    text('source').notNull(),
+  kind:      text('kind').notNull(),
+  nativeKey: text('native_key').notNull(),
+})

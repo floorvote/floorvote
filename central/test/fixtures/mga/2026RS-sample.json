@@ -1,0 +1,770 @@
+[
+ {
+  "BillNumber": "HB0001",
+  "ChapterNumber": "",
+  "CrossfileBillNumber": "SB0002",
+  "SponsorPrimary": "Delegate Crosby",
+  "Sponsors": [
+   {
+    "Name": "Delegate Crosby"
+   },
+   {
+    "Name": "Delegate Allen"
+   },
+   {
+    "Name": "Delegate Amprey"
+   },
+   {
+    "Name": "Delegate Bagnall"
+   },
+   {
+    "Name": "Delegate Behler"
+   },
+   {
+    "Name": "Delegate Boafo"
+   },
+   {
+    "Name": "Delegate Cardin"
+   },
+   {
+    "Name": "Delegate Edelson"
+   },
+   {
+    "Name": "Delegate Foley"
+   },
+   {
+    "Name": "Delegate Forbes"
+   },
+   {
+    "Name": "Delegate Fraser-Hidalgo"
+   },
+   {
+    "Name": "Delegate Guyton"
+   },
+   {
+    "Name": "Delegate Healey"
+   },
+   {
+    "Name": "Delegate Kaufman"
+   },
+   {
+    "Name": "Delegate Korman"
+   },
+   {
+    "Name": "Delegate Lewis"
+   },
+   {
+    "Name": "Delegate Long, J."
+   },
+   {
+    "Name": "Delegate Moon"
+   },
+   {
+    "Name": "Delegate Odom"
+   },
+   {
+    "Name": "Delegate Phillips"
+   },
+   {
+    "Name": "Delegate Ruff"
+   },
+   {
+    "Name": "Delegate Shetty"
+   },
+   {
+    "Name": "Delegate Solomon"
+   },
+   {
+    "Name": "Delegate Stein"
+   },
+   {
+    "Name": "Delegate Toles"
+   },
+   {
+    "Name": "Delegate Watson"
+   }
+  ],
+  "Synopsis": "Prohibiting a certain public service company from recovering through rates any costs associated with a supervisor's annual compensation once the compensation exceeds 110% of the maximum annual salary payable to the chair of the Commission for the same calendar year; requiring the Public Service Commission to publish guidance defining \"reasonable cost limitations\"; requiring each public service company to send a copy of the policy adopted under the Act to the Commission at certain times;  etc.",
+  "Title": "Investor-Owned Electric, Gas, and Gas and Electric Companies - Cost Recovery - Limitations",
+  "Status": "In the Senate - First Reading Education, Energy, and the Environment",
+  "CommitteePrimaryOrigin": "Environment and Transportation",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "Education, Energy, and the Environment",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-01-28T15:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": "2026-02-02",
+  "ReportActionHouseOfOrigin": "Favorable with Amendments",
+  "SecondReadingDateHouseOfOrigin": "2026-02-05",
+  "SecondReadingActionHouseOfOrigin": "Passed with Amendments",
+  "ThirdReadingDateHouseOfOrigin": "2026-02-06",
+  "ThirdReadingActionHouseOfOrigin": "Passed",
+  "FirstReadingDateOppositeHouse": "2026-02-07",
+  "HearingDateTimePrimaryOppositeHouse": null,
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": null,
+  "ReportActionOppositeHouse": "",
+  "SecondReadingDateOppositeHouse": null,
+  "SecondReadingActionOppositeHouse": "",
+  "ThirdReadingDateOppositeHouse": null,
+  "ThirdReadingActionOppositeHouse": "",
+  "InteractionBetweenChambers": "",
+  "PassedByMGA": false,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "c5",
+    "Name": "Utility Regulation"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "commitco",
+    "Name": "Committees and Commissions"
+   },
+   {
+    "Code": "contracts",
+    "Name": "Contracts -see also- Procurement"
+   },
+   {
+    "Code": "plansp",
+    "Name": "Plans and Proposals"
+   },
+   {
+    "Code": "publications",
+    "Name": "Publications -see also- Maryland Register; Textbooks"
+   },
+   {
+    "Code": "publicsc",
+    "Name": "Public Service Commission"
+   },
+   {
+    "Code": "salaric",
+    "Name": "Salaries and Compensation -see also- Overtime; Reimb. Rates"
+   },
+   {
+    "Code": "standabp",
+    "Name": "Standards and Best Practices"
+   },
+   {
+    "Code": "time",
+    "Name": "Time"
+   },
+   {
+    "Code": "utilities",
+    "Name": "Utilities -see also- Recycl; Refuse; Sewage; Teleph; Water"
+   },
+   {
+    "Code": "workle",
+    "Name": "Work, Labor, and Employment -see also- JobTrn; Leave; etc."
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "T",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "gpu",
+     "Title": "Public Utilities"
+    },
+    "Sections": [
+     {
+      "Section": "4-504"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "SB0002",
+  "ChapterNumber": "",
+  "CrossfileBillNumber": "HB0001",
+  "SponsorPrimary": "Senator Hester",
+  "Sponsors": [
+   {
+    "Name": "Senator Hester"
+   }
+  ],
+  "Synopsis": "Prohibiting certain public service companies from recovering through rates any costs associated with paying certain employees a bonus unless the employee has a written contract executed by December 31, 2025, or the employee is covered by a valid collective bargaining agreement; prohibiting a certain public service company from recovering through rates any costs associated with a supervisor's annual compensation once the compensation exceeds a certain amount; etc.",
+  "Title": "Investor-Owned Electric, Gas, and Gas and Electric Companies - Cost Recovery - Limitations",
+  "Status": "In the Senate - Hearing 2/05 at 1:00 p.m.",
+  "CommitteePrimaryOrigin": "Education, Energy, and the Environment",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-02-05T13:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": null,
+  "ReportActionHouseOfOrigin": "",
+  "SecondReadingDateHouseOfOrigin": null,
+  "SecondReadingActionHouseOfOrigin": "",
+  "ThirdReadingDateHouseOfOrigin": null,
+  "ThirdReadingActionHouseOfOrigin": "",
+  "FirstReadingDateOppositeHouse": null,
+  "HearingDateTimePrimaryOppositeHouse": null,
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": null,
+  "ReportActionOppositeHouse": "",
+  "SecondReadingDateOppositeHouse": null,
+  "SecondReadingActionOppositeHouse": "",
+  "ThirdReadingDateOppositeHouse": null,
+  "ThirdReadingActionOppositeHouse": "",
+  "InteractionBetweenChambers": "",
+  "PassedByMGA": false,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "c5",
+    "Name": "Utility Regulation"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "commitco",
+    "Name": "Committees and Commissions"
+   },
+   {
+    "Code": "contracts",
+    "Name": "Contracts -see also- Procurement"
+   },
+   {
+    "Code": "salaric",
+    "Name": "Salaries and Compensation -see also- Overtime; Reimb. Rates"
+   },
+   {
+    "Code": "utilities",
+    "Name": "Utilities -see also- Recycl; Refuse; Sewage; Teleph; Water"
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "F",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "gpu",
+     "Title": "Public Utilities"
+    },
+    "Sections": [
+     {
+      "Section": "4-504"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "HB0014",
+  "ChapterNumber": "CH0775",
+  "CrossfileBillNumber": "",
+  "SponsorPrimary": "Delegate Foley",
+  "Sponsors": [
+   {
+    "Name": "Delegate Foley"
+   }
+  ],
+  "Synopsis": "Altering the contents of a certain bullying, harassment, or intimidation form to require, if the incident is believed to have been motivated in whole or in substantial part by certain actual or perceived personal characteristics, identification of those personal characteristics, if known; requiring each county board of education to report information about groups with certain characteristics under certain circumstances; requiring the State Department of Education to establish certain standards by July 1, 2027; etc.",
+  "Title": "County Boards of Education - Bullying, Harassment, or Intimidation - Information Collection and Reporting Requirements",
+  "Status": "Approved by the Governor - Chapter 775",
+  "CommitteePrimaryOrigin": "Ways and Means",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "Education, Energy, and the Environment",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-01-29T13:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": "2026-03-20",
+  "ReportActionHouseOfOrigin": "Favorable with Amendments",
+  "SecondReadingDateHouseOfOrigin": "2026-03-07",
+  "SecondReadingActionHouseOfOrigin": "Passed with Amendments",
+  "ThirdReadingDateHouseOfOrigin": "2026-03-09",
+  "ThirdReadingActionHouseOfOrigin": "Passed",
+  "FirstReadingDateOppositeHouse": "2026-03-07",
+  "HearingDateTimePrimaryOppositeHouse": "2026-04-01T13:00:00",
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": "2026-04-09",
+  "ReportActionOppositeHouse": "Favorable with Amendments",
+  "SecondReadingDateOppositeHouse": "2026-03-22",
+  "SecondReadingActionOppositeHouse": "Passed with Amendments",
+  "ThirdReadingDateOppositeHouse": "2026-03-24",
+  "ThirdReadingActionOppositeHouse": "Passed with Amendments",
+  "InteractionBetweenChambers": "Conference Committee Appointed",
+  "PassedByMGA": true,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "f1",
+    "Name": "Primary and Secondary Education"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "baltimci",
+    "Name": "Baltimore City"
+   },
+   {
+    "Code": "commitco",
+    "Name": "Committees and Commissions"
+   },
+   {
+    "Code": "counties",
+    "Name": "Counties -see also- Chartered Counties; Code Counties; etc."
+   },
+   {
+    "Code": "data",
+    "Name": "Data -see also- Census; Demographics"
+   },
+   {
+    "Code": "disabilities",
+    "Name": "Disabilities"
+   },
+   {
+    "Code": "discriminatio",
+    "Name": "Discrimination"
+   },
+   {
+    "Code": "educatb",
+    "Name": "Education, Boards of"
+   },
+   {
+    "Code": "educatsd",
+    "Name": "Education, State Department of"
+   },
+   {
+    "Code": "electrcom",
+    "Name": "Electronic Communication"
+   },
+   {
+    "Code": "electrg",
+    "Name": "Electronic Government"
+   },
+   {
+    "Code": "ethnica",
+    "Name": "Ethnic Affairs"
+   },
+   {
+    "Code": "forms",
+    "Name": "Forms"
+   },
+   {
+    "Code": "gender",
+    "Name": "Gender -see also- Women"
+   },
+   {
+    "Code": "harassment",
+    "Name": "Harassment -see also- Threats"
+   },
+   {
+    "Code": "privacy",
+    "Name": "Privacy"
+   },
+   {
+    "Code": "publici",
+    "Name": "Public Information"
+   },
+   {
+    "Code": "racialm",
+    "Name": "Racial Matters -see also- Ethnic Affairs; Minorities"
+   },
+   {
+    "Code": "religion",
+    "Name": "Religion -see also- Places of Worship"
+   },
+   {
+    "Code": "reports",
+    "Name": "Reports"
+   },
+   {
+    "Code": "sexualor",
+    "Name": "Sexual Orientation"
+   },
+   {
+    "Code": "standabp",
+    "Name": "Standards and Best Practices"
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "E",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "ged",
+     "Title": "Education"
+    },
+    "Sections": [
+     {
+      "Section": "7-424"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "HJ0005",
+  "ChapterNumber": "JR0003",
+  "CrossfileBillNumber": "SJ0001",
+  "SponsorPrimary": "Speaker",
+  "Sponsors": [
+   {
+    "Name": "Speaker"
+   },
+   {
+    "Name": "Governor's Salary Commission"
+   }
+  ],
+  "Synopsis": "Establishing the salaries to be paid to the Governor and Lieutenant Governor, as directed by Article II, Section 21A of the Maryland Constitution, for the 4-year term of office beginning January 20, 2027.",
+  "Title": "Governor's Salary Commission - Salary Recommendations for Governor and Lieutenant Governor",
+  "Status": "Enacted under Article II, Section 21A(d) of the Maryland Constitution Assigned a resolution number - Joint Resolution 3",
+  "CommitteePrimaryOrigin": "Appropriations",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-27",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-03-03T13:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": null,
+  "ReportActionHouseOfOrigin": "",
+  "SecondReadingDateHouseOfOrigin": null,
+  "SecondReadingActionHouseOfOrigin": "",
+  "ThirdReadingDateHouseOfOrigin": null,
+  "ThirdReadingActionHouseOfOrigin": "",
+  "FirstReadingDateOppositeHouse": null,
+  "HearingDateTimePrimaryOppositeHouse": null,
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": null,
+  "ReportActionOppositeHouse": "",
+  "SecondReadingDateOppositeHouse": null,
+  "SecondReadingActionOppositeHouse": "",
+  "ThirdReadingDateOppositeHouse": null,
+  "ThirdReadingActionOppositeHouse": "",
+  "InteractionBetweenChambers": "",
+  "PassedByMGA": true,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "p1",
+    "Name": "State Government - Agencies, Offices, and Officials"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "governor",
+    "Name": "Governor"
+   },
+   {
+    "Code": "legislsd",
+    "Name": "Legislative Services, Department of"
+   },
+   {
+    "Code": "lieuteg",
+    "Name": "Lieutenant Governor"
+   },
+   {
+    "Code": "salaric",
+    "Name": "Salaries and Compensation -see also- Overtime; Reimb. Rates"
+   }
+  ],
+  "BillType": "Regular",
+  "BillVersion": "F",
+  "Statutes": null,
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "HB0039",
+  "ChapterNumber": "",
+  "CrossfileBillNumber": "",
+  "SponsorPrimary": "Delegate Taveras",
+  "Sponsors": [
+   {
+    "Name": "Delegate Taveras"
+   }
+  ],
+  "Synopsis": "Authorizing the use of a certain portable solar electric generating facility by an eligible customer-generator for the purpose of net energy metering.",
+  "Title": "Net Energy Metering - Portable Solar Electric Generating Facilities",
+  "Status": "In the House - Unfavorable Report by Environment and Transportation; Withdrawn",
+  "CommitteePrimaryOrigin": "Environment and Transportation",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": null,
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": "2026-02-16",
+  "ReportActionHouseOfOrigin": "Withdrawn",
+  "SecondReadingDateHouseOfOrigin": null,
+  "SecondReadingActionHouseOfOrigin": "",
+  "ThirdReadingDateHouseOfOrigin": null,
+  "ThirdReadingActionHouseOfOrigin": "",
+  "FirstReadingDateOppositeHouse": null,
+  "HearingDateTimePrimaryOppositeHouse": null,
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": null,
+  "ReportActionOppositeHouse": "",
+  "SecondReadingDateOppositeHouse": null,
+  "SecondReadingActionOppositeHouse": "",
+  "ThirdReadingDateOppositeHouse": null,
+  "ThirdReadingActionOppositeHouse": "",
+  "InteractionBetweenChambers": "",
+  "PassedByMGA": false,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "c5",
+    "Name": "Utility Regulation"
+   },
+   {
+    "Code": "m5",
+    "Name": "Energy and Climate"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "energym",
+    "Name": "Energy Matters -see also- Fuel; NuclearMatt; PwrPlnts; etc."
+   },
+   {
+    "Code": "energyti",
+    "Name": "Energy Technology and Infrastructure"
+   },
+   {
+    "Code": "solare",
+    "Name": "Solar Energy"
+   },
+   {
+    "Code": "utilities",
+    "Name": "Utilities -see also- Recycl; Refuse; Sewage; Teleph; Water"
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "F",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "gpu",
+     "Title": "Public Utilities"
+    },
+    "Sections": [
+     {
+      "Section": "7-306"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "HB0002",
+  "ChapterNumber": "",
+  "CrossfileBillNumber": "SB0185",
+  "SponsorPrimary": "Delegate Griffith",
+  "Sponsors": [
+   {
+    "Name": "Delegate Griffith"
+   }
+  ],
+  "Synopsis": "Increasing, from $15,000 to $20,000, the amount allowed as a subtraction modification under the Maryland income tax for retirement income attributable to an individual's employment as a public safety employee; and applying the Act to all taxable years beginning after December 31, 2025.",
+  "Title": "Subtraction Modification - Public Safety Retirement Income",
+  "Status": "In the House - Hearing 1/20 at 1:00 p.m.",
+  "CommitteePrimaryOrigin": "Ways and Means",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-01-20T13:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": null,
+  "ReportActionHouseOfOrigin": "",
+  "SecondReadingDateHouseOfOrigin": null,
+  "SecondReadingActionHouseOfOrigin": "",
+  "ThirdReadingDateHouseOfOrigin": null,
+  "ThirdReadingActionHouseOfOrigin": "",
+  "FirstReadingDateOppositeHouse": null,
+  "HearingDateTimePrimaryOppositeHouse": null,
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": null,
+  "ReportActionOppositeHouse": "",
+  "SecondReadingDateOppositeHouse": null,
+  "SecondReadingActionOppositeHouse": "",
+  "ThirdReadingDateOppositeHouse": null,
+  "ThirdReadingActionOppositeHouse": "",
+  "InteractionBetweenChambers": "",
+  "PassedByMGA": false,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "q3",
+    "Name": "Taxes - Income"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "correco",
+    "Name": "Correctional Officers"
+   },
+   {
+    "Code": "emergems",
+    "Name": "Emergency Medical Services -see also- Ambul; RescSqd"
+   },
+   {
+    "Code": "emerges",
+    "Name": "Emergency Services -see also- Ambul; Emergencies; etc."
+   },
+   {
+    "Code": "exemptions",
+    "Name": "Exemptions"
+   },
+   {
+    "Code": "firep",
+    "Name": "Fire Protection"
+   },
+   {
+    "Code": "incomet",
+    "Name": "Income Tax"
+   },
+   {
+    "Code": "lawe",
+    "Name": "Law Enforcement -see also- SRO; Sheriffs; State Police"
+   },
+   {
+    "Code": "rescues",
+    "Name": "Rescue Squads -see also- Emergency Medical Serv "
+   },
+   {
+    "Code": "retirement",
+    "Name": "Retirement -see also- Mandatory Retirement"
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "F",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "gtg",
+     "Title": "Tax - General"
+    },
+    "Sections": [
+     {
+      "Section": "10-207"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ },
+ {
+  "BillNumber": "HB0218",
+  "ChapterNumber": "CH0473",
+  "CrossfileBillNumber": "",
+  "SponsorPrimary": "Chair, Environment and Transportation Committee",
+  "Sponsors": [
+   {
+    "Name": "Chair, Environment and Transportation Committee"
+   },
+   {
+    "Name": "Office of the Attorney General"
+   }
+  ],
+  "Synopsis": "Altering the date, from November 30 to October 1 each year, by which the Office of the Attorney General must report on certain activities of the Office's Environmental and Natural Resources Crimes Unit and certain activities taken by the Department of the Environment and the Department of Natural Resources in response to findings of the Unit.",
+  "Title": "Office of the Attorney General - Environmental and Natural Resources Crimes Unit - Reporting Requirement",
+  "Status": "Approved by the Governor - Chapter 473",
+  "CommitteePrimaryOrigin": "Environment and Transportation",
+  "CommitteeSecondaryOrigin": "",
+  "CommitteePrimaryOpposite": "Education, Energy, and the Environment",
+  "CommitteeSecondaryOpposite": "",
+  "FirstReadingDateHouseOfOrigin": "2026-01-14",
+  "HearingDateTimePrimaryHouseOfOrigin": "2026-02-04T13:00:00",
+  "HearingDateTimeSecondaryHouseOfOrigin": null,
+  "ReportDateHouseOfOrigin": "2026-03-02",
+  "ReportActionHouseOfOrigin": "Favorable",
+  "SecondReadingDateHouseOfOrigin": "2026-02-22",
+  "SecondReadingActionHouseOfOrigin": "Passed",
+  "ThirdReadingDateHouseOfOrigin": "2026-02-23",
+  "ThirdReadingActionHouseOfOrigin": "Passed",
+  "FirstReadingDateOppositeHouse": "2026-02-22",
+  "HearingDateTimePrimaryOppositeHouse": "2026-03-24T13:00:00",
+  "HearingDateTimeSecondaryOppositeHouse": null,
+  "ReportDateOppositeHouse": "2026-04-10",
+  "ReportActionOppositeHouse": "Favorable",
+  "SecondReadingDateOppositeHouse": "2026-03-23",
+  "SecondReadingActionOppositeHouse": "Passed",
+  "ThirdReadingDateOppositeHouse": "2026-03-27",
+  "ThirdReadingActionOppositeHouse": "Passed",
+  "InteractionBetweenChambers": "Returned Passed",
+  "PassedByMGA": true,
+  "EmergencyBill": false,
+  "ConstitutionalAmendment": false,
+  "BroadSubjects": [
+   {
+    "Code": "p1",
+    "Name": "State Government - Agencies, Offices, and Officials"
+   },
+   {
+    "Code": "m3",
+    "Name": "Environment"
+   },
+   {
+    "Code": "m1",
+    "Name": "Natural Resources - Generally"
+   }
+  ],
+  "NarrowSubjects": [
+   {
+    "Code": "attorng",
+    "Name": "Attorney General"
+   },
+   {
+    "Code": "crimesp",
+    "Name": "Crimes and Punishments -see also- Penalties and Sentnc; etc."
+   },
+   {
+    "Code": "envirom",
+    "Name": "Environmental Matters -see also- Conserv; Nat Resrce; Pollut"
+   },
+   {
+    "Code": "naturar",
+    "Name": "Natural Resources -see also- Coal; For&Pks; Rivers; etc."
+   },
+   {
+    "Code": "reports",
+    "Name": "Reports"
+   },
+   {
+    "Code": "time",
+    "Name": "Time"
+   }
+  ],
+  "BillType": "Pre-Filed",
+  "BillVersion": "T",
+  "Statutes": [
+   {
+    "Article": {
+     "Code": "gsg",
+     "Title": "State Government"
+    },
+    "Sections": [
+     {
+      "Section": "6-702"
+     }
+    ]
+   }
+  ],
+  "YearAndSession": "2026 Regular Session",
+  "StatusCurrentAsOf": "2026-10-05T13:20:06.840"
+ }
+]

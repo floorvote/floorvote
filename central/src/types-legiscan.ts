@@ -32,6 +32,11 @@ export type LsEnv = {
    * Falls back to INGESTOR_QUEUE when unset.
    */
   LIMS_INGESTOR_QUEUE?: Queue
+  /**
+   * "MD" to read Maryland from the General Assembly's own open data
+   * (src/sources/mga.ts) instead of LegiScan. No key needed. Unset → off.
+   */
+  MGA_STATES?: string
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   BILL_PROVIDER: 'legiscan'

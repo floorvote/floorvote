@@ -1,0 +1,167 @@
+import { env } from 'cloudflare:test'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { drizzle } from 'drizzle-orm/d1'
+import { eq } from 'drizzle-orm'
+import * as schema from '../../src/db/schema-legiscan'
+import { setupLsDb } from '../helpers/setupLsDb'
+import sampleRaw from '../fixtures/mga/2026RS-sample.json?raw'
+
+vi.mock('../../src/lib/mga', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/mga')>('../../src/lib/mga')
+  return { ...actual, getMgaSession: vi.fn(), mgaSessionExists: vi.fn() }
+})
+vi.mock('../../src/lib/legiscan', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+  return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
+    getMasterListBySession: vi.fn().mockResolvedValue([]), getMasterListRaw: vi.fn().mockResolvedValue([]) }
+})
+vi.mock('../../src/lib/sync-schedule', async () => {
+  const actual = await vi.importActual<typeof import('../../src/lib/sync-schedule')>('../../src/lib/sync-schedule')
+  return { ...actual, getCurrentEtHour: vi.fn(() => 5) }
+})
+const fetchMock = vi.fn()
+vi.stubGlobal('fetch', fetchMock)
+
+import { runSourceSync } from '../../src/cron/sync-sources'
+import { runLsSync } from '../../src/cron/sync-legiscan'
+import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
+import { mgaSource } from '../../src/sources/mga'
+import * as mga from '../../src/lib/mga'
+import * as legiscan from '../../src/lib/legiscan'
+import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
+import { nowDb } from '../../src/lib/dbTime'
+
+const sample = JSON.parse(sampleRaw) as mga.MgaRecord[]
+const PDF = '%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
+const THIS_YEAR = Number(nowDb().slice(0, 4))
+const CODE = `${THIS_YEAR}RS`
+
+function makeEnv(extra: Record<string, unknown> = {}) {
+  const ingestor = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn() }
+  const tenantQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+  return {
+    ingestor, tenantQueue,
+    env: {
+      ...(env as any),
+      MGA_STATES: 'MD',
+      INGESTOR_QUEUE: ingestor,
+      [tenantQueueBindingName('team')]: tenantQueue,
+      ...extra,
+    },
+  }
+}
+
+const queuedIds = (q: { sendBatch: ReturnType<typeof vi.fn> }) =>
+  q.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+
+async function billByNumber(number: string) {
+  const db = drizzle(env.DB, { schema })
+  return db.select().from(schema.bills).where(eq(schema.bills.billNumber, number)).get()
+}
+
+beforeEach(async () => {
+  await setupLsDb()
+  vi.clearAllMocks()
+  vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
+  vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE ? structuredClone(sample) : null))
+  fetchMock.mockImplementation(async () => new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } }))
+  const db = drizzle(env.DB, { schema })
+  await db.insert(schema.tenants).values({ tenantId: 'team', name: 'Team', stateCoverage: '["MD"]', active: true })
+  await db.insert(schema.keywordRegistry).values([{ tenantId: 'team', keyword: 'cost recovery' }])
+})
+
+describe('the Maryland sync', () => {
+  it('does nothing unless MGA_STATES names MD', async () => {
+    const db = drizzle(env.DB, { schema })
+    expect(await runSourceSync(mgaSource, makeEnv({ MGA_STATES: '' }).env, db)).toEqual([])
+    expect(mga.getMgaSession).not.toHaveBeenCalled()
+  })
+
+  it('finds the session, stores every record, and queues the matched bills', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e, ingestor } = makeEnv()
+    const reports = await runSourceSync(mgaSource, e, db)
+
+    const session = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionTag, CODE)).get()
+    expect(session).toMatchObject({ state: 'MD', source: 'mga', sessionName: `${THIS_YEAR} Regular Session`, special: 0 })
+    expect(session!.sessionId).toBeGreaterThan(3_000_000_000)
+    expect(reports).toEqual([expect.objectContaining({ sessionId: session!.sessionId, records: sample.length })])
+
+    expect((await db.select().from(schema.sourceRecords).all()).length).toBe(sample.length)
+    const hb1 = await billByNumber('HB1')
+    expect(hb1).toMatchObject({ source: 'mga', state: 'MD', status: 3 })
+    // HB 1 and its cross-file SB 2 share a title, so both match "cost recovery".
+    expect(queuedIds(ingestor).sort()).toEqual([hb1!.billId, (await billByNumber('SB2'))!.billId].sort())
+  })
+
+  it('queues nothing when only the file timestamp moved', async () => {
+    const db = drizzle(env.DB, { schema })
+    const first = makeEnv()
+    await runSourceSync(mgaSource, first.env, db)
+    for (const n of ['HB1', 'SB2']) {
+      const b = await billByNumber(n)
+      await db.update(schema.bills).set({ changeHash: (await db.select().from(schema.sourceRecords)
+        .where(eq(schema.sourceRecords.billId, b!.billId)).get())!.rawHash }).where(eq(schema.bills.billId, b!.billId))
+    }
+    vi.mocked(mga.getMgaSession).mockImplementation(async () =>
+      structuredClone(sample).map(r => ({ ...r, StatusCurrentAsOf: '2099-01-01T00:00:00' })))
+    const second = makeEnv()
+    await runSourceSync(mgaSource, second.env, db)
+    expect(queuedIds(second.ingestor)).toEqual([])
+  })
+
+  it('stops the LegiScan sync from touching Maryland', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({ sessionId: 2200, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR, sessionTitle: 'T', sessionName: 'T' })
+    await runLsSync(makeEnv().env, db)
+    expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
+    expect(legiscan.getMasterListRaw).not.toHaveBeenCalled()
+  })
+
+  it('refuses to run while LegiScan Maryland bills are linked to tenants', async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values({ billId: 77, changeHash: 'x', sessionId: 2200, state: 'MD', stateId: 20, billNumber: 'HB9', title: 'T' })
+    await db.insert(schema.billTenants).values({ billId: 77, tenantId: 'team', matchType: 'keyword' })
+    await expect(runSourceSync(mgaSource, makeEnv().env, db)).rejects.toThrow(/LegiScan bill links exist in MD/)
+    expect(mga.getMgaSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('ingesting a Maryland bill', () => {
+  it('builds it from the stored record with no further calls, and serves MGA labels and links', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv()
+    await runSourceSync(mgaSource, e, db)
+    const hb1 = (await billByNumber('HB1'))!
+    vi.mocked(mga.getMgaSession).mockClear()
+
+    const ack = vi.fn(); const retry = vi.fn()
+    await processLsIngestorQueue({ messages: [{ body: { billId: hb1.billId }, ack, retry }] } as any, e, db)
+    expect(retry).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalled()
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(legiscan.getBillText).not.toHaveBeenCalled()
+    expect(mga.getMgaSession).not.toHaveBeenCalled()
+
+    const texts = await db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, hb1.billId)).all()
+    expect(texts.map(t => t.stateLink).sort()).toEqual([
+      `https://mgaleg.maryland.gov/${CODE}/bills/hb/hb0001F.pdf`,
+      `https://mgaleg.maryland.gov/${CODE}/bills/hb/hb0001T.pdf`,
+    ])
+    expect(texts.every(t => t.r2Key)).toBe(true)
+    const sponsors = await db.select().from(schema.people)
+      .innerJoin(schema.billSponsors, eq(schema.billSponsors.peopleId, schema.people.peopleId))
+      .where(eq(schema.billSponsors.billId, hb1.billId)).all()
+    expect(sponsors.length).toBeGreaterThan(20)
+    expect(sponsors.every(s => s.people.source === 'mga')).toBe(true)
+
+    const { app } = await import('../../src/index-legiscan')
+    const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${hb1.billId}`, {
+      headers: { 'x-admin-secret': 'test-secret' },
+    }), { ...e, ADMIN_SECRET: 'test-secret' })
+    expect(res.status).toBe(200)
+    const body = await res.json() as { status: string; sponsors: { name: string; url: string | null }[]; stateUrl?: string }
+    expect(body.status).toBe('Passed the House')
+    expect(body.sponsors[0]).toMatchObject({ name: 'Crosby', url: null })
+  })
+})

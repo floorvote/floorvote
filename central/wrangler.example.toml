@@ -149,6 +149,9 @@ name = "EMAIL"
 # # from LegiScan as before. See src/cron/sync-lims.ts.
 # # LIMS_STATES = "DC"
 # # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
+# # The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
+# # source instead of LegiScan. No key needed. See src/sources/mga.ts.
+# # MGA_STATES = "MD"
 #
 # [env.legiscan.triggers]
 # crons = ["0 * * * *"]
