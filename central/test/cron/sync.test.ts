@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { sessions, bills, billTenants, tenants, keywordRegistry } from '../../src/db/schema'
 
-// Mock the legiscan module — runFullPass uses getMasterListBySession + refreshLsSessions
+// Mock the legiscan module — runFullPass uses getMasterListBySession + refreshSessions
 // (which calls getSessionList); runRawPass uses getMasterListRaw.
 vi.mock('../../src/providers/legiscan/client', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
@@ -23,7 +23,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
   queuesRestEnabled: () => true,
 }))
 
-import { runLsSync } from '../../src/cron/sync'
+import { runSync } from '../../src/cron/sync'
 import * as legiscan from '../../src/providers/legiscan/client'
 import * as queuesRest from '../../src/lib/queuesRest'
 import { setupLsDb } from '../helpers/setupLsDb'
@@ -46,7 +46,7 @@ beforeEach(async () => {
   vi.mocked(legiscan.getSessionList).mockResolvedValue([])
 })
 
-describe('runLsSync → runFullPass', () => {
+describe('runSync → runFullPass', () => {
   it('writes matchType=keyword for matching tenants, null for non-matching, queues only newly-matched', async () => {
     const db = drizzle(env.DB, { schema })
     const etHour = getCurrentEtHour()
@@ -102,7 +102,7 @@ describe('runLsSync → runFullPass', () => {
     const sendBatch = vi.fn().mockResolvedValue(undefined)
     const mockEnv = { ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     const links = await db.select().from(billTenants).all()
     const linkMap = new Map(links.map(l => [l.billId, l.matchType]))
@@ -178,7 +178,7 @@ describe('runLsSync → runFullPass', () => {
     const sendBatch = vi.fn().mockResolvedValue(undefined)
     const mockEnv = { ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     const link = await db.select().from(billTenants).where(eq(billTenants.billId, 3)).get()
     expect(link?.matchType).toBe('manual') // unchanged despite keyword non-match
@@ -231,7 +231,7 @@ describe('runLsSync → runFullPass', () => {
       TENANT_QUEUE_TEST_STUB: { sendBatch: tenantSendBatch, send: vi.fn() },
     }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     // Ingestor should NOT have been called (no matched bill)
     expect(ingestorSendBatch).not.toHaveBeenCalled()
@@ -274,7 +274,7 @@ describe('runLsSync → runFullPass', () => {
       TENANT_QUEUE_TEST_MON: { sendBatch: tenantSendBatch, send: vi.fn() },
     }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     const link = await db.select().from(billTenants).where(eq(billTenants.billId, 50)).get()
     expect(link?.matchType).toBe(null)
@@ -314,7 +314,7 @@ describe('runLsSync → runFullPass', () => {
       INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() },
       TENANT_QUEUE_TEST_MON2: { sendBatch: tenantSendBatch, send: vi.fn() },
     }
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
     expect(tenantSendBatch).not.toHaveBeenCalled()
   })
 
@@ -343,7 +343,7 @@ describe('runLsSync → runFullPass', () => {
       CF_QUEUES_TOKEN: 'tok', CF_ACCOUNT_ID: 'acct',
       INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() },
     }
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     expect(vi.mocked(queuesRest.publishBatch)).toHaveBeenCalledTimes(1)
     const call = vi.mocked(queuesRest.publishBatch).mock.calls[0]
@@ -352,7 +352,7 @@ describe('runLsSync → runFullPass', () => {
   })
 })
 
-describe('runLsSync → runRawPass', () => {
+describe('runSync → runRawPass', () => {
   it('advances change_hash + queues only matched bills; leaves unmatched stub hash stale', async () => {
     const db = drizzle(env.DB, { schema })
     const etHour = getCurrentEtHour()
@@ -411,7 +411,7 @@ describe('runLsSync → runRawPass', () => {
     const sendBatch = vi.fn().mockResolvedValue(undefined)
     const mockEnv = { ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     expect(sendBatch).toHaveBeenCalledTimes(1)
     const queued = sendBatch.mock.calls[0][0].map((m: any) => m.body.billId)
@@ -458,7 +458,7 @@ describe('runLsSync → runRawPass', () => {
     const sendBatch = vi.fn().mockResolvedValue(undefined)
     const mockEnv = { ...(env as any), INGESTOR_QUEUE: { sendBatch, send: vi.fn() } }
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     // No queue messages — new bill on raw doesn't get queued.
     expect(sendBatch).not.toHaveBeenCalled()
@@ -471,7 +471,7 @@ describe('runLsSync → runRawPass', () => {
   })
 })
 
-describe('runLsSync → raw-then-full handoff for stub bills (swallow regression)', () => {
+describe('runSync → raw-then-full handoff for stub bills (swallow regression)', () => {
   // Regression for the "raw pass swallows stub changes" bug: a match_type=null bill
   // changes; a raw pass runs first and (pre-fix) advanced the stored change_hash, which
   // hid the change from the subsequent full pass — the only pass that refreshes last_action
@@ -520,7 +520,7 @@ describe('runLsSync → raw-then-full handoff for stub bills (swallow regression
       { bill_id: 40, number: 'A5048', change_hash: 'new-40' },
     ] as any)
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     // The fix: stub hash is left stale, nothing queued, no tenant notification.
     const afterRaw = await db.select().from(bills).where(eq(bills.billId, 40)).get()
@@ -543,7 +543,7 @@ describe('runLsSync → raw-then-full handoff for stub bills (swallow regression
         url: 'https://legiscan.com/NJ/bill/A5048/2026' },
     ] as any)
 
-    await runLsSync(mockEnv, db)
+    await runSync(mockEnv, db)
 
     // Central bills row is now refreshed with the latest action and hash.
     const afterFull = await db.select().from(bills).where(eq(bills.billId, 40)).get()
@@ -564,7 +564,7 @@ describe('runLsSync → raw-then-full handoff for stub bills (swallow regression
   })
 })
 
-describe('runLsSync → wildcard stateCoverage', () => {
+describe('runSync → wildcard stateCoverage', () => {
   it('syncs all session states when a tenant has stateCoverage ["*"]', async () => {
     const db = drizzle(env.DB, { schema })
     const etHour = getCurrentEtHour()
@@ -606,7 +606,7 @@ describe('runLsSync → wildcard stateCoverage', () => {
     // getMasterListBySession returns empty list for both sessions
     vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([])
 
-    await runLsSync(env as any, db)
+    await runSync(env as any, db)
 
     // Both sessions must have been synced — verified via session_sync_log rows
     const logRows = await db.select().from(schema.sessionSyncLog).all()
@@ -629,7 +629,7 @@ describe('runLsSync → wildcard stateCoverage', () => {
     vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([])
     vi.mocked(legiscan.getMasterListRaw).mockResolvedValue([])
 
-    await runLsSync(env as any, db)
+    await runSync(env as any, db)
 
     // No sync log entries — nothing to sync
     const logRows = await db.select().from(schema.sessionSyncLog).all()

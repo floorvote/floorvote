@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { mintSuperadminToken, isSuperadminEmail } from './superadminIssuer'
 import { verifySuperadminJwt } from './superadminJwt'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 
-async function envWithKey(emails: string): Promise<{ env: LsEnv; pub: string }> {
+async function envWithKey(emails: string): Promise<{ env: Env; pub: string }> {
   const kp = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])) as CryptoKeyPair
   const priv = JSON.stringify(await crypto.subtle.exportKey('jwk', kp.privateKey))
   const pub = JSON.stringify(await crypto.subtle.exportKey('jwk', kp.publicKey))
-  return { env: { SUPERADMIN_EMAILS: emails, SUPERADMIN_JWT_PRIVATE_KEY: priv } as unknown as LsEnv, pub }
+  return { env: { SUPERADMIN_EMAILS: emails, SUPERADMIN_JWT_PRIVATE_KEY: priv } as unknown as Env, pub }
 }
 
 describe('superadminIssuer', () => {
@@ -27,7 +27,7 @@ describe('superadminIssuer', () => {
   })
 
   it('returns null when no private key is configured', async () => {
-    const env = { SUPERADMIN_EMAILS: 'boss@example.com' } as unknown as LsEnv
+    const env = { SUPERADMIN_EMAILS: 'boss@example.com' } as unknown as Env
     expect(await mintSuperadminToken(env, 'boss@example.com', 'Boss')).toBeNull()
   })
 

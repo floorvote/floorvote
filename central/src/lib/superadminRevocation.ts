@@ -14,15 +14,15 @@
 import { sql } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { getSetting, setSetting } from './settings'
-import type { LsDb } from '../types'
+import type { Db } from '../types'
 
 const PREFIX = 'revoked_jti:'
 
-export async function revokeSuperadminJti(db: LsDb, jti: string, expEpochSec: number): Promise<void> {
+export async function revokeSuperadminJti(db: Db, jti: string, expEpochSec: number): Promise<void> {
   await setSetting(db, PREFIX + jti, String(Math.floor(expEpochSec)))
 }
 
-export async function isSuperadminJtiRevoked(db: LsDb, jti: string): Promise<boolean> {
+export async function isSuperadminJtiRevoked(db: Db, jti: string): Promise<boolean> {
   if (!jti) return false
   return (await getSetting(db, PREFIX + jti, '')) !== ''
 }
@@ -31,7 +31,7 @@ export async function isSuperadminJtiRevoked(db: LsDb, jti: string): Promise<boo
  * Drop revocation rows whose token has already expired (value < nowSec). Safe to
  * call opportunistically; revoked tokens that are still within their TTL are kept.
  */
-export async function pruneRevokedSuperadminJtis(db: LsDb, nowSec: number = Math.floor(Date.now() / 1000)): Promise<void> {
+export async function pruneRevokedSuperadminJtis(db: Db, nowSec: number = Math.floor(Date.now() / 1000)): Promise<void> {
   await db.delete(schema.settings).where(
     sql`${schema.settings.key} LIKE ${PREFIX + '%'} AND CAST(${schema.settings.value} AS INTEGER) < ${Math.floor(nowSec)}`,
   )

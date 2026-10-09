@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 
 // Mock the LegiScan API surface. The processor calls getBill at the top of
-// processLsBill. We don't want real network calls.
+// processBill. We don't want real network calls.
 // getBillText must be mocked too: it is the fallback when a state's own link
 // won't yield the document, and the real one would hit api.legiscan.com (and
 // burn a quota call) from the test suite.
@@ -19,7 +19,7 @@ vi.mock('../../src/providers/legiscan/client', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { processLsIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor'
+import { processIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
 
@@ -36,7 +36,7 @@ beforeEach(async () => {
   vi.mocked(legiscan.getBill).mockReset()
 })
 
-// Helper: builds a complete LegiscanBill fixture with every child collection
+// Helper: builds a complete CentralMeasure fixture with every child collection
 // populated. We use this as the canonical "what getBill returns" payload.
 function buildFixtureBill(overrides: Partial<any> = {}): any {
   return {
@@ -91,7 +91,7 @@ function buildFixtureBill(overrides: Partial<any> = {}): any {
   }
 }
 
-// Build a mock MessageBatch that processLsIngestorQueue can iterate.
+// Build a mock MessageBatch that processIngestorQueue can iterate.
 // The processor calls message.ack() on success; we need a mock that won't throw.
 function makeBatch(billId: number, overrides: Record<string, unknown> = {}): MessageBatch<any> {
   const ack = vi.fn()
@@ -123,7 +123,7 @@ function makeEnv() {
   }
 }
 
-describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
+describe('processBill: unified ingest path (post-F3 invariant)', () => {
   // This test exists to catch the §A1 regression: when an existing bill is
   // re-ingested with the SAME change_hash, the ingestor used to take a
   // "fast path" that wrote texts/supplements/amendments but NOT
@@ -149,7 +149,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
     const batch = makeBatch(9001)
-    await processLsIngestorQueue(batch, makeEnv(), db)
+    await processIngestorQueue(batch, makeEnv(), db)
 
     // §A1 invariant: every child table has the expected rows.
     const historyRows = await db.select().from(schema.billHistory).where(eq(schema.billHistory.billId, 9001)).all()
@@ -198,7 +198,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     const fixture = buildFixtureBill()
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const person = await db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
     expect(person, 'people row must be created from the sponsor payload').toBeDefined()
@@ -225,7 +225,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     const fixture = buildFixtureBill()
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const person = await db.select().from(schema.people).where(eq(schema.people.peopleId, 5001)).get()
     expect(person?.bioJson, 'bio_json must be preserved across re-ingest').toContain('ballotpedia.org')
@@ -251,7 +251,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
     const batch = makeBatch(9001)
-    await processLsIngestorQueue(batch, makeEnv(), db)
+    await processIngestorQueue(batch, makeEnv(), db)
 
     const changeLogRows = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, 9001)).all()
     const titleChanges = changeLogRows.filter(c => c.changeType === 'title_changed')
@@ -281,7 +281,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
     const batch = makeBatch(fixture.bill_id)
-    await processLsIngestorQueue(batch, makeEnv(), db)
+    await processIngestorQueue(batch, makeEnv(), db)
 
     const changeLogRows = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, fixture.bill_id)).all()
     const metadataChanges = changeLogRows.filter(c =>
@@ -305,7 +305,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
     const batch = makeBatch(9001)
-    await processLsIngestorQueue(batch, makeEnv(), db)
+    await processIngestorQueue(batch, makeEnv(), db)
 
     const billRow = await db.select().from(schema.bills).where(eq(schema.bills.billId, 9001)).get()
     expect(billRow).toBeDefined()
@@ -330,7 +330,7 @@ describe('processLsBill: unified ingest path (post-F3 invariant)', () => {
     vi.mocked(legiscan.getBill).mockResolvedValue(fixture)
 
     const batch = makeBatch(9001, { forceFullIngest: true } as any)
-    await processLsIngestorQueue(batch, makeEnv(), db)
+    await processIngestorQueue(batch, makeEnv(), db)
 
     // The processor should have ack'd, not retried — the extra field is silently ignored.
     expect(batch.messages[0].ack).toHaveBeenCalled()
@@ -440,7 +440,7 @@ describe('downloadTextToR2: bot-wall handling', () => {
       doc: toBase64(REAL_PDF),
     } as any)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1000)).get()
     expect(legiscan.getBillText).toHaveBeenCalledWith(1000, 'test-key', expect.any(Function))
@@ -456,7 +456,7 @@ describe('downloadTextToR2: bot-wall handling', () => {
     }))
     vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('LegiScan HTTP 403'))
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1000)).get()
     // Storing nothing is deliberate: an r2_key here would be sticky, because the
@@ -506,7 +506,7 @@ describe('downloadTextToR2: fragment links', () => {
       doc: toBase64(doc),
     } as any)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     expect(fetchMock, 'a fragment link must not be fetched at all').not.toHaveBeenCalled()
     expect(legiscan.getBillText).toHaveBeenCalledWith(2000, 'test-key', expect.any(Function))
@@ -526,7 +526,7 @@ describe('downloadTextToR2: fragment links', () => {
       mime: 'text/html', mime_id: 1, text_size: doc.length, text_hash: 'ignored', doc: toBase64(doc),
     } as any)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 2000)).get()
     expect(row!.r2Key).toBeTruthy()
@@ -544,7 +544,7 @@ describe('downloadTextToR2: fragment links', () => {
       doc: toBase64('<html>something else entirely</html>'),
     } as any)
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 2000)).get()
     expect(row!.r2Key, 'a document that fails its hash must not be stored').toBeNull()
@@ -565,7 +565,7 @@ describe('downloadTextToR2: fragment links', () => {
       status: 200, headers: { 'content-type': 'text/html' },
     }))
 
-    await processLsIngestorQueue(makeBatch(9001), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 2001)).get()
     expect(row!.r2Key, 'state_link results are stored without hash checking').toBeTruthy()
@@ -600,7 +600,7 @@ describe('forceTextRefetch', () => {
     const db = drizzle(env.DB, { schema })
     await seedStoredText(db)
 
-    await processLsIngestorQueue(
+    await processIngestorQueue(
       makeBatch(9001, { skipFetch: true, forceTextRefetch: true }),
       makeEnv(),
       db,
@@ -617,7 +617,7 @@ describe('forceTextRefetch', () => {
     const db = drizzle(env.DB, { schema })
     await seedStoredText(db)
 
-    await processLsIngestorQueue(makeBatch(9001, { skipFetch: true }), makeEnv(), db)
+    await processIngestorQueue(makeBatch(9001, { skipFetch: true }), makeEnv(), db)
 
     expect(legiscan.getBillText, 'a stored document is not re-fetched by default')
       .not.toHaveBeenCalled()

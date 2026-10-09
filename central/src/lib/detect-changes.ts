@@ -1,4 +1,4 @@
-import type { LegiscanBill, LegiscanCalendarEntry } from '../providers/legiscan/client'
+import type { CentralMeasure, MeasureCalendarEntry } from '../providers/legiscan/client'
 import type { CalendarBlock } from '../types'
 
 export type ChangeRecord = {
@@ -57,7 +57,7 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
   return `${role}${sponsor.name} (${sponsor.party})`
 }
 
-export function detectChanges(snapshot: BillSnapshot, bill: LegiscanBill): ChangeRecord[] {
+export function detectChanges(snapshot: BillSnapshot, bill: CentralMeasure): ChangeRecord[] {
   const changes: ChangeRecord[] = []
 
   // 1. Status change (skip when snapshot.status is null — bill is new/unknown)
@@ -222,7 +222,7 @@ function isPast(date: string | null, today: string): boolean {
 
 export function detectCalendarChanges(
   prior: PriorCalendarRow[],
-  incoming: LegiscanCalendarEntry[],
+  incoming: MeasureCalendarEntry[],
   today: string,
 ): CalendarChange[] {
   const priorByKey = new Map(prior.map(p => [p.identityKey, p]))

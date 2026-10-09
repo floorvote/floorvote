@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 
 /**
  * Object-level authorization for tenant-scoped central routes reachable via the
@@ -32,7 +32,7 @@ function forbidden(): Response {
 }
 
 /** Guard a route whose target tenant is a path param (default `:tenantId`). */
-export function guardCallerTenantParam(param = 'tenantId'): MiddlewareHandler<{ Bindings: LsEnv }> {
+export function guardCallerTenantParam(param = 'tenantId'): MiddlewareHandler<{ Bindings: Env }> {
   return async (c, next) => {
     const params = c.req.param() as Record<string, string | undefined>
     if (isCrossTenant(c.req.header(CALLER_TENANT_HEADER), params[param])) {
@@ -43,7 +43,7 @@ export function guardCallerTenantParam(param = 'tenantId'): MiddlewareHandler<{ 
 }
 
 /** Guard a route whose target tenant is a JSON body field (default `tenantId`). */
-export function guardCallerTenantBody(field = 'tenantId'): MiddlewareHandler<{ Bindings: LsEnv }> {
+export function guardCallerTenantBody(field = 'tenantId'): MiddlewareHandler<{ Bindings: Env }> {
   return async (c, next) => {
     const caller = c.req.header(CALLER_TENANT_HEADER)
     // Only parse the body when a props-carrying caller could be denied; the

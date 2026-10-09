@@ -3,14 +3,14 @@ import { eq, and, gt } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import type { MiddlewareHandler } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 import { verifySuperadminJwt } from './superadminJwt'
 import { isSuperadminJtiRevoked } from './superadminRevocation'
 import { secretsMatch } from './auth'
 
 type DB = ReturnType<typeof drizzle<typeof schema>>
 
-export type DashEnv = { Bindings: LsEnv; Variables: { adminEmail: string } }
+export type DashEnv = { Bindings: Env; Variables: { adminEmail: string } }
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 

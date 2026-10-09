@@ -2,7 +2,7 @@ import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import type * as schema from './db/schema'
 import type { RateLimiter } from '../../shared/rateLimit'
 
-export type LsEnv = {
+export type Env = {
   DB: D1Database
   BILLS_BUCKET: R2Bucket
   INGESTOR_QUEUE: Queue
@@ -49,9 +49,9 @@ export type LsEnv = {
   [key: string]: unknown
 }
 
-export type LsDb = DrizzleD1Database<typeof schema>
+export type Db = DrizzleD1Database<typeof schema>
 
-export type LsIngestorMessage = {
+export type IngestorMessage = {
   billId: number
   forceMetadata?: boolean
   forceAI?: boolean  // propagate to tenant notification so tenant re-runs AI even if text unchanged
@@ -85,7 +85,7 @@ export type CalendarBlock = {
   }[]
 }
 
-export type LsNotificationMessage = {
+export type NotificationMessage = {
   tenantId: string
   billId: string   // "legiscan:{bill_id}"
   forceMetadata?: boolean

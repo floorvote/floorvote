@@ -5,23 +5,23 @@ import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
-import type { LsEnv } from '../types'
+import type { Env } from '../types'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
   3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
 }
 
-export const billsLsRoutes = new Hono<{ Bindings: LsEnv }>()
+export const billsRoutes = new Hono<{ Bindings: Env }>()
 
-billsLsRoutes.use('*', async (c, next) => {
+billsRoutes.use('*', async (c, next) => {
   if (!(await secretsMatch(c.req.header('x-admin-secret'), c.env.ADMIN_SECRET))) {
     return c.json({ error: 'unauthorized' }, 401)
   }
   return next()
 })
 
-billsLsRoutes.get('/sessions', async (c) => {
+billsRoutes.get('/sessions', async (c) => {
   const state = c.req.query('state')?.toUpperCase()
   if (!state) return c.json({ error: 'state is required' }, 400)
   const db = drizzle(c.env.DB, { schema })
@@ -43,7 +43,7 @@ billsLsRoutes.get('/sessions', async (c) => {
 // supplements, and roll-call votes for a batch of bill ids in a few indexed
 // `WHERE bill_id IN (...)` queries — far cheaper than one /bills/:id full-detail
 // call per bill. Registered before GET /:id (different method, no conflict).
-billsLsRoutes.post('/rich-batch', async (c) => {
+billsRoutes.post('/rich-batch', async (c) => {
   const body = await c.req.json().catch(() => ({} as Record<string, unknown>))
   const rawIds = Array.isArray((body as { ids?: unknown }).ids) ? (body as { ids: unknown[] }).ids : []
   const numericIds = [...new Set(
@@ -140,7 +140,7 @@ billsLsRoutes.post('/rich-batch', async (c) => {
   return c.json({ byId })
 })
 
-billsLsRoutes.get('/:id', async (c) => {
+billsRoutes.get('/:id', async (c) => {
   const rawId = c.req.param('id')
   const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
   if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)
@@ -353,7 +353,7 @@ billsLsRoutes.get('/:id', async (c) => {
   })
 })
 
-billsLsRoutes.get('/:id/changes', async (c) => {
+billsRoutes.get('/:id/changes', async (c) => {
   const rawId = c.req.param('id')
   const numericId = rawId.startsWith('legiscan:')
     ? parseInt(rawId.split(':')[1], 10)
@@ -372,7 +372,7 @@ billsLsRoutes.get('/:id/changes', async (c) => {
   return c.json({ changes })
 })
 
-billsLsRoutes.get('/:id/text/:docId', async (c) => {
+billsRoutes.get('/:id/text/:docId', async (c) => {
   const rawId = c.req.param('id')
   const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
   if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)
@@ -407,7 +407,7 @@ billsLsRoutes.get('/:id/text/:docId', async (c) => {
   return res
 })
 
-billsLsRoutes.get('/:id/text', async (c) => {
+billsRoutes.get('/:id/text', async (c) => {
   const rawId = c.req.param('id')
   const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
   if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)

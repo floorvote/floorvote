@@ -4,19 +4,19 @@ import { sessions, bills, billTenants, tenants, keywordRegistry, apiCallLog, ses
 import { matchesUnion } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
-import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types'
+import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
 
-function trackLsCall(db: LsDb, callType: string, params: Record<string, unknown>): void {
+function trackLsCall(db: Db, callType: string, params: Record<string, unknown>): void {
   db.insert(apiCallLog)
     .values({ loggedAt: nowDb(), callType, params: JSON.stringify(params) })
     .catch(err => console.error('[rate-limit] failed to log API call:', err))
 }
 
-export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
+export async function runSync(env: Env, db: Db): Promise<void> {
   const activeTenants = await db.select().from(tenants).where(eq(tenants.active, true)).all()
   if (activeTenants.length === 0) return
 
@@ -49,7 +49,7 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
   if (etHour === 5) {
     for (const state of trackedStates) {
       try {
-        await refreshLsSessions(state, env.LEGISCAN_API_KEY, db)
+        await refreshSessions(state, env.LEGISCAN_API_KEY, db)
       } catch (err) {
         console.error(`[sync-ls] failed to refresh sessions for ${state}:`, err)
       }
@@ -114,7 +114,7 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
   await Promise.allSettled(tasks)
 }
 
-async function refreshLsSessions(state: string, apiKey: string, db: LsDb): Promise<void> {
+async function refreshSessions(state: string, apiKey: string, db: Db): Promise<void> {
   const lsSessions = await getSessionList(state, apiKey, () =>
     trackLsCall(db, 'getSessionList', { state }))
   for (const s of lsSessions) {
@@ -146,8 +146,8 @@ async function refreshLsSessions(state: string, apiKey: string, db: LsDb): Promi
 async function runFullPass(
   session: { sessionId: number; state: string; sessionName: string },
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
 ): Promise<void> {
   const list = await getMasterListBySession(session.sessionId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getMasterListBySession', { sessionId: session.sessionId }))
@@ -199,7 +199,7 @@ async function runFullPass(
   const billStmts: any[] = []
   const billTenantStmts: any[] = []
   const toQueue = new Set<number>()
-  const stubMessagesByTenant = new Map<string, LsNotificationMessage[]>()
+  const stubMessagesByTenant = new Map<string, NotificationMessage[]>()
   const queueIdByTenant = new Map(coveringTenants.map(t => [t.tenantId, t.queueId]))
   let changedCount = 0
 
@@ -313,7 +313,7 @@ async function runFullPass(
   const queueIds = Array.from(toQueue)
   for (let i = 0; i < queueIds.length; i += 100) {
     await env.INGESTOR_QUEUE.sendBatch(
-      queueIds.slice(i, i + 100).map<LsIngestorMessage>(billId => ({ billId }))
+      queueIds.slice(i, i + 100).map<IngestorMessage>(billId => ({ billId }))
         .map(body => ({ body }))
     )
   }
@@ -347,8 +347,8 @@ async function runFullPass(
 async function runRawPass(
   session: { sessionId: number; state: string; sessionName: string },
   coveringTenants: { tenantId: string; stateCoverage: string }[],
-  env: LsEnv,
-  db: LsDb,
+  env: Env,
+  db: Db,
 ): Promise<void> {
   void coveringTenants
   const rawList = await getMasterListRaw(session.sessionId, env.LEGISCAN_API_KEY, () =>
@@ -434,7 +434,7 @@ async function runRawPass(
   const queueIds = Array.from(toQueue)
   for (let i = 0; i < queueIds.length; i += 100) {
     await env.INGESTOR_QUEUE.sendBatch(
-      queueIds.slice(i, i + 100).map<LsIngestorMessage>(billId => ({ billId }))
+      queueIds.slice(i, i + 100).map<IngestorMessage>(billId => ({ billId }))
         .map(body => ({ body }))
     )
   }
