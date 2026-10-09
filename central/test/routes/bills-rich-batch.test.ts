@@ -124,20 +124,28 @@ describe('member votes', () => {
     method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }, env)
 
-  it('adds each member\'s vote only when asked', async () => {
+  it('leaves member votes out of the batch, which only the data export reads', async () => {
     await seedMemberVotes()
-    const without = await (await post({ ids: [102] })).json() as any
-    expect(without.byId['102'].votes[0].memberVotes).toBeUndefined()
-    const withVotes = await (await post({ ids: [102], memberVotes: true })).json() as any
-    expect(withVotes.byId['102'].votes[0].memberVotes).toEqual(expect.arrayContaining([{ name: 'Zachary Parker', vote: 'Yes' }, { name: 'Brooke Pinto', vote: 'No' }]))
+    const body = await (await post({ ids: [102] })).json() as any
+    expect(body.byId['102'].votes[0].memberVotes).toBeUndefined()
   })
 
-  it('returns member votes, sorted by name, on the bill detail', async () => {
+  it('returns member votes, sorted by name and keyed by person id, on the bill detail', async () => {
     await seedMemberVotes()
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.votes[0].memberVotes).toEqual([{ name: 'Brooke Pinto', vote: 'No' }, { name: 'Zachary Parker', vote: 'Yes' }])
+    expect(body.votes[0].memberVotes).toEqual([
+      { personId: '2', name: 'Brooke Pinto', vote: 'No' },
+      { personId: '1', name: 'Zachary Parker', vote: 'Yes' },
+    ])
+  })
+
+  it('returns an empty list for a roll call with no member votes', async () => {
+    await seed()
+    const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
+    const body = await res.json() as any
+    expect(body.votes[0].memberVotes).toEqual([])
   })
 })
 
@@ -152,6 +160,6 @@ describe('bill detail with many roll calls', () => {
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.votes.find((v: any) => v.id === '1129').memberVotes).toEqual([{ name: 'Zachary Parker', vote: 'Yes' }])
+    expect(body.votes.find((v: any) => v.id === '1129').memberVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes' }])
   })
 })
