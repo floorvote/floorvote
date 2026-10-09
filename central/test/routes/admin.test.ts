@@ -1,29 +1,13 @@
-import { env, applyD1Migrations, reset } from 'cloudflare:test'
+import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema'
 import { app } from '../../src/index'
-import migration0001 from '../../migrations/0001_initial.sql?raw'
-import migration0003 from '../../migrations/0003_openstates_migration.sql?raw'
-
-function parseMigration(sql: string, name: string) {
-  const queries = sql
-    .split(';')
-    .map((s) =>
-      s.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n').trim(),
-    )
-    .filter((s) => s.length > 0)
-    .map((s) => s + ';')
-  return { name, queries }
-}
+import { openStatesMigrations, setupDb } from '../helpers/migrations'
 
 beforeEach(async () => {
-  await reset()
-  await applyD1Migrations(env.DB, [
-    parseMigration(migration0001, '0001_initial'),
-    parseMigration(migration0003, '0003_openstates_migration'),
-  ])
+  await setupDb(openStatesMigrations)
 })
 
 async function insertBill(billId: string, textR2Key?: string) {
