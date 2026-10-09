@@ -18,6 +18,9 @@ export const sessions = sqliteTable('sessions', {
   syncEnabled:     integer('sync_enabled', { mode: 'boolean' }).notNull().default(true),
   fullSyncHoursEt: text('full_sync_hours_et'),
   rawSyncHoursEt:  text('raw_sync_hours_et'),
+  // Weekly per-member vote load from the provider's vote datasets (cron/vote-datasets.ts).
+  votesDatasetHash: text('votes_dataset_hash'),
+  votesCheckedAt:   text('votes_checked_at'),
 })
 
 export const people = sqliteTable('people', {

@@ -51,7 +51,25 @@ export type Env = {
 
 export type Db = DrizzleD1Database<typeof schema>
 
-export type IngestorMessage = {
+/** A message on the ingestor queue: one bill to ingest, or one session's vote dataset to load. */
+export type IngestorMessage = BillMessage | VoteDatasetMessage
+
+/**
+ * Load one session's per-member votes from its provider's vote dataset
+ * (cron/vote-datasets.ts). Shares the ingestor queue so self-hosted configs
+ * need no new queue binding.
+ */
+export type VoteDatasetMessage = {
+  kind: 'vote-dataset'
+  providerId: string
+  sessionId: number
+  /** The provider's handle for the dataset (`VoteDataset.key`). */
+  key: string
+  hash: string
+}
+
+export type BillMessage = {
+  kind?: undefined
   billId: number
   forceMetadata?: boolean
   forceAI?: boolean  // propagate to tenant notification so tenant re-runs AI even if text unchanged

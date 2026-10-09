@@ -6,7 +6,9 @@ import {
   billChangeLog, rollCalls, people, tenants,
 } from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
-import type { Env, Db, IngestorMessage, NotificationMessage, CalendarBlock } from '../types'
+import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
+import { personRow } from '../lib/people'
+import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
 import { deliverToTenant } from '../lib/tenantDelivery'
@@ -17,18 +19,40 @@ export async function processIngestorQueue(
   env: Env,
   db: Db,
 ): Promise<void> {
+  // At most one vote-dataset load per invocation: each can spend a large share
+  // of the invocation's D1 query budget, so further loads in the batch are
+  // re-sent with a delay rather than run here. Re-sending (not retry()) keeps
+  // them from using up their retry budget.
+  let datasetLoaded = false
   for (const message of batch.messages) {
+    const body = message.body
+    if (body.kind === 'vote-dataset') {
+      try {
+        if (datasetLoaded) {
+          await env.INGESTOR_QUEUE.send(body, { delaySeconds: VOTE_DATASET_DEFER_SECONDS })
+        } else {
+          datasetLoaded = true
+          await loadVoteDataset(body, env, db)
+        }
+        message.ack()
+      } catch (err) {
+        console.error('[processor-ls] vote dataset load failed for session', body.sessionId, err)
+        // Each attempt re-downloads the archive, so give the provider time first.
+        message.retry({ delaySeconds: VOTE_DATASET_RETRY_SECONDS })
+      }
+      continue
+    }
     try {
-      await processBill(message.body, env, db)
+      await processBill(body, env, db)
       message.ack()
     } catch (err) {
-      console.error('[processor-ls] failed for billId', message.body.billId, err)
+      console.error('[processor-ls] failed for billId', body.billId, err)
       message.retry()
     }
   }
 }
 
-async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void> {
+async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
@@ -252,30 +276,9 @@ async function ingestMeasure(
     // any state that arrives via keyword sync (rather than a bulk dataset seed)
     // has no people rows and falls back to showing the numeric people_id.
     // Update the display fields on conflict but preserve bio_json, which only
-    // the richer bulk/getSessionPeople sources populate.
+    // the richer bulk/getSessionPeople sources populate (see personRow).
     if (s.people_id) {
-      const personValues = {
-        peopleId:      s.people_id,
-        personHash:    s.person_hash ?? null,
-        stateId:       s.state_id ?? bill.state_id ?? null,
-        partyId:       s.party_id ?? null,
-        party:         s.party || null,
-        roleId:        s.role_id ?? null,
-        role:          s.role || null,
-        name:          s.name || String(s.people_id),
-        firstName:     s.first_name ?? null,
-        middleName:    s.middle_name ?? null,
-        lastName:      s.last_name ?? null,
-        suffix:        s.suffix ?? null,
-        nickname:      s.nickname ?? null,
-        district:      s.district || null,
-        ftmEid:        s.ftm_eid ?? null,
-        votesmartId:   s.votesmart_id ?? null,
-        opensecretsId: s.opensecrets_id ?? null,
-        knowwhoPid:    s.knowwho_pid ?? null,
-        ballotpedia:   s.ballotpedia ?? null,
-        bioguideId:    s.bioguide_id ?? null,
-      }
+      const personValues = personRow(s, bill.state_id ?? null)
       const { peopleId: _omit, ...personUpdate } = personValues
       await db.insert(people).values(personValues).onConflictDoUpdate({
         target: people.peopleId,
@@ -426,8 +429,8 @@ async function ingestMeasure(
   }
 
   // Upsert roll calls (vote summaries from getBill). Per-legislator vote rows
-  // (roll_call_votes) require getRollCall calls and are out of scope here —
-  // bulk seed has them; live-ingested bills won't.
+  // (roll_call_votes) would cost a getRollCall call each, so they come from the
+  // weekly vote-dataset load instead (cron/vote-datasets.ts).
   for (const v of bill.votes ?? []) {
     await db.insert(rollCalls).values({
       rollCallId:  v.roll_call_id,

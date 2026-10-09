@@ -69,6 +69,34 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
 
   /** A sponsor's profile page on the provider's site, for a person record with no link of its own. */
   personUrl?(person: { state: string; name: string; peopleId: number }): string
+
+  /**
+   * The provider's per-member vote datasets for a state, one per session, each
+   * with a hash that changes whenever its contents do. With
+   * `fetchVoteDataset`, drives the weekly per-member vote load: core compares
+   * hashes and downloads only datasets that changed. Omitted when the
+   * provider's measure records carry member votes themselves, or it has none.
+   */
+  listVoteDatasets?(state: string, ctx: ProviderContext<K>): Promise<VoteDataset[]>
+
+  /**
+   * One session's vote dataset, as the bytes of a ZIP archive, streamed so
+   * core can read it as it downloads. Core reads `vote/*.json` entries, each
+   * `{ roll_call: { roll_call_id, votes: [{ people_id, vote_id, vote_text }] } }`
+   * (LegiScan's getRollCall shape), and `people/*.json` entries, each
+   * `{ person: MeasurePerson }`, at any depth. It also expects `bill/*.json`
+   * entries and fails a load that has none of the three.
+   */
+  fetchVoteDataset?(dataset: VoteDataset, ctx: ProviderContext<K>): Promise<ReadableStream<Uint8Array>>
+}
+
+/** One session's vote dataset, as `listVoteDatasets` lists it. */
+export interface VoteDataset {
+  sessionId: number
+  /** Changes whenever the dataset's contents do. */
+  hash: string
+  /** The provider's handle for fetching it, such as an access key. Opaque to core. */
+  key: string
 }
 
 /** A key of central's env a provider may declare in `envKeys`. */
@@ -169,18 +197,18 @@ interface MeasureText {
   alt_text_hash: string
 }
 
-interface MeasureSponsor {
+/**
+ * A legislator, in LegiScan's getPerson shape. Each sponsor carries one, and a
+ * vote dataset holds one per `people/*.json` file. Core persists these into
+ * `people` (lib/people.ts) so names resolve without a separate bulk seed.
+ */
+export interface MeasurePerson {
   people_id: number
   name: string
   party: string
   role: string
   role_id: number
   district: string
-  sponsor_type_id: number  // 1=Primary, 2=Co-Sponsor, 3=Joint Sponsor
-  sponsor_order: number
-  // Each sponsor carries the full person record (LegiScan's getBill embeds one
-  // in getPerson's shape). The ingest persists these into `people` so names
-  // resolve without a separate bulk seed.
   person_hash?: string
   party_id?: string
   state_id?: number
@@ -200,6 +228,11 @@ interface MeasureSponsor {
       biography?: string
     }
   }
+}
+
+interface MeasureSponsor extends MeasurePerson {
+  sponsor_type_id: number  // 1=Primary, 2=Co-Sponsor, 3=Joint Sponsor
+  sponsor_order: number
 }
 
 interface MeasureHistoryEntry {

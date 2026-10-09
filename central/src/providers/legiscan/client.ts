@@ -160,3 +160,65 @@ export async function getSessionList(
     return [{ ...(v as LegiscanSession), sort_order: index }]
   })
 }
+
+/** One session's weekly bulk dataset, as listed by `getDatasetList`. */
+export interface LegiscanDatasetEntry {
+  session_id: number
+  dataset_hash: string
+  dataset_date?: string
+  dataset_size?: number
+  /** Required by getDatasetRaw. */
+  access_key: string
+}
+
+/** Every bulk dataset LegiScan publishes for a state, one per session. */
+export async function getDatasetList(
+  state: string,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<LegiscanDatasetEntry[]> {
+  const data = await legiscanFetch<{ datasetlist: Record<string, unknown> }>(
+    'getDatasetList',
+    { state },
+    apiKey,
+    onRequest,
+  )
+  return Object.values(data.datasetlist).filter(
+    (v): v is LegiscanDatasetEntry =>
+      typeof v === 'object' && v !== null && 'session_id' in v && 'access_key' in v && 'dataset_hash' in v,
+  )
+}
+
+/**
+ * One session's bulk dataset ZIP (JSON format), as a raw binary stream.
+ *
+ * `getDatasetRaw` is `getDataset` without the base64 JSON envelope, so the
+ * caller can unzip it as it downloads instead of holding the whole archive
+ * (tens of MB for a large state) in memory. An error still comes back as a
+ * LegiScan JSON body, so a JSON response is read and thrown.
+ */
+export async function getDatasetRaw(
+  sessionId: number,
+  accessKey: string,
+  apiKey: string,
+  onRequest?: () => void,
+): Promise<ReadableStream<Uint8Array>> {
+  const url = new URL(BASE_URL)
+  url.searchParams.set('key', apiKey)
+  url.searchParams.set('op', 'getDatasetRaw')
+  url.searchParams.set('id', String(sessionId))
+  url.searchParams.set('access_key', accessKey)
+  url.searchParams.set('format', 'json')
+
+  const res = await rateLimitedFetch(url.toString(), undefined, {
+    ratePerSec: LEGISCAN_RATE_PER_SEC,
+    bucketKey: 'legiscan',
+    onRequest,
+  })
+  if (!res.ok) throw new Error(`LegiScan HTTP ${res.status}`)
+  if ((res.headers.get('content-type') ?? '').includes('json')) {
+    throw new Error(`LegiScan API error: ${(await res.text()).slice(0, 500)}`)
+  }
+  if (!res.body) throw new Error('LegiScan getDatasetRaw returned no body')
+  return res.body
+}

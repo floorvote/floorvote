@@ -11,10 +11,11 @@ import { deliverBatchToTenant } from '../lib/tenantDelivery'
 const BATCH = 80
 const FLUSH_BATCH = 500
 
-export async function runSync(env: Env, db: Db): Promise<void> {
-  const activeTenants = await db.select().from(tenants).where(eq(tenants.active, true)).all()
-  if (activeTenants.length === 0) return
-
+/** The states active instances cover, which are the states central keeps in sync. */
+export async function loadTrackedStates(
+  db: Db,
+  activeTenants: { stateCoverage: string }[],
+): Promise<Set<string>> {
   const trackedStates = new Set<string>()
   const hasWildcard = activeTenants.some(t => {
     try { return (JSON.parse(t.stateCoverage) as string[]).includes('*') } catch { return false }
@@ -32,7 +33,14 @@ export async function runSync(env: Env, db: Db): Promise<void> {
       for (const s of coverage) trackedStates.add(s)
     }
   }
+  return trackedStates
+}
 
+export async function runSync(env: Env, db: Db): Promise<void> {
+  const activeTenants = await db.select().from(tenants).where(eq(tenants.active, true)).all()
+  if (activeTenants.length === 0) return
+
+  const trackedStates = await loadTrackedStates(db, activeTenants)
   if (trackedStates.size === 0) return
 
   // States don't record their provider yet, so every state syncs from the default.
