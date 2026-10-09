@@ -845,7 +845,7 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
   if (!sessionId) return ''
   // synthesized seed sessions: "seed:RI:2026" → "2026"
   if (sessionId.startsWith('seed:')) return sessionId.split(':').pop() ?? sessionId
-  // OpenStates session IDs: "ri:2026" → "2026"
+  // Legacy "ri:2026"-style session ids (from the removed OpenStates central), kept for older data and tests
   if (/^[a-z]{2}:\d{4}/.test(sessionId)) return sessionId.split(':').pop() ?? sessionId
   return sessionId
 }

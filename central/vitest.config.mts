@@ -11,8 +11,8 @@ export default defineConfig({
         d1Databases: ['DB'],
         r2Buckets: ['BILLS_BUCKET'],
         queues: {
-          producers: { INGESTOR_QUEUE: 'central-ingestor', NOTIFICATIONS_QUEUE: 'central-notifications' },
-          consumers: ['central-ingestor'],
+          producers: { INGESTOR_QUEUE: 'central-legiscan-ingestor' },
+          consumers: ['central-legiscan-ingestor'],
         },
         bindings: {
           LEGISCAN_API_KEY: 'test-key',
