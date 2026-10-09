@@ -14,6 +14,8 @@ export interface TenantRpc {
   demoReset(): Promise<{ ok: boolean; billsSeeded: boolean }>
   runDigestNow(): Promise<{ ok: boolean }>
   refreshMetadata(): Promise<{ queued: number }>
+  /** Point the tenant's bills at new central ids (a cutover to a direct source; cron/cutover.ts). */
+  rekeyBills(pairs: { from: string; to: string }[]): Promise<{ rekeyed: number; missing: string[]; conflicts: string[] }>
   sendSampleEmail(to: string, type: string): Promise<{ ok: boolean; provider?: string; error?: string }>
   unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>>
 }

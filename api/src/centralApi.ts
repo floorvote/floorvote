@@ -4,6 +4,7 @@ import { authEvents } from './db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { computeEngagementSnapshot, type EngagementSnapshot } from './lib/engagementSnapshot'
 import { refreshMetadata } from './lib/refreshMetadata'
+import { rekeyBills, type RekeyResult } from './lib/rekeyBills'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { registerWithCentral } from './cron/sync'
 import { runDigest } from './lib/digest'
@@ -36,6 +37,11 @@ export class CentralApi extends WorkerEntrypoint<Env> {
 
   async refreshMetadata(): Promise<{ queued: number }> {
     return refreshMetadata(this.env, getDb(this.env.DB))
+  }
+
+  /** Central's cutover of a state to a direct source: see lib/rekeyBills.ts. */
+  async rekeyBills(pairs: { from: string; to: string }[]): Promise<RekeyResult> {
+    return rekeyBills(getDb(this.env.DB), pairs)
   }
 
   async sendSampleEmail(to: string, type: string): Promise<SampleSendResult> {

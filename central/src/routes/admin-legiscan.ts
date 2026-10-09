@@ -12,6 +12,7 @@ import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runLsSync } from '../cron/sync-legiscan'
 import { importLimsMeasures } from '../cron/sync-lims'
 import { runSourceSync } from '../cron/sync-sources'
+import { applyCutover, planCutover } from '../cron/cutover'
 import { directSource } from '../sources'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
@@ -56,6 +57,29 @@ async function runSourceNow(c: Context<{ Bindings: LsEnv }>, id: string) {
   return c.json({ ok: true, passes })
 }
 adminLsRoutes.post('/sources/:id/sync', c => runSourceNow(c, c.req.param('id')))
+
+// Move the tenant links of a source's states from LegiScan bills to the
+// source's own (cron/cutover.ts). A dry run unless ?confirm=true: it reports
+// every link and its match. ?dropUnmatched=true also drops tracked links with
+// no match, which otherwise stay and keep the source's sync paused.
+adminLsRoutes.post('/sources/:id/cutover', async (c) => {
+  const source = directSource(c.req.param('id'))
+  if (!source) return c.json({ error: `unknown source "${c.req.param('id')}"` }, 404)
+  if (!source.enabled(c.env)) return c.json({ error: `source "${source.id}" is not configured on this central` }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const plan = await planCutover(source, c.env, db)
+  if (c.req.query('confirm') !== 'true') {
+    const unmatched = plan.links.filter(l => l.to === null)
+    return c.json({
+      dryRun: true, sessions: plan.sessions,
+      matched: plan.links.length - unmatched.length,
+      unmatched: { monitorOnly: unmatched.filter(l => l.matchType === null).length, tracked: unmatched.filter(l => l.matchType !== null) },
+      tenants: [...new Set(plan.links.map(l => l.tenantId))],
+    })
+  }
+  const report = await applyCutover(source, plan, c.env, db, { dropUnmatched: c.req.query('dropUnmatched') === 'true' })
+  return c.json({ ok: !report.blocked, ...report })
+})
 adminLsRoutes.post('/lims-sync', c => runSourceNow(c, 'lims'))
 
 // Import specific LIMS measures from any Council Period and track them for one

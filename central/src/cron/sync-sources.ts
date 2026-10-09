@@ -1,4 +1,4 @@
-import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
+import { eq, and, or, inArray, notInArray, lt, gte, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { sessions, bills, billTenants, tenants, sourceRecords } from '../db/schema-legiscan'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
@@ -48,24 +48,22 @@ export async function runSourceSync(
   }
   if (coveringByState.size === 0) return []
 
-  // Moving a state from LegiScan to a direct source needs a cutover that moves
-  // tenant links onto the new rows. Until one has run, refuse: syncing anyway
-  // would give every bill in the state a second copy under a new id, and
-  // tenants would see (and pay AI for) both.
-  const states = [...coveringByState.keys()]
-  const legacy = await db.select({ n: sql<number>`COUNT(*)` })
-    .from(bills)
-    .innerJoin(billTenants, eq(billTenants.billId, bills.billId))
-    .where(and(inArray(bills.state, states), eq(bills.source, 'legiscan')))
-    .get()
-  if (Number(legacy?.n ?? 0) > 0) {
-    throw new Error(
-      `[sync-${source.id}] ${legacy!.n} LegiScan bill links exist in ${states.join(', ')}; ` +
-      `the ${source.id} sync is paused until they are cut over. These states are not syncing from either source meanwhile.`)
-  }
-
   const ctx: SyncContext = { today: nowDb().slice(0, 10), etHour: getCurrentEtHour(), force: !!opts.force }
   const toSync = await source.syncSessions(env, db, ctx)
+
+  // Moving a state from LegiScan to a direct source needs a cutover that moves
+  // tenant links onto the new rows (cron/cutover.ts). Until one has run, refuse:
+  // syncing anyway would give every bill in the state a second copy under a new
+  // id, and tenants would see (and pay AI for) both. Only sessions the source
+  // syncs count; earlier LegiScan sessions stay as they are.
+  const states = [...coveringByState.keys()]
+  const legacy = await legacyLinks(db, states, toSync)
+  if (legacy.length > 0) {
+    throw new Error(
+      `[sync-${source.id}] ${legacy.length} LegiScan bill links exist in ${states.join(', ')}; ` +
+      `the ${source.id} sync is paused until they are cut over (POST /api/admin/sources/${source.id}/cutover). ` +
+      'These states are not syncing from either source meanwhile.')
+  }
 
   const reports: SourcePassReport[] = []
   for (const session of toSync) {
@@ -102,6 +100,38 @@ async function runSourcePass(
     : 0
   if (refreshed > 0) console.log(`[sync-${source.id}] refreshing details for ${refreshed} tracked bills`)
   return { records: records.length, queued: queued.size, refreshed }
+}
+
+export interface LegacyLink {
+  billId: number
+  number: string
+  tenantId: string
+  matchType: string | null
+  yearStart: number
+  special: number
+  sessionName: string
+}
+
+/**
+ * Tenant links to LegiScan bills in these states, in sessions that end no
+ * earlier than the first year of the direct-source sessions given: the bills a
+ * direct source's own rows would duplicate.
+ */
+export async function legacyLinks(db: LsDb, states: string[], directSessions: SessionRow[]): Promise<LegacyLink[]> {
+  if (states.length === 0 || directSessions.length === 0) return []
+  const fromYear = Math.min(...directSessions.map(s => s.yearStart))
+  return db.select({
+    billId: bills.billId, number: bills.billNumber, tenantId: billTenants.tenantId, matchType: billTenants.matchType,
+    yearStart: sessions.yearStart, special: sessions.special, sessionName: sessions.sessionName,
+  })
+    .from(billTenants)
+    .innerJoin(bills, eq(bills.billId, billTenants.billId))
+    // A bill whose session row is missing counts: nothing says it is from an earlier session.
+    .leftJoin(sessions, eq(sessions.sessionId, bills.sessionId))
+    .where(and(inArray(bills.state, states), eq(bills.source, 'legiscan'),
+      or(isNull(sessions.sessionId), gte(sessions.yearEnd, fromYear))))
+    .all()
+    .then(rows => rows.map(r => ({ ...r, yearStart: r.yearStart ?? 0, special: r.special ?? 0, sessionName: r.sessionName ?? '' })))
 }
 
 export function sourceQueue(source: DirectSource, env: LsEnv): Queue {

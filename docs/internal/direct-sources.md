@@ -160,7 +160,14 @@ What's specific to a legislature stays in its module. For DC that is Council Per
 
 When a state switches from LegiScan to a direct source, tenants that already track its LegiScan bills would otherwise see every bill twice and pay for AI on both copies. The sync therefore refuses to run a direct source for a state while tenant links to that state's LegiScan bills remain, and says so in the job log. #206 does this for DC. This proposal makes it per state.
 
-The guard counts monitor links too, since every covering tenant gets a monitor link for every bill in its states. So a deployment that already syncs a state from LegiScan can't switch that state until a cutover tool moves its tenant links onto the new rows (matching on state, session and bill number). New deployments, and states no tenant covers yet, can switch at once. The cutover tool is the next piece of work after this stack.
+The guard counts monitor links too, since every covering tenant gets a monitor link for every bill in its states. It counts only sessions the direct source syncs: a LegiScan session that ended before them stays as it is, frozen, since the LegiScan sync no longer covers the state.
+
+`POST /api/admin/sources/:id/cutover` moves a state over:
+
+1. **Plan** (a dry run unless `?confirm=true`). It refreshes the source's sessions and stores their records, which tenants never see. Then it matches each linked LegiScan bill to the source's bill with the same year, kind of session (regular or special) and number, compared without padding. It reports matched links, unmatched monitor links, and unmatched tracked links.
+2. **Tenants.** Each tenant points its own bills at the new ids, over a new `rekeyBills` RPC. A tenant stores central ids only in `bills.external_id`, so its positions, notes, votes and analyses stay with the bill. A tenant with no service binding is left alone and reported.
+3. **Central.** It moves the links and drops unmatched monitor links. Unmatched tracked links stay unless `?dropUnmatched=true`, and while any remain the sync stays paused.
+4. **Sync.** The source's sync then runs. Its pass creates the new bills and queues every tracked one for ingest, so tenants refetch them. A tenant's AI runs again on a moved bill when the new source's text differs from LegiScan's.
 
 ## How the other states follow
 
@@ -202,4 +209,3 @@ Each is a draft stacked on the previous one, starting from #206.
 - **Virginia's API terms** say "personal and non-commercial use only". Until that is clarified with DLAS, the Virginia module reads only the public CSVs, and Virginia bills have no text.
 - **Maryland votes and amendments** are published only as HTML pages and PDFs. They are left out until someone needs them.
 - **The tenant id prefix.** `legiscan:<int>` could become a neutral prefix in a later PR.
-- **The cutover tool**, for moving a state that tenants already track from LegiScan to a direct source.
