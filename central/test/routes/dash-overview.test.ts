@@ -73,3 +73,19 @@ describe('GET /admin/dash/overview', () => {
     expect(body.data.tenants).toEqual({ total: 0, list: [] })
   })
 })
+
+describe('GET /admin/dash/overview: LIMS calls', () => {
+  it('does not count lims:* calls against the LegiScan budget', async () => {
+    const db = drizzle(env.DB, { schema })
+    const now = new Date().toISOString()
+    await db.insert(schema.apiCallLog).values([
+      { callType: 'getBill', params: '{}', loggedAt: now } as any,
+      { callType: 'lims:BulkData', params: '{}', loggedAt: now } as any,
+      { callType: 'lims:LegislationDetails', params: '{}', loggedAt: now } as any,
+    ])
+
+    const res = await app.fetch(new Request('http://central/admin/dash/overview', { headers: AUTH }), TEST_ENV)
+    const body = await res.json() as any
+    expect(body.data.apiBudget.used).toBe(1)
+  })
+})

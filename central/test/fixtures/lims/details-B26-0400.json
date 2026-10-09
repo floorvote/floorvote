@@ -1,0 +1,256 @@
+{
+ "legislationId": 60460,
+ "legislationNumber": "B26-0400",
+ "councilPeriodId": 26,
+ "category": "Bill",
+ "subCategory": "Permanent Bill",
+ "title": "Statutory Neglect Amendment Act of 2025",
+ "shortDescription": null,
+ "introductionDate": "2025-10-06T00:00:00",
+ "placeOfIntroduction": "Office of the Secretary",
+ "placeRead": null,
+ "introducers": [
+  {
+   "memberName": "Parker, Zachary",
+   "memberTitle": "Councilmember"
+  }
+ ],
+ "coIntroducers": [
+  {
+   "memberName": "Bonds, Anita",
+   "memberTitle": "Councilmember"
+  }
+ ],
+ "coSponsors": null,
+ "committeeReferralDate": "2025-10-07T00:00:00",
+ "committeesReferredTo": [
+  "Youth Affairs",
+  "Judiciary and Public Safety"
+ ],
+ "committeesReferredToWithComments": null,
+ "introductionPublicationDate": "2025-10-10T00:00:00",
+ "atTheRequestOf": null,
+ "status": "Official Law",
+ "legislationDocument": "https://lims.dccouncil.gov/downloads/LIMS/60460/Introduction/B26-0400-Introduction.pdf?Id=224385",
+ "committeeReReferral": null,
+ "additionalInformation": "BILL SUMMARY - As introduced, Bill 26-400 would update the statutory definition of neglect and clarify that the Child and Family Services Agency shall not use a parent or guardian\u2019s eligibility or use of public benefits as the sole evidence that parental failure is unrelated to neglect. It would also clarify that homelessness or lack of stable housing shall not be used as sole evidence of neglect.",
+ "committeeHearing": [
+  {
+   "hearingDate": "2025-11-13T00:00:00",
+   "hearingType": "Public Hearing",
+   "videoLink": "http://video.oct.dc.gov/VOD/DCC/2025_11/11_13_25_Youth_Judici.html",
+   "hearingNotice": "https://lims.dccouncil.gov/downloads/LIMS/60460/Hearing_Notice/B26-0400-Hearing_Notice1.pdf?Id=225465",
+   "cancellationHearingNotice": null,
+   "noticeFiledDate": "2025-10-21T00:00:00",
+   "noticePublicationDate": "2025-10-24T00:00:00",
+   "hearingRecord": "https://lims.dccouncil.gov/downloads/LIMS/60460/Hearing_Record/B26-0400-Hearing_Record1.pdf?Id=229135"
+  }
+ ],
+ "committeeMarkup": [
+  {
+   "committeeActionDate": "2026-01-27T00:00:00",
+   "committeePrint": "https://lims.dccouncil.gov/downloads/LIMS/60460/Committee_Print/B26-0400-Committee_Print1.pdf?Id=231796",
+   "committeeReport": "https://lims.dccouncil.gov/downloads/LIMS/60460/Committee_Report/B26-0400-Committee_Report1.pdf?Id=231798",
+   "reportFiledDate": "2026-02-03T00:00:00",
+   "videoLink": "http://video.oct.dc.gov/VOD/DCC/2026_01/01_27_26_Youth.html"
+  },
+  {
+   "committeeActionDate": "2026-02-23T00:00:00",
+   "committeePrint": "https://lims.dccouncil.gov/downloads/LIMS/60460/Committee_Print/B26-0400-Committee_Print2.pdf?Id=232948",
+   "committeeReport": "https://lims.dccouncil.gov/downloads/LIMS/60460/Committee_Report/B26-0400-Committee_Report2.pdf?Id=232950",
+   "reportFiledDate": "2026-02-25T00:00:00",
+   "videoLink": "http://video.oct.dc.gov/VOD/DCC/2026_02/02_23_26_Judici.html"
+  }
+ ],
+ "actions": [
+  {
+   "action": "First Reading, CC ",
+   "actionDate": "2026-03-03T00:00:00",
+   "videoLink": "https://dc.granicus.com/player/clip/10385?view_id=2&redirect=true",
+   "attachmentType": "Engrossment",
+   "attachment": "https://lims.dccouncil.gov/downloads/LIMS/60460/Meeting1/Engrossment/B26-0400-Engrossment1.pdf?Id=233777",
+   "voteDetails": {
+    "voteType": "Voice Vote",
+    "voteResult": "Approved",
+    "votes": [
+     {
+      "councilMember": "Anita Bonds",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Brianne K. Nadeau",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Brooke Pinto",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Charles Allen",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Christina Henderson",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Doni Crawford ",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Janeese Lewis George",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Matthew Frumin",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Phil Mendelson",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Robert C. White, Jr.",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Trayon White, Sr.",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Wendell Felder",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Zachary Parker",
+      "vote": "Yes"
+     }
+    ]
+   }
+  },
+  {
+   "action": "Final Reading, CC ",
+   "actionDate": "2026-03-31T00:00:00",
+   "videoLink": "https://dc.granicus.com/player/clip/10467?view_id=2&redirect=true",
+   "attachmentType": "Enrollment",
+   "attachment": "https://lims.dccouncil.gov/downloads/LIMS/60460/Meeting2/Enrollment/B26-0400-Enrollment1.pdf?Id=236164",
+   "voteDetails": {
+    "voteType": "Voice Vote",
+    "voteResult": "Approved",
+    "votes": [
+     {
+      "councilMember": "Anita Bonds",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Brianne K. Nadeau",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Brooke Pinto",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Charles Allen",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Christina Henderson",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Doni Crawford ",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Janeese Lewis George",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Matthew Frumin",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Phil Mendelson",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Robert C. White, Jr.",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Trayon White, Sr.",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Wendell Felder",
+      "vote": "Yes"
+     },
+     {
+      "councilMember": "Zachary Parker",
+      "vote": "Yes"
+     }
+    ]
+   }
+  }
+ ],
+ "mayoralReview": {
+  "transmittedDate": "2026-04-13T00:00:00",
+  "responseDueDate": "2026-04-28T00:00:00",
+  "returnedDate": "2026-04-24T00:00:00",
+  "signedDate": "2026-04-24T00:00:00",
+  "signedAct": "https://lims.dccouncil.gov/downloads/LIMS/60460/Signed_Act/B26-0400-Signed_Act.pdf?Id=236895",
+  "actNumber": "A26-0309",
+  "enactedDate": "2026-04-24T00:00:00",
+  "vetoDate": null,
+  "expirationDate": null,
+  "actPublicationDate": "2026-05-01T00:00:00",
+  "actPublicationPageNumber": "006825",
+  "actPublicationVolume": "73"
+ },
+ "congressionalReview": {
+  "transmittedDate": "2026-04-29T00:00:00",
+  "lawProjectedDate": null,
+  "effectiveDate": "2026-06-11T00:00:00",
+  "lawNumber": "L26-0129",
+  "expirationDate": null,
+  "lawPublicationDate": "2026-06-26T00:00:00",
+  "lawPublicationPageNumber": "008883",
+  "lawPublicationVolume": "73"
+ },
+ "vendorName": null,
+ "withdrawnBy": null,
+ "withdrawnDate": null,
+ "linkedLegislation": [],
+ "resolutionDetails": null,
+ "otherDocuments": [
+  {
+   "legislationDocumentId": 174689,
+   "documentTypeId": 2,
+   "documentTypeName": "Memorandum",
+   "documentTitle": null,
+   "url": "https://lims.dccouncil.gov/downloads/LIMS/60460/Memo/B26-0400_Memorandum.pdf?Id=224386"
+  },
+  {
+   "legislationDocumentId": 178994,
+   "documentTypeId": 13,
+   "documentTypeName": "Other",
+   "documentTitle": null,
+   "url": "https://lims.dccouncil.gov/downloads/LIMS/60460/Other/B26-0400-REIA_B26-0400_Statutory_Neglect_Print.pdf?Id=232895"
+  },
+  {
+   "legislationDocumentId": 179041,
+   "documentTypeId": 13,
+   "documentTypeName": "Other",
+   "documentTitle": null,
+   "url": "https://lims.dccouncil.gov/downloads/LIMS/60460/Other/B26-0400-Request_to_Agendize.pdf?Id=233032"
+  },
+  {
+   "legislationDocumentId": 182834,
+   "documentTypeId": 13,
+   "documentTypeName": "Other",
+   "documentTitle": null,
+   "url": "https://lims.dccouncil.gov/downloads/LIMS/60460/Other/B26-0400-Law_Notice_26-129.pdf?Id=240910"
+  }
+ ]
+}

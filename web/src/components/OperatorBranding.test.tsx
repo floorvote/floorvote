@@ -174,3 +174,23 @@ describe('OperatorBranding', () => {
     expect(screen.queryByRole('link', { name: 'Privacy' })).toBeNull()
   })
 })
+
+describe('OperatorBranding data credit by source', () => {
+  it('credits the DC Council LIMS, and not LegiScan, for a LIMS-fed tenant', () => {
+    render(<MemoryRouter><OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} dataSources={['lims']} /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'DC Council LIMS' })).toHaveAttribute('href', 'https://lims.dccouncil.gov')
+    expect(screen.queryByRole('link', { name: 'LegiScan' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'CC BY 4.0' })).toBeNull()
+  })
+
+  it('credits both for a tenant fed from both', () => {
+    render(<MemoryRouter><OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} dataSources={['legiscan', 'lims']} /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'LegiScan' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'DC Council LIMS' })).toBeInTheDocument()
+  })
+
+  it('falls back to LegiScan for an unrecognised source list', () => {
+    render(<MemoryRouter><OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} dataSources={['other']} /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'LegiScan' })).toBeInTheDocument()
+  })
+})

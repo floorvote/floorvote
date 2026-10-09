@@ -1,0 +1,52 @@
+{
+ "legislationId": 62569,
+ "legislationNumber": "REPROG26-0153",
+ "councilPeriodId": 26,
+ "category": "Reprogramming",
+ "subCategory": null,
+ "title": "FY 2026 Reprogramming Request for $750,000.00 of Local Funds within the Department of Youth Rehabilitation Services Dear",
+ "shortDescription": null,
+ "introductionDate": "2026-09-24T00:00:00",
+ "placeOfIntroduction": "Office of the Secretary",
+ "placeRead": null,
+ "introducers": [
+  {
+   "memberName": "Mendelson, Phil",
+   "memberTitle": "Chairman"
+  }
+ ],
+ "coIntroducers": null,
+ "coSponsors": null,
+ "committeeReferralDate": "2026-09-25T00:00:00",
+ "committeesReferredTo": [
+  "Retained by the Council"
+ ],
+ "committeesReferredToWithComments": [
+  "Youth Affairs"
+ ],
+ "introductionPublicationDate": null,
+ "atTheRequestOf": "Mayor",
+ "status": "New",
+ "legislationDocument": "https://lims.dccouncil.gov/downloads/LIMS/62569/Introduction/REPROG26-0153-Introduction.pdf?Id=246261",
+ "committeeReReferral": null,
+ "additionalInformation": null,
+ "committeeHearing": [],
+ "committeeMarkup": [],
+ "actions": null,
+ "mayoralReview": null,
+ "congressionalReview": null,
+ "vendorName": null,
+ "withdrawnBy": null,
+ "withdrawnDate": null,
+ "linkedLegislation": [],
+ "resolutionDetails": null,
+ "otherDocuments": [
+  {
+   "legislationDocumentId": 185471,
+   "documentTypeId": 2,
+   "documentTypeName": "Memorandum",
+   "documentTitle": null,
+   "url": "https://lims.dccouncil.gov/downloads/LIMS/62569/Memo/REPROG26-0153_Memorandum.pdf?Id=246262"
+  }
+ ]
+}

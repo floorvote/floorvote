@@ -8,6 +8,11 @@ import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 
+// LIMS calls are logged to api_call_log too (callType 'lims:*') so they show up
+// in call history, but they are not LegiScan calls and must not count against
+// the LegiScan monthly budget these panels report.
+const legiscanCallsOnly = sql`${schema.apiCallLog.callType} NOT LIKE 'lims:%'`
+
 export const dashRoutes = new Hono<DashEnv>()
 
 dashRoutes.use('*', requireAdmin())
@@ -65,7 +70,7 @@ dashRoutes.get('/overview', async (c) => {
   const apiUsedRow = await db
     .select({ n: sql<number>`COUNT(*)` })
     .from(schema.apiCallLog)
-    .where(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()))
+    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
     .get()
   const apiUsed = Number(apiUsedRow?.n ?? 0)
 
@@ -315,7 +320,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
   const mtdRow = await db
     .select({ n: sql<number>`COUNT(*)` })
     .from(schema.apiCallLog)
-    .where(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()))
+    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
     .get()
 
   // Daily series: last `days` days
@@ -328,7 +333,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
       calls: sql<number>`COUNT(*)`,
     })
     .from(schema.apiCallLog)
-    .where(gte(schema.apiCallLog.loggedAt, since.toISOString()))
+    .where(and(gte(schema.apiCallLog.loggedAt, since.toISOString()), legiscanCallsOnly))
     .groupBy(sql`substr(${schema.apiCallLog.loggedAt}, 1, 10)`)
     .all()
   const dailyByDate = new Map<string, number>()
@@ -348,7 +353,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
       calls: sql<number>`COUNT(*)`,
     })
     .from(schema.apiCallLog)
-    .where(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()))
+    .where(and(gte(schema.apiCallLog.loggedAt, monthStart.toISOString()), legiscanCallsOnly))
     .groupBy(schema.apiCallLog.callType)
     .orderBy(desc(sql`COUNT(*)`))
     .limit(10)
@@ -364,7 +369,7 @@ dashRoutes.get('/sync/api-budget', async (c) => {
       calls: sql<number>`COUNT(*)`,
     })
     .from(schema.apiCallLog)
-    .where(gte(schema.apiCallLog.loggedAt, ninetyDaysAgo.toISOString()))
+    .where(and(gte(schema.apiCallLog.loggedAt, ninetyDaysAgo.toISOString()), legiscanCallsOnly))
     .groupBy(sql`substr(${schema.apiCallLog.loggedAt}, 1, 10)`)
     .all()
   const monthByDate = new Map<string, number>()

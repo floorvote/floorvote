@@ -357,3 +357,15 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
   dailyUsed:   integer('daily_used').notNull(),
   updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
+
+/** DC Council LIMS source records; see migrations-legiscan/0021_lims_records.sql. */
+export const limsRecords = sqliteTable('lims_records', {
+  billId:            integer('bill_id').primaryKey(),
+  legislationNumber: text('legislation_number').notNull().unique(),
+  councilPeriodId:   integer('council_period_id').notNull(),
+  categoryId:        integer('category_id').notNull(),
+  bulkJson:          text('bulk_json').notNull(),
+  bulkHash:          text('bulk_hash').notNull(),
+  detailsFetchedAt:  text('details_fetched_at'),
+  updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
