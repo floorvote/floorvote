@@ -1,4 +1,4 @@
-import { getBill, getBillText, getMasterListBySession, getMasterListRaw, getSessionList } from './client'
+import { getBill, getBillText, getDatasetList, getDatasetRaw, getMasterListBySession, getMasterListRaw, getSessionList } from './client'
 import type { Provider } from '../sdk'
 
 /**
@@ -47,6 +47,18 @@ export const legiscan: Provider<'LEGISCAN_API_KEY'> = {
 
   personUrl: ({ state, name, peopleId }) =>
     `https://legiscan.com/${state}/people/${name.replace(/ /g, '-')}/id/${peopleId}`,
+
+  // getBill carries only roll call totals, and getRollCall costs a call per
+  // roll call. The weekly bulk dataset holds every getRollCall record for a
+  // session, so a session's member votes cost one download.
+  listVoteDatasets: async (state, ctx) =>
+    (await getDatasetList(state, ctx.env.LEGISCAN_API_KEY, () =>
+      ctx.logCall('getDatasetList', { state })))
+      .map(d => ({ sessionId: d.session_id, hash: d.dataset_hash, key: d.access_key })),
+
+  fetchVoteDataset: ({ sessionId, key }, ctx) =>
+    getDatasetRaw(sessionId, key, ctx.env.LEGISCAN_API_KEY, () =>
+      ctx.logCall('getDatasetRaw', { sessionId })),
 }
 
 /** Decode base64 (as LegiScan returns document bytes) without Node Buffer. */

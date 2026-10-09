@@ -26,6 +26,8 @@ LegiScan is the default **provider** (`central/src/providers/legiscan/`). Core (
 | `listChangeHashes` (optional) | `getMasterListRaw` | Cron raw pass. A provider without it skips raw-pass hours. |
 | `fetchMeasure` | `getBill` | Ingestor |
 | `fetchDocument` (optional) | `getBillText` | Ingestor, on both the normal and `skipFetch` paths, only when a text's `state_link` fails or selects its version with a URL fragment the server never sees |
+| `listVoteDatasets` (optional) | `getDatasetList` | Cron, once a day at 3 ET, for states with a session due its weekly vote check ([legiscan-member-votes.md](legiscan-member-votes.md)) |
+| `fetchVoteDataset` (optional) | `getDatasetRaw` | Ingestor, for a `vote-dataset` message, when a session's dataset hash changed |
 
 Two things hold the split. ESLint (`central/eslint-provider-boundary.mjs`) lets core reach the provider only through the registry (`central/src/providers/index.ts`), and lets provider code reach core only through `central/src/providers/sdk.ts`. And a provider's `ctx.env` holds only the env keys it declares (LegiScan's is `LEGISCAN_API_KEY`), so it never gets the database, buckets, or queues.
 

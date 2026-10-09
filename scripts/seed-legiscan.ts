@@ -42,9 +42,9 @@
  *   --remote                  Use --remote (default)
  *   --skip-votes              Skip vote seeding entirely (no roll_calls, no roll_call_votes)
  *   --with-individual-votes   Also seed per-legislator roll_call_votes rows.
- *                             Default is to skip them — nothing in the codebase reads
- *                             them and they bloat D1 on large sessions. Use this if
- *                             you want them upfront; otherwise backfill later with
+ *                             Default is to skip them: central's weekly dataset load
+ *                             fills them for sessions instances cover. Use this for
+ *                             an older session, or backfill later with
  *                             --individual-votes-only against the same JSON files.
  *   --individual-votes-only   Backfill ONLY roll_call_votes against an already-seeded
  *                             session. Skips bills/people/roll_calls. Use this to add

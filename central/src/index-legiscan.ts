@@ -3,6 +3,8 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
 import { runSync } from './cron/sync'
+import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
+import { getCurrentEtHour } from './lib/sync-schedule'
 import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
 import { processIngestorQueue } from './queue/processor'
 import { processDeadLetterQueue } from './queue/deadLetters'
@@ -83,6 +85,9 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const db = drizzle(env.DB, { schema })
     ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
+    if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
+      ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))
+    }
     if (shouldRunEngagementPull(new Date())) {
       ctx.waitUntil(runJob(env, 'engagement-pull', () => pullEngagementStats(env, db)))
       ctx.waitUntil(runJob(env, 'd1-anomaly-watch', () => runAnomalyWatch(env)))
