@@ -39,6 +39,7 @@ async function legiscanFetch<T extends Record<string, unknown>>(
 
   const res = await rateLimitedFetch(url.toString(), undefined, {
     ratePerSec: LEGISCAN_RATE_PER_SEC,
+    bucketKey: 'legiscan',
     onRequest,
   })
   if (!res.ok) throw new Error(`LegiScan HTTP ${res.status}`)

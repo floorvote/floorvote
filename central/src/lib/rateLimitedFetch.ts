@@ -11,8 +11,9 @@
  * signal errors through the status code. Baking either convention in here
  * would force the other to work around it.
  *
- * Scope note: the token bucket is per-isolate and in-memory, keyed by rate. A
- * cron invocation and a queue-consumer invocation run in different isolates and
+ * Scope note: the token bucket is per-isolate and in-memory, keyed by
+ * `bucketKey` (by default, the rate). A cron invocation and a queue-consumer
+ * invocation run in different isolates and
  * therefore hold independent buckets, so the aggregate outbound rate can exceed
  * `ratePerSec` across invocations. The bucket smooths the common case (a burst
  * inside one invocation, e.g. the cron's `Promise.allSettled` fan-out); the 429
@@ -25,6 +26,12 @@ const RETRY_DELAYS_MS = [2000, 5000, 10000]
 export interface RateLimitedFetchOptions {
   /** Sustained outbound request rate, in requests per second. */
   ratePerSec: number
+  /**
+   * Which bucket to pace against. Defaults to the rate, so every caller at the
+   * same rate shares one bucket. A provider passes its id, so two providers
+   * that happen to share a rate are paced separately.
+   */
+  bucketKey?: string
   /** Max 429 retries. Defaults to the number of fallback delays (3). */
   maxRetries?: number
   /**
@@ -44,26 +51,26 @@ interface TokenBucket {
   lastRefillMs: number
 }
 
-/** Per-isolate, in-memory buckets keyed by rate. See the scope note above. */
-const buckets = new Map<number, TokenBucket>()
+/** Per-isolate, in-memory buckets by key. See the scope note above. */
+const buckets = new Map<string, TokenBucket>()
 
 /**
- * Serializes bucket acquisition per rate. Without this, concurrent callers all
+ * Serializes bucket acquisition per bucket. Without this, concurrent callers all
  * read the same `tokens` value before any of them decrements it, and the burst
  * goes out unpaced — which is exactly the cron fan-out case.
  */
-const acquireChains = new Map<number, Promise<void>>()
+const acquireChains = new Map<string, Promise<void>>()
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /** Burst capacity. One token: strict pacing, no saved-up burst. */
 const BUCKET_CAPACITY = 1
 
-async function takeToken(ratePerSec: number): Promise<void> {
-  let bucket = buckets.get(ratePerSec)
+async function takeToken(key: string, ratePerSec: number): Promise<void> {
+  let bucket = buckets.get(key)
   if (!bucket) {
     bucket = { tokens: BUCKET_CAPACITY, lastRefillMs: Date.now() }
-    buckets.set(ratePerSec, bucket)
+    buckets.set(key, bucket)
   }
 
   const now = Date.now()
@@ -83,10 +90,10 @@ async function takeToken(ratePerSec: number): Promise<void> {
 }
 
 /** Queues token acquisition so concurrent callers are paced, not batched. */
-function acquire(ratePerSec: number): Promise<void> {
-  const prior = acquireChains.get(ratePerSec) ?? Promise.resolve()
-  const next = prior.then(() => takeToken(ratePerSec), () => takeToken(ratePerSec))
-  acquireChains.set(ratePerSec, next.catch(() => {}))
+function acquire(key: string, ratePerSec: number): Promise<void> {
+  const prior = acquireChains.get(key) ?? Promise.resolve()
+  const next = prior.then(() => takeToken(key, ratePerSec), () => takeToken(key, ratePerSec))
+  acquireChains.set(key, next.catch(() => {}))
   return next
 }
 
@@ -103,10 +110,11 @@ export async function rateLimitedFetch(
   opts: RateLimitedFetchOptions,
 ): Promise<Response> {
   const { ratePerSec, onRequest } = opts
+  const bucketKey = opts.bucketKey ?? `rate:${ratePerSec}`
   const maxRetries = opts.maxRetries ?? RETRY_DELAYS_MS.length
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    await acquire(ratePerSec)
+    await acquire(bucketKey, ratePerSec)
     const res = await fetch(url, init)
     if (onRequest) {
       try {
