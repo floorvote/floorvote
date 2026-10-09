@@ -152,6 +152,10 @@ name = "EMAIL"
 # # The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
 # # source instead of LegiScan. No key needed. See src/sources/mga.ts.
 # # MGA_STATES = "MD"
+# # Virginia's Legislative Information System data files (lis.virginia.gov) as
+# # VA's source instead of LegiScan. No key needed; bill text needs the LIS
+# # API, which is not used yet. See src/sources/lis.ts.
+# # LIS_STATES = "VA"
 #
 # [env.legiscan.triggers]
 # crons = ["0 * * * *"]

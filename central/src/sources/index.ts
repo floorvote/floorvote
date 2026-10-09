@@ -2,13 +2,14 @@ import { eq } from 'drizzle-orm'
 import { bills, sourceRecords } from '../db/schema-legiscan'
 import { limsSource } from './lims'
 import { mgaSource } from './mga'
+import { lisSource } from './lis'
 import type { DirectSource } from './types'
 import type { LsEnv, LsDb } from '../types-legiscan'
 
 export type { DirectSource } from './types'
 
 /** Every direct source central knows. A deployment enables each by configuration. */
-export const SOURCES: readonly DirectSource[] = [limsSource, mgaSource]
+export const SOURCES: readonly DirectSource[] = [limsSource, mgaSource, lisSource]
 
 export function directSource(id: string | null | undefined): DirectSource | undefined {
   return SOURCES.find(s => s.id === id)

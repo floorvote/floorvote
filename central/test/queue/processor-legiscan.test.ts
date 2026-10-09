@@ -470,6 +470,24 @@ describe('downloadTextToR2: bot-wall handling', () => {
   })
 })
 
+describe('per-member votes', () => {
+  it('writes every member vote of a large roll call, replacing the previous set', async () => {
+    const db = drizzle(env.DB, { schema })
+    const memberVotes = (n: number) => Array.from({ length: n }, (_, i) => ({ people_id: 5000 + i, vote_id: i % 2 ? 1 : 2, vote_text: i % 2 ? 'Yea' : 'Nay' }))
+    const bill = (n: number) => buildFixtureBill({
+      votes: [{ roll_call_id: 777, date: '2026-02-03', desc: 'Passed', yea: 0, nay: 0, nv: 0, absent: 0, total: n, passed: 1,
+        chamber: 'H', chamber_id: 1, url: '', state_link: '', member_votes: memberVotes(n) }],
+    })
+    const opts = { forceMetadata: false, forceAI: false, interactive: false, legiscanTextFallback: true }
+    const count = async () => (await db.select().from(schema.rollCallVotes).where(eq(schema.rollCallVotes.rollCallId, 777)).all()).length
+
+    await ingestLsBill(bill(250), makeEnv(), db, opts)
+    expect(await count()).toBe(250)
+    await ingestLsBill(bill(40), makeEnv(), db, opts)
+    expect(await count()).toBe(40)
+  })
+})
+
 describe('LIMS ids never reach LegiScan', () => {
   const LIMS_BILL = limsBillId('B26-0400')!
   const limsPdf = {

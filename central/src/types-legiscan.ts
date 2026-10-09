@@ -37,6 +37,11 @@ export type LsEnv = {
    * (src/sources/mga.ts) instead of LegiScan. No key needed. Unset → off.
    */
   MGA_STATES?: string
+  /**
+   * "VA" to read Virginia from the Legislative Information System's public data
+   * files (src/sources/lis.ts) instead of LegiScan. No key needed. Unset → off.
+   */
+  LIS_STATES?: string
   ADMIN_SECRET: string
   OPERATOR_NAME: string
   BILL_PROVIDER: 'legiscan'

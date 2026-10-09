@@ -1,6 +1,7 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getBill, getBillText, type LegiscanBill } from '../lib/legiscan'
 import { billSource, directSource } from '../sources'
+import type { BatchItem } from 'drizzle-orm/batch'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
@@ -87,6 +88,22 @@ async function fetchBillForIngest(billId: number, source: string, env: LsEnv, db
   if (direct) return await direct.buildBill(billId, env, db)
   return getBill(billId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getBill', { billId }))
+}
+
+/** D1 binds at most 100 parameters per statement; a vote row has five. */
+const VOTE_ROWS_PER_INSERT = 19
+
+/** Replace one roll call's member votes: a delete, then multi-row inserts. */
+function memberVoteStatements(
+  db: LsDb, rollCallId: number, votes: NonNullable<LegiscanBill['votes'][number]['member_votes']>,
+): BatchItem<'sqlite'>[] {
+  const stmts: BatchItem<'sqlite'>[] = [db.delete(rollCallVotes).where(eq(rollCallVotes.rollCallId, rollCallId))]
+  for (let i = 0; i < votes.length; i += VOTE_ROWS_PER_INSERT) {
+    stmts.push(db.insert(rollCallVotes).values(votes.slice(i, i + VOTE_ROWS_PER_INSERT).map(mv => ({
+      id: crypto.randomUUID(), rollCallId, peopleId: mv.people_id, voteId: mv.vote_id, voteText: mv.vote_text,
+    }))))
+  }
+  return stmts
 }
 
 export type IngestOptions = {
@@ -456,6 +473,7 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
   // Upsert roll calls (vote summaries from getBill). Per-legislator vote rows
   // (roll_call_votes) require getRollCall calls and are out of scope here —
   // bulk seed has them; live-ingested bills won't.
+  const memberVoteWrites: BatchItem<'sqlite'>[] = []
   for (const v of bill.votes ?? []) {
     await db.insert(rollCalls).values({
       rollCallId:  v.roll_call_id,
@@ -490,16 +508,11 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
       },
     })
 
-    if (v.member_votes) {
-      await db.delete(rollCallVotes).where(eq(rollCallVotes.rollCallId, v.roll_call_id))
-      for (const mv of v.member_votes) {
-        await db.insert(rollCallVotes).values({
-          id: crypto.randomUUID(), rollCallId: v.roll_call_id,
-          peopleId: mv.people_id, voteId: mv.vote_id, voteText: mv.vote_text,
-        })
-      }
-    }
+    if (v.member_votes) memberVoteWrites.push(...memberVoteStatements(db, v.roll_call_id, v.member_votes))
   }
+  // One batch for every member vote of the bill: a Virginia budget bill has
+  // thousands, and one query each would pass D1's per-invocation query limit.
+  if (memberVoteWrites.length > 0) await db.batch(memberVoteWrites as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]])
 
   const calendarBlock: CalendarBlock = {
     events: (bill.calendar ?? []).map(e => ({
