@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import { requireAdmin, type DashEnv } from '../lib/adminAuth'
 import { resolveTenantRpc } from '../lib/tenantRpc'
 

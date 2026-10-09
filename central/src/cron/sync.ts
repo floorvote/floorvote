@@ -1,10 +1,10 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
-import { getMasterListBySession, getMasterListRaw, getSessionList } from '../lib/legiscan'
-import { sessions, bills, billTenants, tenants, keywordRegistry, apiCallLog, sessionSyncLog } from '../db/schema-legiscan'
+import { getMasterListBySession, getMasterListRaw, getSessionList } from '../providers/legiscan/client'
+import { sessions, bills, billTenants, tenants, keywordRegistry, apiCallLog, sessionSyncLog } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
-import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
+import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 
 const BATCH = 80

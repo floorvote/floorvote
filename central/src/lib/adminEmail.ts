@@ -1,5 +1,5 @@
 import { sendEmail } from './email'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 export async function sendAdminMagicLink(

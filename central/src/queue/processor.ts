@@ -1,12 +1,12 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getBill, getBillText } from '../lib/legiscan'
+import { getBill, getBillText } from '../providers/legiscan/client'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
   billChangeLog, rollCalls, people, tenants,
-} from '../db/schema-legiscan'
+} from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
-import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage, CalendarBlock } from '../types-legiscan'
+import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage, CalendarBlock } from '../types'
 import { nowDb } from '../lib/dbTime'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
@@ -220,7 +220,7 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
 
   await db.delete(billSponsors).where(eq(billSponsors.billId, bill.bill_id))
   for (const s of bill.sponsors ?? []) {
-    // Persist the person record embedded on the sponsor. bills-legiscan resolves
+    // Persist the person record embedded on the sponsor. routes/bills resolves
     // sponsor display names by joining bill_sponsors -> people; without this,
     // any state that arrives via keyword sync (rather than a bulk dataset seed)
     // has no people rows and falls back to showing the numeric people_id.

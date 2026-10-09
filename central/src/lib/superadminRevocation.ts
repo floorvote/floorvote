@@ -12,9 +12,9 @@
 // stored value is the token's `exp` (epoch seconds) so expired entries can be
 // pruned (a revocation is meaningless once the token would have expired anyway).
 import { sql } from 'drizzle-orm'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import { getSetting, setSetting } from './settings'
-import type { LsDb } from '../types-legiscan'
+import type { LsDb } from '../types'
 
 const PREFIX = 'revoked_jti:'
 

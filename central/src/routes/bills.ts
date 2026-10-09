@@ -1,11 +1,11 @@
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, desc, inArray } from 'drizzle-orm'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',

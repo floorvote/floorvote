@@ -1,4 +1,4 @@
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 import { htmlToText } from './htmlToText'
 import { PRODUCT_NAME } from '../../../shared/brand'
 

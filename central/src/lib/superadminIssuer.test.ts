@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mintSuperadminToken, isSuperadminEmail } from './superadminIssuer'
 import { verifySuperadminJwt } from './superadminJwt'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 
 async function envWithKey(emails: string): Promise<{ env: LsEnv; pub: string }> {
   const kp = (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])) as CryptoKeyPair

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   getMasterList,
   getMasterListBySession,
-} from '../../src/lib/legiscan'
+} from '../../../src/providers/legiscan/client'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)

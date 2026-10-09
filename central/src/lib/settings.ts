@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import { nowDb } from './dbTime'
-import type { LsDb } from '../types-legiscan'
+import type { LsDb } from '../types'
 
 export async function getSetting(db: LsDb, key: string, fallback: string): Promise<string> {
   const row = await db.select().from(schema.settings).where(eq(schema.settings.key, key)).get()

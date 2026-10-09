@@ -2,10 +2,10 @@ import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, inArray, desc } from 'drizzle-orm'
 import { matchesUnion } from '../lib/keywords'
-import * as schema from '../db/schema-legiscan'
+import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
-import type { LsEnv } from '../types-legiscan'
+import type { LsEnv } from '../types'
 import { calendarBlockFromRows, type StoredCalendarRow } from '../lib/detect-changes'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
@@ -28,7 +28,7 @@ tenantsLsRoutes.use('*', async (c, next) => {
 
 // GET /tenants/current-session/:state — the state's newest regular session.
 // Used by a tenant's GET /bills/draft-defaults to pick a default year for a new
-// draft bill. schema-legiscan has no is_current column, so "current" is the
+// draft bill. The central schema has no is_current column, so "current" is the
 // highest-yearStart non-special session; sineDie tells the caller whether that
 // session has already adjourned, which is when a draft belongs to the NEXT one.
 tenantsLsRoutes.get('/current-session/:state', async (c) => {
