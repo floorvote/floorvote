@@ -3,6 +3,7 @@ import { useVerticalResize, ResizeHandle } from './ResizeHandle'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
+import { parseHandle } from '../../../shared/billHandle'
 import { color, radius, fontSize } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
@@ -300,7 +301,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                     {selectedVersion?.altStateLink && (
                       <a
                         href={selectedVersion.altStateLink}
-                        download={`${billId.replace('legiscan:', '')}-${selectedVersion?.type ?? 'text'}.pdf`}
+                        download={`${parseHandle(billId) ?? billId}-${selectedVersion?.type ?? 'text'}.pdf`}
                         className="blue-link"
                         style={{ fontSize: fontSize.sm }}
                       >

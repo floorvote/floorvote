@@ -7,6 +7,7 @@ import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'd
 import type { AppEnv } from '../types'
 import { sessionToSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
+import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { newMatchWhere } from './billsApi/query'
 import { getNewMatchMinRelevance } from '../lib/newMatch'
@@ -129,7 +130,7 @@ interface HearingBill {
   myVote: string | null
   /** Drives the dashed BillBadge variant on the sidebar hearing chips. Always
    *  false in practice today: hearings are matched to tenant rows by
-   *  `externalId = 'legiscan:<n>'`, and a draft is created with a null
+   *  the bill handle in `externalId`, and a draft is created with a null
    *  externalId (see billsApi/draftRoutes.ts), so no draft can reach this list.
    *  Carried anyway so the shape is honest and a future draft-with-hearing
    *  path can't silently reintroduce the solid badge. */
@@ -220,10 +221,8 @@ async function fetchUpcomingHearings(
       .where(isNotNull(bills.priority))
       .all()
     const priorityBillIds = priorityRows
-      .map(r => r.externalId)
-      .filter((e): e is string => !!e && e.startsWith('legiscan:'))
-      .map(e => Number(e.slice('legiscan:'.length)))
-      .filter(n => Number.isInteger(n) && n > 0)
+      .map(r => parseHandle(r.externalId))
+      .filter((n): n is number => n !== null)
     if (priorityBillIds.length === 0) return { hearings: [], lookaheadDays }
 
     try {
@@ -244,9 +243,9 @@ async function fetchUpcomingHearings(
 
   if (centralResults.length === 0) return { hearings: [], lookaheadDays }
 
-  // Tenant bills store the LegiScan id as externalId = 'legiscan:<n>'.
+  // Tenant bills store the central bill's handle as externalId.
   // Look up tenant rows, including summary/priority for the chip tooltip.
-  const billExternalIds = [...new Set(centralResults.map(h => `legiscan:${h.billId}`))]
+  const billExternalIds = [...new Set(centralResults.map(h => toHandle(h.billId)))]
 
   // Scope is fixed to prioritized bills only.
   const billRows = await db
@@ -295,7 +294,7 @@ async function fetchUpcomingHearings(
   // Group by composite hearing key
   const groups = new Map<string, HearingGroup>()
   for (const h of centralResults) {
-    const bill = billByExternal.get(`legiscan:${h.billId}`)
+    const bill = billByExternal.get(toHandle(h.billId))
     if (!bill) continue
     // Composite key: same date+time+description+location = same hearing
     const hearingKey = `${h.date}|${h.time ?? ''}|${(h.description ?? '').trim()}|${(h.location ?? '').trim()}`

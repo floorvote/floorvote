@@ -9,6 +9,7 @@ import {
 } from '../db/schema'
 import { gt, and, inArray, sql, type SQL } from 'drizzle-orm'
 import { centralFetch } from '../lib/centralFetch'
+import { HANDLE_PREFIX, parseHandle } from '../../../shared/billHandle'
 import { EXPORT_TABLES, type ExportTable } from '../../../shared/exportTables'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../lib/billSubjects'
 import type { AppEnv } from '../types'
@@ -133,9 +134,10 @@ exportApiRouter.get('/rich', async (c) => {
 
   // Only meaningful bills carry useful rich data and are actually viewed;
   // restricting here avoids pulling rich data for lightweight stubs.
+  const isCentralBill = sql`${bills.externalId} LIKE ${`${HANDLE_PREFIX}%`}`
   const where = cursor
-    ? sql`${bills.externalId} LIKE 'legiscan:%' AND ${MEANINGFUL_BILLS} AND ${bills.id} > ${cursor}`
-    : sql`${bills.externalId} LIKE 'legiscan:%' AND ${MEANINGFUL_BILLS}`
+    ? sql`${isCentralBill} AND ${MEANINGFUL_BILLS} AND ${bills.id} > ${cursor}`
+    : sql`${isCentralBill} AND ${MEANINGFUL_BILLS}`
 
   let billRows = await db
     .select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber })
@@ -171,7 +173,8 @@ exportApiRouter.get('/rich', async (c) => {
   }
 
   for (const b of billRows) {
-    const rich = b.externalId ? byId[b.externalId.replace('legiscan:', '')] : undefined
+    const centralId = parseHandle(b.externalId)
+    const rich = centralId !== null ? byId[String(centralId)] : undefined
     if (!rich) continue
     for (const a of rich.amendments ?? []) {
       amendments.push({ billId: b.id, billNumber: b.billNumber, ...a })

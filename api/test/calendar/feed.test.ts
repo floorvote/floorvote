@@ -177,14 +177,6 @@ describe('PATCH /api/bills/:id/priority', () => {
 describe('calendar backfill', () => {
   beforeEach(async () => { await resetDb(); await applyMigrations() })
 
-  it('parseLegiScanId parses legiscan ids and rejects others', async () => {
-    const { parseLegiScanId } = await import('../../src/lib/calendarBackfill')
-    expect(parseLegiScanId('legiscan:501')).toBe(501)
-    expect(parseLegiScanId('ocd-bill/abc')).toBeNull()
-    expect(parseLegiScanId(null)).toBeNull()
-    expect(parseLegiScanId('legiscan:0')).toBeNull()
-  })
-
   it('collectPriorityLegiscanIds returns numeric legiscan ids of priority bills only', async () => {
     const { collectPriorityLegiscanIds } = await import('../../src/lib/calendarBackfill')
     await seedBill({ billNumber: 'H1', state: 'RI', session: '2026', externalId: 'legiscan:501', priority: 'high' })
