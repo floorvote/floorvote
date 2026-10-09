@@ -9,22 +9,6 @@
  *
  * Each package's test suite asserts ITS OWN matcher against this one table, so
  * a change to either side that is not mirrored fails that side's tests.
- *
- * The one-off scripts no longer hand-copy the logic — load-history.ts,
- * seed-from-bulk.ts, openstates-eval.ts and openstates-deep-eval.ts all import
- * from shared/keywords.ts, so a matcher change reaches them without edits.
- * (This comment claimed otherwise until 2026-09-10, when auditing the blast
- * radius of a boundary-class change turned up the imports.) The two eval
- * scripts still match against their own hard-coded keyword list rather than an
- * operator-supplied one, so the wildcard sentinel can never reach them.
- *
- * scripts/openstates/openstates-crossref.py is a SEPARATE, deliberate
- * divergence and is not tracked here: it's a Python, offline-only script that
- * cannot import this TypeScript module, so it keeps its own copy — a
- * `WORD_BOUNDARY = {'election'}` carve-out plus plain substring matching, i.e.
- * the OLD pre-glob semantics this file replaced everywhere else. It was never
- * ported to glob syntax and its match counts are not comparable to any of the
- * matchers above.
  */
 
 export type KeywordMatchCase = { text: string; keywords: string[]; expected: boolean }

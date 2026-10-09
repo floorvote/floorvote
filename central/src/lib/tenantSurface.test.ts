@@ -19,7 +19,6 @@ describe('tenantSurface allowlist matcher', () => {
       ['GET', '/api/tenants/ri/upcoming-hearings?days=14'],
       ['POST', '/api/admin/sync-keywords/ri'],
       ['POST', '/api/admin/update-bill-match-types/ri'],
-      ['POST', '/api/admin/reprocess-tenant/ri'],
       ['GET', '/api/admin/superadmin/check'],
       ['GET', '/api/admin/superadmin/check?email=x@y.org'],
     ]
@@ -32,6 +31,7 @@ describe('tenantSurface allowlist matcher', () => {
     const blocked: [string, string][] = [
       ['POST', '/api/admin/superadmin/mint'],
       ['POST', '/api/admin/reingest-tenant/ri'],
+      ['POST', '/api/admin/reprocess-tenant/ri'],
       ['POST', '/api/admin/anomaly-watch'],
       ['POST', '/api/admin/trigger-sync'],
       ['POST', '/api/admin/backfill-match-types'],
@@ -130,7 +130,6 @@ describe('tenantSurface allowlist matcher', () => {
       ['POST', '/api/bills/rich-batch',                        'routes/exportApi.ts'],
       ['POST', '/api/admin/sync-keywords/ri',                  'routes/adminApi.ts'],
       ['POST', '/api/admin/update-bill-match-types/ri',        'routes/adminApi.ts'],
-      ['POST', '/api/admin/reprocess-tenant/ri',               'lib/demoResetAndSeed.ts'],
     ]
     it.each(callerOps)('allows %s %s (called from %s)', (method, path) => {
       expect(isTenantSurfaceAllowed(method, path)).toBe(true)

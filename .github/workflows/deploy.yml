@@ -17,7 +17,6 @@ on:
         type: choice
         options:
           - tenant
-          - central
           - central-legiscan
         required: true
       tenant:
@@ -61,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${{ inputs.target }}" in
-            central|central-legiscan) cd central && npm ci ;;
+            central-legiscan) cd central && npm ci ;;
             *) npm ci ;;
           esac
 
@@ -73,7 +72,6 @@ jobs:
               t="${{ inputs.tenant }}"
               if [ -z "$t" ]; then echo "::error::'tenant' input is required when target = tenant"; exit 1; fi
               cd api && npm run deploy:tenant -- "$t" ;;
-            central)         cd central && npm run deploy ;;
             central-legiscan) cd central && npm run deploy:legiscan ;;
             *) echo "::error::unknown target ${{ inputs.target }}"; exit 1 ;;
           esac

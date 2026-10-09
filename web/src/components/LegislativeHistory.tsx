@@ -52,7 +52,7 @@ function MemberVotes({ votes }: { votes: { name: string; vote: string }[] }) {
   )
 }
 
-// Strip leading "MM/DD/YYYY " date prefix that some states embed in OpenStates action descriptions
+// Strip leading "MM/DD/YYYY " date prefix that some states embed in action descriptions
 const stripDatePrefix = (s: string) => /^\d{2}\/\d{2}\/\d{4} /.test(s) ? s.slice(11) : s
 
 // Monitoring-only (stub) bills get fresh `lastAction` from the masterlist sync but their

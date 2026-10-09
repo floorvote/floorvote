@@ -7,14 +7,9 @@
  *
  * Deliberately dumb about response shapes. It returns the raw `Response` and
  * lets the caller parse and decide what counts as an error, because providers
- * disagree: LegiScan answers HTTP 200 with an error body, OpenStates uses
- * `res.ok`. Baking either convention in here would force the other to work
- * around it.
- *
- * `central/src/providers/openstates.ts` is the intended second adopter — it has
- * its own equivalent 429-retry loop that this mirrors — but it has deliberately
- * NOT been migrated yet. That provider is vestigial and left untouched on
- * purpose; migrating it is a separate decision, not a drive-by.
+ * disagree: LegiScan answers HTTP 200 with an error body, while other APIs
+ * signal errors through the status code. Baking either convention in here
+ * would force the other to work around it.
  *
  * Scope note: the token bucket is per-isolate and in-memory, keyed by rate. A
  * cron invocation and a queue-consumer invocation run in different isolates and
@@ -24,7 +19,7 @@
  * retry below is what covers the aggregate case.
  */
 
-/** Escalating fallback waits, mirroring the OpenStates provider's semantics. */
+/** Escalating fallback waits, used when a 429 carries no usable `Retry-After`. */
 const RETRY_DELAYS_MS = [2000, 5000, 10000]
 
 export interface RateLimitedFetchOptions {

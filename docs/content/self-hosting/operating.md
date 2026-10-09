@@ -62,7 +62,7 @@ The repo ships a manual deploy workflow at `.github/workflows/deploy.yml` (`work
 ```bash
 # From your default branch — deploy one tenant, or central:
 gh workflow run deploy.yml --ref main -f target=tenant -f tenant=<slug>
-gh workflow run deploy.yml --ref main -f target=central
+gh workflow run deploy.yml --ref main -f target=central-legiscan
 gh run watch
 ```
 
@@ -79,6 +79,9 @@ cd central && npm install && npm run deploy:legiscan
 # Repeat for each tenant
 cd ../api && npm run deploy:tenant -- org-nj
 ```
+
+> [!NOTE]
+> **Check where your central settings live.** Older versions of `central/wrangler.example.toml` put a few optional settings only in the top-level block, outside `[env.legiscan]`: `DEAD_LETTER_QUEUE`, `EMAIL_FROM`, `ALERT_EMAILS`, `SUPERADMIN_JWT_PUBLIC_KEY`, and the dead-letter `[[queues.consumers]]` entry. Wrangler doesn't carry top-level vars or queue consumers into an environment, so if you filled any of these in at the top level, your central never used them. Job-failure alerts went nowhere, email used the default sender, and superadmin login stayed off. Move them into `[env.legiscan.vars]` and `[[env.legiscan.queues.consumers]]`, then redeploy. Keep the top-level `name` and compatibility settings, which the `legiscan` environment inherits. The rest of the old top-level block (its `main`, D1, R2, queue, cron, and `[vars]` entries) is unused and can be deleted.
 
 ## Monitoring
 

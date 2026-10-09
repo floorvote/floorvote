@@ -11,7 +11,7 @@
 # that one integration against a real service.
 #
 # This file holds LOCAL secrets only. Non-secret per-env config (APP_URL,
-# TENANT_ID, STATE, PROVIDER, …) lives in wrangler.toml — see
+# TENANT_ID, STATE, …) lives in wrangler.toml — see
 # api/wrangler.example.toml. Production secrets are set with
 # `wrangler secret put`, never here (see the "Secrets" note at the bottom of
 # api/wrangler.example.toml).

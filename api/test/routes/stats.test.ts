@@ -96,7 +96,7 @@ describe('GET /stats/sidebar — DEMO_MODE upcoming hearings', () => {
   it('reads seeded calendar_events instead of central when DEMO_MODE=true', async () => {
     const res = await app.request('/api/stats/sidebar',
       { headers: { Cookie: `session=${memberToken}` } },
-      { ...env, DEMO_MODE: 'true', PROVIDER: 'legiscan' })
+      { ...env, DEMO_MODE: 'true' })
     expect(res.status).toBe(200)
     const body = await res.json() as { upcomingHearings: Array<{ date: string; bills: Array<{ billNumber: string }> }> }
     expect(body.upcomingHearings).toHaveLength(1)
@@ -107,7 +107,7 @@ describe('GET /stats/sidebar — DEMO_MODE upcoming hearings', () => {
   it('returns the seeded hearing without a successful central call in demo mode', async () => {
     const res = await app.request('/api/stats/sidebar',
       { headers: { Cookie: `session=${memberToken}` } },
-      { ...env, DEMO_MODE: 'true', PROVIDER: 'legiscan' })
+      { ...env, DEMO_MODE: 'true' })
     const body = await res.json() as { upcomingHearings: unknown[] }
     expect(body.upcomingHearings).toHaveLength(1)
   })
@@ -123,7 +123,7 @@ describe('GET /stats/sidebar — DEMO_MODE upcoming hearings', () => {
     })
     const res = await app.request('/api/stats/sidebar',
       { headers: { Cookie: `session=${memberToken}` } },
-      { ...env, DEMO_MODE: 'true', PROVIDER: 'legiscan' })
+      { ...env, DEMO_MODE: 'true' })
     const body = await res.json() as { upcomingHearings: Array<{ bills: Array<{ billNumber: string }> }> }
     // Only the prioritized A1129 hearing remains; A2000 is filtered out.
     expect(body.upcomingHearings).toHaveLength(1)

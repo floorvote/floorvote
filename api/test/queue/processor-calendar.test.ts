@@ -33,7 +33,6 @@ function centralBillJson(number = 'H 5174') {
     status: 'Introduced',
     statusDate: '2026-06-01',
     updatedAt: '2026-06-02T00:00:00Z',
-    openstatesUrl: null,
     stateUrl: null,
     textHash: null,
     textR2Key: null,

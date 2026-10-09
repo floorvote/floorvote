@@ -107,7 +107,7 @@ function makeBatch(billId: number, overrides: Record<string, unknown> = {}): Mes
         attempts: 1,
       },
     ],
-    queue: 'central-ingestor',
+    queue: 'central-legiscan-ingestor',
     ackAll: vi.fn(),
     retryAll: vi.fn(),
   } as unknown as MessageBatch<any>

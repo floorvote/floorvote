@@ -279,7 +279,6 @@ billsLsRoutes.get('/:id', async (c) => {
     billType: bill.billType ?? null,
     body: bill.body ?? null,
     updatedAt: bill.updatedAt,
-    openstatesUrl: null,
     stateUrl: bill.stateLink ?? null,
     legiscanUrl: bill.url ?? null,
     textHash: textWithR2?.textHash ?? null,

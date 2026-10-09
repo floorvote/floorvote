@@ -337,7 +337,7 @@ flowchart TD
   <thead><tr><th>Store</th><th>Contents</th></tr></thead>
   <tbody>
     <tr><td><strong>Central D1</strong> (<code>central-bills-ls</code>)</td><td>sessions, bills + every child table (history, sponsors, texts, supplements, amendments, sasts, subjects, calendar, referrals, roll_calls, roll_call_votes*), people, committees, bill_change_log, api_call_log, session_sync_log, bill_tenants, keyword_registry.</td></tr>
-    <tr><td><strong>Central R2</strong> (<code>central-bill-texts-ls</code>)</td><td><code>bills/legiscan-{billId}/texts/{docId}.html|pdf</code> — actual bill text files. <code>sessions/{id}/masterlist.json</code> — cached masterlist for keyword resync.</td></tr>
+    <tr><td><strong>Central R2</strong> (<code>central-bill-texts-ls</code>)</td><td><code>bills/legiscan-{billId}/texts/{docId}.html|pdf</code> — actual bill text files.</td></tr>
     <tr><td><strong>Tenant D1</strong> (<code>floorvote-{id}</code>, one per org)</td><td>The denormalized <code>bills</code> row (with title/sponsor/lastAction etc. inlined; canonical state via <code>match_type</code> + <code>text_status</code> + <code>ai_processed_at</code>), member_votes, official_positions, comments, notes, feed_events, custom fields, AI outputs.</td></tr>
   </tbody>
 </table>
