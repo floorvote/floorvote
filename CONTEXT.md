@@ -25,3 +25,5 @@
 **Bounced invite**: a pending invite whose latest invite or sign-in email couldn't be delivered. Shown as "Email bounced." Avoid: "failed invite" (the email failed, not the invite); "undeliverable."
 
 **Previously bounced address**: an address whose most recent delivery outcome from this instance was a bounce (a later delivery clears it), or that the email provider refuses to send to. Shown as "previously bounced." Avoid: "suppressed" in product copy.
+
+**Provider**: where central gets a state's legislative data (LegiScan by default, or a legislature's own feed), and the adapter in `central/src/providers/` that reads it and maps it into central's shapes. Unrelated to the email provider. Avoid: "source" in code and copy, since it already means a calendar event's source and a bill's page on the legislature's site; "data source."

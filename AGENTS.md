@@ -12,6 +12,8 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 
 **Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret.
 
+**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`.
+
 **Bill pipeline:**
 1. Central hourly cron → per-state keyword union filter → queue matching bills to ingestor
 2. Ingestor → fetch bill + text from LegiScan → store in R2 → notify tenants
@@ -124,7 +126,7 @@ For local dev: `cp api/.dev.vars.example api/.dev.vars` (and `central/.dev.vars.
 
 ### Database
 
-Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-legiscan/`. Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema-legiscan.ts` (central).
+Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-legiscan/`. Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema.ts` (central).
 
 **Always add new migration files — never edit existing ones.**
 
