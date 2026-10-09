@@ -1,17 +1,9 @@
-import { env, applyD1Migrations, reset } from 'cloudflare:test'
+import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema-legiscan'
 import { sessions, bills, billTenants, tenants, keywordRegistry } from '../../src/db/schema-legiscan'
-import migration0001 from '../../migrations-legiscan/0001_initial.sql?raw'
-import migration0002 from '../../migrations-legiscan/0002_api_call_log_v2.sql?raw'
-import migration0003 from '../../migrations-legiscan/0003_session_sync_log.sql?raw'
-import migration0004 from '../../migrations-legiscan/0004_match_tracking.sql?raw'
-import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_change_log.sql?raw'
-import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
-import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
-import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
 
 // Mock the legiscan module — runFullPass uses getMasterListBySession + refreshLsSessions
 // (which calls getSessionList); runRawPass uses getMasterListRaw.
@@ -34,15 +26,7 @@ vi.mock('../../src/lib/queuesRest', () => ({
 import { runLsSync } from '../../src/cron/sync-legiscan'
 import * as legiscan from '../../src/lib/legiscan'
 import * as queuesRest from '../../src/lib/queuesRest'
-
-function parseMigration(sql: string, name: string) {
-  const queries = sql
-    .split(';')
-    .map(s => s.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n').trim())
-    .filter(s => s.length > 0)
-    .map(s => s + ';')
-  return { name, queries }
-}
+import { setupLsDb } from '../helpers/setupLsDb'
 
 function getCurrentEtHour(): number {
   return parseInt(
@@ -56,17 +40,7 @@ function getCurrentEtHour(): number {
 }
 
 beforeEach(async () => {
-  await reset()
-  await applyD1Migrations(env.DB, [
-    parseMigration(migration0001, '0001_initial'),
-    parseMigration(migration0002, '0002_api_call_log_v2'),
-    parseMigration(migration0003, '0003_session_sync_log'),
-    parseMigration(migration0004, '0004_match_tracking'),
-    parseMigration(migration0005, '0005_bill_amendments_and_change_log'),
-    parseMigration(migration0006, '0006_texts_fetched_at'),
-    parseMigration(migration0013, '0013_tenants_queue_id'),
-    parseMigration(migration0017, '0017_tenant_ai_personalized'),
-  ])
+  await setupLsDb()
   vi.clearAllMocks()
   // Re-establish the default for getSessionList after clearAllMocks wipes implementations.
   vi.mocked(legiscan.getSessionList).mockResolvedValue([])

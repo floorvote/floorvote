@@ -1,17 +1,8 @@
-import { env, applyD1Migrations, reset } from 'cloudflare:test'
+import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import * as schema from '../../src/db/schema-legiscan'
-import migration0001 from '../../migrations-legiscan/0001_initial.sql?raw'
-import migration0002 from '../../migrations-legiscan/0002_api_call_log_v2.sql?raw'
-import migration0003 from '../../migrations-legiscan/0003_session_sync_log.sql?raw'
-import migration0004 from '../../migrations-legiscan/0004_match_tracking.sql?raw'
-import migration0005 from '../../migrations-legiscan/0005_bill_amendments_and_change_log.sql?raw'
-import migration0006 from '../../migrations-legiscan/0006_texts_fetched_at.sql?raw'
-import migration0013 from '../../migrations-legiscan/0013_tenants_queue_id.sql?raw'
-import migration0016 from '../../migrations-legiscan/0016_bill_texts_fetch_error.sql?raw'
-import migration0017 from '../../migrations-legiscan/0017_tenant_ai_personalized.sql?raw'
 
 // Mock the LegiScan API surface. The processor calls getBill at the top of
 // processLsBill. We don't want real network calls.
@@ -30,29 +21,10 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { processLsIngestorQueue, validateTextPayload, isVersionAddressable } from '../../src/queue/processor-legiscan'
 import * as legiscan from '../../src/lib/legiscan'
-
-function parseMigration(sql: string, name: string) {
-  const queries = sql
-    .split(';')
-    .map(s => s.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n').trim())
-    .filter(s => s.length > 0)
-    .map(s => s + ';')
-  return { name, queries }
-}
+import { setupLsDb } from '../helpers/setupLsDb'
 
 beforeEach(async () => {
-  await reset()
-  await applyD1Migrations(env.DB, [
-    parseMigration(migration0001, '0001_initial'),
-    parseMigration(migration0002, '0002_api_call_log_v2'),
-    parseMigration(migration0003, '0003_session_sync_log'),
-    parseMigration(migration0004, '0004_match_tracking'),
-    parseMigration(migration0005, '0005_bill_amendments_and_change_log'),
-    parseMigration(migration0006, '0006_texts_fetched_at'),
-    parseMigration(migration0013, '0013_tenants_queue_id'),
-    parseMigration(migration0016, '0016_bill_texts_fetch_error'),
-    parseMigration(migration0017, '0017_tenant_ai_personalized'),
-  ])
+  await setupLsDb()
   fetchMock.mockReset()
   // Default: text downloads succeed with empty html so r2_key gets stamped.
   fetchMock.mockResolvedValue(
