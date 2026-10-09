@@ -175,15 +175,15 @@ billsRoutes.get('/:id', async (c) => {
       .where(eq(schema.rollCalls.billId, numeric))
       .all(),
   ])
-  const memberVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
+  const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
   for (const r of memberVoteRows) {
     if (r.peopleId == null || !r.vote) continue
-    const list = memberVotesByRc.get(r.rollCallId) ?? []
+    const list = legislatorVotesByRc.get(r.rollCallId) ?? []
     // Same fallback as sponsors: a person with no people row still counts.
     list.push({ personId: String(r.peopleId), name: r.name ?? String(r.peopleId), vote: r.vote })
-    memberVotesByRc.set(r.rollCallId, list)
+    legislatorVotesByRc.set(r.rollCallId, list)
   }
-  for (const list of memberVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+  for (const list of legislatorVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
   const textWithR2 = [...texts]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -272,7 +272,7 @@ billsRoutes.get('/:id', async (c) => {
     votes: rollCalls.map(rc => ({
       id: String(rc.rollCallId),
       // Each legislator's vote, where central has it: the LegiScan dataset load, or a provider whose feed carries them.
-      memberVotes: memberVotesByRc.get(rc.rollCallId) ?? [],
+      legislatorVotes: legislatorVotesByRc.get(rc.rollCallId) ?? [],
       motionText: rc.description,
       date: rc.date,
       result: rc.passed ? 'pass' : 'fail',

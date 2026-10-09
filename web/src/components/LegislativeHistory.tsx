@@ -19,8 +19,8 @@ interface VoteEntry {
   nv: number
   absent: number
   passed: number
-  /** Each member's vote, where the provider records it (DC LIMS readings). */
-  memberVotes?: { name: string; vote: string }[]
+  /** Each legislator's vote on this roll call, where central has them (any provider). */
+  legislatorVotes?: { name: string; vote: string }[]
 }
 
 interface LegislativeHistoryProps {
@@ -32,17 +32,17 @@ interface LegislativeHistoryProps {
 
 type TimelineItem =
   | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number }
-  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; memberVotes?: { name: string; vote: string }[] }
+  | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string }[] }
 
-/** How each member voted, grouped by vote ("Yes", "No", "Absent", ...), with the no side first to scan. */
-function MemberVotes({ votes }: { votes: { name: string; vote: string }[] }) {
+/** How each legislator voted, grouped by vote ("Yes", "No", "Absent", ...), with the no side first to scan. */
+function LegislatorVotes({ votes }: { votes: { name: string; vote: string }[] }) {
   const groups = new Map<string, string[]>()
   for (const v of votes) groups.set(v.vote, [...(groups.get(v.vote) ?? []), v.name])
   const rank = (k: string) => /^(no|nay)$/i.test(k) ? 0 : /^(yes|yea|aye)$/i.test(k) ? 1 : 2
   const ordered = [...groups].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
   return (
     <details style={{ marginTop: 4 }}>
-      <summary style={{ cursor: 'pointer', color: color.linkBlue, fontSize: fontSize.xs }}>How each member voted</summary>
+      <summary style={{ cursor: 'pointer', color: color.linkBlue, fontSize: fontSize.xs }}>How each legislator voted</summary>
       <div style={{ marginTop: 4, display: 'grid', gap: 3, fontSize: fontSize.xs, color: color.textSecondary }}>
         {ordered.map(([vote, names]) => (
           <div key={vote}><strong style={{ color: rank(vote) === 0 ? color.textDanger : rank(vote) === 1 ? color.textSuccess : color.textSlate }}>{vote} ({names.length}):</strong> {names.join(', ')}</div>
@@ -101,7 +101,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
   // Merge history actions and votes into one sorted timeline
   const timeline: TimelineItem[] = [
     ...entries.map((e): TimelineItem => ({ kind: 'action', date: e.date, chamber: e.chamber, action: e.action, importance: e.importance })),
-    ...votes.map((v): TimelineItem => ({ kind: 'vote', date: v.date, chamber: v.chamber, desc: v.desc, yea: v.yea, nay: v.nay, nv: v.nv, absent: v.absent, passed: v.passed, memberVotes: v.memberVotes })),
+    ...votes.map((v): TimelineItem => ({ kind: 'vote', date: v.date, chamber: v.chamber, desc: v.desc, yea: v.yea, nay: v.nay, nv: v.nv, absent: v.absent, passed: v.passed, legislatorVotes: v.legislatorVotes })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 
   const synthetic = syntheticLatestAction(entries, lastAction, lastActionDate)
@@ -183,7 +183,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
                     {item.nv > 0 && <span>NV: {item.nv}</span>}
                     {item.absent > 0 && <span>Absent: {item.absent}</span>}
                   </div>
-                  {item.memberVotes && item.memberVotes.length > 0 && <MemberVotes votes={item.memberVotes} />}
+                  {item.legislatorVotes && item.legislatorVotes.length > 0 && <LegislatorVotes votes={item.legislatorVotes} />}
                 </div>
               )}
             />

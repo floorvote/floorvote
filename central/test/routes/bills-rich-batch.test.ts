@@ -107,8 +107,8 @@ describe('POST /bills/rich-batch', () => {
   })
 })
 
-describe('member votes', () => {
-  async function seedMemberVotes() {
+describe('legislator votes', () => {
+  async function seedLegislatorVotes() {
     await seed()
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.people).values([
@@ -124,28 +124,28 @@ describe('member votes', () => {
     method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }, env)
 
-  it('leaves member votes out of the batch, which only the data export reads', async () => {
-    await seedMemberVotes()
+  it('leaves legislator votes out of the batch, which only the data export reads', async () => {
+    await seedLegislatorVotes()
     const body = await (await post({ ids: [102] })).json() as any
-    expect(body.byId['102'].votes[0].memberVotes).toBeUndefined()
+    expect(body.byId['102'].votes[0].legislatorVotes).toBeUndefined()
   })
 
-  it('returns member votes, sorted by name and keyed by person id, on the bill detail', async () => {
-    await seedMemberVotes()
+  it('returns legislator votes, sorted by name and keyed by person id, on the bill detail', async () => {
+    await seedLegislatorVotes()
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.votes[0].memberVotes).toEqual([
+    expect(body.votes[0].legislatorVotes).toEqual([
       { personId: '2', name: 'Brooke Pinto', vote: 'No' },
       { personId: '1', name: 'Zachary Parker', vote: 'Yes' },
     ])
   })
 
-  it('returns an empty list for a roll call with no member votes', async () => {
+  it('returns an empty list for a roll call with no legislator votes', async () => {
     await seed()
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     const body = await res.json() as any
-    expect(body.votes[0].memberVotes).toEqual([])
+    expect(body.votes[0].legislatorVotes).toEqual([])
   })
 })
 
@@ -160,6 +160,6 @@ describe('bill detail with many roll calls', () => {
     const res = await app.request('/api/bills/legiscan:102', { headers: { 'x-admin-secret': 'test-secret' } }, env)
     expect(res.status).toBe(200)
     const body = await res.json() as any
-    expect(body.votes.find((v: any) => v.id === '1129').memberVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes' }])
+    expect(body.votes.find((v: any) => v.id === '1129').legislatorVotes).toEqual([{ personId: '1', name: 'Zachary Parker', vote: 'Yes' }])
   })
 })
