@@ -1,5 +1,5 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getBill, getBillText } from '../providers/legiscan/client'
+import { getBill, getBillText, type CentralMeasure } from '../providers/legiscan/client'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
@@ -66,6 +66,27 @@ async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void
 
   const bill = await getBill(msg.billId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getBill', { billId: msg.billId }))
+  await ingestMeasure(bill, env, db, {
+    forceMetadata, forceAI, interactive,
+    forceTextRefetch: msg.forceTextRefetch ?? false,
+  })
+}
+
+type IngestOptions = {
+  forceMetadata: boolean
+  forceAI: boolean
+  interactive: boolean
+  /** Re-download every text even when R2 already has it (admin refetch-fragment-texts). */
+  forceTextRefetch: boolean
+}
+
+/**
+ * Write one measure into central: change detection, the bill row and its child
+ * tables, text downloads to R2, and the tenant notifications. Provider-neutral:
+ * the caller fetches the measure from its provider and hands it here.
+ */
+async function ingestMeasure(bill: CentralMeasure, env: Env, db: Db, opts: IngestOptions): Promise<void> {
+  const { forceMetadata, forceAI, interactive, forceTextRefetch } = opts
   const now = nowDb()
 
   // --- Change detection ---
@@ -329,7 +350,7 @@ async function processBill(msg: IngestorMessage, env: Env, db: Db): Promise<void
     // Download text if not already in R2
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
-    if ((msg.forceTextRefetch || !stored?.r2Key) && t.state_link) {
+    if ((forceTextRefetch || !stored?.r2Key) && t.state_link) {
       await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, env, db, t.text_size ?? null, t.text_hash ?? null)
     }
   }
