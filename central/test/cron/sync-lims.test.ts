@@ -86,7 +86,7 @@ describe('runLimsSync', () => {
     expect(session?.sessionName).toBe('2025-2026 Council Period 26')
     expect(session?.state).toBe('DC')
     expect((await db.select().from(schema.people).all()).length).toBe(15)
-    expect((await db.select().from(schema.limsRecords).all()).length).toBe(4)
+    expect((await db.select().from(schema.sourceRecords).all()).length).toBe(4)
 
     const links = new Map((await db.select().from(schema.billTenants).all()).map(l => [l.billId, l.matchType]))
     expect(links.get(B0400)).toBe('keyword')
@@ -135,7 +135,7 @@ describe('ingesting a LIMS bill', () => {
 
     const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, B0400)).get()
     expect(bill?.title).toBe('Statutory Neglect Amendment Act of 2025')
-    expect(bill?.changeHash).toBe((await db.select().from(schema.limsRecords).where(eq(schema.limsRecords.billId, B0400)).get())?.bulkHash)
+    expect(bill?.changeHash).toBe((await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.rawHash)
 
     const texts = await db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, B0400)).all()
     expect(texts.length).toBeGreaterThan(3)
@@ -263,7 +263,7 @@ describe('Codex review fixes', () => {
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [pending] : []))
     vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), status: 'Under Council Review' })
     await passAndIngest(db)
-    expect((await db.select().from(schema.limsRecords).where(eq(schema.limsRecords.billId, B0400)).get())?.detailsFetchedAt).toBeTruthy()
+    expect((await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.detailsFetchedAt).toBeTruthy()
 
     // Fresh details, unchanged bulk: nothing to do.
     const fresh = makeEnv()
@@ -271,7 +271,7 @@ describe('Codex review fixes', () => {
     expect(fresh.limsQueue.sendBatch).not.toHaveBeenCalled()
 
     // Three days later the same bill is re-fetched though bulk has not changed.
-    await env.DB.prepare(`UPDATE lims_records SET details_fetched_at = datetime('now', '-3 days') WHERE bill_id = ?`).bind(B0400).run()
+    await env.DB.prepare(`UPDATE source_records SET details_fetched_at = datetime('now', '-3 days') WHERE bill_id = ?`).bind(B0400).run()
     const later = makeEnv()
     await runLimsSync(later.env, db)
     const queued = later.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
@@ -282,7 +282,7 @@ describe('Codex review fixes', () => {
     const db = drizzle(env.DB, { schema })
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [bulk['B26-0400']] : []))
     await passAndIngest(db)   // B26-0400 is Official Law
-    await env.DB.prepare(`UPDATE lims_records SET details_fetched_at = datetime('now', '-30 days')`).run()
+    await env.DB.prepare(`UPDATE source_records SET details_fetched_at = datetime('now', '-30 days')`).run()
     const later = makeEnv()
     await runLimsSync(later.env, db)
     expect(later.limsQueue.sendBatch).not.toHaveBeenCalled()

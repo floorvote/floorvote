@@ -6,12 +6,11 @@ import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
 import type { LsEnv } from '../types-legiscan'
-import { LIMS_STATUS_LABELS } from '../lib/lims-map'
+import { directSource } from '../sources'
 
 const STATUS_LABELS: Record<number, string> = {
   0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
   3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
-  ...LIMS_STATUS_LABELS,
 }
 
 export const billsLsRoutes = new Hono<{ Bindings: LsEnv }>()
@@ -153,6 +152,7 @@ billsLsRoutes.get('/:id', async (c) => {
       party: schema.people.party,
       role: schema.people.role,
       bioJson: schema.people.bioJson,
+      personSource: schema.people.source,
     })
       .from(schema.billSponsors)
       .leftJoin(schema.people, eq(schema.billSponsors.peopleId, schema.people.peopleId))
@@ -205,7 +205,8 @@ billsLsRoutes.get('/:id', async (c) => {
           url = bio.social?.biography ?? null
         } catch { /* ignore */ }
       }
-      if (!url && s.peopleId) url = `https://legiscan.com/${bill.state}/people/${name.replace(/ /g, '-')}/id/${s.peopleId}`
+      // Only LegiScan's people have a legiscan.com profile.
+      if (!url && s.peopleId && (s.personSource ?? 'legiscan') === 'legiscan') url = `https://legiscan.com/${bill.state}/people/${name.replace(/ /g, '-')}/id/${s.peopleId}`
       return {
         name,
         party: s.party ?? null,
@@ -236,7 +237,7 @@ billsLsRoutes.get('/:id', async (c) => {
     number: bill.billNumber,
     title: bill.title,
     abstract: bill.description ?? null,
-    status: STATUS_LABELS[bill.status] ?? String(bill.status),
+    status: (directSource(bill.source)?.statusLabels ?? STATUS_LABELS)[bill.status] ?? String(bill.status),
     statusDate: bill.statusDate ?? null,
     lastAction: bill.lastAction ?? null,
     lastActionDate: bill.lastActionDate ?? null,

@@ -1,4 +1,4 @@
-import { LIMS_STATUS_LABELS } from './lims-map'
+import { directSource } from '../sources'
 import type { LegiscanBill, LegiscanCalendarEntry } from './legiscan'
 import type { CalendarBlock } from '../types-legiscan'
 
@@ -43,11 +43,10 @@ const STATUS_LABELS: Record<number, string> = {
   4: 'Passed',
   5: 'Vetoed',
   6: 'Failed/Dead',
-  ...LIMS_STATUS_LABELS,
 }
 
-function statusLabel(status: number): string {
-  return STATUS_LABELS[status] ?? String(status)
+function statusLabel(status: number, source: string): string {
+  return (directSource(source)?.statusLabels ?? STATUS_LABELS)[status] ?? String(status)
 }
 
 function sponsorKey(peopleId: number | null | undefined, name: string): string {
@@ -59,15 +58,15 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
   return `${role}${sponsor.name} (${sponsor.party})`
 }
 
-export function detectChanges(snapshot: BillSnapshot, bill: LegiscanBill): ChangeRecord[] {
+export function detectChanges(snapshot: BillSnapshot, bill: LegiscanBill, source = 'legiscan'): ChangeRecord[] {
   const changes: ChangeRecord[] = []
 
   // 1. Status change (skip when snapshot.status is null — bill is new/unknown)
   if (snapshot.status !== null && bill.status !== snapshot.status) {
     changes.push({
       changeType: 'status_change',
-      oldValue: statusLabel(snapshot.status),
-      newValue: statusLabel(bill.status),
+      oldValue: statusLabel(snapshot.status, source),
+      newValue: statusLabel(bill.status, source),
       detail: null,
     })
   }

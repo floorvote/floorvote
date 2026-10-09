@@ -9,6 +9,7 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | File | What it covers |
 |---|---|
 | `sync-pipeline.md` | Code-grounded LegiScan → tenant sync pipeline (cron, ingestor, dedup, queues). |
+| `direct-sources.md` | Proposal: reading official feeds directly (DC, Maryland, Virginia), source provenance, and the shared committee, membership, event and label model. |
 | `legiscan-api.md` | LegiScan API reference (machine-derived from the LegiScan manual PDF). |
 | `emails.md` | The email-shell contract — follow it when adding an email type. |
 | `calendar.md` | ICS calendar feed capability-URL security model. |

@@ -6,9 +6,8 @@
  * keep the two sources from colliding, LIMS ids are offset into a range LegiScan
  * never reaches (its bill, doc and session ids are in the low millions at most).
  *
- * The range doubles as the provider discriminator: code that is about to call
- * LegiScan for a bill, document or session checks these predicates first, so a
- * LIMS id is never sent to api.legiscan.com (which would fail, and cost quota).
+ * Which source a row came from is recorded in its `source` column (see
+ * src/sources); the ranges only keep LIMS ids from colliding with LegiScan's.
  *
  *   bill_id      = LIMS_BILL_ID_BASE + typeCode*1e7 + councilPeriod*1e5 + seq
  *                  (computed from the measure number, e.g. B26-0400 -> 1_012_600_400,

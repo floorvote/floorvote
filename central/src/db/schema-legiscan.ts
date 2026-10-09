@@ -18,6 +18,8 @@ export const sessions = sqliteTable('sessions', {
   syncEnabled:     integer('sync_enabled', { mode: 'boolean' }).notNull().default(true),
   fullSyncHoursEt: text('full_sync_hours_et'),
   rawSyncHoursEt:  text('raw_sync_hours_et'),
+  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  source:          text('source').notNull().default('legiscan'),
 })
 
 export const people = sqliteTable('people', {
@@ -42,6 +44,8 @@ export const people = sqliteTable('people', {
   ballotpedia:   text('ballotpedia'),
   bioguideId:    text('bioguide_id'),
   bioJson:       text('bio_json'),
+  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  source:        text('source').notNull().default('legiscan'),
 })
 
 export const bills = sqliteTable('bills', {
@@ -71,6 +75,8 @@ export const bills = sqliteTable('bills', {
   createdAt:       text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt:       text('updated_at').notNull().default(sql`(datetime('now'))`),
   textsFetchedAt:  text('texts_fetched_at'),
+  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  source:          text('source').notNull().default('legiscan'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
@@ -358,14 +364,17 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
   updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
-/** DC Council LIMS source records; see migrations-legiscan/0021_lims_records.sql. */
-export const limsRecords = sqliteTable('lims_records', {
-  billId:            integer('bill_id').primaryKey(),
-  legislationNumber: text('legislation_number').notNull().unique(),
-  councilPeriodId:   integer('council_period_id').notNull(),
-  categoryId:        integer('category_id').notNull(),
-  bulkJson:          text('bulk_json').notNull(),
-  bulkHash:          text('bulk_hash').notNull(),
-  detailsFetchedAt:  text('details_fetched_at'),
-  updatedAt:         text('updated_at').notNull().default(sql`(datetime('now'))`),
+/**
+ * The raw record each direct-source bill was last built from, and its hash;
+ * see migrations-legiscan/0025_source_provenance.sql.
+ */
+export const sourceRecords = sqliteTable('source_records', {
+  billId:           integer('bill_id').primaryKey(),
+  source:           text('source').notNull(),
+  nativeKey:        text('native_key').notNull(),
+  sessionId:        integer('session_id').notNull(),
+  rawJson:          text('raw_json').notNull(),
+  rawHash:          text('raw_hash').notNull(),
+  detailsFetchedAt: text('details_fetched_at'),
+  updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })

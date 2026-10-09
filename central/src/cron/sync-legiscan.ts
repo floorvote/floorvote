@@ -6,8 +6,7 @@ import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import type { LsEnv, LsDb, LsIngestorMessage, LsNotificationMessage } from '../types-legiscan'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
-import { isLimsSessionId } from '../lib/lims-ids'
-import { limsStates } from '../lib/lims-config'
+import { directStates } from '../sources'
 import type { MasterListEntry } from '../lib/legiscan'
 
 const BATCH = 80
@@ -41,8 +40,8 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
     }
   }
 
-  // States sourced from DC LIMS are synced by cron/sync-lims.ts, not here.
-  for (const state of limsStates(env)) trackedStates.delete(state)
+  // States read from a direct source (src/sources) are synced by that source.
+  for (const state of directStates(env)) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
 
@@ -72,7 +71,7 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
     rawSyncHoursEt: sessions.rawSyncHoursEt,
   })
     .from(sessions)
-    .where(inArray(sessions.state, [...trackedStates]))
+    .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.source, 'legiscan')))
     .all()
 
   const tenantsByState = new Map<string, { tenantId: string; stateCoverage: string; queueId: string | null }[]>()
@@ -91,10 +90,9 @@ export async function runLsSync(env: LsEnv, db: LsDb): Promise<void> {
   // (D1 reads, queue sends, LegiScan calls) interleave across sessions instead
   // of stacking serially. Promise.allSettled ensures one session's failure
   // doesn't reject the whole batch.
-  // LIMS sessions share this table but are synced by their own cron; LegiScan
-  // has never heard of their ids.
+  // Direct-source sessions share this table (excluded above): they are synced by
+  // their own source, and LegiScan has never heard of their ids.
   const sessionsToProcess = sessionRows
-    .filter(session => !isLimsSessionId(session.sessionId))
     .map(session => ({ session, mode: decideMode(session, etHour) }))
     .filter(({ mode }) => mode !== 'skip')
 
@@ -172,7 +170,8 @@ async function runFullPass(
  * Returns the bill ids it queued for the ingestor.
  */
 export async function applyMasterList(
-  session: { sessionId: number; state: string; sessionName: string },
+  /** `source` is written to new bill rows; LegiScan when absent. */
+  session: { sessionId: number; state: string; sessionName: string; source?: string },
   list: MasterListEntry[],
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
   env: LsEnv,
@@ -254,6 +253,7 @@ export async function applyMasterList(
           changeHash: entry.change_hash,
           sessionId: session.sessionId,
           state: session.state,
+          source: session.source ?? 'legiscan',
           stateId: 0,
           billNumber: entry.number,
           title: entry.title ?? entry.number,

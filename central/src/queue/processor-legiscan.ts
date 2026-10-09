@@ -1,7 +1,6 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getBill, getBillText, type LegiscanBill } from '../lib/legiscan'
-import { isLimsBillId } from '../lib/lims-ids'
-import { fetchLimsBill } from '../lib/lims-ingest'
+import { billSource, directSource } from '../sources'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants, apiCallLog,
@@ -56,10 +55,12 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
       ))
       .all()
 
+    const legiscanTextFallback = textsToDownload.some(t => t.stateLink)
+      && (await billSource(db, msg.billId)) === 'legiscan'
     for (const t of textsToDownload) {
       if (t.stateLink) {
         await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', env, db, t.textSize, t.textHash,
-          !isLimsBillId(msg.billId))
+          legiscanTextFallback)
       }
     }
 
@@ -67,20 +68,23 @@ async function processLsBill(msg: LsIngestorMessage, env: LsEnv, db: LsDb): Prom
     return
   }
 
-  const bill = await fetchBillForIngest(msg.billId, env, db)
+  const source = await billSource(db, msg.billId)
+  const bill = await fetchBillForIngest(msg.billId, source, env, db)
   await ingestLsBill(bill, env, db, {
     forceMetadata, forceAI, interactive,
-    legiscanTextFallback: !isLimsBillId(bill.bill_id),
+    legiscanTextFallback: source === 'legiscan',
     forceTextRefetch: msg.forceTextRefetch ?? false,
+    source,
   })
 }
 
 /**
- * Fetch the full record for one bill in LegiScan's `getBill` shape. LIMS bills
- * (see lib/lims-ids.ts) are never sent to LegiScan.
+ * Fetch the full record for one bill in LegiScan's `getBill` shape. A bill from
+ * a direct source (src/sources) is built by that source, never sent to LegiScan.
  */
-async function fetchBillForIngest(billId: number, env: LsEnv, db: LsDb): Promise<LegiscanBill> {
-  if (isLimsBillId(billId)) return await fetchLimsBill(billId, env, db)
+async function fetchBillForIngest(billId: number, source: string, env: LsEnv, db: LsDb): Promise<LegiscanBill> {
+  const direct = directSource(source)
+  if (direct) return await direct.buildBill(billId, env, db)
   return getBill(billId, env.LEGISCAN_API_KEY, () =>
     trackLsCall(db, 'getBill', { billId }))
 }
@@ -97,6 +101,8 @@ export type IngestOptions = {
   legiscanTextFallback: boolean
   /** Re-download every text even when R2 already has it (admin refetch-fragment-texts). */
   forceTextRefetch?: boolean
+  /** Which source the bill comes from (src/sources); written to new rows. LegiScan when absent. */
+  source?: string
 }
 
 /**
@@ -107,6 +113,7 @@ export type IngestOptions = {
  */
 export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opts: IngestOptions): Promise<void> {
   const { forceMetadata, forceAI, interactive, legiscanTextFallback, forceTextRefetch } = opts
+  const source = opts.source ?? 'legiscan'
   const now = nowDb()
 
   // --- Change detection ---
@@ -158,7 +165,7 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
       sponsorDetailByKey,
     }
 
-    detectedChanges = detectChanges(snapshot, bill)
+    detectedChanges = detectChanges(snapshot, bill, source)
 
     // Write change records
     if (detectedChanges.length > 0) {
@@ -207,6 +214,7 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
     changeHash:         bill.change_hash,
     sessionId:          bill.session_id,
     state:              bill.state,
+    source,
     stateId:            bill.state_id,
     billNumber:         bill.bill_number,
     billType:           bill.bill_type,
@@ -295,7 +303,8 @@ export async function ingestLsBill(bill: LegiscanBill, env: LsEnv, db: LsDb, opt
         bioguideId:    s.bioguide_id ?? null,
       }
       const { peopleId: _omit, ...personUpdate } = personValues
-      await db.insert(people).values(personValues).onConflictDoUpdate({
+      // A person keeps the source that first wrote them: set on insert only.
+      await db.insert(people).values({ ...personValues, source }).onConflictDoUpdate({
         target: people.peopleId,
         set: personUpdate,
       })

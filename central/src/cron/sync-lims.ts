@@ -1,10 +1,11 @@
-import { eq, and, or, inArray, notInArray, gte, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
+import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { getBulkData, getCouncilPeriods, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from '../lib/lims'
 import { bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, LIMS_STATE, limsStatusCode, toMasterListEntry } from '../lib/lims-map'
-import { limsBillId, limsPeopleId, limsSessionId, LIMS_BILL_ID_BASE, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
-import { limsCategories, limsStates } from '../lib/lims-config'
+import { limsBillId, limsPeopleId, limsSessionId, LIMS_SESSION_ID_BASE } from '../lib/lims-ids'
+import { limsCategories } from '../lib/lims-config'
+import { limsSource } from '../sources/lims'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
-import { sessions, bills, billTenants, tenants, people, limsRecords } from '../db/schema-legiscan'
+import { sessions, bills, billTenants, tenants, people, sourceRecords } from '../db/schema-legiscan'
 import { trackLimsCall } from '../lib/lims-ingest'
 import { nowDb } from '../lib/dbTime'
 import { applyMasterList } from './sync-legiscan'
@@ -50,7 +51,7 @@ export interface LimsPassReport { sessionId: number; sessionName: string; record
  * Council Period and members and runs a full pass on every synced session.
  */
 export async function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean } = {}): Promise<LimsPassReport[]> {
-  if (!limsStates(env).has(LIMS_STATE) || !env.LIMS_API_KEY) return []
+  if (!limsSource.enabled(env) || !env.LIMS_API_KEY) return []
 
   const covering = (await db.select().from(tenants).where(eq(tenants.active, true)).all())
     .filter(t => {
@@ -69,7 +70,7 @@ export async function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean 
   const legacy = await db.select({ n: sql<number>`COUNT(*)` })
     .from(bills)
     .innerJoin(billTenants, eq(billTenants.billId, bills.billId))
-    .where(and(eq(bills.state, LIMS_STATE), lt(bills.billId, LIMS_BILL_ID_BASE)))
+    .where(and(eq(bills.state, LIMS_STATE), eq(bills.source, 'legiscan')))
     .get()
   if (Number(legacy?.n ?? 0) > 0) {
     throw new Error(
@@ -110,11 +111,7 @@ export async function runLimsSync(env: LsEnv, db: LsDb, opts: { force?: boolean 
 }
 
 function limsSessionRows(db: LsDb) {
-  return db.select().from(sessions).where(and(
-    eq(sessions.state, LIMS_STATE),
-    gte(sessions.sessionId, LIMS_SESSION_ID_BASE),
-    lt(sessions.sessionId, LIMS_SESSION_ID_BASE * 2),
-  )).all()
+  return db.select().from(sessions).where(and(eq(sessions.state, LIMS_STATE), eq(sessions.source, 'lims'))).all()
 }
 
 async function currentLimsSession(db: LsDb, today: string) {
@@ -143,6 +140,7 @@ async function upsertPeriod(db: LsDb, cp: LimsCouncilPeriod, prior: 0 | 1): Prom
     sessionName: name,
     prior,
     sineDie: 0,
+    source: 'lims',
   }).onConflictDoUpdate({
     target: sessions.sessionId,
     set: { sessionTitle: name, sessionName: name, prior },
@@ -159,10 +157,7 @@ export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: stri
   if (!cp) return
 
   // Any other LIMS session stops being current.
-  await db.update(sessions).set({ prior: 1 }).where(and(
-    gte(sessions.sessionId, LIMS_SESSION_ID_BASE),
-    lt(sessions.sessionId, LIMS_SESSION_ID_BASE * 2),
-  ))
+  await db.update(sessions).set({ prior: 1 }).where(eq(sessions.source, 'lims'))
   await upsertPeriod(db, cp, 0)
   const previous = periods.find(p => p.councilPeriodId === cp.councilPeriodId - 1)
   if (previous && Number(previous.endDate.slice(0, 4)) >= Number(today.slice(0, 4)) - 1) {
@@ -173,7 +168,8 @@ export async function refreshCouncilPeriod(apiKey: string, db: LsDb, today: stri
   // current one: a bill from an earlier period (the previous period, or one
   // imported with lims-import) names sponsors who may have left the Council.
   // The current period goes last, so its record wins where a name repeats.
-  const imported = (await db.selectDistinct({ id: limsRecords.councilPeriodId }).from(limsRecords).all()).map(r => r.id)
+  const imported = (await db.selectDistinct({ id: sourceRecords.sessionId }).from(sourceRecords)
+    .where(eq(sourceRecords.source, 'lims')).all()).map(r => r.id - LIMS_SESSION_ID_BASE)
   const periodIds = [...new Set([...(previous ? [previous.councilPeriodId] : []), ...imported])]
     .filter(id => id !== cp.councilPeriodId).sort((a, b) => a - b)
   periodIds.push(cp.councilPeriodId)
@@ -195,6 +191,7 @@ async function upsertMembers(apiKey: string, db: LsDb, councilPeriodId: number):
       // bills-legiscan builds a legiscan.com profile link for any sponsor with a
       // people id and no biography URL; LIMS people have no LegiScan profile.
       bioJson: JSON.stringify({ social: { biography: MEMBER_BIO_URL } }),
+      source: 'lims',
     }
     const { peopleId: _id, ...update } = values
     await db.insert(people).values(values).onConflictDoUpdate({ target: people.peopleId, set: update })
@@ -211,7 +208,7 @@ async function runLimsPass(
   const councilPeriodId = session.sessionId - LIMS_SESSION_ID_BASE
 
   // One call per category, serially: LIMS rejects concurrent bursts.
-  const records: { rec: LimsBulkRecord; categoryId: number; billId: number }[] = []
+  const records: { rec: LimsBulkRecord; billId: number }[] = []
   for (const categoryId of limsCategories(env)) {
     const rows = await getBulkData(categoryId, councilPeriodId, env.LIMS_API_KEY!,
       () => trackLimsCall(db, 'BulkData', { categoryId, councilPeriodId }))
@@ -221,7 +218,7 @@ async function runLimsPass(
         console.warn(`[sync-lims] skipping unrecognised measure number "${rec.legislationNumber}"`)
         continue
       }
-      records.push({ rec, categoryId, billId })
+      records.push({ rec, billId })
     }
   }
   if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
@@ -234,8 +231,8 @@ async function runLimsPass(
   const storedDesc = new Map<number, string | null>()
   for (let i = 0; i < ids.length; i += BATCH) {
     const chunk = ids.slice(i, i + BATCH)
-    for (const r of await db.select({ billId: limsRecords.billId, bulkHash: limsRecords.bulkHash })
-      .from(limsRecords).where(inArray(limsRecords.billId, chunk)).all()) storedHash.set(r.billId, r.bulkHash)
+    for (const r of await db.select({ billId: sourceRecords.billId, rawHash: sourceRecords.rawHash })
+      .from(sourceRecords).where(inArray(sourceRecords.billId, chunk)).all()) storedHash.set(r.billId, r.rawHash)
     for (const r of await db.select({ billId: bills.billId, description: bills.description })
       .from(bills).where(inArray(bills.billId, chunk)).all()) storedDesc.set(r.billId, r.description)
   }
@@ -243,20 +240,20 @@ async function runLimsPass(
   const now = nowDb()
   const stmts: any[] = []
   const entries = []
-  for (const { rec, categoryId, billId } of records) {
+  for (const { rec, billId } of records) {
     const hash = await bulkHash(rec)
     if (storedHash.get(billId) !== hash) {
       const values = {
         billId,
-        legislationNumber: clean(rec.legislationNumber),
-        councilPeriodId,
-        categoryId,
-        bulkJson: JSON.stringify(rec),
-        bulkHash: hash,
+        source: 'lims',
+        nativeKey: clean(rec.legislationNumber),
+        sessionId: session.sessionId,
+        rawJson: JSON.stringify(rec),
+        rawHash: hash,
         updatedAt: now,
       }
       const { billId: _id, ...update } = values
-      stmts.push(db.insert(limsRecords).values(values).onConflictDoUpdate({ target: limsRecords.billId, set: update }))
+      stmts.push(db.insert(sourceRecords).values(values).onConflictDoUpdate({ target: sourceRecords.billId, set: update }))
     }
     entries.push(toMasterListEntry(rec, billId, await effectiveChangeHash(rec, hash, today), storedDesc.get(billId) ?? null, today))
   }
@@ -266,21 +263,21 @@ async function runLimsPass(
   }
 
   const queue = env.LIMS_INGESTOR_QUEUE ?? env.INGESTOR_QUEUE
-  const queued = new Set(await applyMasterList(session, entries, coveringTenants, env, db, queue,
+  const queued = new Set(await applyMasterList({ ...session, source: 'lims' }, entries, coveringTenants, env, db, queue,
     { deferQueuedUpdates: true }))
 
   // Re-fetch details for tracked, unsettled bills whose details are stale.
-  const stale = await db.selectDistinct({ billId: limsRecords.billId, fetchedAt: limsRecords.detailsFetchedAt })
-    .from(limsRecords)
-    .innerJoin(billTenants, eq(billTenants.billId, limsRecords.billId))
-    .innerJoin(bills, eq(bills.billId, limsRecords.billId))
+  const stale = await db.selectDistinct({ billId: sourceRecords.billId, fetchedAt: sourceRecords.detailsFetchedAt })
+    .from(sourceRecords)
+    .innerJoin(billTenants, eq(billTenants.billId, sourceRecords.billId))
+    .innerJoin(bills, eq(bills.billId, sourceRecords.billId))
     .where(and(
-      eq(limsRecords.councilPeriodId, councilPeriodId),
+      eq(sourceRecords.sessionId, session.sessionId),
       isNotNull(billTenants.matchType),
       notInArray(bills.status, SETTLED_STATUSES),
-      or(isNull(limsRecords.detailsFetchedAt), lt(limsRecords.detailsFetchedAt, sql`datetime('now', ${DETAILS_MAX_AGE})`)),
+      or(isNull(sourceRecords.detailsFetchedAt), lt(sourceRecords.detailsFetchedAt, sql`datetime('now', ${DETAILS_MAX_AGE})`)),
     ))
-    .orderBy(asc(limsRecords.detailsFetchedAt))
+    .orderBy(asc(sourceRecords.detailsFetchedAt))
     .limit(DETAILS_REFRESH_PER_PASS + queued.size)
     .all()
   const refresh = stale.map(r => r.billId).filter(id => !queued.has(id)).slice(0, DETAILS_REFRESH_PER_PASS)
@@ -359,8 +356,9 @@ export async function importLimsMeasures(
       sessionName: councilPeriodName(cp),
       prior: 1,
       sineDie: cp.endDate.slice(0, 10) < today ? 1 : 0,
+      source: 'lims',
     }).onConflictDoNothing()
-    const session = { sessionId: limsSessionId(cp.councilPeriodId), state: LIMS_STATE, sessionName: councilPeriodName(cp) }
+    const session = { sessionId: limsSessionId(cp.councilPeriodId), state: LIMS_STATE, sessionName: councilPeriodName(cp), source: 'lims' }
 
     const rows = await getBulkData(g.category, g.cp, apiKey,
       () => trackLimsCall(db, 'BulkData', { categoryId: g.category, councilPeriodId: g.cp, reason: 'import' }))
@@ -376,15 +374,15 @@ export async function importLimsMeasures(
       const hash = await bulkHash(rec)
       const values = {
         billId,
-        legislationNumber: clean(rec.legislationNumber),
-        councilPeriodId: g.cp,
-        categoryId: g.category,
-        bulkJson: JSON.stringify(rec),
-        bulkHash: hash,
+        source: 'lims',
+        nativeKey: clean(rec.legislationNumber),
+        sessionId: session.sessionId,
+        rawJson: JSON.stringify(rec),
+        rawHash: hash,
         updatedAt: nowDb(),
       }
       const { billId: _id, ...update } = values
-      await db.insert(limsRecords).values(values).onConflictDoUpdate({ target: limsRecords.billId, set: update })
+      await db.insert(sourceRecords).values(values).onConflictDoUpdate({ target: sourceRecords.billId, set: update })
       const stored = await db.select({ description: bills.description }).from(bills).where(eq(bills.billId, billId)).get()
       entries.push(toMasterListEntry(rec, billId, await effectiveChangeHash(rec, hash, today), stored?.description ?? null, today))
       ids.push(billId)
