@@ -2,7 +2,7 @@
   <a href="https://floorvote.org">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset=".github/assets/floorvote-wordmark-dark.svg">
-      <img alt="FloorVote" src=".github/assets/floorvote-wordmark.svg" width="360">
+      <img alt="FloorVote" src=".github/assets/floorvote-wordmark-readme-light.svg" width="360">
     </picture>
   </a>
 </p>
