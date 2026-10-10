@@ -9,7 +9,8 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
  * The Maryland General Assembly's open data (client.ts, map.ts): one JSON file
  * per session with every bill, so a pass is one request and a bill is built
  * from its stored record with no further calls. The request carries the ETag
- * of the last file read, so an unchanged file costs a 304 and no pass. Ids
+ * of the last file read, so an unchanged file costs a 304 and no download,
+ * and the pass runs on the records stored from the last read. Ids
  * come from central's id table. The data needs no key, and its requests
  * aren't logged as API calls.
  */

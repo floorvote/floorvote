@@ -233,6 +233,31 @@ describe('Maryland from the General Assembly', () => {
   })
 })
 
+describe('committees from the MGA (#299)', () => {
+  it('points each referral and the committee a bill waits in at one committee row per chamber and name', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const hb1 = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const sb2 = await getJson(`/bills/${toHandle(await billId('SB2'))}`)
+
+    // HB 1 passed the House and waits in the Senate committee, where SB 2 started.
+    expect(hb1.referrals.map((r: any) => [r.chamber, r.name])).toEqual([
+      ['H', 'Environment and Transportation'], ['S', 'Education, Energy, and the Environment'],
+    ])
+    expect(hb1.committee).toMatchObject({ name: 'Education, Energy, and the Environment', chamber: 'S' })
+    expect(sb2.committee).toEqual(hb1.committee)
+    expect(sb2.referrals[0].committeeId).toBe(hb1.committee.committeeId)
+    expect(hb1.referrals.every((r: any) => Number(r.committeeId) > 3_000_000_000)).toBe(true)
+
+    const rows = await drizzle(env.DB, { schema }).select().from(schema.committees).all()
+    expect(rows.map(r => [r.provider, r.state, r.chamber, r.name]).sort()).toEqual([
+      ['mga', 'MD', 'H', 'Environment and Transportation'],
+      ['mga', 'MD', 'H', 'Ways and Means'],
+      ['mga', 'MD', 'S', 'Education, Energy, and the Environment'],
+    ])
+  })
+})
+
 describe('Maryland hearings on the calendar', () => {
   const calendarOf = (run: Run, handle: string) =>
     sentToTenant(run).filter((m: any) => m.billId === handle && m.calendar).map((m: any) => m.calendar)
