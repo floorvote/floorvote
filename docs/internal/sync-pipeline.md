@@ -155,6 +155,8 @@ A bill's hearings, mark-ups, meetings, and deadlines live in central's `bill_cal
 
 Changing an event type's kind re-identifies a non-LegiScan provider's entries of that type, which instances see cancelled and recreated once.
 
+**For a provider.** Give each entry a `type_id` whose vocabulary event type names its kind. Set `event_id` only to an id the feed publishes and keeps. Without one, keep the description stable (no ordinals or counts, and no time). List every entry the feed shows, past ones too, and never drop one to signal anything. Set `cancelled: true` only when the feed says that specific event was cancelled (a notice tied to it, or a cancelled or removed status on the event), with the identity the live entry had. Build live entries only from the record the measure's change hash covers, since a recheck trusts that hash. Separately fetched data, like LIMS's details response, may supply cancellations but not live entries.
+
 ### Committees
 
 Central's `committees` table holds one row per committee a bill is referred to, and `bill_referrals.committee_id` points at it, so a committee reads the same on every bill. Rows carry the `provider` that wrote them (migration 0035). There are no memberships, chairs, or staff.
