@@ -32,6 +32,16 @@ export function sessionToSlug(sessionName: string): string {
 }
 
 /**
+ * The first of `wanted`, `wanted-2`, `wanted-3`, ... that no other session of
+ * the state holds. Central assigns slugs this way (central/src/lib/sessionSlugs.ts).
+ */
+export function firstFreeSlug(wanted: string, taken: ReadonlySet<string>): string {
+  let slug = wanted
+  for (let n = 2; taken.has(slug); n++) slug = `${wanted}-${n}`
+  return slug
+}
+
+/**
  * The slug an older URL may use for this session, or null. Before Council
  * Periods had their own slug, "2025-2026 Council Period 26" slugged to
  * "2025-2026", and links made then should keep working where they are

@@ -317,6 +317,8 @@ export async function importProviderMeasures(
 
   const ctx = providerContext(provider, env, db)
   const found = await provider.importMeasures(numbers, ctx)
+  // Owners seeded before any session is slugged: the plain slug goes to the owner's session.
+  await loadStateOwners(env, db)
   const result: ImportReport = { imported: [], notFound: found.notFound, invalid: found.invalid }
   const queue = ingestQueueFor(provider, env)
   const covering = [{ tenantId, stateCoverage: tenant.stateCoverage, queueId: tenant.queueId ?? null }]

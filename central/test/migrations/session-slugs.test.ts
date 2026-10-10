@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } from '../helpers/migrations'
 import { assignSessionSlugs } from '../../src/lib/sessionSlugs'
+import { loadStateOwners } from '../../src/lib/stateProviders'
 import { app } from '../../src/index-legiscan'
 
 // A central upgrading onto session slugs: built from the migrations before
@@ -87,6 +88,29 @@ describe('session slugs on an upgraded central', () => {
     await Promise.all([assignSessionSlugs(db), assignSessionSlugs(db), assignSessionSlugs(db)])
     expect(await slugsIn('MD')).toEqual({ 2200: '2026', 3000000005: '2026-2', 3000000006: '2026-s1' })
     expect(await slugsIn('US')).toEqual({ 7001: 'special-joint-session', 7002: 'special-joint-session-2', 7003: 'special-joint-session-3' })
+  })
+
+  it('give the plain slug to the session of the provider that owns the state, ahead of an older one', async () => {
+    // A fork's DC: LIMS owns it, and a leftover LegiScan Council Period 26
+    // session has a lower id. /DC/cp26/... stays with LIMS.
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name, provider)
+        VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26', 'legiscan')`),
+      env.DB.prepare(`INSERT INTO state_providers (state, provider) VALUES ('DC', 'lims')`),
+    ])
+    await assignSessionSlugs(drizzle(env.DB, { schema }))
+    expect(await slugsIn('DC')).toEqual({ 1000000026: 'cp26', 2050: 'cp26-2', 2100: '2025-2026' })
+    // Maryland has no row, so LegiScan owns it, as before.
+    expect(await slugsIn('MD')).toEqual({ 2200: '2026', 3000000005: '2026-2', 3000000006: '2026-s1' })
+  })
+
+  it('seed ownership from the old env var before the first slugs, as the cron tick does', async () => {
+    await env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name, provider)
+      VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26', 'legiscan')`).run()
+    const db = drizzle(env.DB, { schema })
+    await loadStateOwners({ ...(env as any), LIMS_STATES: 'DC', LIMS_API_KEY: 'k' }, db)
+    await assignSessionSlugs(db)
+    expect(await slugsIn('DC')).toEqual({ 1000000026: 'cp26', 2050: 'cp26-2', 2100: '2025-2026' })
   })
 
   it('refuse a second session with a slug its state already has', async () => {

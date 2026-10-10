@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
 import { runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
+import { loadStateOwners } from './lib/stateProviders'
 import { isSnapshotProvider, runSnapshotSync } from './cron/sync-snapshots'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
@@ -89,7 +90,12 @@ export default {
     const db = drizzle(env.DB, { schema })
     // Slugs for sessions written without one: every existing session on the
     // first tick after migration 0031, and any a seed script wrote since.
-    ctx.waitUntil(runJob(env, 'session-slugs', () => assignSessionSlugs(db)))
+    // Ownership first, which seeds env-var owners, since the plain slug goes
+    // to the owning provider's session.
+    ctx.waitUntil(runJob(env, 'session-slugs', async () => {
+      await loadStateOwners(env, db)
+      await assignSessionSlugs(db)
+    }))
     ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
     // One job per snapshot provider, so one failing never stops another.
     for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
