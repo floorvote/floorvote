@@ -376,6 +376,16 @@ describe('reading the session file with its ETag', () => {
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual([null])
   })
 
+  it('keeps the ETag when a claim is refused', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    // Instances track Maryland bills now, so only a cutover could move the state.
+    expect((await claim('legiscan')).status).toBe(409)
+    calls = []
+    await runSnapshotSync(mga, makeEnv().env, drizzle(env.DB, { schema }))
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
+  })
+
   it('keeps asking in full while the file comes without an ETag', async () => {
     serve(sample(), null)
     await claim('mga')
