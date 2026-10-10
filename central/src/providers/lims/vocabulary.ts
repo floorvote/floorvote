@@ -155,8 +155,10 @@ export const vocabulary: ProviderVocabulary = {
   },
 
   eventTypes: {
-    1: { label: 'Hearing', explainer: 'A Council committee hearing or roundtable, where the public can testify or submit written testimony.' },
-    3: { label: 'Markup Session', explainer: 'A committee meeting where Councilmembers amend the measure and vote on whether to send it to the full Council.' },
+    1: { label: 'Hearing', kind: 'hearing', explainer: 'A Council committee hearing or roundtable, where the public can testify or submit written testimony.' },
+    3: { label: 'Markup Session', kind: 'markup', explainer: 'A committee meeting where Councilmembers amend the measure and vote on whether to send it to the full Council.' },
+    // map.ts: Mayor's response due, Congressional review ends, and an act or law expiring.
+    10: { label: 'Deadline', kind: 'deadline', explainer: 'A date the law sets for the measure\'s next step: the end of the Mayor\'s time to sign or veto it, the end of Congressional review, or the day an emergency act or temporary law expires.' },
   },
 
   calendarName: 'DC Council calendar',

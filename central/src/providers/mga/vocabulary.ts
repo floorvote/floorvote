@@ -95,7 +95,7 @@ export const vocabulary: ProviderVocabulary = {
   },
 
   eventTypes: {
-    1: { label: 'Hearing', explainer: 'A committee hearing on the bill, where the public can testify or submit written testimony.' },
+    1: { label: 'Hearing', kind: 'hearing', explainer: 'A committee hearing on the bill, where the public can testify or submit written testimony.' },
   },
 
   extras: {

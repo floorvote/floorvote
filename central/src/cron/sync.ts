@@ -10,6 +10,7 @@ import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
+import { queueCalendarRechecks } from '../lib/billCalendar'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -256,6 +257,8 @@ export async function applyMasterList(
   const toQueue = new Set<number>()
   const stubMessagesByTenant = new Map<string, NotificationMessage[]>()
   const queueIdByTenant = new Map(coveringTenants.map(t => [t.tenantId, t.queueId]))
+  /** Bills listed with the change hash central holds, by that hash, for calendar rechecks. */
+  const unchanged = new Map<number, string>()
   let changedCount = 0
 
   for (const entry of list) {
@@ -263,6 +266,7 @@ export async function applyMasterList(
     const isNew = !stored
     const billChanged = !stored || stored.changeHash !== entry.change_hash
     if (isNew || billChanged) changedCount++
+    else unchanged.set(entry.bill_id, entry.change_hash)
 
     if (isNew) {
       billStmts.push(
@@ -392,6 +396,8 @@ export async function applyMasterList(
         .map(body => ({ body }))
     )
   }
+  // An unchanged bill is a second pull of its calendar (lib/billCalendar.ts).
+  await queueCalendarRechecks(db, ingestorQueue, unchanged)
 
   // Flush stub messages to each tenant's queue. Binding-first, HTTP fallback by queueId —
   // so tenants WITHOUT a static TENANT_QUEUE_<ID> binding (dynamically onboarded) still
@@ -462,6 +468,7 @@ async function runRawPass(
   const now = nowDb()
   const billStmts: any[] = []
   const toQueue = new Set<number>()
+  const unchanged = new Map<number, string>()
   let changedCount = 0
 
   for (const entry of rawList) {
@@ -469,6 +476,7 @@ async function runRawPass(
     const isNew = storedHash === undefined
     const changed = storedHash !== entry.change_hash
     if (isNew || changed) changedCount++
+    else unchanged.set(entry.bill_id, entry.change_hash)
 
     if (isNew) {
       billStmts.push(
@@ -516,6 +524,7 @@ async function runRawPass(
         .map(body => ({ body }))
     )
   }
+  await queueCalendarRechecks(db, env.INGESTOR_QUEUE, unchanged)
 
   await db.insert(sessionSyncLog).values({
     syncedAt: nowDb(),

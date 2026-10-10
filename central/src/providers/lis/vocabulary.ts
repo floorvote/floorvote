@@ -79,7 +79,7 @@ export const vocabulary: ProviderVocabulary = {
   },
 
   eventTypes: {
-    1: { label: 'Hearing', explainer: 'A committee or subcommittee meeting with the bill on its docket.' },
+    1: { label: 'Hearing', kind: 'hearing', explainer: 'A committee or subcommittee meeting with the bill on its docket.' },
   },
 
   extras: {

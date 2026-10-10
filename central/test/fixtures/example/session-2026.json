@@ -25,6 +25,9 @@
     "Packet": null,
     "WithdrawnBy": null,
     "InternalId": 70012,
-    "Attachments": []
+    "Attachments": [],
+    "Meetings": [
+      { "Id": "M-301", "Date": "2026-10-14", "Title": "Committee on Libraries meeting", "Removed": false }
+    ]
   }
 ]

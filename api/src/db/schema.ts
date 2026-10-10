@@ -354,6 +354,10 @@ export const calendarEvents = sqliteTable('calendar_events', {
   uid: text('uid').notNull().unique(),
   billId: text('bill_id'),
   source: text('source').notNull().default('hearing'),
+  // A bill calendar entry's kind, as central sent it: 'hearing', 'markup',
+  // 'meeting', or 'deadline' (shared/calendarKinds.ts). Null for custom
+  // events, and for an entry central hasn't sent since migration 0079.
+  kind: text('kind'),
   sequence: integer('sequence').notNull().default(0),
   date: text('date'),
   time: text('time'),

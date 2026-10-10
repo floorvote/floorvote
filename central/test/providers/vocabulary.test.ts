@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { PROVIDERS, getProvider } from '../../src/providers'
 import { stagePosition } from '../../../shared/statusStages'
 import { EXTRA_DISPLAYS } from '../../../shared/providerExtras'
+import { CALENDAR_KINDS } from '../../../shared/calendarKinds'
 import { limsStatusCode } from '../../src/providers/lims/map'
 import { example } from './example'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
@@ -35,6 +36,10 @@ describe.each([...PROVIDERS, example].map(p => [p.id, p] as const))('%s vocabula
     for (const t of [...Object.values(provider.vocabulary.billTypes), ...Object.values(provider.vocabulary.eventTypes)]) {
       expect(t.label.trim()).not.toBe('')
     }
+  })
+
+  it('names the kind of each event type, which central sends with every calendar entry', () => {
+    for (const t of Object.values(provider.vocabulary.eventTypes)) expect(CALENDAR_KINDS, t.label).toContain(t.kind)
   })
 
   it('gives each extra its own label and a display type, and the provider a display name for their panel', () => {

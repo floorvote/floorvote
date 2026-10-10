@@ -39,6 +39,10 @@ export const legiscan: Provider<'LEGISCAN_API_KEY'> = {
 
   vocabulary,
 
+  // getBill's calendar entries carry no event id, and every subscriber's
+  // calendar UIDs are built from the identity they've always had.
+  legacyCalendarIdentity: true,
+
   personUrl: ({ state, name, peopleId }) =>
     `https://legiscan.com/${state}/people/${name.replace(/ /g, '-')}/id/${peopleId}`,
 
