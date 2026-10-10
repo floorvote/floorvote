@@ -59,6 +59,8 @@ import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
+import { ProviderExtrasList } from '../components/ProviderExtras'
+import type { BillExtras } from '../../../shared/providerExtras'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
@@ -474,6 +476,8 @@ type BillDetailData = {
     url: string | null
     stateLink: string | null
   }[]
+  /** Fields only the bill's provider publishes, labeled by central, for one generic panel. Null when there are none. */
+  extras?: BillExtras | null
   customFieldValues: Record<string, { value: string; setBy: string | null; updatedAt: string }>
   matchType: 'keyword' | 'manual' | null
   newMatchAt?: string | null
@@ -639,6 +643,7 @@ export function BillDetail() {
   const [regenerateError, setRegenerateError] = useState<string | null>(null)
   const [showAmendments, setShowAmendments] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
+  const [showExtras, setShowExtras] = useState(false)
   const [showActions, setShowActions] = useState(false)
 
   const [hoveredTag, setHoveredTag] = useState<string | null>(null)
@@ -794,6 +799,7 @@ export function BillDetail() {
     if (sectionId === 'section-amendments') setShowAmendments(true)
     if (sectionId === 'section-documents') setShowDocuments(true)
     if (sectionId === 'section-hearings') setShowHearings(true)
+    if (sectionId === 'section-extras') setShowExtras(true)
 
     // setTimeout gives React one extra tick to flush collapsible expansion before measuring
     const timerId = setTimeout(() => {
@@ -1241,6 +1247,7 @@ export function BillDetail() {
   const hasAmendments = (bill.amendments ?? []).filter(a => a.url || a.stateLink).length > 0
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
+  const hasDocuments = (bill.supplements ?? []).filter(s => s.stateLink || s.url).length > 0
   return (
     <div className="bill-detail-outer" style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
       <style>{`
@@ -2631,7 +2638,7 @@ export function BillDetail() {
         })()}
 
         {/* Documents collapsible (supplements only) */}
-        {(bill.supplements ?? []).filter(s => s.stateLink || s.url).length > 0 && (() => {
+        {hasDocuments && (() => {
           const suppChipStyle = (typeId: number): React.CSSProperties => {
             switch (typeId) {
               case 1: case 3: return { color: color.textSuccessDark, background: color.bgSuccessChip }  // Fiscal Note
@@ -2676,6 +2683,21 @@ export function BillDetail() {
             </CollapsibleSection>
           )
         })()}
+
+        {/* Additional information: fields only the bill's provider publishes */}
+        {bill.extras && bill.extras.fields.length > 0 && (
+          <CollapsibleSection
+            id="section-extras"
+            label={`Additional information from ${bill.extras.providerName}`}
+            count={bill.extras.fields.length}
+            open={showExtras}
+            onToggle={() => setShowExtras(v => !v)}
+            hasPrev={hasBillText || hasAmendments || hasActions || hasHearings || hasDocuments}
+            flashed={flashedSectionId === 'section-extras'}
+          >
+            <ProviderExtrasList fields={bill.extras.fields} />
+          </CollapsibleSection>
+        )}
       </div>
 
       {/* Two-column layout */}
