@@ -144,8 +144,11 @@ async function reconcileBodyEvents(env: Env, db: AppDb, events: CentralBodyEvent
   const result: BodyEventSyncResult = { upserted: 0, cancelled: 0, removed: 0, covered: 0 }
   const incoming = new Map(events.map(e => [e.uid, e]))
 
-  type Existing = { id: string; uid: string; sequence: number; eventHash: string | null; status: string; source: string }
-  const cols = { id: calendarEvents.id, uid: calendarEvents.uid, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status, source: calendarEvents.source }
+  type Existing = { id: string; uid: string; sequence: number; eventHash: string | null; status: string; source: string; kind: string | null }
+  const cols = {
+    id: calendarEvents.id, uid: calendarEvents.uid, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash,
+    status: calendarEvents.status, source: calendarEvents.source, kind: calendarEvents.kind,
+  }
   const existing = new Map<string, Existing>()
   for (const r of await db.select(cols).from(calendarEvents)
     .where(and(eq(calendarEvents.source, 'body'), gte(calendarEvents.date, from), lte(calendarEvents.date, to))).all()) existing.set(r.uid, r)
@@ -183,8 +186,11 @@ async function reconcileBodyEvents(env: Env, db: AppDb, events: CentralBodyEvent
     } else {
       id = prior.id
       const bump = (prior.eventHash ?? '') !== e.eventHash || prior.status !== status
-      await db.update(calendarEvents).set({ ...values, sequence: bump ? prior.sequence + 1 : prior.sequence })
-        .where(eq(calendarEvents.id, id))
+      // The hash covers everything shown, so an unchanged event costs no write.
+      if (bump || prior.source !== 'body' || prior.kind !== e.kind) {
+        await db.update(calendarEvents).set({ ...values, sequence: bump ? prior.sequence + 1 : prior.sequence })
+          .where(eq(calendarEvents.id, id))
+      }
       if (bump) {
         if (status === 'cancelled') result.cancelled++
         else result.upserted++
@@ -212,7 +218,7 @@ async function relink(db: AppDb, eventId: string, billIds: string[]): Promise<vo
   const want = [...new Set(billIds)].sort()
   if (current.length === want.length && current.every((id, i) => id === want[i])) return
   await db.delete(calendarEventBills).where(eq(calendarEventBills.eventId, eventId))
-  if (want.length > 0) await db.insert(calendarEventBills).values(want.map(billId => ({ eventId, billId })))
+  for (const chunk of chunks(want, 40)) await db.insert(calendarEventBills).values(chunk.map(billId => ({ eventId, billId })))
 }
 
 /**

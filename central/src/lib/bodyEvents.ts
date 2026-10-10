@@ -281,13 +281,23 @@ function topicKey(s: string | null | undefined): string {
 const MIN_TOPIC_KEY = 12
 
 /**
+ * Whether a numberless topic names the bill whose title or entry is `text`:
+ * the text carries the topic's words, and they are most of it. So a notice
+ * titled with the roundtable's own words pairs, and a long bill title that
+ * happens to mention an agency an oversight hearing is about doesn't.
+ */
+function topicNames(topic: string, text: string): boolean {
+  return text.includes(topic) && topic.length * 2 >= text.length
+}
+
+/**
  * Point each listed event's links at the bills on its agenda, writing only
  * where they changed. An item with a bill number links the provider's bill of
  * that number in the state (the one whose session spans the event's year,
  * when numbers repeat across sessions). An item without one links the one
- * bill with a live calendar entry that day whose title or entry carries the
- * item's words, which is how DC's oversight hearing notices pair with the
- * Council's calendar.
+ * bill with a live calendar entry that day whose title or entry is mostly the
+ * item's words (topicNames), which is how DC's oversight hearing notices pair
+ * with the Council's calendar.
  */
 async function linkAgendas(db: Db, provider: Provider, state: string, events: BodyEvent[]): Promise<void> {
   if (events.length === 0) return
@@ -326,7 +336,7 @@ async function linkAgendas(db: Db, provider: Provider, state: string, events: Bo
       }
       const key = topicKey(item.topic)
       if (key.length < MIN_TOPIC_KEY) continue
-      const hits = new Set((entriesByDate.get(e.date) ?? []).filter(x => x.keys.some(k => k.includes(key))).map(x => x.billId))
+      const hits = new Set((entriesByDate.get(e.date) ?? []).filter(x => x.keys.some(k => topicNames(key, k))).map(x => x.billId))
       if (hits.size === 1) ids.add([...hits][0])
     }
     want.set(e.event_id, [...ids].sort((a, b) => a - b))
