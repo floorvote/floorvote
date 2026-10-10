@@ -1,0 +1,16 @@
+-- Drops lims_records, the LIMS-only raw-record table from #206. 0025 and 0026
+-- copied its rows into source_records (provider_records since 0027), and no
+-- code reads or writes it any more. The one column the copy left out,
+-- category_id, was never read: the LIMS provider works out a measure's
+-- category from its number.
+--
+-- Both upgrade paths have the table when 0025 and 0026 copy from it, and both
+-- run those copies before this file. A fresh central creates it, empty, in
+-- 0021_lims_records, and a downstream fork's production made it in its own
+-- 0020 (0021_lims_records is then a no-op). IF EXISTS covers a central where
+-- it is already gone.
+--
+-- A fork's production that runs its old code between this migration and the
+-- new deploy sees its LIMS sync fail until the deploy lands. The first pass of
+-- the new code stores again every record that changed meanwhile.
+DROP TABLE IF EXISTS lims_records;
