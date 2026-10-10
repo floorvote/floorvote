@@ -389,7 +389,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
       details: calendarEvents.details, url: calendarEvents.url,
       billId: calendarEvents.billId,
       billNumber: bills.billNumber, billTitle: bills.title, priority: bills.priority, state: bills.state,
-      session: bills.session, billIsDraft: bills.isDraft,
+      session: bills.session, sessionSlug: bills.sessionSlug, billIsDraft: bills.isDraft,
     })
     .from(calendarEvents)
     .leftJoin(bills, eq(calendarEvents.billId, bills.id))
@@ -416,10 +416,10 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
   const customUids = rows.filter(r => r.source === 'custom').map(r => r.uid)
   const numbersByUid = new Map<string, string[]>()
   const stateByUid = new Map<string, string>() // custom event → first linked bill's state
-  const firstBillByUid = new Map<string, { id: string; state: string | null; session: string | null; billNumber: string }>()
+  const firstBillByUid = new Map<string, { id: string; state: string | null; session: string | null; sessionSlug: string | null; billNumber: string }>()
   if (customUids.length > 0) {
     const links = await db
-      .select({ uid: calendarEvents.uid, billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session })
+      .select({ uid: calendarEvents.uid, billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug })
       .from(calendarEvents)
       .innerJoin(calendarEventBills, eq(calendarEventBills.eventId, calendarEvents.id))
       .innerJoin(bills, eq(calendarEventBills.billId, bills.id))
@@ -430,7 +430,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
       list.push(l.billNumber)
       numbersByUid.set(l.uid, list)
       if (l.state && !stateByUid.has(l.uid)) stateByUid.set(l.uid, l.state)
-      if (!firstBillByUid.has(l.uid)) firstBillByUid.set(l.uid, { id: l.billId, state: l.state, session: l.session, billNumber: l.billNumber })
+      if (!firstBillByUid.has(l.uid)) firstBillByUid.set(l.uid, { id: l.billId, state: l.state, session: l.session, sessionSlug: l.sessionSlug, billNumber: l.billNumber })
     }
   }
 
@@ -464,11 +464,11 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     let url: string | null = null
     if (r.source === 'custom') {
       const fb = firstBillByUid.get(r.uid)
-      const billHref = fb ? encodeURI(`https://${host}${billUrl({ id: fb.id, state: fb.state, session: fb.session, billNumber: fb.billNumber })}`) : null
+      const billHref = fb ? encodeURI(`https://${host}${billUrl({ id: fb.id, state: fb.state, session: fb.session, sessionSlug: fb.sessionSlug, billNumber: fb.billNumber })}`) : null
       description = customBody({ details: r.details, url: r.url, billNumbers: customNumbers, billHref, calendarHref, assoc: assocName })
       url = customUrl({ url: r.url, billHref, calendarHref })
     } else if (r.billNumber && r.billId) {
-      const billHref = encodeURI(`https://${host}${billUrl({ id: r.billId, state: r.state, session: r.session, billNumber: r.billNumber })}`)
+      const billHref = encodeURI(`https://${host}${billUrl({ id: r.billId, state: r.state, session: r.session, sessionSlug: r.sessionSlug, billNumber: r.billNumber })}`)
       description = hearingBody({ billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }) || null, priority: r.priority, billHref, assoc: assocName })
       url = billHref
     }

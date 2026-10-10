@@ -51,6 +51,27 @@ let _tmpFiles: string[] = []
  * re-apply. (This killed an MI seed at 2,880/3,909 bills and an IL seed on its
  * first batch, both resumable the whole time.)
  */
+/** The fields of a LegiScan dataset's session metadata the seed writes. */
+export interface SeedSession {
+  state_id?: number; year_start?: number; year_end?: number; prefile?: number; sine_die?: number
+  prior?: number; special?: number; session_tag?: string; session_title?: string; session_name?: string
+}
+
+/**
+ * Upsert a seeded session's row. On an existing row, only the dataset's own
+ * fields are written: central's slug (unique within the state, and never
+ * changed once assigned), the row's provider, and its sync settings stay as
+ * they are. A new row gets its slug on central's next cron tick.
+ */
+export function sessionUpsertSql(sessionId: number, state: string, session: SeedSession): string {
+  return `INSERT INTO sessions (session_id, state, state_id, year_start, year_end, prefile, sine_die, prior, special, session_tag, session_title, session_name)
+VALUES (${num(sessionId)}, ${esc(state)}, ${num(session.state_id)}, ${num(session.year_start)}, ${num(session.year_end)}, ${num(session.prefile ?? 0)}, ${num(session.sine_die ?? 0)}, ${num(session.prior ?? 0)}, ${num(session.special ?? 0)}, ${esc(session.session_tag ?? '')}, ${esc(session.session_title ?? '')}, ${esc(session.session_name ?? '')})
+ON CONFLICT (session_id) DO UPDATE SET
+  state_id = excluded.state_id, year_start = excluded.year_start, year_end = excluded.year_end,
+  prefile = excluded.prefile, sine_die = excluded.sine_die, prior = excluded.prior, special = excluded.special,
+  session_tag = excluded.session_tag, session_title = excluded.session_title, session_name = excluded.session_name;`
+}
+
 export function isTransientD1Error(msg: string): boolean {
   return /timed out|timeout|\b(408|409|425|429|500|502|503|504)\b|fetch failed|network connection lost|econnreset|epipe|socket hang up|too many requests|internal error|service unavailable|could not reach|connection (refused|reset|closed)|not currently importing anything|no import in progress/i.test(msg)
 }
@@ -140,10 +161,7 @@ export function seedCentralDb(
   console.log(`  Session title: "${session.session_title}"`)
   console.log(`  Bills: ${billFiles.length}  People: ${peopleFiles.length}  Votes: ${voteFiles.length}`)
 
-  runSql([
-    `INSERT OR REPLACE INTO sessions (session_id, state, state_id, year_start, year_end, prefile, sine_die, prior, special, session_tag, session_title, session_name)
-VALUES (${num(sessionId)}, ${esc(state)}, ${num(session.state_id)}, ${num(session.year_start)}, ${num(session.year_end)}, ${num(session.prefile ?? 0)}, ${num(session.sine_die ?? 0)}, ${num(session.prior ?? 0)}, ${num(session.special ?? 0)}, ${esc(session.session_tag ?? '')}, ${esc(session.session_title ?? '')}, ${esc(session.session_name ?? '')});`,
-  ], opts)
+  runSql([sessionUpsertSql(sessionId, state, session)], opts)
   console.log('  ✓ Session row upserted')
 
   // ── People ────────────────────────────────────────────────────────────────

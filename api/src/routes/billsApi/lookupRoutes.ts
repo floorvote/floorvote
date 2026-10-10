@@ -5,7 +5,7 @@ import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { billSlug, legacySessionSlug } from '../../lib/sessionSlug'
+import { billSlug, legacySessionSlug, sessionToSlug } from '../../lib/sessionSlug'
 import { buildBillDetail } from './detail'
 import { nextDraftNumber } from '../../lib/draftNumber'
 import { defaultDraftYear } from './draftRoutes'
@@ -14,14 +14,18 @@ import { defaultDraftYear } from './draftRoutes'
 // compare the same notion of "answers to this URL" that these routes do.
 
 /**
- * The bill a /STATE/SLUG/NUMBER URL names. An exact slug match wins; failing
- * that, an older slug a Council Period used before it had its own (its year
- * span). More than one match is ambiguous, never a guess.
+ * The bill a /STATE/SLUG/NUMBER URL names. An exact slug match wins: the slug
+ * central assigned the bill's session, which is unique within the state.
+ * Failing that, a slug the URL may have been made with before: the one the
+ * session name asks for (which central gave another session of the state, so
+ * gave this one "-2"), or the year span a Council Period used before it had its
+ * own. More than one match is ambiguous, never a guess.
  */
-function resolveSlug<T extends { session: string; isDraft: boolean; yearStart: number | null }>(candidates: T[], slug: string):
+function resolveSlug<T extends { session: string; sessionSlug: string | null; isDraft: boolean; yearStart: number | null }>(candidates: T[], slug: string):
   { status: 200; match: T } | { status: 404 } | { status: 409; candidates: T[] } {
   const exact = candidates.filter(b => billSlug(b) === slug)
-  const matches = exact.length > 0 ? exact : candidates.filter(b => !b.isDraft && legacySessionSlug(b.session) === slug)
+  const matches = exact.length > 0 ? exact : candidates.filter(b =>
+    !b.isDraft && (sessionToSlug(b.session) === slug || legacySessionSlug(b.session) === slug))
   if (matches.length === 0) return { status: 404 }
   if (matches.length > 1) return { status: 409, candidates: matches }
   return { status: 200, match: matches[0] }
@@ -34,7 +38,7 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
     const db = getDb(c.env.DB)
     const { state, sessionSlug: slug, billNumber } = c.req.param()
     const stateUpper = state.toUpperCase()
-    const candidates = await db.select({ id: bills.id, session: bills.session, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
+    const candidates = await db.select({ id: bills.id, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
       .from(bills)
       .where(and(eq(bills.billNumber, billNumber), eq(bills.state, stateUpper)))
       .all()
@@ -53,7 +57,7 @@ export function registerLookupRoutes(router: Hono<AppEnv>) {
   router.get('/resolve/:sessionSlug/:billNumber', async (c) => {
     const db = getDb(c.env.DB)
     const { sessionSlug: slug, billNumber } = c.req.param()
-    const candidates = await db.select({ id: bills.id, session: bills.session, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
+    const candidates = await db.select({ id: bills.id, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state, isDraft: bills.isDraft, yearStart: bills.yearStart })
       .from(bills).where(eq(bills.billNumber, billNumber)).all()
     // A stateless draft (state = '') has no canonical URL to redirect to here —
     // it must keep resolving only via /bills/<uuid>, never via this state-less
