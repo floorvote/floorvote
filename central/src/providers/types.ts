@@ -27,8 +27,10 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly id: string
 
   /**
-   * The provider's name as members and operators read it, such as "DC Council
-   * LIMS". It titles the bill page's panel of the provider's extras.
+   * The provider's name as members and operators read it, such as "DC
+   * Council". It titles the bill page's panel of the provider's extras
+   * ("Additional information from DC Council"), so it names the publisher
+   * rather than the system.
    */
   readonly displayName: string
 

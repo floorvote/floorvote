@@ -21,8 +21,9 @@ export const LEGISCAN_CODE_WORDS: Readonly<Record<string, string>> = {
  * Stage and rank for the status strings instance bills held before central
  * sent them: LegiScan's labels, the bare LegiScan codes and the words that
  * replace them, and LIMS's status names (a fork ran DC on LIMS). Migration
- * 0076 backfilled tenant bills from this table, and the queue consumer falls
- * back to it when a central from before provider vocabularies sends no rank.
+ * 0076 backfilled tenant bills from this table (with 0078 moving LIMS's
+ * Expired), and the queue consumer falls back to it when a central from
+ * before provider vocabularies sends no rank.
  *
  * Where a LIMS name is also a LegiScan label ("Failed", "Vetoed"), LegiScan's
  * entry wins, so a LIMS bill can start one rank off within the right stage
@@ -68,10 +69,11 @@ export const LEGACY_STATUS_ORDER: Readonly<Record<string, { stage: StatusStage; 
   'Withdrawn': { stage: 'failed', rank: 503 },
   'Disapproved': { stage: 'failed', rank: 505 },
   'Deemed Disapproved': { stage: 'failed', rank: 506 },
-  'Expired': { stage: 'failed', rank: 507 },
   'Approved': { stage: 'enacted', rank: 701 },
   'Deemed Approved': { stage: 'enacted', rank: 702 },
   'Enacted': { stage: 'enacted', rank: 703 },
   'Under Congressional Review': { stage: 'enacted', rank: 704 },
   'Official Law': { stage: 'enacted', rank: 705 },
+  // 0076 backfilled Expired as failed (507), and 0078 moved it here.
+  'Expired': { stage: 'enacted', rank: 706 },
 }

@@ -18,6 +18,9 @@ import type { ProviderVocabulary } from '../sdk'
  */
 export const vocabulary: ProviderVocabulary = {
   statuses: {
+    // No stage: a hearing notice isn't on the legislative path, so a stage
+    // filter leaves it out. Terminal, since a notice's changes reach its
+    // BulkData record, which the sync compares, and its details never move.
     100: {
       label: 'Not Applicable', stage: null, rank: 0, terminal: true,
       explainer: 'This measure doesn\'t move through the Council\'s legislative steps, so it has no status. Hearing notices are an example.',
@@ -58,10 +61,6 @@ export const vocabulary: ProviderVocabulary = {
       label: 'Deemed Disapproved', stage: 'failed', rank: 506, terminal: true,
       explainer: 'Disapproved automatically because the Council did not approve it within its review period.',
     },
-    121: {
-      label: 'Expired', stage: 'failed', rank: 507, terminal: true,
-      explainer: 'Ended without becoming law, or reached the end of its limited term (90 days for emergency acts, 225 for temporary acts).',
-    },
     109: {
       label: 'Vetoed', stage: 'vetoed', rank: 601, terminal: false,
       explainer: 'Vetoed by the Mayor. The Council can override with a two-thirds vote.',
@@ -87,6 +86,13 @@ export const vocabulary: ProviderVocabulary = {
     105: {
       label: 'Official Law', stage: 'enacted', rank: 705, terminal: true,
       explainer: 'Survived Congressional review and is now DC law, with a law number.',
+    },
+    // Enacted, not failed: what expires is mostly emergency and temporary
+    // acts, which were law until their term ran out. LegiScan keeps such an
+    // act "Passed", so DC sorts and filters like every other state.
+    121: {
+      label: 'Expired', stage: 'enacted', rank: 706, terminal: true,
+      explainer: 'Ended without becoming law, or reached the end of its limited term (90 days for emergency acts, 225 for temporary acts).',
     },
   },
 
@@ -154,4 +160,54 @@ export const vocabulary: ProviderVocabulary = {
   },
 
   calendarName: 'DC Council calendar',
+
+  // Shown on the bill page under "Additional information from DC Council", in
+  // this order. map.ts fills them, and inventory.ts says which feed field each
+  // comes from.
+  extras: {
+    lawNumber: {
+      label: 'D.C. Law number', display: 'identifier',
+      explainer: 'The number an act takes when it becomes law after Congressional review.',
+    },
+    actNumber: {
+      label: 'Act number', display: 'identifier',
+      explainer: 'The number a measure takes when it is enacted: signed by the Mayor, left unsigned past the Mayor\'s deadline, or passed over a veto.',
+    },
+    resolutionNumber: {
+      label: 'Resolution number', display: 'identifier',
+      explainer: 'The number a resolution takes when the Council adopts it.',
+    },
+    requestedBy: {
+      label: 'Introduced at the request of', display: 'text',
+      explainer: 'Who asked for the measure. The Chairman often introduces measures at the request of the Mayor.',
+    },
+    commentCommittees: {
+      label: 'Committees asked for comments', display: 'text',
+      explainer: 'Committees that may comment on the measure. The committee it was referred to, or the full Council, still acts on it.',
+    },
+    sentToMayor: { label: 'Sent to the Mayor', display: 'date' },
+    mayorDeadline: {
+      label: 'Mayor\'s deadline', display: 'date',
+      explainer: 'The Mayor has 10 working days to sign or veto an act. Unsigned by then, it takes effect as if signed.',
+    },
+    signedByMayor: { label: 'Signed by the Mayor', display: 'date' },
+    vetoedByMayor: { label: 'Vetoed by the Mayor', display: 'date' },
+    enacted: { label: 'Enacted', display: 'date' },
+    actExpires: {
+      label: 'Act expires', display: 'date',
+      explainer: 'Emergency acts last no more than 90 days, and temporary acts no more than 225.',
+    },
+    sentToCongress: { label: 'Sent to Congress', display: 'date' },
+    projectedLawDate: {
+      label: 'Projected law date', display: 'date',
+      explainer: 'When Congressional review is expected to end. Review counts only days Congress is in session, so this is an estimate.',
+    },
+    lawEffective: { label: 'Law effective', display: 'date' },
+    lawExpires: {
+      label: 'Law expires', display: 'date',
+      explainer: 'A temporary law lasts no more than 225 days.',
+    },
+    withdrawnBy: { label: 'Withdrawn by', display: 'text' },
+    withdrawnOn: { label: 'Withdrawn on', display: 'date' },
+  },
 }

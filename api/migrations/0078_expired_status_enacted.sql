@@ -1,0 +1,13 @@
+-- DC's LIMS status Expired moves from the failed stage to enacted (#294).
+-- What expires is mostly emergency and temporary acts, which were law until
+-- their term ran out, and LegiScan keeps such an act Passed. Central's LIMS
+-- vocabulary now sends enacted with rank 706, after Official Law. This moves
+-- bills 0076 backfilled with the old stage, so they sort and filter the same
+-- before central next sends them.
+--
+-- Only an instance fed by LIMS (a fork running DC on it) holds this status,
+-- so on every other instance it changes no rows.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+UPDATE bills SET status_stage = 'enacted', status_rank = 706 WHERE status = 'Expired';
