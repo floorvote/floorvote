@@ -281,7 +281,7 @@ describe('Maryland hearings on the calendar', () => {
 })
 
 describe('reading the session file with its ETag', () => {
-  it('asks with the last ETag, and skips the pass when the file hasn\'t changed', async () => {
+  it('asks with the last ETag, and changes nothing when the file hasn\'t changed', async () => {
     await claim('mga')
     await syncAndIngest()
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual([null])
@@ -291,10 +291,53 @@ describe('reading the session file with its ETag', () => {
     const run = makeEnv()
     const reports = await runSnapshotSync(mga, run.env, drizzle(env.DB, { schema }))
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
-    expect(reports).toEqual([expect.objectContaining({ records: 0, queued: 0 })])
+    // The stored records stand in for the file, and nothing in them changed.
+    expect(reports).toEqual([expect.objectContaining({ records: sample().length, queued: 0 })])
     expect(queuedIds(run)).toEqual([])
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before)
+  })
+
+  it('links an instance that newly covers Maryland when the file hasn\'t changed', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values({ tenantId: 'second', name: 'Second', stateCoverage: '["MD"]', active: true })
+    await db.insert(schema.keywordRegistry).values({ tenantId: 'second', keyword: 'tax' })
+
+    calls = []
+    const run = makeEnv()
+    const secondQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+    run.env[tenantQueueBindingName('second')] = secondQueue
+    await runSnapshotSync(mga, run.env, db)
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
+
+    const links = await db.select().from(schema.billTenants).where(eq(schema.billTenants.tenantId, 'second')).all()
+    expect(links).toHaveLength(sample().length)
+    const hb2 = await billId('HB2')
+    expect(links.find(l => l.billId === hb2)?.matchType).toBe('keyword')
+    // HB 2 is tracked there now, and the other bills reach it as monitor stubs.
+    expect(queuedIds(run)).toEqual([await billId('HB2')])
+    const stubs = secondQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)).filter((m: any) => m.stubOnly)
+    expect(stubs).toHaveLength(sample().length - 1)
+  })
+
+  it('re-queues a changed bill whose ingest failed when the file hasn\'t changed since', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const changed = sample()
+    changed.find(r => r.BillNumber === 'SB0002')!.Status = 'In the Senate - Favorable Report by Finance'
+    serve(changed, '"v2"')
+    // The pass queues SB 2, and its ingest never lands.
+    const failed = makeEnv()
+    await runSnapshotSync(mga, failed.env, drizzle(env.DB, { schema }))
+    expect(queuedIds(failed)).toEqual([await billId('SB2')])
+
+    calls = []
+    const run = makeEnv()
+    await runSnapshotSync(mga, run.env, drizzle(env.DB, { schema }))
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v2"'])
+    expect(queuedIds(run)).toEqual([await billId('SB2')])
   })
 
   it('reads a changed file in full, and asks with its new ETag next time', async () => {

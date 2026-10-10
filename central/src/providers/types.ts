@@ -381,8 +381,10 @@ export interface ProviderSnapshot {
    */
   etag?: string | null
   /**
-   * The feed answered `SnapshotSession.etag` with 304 Not Modified. Core
-   * skips the pass (`records` is then empty) and keeps the stored ETag.
+   * The feed answered `SnapshotSession.etag` with 304 Not Modified, and
+   * `records` is empty. Core runs the pass on the records it stored from the
+   * last full read, so matching and retries go on without the download, and
+   * keeps the stored ETag.
    */
   unchanged?: boolean
 }
