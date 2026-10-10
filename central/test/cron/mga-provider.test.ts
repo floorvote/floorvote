@@ -233,6 +233,53 @@ describe('Maryland from the General Assembly', () => {
   })
 })
 
+describe('Maryland hearings on the calendar', () => {
+  const calendarOf = (run: Run, handle: string) =>
+    sentToTenant(run).filter((m: any) => m.billId === handle && m.calendar).map((m: any) => m.calendar)
+
+  it('puts each committee hearing on the calendar, and a rescheduled hearing keeps its identity', async () => {
+    const records = sample()
+    const sb2 = records.find(r => r.BillNumber === 'SB0002')!
+    sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-06T13:00:00'
+    serve(records)
+    await claim('mga')
+    const first = await syncAndIngest()
+    const handle = toHandle(await billId('SB2'))
+
+    const bill = await getJson(`/bills/${handle}`)
+    expect(bill.calendar).toEqual([expect.objectContaining({
+      typeId: 1, type: 'Hearing', date: '2026-10-06', time: '13:00', description: 'Senate Education, Energy, and the Environment hearing',
+    })])
+    const [added] = calendarOf(first.run, handle)
+    expect(added.changes).toEqual([expect.objectContaining({ changeType: 'hearing_added', date: '2026-10-06' })])
+    const identity = added.changes[0].identityKey
+
+    // The committee moves the hearing: the same hearing, changed, not one cancelled and another added.
+    sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-08T15:00:00'
+    serve(records, '"v2"')
+    const second = await syncAndIngest()
+    const [moved] = calendarOf(second.run, handle)
+    expect(moved.changes).toEqual([expect.objectContaining({ changeType: 'hearing_changed', identityKey: identity, date: '2026-10-08', time: '15:00' })])
+    expect(moved.events).toHaveLength(1)
+  })
+
+  it('gives a second committee\'s hearing on the same bill an identity of its own', async () => {
+    const records = sample()
+    const sb2 = records.find(r => r.BillNumber === 'SB0002')!
+    sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-06T13:00:00'
+    sb2.CommitteeSecondaryOrigin = 'Budget and Taxation'
+    sb2.HearingDateTimeSecondaryHouseOfOrigin = '2026-10-06T13:00:00'
+    serve(records)
+    await claim('mga')
+    const { run } = await syncAndIngest()
+    const [cal] = calendarOf(run, toHandle(await billId('SB2')))
+    expect(cal.events.map((e: any) => e.description)).toEqual([
+      'Senate Education, Energy, and the Environment hearing', 'Senate Budget and Taxation hearing',
+    ])
+    expect(new Set(cal.events.map((e: any) => e.identityKey)).size).toBe(2)
+  })
+})
+
 describe('reading the session file with its ETag', () => {
   it('asks with the last ETag, and skips the pass when the file hasn\'t changed', async () => {
     await claim('mga')
