@@ -140,6 +140,15 @@ describe('cancellation', () => {
     expect(plan.live).toEqual([])
   })
 
+  it('counts nothing missing from a pull that lists only cancellations', () => {
+    const prior = stored(lims, [entry({ description: 'Public Hearing on B26-0769' }), entry({ type_id: 3, description: 'Committee Mark-up of B26-0769' })])
+    for (const hash of ['pull-1', 'pull-2']) {
+      const plan = planCalendarPull(lims, BILL, prior, [entry({ description: 'Public Hearing on B26-0769', cancelled: true })], hash, NOW)
+      expect(plan.live.map(r => r.description)).toEqual(['Committee Mark-up of B26-0769'])
+      expect(plan.writes.every(r => r.missedPulls === 0)).toBe(true)
+    }
+  })
+
   it('never cancels on a date passing, and cancels a past entry quietly', () => {
     const past = entry({ date: '2026-05-01' })
     const prior = stored(legiscan, [past, entry({ type_id: 3, description: 'Markup' })])

@@ -14,8 +14,8 @@ import type { CalendarBlock, Db } from '../types'
  *   (`Provider.legacyCalendarIdentity`).
  * - **Cancellation.** Only on positive evidence (the provider marks the entry
  *   cancelled), or once the entry is missing from two successful pulls in a
- *   row. A pull with no calendar entries at all counts for nothing, and a
- *   date passing never cancels anything.
+ *   row. A pull that lists no live entries counts for nothing, and a date
+ *   passing never cancels anything.
  * - **No deletes.** A cancelled entry keeps its row, and comes back under the
  *   same identity if the provider lists it again.
  *
@@ -190,7 +190,6 @@ export function planCalendarPull(
   now: string,
 ): CalendarPlan {
   const planner = new Planner(provider, prior, now)
-  // A pull with no entries at all is no evidence that any went away.
   if (incoming.length === 0) return planner.plan()
 
   // Stored rows by the identity they answer to. Of two with one identity, a live one is kept.
@@ -253,6 +252,10 @@ export function planCalendarPull(
       if (!suppressedAsPast) planner.change('hearing_changed', row)
     }
   }
+
+  // A pull that lists no live entry (none at all, or only cancellations) is
+  // no evidence that any other went away.
+  if (![...listed.values()].some(e => !e.cancelled)) return planner.plan()
 
   for (const row of planner.all) {
     if (accounted.has(row.id) || row.cancelledAt || planner.wrote(row)) continue
