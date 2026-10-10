@@ -28,6 +28,13 @@ export interface SourcePassReport { sessionId: number; sessionName: string; reco
 type Covering = { tenantId: string; stateCoverage: string; queueId: string | null }
 type SessionRow = typeof sessions.$inferSelect
 
+/** A provider with everything the snapshot sync calls. */
+export type SnapshotProvider = Provider & Required<Pick<Provider, 'states' | 'selectSessions' | 'snapshot' | 'toEntry'>>
+
+export function isSnapshotProvider(provider: Provider | undefined): provider is SnapshotProvider {
+  return !!provider?.states && !!provider.selectSessions && !!provider.snapshot && !!provider.toEntry
+}
+
 /**
  * `force` (the admin "run now" route) ignores the hour of day: the provider
  * refreshes its sessions and every synced session gets a full pass.
@@ -35,7 +42,7 @@ type SessionRow = typeof sessions.$inferSelect
 export async function runSourceSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SourcePassReport[]> {
-  if (!provider.snapshot || !provider.states || !providerEnabled(provider, env)) return []
+  if (!isSnapshotProvider(provider) || !providerEnabled(provider, env)) return []
 
   const active = await db.select().from(tenants).where(eq(tenants.active, true)).all()
   const coveringByState = new Map<string, Covering[]>()
@@ -95,14 +102,14 @@ export async function runSourceSync(
  * provider's first sessions arrive.
  */
 async function sessionsToSync(
-  provider: Provider, state: string, ctx: ProviderContext, etHour: number, force: boolean, db: Db,
+  provider: SnapshotProvider, state: string, ctx: ProviderContext, etHour: number, force: boolean, db: Db,
 ): Promise<SessionRow[]> {
   const stored = await providerSessions(db, provider.id, state)
-  const due = provider.selectSessions!(stored, ctx.today)
+  const due = provider.selectSessions(stored, ctx.today)
   if (!force && etHour !== 5 && due.length > 0) return due
 
   await refreshSourceSessions(provider, state, ctx, db)
-  const refreshed = provider.selectSessions!(await providerSessions(db, provider.id, state), ctx.today)
+  const refreshed = provider.selectSessions(await providerSessions(db, provider.id, state), ctx.today)
   if (refreshed.length === 0) console.warn(`[sync-${provider.id}] no current session for ${state}; skipping`)
   return refreshed
 }
@@ -195,14 +202,14 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
 }
 
 async function runSourcePass(
-  provider: Provider,
+  provider: SnapshotProvider,
   session: SessionRow,
   covering: Covering[],
   env: Env,
   db: Db,
   ctx: ProviderContext,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
-  const { records, people: listedPeople } = await provider.snapshot!(storedSession(session), ctx)
+  const { records, people: listedPeople } = await provider.snapshot(storedSession(session), ctx)
   if (listedPeople && listedPeople.length > 0) await upsertProviderPeople(db, provider.id, listedPeople)
   if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
 
@@ -223,7 +230,7 @@ async function runSourcePass(
  * full-pass entries for all of them.
  */
 async function storeRecords(
-  provider: Provider, session: SessionRow, records: ProviderRecord[], db: Db, ctx: ProviderContext,
+  provider: SnapshotProvider, session: SessionRow, records: ProviderRecord[], db: Db, ctx: ProviderContext,
 ) {
   // Stored hashes (to skip unchanged records) and stored descriptions (a list
   // record may have none; the ingestor fills them, and the pass would
@@ -256,7 +263,7 @@ async function storeRecords(
       const { billId: _id, ...update } = values
       stmts.push(db.insert(sourceRecords).values(values).onConflictDoUpdate({ target: sourceRecords.billId, set: update }))
     }
-    entries.push(await provider.toEntry!(record, { description: storedDesc.get(record.billId) ?? null }, ctx))
+    entries.push(await provider.toEntry(record, { description: storedDesc.get(record.billId) ?? null }, ctx))
   }
   for (let i = 0; i < stmts.length; i += FLUSH_BATCH) {
     const chunk = stmts.slice(i, i + FLUSH_BATCH) as [any, ...any[]]
@@ -308,7 +315,7 @@ export interface ImportReport {
 export async function importSourceMeasures(
   provider: Provider, env: Env, db: Db, tenantId: string, numbers: string[],
 ): Promise<ImportReport> {
-  if (!provider.importMeasures || !provider.toEntry) throw new Error(`${provider.id} can't import measures`)
+  if (!isSnapshotProvider(provider) || !provider.importMeasures) throw new Error(`${provider.id} can't import measures`)
   const tenant = await db.select().from(tenants).where(eq(tenants.tenantId, tenantId)).get()
   if (!tenant) throw new Error(`tenant ${tenantId} not found`)
 

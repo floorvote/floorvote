@@ -10,7 +10,7 @@ import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
-import { importSourceMeasures, runSourceSync } from '../cron/sync-sources'
+import { importSourceMeasures, isSnapshotProvider, runSourceSync } from '../cron/sync-sources'
 import { providerEnabled } from '../lib/providerRouting'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
@@ -49,7 +49,7 @@ adminRoutes.post('/trigger-sync', async (c) => {
 // synced session gets a full pass. /lims-sync is the original name for DC.
 async function runSourceNow(c: Context<{ Bindings: Env }>, id: string) {
   const provider = findProvider(id)
-  if (!provider?.snapshot) return c.json({ error: `unknown source "${id}"` }, 404)
+  if (!isSnapshotProvider(provider)) return c.json({ error: `unknown source "${id}"` }, 404)
   if (!providerEnabled(provider, c.env)) return c.json({ error: `source "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
   const passes = await runSourceSync(provider, c.env, db, { force: true })

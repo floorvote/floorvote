@@ -3,7 +3,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
 import { runSync } from './cron/sync'
-import { runSourceSync } from './cron/sync-sources'
+import { isSnapshotProvider, runSourceSync } from './cron/sync-sources'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
@@ -88,7 +88,7 @@ export default {
     const db = drizzle(env.DB, { schema })
     ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
     // One job per snapshot provider, so one failing never stops another.
-    for (const provider of PROVIDERS.filter(p => p.snapshot)) {
+    for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
       ctx.waitUntil(runJob(env, `${provider.id}-sync`, () => runSourceSync(provider, env, db)))
     }
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
