@@ -239,6 +239,8 @@ billsRoutes.get('/:id', async (c) => {
       chamber: h.chamber,
       classification: [] as string[],
       order: h.seq,
+      // A recording of the meeting, when the provider publishes one.
+      videoUrl: h.videoUrl ?? null,
     }))
 
   const sponsors = sponsorRows

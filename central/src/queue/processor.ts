@@ -16,6 +16,7 @@ import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
 import { toHandle } from '../lib/billHandle'
 import { replaceBillExtras } from '../lib/billExtras'
+import { httpUrl } from '../../../shared/httpUrl'
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -313,6 +314,7 @@ export async function ingestMeasure(
       date: h.date, action: h.action,
       chamber: h.chamber || null, chamberId: h.chamber_id,
       importance: h.importance, seq: i,
+      videoUrl: httpUrl(h.video_url),
     })
   }
 

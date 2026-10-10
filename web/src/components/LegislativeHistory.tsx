@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { CHROME_TEXT } from '../lib/textStyles'
 import { TabularRow } from './TabularRow'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { httpUrl } from '../../../shared/httpUrl'
 
 interface HistoryEntry {
   date: string
   action: string
   chamber?: string
   importance?: number
+  /** A recording of the meeting, when the bill's provider publishes one (DC's Council does). */
+  videoUrl?: string
 }
 
 interface VoteEntry {
@@ -31,7 +34,7 @@ interface LegislativeHistoryProps {
 }
 
 type TimelineItem =
-  | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number }
+  | { kind: 'action'; date: string; chamber?: string; action: string; importance?: number; videoUrl?: string }
   | { kind: 'vote'; date: string; chamber: string | null; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { name: string; vote: string }[] }
 
 /** How each legislator voted, grouped by vote ("Yes", "No", "Absent", ...), with the no side first to scan. */
@@ -49,6 +52,24 @@ function LegislatorVotes({ votes }: { votes: { name: string; vote: string }[] })
         ))}
       </div>
     </details>
+  )
+}
+
+/** A link to the recording of the meeting an action happened at. Only an http(s) URL becomes a link. */
+function MeetingVideo({ url, action }: { url?: string; action: string }) {
+  const href = httpUrl(url)
+  if (!href) return null
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Video: ${action} (opens in a new tab)`}
+      style={{ marginLeft: 8, color: color.linkBlue, fontSize: fontSize.xs, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 2, verticalAlign: 'middle' }}
+    >
+      <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: fontSize.base, lineHeight: 1 }}>play_circle</span>
+      Video
+    </a>
   )
 }
 
@@ -100,7 +121,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
 
   // Merge history actions and votes into one sorted timeline
   const timeline: TimelineItem[] = [
-    ...entries.map((e): TimelineItem => ({ kind: 'action', date: e.date, chamber: e.chamber, action: e.action, importance: e.importance })),
+    ...entries.map((e): TimelineItem => ({ kind: 'action', date: e.date, chamber: e.chamber, action: e.action, importance: e.importance, videoUrl: e.videoUrl })),
     ...votes.map((v): TimelineItem => ({ kind: 'vote', date: v.date, chamber: v.chamber, desc: v.desc, yea: v.yea, nay: v.nay, nv: v.nv, absent: v.absent, passed: v.passed, legislatorVotes: v.legislatorVotes })),
   ].sort((a, b) => b.date.localeCompare(a.date))
 
@@ -171,9 +192,12 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
               }
               chip={item.chamber ? <span style={chamberStyle(item.chamber)}>{chamberLabel(item.chamber)}</span> : null}
               content={item.kind === 'action' ? (
-                <span style={{ color: color.textSlate, fontWeight: item.importance === 1 ? fontWeight.semibold : fontWeight.normal }}>
-                  {stripDatePrefix(item.action)}
-                </span>
+                <>
+                  <span style={{ color: color.textSlate, fontWeight: item.importance === 1 ? fontWeight.semibold : fontWeight.normal }}>
+                    {stripDatePrefix(item.action)}
+                  </span>
+                  <MeetingVideo url={item.videoUrl} action={stripDatePrefix(item.action)} />
+                </>
               ) : (
                 <div>
                   <div style={{ color: color.textSlate, fontWeight: fontWeight.medium, marginBottom: 3 }}>{item.desc}</div>

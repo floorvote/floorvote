@@ -15,6 +15,7 @@ import {
   isAiConfigDefault,
 } from '../../../shared/aiDefaults'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
+import { httpUrl } from '../../../shared/httpUrl'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -224,7 +225,8 @@ type CentralBill = {
   textR2Key: string | null
   textStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2'
   texts: Array<{ docId: string; note: string; date: string; links: Array<{ url: string; mediaType: string }> }>
-  actions: Array<{ description: string; date: string; chamber: string | null; classification: string[]; order: number }>
+  /** `videoUrl`: a recording of the meeting, when the provider publishes one. Absent from an older central. */
+  actions: Array<{ description: string; date: string; chamber: string | null; classification: string[]; order: number; videoUrl?: string | null }>
   sponsors: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
   votes: Array<unknown>
   relatedBills: Array<{ identifier: string; session: string; relationType: string }>
@@ -251,6 +253,17 @@ function statusOrder(b: CentralBill): { statusStage: string | null; statusRank: 
   if (typeof b.statusRank === 'number') return { statusStage: b.statusStage ?? null, statusRank: b.statusRank }
   const legacy = LEGACY_STATUS_ORDER[b.status ?? '']
   return { statusStage: legacy?.stage ?? null, statusRank: legacy?.rank ?? 0 }
+}
+
+/**
+ * The bill's history as `bills.history` stores it. An entry keeps its meeting
+ * video only as an http(s) link, since the bill page puts it in an href.
+ */
+function historyFrom(actions: CentralBill['actions']): { date: string; action: string; chamber: string | null; videoUrl?: string }[] {
+  return actions.map(a => {
+    const videoUrl = httpUrl(a.videoUrl)
+    return { date: a.date, action: a.description, chamber: a.chamber, ...(videoUrl ? { videoUrl } : {}) }
+  })
 }
 
 export async function processCentralNotification(
@@ -313,11 +326,7 @@ export async function processCentralNotification(
     const coSponsorListStub = centralBill.sponsors
       .filter(s => s !== primarySponsorStub)
       .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null }))
-    const historyStub = centralBill.actions.map(a => ({
-      date: a.date,
-      action: a.description,
-      chamber: a.chamber,
-    }))
+    const historyStub = historyFrom(centralBill.actions)
     const lastActionStub = centralBill.lastAction
       ?? (historyStub.length > 0 ? historyStub[historyStub.length - 1].action : null)
     const lastActionDateStub = centralBill.lastActionDate
@@ -370,11 +379,7 @@ export async function processCentralNotification(
     const coSponsorListMd = centralBill.sponsors
       .filter(s => s !== primarySponsorMd)
       .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null }))
-    const historyMd = centralBill.actions.map(a => ({
-      date: a.date,
-      action: a.description,
-      chamber: a.chamber,
-    }))
+    const historyMd = historyFrom(centralBill.actions)
     const lastActionMd = centralBill.lastAction
       ?? (historyMd.length > 0 ? historyMd[historyMd.length - 1].action : null)
     const lastActionDateMd = centralBill.lastActionDate
@@ -447,12 +452,7 @@ export async function processCentralNotification(
     .filter(s => s !== primarySponsor)
     .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null }))
 
-  // Map actions to history format
-  const history = centralBill.actions.map(a => ({
-    date: a.date,
-    action: a.description,
-    chamber: a.chamber,
-  }))
+  const history = historyFrom(centralBill.actions)
   const lastAction = centralBill.lastAction
     ?? (history.length > 0 ? history[history.length - 1].action : null)
   const lastActionDate = centralBill.lastActionDate

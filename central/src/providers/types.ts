@@ -501,6 +501,12 @@ interface MeasureHistoryEntry {
   chamber: string
   chamber_id: number
   importance: number  // 1=major, 2=minor
+  /**
+   * A recording of the meeting the action happened at, when the provider
+   * publishes one (LIMS: hearing, mark-up, and floor-reading videos). Core
+   * keeps only an http(s) URL.
+   */
+  video_url?: string
 }
 
 interface MeasureSast {
