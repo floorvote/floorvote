@@ -26,6 +26,7 @@ type MultiStagedDelta = { additions: string[]; removals: string[] }
 
 export type FilterState = {
   status: string[]
+  stage: string[]
   priority: string[]
   position: string[]
   year: string[]
@@ -53,6 +54,7 @@ export type FilterState = {
 export function buildFilterBody(f: FilterState): Record<string, unknown> {
   return {
     ...(f.status.length > 0 && { status: f.status }),
+    ...(f.stage.length > 0 && { stage: f.stage }),
     ...(f.priority.length > 0 && { priority: f.priority }),
     ...(f.position.length > 0 && { position: f.position }),
     ...(f.year.length > 0 && { year: f.year }),
@@ -80,6 +82,7 @@ export function buildFilterBody(f: FilterState): Record<string, unknown> {
 export function buildBulkValuesParams(f: FilterState): URLSearchParams {
   const params = new URLSearchParams()
   f.status.forEach(s => params.append('status', s))
+  f.stage.forEach(s => params.append('stage', s))
   f.priority.forEach(p => params.append('priority', p))
   f.position.forEach(p => params.append('position', p))
   f.year.forEach(y => params.append('year', y))

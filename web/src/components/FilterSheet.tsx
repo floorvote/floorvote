@@ -13,6 +13,7 @@ interface FilterSheetProps {
   isOpen: boolean
   onClose: () => void
   statuses: string[]
+  stages: string[]
   priorities: string[]
   positions: string[]
   tags: string[]
@@ -47,6 +48,7 @@ interface FilterSheetProps {
    *  `f.isMultiState`, gated by `knownStates.size > 1`. */
   isMultiState: boolean
   statusOptions: { value: string; label: string }[]
+  stageOptions: { value: string; label: string }[]
   priorityOptions: { value: string; label: string }[]
   positionOptions: { value: string; label: string }[]
   tagOptions: string[]
@@ -63,6 +65,7 @@ interface FilterSheetProps {
   cfFilters: Record<string, string[]>
   onCfFilterChange: (fieldId: string, values: string[]) => void
   onStatusChange: (v: string[]) => void
+  onStageChange: (v: string[]) => void
   onPriorityChange: (v: string[]) => void
   onPositionChange: (v: string[]) => void
   onTagChange: (v: string[]) => void
@@ -77,6 +80,7 @@ interface FilterSheetProps {
   onClearAll: () => void
   counts?: {
     status: Record<string, number>
+    stage?: Record<string, number>
     priority: Record<string, number>
     position: Record<string, number>
     session: Record<string, number>
@@ -99,7 +103,7 @@ interface FilterSheetProps {
 // entries — represented here as `cf:<fieldId>` rather than as one more member
 // of the static union. Binary custom fields, like the two toggles above,
 // never become a `dimension` value at all — they stay direct controls.
-type StaticDimensionKey = 'status' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
+type StaticDimensionKey = 'status' | 'stage' | 'priority' | 'position' | 'session' | 'tags' | 'subjects' | 'state'
 type CustomFieldDimensionKey = `cf:${string}`
 type DimensionKey = StaticDimensionKey | CustomFieldDimensionKey
 
@@ -238,12 +242,12 @@ function useDrilldownFocus(dimension: DimensionKey | null, isOpen: boolean) {
 
 export function FilterSheet({
   isOpen, onClose,
-  statuses, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
+  statuses, stages, priorities, positions, tags, subjects, sessions, states, minRelevance, myBills,
   isAdmin, newMatches, newMatchesCount, unvotedOnly, unvotedCount, drafts, draftCount, hasDrafts, uniqueStates, isMultiState,
   matchAny, onMatchAnyChange,
-  statusOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
+  statusOptions, stageOptions, priorityOptions, positionOptions, tagOptions, subjectGroups, sessionOptions, totalSessionCount, stateOptions,
   customFieldDefs, cfFilters, onCfFilterChange,
-  onStatusChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
+  onStatusChange, onStageChange, onPriorityChange, onPositionChange, onTagChange, onSubjectChange, onSessionChange, onStateChange,
   onMinRelevanceChange, onMyBillsChange, onNewMatchesChange, onUnvotedOnlyChange, onDraftsChange,
   onClearAll, counts,
 }: FilterSheetProps) {
@@ -290,7 +294,7 @@ export function FilterSheet({
   // button's badge count) term for term — a mismatch is exactly the bug that
   // orphaned `unvoted` on mobile (see task-7-report.md, Critical 1): the
   // button badge counted it, this sheet's own "Reset filters" gate didn't.
-  const totalActive = statuses.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + (draftsVisible && drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActive = statuses.length + stages.length + priorities.length + positions.length + tags.length + subjects.length + sessions.length + states.length + (minRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatchesVisible && newMatches ? 1 : 0) + (draftsVisible && drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   function toggleItem(arr: string[], val: string, setter: (v: string[]) => void) {
     setter(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val])
@@ -302,6 +306,7 @@ export function FilterSheet({
   const STATIC_DIMENSION_LABELS: Record<StaticDimensionKey, string> = {
     state: filterDimensionLabel('state'),
     status: filterDimensionLabel('status'),
+    stage: filterDimensionLabel('stage'),
     priority: filterDimensionLabel('priority'),
     position: filterDimensionLabel('position'),
     session: filterDimensionLabel('session'),
@@ -342,6 +347,7 @@ export function FilterSheet({
   const activeFilterGroups = buildActiveFilterGroups({
     filterStates: states,
     filterStatuses: statuses,
+    filterStages: stages,
     filterPositions: positions,
     filterPriorities: priorities,
     filterYears: sessions.map(Number),
@@ -354,6 +360,7 @@ export function FilterSheet({
     isMultiState,
     onRemoveState: s => onStateChange(states.filter(x => x !== s)),
     onRemoveStatus: s => onStatusChange(statuses.filter(x => x !== s)),
+    onRemoveStage: s => onStageChange(stages.filter(x => x !== s)),
     onRemovePosition: p => onPositionChange(positions.filter(x => x !== p)),
     onRemovePriority: p => onPriorityChange(priorities.filter(x => x !== p)),
     onRemoveYear: y => onSessionChange(sessions.filter(s => s !== String(y))),
@@ -583,6 +590,9 @@ export function FilterSheet({
                 {statusOptions.length > 0 && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.status} selectedCount={statuses.length} onClick={() => setDimension('status')} buttonRef={rowRef('status')} />
                 )}
+                {stageOptions.length > 0 && (
+                  <DimensionRow label={STATIC_DIMENSION_LABELS.stage} selectedCount={stages.length} onClick={() => setDimension('stage')} buttonRef={rowRef('stage')} />
+                )}
                 {priorityOptions.length > 0 && (
                   <DimensionRow label={STATIC_DIMENSION_LABELS.priority} selectedCount={priorities.length} onClick={() => setDimension('priority')} buttonRef={rowRef('priority')} />
                 )}
@@ -639,6 +649,20 @@ export function FilterSheet({
                   active={statuses.includes(opt.value)}
                   onClick={() => toggleItem(statuses, opt.value, onStatusChange)}
                   count={counts?.status[opt.value] ?? 0}
+                />
+              ))}
+            </div>
+          )}
+
+          {dimension === 'stage' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {stageOptions.map(opt => (
+                <SheetChip
+                  key={opt.value}
+                  label={opt.label}
+                  active={stages.includes(opt.value)}
+                  onClick={() => toggleItem(stages, opt.value, onStageChange)}
+                  count={counts?.stage?.[opt.value] ?? 0}
                 />
               ))}
             </div>

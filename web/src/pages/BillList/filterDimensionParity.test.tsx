@@ -165,7 +165,7 @@ function renderMobile(
     <FilterSheet
       isOpen
       onClose={() => {}}
-      statuses={[]} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
+      statuses={[]} stages={[]} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
       minRelevance={0} myBills={false}
       isAdmin={ctx.isAdmin}
       newMatches={false}
@@ -179,6 +179,7 @@ function renderMobile(
       uniqueStates={ctx.uniqueStates}
       isMultiState={ctx.isMultiState}
       statusOptions={[{ value: 'active', label: 'Active' }]}
+      stageOptions={[{ value: 'enacted', label: 'Enacted' }]}
       priorityOptions={[{ value: 'high', label: 'High' }]}
       positionOptions={[{ value: 'support', label: 'Support' }]}
       tagOptions={['Education']}
@@ -189,7 +190,7 @@ function renderMobile(
       customFieldDefs={ctx.customFieldDefs ?? []}
       cfFilters={{}}
       onCfFilterChange={() => {}}
-      onStatusChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
+      onStatusChange={() => {}} onStageChange={() => {}} onPriorityChange={() => {}} onPositionChange={() => {}}
       onTagChange={() => {}} onSubjectChange={() => {}} onSessionChange={() => {}} onStateChange={() => {}}
       onMinRelevanceChange={() => {}} onMyBillsChange={() => {}} onNewMatchesChange={() => {}}
       onUnvotedOnlyChange={() => {}}
@@ -529,7 +530,7 @@ describe('dimension scope classification', () => {
 
   it('treats every value dimension as a bill fact', () => {
     const bill = FILTER_DIMENSIONS.filter(d => d.scope === 'bill').map(d => d.key).sort()
-    expect(bill).toEqual(['position', 'priority', 'session', 'state', 'status', 'subjects', 'tags'])
+    expect(bill).toEqual(['position', 'priority', 'session', 'stage', 'state', 'status', 'subjects', 'tags'])
   })
 
   it('registers unvoted so the bills page can set it, not only clear it', () => {

@@ -622,8 +622,10 @@ describe('BillList saved views — short URL resolution', () => {
 
     // findByRole (not getByRole): the Status dropdown mounts once facets load,
     // a separate fetch from the /views one the waitFor above is gated on —
-    // under load the two don't always resolve on the same tick.
-    fireEvent.click(await screen.findByRole('button', { name: 'Status' }))
+    // under load the two don't always resolve on the same tick. For the same
+    // reason the view's own status filter may already be applied, which makes
+    // the trigger read "Status (1)".
+    fireEvent.click(await screen.findByRole('button', { name: /^Status( \(\d+\))?$/ }))
     const introducedOption = (await screen.findAllByText('Introduced'))
       .find(el => el.closest('label') !== null)
     fireEvent.click(introducedOption!)

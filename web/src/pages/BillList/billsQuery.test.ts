@@ -30,6 +30,12 @@ describe('billsApiParams', () => {
     expect(s).not.toContain('match=')
   })
 
+  it('round-trips the stage filter', () => {
+    const v = billsFilterValuesFromSearch(new URLSearchParams('stage=enacted&stage=vetoed'))
+    expect(v.stages).toEqual(['enacted', 'vetoed'])
+    expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100&stage=enacted&stage=vetoed')
+  })
+
   it('parses a bare /bills URL to an empty (page-1) query', () => {
     const v = billsFilterValuesFromSearch(new URLSearchParams(''))
     expect(billsApiParams(v, 1, 100)).toBe('page=1&pageSize=100')

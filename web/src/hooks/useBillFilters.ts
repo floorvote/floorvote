@@ -6,6 +6,7 @@ import { STATUS_SEMANTIC_ORDER } from '../pages/BillList/constants'
 import { FILTER_ANY } from '../pages/BillList/FilterPanel'
 import { knownStates, knownStatuses, knownTagsCache } from '../pages/BillList'
 import { normalizeViewQuery } from '../lib/savedViews'
+import { STATUS_STAGES } from '../../../shared/statusStages'
 
 type SearchParams = ReturnType<typeof useSearchParams>[0]
 type SetSearchParams = ReturnType<typeof useSearchParams>[1]
@@ -31,6 +32,7 @@ export function useBillFilters(opts: {
 
   const [search, setSearch] = useState('')
   const [filterStatuses, setFilterStatuses] = useState<string[]>(() => searchParams.getAll('status'))
+  const [filterStages, setFilterStages] = useState<string[]>(() => searchParams.getAll('stage'))
   const [filterPriorities, setFilterPriorities] = useState<string[]>(() => searchParams.getAll('priority'))
   const [filterPositions, setFilterPositions] = useState<string[]>(() => searchParams.getAll('position'))
   const [filterYears, setFilterYears] = useState<number[]>(() =>
@@ -94,6 +96,7 @@ export function useBillFilters(opts: {
     if (location.search === lastWrittenSearch.current) return
     const params = new URLSearchParams(location.search)
     setFilterStatuses(params.getAll('status'))
+    setFilterStages(params.getAll('stage'))
     setFilterPriorities(params.getAll('priority'))
     setFilterPositions(params.getAll('position'))
     setFilterYears(params.getAll('year').map(Number).filter(n => !isNaN(n)))
@@ -131,6 +134,7 @@ export function useBillFilters(opts: {
 
   const currentFilters = useMemo(() => ({
     status: filterStatuses,
+    stage: filterStages,
     priority: filterPriorities,
     position: filterPositions,
     year: filterYears.map(String),
@@ -145,7 +149,7 @@ export function useBillFilters(opts: {
     drafts,
     matchAny,
     cf: cfFilters,
-  }), [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, selectedSubjects, search, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, cfFilters])
+  }), [filterStatuses, filterStages, filterPriorities, filterPositions, filterYears, filterStates, selectedTags, selectedSubjects, search, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, cfFilters])
 
   function setCfFilter(fieldId: string, values: string[]) {
     setCfFilters(prev => ({ ...prev, [fieldId]: values }))
@@ -170,6 +174,7 @@ export function useBillFilters(opts: {
   useEffect(() => {
     const next = new URLSearchParams()
     filterStatuses.forEach(s => next.append('status', s))
+    filterStages.forEach(s => next.append('stage', s))
     filterPriorities.forEach(p => next.append('priority', p))
     filterPositions.forEach(p => next.append('position', p))
     filterYears.forEach(y => next.append('year', String(y)))
@@ -223,7 +228,7 @@ export function useBillFilters(opts: {
     lastWrittenSearch.current = searchStr
     setSearchParams(next, { replace: true })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterStatuses, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, selectedTags, selectedSubjects, sortCol, sortDir, cfFilters])
+  }, [filterStatuses, filterStages, filterPriorities, filterPositions, filterYears, filterStates, filterMinRelevance, myBills, unvotedOnly, newMatches, drafts, matchAny, selectedTags, selectedSubjects, sortCol, sortDir, cfFilters])
 
   const handleTagClick = useCallback((tag: string) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])
@@ -260,6 +265,7 @@ export function useBillFilters(opts: {
     pendingViewQuery.current = null
     setSearch('')
     setFilterStatuses([])
+    setFilterStages([])
     setFilterPriorities([])
     setFilterPositions([])
     setFilterYears([])
@@ -295,6 +301,7 @@ export function useBillFilters(opts: {
     pendingViewId.current = view.slug ?? view.id
     pendingViewQuery.current = normalizeViewQuery(view.query)
     setFilterStatuses(params.getAll('status'))
+    setFilterStages(params.getAll('stage'))
     setFilterPriorities(params.getAll('priority'))
     setFilterPositions(params.getAll('position'))
     setFilterYears(params.getAll('year').map(Number).filter(n => !isNaN(n)))
@@ -326,12 +333,12 @@ export function useBillFilters(opts: {
   }, [customFieldDefs, handleResetFilters, setSortCol, setSortDir])
 
   const hasActiveFilters = !!(
-    search || filterStatuses.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
+    search || filterStatuses.length > 0 || filterStages.length > 0 || filterPriorities.length > 0 || filterPositions.length > 0 ||
     filterYears.length > 0 || filterStates.length > 0 || filterMinRelevance > 0 || selectedTags.length > 0 || selectedSubjects.length > 0 || myBills || unvotedOnly || newMatches || drafts ||
     Object.keys(cfFilters).some(k => (cfFilters[k]?.length ?? 0) > 0)
   )
 
-  const totalActiveFilters = filterStatuses.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
+  const totalActiveFilters = filterStatuses.length + filterStages.length + filterPriorities.length + filterPositions.length + selectedTags.length + selectedSubjects.length + filterYears.length + filterStates.length + (filterMinRelevance > 0 ? 1 : 0) + (myBills ? 1 : 0) + (unvotedOnly ? 1 : 0) + (newMatches ? 1 : 0) + (drafts ? 1 : 0) + Object.values(cfFilters).reduce((sum, v) => sum + v.length, 0)
 
   const yearFacetKeys = useMemo(() => {
     return Object.keys(facetCounts.year)
@@ -349,6 +356,12 @@ export function useBillFilters(opts: {
       return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
     })
   }, [facetCounts.status])
+  // Every stage, most advanced first like the statuses above. The list is
+  // fixed, so a stage with no bills still shows, at 0.
+  const stageOptions = useMemo(
+    () => [...STATUS_STAGES].reverse().map(s => ({ value: s.key as string, label: s.label as string })),
+    [],
+  )
   // Options come from the facets API + the session-sticky knownTagsCache, but a tag removed
   // from the taxonomy must never be selectable. Intersect with the taxonomy; fail open (show all)
   // while the taxonomy is still loading, so options never briefly vanish.
@@ -396,6 +409,7 @@ export function useBillFilters(opts: {
   return {
     search, setSearch,
     filterStatuses, setFilterStatuses,
+    filterStages, setFilterStages,
     filterPriorities, setFilterPriorities,
     filterPositions, setFilterPositions,
     filterYears, setFilterYears,
@@ -413,7 +427,7 @@ export function useBillFilters(opts: {
     currentFilters,
     handleTagClick, handleTagsChange, handleSubjectsChange, handleStatusClick, handlePriorityClick,
     handlePositionClick, handleYearClick, handleRelevanceClick, handleResetFilters,
-    yearFacetKeys, statuses, allTags, positionOptions, uniqueStates, isMultiState,
+    yearFacetKeys, statuses, stageOptions, allTags, positionOptions, uniqueStates, isMultiState,
     hasActiveFilters, totalActiveFilters,
     applyView,
     activeViewSlug: searchParams.get('view'),

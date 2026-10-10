@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { decodeStatus } from '../../lib/legislativeStatus'
+import { stageLabel } from '../../../../shared/statusStages'
 import { PRIORITY_COLORS, POSITION_COLORS, POSITION_FALLBACK } from '../../lib/chipStyles'
 import { fontSize, radius } from '../../styles/tokens'
 import { ActiveChip, FILTER_ANY } from './FilterPanel'
@@ -10,6 +11,7 @@ export type ActiveFilterGroup = { key: string; chips: ReactNode[] }
 export type ActiveFilterGroupArgs = {
   filterStates: string[]
   filterStatuses: string[]
+  filterStages: string[]
   filterPositions: string[]
   filterPriorities: string[]
   filterYears: number[]
@@ -26,6 +28,7 @@ export type ActiveFilterGroupArgs = {
   isMultiState: boolean
   onRemoveState: (s: string) => void
   onRemoveStatus: (s: string) => void
+  onRemoveStage: (s: string) => void
   onRemovePosition: (p: string) => void
   onRemovePriority: (p: string) => void
   onRemoveYear: (y: number) => void
@@ -58,6 +61,9 @@ export function buildActiveFilterGroups(a: ActiveFilterGroupArgs): ActiveFilterG
   )))
   push('status', a.filterStatuses.map(s => (
     <ActiveChip key={`status-${s}`} label={decodeStatus(s) ?? s} color="gray" onRemove={() => a.onRemoveStatus(s)} />
+  )))
+  push('stage', a.filterStages.map(s => (
+    <ActiveChip key={`stage-${s}`} label={stageLabel(s) ?? s} color="gray" onRemove={() => a.onRemoveStage(s)} />
   )))
   push('position', a.filterPositions.map(p => {
     const posLabel = p === FILTER_ANY ? 'Any position' : ((a.positionOptions.find(o => o.value === p) as { value: string; label?: string } | undefined)?.label ?? p)

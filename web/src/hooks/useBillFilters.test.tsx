@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { useBillFilters } from './useBillFilters'
 import type { CustomFieldDef, FacetCounts } from '../pages/BillList/types'
 
-const emptyFacets: FacetCounts = { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
+const emptyFacets: FacetCounts = { status: {}, stage: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
 
 function draftsWrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter initialEntries={['/bills?drafts=1']}>{children}</MemoryRouter>
@@ -176,6 +176,36 @@ describe('useBillFilters', () => {
       expect(result.current.filterStatuses).toEqual([])
       expect(result.current.matchAny).toBe(true)
       expect(new URLSearchParams(result.current.urlSearch).get('match')).toBe('any')
+    })
+  })
+
+  describe('stage', () => {
+    function stageWrapper({ children }: { children: ReactNode }) {
+      return <MemoryRouter initialEntries={['/bills?stage=enacted']}>{children}</MemoryRouter>
+    }
+
+    it('reads the stage filter from the URL and writes it back', () => {
+      const { result } = renderHook(useHarness, { wrapper: stageWrapper })
+      expect(result.current.filterStages).toEqual(['enacted'])
+      expect(result.current.hasActiveFilters).toBe(true)
+      expect(result.current.totalActiveFilters).toBe(1)
+
+      act(() => result.current.setFilterStages(['enacted', 'vetoed']))
+      expect(new URLSearchParams(result.current.urlSearch).getAll('stage')).toEqual(['enacted', 'vetoed'])
+    })
+
+    it('handleResetFilters clears it', () => {
+      const { result } = renderHook(useHarness, { wrapper: stageWrapper })
+      act(() => result.current.handleResetFilters())
+      expect(result.current.filterStages).toEqual([])
+      expect(result.current.urlSearch).not.toContain('stage=')
+    })
+
+    it('offers every stage, most advanced first', () => {
+      const { result } = renderHook(useHarness, { wrapper })
+      expect(result.current.stageOptions.map(o => o.label)).toEqual([
+        'Enacted', 'Vetoed', 'Failed', 'Passed legislature', 'Passed one chamber', 'In committee', 'Introduced',
+      ])
     })
   })
 
