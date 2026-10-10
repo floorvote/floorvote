@@ -471,6 +471,30 @@ describe('downloadTextToR2: bot-wall handling', () => {
 })
 
 describe('per-member votes', () => {
+  it("replaces a roll call's earlier vote rows, ids and unresolved members included", async () => {
+    const db = drizzle(env.DB, { schema })
+    // Rows as the contributor's batched insert wrote them in production: random
+    // ids, and a null person for a member LIMS couldn't resolve.
+    await db.insert(schema.rollCallVotes).values([
+      { id: crypto.randomUUID(), rollCallId: 778, peopleId: 5000, voteId: 1, voteText: 'Yea' },
+      { id: crypto.randomUUID(), rollCallId: 778, peopleId: null, voteId: 2, voteText: 'Nay' },
+    ])
+    const bill = buildFixtureBill({
+      votes: [{ roll_call_id: 778, date: '2026-02-03', desc: 'Passed', yea: 1, nay: 1, nv: 1, absent: 0, total: 3, passed: 1,
+        chamber: 'H', chamber_id: 1, url: '', state_link: '', member_votes: [
+          { people_id: 5000, vote_id: 1, vote_text: 'Yea' },
+          { people_id: 5001, vote_id: 2, vote_text: 'Nay' },
+          { people_id: null, vote_id: 3, vote_text: 'NV' },
+        ] }],
+    })
+
+    await ingestMeasure(bill, getProvider('lims'), makeEnv(), db, { forceMetadata: false, forceAI: false, interactive: false })
+
+    const rows = await db.select().from(schema.rollCallVotes).where(eq(schema.rollCallVotes.rollCallId, 778)).all()
+    expect(rows.map(r => r.id).sort()).toEqual(['778-5000', '778-5001'])
+    expect(rows.some(r => r.peopleId === null)).toBe(false)
+  })
+
   it('writes every member vote of a large roll call, replacing the previous set', async () => {
     const db = drizzle(env.DB, { schema })
     const memberVotes = (n: number) => Array.from({ length: n }, (_, i) => ({ people_id: 5000 + i, vote_id: i % 2 ? 1 : 2, vote_text: i % 2 ? 'Yea' : 'Nay' }))

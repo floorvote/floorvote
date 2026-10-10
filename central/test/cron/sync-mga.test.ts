@@ -22,7 +22,8 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runSourceSync } from '../../src/cron/sync-sources'
+import { runSourceSync, refreshSourceSessions } from '../../src/cron/sync-sources'
+import { providerContext } from '../../src/lib/providerContext'
 import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { mga as mgaSource } from '../../src/providers/mga'
@@ -68,6 +69,30 @@ beforeEach(async () => {
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.tenants).values({ tenantId: 'team', name: 'Team', stateCoverage: '["MD"]', active: true })
   await db.insert(schema.keywordRegistry).values([{ tenantId: 'team', keyword: 'cost recovery' }])
+})
+
+describe('Maryland session refresh', () => {
+  it('makes a session the MGA stops listing prior, and leaves sessions alone when it lists none', async () => {
+    const db = drizzle(env.DB, { schema })
+    const ctx = providerContext(mgaSource, makeEnv().env, db)
+    const S1 = `${THIS_YEAR}S1`
+    // A LegiScan Maryland session, which the MGA refresh must never touch.
+    await db.insert(schema.sessions).values({ sessionId: 2100, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR, sessionTitle: 'LS', sessionName: 'LS' })
+    const prior = async () => Object.fromEntries((await db.select().from(schema.sessions).all())
+      .map(s => [s.source === 'mga' ? s.sessionTag : `${s.source}:${s.sessionId}`, s.prior]))
+
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
+    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 0, 'legiscan:2100': 0 })
+
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
+    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
+
+    vi.mocked(mga.mgaSessionExists).mockResolvedValue(false)
+    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
+  })
 })
 
 describe('the Maryland sync', () => {

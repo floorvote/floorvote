@@ -12,6 +12,10 @@ vi.mock('../../src/providers/lims/client', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/lims/client')>('../../src/providers/lims/client')
   return { ...actual, getCouncilPeriods: vi.fn(), getMembers: vi.fn(), getBulkData: vi.fn(), getLegislationDetails: vi.fn() }
 })
+vi.mock('../../src/providers/lims/map', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/lims/map')>('../../src/providers/lims/map')
+  return { ...actual, buildLimsBill: vi.fn(actual.buildLimsBill) }
+})
 vi.mock('../../src/providers/legiscan/client', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
@@ -30,6 +34,7 @@ import { providerContext } from '../../src/lib/providerContext'
 import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
 import * as lims from '../../src/providers/lims/client'
+import * as limsMap from '../../src/providers/lims/map'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { limsBillId, limsSessionId, isLimsDocId } from '../../src/providers/lims/ids'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
@@ -173,6 +178,26 @@ describe('ingesting a LIMS bill', () => {
     await runLimsSync(second.env, db)
     const queued = second.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
     expect(queued).not.toContain(B0400)
+  })
+})
+
+describe('details refresh bookkeeping', () => {
+  it('records the details fetch only once the bill is built', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv()
+    await runLimsSync(e, db)
+    const fetchedAt = async () =>
+      (await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.detailsFetchedAt
+
+    vi.mocked(limsMap.buildLimsBill).mockRejectedValueOnce(new Error('unexpected details shape'))
+    const retry = vi.fn()
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry }] } as any, e, db)
+    expect(lims.getLegislationDetails).toHaveBeenCalled()
+    expect(retry).toHaveBeenCalled()
+    expect(await fetchedAt()).toBeNull()
+
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, e, db)
+    expect(await fetchedAt()).toBeTruthy()
   })
 })
 
