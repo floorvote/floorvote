@@ -818,31 +818,35 @@ async function reconcileCalendar(
   const incomingUids = new Set<string>()
   const changedUids = new Set<string>()
 
-  // Upsert current events; bump sequence when event_hash changed.
+  // Upsert current events. The ICS SEQUENCE only ever rises: it bumps when an
+  // event's content changes (its event_hash) and when a cancelled event comes
+  // back, so calendar clients take the newer copy.
   for (const e of block.events) {
     const uid = hearingUid(msg.billId, e.identityKey, msg.tenantId)
     incomingUids.add(uid)
-    const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash })
+    const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
 
     if (!existing) {
       await db.insert(calendarEvents).values({
-        id: crypto.randomUUID(), uid, billId: billInternalId, source: 'hearing', sequence: 0,
+        id: crypto.randomUUID(), uid, billId: billInternalId, source: 'hearing', kind: e.kind ?? null, sequence: 0,
         date: e.date, time: e.time, location: e.location, description: e.description,
         status: 'confirmed', eventHash: e.eventHash, createdAt: now, updatedAt: now,
       })
       changedUids.add(uid)
     } else {
-      const bump = (existing.eventHash ?? '') !== (e.eventHash ?? '')
+      const hashChanged = (existing.eventHash ?? '') !== (e.eventHash ?? '')
+      const reconfirmed = existing.status === 'cancelled'
+      const bump = hashChanged || reconfirmed
       await db.update(calendarEvents).set({
-        billId: billInternalId, status: 'confirmed',
+        billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}),
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
       }).where(eq(calendarEvents.uid, uid))
       if (bump) {
         changedUids.add(uid)
-        console.log('[calendar-reconcile] hash bump', JSON.stringify({
-          billId: msg.billId, tenantId: msg.tenantId, uid,
+        console.log('[calendar-reconcile] sequence bump', JSON.stringify({
+          billId: msg.billId, tenantId: msg.tenantId, uid, reconfirmed,
           oldHash: existing.eventHash, newHash: e.eventHash ?? null,
         }))
       }
@@ -866,6 +870,8 @@ async function reconcileCalendar(
   // on queue re-delivery: a re-delivered identical message leaves changedUids empty).
   if (!isNew) {
     for (const ch of block.changes) {
+      // A deadline isn't a hearing: the calendar shows it, and the feed doesn't announce it as one.
+      if (ch.kind === 'deadline') continue
       const uid = hearingUid(msg.billId, ch.identityKey, msg.tenantId)
       if (!changedUids.has(uid)) continue
       console.log('[calendar-reconcile] feed event', JSON.stringify({

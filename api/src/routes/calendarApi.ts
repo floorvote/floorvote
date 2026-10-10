@@ -92,6 +92,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const rows = await db
     .select({
       id: calendarEvents.id, uid: calendarEvents.uid, source: calendarEvents.source,
+      kind: calendarEvents.kind,
       sequence: calendarEvents.sequence, billId: calendarEvents.billId,
       eventHash: calendarEvents.eventHash,
       date: calendarEvents.date, time: calendarEvents.time,
@@ -147,6 +148,8 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }
   interface EventResult {
     id: string; uid: string; source: string; billId: string | null
+    /** A bill calendar entry's kind, from central (null for custom events, or before central sent one). */
+    kind: string | null
     eventHash: string | null
     /** All event_hashes merged into this entry; the sidebar deep-link focus matches any of them. */
     eventHashes: string[]
@@ -162,7 +165,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
           ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false }]
           : [])
     return {
-      id: r.id, uid: r.uid, source: r.source, billId: r.billId,
+      id: r.id, uid: r.uid, source: r.source, kind: r.kind, billId: r.billId,
       eventHash: r.eventHash, eventHashes: r.eventHash ? [r.eventHash] : [],
       date: r.date, time: r.time, location: r.location,
       description: r.description, details: r.details, url: r.url,
@@ -180,7 +183,8 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const hearingGroups = new Map<string, EventResult>()
   for (const e of entries) {
     if (e.source !== 'hearing') { result.push(e); continue }
-    const key = `${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+    // Kind too, so a deadline never merges into a hearing. An entry stored before kinds were is a hearing.
+    const key = `${e.kind ?? 'hearing'}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
     const g = hearingGroups.get(key)
     if (!g) {
       hearingGroups.set(key, e)
