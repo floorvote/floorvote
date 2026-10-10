@@ -158,8 +158,8 @@ describe('claiming a state for a provider', () => {
   it('is refused while the owner has tracked bills, naming the owner, the count, and the instances, and the row stays as it was', async () => {
     const { env: e } = makeEnv()
     await trackLegiscanDcBill(9001, 'oca', 'keyword')
-    await trackLegiscanDcBill(9001, 'team', null)   // a monitor link counts: the instance holds the bill too
-    await trackLegiscanDcBill(9002, 'team', 'manual')
+    await trackLegiscanDcBill(9001, 'team', 'manual')
+    await trackLegiscanDcBill(9002, 'team', null)   // a monitor link counts: the instance holds the bill too
 
     const res = await claim(e, 'DC', { provider: 'lims' })
     expect(res.status).toBe(409)
