@@ -107,10 +107,20 @@ VALUES (${esc(`${b.bill_id}-${s.subject_id}`)}, ${num(b.bill_id)}, ${num(s.subje
 VALUES (${esc(`${b.bill_id}-${r.committee_id ?? 0}-${r.date ?? ''}`)}, ${num(b.bill_id)}, ${esc(r.date)}, ${num(r.committee_id)}, ${esc(r.chamber)}, ${num(r.chamber_id)}, ${esc(r.name)});`)
   }
 
-  for (const c of (b.calendar ?? [])) {
-    const calId = c.event_hash ?? `${c.type_id ?? 0}-${c.date ?? ''}-${c.time ?? ''}`
+  // A bill's calendar is written only when central holds none for it. Central
+  // keeps each entry under a stable identity and never deletes one, so a
+  // re-run seed must not bring back an entry the ingest has since cancelled
+  // (central/src/lib/billCalendar.ts). One statement for the whole calendar,
+  // since a row per statement would find the bill's first row and skip the rest.
+  const calendar = b.calendar ?? []
+  if (calendar.length > 0) {
+    const rows = calendar.map(c => {
+      const calId = c.event_hash ?? `${c.type_id ?? 0}-${c.date ?? ''}-${c.time ?? ''}`
+      return `(${esc(`${b.bill_id}-${calId}`)}, ${num(b.bill_id)}, ${num(c.type_id)}, ${esc(c.event_hash)}, ${esc(c.type)}, ${esc(c.date)}, ${esc(c.time)}, ${esc(c.location)}, ${esc(c.description)})`
+    })
     stmts.push(`INSERT OR IGNORE INTO bill_calendar (id, bill_id, type_id, event_hash, type, date, time, location, description)
-VALUES (${esc(`${b.bill_id}-${calId}`)}, ${num(b.bill_id)}, ${num(c.type_id)}, ${esc(c.event_hash)}, ${esc(c.type)}, ${esc(c.date)}, ${esc(c.time)}, ${esc(c.location)}, ${esc(c.description)});`)
+SELECT * FROM (VALUES ${rows.join(', ')})
+WHERE NOT EXISTS (SELECT 1 FROM bill_calendar WHERE bill_id = ${num(b.bill_id)});`)
   }
 
   for (const v of (b.votes ?? [])) {
