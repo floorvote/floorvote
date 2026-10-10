@@ -9,3 +9,6 @@
 /central/eslint-provider-boundary.mjs          @wtadler
 /central/scripts/check-provider-boundary.mjs   @wtadler
 /central/src/providers/legiscan/               @wtadler
+/central/src/providers/lims/                   @wtadler
+/central/src/providers/mga/                    @wtadler
+/central/src/providers/lis/                    @wtadler

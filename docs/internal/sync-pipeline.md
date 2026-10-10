@@ -31,6 +31,18 @@ LegiScan is the default **provider** (`central/src/providers/legiscan/`). Core (
 
 Two things hold the split. ESLint (`central/eslint-provider-boundary.mjs`) lets core reach the provider only through the registry (`central/src/providers/index.ts`), and lets provider code reach core only through `central/src/providers/sdk.ts`. And a provider's `ctx.env` holds only the env keys it declares (LegiScan's is `LEGISCAN_API_KEY`), so it never gets the database, buckets, or queues.
 
+### Snapshot providers (DC, Maryland, Virginia)
+
+Three opt-in providers read a legislature's own feed: DC Council LIMS (`providers/lims/`), the Maryland General Assembly's open data (`providers/mga/`), and Virginia's LIS data files (`providers/lis/`). Each is off unless its env var names its state (`LIMS_STATES` with `LIMS_API_KEY`, `MGA_STATES`, or `LIS_STATES`). Then the LegiScan sync and the weekly vote-dataset check leave that state alone.
+
+None of these feeds has a modified-since filter, so each is read as a snapshot by its own hourly job (`central/src/cron/sync-sources.ts`):
+
+1. **Sessions.** At 5 ET, or whenever none of the provider's stored sessions would sync, core calls `listSessions` and upserts what it returns. A session the provider no longer lists stops being current. A provider with `listPeople` then returns its legislators, and core upserts them. `selectSessions` picks which stored sessions to sync.
+2. **Full pass.** In a session's full-pass hours, `snapshot` returns every record with a hash. Core stores each changed record in `source_records`, maps each record through `toEntry`, and runs the same `applyMasterList` as the LegiScan full pass. Queued bills go to the provider's `ingestQueue` binding when it is bound (LIMS: `LIMS_INGESTOR_QUEUE`), and to `INGESTOR_QUEUE` otherwise. With `detailsRefresh` (LIMS), tracked, unsettled bills whose details are stale are re-queued too.
+3. **Ingest.** The ingestor routes each bill by its provider (`source_records.source`, then `bills.source`), and passes `fetchMeasure` the stored record and its session. LIMS also returns its LegislationDetails response, and core records when it was fetched.
+
+Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `source_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Moving a state off LegiScan while instances track its LegiScan bills is refused until a cutover exists.
+
 ---
 
 ## Phase 1 — Cron (`central/src/cron/sync.ts`)
@@ -228,6 +240,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **Cron logic**: `central/src/cron/sync.ts` (`runFullPass`, `applyMasterList`, `runRawPass`)
 - **Ingestor**: `central/src/queue/processor.ts` (`processBill`, `ingestMeasure`)
 - **LegiScan calls**: `central/src/providers/legiscan/` (the API client, and the provider that maps it onto the interface in `central/src/providers/types.ts`)
+- **Snapshot providers**: `central/src/cron/sync-sources.ts` (`runSourceSync`), and `central/src/providers/{lims,mga,lis}/`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)
