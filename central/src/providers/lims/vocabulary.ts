@@ -92,7 +92,7 @@ export const vocabulary: ProviderVocabulary = {
     // act "Passed", so DC sorts and filters like every other state.
     121: {
       label: 'Expired', stage: 'enacted', rank: 706, terminal: true,
-      explainer: 'Ended without becoming law, or reached the end of its limited term (90 days for emergency acts, 225 for temporary acts).',
+      explainer: 'Was law for a limited term, which has now ended. Emergency acts last no more than 90 days, and temporary acts no more than 225.',
     },
   },
 
