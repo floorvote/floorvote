@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { detectChanges, type BillSnapshot, detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow, calendarBlockFromRows, type StoredCalendarRow } from '../../src/lib/detect-changes'
-import { getProvider, type CentralMeasure, type MeasureCalendarEntry } from '../../src/providers'
+import { detectChanges, type BillSnapshot } from '../../src/lib/detect-changes'
+import { getProvider, type CentralMeasure } from '../../src/providers'
 
 const legiscan = getProvider('legiscan')
 
@@ -391,96 +391,5 @@ describe('detectChanges', () => {
     const changes = detectChanges(snapshotNoStatus, baseBill({ status: 4 }), legiscan)
     const statusChanges = changes.filter((c) => c.changeType === 'status_change')
     expect(statusChanges).toHaveLength(0)
-  })
-})
-
-function cal(overrides: Partial<MeasureCalendarEntry> = {}): MeasureCalendarEntry {
-  return {
-    type_id: 1, type: 'Hearing', date: '2026-06-04', time: '14:00:00',
-    location: 'Room 35', description: 'House Cmte on Elections', event_hash: 'h1',
-    ...overrides,
-  }
-}
-
-describe('detectCalendarChanges', () => {
-  it('normalizes whitespace and case in identity key', () => {
-    const k1 = calendarIdentityKey({ type_id: 1, description: 'House  Cmte on Elections', date: '2026-06-04' })
-    const k2 = calendarIdentityKey({ type_id: 1, description: 'house cmte on elections', date: '2026-06-04' })
-    expect(k1).toBe(k2)
-  })
-
-  it('returns empty when prior and incoming match by identity + hash', () => {
-    const prior: PriorCalendarRow[] = [{ identityKey: calendarIdentityKey(cal()), eventHash: 'h1', date: '2026-06-04', description: 'House Cmte on Elections' }]
-    expect(detectCalendarChanges(prior, [cal()])).toEqual([])
-  })
-
-  it('detects a newly added hearing', () => {
-    const changes = detectCalendarChanges([], [cal()])
-    expect(changes).toHaveLength(1)
-    expect(changes[0].changeType).toBe('hearing_added')
-    expect(changes[0].date).toBe('2026-06-04')
-    expect(changes[0].description).toBe('House Cmte on Elections')
-  })
-
-  it('detects a changed hearing when event_hash differs under same identity (reschedule)', () => {
-    const prior: PriorCalendarRow[] = [{ identityKey: calendarIdentityKey(cal()), eventHash: 'h1', date: '2026-06-04', description: 'House Cmte on Elections' }]
-    const moved = cal({ date: '2026-06-05', time: '10:00:00', event_hash: 'h2' })
-    const changes = detectCalendarChanges(prior, [moved])
-    expect(changes).toHaveLength(1)
-    expect(changes[0].changeType).toBe('hearing_changed')
-    expect(changes[0].date).toBe('2026-06-05')
-  })
-
-  it('handles multiple hearings: one unchanged, one rescheduled', () => {
-    const a = cal({ type_id: 1, description: 'House Cmte on Elections', event_hash: 'a1' })
-    const b = cal({ type_id: 2, description: 'Senate Judiciary', event_hash: 'b1' })
-    const prior: PriorCalendarRow[] = [
-      { identityKey: calendarIdentityKey(a), eventHash: 'a1', date: a.date, description: a.description },
-      { identityKey: calendarIdentityKey(b), eventHash: 'b1', date: b.date, description: b.description },
-    ]
-    const bMoved = cal({ type_id: 2, description: 'Senate Judiciary', date: '2026-06-06', event_hash: 'b2' })
-    const changes = detectCalendarChanges(prior, [a, bMoved])
-    expect(changes).toHaveLength(1)
-    expect(changes[0].changeType).toBe('hearing_changed')
-    expect(changes[0].description).toBe('Senate Judiciary')
-  })
-
-  it('detects a cancelled hearing and carries prior date/description', () => {
-    const prior: PriorCalendarRow[] = [{ identityKey: calendarIdentityKey(cal()), eventHash: 'h1', date: '2026-06-04', description: 'House Cmte on Elections' }]
-    const changes = detectCalendarChanges(prior, [])
-    expect(changes).toHaveLength(1)
-    expect(changes[0].changeType).toBe('hearing_cancelled')
-    expect(changes[0].date).toBe('2026-06-04')
-    expect(changes[0].description).toBe('House Cmte on Elections')
-  })
-
-  it('falls back to date for identity when description is blank', () => {
-    const k = calendarIdentityKey({ type_id: 2, description: '', date: '2026-07-01' })
-    expect(k).toBe('2|date:2026-07-01')
-  })
-
-  it('treats type_id 0 and null identically (matches storage convention)', () => {
-    const k0 = calendarIdentityKey({ type_id: 0, description: 'Floor Session', date: '2026-06-04' })
-    const kNull = calendarIdentityKey({ type_id: null, description: 'Floor Session', date: '2026-06-04' })
-    expect(k0).toBe(kNull)
-    expect(k0).toBe('x|floor session')
-  })
-})
-
-describe('calendarBlockFromRows', () => {
-  it('maps stored rows to events-only block with identity keys', () => {
-    const rows: StoredCalendarRow[] = [
-      { typeId: 1, description: 'House Cmte on Elections', date: '2026-06-04', time: '14:00:00', location: 'Room 35', eventHash: 'h1' },
-    ]
-    const block = calendarBlockFromRows(rows)
-    expect(block.changes).toEqual([])
-    expect(block.events).toHaveLength(1)
-    expect(block.events[0].identityKey).toBe('1|house cmte on elections')
-    expect(block.events[0].date).toBe('2026-06-04')
-    expect(block.events[0].eventHash).toBe('h1')
-  })
-
-  it('returns empty events for no rows', () => {
-    expect(calendarBlockFromRows([])).toEqual({ events: [], changes: [] })
   })
 })

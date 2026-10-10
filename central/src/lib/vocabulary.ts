@@ -51,7 +51,7 @@ export function vocabularyLabels(provider: Provider) {
     billTypes: Object.entries(v.billTypes)
       .map(([value, t]) => ({ value, label: t.label, explainer: t.explainer ?? null })),
     eventTypes: Object.entries(v.eventTypes)
-      .map(([typeId, t]) => ({ typeId: Number(typeId), label: t.label, explainer: t.explainer ?? null })),
+      .map(([typeId, t]) => ({ typeId: Number(typeId), label: t.label, kind: t.kind, explainer: t.explainer ?? null })),
     calendarName: v.calendarName ?? null,
   }
 }

@@ -2,10 +2,14 @@ import { eq, and, isNull, sql } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureRef, type Provider } from '../providers'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
-  billSasts, billSubjects, billReferrals, billCalendar, billTenants,
+  billSasts, billSubjects, billReferrals, billTenants,
   billChangeLog, rollCalls, people, tenants, sessions, providerRecords,
 } from '../db/schema'
-import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
+import { detectChanges, type BillSnapshot, type ChangeRecord } from '../lib/detect-changes'
+import {
+  calendarBlockEvents, logCalendarChanges, planCalendarPull, planCalendarRecheck, readCalendarRows, writeCalendarRows,
+  type CalendarChange, type CalendarRow,
+} from '../lib/billCalendar'
 import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
 import { personRow } from '../lib/people'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
@@ -66,6 +70,11 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const known = await db.select({ provider: bills.provider, sessionId: bills.sessionId })
     .from(bills).where(eq(bills.billId, msg.billId)).get()
   const provider = getProvider(known?.provider ?? DEFAULT_PROVIDER_ID)
+
+  if (msg.calendarRecheck !== undefined) {
+    await recheckCalendar(msg.billId, msg.calendarRecheck, provider, env, db)
+    return
+  }
 
   if (msg.skipFetch) {
     // Data already in DB from bulk seed — skip the provider's API, just download text and notify
@@ -173,6 +182,7 @@ export async function ingestMeasure(
 
   let detectedChanges: ChangeRecord[] = []
   let calendarChanges: CalendarChange[] = []
+  let priorCalendar: CalendarRow[] = []
 
   if (existingBillRow) {
     // Read before-snapshot from child tables
@@ -187,9 +197,9 @@ export async function ingestMeasure(
         .leftJoin(people, eq(billSponsors.peopleId, people.peopleId))
         .where(eq(billSponsors.billId, bill.bill_id))
         .all(),
-      db.select({ typeId: billCalendar.typeId, description: billCalendar.description, date: billCalendar.date, time: billCalendar.time, location: billCalendar.location, eventHash: billCalendar.eventHash })
-        .from(billCalendar).where(eq(billCalendar.billId, bill.bill_id)).all(),
+      readCalendarRows(db, bill.bill_id),
     ])
+    priorCalendar = priorCalRows
 
     const sponsorKeys = new Set<string>()
     const sponsorDetailByKey = new Map<string, string>()
@@ -228,30 +238,14 @@ export async function ingestMeasure(
         })
       }
     }
+  }
 
-    const priorCalendar: PriorCalendarRow[] = priorCalRows.map(r => ({
-      identityKey: calendarIdentityKey({ type_id: r.typeId, description: r.description, date: r.date }),
-      eventHash: r.eventHash,
-      date: r.date,
-      description: r.description,
-      time: r.time,
-      location: r.location,
-    }))
-    calendarChanges = detectCalendarChanges(priorCalendar, bill.calendar ?? [], now.slice(0, 10))
-
-    if (calendarChanges.length > 0) {
-      for (const change of calendarChanges) {
-        await db.insert(billChangeLog).values({
-          id: crypto.randomUUID(),
-          billId: bill.bill_id,
-          changeType: change.changeType,
-          oldValue: null,
-          newValue: change.description ?? null,
-          detail: change.date ?? null,
-          detectedAt: now,
-        })
-      }
-    }
+  // This pull's effect on the bill's calendar. A new bill's entries are all
+  // new, and like its other data they aren't reported as changes.
+  const calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar, bill.change_hash, now)
+  if (existingBillRow) {
+    calendarChanges = calendarPlan.changes
+    await logCalendarChanges(db, bill.bill_id, calendarChanges, now)
   }
   // --- End change detection ---
 
@@ -375,16 +369,8 @@ export async function ingestMeasure(
     })
   }
 
-  await db.delete(billCalendar).where(eq(billCalendar.billId, bill.bill_id))
-  for (const cal of bill.calendar ?? []) {
-    await db.insert(billCalendar).values({
-      id: crypto.randomUUID(), billId: bill.bill_id,
-      typeId: cal.type_id || null, eventHash: cal.event_hash || null,
-      type: cal.type || null, date: cal.date || null,
-      time: cal.time || null, location: cal.location || null,
-      description: cal.description || null,
-    })
-  }
+  // Calendar rows are updated in place, never deleted (lib/billCalendar.ts).
+  await writeCalendarRows(db, calendarPlan.writes)
 
   // The provider's extras. Display only: change detection above never sees
   // them, so an extra changing alone notifies no one.
@@ -539,17 +525,37 @@ export async function ingestMeasure(
   if (memberVotes.length > 0) await writeMemberVotes(env.DB, memberVotes, { replace: true })
 
   const calendarBlock: CalendarBlock = {
-    events: (bill.calendar ?? []).map(e => ({
-      identityKey: calendarIdentityKey(e),
-      date: e.date || null,
-      time: e.time || null,
-      location: e.location || null,
-      description: e.description || null,
-      eventHash: e.event_hash || null,
-    })),
+    events: calendarBlockEvents(provider, calendarPlan.live),
     changes: calendarChanges,
   }
   await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
+}
+
+/**
+ * A sync pass listed the bill with `pullHash`, the change hash of the pull its
+ * missing calendar entries were missing from: count one more pull, cancel what
+ * that makes two, and tell instances. Calls no provider.
+ */
+async function recheckCalendar(billId: number, pullHash: string, provider: Provider, env: Env, db: Db): Promise<void> {
+  const bill = await db.select({ changeHash: bills.changeHash }).from(bills).where(eq(bills.billId, billId)).get()
+  // The bill has moved on since the pass listed it, and its ingest pulls it fresh.
+  if (bill?.changeHash !== pullHash) return
+  const now = nowDb()
+  const prior = await readCalendarRows(db, billId)
+  // Nothing was missing from the pull with this hash.
+  if (!prior.some(r => r.missedHash === pullHash)) return
+  const plan = planCalendarRecheck(provider, prior, pullHash, now)
+  if (plan.writes.length > 0) {
+    await writeCalendarRows(db, plan.writes)
+    await logCalendarChanges(db, billId, plan.changes, now)
+  }
+  // Sent even when there is nothing new to write: a retried recheck whose
+  // first try wrote its rows and then failed to reach instances must still
+  // reach them, and instances reconcile the same block idempotently.
+  await notifyTenants(billId, env, db, now, false, false, [], {
+    events: calendarBlockEvents(provider, plan.live),
+    changes: plan.changes,
+  })
 }
 
 /**

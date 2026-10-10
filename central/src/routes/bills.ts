@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
@@ -10,6 +10,7 @@ import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
+import { calendarKind } from '../lib/billCalendar'
 import { billReferralDetails, pendingCommittee } from '../lib/committees'
 import type { Env } from '../types'
 
@@ -185,7 +186,9 @@ billsRoutes.get('/:id', async (c) => {
     db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, numeric)).all(),
     db.select().from(schema.billSasts).where(eq(schema.billSasts.billId, numeric)).all(),
     db.select().from(schema.rollCalls).where(eq(schema.rollCalls.billId, numeric)).all(),
-    db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, numeric)).all(),
+    // Cancelled entries keep their rows, but aren't on the bill's calendar.
+    db.select().from(schema.billCalendar)
+      .where(and(eq(schema.billCalendar.billId, numeric), isNull(schema.billCalendar.cancelledAt))).all(),
     db.select().from(schema.billSupplements).where(eq(schema.billSupplements.billId, numeric)).all(),
     db.select().from(schema.billSubjects).where(eq(schema.billSubjects.billId, numeric)).all(),
     db.select().from(schema.billAmendments).where(eq(schema.billAmendments.billId, numeric)).orderBy(schema.billAmendments.date).all(),
@@ -333,6 +336,7 @@ billsRoutes.get('/:id', async (c) => {
       eventHash: e.eventHash ?? '',
       typeId: e.typeId ?? 0,
       type: e.type ?? '',
+      kind: calendarKind(provider, e.typeId),
       date: e.date ?? '',
       time: e.time ?? null,
       location: e.location ?? null,

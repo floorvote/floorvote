@@ -301,6 +301,58 @@ function supplementType(kind: string, name?: string): { type: string; typeId: nu
 const HEARING_RE = /^(Public (Hearing|Roundtable)|Public Oversight (Hearing|Roundtable)|Oversight Hearing|Roundtable)( Meeting)?( on\b| -)/i
 const MARKUP_RE = /^Committee Mark-?up\b/i
 
+/** Calendar event types (vocabulary.ts). */
+const HEARING_TYPE_ID = 1
+const MARKUP_TYPE_ID = 3
+const DEADLINE_TYPE_ID = 10
+
+const LIMS_DATE = '([A-Z][a-z]{2} \\d{1,2}, \\d{4})'
+const MAYOR_DUE_RE = new RegExp(`Response Due on ${LIMS_DATE}`, 'i')
+const PROJECTED_RE = new RegExp(`Projected Law Date is ${LIMS_DATE}`, 'i')
+const EXPIRES_RE = new RegExp(`Expires on ${LIMS_DATE}`, 'i')
+
+/**
+ * The deadlines the Council records for a measure: the Mayor's response due
+ * date, the projected law date at the end of Congressional review, and when an
+ * emergency act or temporary law expires. LIMS states each date, so none is
+ * computed (the projected law date already counts only the days Congress is in
+ * session). The latest history entry that states each one wins, since a
+ * re-transmittal or a new publication restates it. A measure has at most one
+ * of each, so each kind of deadline is one event for good (`key`), and a
+ * deadline that moves is that event on a new day.
+ *
+ * Only the BulkData record, never the details response: core rechecks a
+ * missing calendar entry against the record's hash (lib/billCalendar.ts),
+ * which covers the bulk record alone. The extras show the details' copies of
+ * these dates.
+ */
+export function limsDeadlines(
+  rec: Pick<LimsBulkRecord, 'legislationSubCategory' | 'projectedLawDate' | 'legislationHistory'>,
+): { key: 'mayor-response' | 'congressional-review' | 'expires'; date: string; description: string }[] {
+  const stated = (re: RegExp): string | null => {
+    let found: string | null = null
+    for (const h of rec.legislationHistory ?? []) {
+      const m = re.exec(clean(h.actionDescription))
+      if (m) found = limsDate(m[1]) ?? found
+    }
+    return found
+  }
+  const out: ReturnType<typeof limsDeadlines> = []
+  const due = stated(MAYOR_DUE_RE)
+  if (due) out.push({ key: 'mayor-response', date: due, description: 'Mayor\'s response due' })
+  const projected = limsDate(clean(rec.projectedLawDate)) ?? stated(PROJECTED_RE)
+  if (projected) out.push({ key: 'congressional-review', date: projected, description: 'Congressional review ends' })
+  const expires = stated(EXPIRES_RE)
+  if (expires) {
+    const sub = clean(rec.legislationSubCategory).toLowerCase()
+    const description = sub.includes('emergency') ? 'Emergency act expires'
+      : sub.includes('temporary') ? 'Temporary law expires'
+      : 'Expires'
+    out.push({ key: 'expires', date: expires, description })
+  }
+  return out
+}
+
 
 function voteBucket(vote: string): { key: 'yea' | 'nay' | 'nv' | 'absent'; id: number } {
   const v = clean(vote).toLowerCase()
@@ -491,46 +543,64 @@ export async function buildLimsBill(
     if (typeof mayor?.signedAct === 'string') await addDoc(parseDocUrl(mayor.signedAct), limsDate(mayor.signedDate), 'Signed Act')
   }
 
-  // ── Calendar: hearings and mark-ups from history; notices are hearings themselves ──
-  // Cancellations come from details, which name the cancelled hearing's date.
-  // Bulk cancellation entries ("Cancellation Notice of Roundtable ...",
-  // "Roundtable Canceled") are not used: in Council Period 26 data a cancelled
-  // hearing has no event row of its own, and an event row after a cancellation
-  // is the rescheduled hearing (e.g. PR26-0264, cancelled Sep 18 2025 and held
-  // Sep 26 with a published record).
-  const cancelledDates = new Set(
-    (details?.committeeHearing ?? []).filter(h => h.cancellationHearingNotice).map(h => limsDate(h.hearingDate)),
-  )
-  const events: { type_id: number; type: string; date: string; description: string; location: string }[] = []
+  // ── Calendar: hearings and mark-ups from history, notices (hearings themselves), and deadlines ──
+  // LIMS publishes no event ids, so core identifies each entry by its kind,
+  // date, and text: two hearings with the same text on different days are two
+  // entries, and neither is numbered by position.
+  //
+  // Cancellations come from details, whose hearing entries name the cancelled
+  // hearing's date and type. That notice is positive evidence, so the entry
+  // goes out marked cancelled and core cancels it at once. Bulk cancellation
+  // entries ("Cancellation Notice of Roundtable ...", "Roundtable Canceled")
+  // are not used: an event row after a cancellation is the rescheduled
+  // hearing (e.g. PR26-0264, cancelled Sep 18 2025 and held Sep 26 with a
+  // published record).
+  const cancelledTypes = new Map<string, string>()
+  for (const h of details?.committeeHearing ?? []) {
+    const date = limsDate(h.hearingDate)
+    if (date && h.cancellationHearingNotice) cancelledTypes.set(date, clean(h.hearingType))
+  }
+  const events: (Omit<MeasureCalendarEntry, 'time' | 'event_hash'>)[] = []
   if (isNoticeCategory(rec)) {
     const date = limsDate(rec.introductionDate)
-    if (date) events.push({ type_id: 1, type: 'Hearing', date, description: clean(rec.title), location: clean(rec.committeeReferral) })
+    if (date) events.push({ type_id: HEARING_TYPE_ID, type: 'Hearing', date, description: clean(rec.title), location: clean(rec.committeeReferral) })
   }
   for (const h of history) {
     if (!h.date) continue
     if (HEARING_RE.test(h.action)) {
-      if (cancelledDates.has(h.date)) continue
-      events.push({ type_id: 1, type: 'Hearing', date: h.date, description: h.action.replace(/ View (Public Hearing|Roundtable) Record$/i, ''), location: '' })
+      events.push({
+        type_id: HEARING_TYPE_ID, type: 'Hearing', date: h.date,
+        description: h.action.replace(/ View (Public Hearing|Roundtable) Record$/i, ''), location: '',
+        ...(cancelledTypes.has(h.date) ? { cancelled: true } : {}),
+      })
     } else if (MARKUP_RE.test(h.action)) {
-      events.push({ type_id: 3, type: 'Markup Session', date: h.date, description: h.action, location: '' })
+      events.push({ type_id: MARKUP_TYPE_ID, type: 'Markup Session', date: h.date, description: h.action, location: '' })
     }
   }
-  // Identity is type + description (lib/detect-changes.ts calendarIdentityKey), so two
-  // entries with the same text on one bill need telling apart.
-  // The first keeps its bare text and later ones get an ordinal, so adding a
-  // second hearing never changes the first one's identity.
+  // A cancelled hearing can drop out of the history. Its notice still names the
+  // date and type, and LIMS words a hearing "<type> on <number>", so the
+  // cancellation still reaches the entry the history listed.
+  for (const [date, type] of cancelledTypes) {
+    if (type && !events.some(e => e.type_id === HEARING_TYPE_ID && e.date === date)) {
+      events.push({ type_id: HEARING_TYPE_ID, type: 'Hearing', date, description: `${type} on ${number}`, location: '', cancelled: true })
+    }
+  }
+  for (const d of limsDeadlines(rec)) {
+    events.push({ type_id: DEADLINE_TYPE_ID, type: 'Deadline', date: d.date, description: d.description, location: '', event_id: `deadline:${d.key}` })
+  }
   events.sort((a, b) => a.date.localeCompare(b.date))
-  const seenDesc = new Map<string, number>()
-  const calendar: MeasureCalendarEntry[] = []
-  for (const e of events) {
-    const key = `${e.type_id}|${e.description.toLowerCase()}`
-    const n = (seenDesc.get(key) ?? 0) + 1
-    seenDesc.set(key, n)
-    const description = n > 1 ? `${e.description} (${n})` : e.description
-    calendar.push({
-      type_id: e.type_id, type: e.type, date: e.date, time: '', location: e.location, description,
-      event_hash: (await sha256Hex(`${e.type_id}|${e.date}|${description}|${e.location}`)).slice(0, 32),
-    })
+  // Every measure's history starts with its introduction, so a record with
+  // none is a bad answer, not a measure whose hearings all went away. It
+  // sends no calendar at all, which core reads as no evidence either way.
+  let calendar: MeasureCalendarEntry[] | undefined
+  if (history.length > 0 || isNoticeCategory(rec)) {
+    calendar = []
+    for (const e of events) {
+      calendar.push({
+        ...e, time: '',
+        event_hash: (await sha256Hex(`${e.type_id}|${e.date}|${e.description}|${e.location}`)).slice(0, 32),
+      })
+    }
   }
 
   // ── Sponsors ──

@@ -112,11 +112,12 @@ async function claimDc(run = makeEnv()) {
   expect(res.status).toBe(200)
 }
 
-/** The hourly LIMS sync, then the ingest of every bill it queued. */
+/** The hourly LIMS sync, then every message it queued: each bill's ingest, or a calendar recheck. */
 async function syncAndIngest(run = makeEnv()) {
   const db = drizzle(env.DB, { schema })
   await runSnapshotSync(lims, run.env, db)
-  const messages = queuedIds(run).map(billId => ({ body: { billId }, ack: vi.fn(), retry: vi.fn() }))
+  const messages = run.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+    .map(body => ({ body, ack: vi.fn(), retry: vi.fn() }))
   if (messages.length > 0) await processIngestorQueue({ messages } as any, run.env, db)
   return { run, messages }
 }
@@ -470,5 +471,109 @@ describe('DC from LIMS fails closed', () => {
     expect(message.ack).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+  })
+})
+
+describe('DC calendar entries', () => {
+  const B0769 = limsBillId('B26-0769')!
+  const hearing = (date: string, cancelled = false) => ({
+    hearingDate: `${date}T00:00:00`, hearingType: 'Public Hearing', videoLink: null, hearingNotice: null,
+    cancellationHearingNotice: cancelled ? 'https://lims.dccouncil.gov/downloads/LIMS/1/Hearing_Cancellation_Notice/B26-0769.pdf?Id=999001' : null,
+    noticeFiledDate: null, noticePublicationDate: null, hearingRecord: null,
+  })
+  const historyRow = (actionDate: string, actionDescription: string) => ({ legislationNumber: 'B26-0769', actionDate, actionDescription, downloadURL: '' })
+
+  /** LIMS serves B26-0769 with this history added, and these hearings in its details. */
+  function serve0769(extraHistory: ReturnType<typeof historyRow>[], hearings: ReturnType<typeof hearing>[]) {
+    const rec = { ...bulk['B26-0769'], legislationHistory: [...(bulk['B26-0769'].legislationHistory as object[]), ...extraHistory] }
+    feed['BulkData/1/26'] = () => json(Object.values(bulk).filter(r => r.legislationCategory === 'Bill' && r.legislationNumber !== 'B26-0769').concat(rec))
+    feed['LegislationDetails/B26-0769'] = () => json({
+      ...JSON.parse(details0400Raw), legislationNumber: 'B26-0769', status: 'Under Council Review',
+      committeeHearing: hearings, committeeMarkup: [], actions: [], otherDocuments: [], mayoralReview: null, congressionalReview: null,
+    })
+  }
+  const SECOND = historyRow('Nov 06, 2026', 'Public Hearing on B26-0769')
+  const lastCalendar = (run: Run, billId: number) => sentToTenant(run).filter((m: any) => m.billId === toHandle(billId) && m.calendar).pop()?.calendar
+  const keys = (calendar: any) => calendar.events.map((e: any) => e.identityKey)
+  const changeList = (calendar: any) => calendar.changes.map((c: any) => [c.changeType, c.identityKey])
+  const billCalendar = async (billId: number) => (await getJson(`/bills/${toHandle(billId)}`)).calendar.map((c: any) => [c.kind, c.date, c.description])
+
+  beforeEach(async () => {
+    // Track B26-0769, whose Council hearing is still to come.
+    await drizzle(env.DB, { schema }).insert(schema.keywordRegistry).values({ tenantId: 'oca', keyword: 'soccer' })
+  })
+
+  it('keeps each hearing\'s identity when another with the same text is cancelled, and cancels on LIMS\'s notice at once', async () => {
+    serve0769([SECOND], [hearing('2026-10-23'), hearing('2026-11-06')])
+    await claimDc()
+    const { run } = await syncAndIngest()
+    const before = lastCalendar(run, B0769)
+    expect(keys(before)).toEqual([
+      'hearing|2026-10-23|public hearing on b26-0769',
+      'hearing|2026-11-06|public hearing on b26-0769',
+    ])
+
+    // LIMS cancels the first: a notice in the history, and on the hearing in details.
+    serve0769([SECOND, historyRow('Oct 01, 2026', 'Cancellation Notice of Public Hearing filed in the Office of Secretary')],
+      [hearing('2026-10-23', true), hearing('2026-11-06')])
+    const { run: next } = await syncAndIngest()
+    const after = lastCalendar(next, B0769)
+    expect(changeList(after)).toEqual([['hearing_cancelled', 'hearing|2026-10-23|public hearing on b26-0769']])
+    // The second keeps the identity it had: nothing was numbered by position.
+    expect(keys(after)).toEqual(['hearing|2026-11-06|public hearing on b26-0769'])
+    expect(await billCalendar(B0769)).toEqual([['hearing', '2026-11-06', 'Public Hearing on B26-0769']])
+  })
+
+  it('cancels a hearing that leaves the history with no notice only after two pulls, the second a sync that finds nothing new', async () => {
+    serve0769([SECOND], [hearing('2026-10-23'), hearing('2026-11-06')])
+    await claimDc()
+    await syncAndIngest()
+
+    serve0769([], [hearing('2026-10-23'), hearing('2026-11-06')])
+    const { run: once } = await syncAndIngest()
+    expect(changeList(lastCalendar(once, B0769))).toEqual([])
+    expect(keys(lastCalendar(once, B0769))).toHaveLength(2)
+
+    // Details fetched just now by D1's clock (which the fake one doesn't move), so no details refresh joins in.
+    await env.DB.prepare(`UPDATE provider_records SET details_fetched_at = datetime('now')`).run()
+    const { run: twice, messages } = await syncAndIngest()
+    expect(messages.map(m => m.body)).toEqual([{ billId: B0769, calendarRecheck: expect.any(String) }])
+    // A recheck asks LIMS for nothing: the record it stored is the record LIMS still serves.
+    expect(calls.filter(u => u.includes('LegislationDetails/B26-0769'))).toHaveLength(2)
+    expect(changeList(lastCalendar(twice, B0769))).toEqual([['hearing_cancelled', 'hearing|2026-11-06|public hearing on b26-0769']])
+    expect(await billCalendar(B0769)).toEqual([['hearing', '2026-10-23', 'Public Hearing on B26-0769']])
+  })
+
+  it('puts DC\'s deadlines on the calendar as deadline entries', async () => {
+    await claimDc()
+    const { run } = await syncAndIngest()
+    expect(await billCalendar(B0400)).toContainEqual(['deadline', '2026-04-28', 'Mayor\'s response due'])
+    expect(lastCalendar(run, B0400).events).toContainEqual(expect.objectContaining({
+      identityKey: 'id:deadline:mayor-response', kind: 'deadline', description: 'Mayor\'s response due',
+    }))
+    const labels = await getJson('/bills/labels?state=DC')
+    expect(labels.eventTypes).toContainEqual({ typeId: 10, label: 'Deadline', kind: 'deadline', explainer: expect.any(String) })
+  })
+
+  it('keeps the identities DC subscribers already have for entries stored before identities were, ordinal and all', async () => {
+    serve0769([SECOND], [hearing('2026-10-23'), hearing('2026-11-06')])
+    await claimDc()
+    await syncAndIngest()
+    // What a fork's central holds after migration 0034: rows the old ingest
+    // wrote, with no identity stored, and the second same-text hearing
+    // numbered by position, as instances' calendar UIDs still are.
+    await env.DB.prepare('UPDATE bill_calendar SET identity_key = NULL').run()
+    await env.DB.prepare(`UPDATE bill_calendar SET description = description || ' (2)', event_hash = 'old-hash' WHERE bill_id = ? AND date = '2026-11-06'`).bind(B0769).run()
+
+    const run = makeEnv()
+    await ingest(B0769, run)
+    const calendar = lastCalendar(run, B0769)
+    expect(keys(calendar)).toEqual(['1|public hearing on b26-0769', '1|public hearing on b26-0769 (2)'])
+    // The ordinal leaves the description, which instances see as a change, not a cancellation.
+    expect(changeList(calendar)).toEqual([['hearing_changed', '1|public hearing on b26-0769 (2)']])
+    expect(await billCalendar(B0769)).toEqual([
+      ['hearing', '2026-10-23', 'Public Hearing on B26-0769'],
+      ['hearing', '2026-11-06', 'Public Hearing on B26-0769'],
+    ])
   })
 })

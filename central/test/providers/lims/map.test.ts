@@ -6,7 +6,7 @@ import detailsReprogRaw from '../../fixtures/lims/details-REPROG26-0153.json?raw
 import membersRaw from '../../fixtures/lims/members-26.json?raw'
 import {
   assignCommitteeIds, buildLimsBill, bulkHash, committeeKey, limsDate, limsStatusCode, personKey, referralParts, toMasterListEntry,
-  councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
+  councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, limsDeadlines, type BuildContext, type LimsPerson,
 } from '../../../src/providers/lims/map'
 import { vocabulary } from '../../../src/providers/lims/vocabulary'
 import { bulkRecordInventory, detailsInventory } from '../../../src/providers/lims/inventory'
@@ -294,13 +294,16 @@ describe('buildLimsBill: B26-0400 (bill with full history, details and votes)', 
     expect(b.supplements.some(s => /Memorandum/i.test(s.type))).toBe(true)
   })
 
-  it('puts the hearing and both mark-ups on the calendar', async () => {
+  it('puts the hearing, both mark-ups, and the Mayor\'s deadline on the calendar', async () => {
     const b = await build('B26-0400', d0400)
     const hearings = b.calendar.filter(c => c.type_id === 1)
     const markups = b.calendar.filter(c => c.type_id === 3)
     expect(hearings.map(h => h.date)).toEqual(['2025-11-13'])
     expect(hearings[0].description).toBe('Public Hearing on B26-0400')
     expect(markups.map(m => m.date)).toEqual(['2026-01-27', '2026-02-23'])
+    expect(b.calendar.filter(c => c.type_id === 10).map(c => [c.type, c.date, c.description, c.event_id])).toEqual([['Deadline', '2026-04-28', "Mayor's response due", 'deadline:mayor-response']])
+    // Every entry's type is one the vocabulary declares, so core can name its kind.
+    for (const c of b.calendar) expect(vocabulary.eventTypes[c.type_id], c.description).toBeDefined()
   })
 
   it('records Councilmember votes with per-member rows', async () => {
@@ -346,21 +349,83 @@ describe('buildLimsBill: other categories', () => {
 })
 
 describe('buildLimsBill: calendar edge cases', () => {
-  it('drops a hearing LIMS marks cancelled', async () => {
-    const cancelled = {
-      ...d0400,
-      committeeHearing: d0400.committeeHearing!.map(h => ({ ...h, cancellationHearingNotice: 'https://lims.dccouncil.gov/downloads/LIMS/60460/Hearing_Cancellation_Notice/x.pdf?Id=1' })),
-    }
+  const CANCELLATION = 'https://lims.dccouncil.gov/downloads/LIMS/60460/Hearing_Cancellation_Notice/x.pdf?Id=1'
+
+  it('marks a hearing LIMS cancelled as cancelled, under its usual text', async () => {
+    const cancelled = { ...d0400, committeeHearing: d0400.committeeHearing!.map(h => ({ ...h, cancellationHearingNotice: CANCELLATION })) }
     const b = await build('B26-0400', cancelled)
-    expect(b.calendar.filter(c => c.type_id === 1)).toEqual([])
+    expect(b.calendar.filter(c => c.type_id === 1).map(c => [c.date, c.description, c.cancelled])).toEqual([
+      ['2025-11-13', 'Public Hearing on B26-0400', true],
+    ])
   })
 
-  it('tells apart two entries with the same text', async () => {
+  it('still marks a cancelled hearing that has left the history, from its notice', async () => {
+    const rec = { ...bulk['B26-0400'], legislationHistory: bulk['B26-0400'].legislationHistory.filter(h => !/^Public Hearing/.test(h.actionDescription ?? '')) }
+    const cancelled = { ...d0400, committeeHearing: d0400.committeeHearing!.map(h => ({ ...h, cancellationHearingNotice: CANCELLATION })) }
+    const b = await buildLimsBill(rec, cancelled, limsBillId('B26-0400')!, await bulkHash(rec), ctx)
+    expect(b.calendar.filter(c => c.type_id === 1).map(c => [c.date, c.description, c.cancelled])).toEqual([
+      ['2025-11-13', 'Public Hearing on B26-0400', true],
+    ])
+  })
+
+  it('lists two hearings with the same text by their days, numbering neither', async () => {
     const rec = bulk['B26-0400']
     const twice = { ...rec, legislationHistory: [...rec.legislationHistory, { ...rec.legislationHistory[5], actionDate: 'Dec 01, 2025' }] }
     const b = await buildLimsBill(twice, d0400, limsBillId('B26-0400')!, await bulkHash(twice), ctx)
-    const descs = b.calendar.filter(c => c.type_id === 1).map(c => c.description)
-    expect(new Set(descs).size).toBe(descs.length)
+    expect(b.calendar.filter(c => c.type_id === 1).map(c => [c.date, c.description])).toEqual([
+      ['2025-11-13', 'Public Hearing on B26-0400'],
+      ['2025-12-01', 'Public Hearing on B26-0400'],
+    ])
+  })
+})
+
+describe('deadlines', () => {
+  const hist = (n: string, rows: [string, string][]) => rows.map(([actionDate, actionDescription]) => ({ legislationNumber: n, actionDate, actionDescription, downloadURL: '' }))
+
+  it('reads the Mayor\'s due date and an emergency act\'s expiration from the history', () => {
+    const rec = { legislationSubCategory: 'Emergency Bill', projectedLawDate: null, legislationHistory: hist('B26-0001', [
+      ['Jan 23, 2025', 'Transmitted to Mayor, Response Due on Feb 06, 2025'],
+      ['Feb 03, 2025', 'Signed by the Mayor and Enacted with Act Number A26-0003, Expires on May 04, 2025'],
+      ['Feb 07, 2025', 'Act A26-0003 Published in DC Register Vol 72 and Page 001133, Expires on May 04, 2025'],
+    ]) }
+    expect(limsDeadlines(rec)).toEqual([
+      { key: 'mayor-response', date: '2025-02-06', description: "Mayor's response due" },
+      { key: 'expires', date: '2025-05-04', description: 'Emergency act expires' },
+    ])
+  })
+
+  it('prefers the bulk projected law date to the history, and names a temporary law\'s expiration', () => {
+    const rec = { legislationSubCategory: 'Temporary Bill', projectedLawDate: 'Nov 14, 2026', legislationHistory: hist('B26-0174', [
+      ['Sep 01, 2026', 'Transmitted to Congress, Projected Law Date is Nov 13, 2026'],
+      ['Nov 20, 2026', 'Law L26-0100, Effective from Nov 14, 2026 Published in DC Register Vol 73 and Page 000001, Expires on Jun 27, 2027'],
+    ]) }
+    expect(limsDeadlines(rec)).toEqual([
+      { key: 'congressional-review', date: '2026-11-14', description: 'Congressional review ends' },
+      { key: 'expires', date: '2027-06-27', description: 'Temporary law expires' },
+    ])
+  })
+
+  it('reads only the BulkData record, which the change hash covers, so a details answer can\'t move one', async () => {
+    const withoutReviews = { ...d0400, mayoralReview: null, congressionalReview: null }
+    for (const details of [d0400, withoutReviews, null]) {
+      const b = await build('B26-0400', details)
+      expect(b.calendar.filter(c => c.type_id === 10).map(c => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
+    }
+  })
+
+  it('sends no calendar from a record with no history, rather than one with every hearing gone', async () => {
+    const rec = { ...bulk['B26-0400'], legislationHistory: [], projectedLawDate: 'Nov 14, 2026' }
+    const b = await buildLimsBill(rec, d0400, limsBillId('B26-0400')!, await bulkHash(rec), ctx)
+    expect(b.calendar).toBeUndefined()
+  })
+
+  it('keeps the latest restated date, and finds none for a bill without deadlines', () => {
+    const rec = { legislationSubCategory: 'Permanent Bill', projectedLawDate: null, legislationHistory: hist('B26-0400', [
+      ['Mar 01, 2026', 'Transmitted to Mayor, Response Due on Mar 15, 2026'],
+      ['Mar 20, 2026', 'Transmitted to Mayor, Response Due on Apr 03, 2026'],
+    ]) }
+    expect(limsDeadlines(rec)).toEqual([{ key: 'mayor-response', date: '2026-04-03', description: "Mayor's response due" }])
+    expect(limsDeadlines({ ...rec, legislationHistory: [] })).toEqual([])
   })
 })
 
@@ -418,14 +483,13 @@ describe('review fixes', () => {
     expect(white.length).toBeGreaterThan(0)
   })
 
-  it('keeps the first hearing identity when a second same-text hearing appears', async () => {
+  it('leaves the first hearing as it was when a second same-text hearing appears', async () => {
     const rec = bulk['B26-0400']
     const before = await build('B26-0400', d0400)
     const twice = { ...rec, legislationHistory: [...rec.legislationHistory, { ...rec.legislationHistory[5], actionDate: 'Dec 01, 2025' }] }
     const after = await buildLimsBill(twice, d0400, limsBillId('B26-0400')!, await bulkHash(twice), ctx)
     const first = before.calendar.find(c => c.type_id === 1)!
-    expect(after.calendar.find(c => c.date === first.date)?.description).toBe(first.description)
-    expect(after.calendar.find(c => c.date === '2025-12-01')?.description).toBe('Public Hearing on B26-0400 (2)')
+    expect(after.calendar.find(c => c.date === first.date)).toEqual(first)
   })
 
   it('does not count a disapproval as passing', async () => {

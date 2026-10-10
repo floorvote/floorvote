@@ -194,6 +194,8 @@ async function fetchUpcomingHearings(
   let centralResults: Array<{
     eventHash: string
     type: string | null
+    /** The entry's kind, from central (shared/calendarKinds.ts). Missing from an older central. */
+    kind?: string
     date: string
     time: string | null
     location: string | null
@@ -296,6 +298,8 @@ async function fetchUpcomingHearings(
   // Group by composite hearing key
   const groups = new Map<string, HearingGroup>()
   for (const h of centralResults) {
+    // A deadline isn't a hearing. The calendar shows it, and this widget doesn't.
+    if (h.kind === 'deadline') continue
     const bill = billByExternal.get(toHandle(h.billId))
     if (!bill) continue
     // Composite key: same date+time+description+location = same hearing

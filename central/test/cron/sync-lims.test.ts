@@ -160,7 +160,9 @@ describe('ingesting a LIMS bill', () => {
     expect(memberVotes.length).toBe(rc[0].total)
 
     const cal = await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0400)).all()
-    expect(cal.map(c => c.date).sort()).toEqual(['2025-11-13', '2026-01-27', '2026-02-23'])
+    expect(cal.filter(c => c.typeId !== 10).map(c => c.date).sort()).toEqual(['2025-11-13', '2026-01-27', '2026-02-23'])
+    // The Mayor's response deadline, from the details response's review.
+    expect(cal.filter(c => c.typeId === 10).map(c => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
 
     const sent = [
       ...tenantQueue.send.mock.calls.map(c => c[0]),
@@ -464,7 +466,9 @@ describe('cancellations', () => {
     expect(history).toEqual(expect.arrayContaining(['Cancellation Notice of Public Hearing filed in the Office of Secretary', 'Public Hearing Canceled']))
     const supps = await db.select().from(schema.billSupplements).where(eq(schema.billSupplements.billId, B0769)).all()
     expect(supps.some(s => /Cancellation/i.test(s.type ?? ''))).toBe(true)
-    expect((await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0769)).all()).map(c => c.date)).not.toContain('2026-10-23')
+    // Cancelled at once on the notice, and kept rather than deleted.
+    const hearingRows = (await db.select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, B0769)).all()).filter(c => c.typeId === 1)
+    expect(hearingRows.map(c => [c.date, c.cancelledAt !== null])).toEqual([['2026-10-23', true]])
 
     const changes = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, B0769)).all()
     expect(changes.map(c => c.changeType)).toContain('hearing_cancelled')
