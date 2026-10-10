@@ -26,6 +26,9 @@ billsRoutes.get('/sessions', async (c) => {
     .select({
       sessionId:   schema.sessions.sessionId,
       sessionName: schema.sessions.sessionName,
+      // Unique within the state (an index guarantees it), or null for a
+      // session written since the last cron tick.
+      slug:        schema.sessions.slug,
       state:       schema.sessions.state,
       yearStart:   schema.sessions.yearStart,
       yearEnd:     schema.sessions.yearEnd,
@@ -133,6 +136,7 @@ billsRoutes.get('/:id', async (c) => {
   const session = bill.sessionId
     ? await db.select({
         sessionName: schema.sessions.sessionName,
+        slug:        schema.sessions.slug,
         yearStart:   schema.sessions.yearStart,
         yearEnd:     schema.sessions.yearEnd,
       })
@@ -251,6 +255,9 @@ billsRoutes.get('/:id', async (c) => {
     billId: toHandle(bill.billId),
     sessionId:   String(bill.sessionId),
     sessionName: session?.sessionName ?? null,
+    // The SESSION in the bill's /STATE/SESSION/BILL URL. Tenants store it and
+    // resolve the URL by it, so it must never change once sent.
+    sessionSlug: session?.slug        ?? null,
     yearStart:   session?.yearStart   ?? null,
     yearEnd:     session?.yearEnd     ?? null,
     state: bill.state,

@@ -72,26 +72,59 @@ beforeEach(async () => {
 })
 
 describe('Maryland session refresh', () => {
-  it('makes a session the MGA stops listing prior, and leaves sessions alone when it lists none', async () => {
+  it('ends a session the MGA stops listing (prior and sine die), and leaves sessions alone when it lists none', async () => {
     const db = drizzle(env.DB, { schema })
     const ctx = providerContext(mgaProvider, makeEnv().env, db)
     const S1 = `${THIS_YEAR}S1`
     // A LegiScan Maryland session, which the MGA refresh must never touch.
     await db.insert(schema.sessions).values({ sessionId: 2100, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR, sessionTitle: 'LS', sessionName: 'LS' })
-    const prior = async () => Object.fromEntries((await db.select().from(schema.sessions).all())
-      .map(s => [s.provider === 'mga' ? s.sessionTag : `${s.provider}:${s.sessionId}`, s.prior]))
+    const state = async () => Object.fromEntries((await db.select().from(schema.sessions).all())
+      .map(s => [s.provider === 'mga' ? s.sessionTag : `${s.provider}:${s.sessionId}`, [s.prior, s.sineDie]]))
 
     vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
     await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
-    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 0, 'legiscan:2100': 0 })
+    expect(await state()).toEqual({ [CODE]: [0, 0], [S1]: [0, 0], 'legiscan:2100': [0, 0] })
 
     vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
     await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
-    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
+    expect(await state()).toEqual({ [CODE]: [0, 0], [S1]: [1, 1], 'legiscan:2100': [0, 0] })
 
     vi.mocked(mga.mgaSessionExists).mockResolvedValue(false)
     await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
-    expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
+    expect(await state()).toEqual({ [CODE]: [0, 0], [S1]: [1, 1], 'legiscan:2100': [0, 0] })
+
+    // Listed again, it is current again.
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
+    await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
+    expect(await state()).toEqual({ [CODE]: [0, 0], [S1]: [0, 0], 'legiscan:2100': [0, 0] })
+  })
+
+  it('stops syncing a session once the MGA stops listing it', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv()
+    const S1 = `${THIS_YEAR}S1`
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
+    vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE || code === S1 ? structuredClone(sample) : null))
+    await runSnapshotSync(mgaProvider, e, db)
+    expect(vi.mocked(mga.getMgaSession).mock.calls.map(c => c[0]).sort()).toEqual([CODE, S1])
+
+    vi.mocked(mga.getMgaSession).mockClear()
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
+    await runSnapshotSync(mgaProvider, e, db)
+    expect(vi.mocked(mga.getMgaSession).mock.calls.map(c => c[0])).toEqual([CODE])
+  })
+
+  it('gives each session a slug of its own, the older LegiScan session keeping the plain one', async () => {
+    const db = drizzle(env.DB, { schema })
+    const ctx = providerContext(mgaProvider, makeEnv().env, db)
+    await db.insert(schema.sessions).values({ sessionId: 2100, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR,
+      sessionTitle: `${THIS_YEAR} Regular Session`, sessionName: `${THIS_YEAR} Regular Session`, slug: `${THIS_YEAR}` })
+    vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === `${THIS_YEAR}S1`)
+    await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
+
+    const slugs = Object.fromEntries((await db.select().from(schema.sessions).all())
+      .map(s => [s.provider === 'mga' ? s.sessionTag : `${s.provider}:${s.sessionId}`, s.slug]))
+    expect(slugs).toEqual({ 'legiscan:2100': `${THIS_YEAR}`, [CODE]: `${THIS_YEAR}-2`, [`${THIS_YEAR}S1`]: `${THIS_YEAR}-s1` })
   })
 })
 

@@ -9,6 +9,7 @@ import { toHandle } from '../lib/billHandle'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { directStates } from '../lib/providerRouting'
+import { assignSessionSlugs } from '../lib/sessionSlugs'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -162,6 +163,7 @@ async function refreshSessions(state: string, provider: Provider, env: Env, db: 
       },
     })
   }
+  await assignSessionSlugs(db)
 }
 
 async function runFullPass(
