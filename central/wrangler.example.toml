@@ -95,17 +95,19 @@ EMAIL_PROVIDER = "cloudflare"
 # CF_ACCOUNT_ID = "REPLACE_WITH_ACCOUNT_ID"          # required for CF_QUEUES_TOKEN dynamic delivery; also used by D1 anomaly watch
 # CF_FLOORVOTE_ZONE_ID = "REPLACE_WITH_ZONE_ID"      # zone ID (not account ID) — only for Login Activity delivery-status lookups
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
-# DC Council LIMS (lims.dccouncil.gov) as DC's provider instead of LegiScan.
-# Needs the LIMS_API_KEY secret too; without it LIMS stays off and DC comes
-# from LegiScan as before. See src/providers/lims.
-# LIMS_STATES = "DC"
+# Opt-in providers. A state syncs from LegiScan unless an admin claim gives it
+# to another provider: POST /api/admin/state-providers/<STATE> with
+# {"provider": "lims"}, "mga", or "lis" (docs/internal/sync-pipeline.md).
+# DC Council LIMS (lims.dccouncil.gov) needs the LIMS_API_KEY secret too.
+# See src/providers/lims.
 # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
-# The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
-# provider instead of LegiScan. No key needed. See src/providers/mga.
+# Maryland (mgaleg.maryland.gov, src/providers/mga) and Virginia
+# (lis.virginia.gov, src/providers/lis) need no key. Virginia bill text needs
+# the LIS API, which is not used yet.
+# For one release only, these older vars still seed a state's claim on the
+# first sync, when the state has none. Remove them once the claim exists.
+# LIMS_STATES = "DC"
 # MGA_STATES = "MD"
-# Virginia's Legislative Information System data files (lis.virginia.gov) as
-# VA's provider instead of LegiScan. No key needed; bill text needs the LIS
-# API, which is not used yet. See src/providers/lis.
 # LIS_STATES = "VA"
 
 [env.legiscan.triggers]
@@ -139,7 +141,7 @@ namespace_id = "3001"
 
 # Secrets (set via `wrangler secret put <NAME> --env legiscan`):
 # LEGISCAN_API_KEY      — LegiScan bill data
-# LIMS_API_KEY          — DC Council LIMS developer key (optional; see LIMS_STATES)
+# LIMS_API_KEY          — DC Council LIMS developer key (optional; needed for a claim of DC by lims)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
 # RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)

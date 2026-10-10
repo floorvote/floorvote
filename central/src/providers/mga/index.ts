@@ -12,7 +12,7 @@ export const mga: Provider<'MGA_STATES'> = {
   id: 'mga',
   envKeys: ['MGA_STATES'],
   states: [MGA_STATE],
-  enabled: env => (env.MGA_STATES ?? '').split(',').some(s => s.trim().toUpperCase() === MGA_STATE),
+  statesEnvKey: 'MGA_STATES',
 
   /**
    * The sessions the MGA has published for this year and next: the regular
