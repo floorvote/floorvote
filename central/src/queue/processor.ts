@@ -15,6 +15,7 @@ import { providerContext } from '../lib/providerContext'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
 import { toHandle } from '../lib/billHandle'
+import { replaceBillExtras } from '../lib/billExtras'
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -379,6 +380,10 @@ export async function ingestMeasure(
       description: cal.description || null,
     })
   }
+
+  // The provider's extras. Display only: change detection above never sees
+  // them, so an extra changing alone notifies no one.
+  await replaceBillExtras(db, bill, provider)
 
   // Upsert texts — preserve existing r2_key
   for (const t of bill.texts ?? []) {

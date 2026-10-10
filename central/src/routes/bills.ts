@@ -9,6 +9,7 @@ import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { statusFields, vocabularyLabels } from '../lib/vocabulary'
+import { billExtrasDetail } from '../lib/billExtras'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -163,7 +164,7 @@ billsRoutes.get('/:id', async (c) => {
         .from(schema.sessions).where(eq(schema.sessions.sessionId, bill.sessionId)).get()
     : null
 
-  const [history, sponsorRows, texts, sasts, rollCalls, calendarEntries, supplementRows, subjectRows, amendmentRows, memberVoteRows] = await Promise.all([
+  const [history, sponsorRows, texts, sasts, rollCalls, calendarEntries, supplementRows, subjectRows, amendmentRows, memberVoteRows, extras] = await Promise.all([
     db.select().from(schema.billHistory).where(eq(schema.billHistory.billId, numeric)).all(),
     db.select({
       id: schema.billSponsors.id,
@@ -200,6 +201,8 @@ billsRoutes.get('/:id', async (c) => {
       .leftJoin(schema.people, eq(schema.people.peopleId, schema.rollCallVotes.peopleId))
       .where(eq(schema.rollCalls.billId, numeric))
       .all(),
+    // Fields only the bill's provider publishes, labeled from its vocabulary.
+    billExtrasDetail(db, numeric, provider),
   ])
   const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
   for (const r of memberVoteRows) {
@@ -363,6 +366,8 @@ billsRoutes.get('/:id', async (c) => {
       }
     }),
     subjects: subjectRows.map(s => s.subjectName),
+    // Display only, for the bill page's panel: null when the bill has none.
+    extras,
   })
 })
 

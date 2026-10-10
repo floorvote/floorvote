@@ -12,6 +12,7 @@ import type { Provider, ProviderPerson, ProviderRecord, SyncSession } from '../s
  */
 export const lis: Provider<'LIS_STATES'> = {
   id: 'lis',
+  displayName: 'Virginia LIS',
   envKeys: ['LIS_STATES'],
   states: [LIS_STATE],
   statesEnvKey: 'LIS_STATES',

@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { PROVIDERS, getProvider } from '../../src/providers'
 import { stagePosition } from '../../../shared/statusStages'
+import { EXTRA_DISPLAYS } from '../../../shared/providerExtras'
 import { limsStatusCode } from '../../src/providers/lims/map'
+import { example } from './example'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 
 // Every provider's vocabulary follows the same rules, which core and
 // instances rely on: rank orders statuses across providers, and instances look
-// a status up by its label.
-describe.each(PROVIDERS.map(p => [p.id, p] as const))('%s vocabulary', (_id, provider) => {
+// a status up by its label. The test-only example provider is the one that
+// declares extras so far.
+describe.each([...PROVIDERS, example].map(p => [p.id, p] as const))('%s vocabulary', (_id, provider) => {
   const statuses = Object.values(provider.vocabulary.statuses)
 
   it('ranks each status by its stage position times 100 plus its order within the stage', () => {
@@ -31,6 +34,16 @@ describe.each(PROVIDERS.map(p => [p.id, p] as const))('%s vocabulary', (_id, pro
     expect(Object.keys(provider.vocabulary.billTypes).length).toBeGreaterThan(0)
     for (const t of [...Object.values(provider.vocabulary.billTypes), ...Object.values(provider.vocabulary.eventTypes)]) {
       expect(t.label.trim()).not.toBe('')
+    }
+  })
+
+  it('gives each extra its own label and a display type, and the provider a display name for their panel', () => {
+    expect(provider.displayName.trim()).not.toBe('')
+    const extras = Object.values(provider.vocabulary.extras ?? {})
+    expect(new Set(extras.map(e => e.label)).size).toBe(extras.length)
+    for (const e of extras) {
+      expect(e.label.trim()).not.toBe('')
+      expect(EXTRA_DISPLAYS, e.label).toContain(e.display)
     }
   })
 })

@@ -1,0 +1,30 @@
+[
+  {
+    "Number": "B26-0001",
+    "Title": "Library Hours Extension Act of 2026",
+    "Status": "Enacted",
+    "Introduced": "2026-01-13",
+    "Page": "https://legislature.example/bills/B26-0001",
+    "LawNumber": "L26-0042",
+    "EffectiveDate": "2026-06-01",
+    "Packet": "https://legislature.example/packets/B26-0001.pdf",
+    "WithdrawnBy": null,
+    "InternalId": 70011,
+    "Attachments": [
+      { "Name": "Committee report", "Url": "https://legislature.example/files/7001.pdf", "Size": 81233 }
+    ]
+  },
+  {
+    "Number": "B26-0002",
+    "Title": "Branch Library Staffing Amendment Act of 2026",
+    "Status": "Introduced",
+    "Introduced": "2026-02-03",
+    "Page": "https://legislature.example/bills/B26-0002",
+    "LawNumber": null,
+    "EffectiveDate": null,
+    "Packet": null,
+    "WithdrawnBy": null,
+    "InternalId": 70012,
+    "Attachments": []
+  }
+]

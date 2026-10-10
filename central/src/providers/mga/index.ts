@@ -11,6 +11,7 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
  */
 export const mga: Provider<'MGA_STATES'> = {
   id: 'mga',
+  displayName: 'Maryland General Assembly',
   envKeys: ['MGA_STATES'],
   states: [MGA_STATE],
   statesEnvKey: 'MGA_STATES',

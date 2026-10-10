@@ -88,6 +88,37 @@ curl -X POST "$CENTRAL/api/admin/refresh-stubs/$TENANT?state=DC" -H "x-admin-sec
 
 Neither makes a provider call or runs AI. Changing a label needs the same resend, and also leaves saved views and links that filter on the old label matching nothing. Explainers can change freely, since instances read them from central each time.
 
+### Provider extras
+
+A field only one provider publishes, such as a DC law number, is still shown on the bill page, as a provider **extra**. The provider declares it in its vocabulary file under `extras`: a key, a label, an optional explainer, and a display type (`text`, `date`, `link`, or `identifier`, from `shared/providerExtras.ts`). Its mapping sets the values on `CentralMeasure.extras`, by key. A provider never writes them itself.
+
+- **Storage.** Core stores the values in `bill_extras` (migration 0032), one row per bill, provider, and key, and replaces a bill's rows on every ingest, like its other child data (`central/src/lib/billExtras.ts`). Labels aren't stored, so relabeling an extra needs no resend. Core drops a value whose key the vocabulary doesn't declare, a value that isn't a string, a `date` that isn't a real YYYY-MM-DD, and a `link` that isn't http(s), with a warning. These checks never throw, since a throw mid-ingest would skip the bill's texts, votes, and tenant notifications. The delete and inserts run in one batch.
+- **The bill API.** `GET /bills/:id` sends `extras`: the provider's display name (`Provider.displayName`) and its fields in vocabulary order, each with its label, explainer, display type, and value, or null when the bill has none.
+- **Instances** pass `extras` through in the bill detail, with no tenant schema change. The bill page shows one generic "Additional information from <provider>" panel, only when there are extras, and an explainer as a tooltip. No provider has UI code of its own.
+- **Display only.** Change detection never sees extras, so an extra changing alone writes no change-log entry and sends instances no changes. Nothing sorts, filters, notifies, or runs AI on them, and instances don't store them.
+
+**Adding an extra needs a backfill.** A new extra, or a fix to how one is mapped, reaches a bill only when that bill is ingested again. That happens when its record changes, and for LIMS also on the details refresh, which skips terminal statuses. The bills an extra matters most for are often the ones that no longer change, such as enacted DC laws with their law numbers. So shipping an extra includes re-ingesting the provider's tracked bills:
+
+- `POST /api/admin/reingest-bill/:billId` queues one bill. List the provider's tracked bills with `SELECT DISTINCT b.bill_id FROM bills b JOIN bill_tenants bt ON bt.bill_id = b.bill_id WHERE b.provider = '<id>' AND bt.match_type IS NOT NULL`.
+- `POST /api/admin/reingest-tenant/:tenantId?confirm=true` queues every tracked bill of an instance, from every provider. Use it only for an instance whose tracked bills all come from that provider: each LegiScan bill it queues costs a `getBill` call.
+
+Both routes queue to `INGESTOR_QUEUE`, not the provider's `ingestQueue`, so pace a large LIMS backfill rather than queueing it all at once (LIMS rate-limits above about two concurrent requests). Neither route runs AI, and an extra changing alone sends instances no changes.
+
+**When an extra becomes a shared column.** Promote an extra to a shared column (or table) on central's bills, with a tenant column if instances need it, when either of these holds:
+
+1. A core feature needs it: sorting, filtering, notifications, AI, or a dedicated view. Each of those reads stored, typed columns that mean the same thing for every provider, and extras are neither.
+2. A second provider publishes the same fact. Two providers' copies of one field belong in one column under one name, so members can compare states, rather than two panels that happen to agree.
+
+Promoting means a migration for the column, mapping it in every provider that has it (and removing it from their `extras`), and a backfill or one-time resend for bills already stored. Until either test is met, an extra is the right home: it costs one vocabulary entry and no schema.
+
+**Field inventories.** Every provider keeps an inventory of every field its feed returns, in `central/src/providers/<id>/inventory.ts` beside its vocabulary (`FieldInventory` in `providers/types.ts`), each `'mapped'`, `{ extra: key }`, or `{ ignored: reason }`, by path (`Sponsors[].Name`). A provider with a listing and a per-measure details response keeps one for each. Reviewers read it to see that nothing in the feed is dropped silently. The provider's mapping test checks its recorded fixtures against it with the shared helper in `central/test/helpers/fieldInventory.ts`:
+
+```ts
+expect(inventoryProblems(inventory, fixtures, vocabulary)).toEqual([])
+```
+
+The check fails on any fixture field the inventory doesn't list, and on an inventory entry naming an extra the vocabulary lacks. `unfedExtras(vocabulary, ...inventories)` from the same helper lists the declared extras no inventory entry names, across all of a provider's inventories. An ignored object or array covers everything inside it, while a mapped one doesn't, so a field the feed starts sending fails the test until someone decides what to do with it. The test-only example provider (`central/test/providers/example/`) shows the whole path: its vocabulary declares extras, its inventory lists its fixture's fields, its mapping test runs the check, and `central/test/cron/provider-extras.test.ts` follows the extras from the feed to the bill API at the main seam. LIMS, Maryland, and Virginia get their inventories with their provider tickets. LegiScan doesn't keep one, since central's shapes are LegiScan's own.
+
 ---
 
 ## Phase 1 — Cron (`central/src/cron/sync.ts`)
@@ -152,7 +183,7 @@ It hands the result to `ingestMeasure`, which unconditionally:
 2. Runs `detectChanges` to compute a list of `ChangeRecord`s.
 3. Writes `bill_change_log` rows (one per detected change).
 4. Upserts the `bills` row (status, title, last_action, etc.).
-5. **Delete + reinsert** these child tables: `bill_history`, `bill_sponsors`, `bill_sasts`, `bill_subjects`, `bill_calendar`, `bill_referrals`.
+5. **Delete + reinsert** these child tables: `bill_history`, `bill_sponsors`, `bill_sasts`, `bill_subjects`, `bill_calendar`, `bill_referrals`, `bill_extras`.
 6. **Upsert** these child tables: `bill_texts`, `bill_supplements`, `bill_amendments`, `roll_calls`.
 7. Downloads any text without an R2 key to `bills/legiscan-{billId}/texts/{docId}.{ext}`.
 8. Stamps `bills.texts_fetched_at` → derives `text_status` for the response.
@@ -290,6 +321,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
 - **Status vocabulary**: `central/src/providers/<id>/vocabulary.ts`, `central/src/lib/vocabulary.ts`, `shared/statusStages.ts`, and `GET /bills/labels` in `central/src/routes/bills.ts`
+- **Provider extras**: `extras` in `central/src/providers/<id>/vocabulary.ts`, `central/src/lib/billExtras.ts`, `shared/providerExtras.ts`, `web/src/components/ProviderExtras.tsx`, and the inventory helper in `central/test/helpers/fieldInventory.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)
 - **Central bill detail API**: `central/src/routes/bills.ts`
 - **Tenant bill detail API**: `api/src/routes/billsApi/detail.ts` (`buildBillDetail`)
