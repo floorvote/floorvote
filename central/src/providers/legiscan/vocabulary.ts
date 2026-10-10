@@ -51,8 +51,9 @@ export const vocabulary: ProviderVocabulary = {
       label: 'Vetoed', stage: 'vetoed', rank: 601, terminal: false,
       explainer: 'Vetoed by the governor. The legislature can still override the veto.',
     },
+    // Not terminal: Chaptered can follow.
     4: {
-      label: 'Passed', stage: 'enacted', rank: 701, terminal: true,
+      label: 'Passed', stage: 'enacted', rank: 701, terminal: false,
       explainer: 'Signed by the governor or otherwise enacted. For a resolution, adopted.',
     },
     7: {
