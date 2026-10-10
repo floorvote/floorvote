@@ -3,7 +3,8 @@ import { sessions, bills, billTenants, tenants, people, providerRecords } from '
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
-import { ingestQueueFor, providerEnabled } from '../lib/providerRouting'
+import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
+import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -11,7 +12,8 @@ import type { Env, Db } from '../types'
 
 /**
  * The sync for every snapshot provider (Provider.snapshot), run on central's
- * hourly cron alongside the LegiScan sync, one job per provider.
+ * hourly cron alongside the LegiScan sync, one job per provider, for the
+ * states the ownership table gives it (lib/stateProviders.ts).
  *
  * None of these providers has a modified-since filter, so each full pass
  * takes the provider's snapshot of a session, stores every record whose hash
@@ -43,11 +45,17 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
 export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SnapshotPassReport[]> {
-  if (!isSnapshotProvider(provider) || !providerEnabled(provider, env)) return []
+  if (!isSnapshotProvider(provider)) return []
+  const owned = statesOwnedBy(await loadStateOwners(env, db), provider.id)
+  if (owned.length === 0) return []
+  if (!providerConfigured(provider, env)) {
+    console.warn(`[sync-${provider.id}] owns ${owned.join(', ')} but isn't configured on this central (missing its API key?); not syncing`)
+    return []
+  }
 
   const active = await db.select().from(tenants).where(eq(tenants.active, true)).all()
   const coveringByState = new Map<string, Covering[]>()
-  for (const state of provider.states) {
+  for (const state of owned) {
     const covering = active
       .filter(t => {
         try {
@@ -60,27 +68,11 @@ export async function runSnapshotSync(
   }
   if (coveringByState.size === 0) return []
 
-  // Moving a state from LegiScan to another provider needs a cutover that moves
-  // tenant links onto the new rows. Until one has run, refuse: syncing anyway
-  // would give every bill in the state a second copy under a new id, and
-  // tenants would see (and pay AI for) both.
-  const states = [...coveringByState.keys()]
-  const legacy = await db.select({ n: sql<number>`COUNT(*)` })
-    .from(bills)
-    .innerJoin(billTenants, eq(billTenants.billId, bills.billId))
-    .where(and(inArray(bills.state, states), eq(bills.provider, 'legiscan')))
-    .get()
-  if (Number(legacy?.n ?? 0) > 0) {
-    throw new Error(
-      `[sync-${provider.id}] ${legacy!.n} LegiScan bill links exist in ${states.join(', ')}; ` +
-      `the ${provider.id} sync is paused until they are cut over. These states are not syncing from either provider meanwhile.`)
-  }
-
   const ctx = providerContext(provider, env, db)
   const etHour = getCurrentEtHour()
   const force = !!opts.force
   const toSync: SessionRow[] = []
-  for (const state of provider.states) toSync.push(...await sessionsToSync(provider, state, ctx, etHour, force, db))
+  for (const state of owned) toSync.push(...await sessionsToSync(provider, state, ctx, etHour, force, db))
 
   const reports: SnapshotPassReport[] = []
   for (const session of toSync) {

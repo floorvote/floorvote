@@ -185,8 +185,12 @@ describe('weekly LegiScan member votes', () => {
       // A session the MGA provider wrote, though Maryland is back on LegiScan.
       { sessionId: 3_000_000_001, state: 'MD', stateId: 20, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular Session', sessionTitle: '2026 Regular Session', provider: 'mga' },
     ])
+    await db.insert(schema.stateProviders).values([
+      { state: 'DC', provider: 'lims', previousProvider: 'legiscan' },
+      { state: 'MD', provider: 'legiscan', previousProvider: 'mga' },
+    ])
 
-    await checkVoteDatasets({ ...mockEnv(), LIMS_API_KEY: 'k', LIMS_STATES: 'DC' }, db)
+    await checkVoteDatasets(mockEnv(), db)
 
     const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
     expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])

@@ -110,8 +110,8 @@ SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"
 # accurate only while you run it unmodified. "" withdraws the offer.
 # OPERATOR_SOURCE_URL = "https://github.com/yourorg/floorvote"
 # Data providers credited in the sidebar footer, comma-separated. Unset means
-# "legiscan". A DC team whose central sources DC from the Council's LIMS
-# (central LIMS_STATES = "DC") sets "lims".
+# "legiscan". A DC team whose central reads DC from the Council's LIMS
+# (DC claimed for "lims" in central's state ownership table) sets "lims".
 # DATA_SOURCES = "lims"
 #
 # Arms the terms-acceptance gate: every user must tick a checkbox agreeing to the

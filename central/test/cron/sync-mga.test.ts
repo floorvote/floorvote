@@ -176,12 +176,13 @@ describe('the Maryland sync', () => {
     expect(legiscan.getMasterListRaw).not.toHaveBeenCalled()
   })
 
-  it('refuses to run while LegiScan Maryland bills are linked to tenants', async () => {
+  it('leaves Maryland on LegiScan while LegiScan Maryland bills are linked to tenants', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.bills).values({ billId: 77, changeHash: 'x', sessionId: 2200, state: 'MD', stateId: 20, billNumber: 'HB9', title: 'T' })
     await db.insert(schema.billTenants).values({ billId: 77, tenantId: 'team', matchType: 'keyword' })
-    await expect(runSnapshotSync(mgaProvider, makeEnv().env, db)).rejects.toThrow(/LegiScan bill links exist in MD/)
+    expect(await runSnapshotSync(mgaProvider, makeEnv().env, db)).toEqual([])
     expect(mga.getMgaSession).not.toHaveBeenCalled()
+    expect(await db.select().from(schema.stateProviders).all()).toEqual([])
   })
 })
 

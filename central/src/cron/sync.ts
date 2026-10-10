@@ -8,8 +8,8 @@ import { providerContext } from '../lib/providerContext'
 import { toHandle } from '../lib/billHandle'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
-import { directStates } from '../lib/providerRouting'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
+import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -45,13 +45,14 @@ export async function runSync(env: Env, db: Db): Promise<void> {
 
   const trackedStates = await loadTrackedStates(db, activeTenants)
 
-  // States read from another provider are synced by that provider (cron/sync-snapshots.ts).
-  for (const state of directStates(env)) trackedStates.delete(state)
+  // This sync runs LegiScan, for the states it owns: every state with no
+  // ownership row, and any whose row names it. A state another provider owns
+  // is synced by that provider (cron/sync-snapshots.ts).
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
+  const owners = await loadStateOwners(env, db, { reportRefusals: true })
+  for (const state of trackedStates) if (ownerOf(owners, state) !== provider.id) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
-
-  // States don't record their provider yet, so every state syncs from the default.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
 
   const etHour = getCurrentEtHour()
   console.log(`[sync-ls] tick at ET hour ${etHour}`)
@@ -322,13 +323,8 @@ export async function applyMasterList(
         prevMatchType === 'manual' ? 'manual' : (matched ? 'keyword' : null)
 
       if (!linkExists) {
-        billTenantStmts.push(
-          db.insert(billTenants).values({
-            billId: entry.bill_id,
-            tenantId: t.tenantId,
-            matchType: newMatchType,
-          }).onConflictDoNothing()
-        )
+        billTenantStmts.push(insertLinkWhileOwner(db,
+          { billId: entry.bill_id, tenantId: t.tenantId, matchType: newMatchType }, session.state, session.provider))
       } else if ((prevMatchType ?? null) !== newMatchType) {
         billTenantStmts.push(
           db.update(billTenants).set({ matchType: newMatchType })
@@ -378,6 +374,15 @@ export async function applyMasterList(
   for (let i = 0; i < billTenantStmts.length; i += FLUSH_BATCH) {
     const chunk = billTenantStmts.slice(i, i + FLUSH_BATCH) as [any, ...any[]]
     if (chunk.length > 0) await db.batch(chunk)
+  }
+
+  // A claim that landed during this pass kept the new links above from being
+  // written (insertLinkWhileOwner). Queue and notify nothing for a state this
+  // provider no longer owns, or instances would get its bills without links.
+  if (await ownerOfState(db, session.state) !== session.provider) {
+    console.warn(`[sync] ${session.state} changed provider during the ${session.provider} pass of ` +
+      `${session.sessionName}; nothing queued or sent`)
+    return []
   }
 
   const queueIds = Array.from(toQueue)
