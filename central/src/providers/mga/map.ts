@@ -1,5 +1,6 @@
 import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
 import { MGA_BASE, type MgaRecord } from './client'
+import { MGA_STATUS_BASE } from './vocabulary'
 
 /**
  * Pure mapping from Maryland General Assembly records (client.ts) to the
@@ -16,33 +17,74 @@ export const MGA_STATE = 'MD'
 /** LegiScan's state_id for Maryland, so MGA rows look like MD rows everywhere. */
 export const MD_STATE_ID = 20
 
+/**
+ * Maryland's status codes (vocabulary.ts), named for the step. The file
+ * itself has none.
+ */
+export const MGA_STATUS = {
+  prefiled: MGA_STATUS_BASE + 1,
+  inCommittee: MGA_STATUS_BASE + 2,
+  reportedFavorably: MGA_STATUS_BASE + 3,
+  passedHouse: MGA_STATUS_BASE + 4,
+  passedSenate: MGA_STATUS_BASE + 5,
+  passedGeneralAssembly: MGA_STATUS_BASE + 6,
+  unfavorableReport: MGA_STATUS_BASE + 7,
+  failed: MGA_STATUS_BASE + 8,
+  postponed: MGA_STATUS_BASE + 9,
+  withdrawn: MGA_STATUS_BASE + 10,
+  vetoed: MGA_STATUS_BASE + 11,
+  adopted: MGA_STATUS_BASE + 12,
+  approved: MGA_STATUS_BASE + 13,
+  enactedUnsigned: MGA_STATUS_BASE + 14,
+  enactedOverVeto: MGA_STATUS_BASE + 15,
+  enactedSubjectToReferendum: MGA_STATUS_BASE + 16,
+} as const
+
 /** Outcomes the Governor or the constitution decides: the file gives them no date. */
-const UNDATED_OUTCOMES = new Set([6, 7, 8, 9, 10, 11])
+const UNDATED_OUTCOMES = new Set<number>([
+  MGA_STATUS.vetoed, MGA_STATUS.adopted, MGA_STATUS.approved, MGA_STATUS.enactedUnsigned,
+  MGA_STATUS.enactedOverVeto, MGA_STATUS.enactedSubjectToReferendum,
+])
 
 /**
  * The code an MGA bill stores in `bills.status` (labeled in vocabulary.ts).
  * The file's own Status field is the last action as free text (over a
- * thousand distinct values a session), so the code is derived from the
- * structured fields, and the text is kept as the last action.
+ * thousand distinct values a session), so the code comes from the structured
+ * fields where they say enough, and from the Status text only for outcomes
+ * they don't record: how an act became law, a veto, a withdrawal, and a
+ * motion that ended the bill. The text is kept as the last action.
  */
 export function mgaStatus(r: MgaRecord): number {
   const s = r.Status ?? ''
-  if (/Veto Override/i.test(s)) return 8
-  if (/subject to constitutional referendum/i.test(s)) return 9
-  if (/Article II, Section 17\(c\)/i.test(s)) return 7
-  if (/Joint Resolution \d+/i.test(s)) return 10
-  if (r.ChapterNumber) return 6
-  if (/^Vetoed by the Governor/i.test(s)) return 11
+  const chapter = (r.ChapterNumber ?? '').trim().toUpperCase()
+  if (/Veto Override/i.test(s)) return MGA_STATUS.enactedOverVeto
+  if (/subject to constitutional referendum/i.test(s)) return MGA_STATUS.enactedSubjectToReferendum
+  if (/Article II, Section 17\(c\)/i.test(s)) return MGA_STATUS.enactedUnsigned
+  // A joint resolution's number goes in the chapter field ("JR0003").
+  if (chapter.startsWith('JR') || /Joint Resolution \d+/i.test(s)) return MGA_STATUS.adopted
+  if (chapter) return MGA_STATUS.approved
+  if (/^Vetoed by the Governor/i.test(s)) return MGA_STATUS.vetoed
   // Passed, no chapter, and back on the floor: a veto override vote deferred
   // ("Special Order vote on veto until next session") or postponed for good.
-  if (r.PassedByMGA && /veto|Postpone Indefinitely/i.test(s)) return 11
-  if (/Withdrawn/i.test(s)) return 13
-  if (/Unfavorable Report/i.test(s)) return 12
-  if (/Postpone Indefinitely.*Adopted/i.test(s)) return 14
-  if (r.PassedByMGA) return 5
-  if (/^Passed/i.test(r.ThirdReadingActionHouseOfOrigin ?? '')) return originChamber(r) === 'H' ? 3 : 4
-  if (r.FirstReadingDateHouseOfOrigin) return 2
-  return 1
+  if (r.PassedByMGA && /veto|Postpone Indefinitely/i.test(s)) return MGA_STATUS.vetoed
+  if (/Withdrawn/i.test(s) || [r.ReportActionHouseOfOrigin, r.ReportActionOppositeHouse].some(a => /^Withdrawn/i.test(a ?? ''))) {
+    return MGA_STATUS.withdrawn
+  }
+  if (/Unfavorable Report/i.test(s)) return MGA_STATUS.unfavorableReport
+  if (/Postpone Indefinitely.*Adopted/i.test(s)) return MGA_STATUS.postponed
+  if (r.PassedByMGA) return MGA_STATUS.passedGeneralAssembly
+  // A House or Senate resolution is done once its own chamber adopts it.
+  const readings = [r.SecondReadingActionHouseOfOrigin, r.ThirdReadingActionHouseOfOrigin]
+  if (mgaBillType(r.BillNumber).type === 'R' && readings.some(a => /^Adopted/i.test(a ?? ''))) return MGA_STATUS.adopted
+  if ([r.ThirdReadingActionHouseOfOrigin, r.ThirdReadingActionOppositeHouse].some(a => /^Failed/i.test(a ?? ''))) {
+    return MGA_STATUS.failed
+  }
+  if (/^Passed/i.test(r.ThirdReadingActionHouseOfOrigin ?? '')) {
+    return originChamber(r) === 'H' ? MGA_STATUS.passedHouse : MGA_STATUS.passedSenate
+  }
+  if (/^Favorable/i.test(r.ReportActionHouseOfOrigin ?? '')) return MGA_STATUS.reportedFavorably
+  if (r.FirstReadingDateHouseOfOrigin) return MGA_STATUS.inCommittee
+  return MGA_STATUS.prefiled
 }
 
 /** "HB0001" → "HB1", as LegiScan and the MGA's own pages write it. */

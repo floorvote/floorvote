@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  buildMgaBill, mgaBillType, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
+  buildMgaBill, MGA_STATUS, mgaBillType, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
 import { vocabulary } from '../../../src/providers/mga/vocabulary'
@@ -22,8 +22,8 @@ const ids: MgaIds = {
 
 describe('mgaStatus', () => {
   it('reads the stage from the structured fields, not the free-text Status', () => {
-    expect(label(rec('SB0002'))).toBe('Introduced')
-    expect(label(rec('HB0002'))).toBe('Introduced')
+    expect(label(rec('SB0002'))).toBe('In committee')
+    expect(label(rec('HB0002'))).toBe('In committee')
     expect(label(rec('HB0001'))).toBe('Passed the House')
     expect(label(rec('HB0014'))).toBe('Approved by the Governor')
     expect(label(rec('HJ0005'))).toBe('Adopted')
@@ -52,6 +52,34 @@ describe('mgaStatus', () => {
     expect(label(r)).toBe('Vetoed by the Governor')
     r.Status = 'In the Senate - Motion Postpone Indefinitely (Senator King) Adopted'
     expect(label(r)).toBe('Vetoed by the Governor')
+  })
+
+  it('reads a committee report, a failed vote, and a resolution\'s adoption from the structured fields', () => {
+    const reported = rec('SB0002')
+    reported.ReportDateHouseOfOrigin = '2026-02-10'
+    reported.ReportActionHouseOfOrigin = 'Favorable with Amendments'
+    expect(label(reported)).toBe('Reported favorably')
+
+    const failed = rec('HB0001')
+    failed.ThirdReadingActionOppositeHouse = 'Failed'
+    expect(label(failed)).toBe('Failed')
+
+    // A joint resolution's number sits in the chapter field, and a resolution is done once its chamber adopts it.
+    const jr = rec('HJ0005')
+    jr.Status = 'Passed Enrolled'
+    expect(label(jr)).toBe('Adopted')
+    const hr = { ...rec('SB0002'), BillNumber: 'HR0004', Status: 'In the House - Adopted', ThirdReadingActionHouseOfOrigin: 'Adopted' }
+    expect(label(hr)).toBe('Adopted')
+    // The same reading action on a bill means nothing on its own.
+    expect(label({ ...hr, BillNumber: 'HB0004' })).toBe('In committee')
+  })
+
+  it('writes Maryland\'s own codes, never LegiScan\'s', () => {
+    for (const code of Object.values(MGA_STATUS)) {
+      expect(code).toBeGreaterThan(200)
+      expect(vocabulary.statuses[code], String(code)).toBeDefined()
+    }
+    expect(Object.keys(vocabulary.statuses).map(Number).sort((a, b) => a - b)).toEqual(Object.values(MGA_STATUS))
   })
 
   it('calls a bill with no first reading pre-filed', () => {
@@ -89,7 +117,7 @@ describe('buildMgaBill', () => {
     const b = await buildMgaBill(rec('HB0001'), '2026RS', 3000000101, 'hash', SESSION, ids)
     expect(b.bill_number).toBe('HB1')
     expect(b.state).toBe('MD')
-    expect(b.status).toBe(3)
+    expect(b.status).toBe(MGA_STATUS.passedHouse)
     expect(b.body).toBe('H')
     expect(b.current_body).toBe('S')
 

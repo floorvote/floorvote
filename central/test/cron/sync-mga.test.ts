@@ -147,7 +147,7 @@ describe('the Maryland sync', () => {
 
     expect((await db.select().from(schema.providerRecords).all()).length).toBe(sample.length)
     const hb1 = await billByNumber('HB1')
-    expect(hb1).toMatchObject({ provider: 'mga', state: 'MD', status: 3 })
+    expect(hb1).toMatchObject({ provider: 'mga', state: 'MD', status: 204 })
     // HB 1 and its cross-file SB 2 share a title, so both match "cost recovery".
     expect(queuedIds(ingestor).sort()).toEqual([hb1!.billId, (await billByNumber('SB2'))!.billId].sort())
   })
