@@ -1,5 +1,6 @@
 import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
 import { MGA_BASE, type MgaRecord } from './client'
+import { MGA_STATUS_BASE } from './vocabulary'
 
 /**
  * Pure mapping from Maryland General Assembly records (client.ts) to the
@@ -16,33 +17,76 @@ export const MGA_STATE = 'MD'
 /** LegiScan's state_id for Maryland, so MGA rows look like MD rows everywhere. */
 export const MD_STATE_ID = 20
 
+/**
+ * Maryland's status codes (vocabulary.ts), named for the step. The file
+ * itself has none.
+ */
+export const MGA_STATUS = {
+  prefiled: MGA_STATUS_BASE + 1,
+  inCommittee: MGA_STATUS_BASE + 2,
+  reportedFavorably: MGA_STATUS_BASE + 3,
+  passedHouse: MGA_STATUS_BASE + 4,
+  passedSenate: MGA_STATUS_BASE + 5,
+  passedGeneralAssembly: MGA_STATUS_BASE + 6,
+  unfavorableReport: MGA_STATUS_BASE + 7,
+  failed: MGA_STATUS_BASE + 8,
+  postponed: MGA_STATUS_BASE + 9,
+  withdrawn: MGA_STATUS_BASE + 10,
+  vetoed: MGA_STATUS_BASE + 11,
+  adopted: MGA_STATUS_BASE + 12,
+  approved: MGA_STATUS_BASE + 13,
+  enactedUnsigned: MGA_STATUS_BASE + 14,
+  enactedOverVeto: MGA_STATUS_BASE + 15,
+  enactedSubjectToReferendum: MGA_STATUS_BASE + 16,
+} as const
+
 /** Outcomes the Governor or the constitution decides: the file gives them no date. */
-const UNDATED_OUTCOMES = new Set([6, 7, 8, 9, 10, 11])
+const UNDATED_OUTCOMES = new Set<number>([
+  MGA_STATUS.vetoed, MGA_STATUS.adopted, MGA_STATUS.approved, MGA_STATUS.enactedUnsigned,
+  MGA_STATUS.enactedOverVeto, MGA_STATUS.enactedSubjectToReferendum,
+])
 
 /**
  * The code an MGA bill stores in `bills.status` (labeled in vocabulary.ts).
  * The file's own Status field is the last action as free text (over a
- * thousand distinct values a session), so the code is derived from the
- * structured fields, and the text is kept as the last action.
+ * thousand distinct values a session), so the code comes from the structured
+ * fields where they say enough, and from the Status text only for outcomes
+ * they don't record: how an act became law, a veto, a withdrawal, and a
+ * motion that ended the bill. The text is kept as the last action.
  */
 export function mgaStatus(r: MgaRecord): number {
   const s = r.Status ?? ''
-  if (/Veto Override/i.test(s)) return 8
-  if (/subject to constitutional referendum/i.test(s)) return 9
-  if (/Article II, Section 17\(c\)/i.test(s)) return 7
-  if (/Joint Resolution \d+/i.test(s)) return 10
-  if (r.ChapterNumber) return 6
-  if (/^Vetoed by the Governor/i.test(s)) return 11
+  const chapter = (r.ChapterNumber ?? '').trim().toUpperCase()
+  if (/Veto Override/i.test(s)) return MGA_STATUS.enactedOverVeto
+  if (/subject to constitutional referendum/i.test(s)) return MGA_STATUS.enactedSubjectToReferendum
+  if (/Article II, Section 17\(c\)/i.test(s)) return MGA_STATUS.enactedUnsigned
+  // A joint resolution's number goes in the chapter field ("JR0003").
+  if (chapter.startsWith('JR') || /Joint Resolution \d+/i.test(s)) return MGA_STATUS.adopted
+  if (chapter) return MGA_STATUS.approved
+  if (/^Vetoed by the Governor/i.test(s)) return MGA_STATUS.vetoed
   // Passed, no chapter, and back on the floor: a veto override vote deferred
   // ("Special Order vote on veto until next session") or postponed for good.
-  if (r.PassedByMGA && /veto|Postpone Indefinitely/i.test(s)) return 11
-  if (/Withdrawn/i.test(s)) return 13
-  if (/Unfavorable Report/i.test(s)) return 12
-  if (/Postpone Indefinitely.*Adopted/i.test(s)) return 14
-  if (r.PassedByMGA) return 5
-  if (/^Passed/i.test(r.ThirdReadingActionHouseOfOrigin ?? '')) return originChamber(r) === 'H' ? 3 : 4
-  if (r.FirstReadingDateHouseOfOrigin) return 2
-  return 1
+  if (r.PassedByMGA && /veto|Postpone Indefinitely/i.test(s)) return MGA_STATUS.vetoed
+  if (/Withdrawn/i.test(s) || [r.ReportActionHouseOfOrigin, r.ReportActionOppositeHouse].some(a => /^Withdrawn/i.test(a ?? ''))) {
+    return MGA_STATUS.withdrawn
+  }
+  if (/Unfavorable Report/i.test(s)) return MGA_STATUS.unfavorableReport
+  if (/Postpone Indefinitely.*Adopted/i.test(s)) return MGA_STATUS.postponed
+  // A House or Senate resolution is done once its own chamber adopts it.
+  const readings = [r.SecondReadingActionHouseOfOrigin, r.ThirdReadingActionHouseOfOrigin]
+  if (mgaBillType(r.BillNumber).type === 'R' && (r.PassedByMGA || readings.some(a => /^Adopted/i.test(a ?? '')))) {
+    return MGA_STATUS.adopted
+  }
+  if (r.PassedByMGA) return MGA_STATUS.passedGeneralAssembly
+  if ([r.ThirdReadingActionHouseOfOrigin, r.ThirdReadingActionOppositeHouse].some(a => /^Failed/i.test(a ?? ''))) {
+    return MGA_STATUS.failed
+  }
+  if (/^Passed/i.test(r.ThirdReadingActionHouseOfOrigin ?? '')) {
+    return originChamber(r) === 'H' ? MGA_STATUS.passedHouse : MGA_STATUS.passedSenate
+  }
+  if (/^Favorable/i.test(r.ReportActionHouseOfOrigin ?? '')) return MGA_STATUS.reportedFavorably
+  if (r.FirstReadingDateHouseOfOrigin) return MGA_STATUS.inCommittee
+  return MGA_STATUS.prefiled
 }
 
 /** "HB0001" → "HB1", as LegiScan and the MGA's own pages write it. */
@@ -66,10 +110,11 @@ function otherChamber(c: 'H' | 'S'): 'H' | 'S' {
 
 const CHAMBER_NAME = { H: 'House', S: 'Senate' } as const
 
-function billType(billNumber: string): { type: string; typeId: string } {
-  const prefix = /^[A-Z]+/.exec(billNumber)?.[0] ?? ''
+/** HB/SB bills, HJ/SJ joint resolutions, and HR/SR resolutions of one chamber. */
+export function mgaBillType(billNumber: string): { type: string; typeId: string } {
+  const prefix = /^[A-Z]+/.exec(billNumber.trim())?.[0] ?? ''
   if (prefix === 'HJ' || prefix === 'SJ') return { type: 'JR', typeId: '3' }
-  if (prefix === 'HS' || prefix === 'SR') return { type: 'R', typeId: '2' }
+  if (prefix === 'HR' || prefix === 'SR') return { type: 'R', typeId: '2' }
   return { type: 'B', typeId: '1' }
 }
 
@@ -170,14 +215,84 @@ export interface MgaIds {
   person(name: string): number
   /** Central document id, by key (see mgaDocKeys). */
   doc(key: string): number
+  /** Central subject id, by key (see mgaSubjectKeys). */
+  subject(key: string): number
 }
 
 /** Every document key buildMgaBill asks MgaIds for. */
 export function mgaDocKeys(sessionCode: string, r: MgaRecord): string[] {
   return [
     ...mgaTextVersions(r).map(v => `${sessionCode}/${r.BillNumber}${v}`),
-    `${sessionCode}/${r.BillNumber}/fiscal-note`,
+    ...(hasFiscalNote(r) ? [`${sessionCode}/${r.BillNumber}/fiscal-note`] : []),
   ]
+}
+
+/**
+ * The Department of Legislative Services writes a fiscal and policy note for
+ * every bill and joint resolution once it is introduced, and none for a
+ * resolution of one chamber.
+ */
+function hasFiscalNote(r: MgaRecord): boolean {
+  return !!r.FirstReadingDateHouseOfOrigin && mgaBillType(r.BillNumber).type !== 'R'
+}
+
+/**
+ * The MGA's subjects: broad ones ("Utility Regulation") and narrow index
+ * terms, each with a short code. Keyed by kind and code, since the two lists
+ * are separate code sets.
+ */
+function subjectList(r: MgaRecord): { key: string; name: string }[] {
+  return [
+    ...(r.BroadSubjects ?? []).map(s => ({ key: `broad/${s.Code}`, name: s.Name })),
+    ...(r.NarrowSubjects ?? []).map(s => ({ key: `narrow/${s.Code}`, name: s.Name })),
+  ]
+}
+
+/** Every subject key buildMgaBill asks MgaIds for. */
+export function mgaSubjectKeys(r: MgaRecord): string[] {
+  return subjectList(r).map(s => s.key)
+}
+
+/**
+ * A subject as members read it. Narrow index terms carry cross-references
+ * for the printed index ("Contracts -see also- Procurement", "Work, Labor,
+ * and Employment -see also- JobTrn; Leave; etc."), which aren't part of the
+ * subject.
+ */
+function subjectName(name: string): string {
+  return name.replace(/\s*-see also-.*$/i, '').trim()
+}
+
+/** "CH0775" → "Chapter 775 of 2026", "JR0003" → "Joint Resolution 3 of 2026". */
+function chapterExtra(chapter: string, year: number): string | null {
+  const m = /^(CH|JR)0*(\d+)$/.exec(chapter.trim().toUpperCase())
+  if (!m) return chapter.trim() || null
+  return `${m[1] === 'CH' ? 'Chapter' : 'Joint Resolution'} ${m[2]} of ${year}`
+}
+
+/**
+ * The statutes a bill affects, one article a line: "Public Utilities
+ * § 4-504", or "Education §§ 7-424, 7-425".
+ */
+function statutesExtra(statutes: MgaRecord['Statutes'] | null): string | null {
+  const lines = (statutes ?? []).map(st => {
+    const sections = (st.Sections ?? []).map(s => s.Section?.trim()).filter(Boolean)
+    const title = st.Article?.Title?.trim() ?? ''
+    if (sections.length === 0) return title
+    return `${title} ${sections.length === 1 ? '§' : '§§'} ${sections.join(', ')}`.trim()
+  }).filter(Boolean)
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
+/** The extras (vocabulary.ts) for one record. A flag shows only when it's set. */
+export function mgaExtras(r: MgaRecord, year: number): NonNullable<CentralMeasure['extras']> {
+  return {
+    chapter: chapterExtra(r.ChapterNumber ?? '', year),
+    statutes: statutesExtra(r.Statutes),
+    emergency: r.EmergencyBill ? 'Yes' : null,
+    constitutionalAmendment: r.ConstitutionalAmendment ? 'Yes' : null,
+    chamberInteraction: r.InteractionBetweenChambers?.trim() || null,
+  }
 }
 
 /**
@@ -198,6 +313,53 @@ function splitSponsor(full: string): { role: string; name: string } {
   return m ? { role: m[1], name: m[2] } : { role: '', name: full }
 }
 
+/**
+ * The committee a bill waits in: its chamber of origin's primary committee
+ * until it is reported or leaves committee, then the second chamber's
+ * primary committee from that chamber's first reading until its report.
+ * Null once no committee holds it.
+ */
+function pendingCommittee(r: MgaRecord, status: number): { chamber: 'H' | 'S'; name: string } | null {
+  const origin = originChamber(r)
+  const name = (n: string | null) => n?.trim() || null
+  if (status === MGA_STATUS.inCommittee) {
+    const n = name(r.CommitteePrimaryOrigin)
+    return n ? { chamber: origin, name: n } : null
+  }
+  if ((status === MGA_STATUS.passedHouse || status === MGA_STATUS.passedSenate) && r.FirstReadingDateOppositeHouse && !r.ReportDateOppositeHouse) {
+    const n = name(r.CommitteePrimaryOpposite)
+    return n ? { chamber: otherChamber(origin), name: n } : null
+  }
+  return null
+}
+
+/**
+ * A committee's native key in central's id table: its chamber and its name,
+ * with case and spacing folded. Both chambers have committees of the same
+ * name (each has a Rules committee), and they're different committees.
+ */
+export function mgaCommitteeKey(chamber: string, name: string): string {
+  return `${chamber}/${name.trim().replace(/\s+/g, ' ').toLowerCase()}`
+}
+
+/**
+ * Give the measure's pending committee and each referral their central
+ * committee ids, minted from central's id table (kind 'committee') by
+ * mgaCommitteeKey, so every bill referred to a committee points at the same
+ * committees row.
+ */
+export async function assignMgaCommitteeIds(
+  measure: CentralMeasure,
+  ids: (kind: string, nativeKeys: readonly string[]) => Promise<Map<string, number>>,
+): Promise<void> {
+  const committee = measure.committee && !Array.isArray(measure.committee) ? measure.committee : null
+  const named = [...measure.referrals, ...(committee ? [committee] : [])]
+  if (named.length === 0) return
+  const byKey = await ids('committee', named.map(c => mgaCommitteeKey(c.chamber, c.name)))
+  for (const c of named) c.committee_id = byKey.get(mgaCommitteeKey(c.chamber, c.name)) ?? 0
+  if (committee) measure.pending_committee_id = committee.committee_id
+}
+
 export interface MgaSession { session_id: number; session_name: string; year_start: number; year_end: number }
 
 export async function buildMgaBill(
@@ -207,7 +369,7 @@ export async function buildMgaBill(
   const origin = originChamber(r)
   const status = mgaStatus(r)
   const history = milestones(r)
-  const type = billType(r.BillNumber)
+  const type = mgaBillType(r.BillNumber)
   const paths = docPaths(sessionCode, r.BillNumber)
   const yearStart = `${session.year_start}-01-01`
 
@@ -227,8 +389,7 @@ export async function buildMgaBill(
     }
   })
 
-  // Every bill and joint resolution gets a fiscal and policy note.
-  const supplements: CentralMeasure['supplements'] = r.FirstReadingDateHouseOfOrigin ? [{
+  const supplements: CentralMeasure['supplements'] = hasFiscalNote(r) && r.FirstReadingDateHouseOfOrigin ? [{
     supplement_id: ids.doc(`${sessionCode}/${r.BillNumber}/fiscal-note`), date: r.FirstReadingDateHouseOfOrigin,
     type_id: 1, type: 'Fiscal Note', title: 'Fiscal and Policy Note', description: '',
     mime: 'application/pdf', url: '', state_link: paths.fiscalNote, supplement_size: 0, supplement_hash: '',
@@ -260,6 +421,7 @@ export async function buildMgaBill(
     }
   })
 
+  // Committee ids come from the id table, in fetchMeasure (assignMgaCommitteeIds).
   const referrals: CentralMeasure['referrals'] = []
   const firstOrigin = r.FirstReadingDateHouseOfOrigin
   const firstOpposite = r.FirstReadingDateOppositeHouse
@@ -279,16 +441,17 @@ export async function buildMgaBill(
     ? [{ type_id: 1, type: 'Cross-filed', sast_bill_number: mgaDisplayNumber(crossfile), sast_bill_id: crossfileId }]
     : []
 
-  const subjectCodes = [...(r.BroadSubjects ?? []), ...(r.NarrowSubjects ?? [])]
-  const subjects: CentralMeasure['subjects'] = await Promise.all(subjectCodes.map(async s => ({
-    // Subjects carry a short code, not a number; this keeps the id stable per code.
-    subject_id: parseInt((await sha256Hex(`mga-subject|${s.Code}`)).slice(0, 7), 16),
-    subject_name: s.Name,
-  })))
+  // Broad subjects first. A narrow term that reads the same as one listed already is left out.
+  const subjects: CentralMeasure['subjects'] = []
+  for (const s of subjectList(r)) {
+    const name = subjectName(s.name)
+    if (name && !subjects.some(x => x.subject_name === name)) subjects.push({ subject_id: ids.subject(s.key), subject_name: name })
+  }
 
   const historyOut = history.map(h => ({ date: h.date, action: h.action, chamber: h.chamber, chamber_id: 0, importance: h.importance }))
 
   const current = /^In the Senate/.test(r.Status ?? '') ? 'S' : /^In the House/.test(r.Status ?? '') ? 'H' : origin
+  const pending = pendingCommittee(r, status)
   return {
     bill_id: billId,
     bill_number: number,
@@ -310,7 +473,7 @@ export async function buildMgaBill(
     pending_committee_id: 0,
     session_id: session.session_id,
     session,
-    committee: null,
+    committee: pending ? { committee_id: 0, chamber: pending.chamber, chamber_id: 0, name: pending.name } : null,
     referrals,
     progress: [],
     sponsors,
@@ -322,5 +485,6 @@ export async function buildMgaBill(
     calendar,
     amendments: [],
     supplements,
+    extras: mgaExtras(r, session.year_start),
   }
 }

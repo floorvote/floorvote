@@ -5,7 +5,7 @@ import { nowDb } from '../lib/dbTime'
 import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
-import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
+import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -82,7 +82,7 @@ export async function runSnapshotSync(
     // A snapshot is the only kind of pull, so only the session's full-pass hours run it.
     if (!force && decideMode(session, etHour) !== 'full') continue
     console.log(`[sync-${provider.id}] full pass: ${session.sessionName}`)
-    const counts = await runSnapshotPass(provider, session, covering, env, db, ctx)
+    const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force)
     reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
     await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
   }
@@ -198,6 +198,14 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
   if (stmts.length > 0) await db.batch(stmts as [typeof stmts[0], ...typeof stmts])
 }
 
+/**
+ * One full pass of a session. A forced run reads in full, and so does a
+ * session with no stored ETag. Otherwise the provider gets the ETag of the
+ * last snapshot a pass finished, and a feed that says nothing changed skips
+ * the pass. The new ETag is stored only once the pass has queued and sent
+ * everything, and only while the provider still owns the state, so a pass
+ * that fails or loses the state to a claim midway is read in full next time.
+ */
 async function runSnapshotPass(
   provider: SnapshotProvider,
   session: SessionRow,
@@ -205,15 +213,27 @@ async function runSnapshotPass(
   env: Env,
   db: Db,
   ctx: ProviderContext,
+  force: boolean,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
-  const { records, people: listedPeople } = await provider.snapshot(storedSession(session), ctx)
+  const etag = force ? null : session.snapshotEtag ?? null
+  const snapshot = await provider.snapshot({ ...storedSession(session), etag }, ctx)
+  const { records, people: listedPeople } = snapshot
   if (listedPeople && listedPeople.length > 0) await upsertProviderPeople(db, provider.id, listedPeople)
-  if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
-
-  const entries = await storeRecords(provider, session, records, db, ctx)
+  // An empty answer is nothing new. An unchanged one still gets the details
+  // refresh, which catches what the listing doesn't show.
+  if (!snapshot.unchanged && records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
   const queue = ingestQueueFor(provider, env)
-  const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
-    { deferQueuedUpdates: true }))
+  const queued = new Set<number>()
+  if (snapshot.unchanged) {
+    console.log(`[sync-${provider.id}] ${session.sessionName} unchanged since its last pass`)
+  } else {
+    const entries = await storeRecords(provider, session, records, db, ctx)
+    for (const id of await applyMasterList(session, entries, covering, env, db, queue, { deferQueuedUpdates: true })) queued.add(id)
+    const newEtag = snapshot.etag ?? null
+    if (newEtag !== (session.snapshotEtag ?? null) && await ownerOfState(db, session.state) === provider.id) {
+      await db.update(sessions).set({ snapshotEtag: newEtag }).where(eq(sessions.sessionId, session.sessionId))
+    }
+  }
 
   const refreshed = provider.detailsRefresh
     ? await refreshStaleDetails(provider, provider.detailsRefresh, session.sessionId, queued, queue, db)
