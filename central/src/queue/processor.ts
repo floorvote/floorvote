@@ -269,13 +269,18 @@ export async function ingestMeasure(
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
   // new, and like its other data they aren't reported as changes. Nor is a
-  // cutover's carry-over.
-  let calendarPlan: CalendarPlan
-  if (carriedFrom) {
-    const carry = carryCalendar(carriedFrom, provider, await readCalendarRows(db, bill.bill_id), bill.calendar ?? [], now)
-    const pulled = planCalendarPull(provider, bill.bill_id, carry.rows, bill.calendar ?? [], bill.change_hash, now)
+  // cutover's carry-over. A carried bill whose measure came with no calendar
+  // at all is no evidence about its entries, so the carry waits for the next
+  // ingest, and instances' calendars are left as they are meanwhile.
+  let calendarPlan: CalendarPlan | null
+  const carryWaits = !!carriedFrom && bill.calendar === undefined
+  if (carriedFrom && bill.calendar !== undefined) {
+    const carry = carryCalendar(carriedFrom, provider, await readCalendarRows(db, bill.bill_id), bill.calendar, now)
+    const pulled = planCalendarPull(provider, bill.bill_id, carry.rows, bill.calendar, bill.change_hash, now)
     const writes = new Map([...carry.writes, ...pulled.writes].map(r => [r.id, r]))
     calendarPlan = { ...pulled, writes: [...writes.values()], changes: [] }
+  } else if (carryWaits) {
+    calendarPlan = null
   } else {
     calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar, bill.change_hash, now)
     if (existingBillRow) {
@@ -335,7 +340,8 @@ export async function ingestMeasure(
       // change, so instances still see it moved and fetch it again.
       updatedAt:          detectedChanges.length > 0 || carriedFrom ? now : sql`updated_at`,
       textsFetchedAt:     now,
-      carriedFrom:        null,
+      // Kept while the calendar carry-over waits for a measure with a calendar.
+      carriedFrom:        carryWaits ? existingBillRow!.carriedFrom : null,
     },
   })
 
@@ -409,7 +415,7 @@ export async function ingestMeasure(
   }
 
   // Calendar rows are updated in place, never deleted (lib/billCalendar.ts).
-  await writeCalendarRows(db, calendarPlan.writes)
+  if (calendarPlan) await writeCalendarRows(db, calendarPlan.writes)
 
   // The provider's extras. Display only: change detection above never sees
   // them, so an extra changing alone notifies no one.
@@ -563,10 +569,10 @@ export async function ingestMeasure(
   // thousands, and one query each would pass D1's per-invocation query limit.
   if (memberVotes.length > 0) await writeMemberVotes(env.DB, memberVotes, { replace: true })
 
-  const calendarBlock: CalendarBlock = {
+  const calendarBlock: CalendarBlock | undefined = calendarPlan ? {
     events: calendarBlockEvents(provider, calendarPlan.live),
     changes: calendarChanges,
-  }
+  } : undefined
   await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
 }
 

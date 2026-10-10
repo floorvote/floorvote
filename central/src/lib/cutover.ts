@@ -335,9 +335,10 @@ export async function planCutover(env: Env, db: Db, state: string, toId: string,
     for (const m of moved) {
       const rows = liveRows.get(m.old.billId)
       const measure = measures.get(m.old.billId)
-      if (!rows || !measure) continue
+      // A measure with no calendar at all says nothing about the entries, and its carry-over waits for one that does.
+      if (!rows || !measure?.calendar) continue
       calendar.bills++
-      const carry = carryCalendar(from, to, rows, measure.calendar ?? [], now)
+      const carry = carryCalendar(from, to, rows, measure.calendar, now)
       const bill = { billId: m.old.billId, number: m.old.number }
       for (const k of carry.kept) {
         calendar.kept.push({ ...bill, identityKey: k.identityKey, kind: calendarKind(to, k.row.typeId), date: k.row.date, from: k.before.description, to: k.row.description })

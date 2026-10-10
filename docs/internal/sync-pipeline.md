@@ -133,7 +133,8 @@ If anything fails, nothing is written and the state stays on its provider. Once 
 - An old entry nothing pairs with is cancelled at once, since nothing will list it again.
 - The new provider's other entries arrive under identities of their own.
 
-So an entry that doesn't match is cancelled and recreated once, and the dry run lists it.
+So an entry that doesn't match is cancelled and recreated once, and the dry run lists it. An empty calendar counts, and cancels every old entry. A measure that comes with no calendar at all (LIMS sends none for a record with no history) says nothing, so the carry-over waits: the ingest sends instances no calendar, and `carried_from` stays until a later ingest brings one, which is quiet too.
+
 **Session slugs.** A moved bill moves to the new provider's session. When that session's name asks for the slug the old session holds, as LIMS's "2025-2026 Council Period 26" does beside LegiScan's, it gets `-2` (`cp26-2`), since slugs never change (#290). Instances store the new slug when the bill next reaches them, so its URL becomes `/DC/cp26-2/B26-0400`. Old links keep resolving through the tenant's computed-slug fallback while no other bill answers to them exactly.
 
 **What stays behind.** The losing provider's unmatched bills keep their rows and links, frozen. Its committee rows stay, with no bill pointing at them, and unmatched legislators keep their rows. R2 copies of the cleared documents stay in the bucket.

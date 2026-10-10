@@ -396,6 +396,36 @@ describe('a cutover', () => {
     expect(msg.changes).toEqual([expect.objectContaining({ changeType: 'action_added', detail: '2026-09-01' })])
   })
 
+  it('waits to carry the calendar over until LIMS sends one', async () => {
+    // LIMS answers with no history for B26-0400, which is no calendar at all.
+    const rec = bulk['B26-0400']
+    const serve = (history: object[]) => {
+      feed['BulkData/1/26'] = () => json(Object.values(bulk).filter(r => r.legislationCategory === 'Bill' && r.legislationNumber !== 'B26-0400')
+        .concat({ ...rec, legislationHistory: history }))
+    }
+    serve([])
+    const { run } = await cutOver()
+    await drain(run.limsQueue, run)
+    const quiet = sentToTenant(run).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    expect(quiet.changes).toBeUndefined()
+    // No calendar block: instances keep the entries they have, and so does central.
+    expect(quiet.calendar).toBeUndefined()
+    expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: 'legiscan' })
+    expect(await row('SELECT COUNT(*) AS n FROM bill_calendar WHERE bill_id = ? AND cancelled_at IS NULL', B0400)).toEqual({ n: 3 })
+
+    // The next answer has its history back, and the carry-over happens then.
+    serve(rec.legislationHistory as object[])
+    const next = makeEnv()
+    const { runSnapshotSync } = await import('../../src/cron/sync-snapshots')
+    const { lims } = await import('../../src/providers/lims')
+    await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
+    await drain(next.limsQueue, next)
+    const carried = sentToTenant(next).find((m: any) => m.billId === toHandle(B0400) && !m.stubOnly)
+    expect(carried.changes).toBeUndefined()
+    expect(carried.calendar.events.map((e: any) => e.identityKey)).toEqual(expect.arrayContaining(['1|committee on youth affairs', '3|committee on youth affairs']))
+    expect(await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0400)).toEqual({ carried_from: null })
+  })
+
   it('leaves the state on LegiScan, with nothing written, when it fails partway through', async () => {
     const run = makeEnv()
     const before = await snapshotTables()
