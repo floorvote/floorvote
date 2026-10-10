@@ -37,9 +37,17 @@ export async function upsertCommittees(db: Db, measure: CentralMeasure, provider
   // LegiScan sends `committee: []` for a bill with no pending committee.
   if (measure.committee && !Array.isArray(measure.committee)) add(measure.committee)
   for (const r of measure.referrals ?? []) add(r)
-  if (named.size === 0) return
+  await upsertCommitteeRows(db, [...named.values()], provider)
+}
 
-  const rows = [...named.values()]
+/**
+ * Upsert committees rows a provider names, under the rule above: a row keeps
+ * the provider and id that first wrote it, and takes its name and chamber
+ * from its latest session. Also how body events (lib/bodyEvents.ts) record
+ * the committees holding them.
+ */
+export async function upsertCommitteeRows(db: Db, rows: (typeof committees.$inferInsert)[], provider: Provider): Promise<void> {
+  if (rows.length === 0) return
   const inserts = []
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     inserts.push(db.insert(committees).values(rows.slice(i, i + INSERT_CHUNK)).onConflictDoUpdate({

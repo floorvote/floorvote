@@ -7,6 +7,9 @@ import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
 import type { Env } from '../types'
 import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/billCalendar'
+import { bodyEventDetails, calendarCoverage, type BodyEventDetail } from '../lib/bodyEvents'
+import { coverageCapabilities } from '../lib/capabilities'
+import { listStateOwnership } from '../lib/stateProviders'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
@@ -541,6 +544,39 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
   })))
 })
 
+// The legislature's own calendar for each state the tenant covers whose
+// provider publishes one (lib/bodyEvents.ts), dated from `from` to `to`, with
+// each event's calendar UID, agenda bills, and the bill calendar entries it
+// covers. Also the capabilities of the states the tenant covers (a state left
+// out has none), so the instance can gate features on them. Each state's
+// events come from the provider that owns it. Cancelled events come too,
+// marked, so the instance cancels its copy.
+tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const from = c.req.query('from') ?? ''
+  const to = c.req.query('to') ?? ''
+  const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d)
+  if (!isDate(from) || !isDate(to) || from > to) return c.json({ error: 'from and to (YYYY-MM-DD, from <= to) are required' }, 400)
+  // At most a year, which bounds the read.
+  if (Date.parse(to) - Date.parse(from) > 366 * 86400_000) return c.json({ error: 'at most a year from from to to' }, 400)
+
+  const db = drizzle(c.env.DB, { schema })
+  const tenant = await db.select({ stateCoverage: schema.tenants.stateCoverage }).from(schema.tenants)
+    .where(eq(schema.tenants.tenantId, tenantId)).get()
+  let coverage: string[] = []
+  try { coverage = tenant ? JSON.parse(tenant.stateCoverage) as string[] : [] } catch { coverage = [] }
+  const owners = new Map((await listStateOwnership(db)).map(r => [r.state, r.provider]))
+  const capabilities = coverageCapabilities(owners, coverage)
+
+  const events: BodyEventDetail[] = []
+  for (const [state, caps] of Object.entries(capabilities)) {
+    if (!caps.bodyEvents) continue
+    const provider = findProvider(owners.get(state))
+    if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to))
+  }
+  return c.json({ capabilities, events })
+})
+
 tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const db = drizzle(c.env.DB, { schema })
@@ -610,15 +646,15 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
       }
     }
 
-    const bodies = chunk.map(r => {
+    const bodies = await Promise.all(chunk.map(async r => {
       const msg: Record<string, unknown> = { tenantId, billId: toHandle(r.billId), forceMetadata: true }
       const cal = calByBillId.get(r.billId)
       if (targeted && cal) {
         const provider = findProvider(cal.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
-        msg.calendar = { events: calendarBlockEvents(provider, cal.rows), changes: [] }
+        msg.calendar = { events: calendarBlockEvents(provider, cal.rows, await calendarCoverage(db, provider, r.billId, cal.rows)), changes: [] }
       }
       return msg
-    })
+    }))
     const outcome = await deliverBatchToTenant(c.env, tenantId, queueId, bodies)
     // Invariant backstop: the upfront guard already rejects the no-delivery-path case,
     // so this can't normally fire — it only trips if that guard ever drifts from

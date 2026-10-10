@@ -11,6 +11,7 @@ import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
+import { runBodyEventSync } from '../cron/body-events'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
@@ -55,7 +56,9 @@ async function runSnapshotNow(c: Context<{ Bindings: Env }>, id: string) {
   if (!providerConfigured(provider, c.env)) return c.json({ error: `provider "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
   const passes = await runSnapshotSync(provider, c.env, db, { force: true })
-  return c.json({ ok: true, passes })
+  // The provider's own calendar too, when it publishes one.
+  const bodyEvents = provider.listBodyEvents ? await runBodyEventSync(provider, c.env, db) : undefined
+  return c.json({ ok: true, passes, ...(bodyEvents ? { bodyEvents } : {}) })
 }
 adminRoutes.post('/providers/:id/sync', c => runSnapshotNow(c, c.req.param('id')))
 adminRoutes.post('/lims-sync', c => runSnapshotNow(c, 'lims'))

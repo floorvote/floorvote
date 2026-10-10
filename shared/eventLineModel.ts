@@ -2,7 +2,11 @@ import { color, fontSize, fontWeight, radius } from './tokens'
 import { formatHearingTimeShort } from './hearingTime'
 import { CARD_STYLE } from './billCardModel'
 
-export interface EventEdgeSource { source: string }
+export interface EventEdgeSource {
+  source: string
+  /** A synced entry's kind, from central: 'hearing', 'markup', 'meeting', or 'deadline'. */
+  kind?: string | null
+}
 
 export interface EventForBodyModel {
   description?: string | null
@@ -51,12 +55,16 @@ export interface EventSourceDescriptor {
   label: string
 }
 
-// Source marker for an event: gavel for data-pulled hearings, calendar_today
-// for custom/editable events. Replaces the old navy/blue left-edge color.
+/** The label of a synced event by its kind. An event without one is a hearing, as every synced event was before kinds. */
+const KIND_LABELS: Record<string, string> = { markup: 'Markup', meeting: 'Meeting', deadline: 'Deadline' }
+
+// Source marker for an event: gavel for data-pulled events (a bill's hearing,
+// or the legislature's own calendar), labeled by kind, and calendar_today for
+// custom/editable events. Replaces the old navy/blue left-edge color.
 export function eventSourceIcon(event: EventEdgeSource): EventSourceDescriptor {
   return event.source === 'custom'
     ? { icon: 'calendar_today', color: color.accentBlue,    tint: color.bgInfo, label: 'Custom event' }
-    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.bgInfo, label: 'Hearing' }
+    : { icon: 'gavel',          color: color.billBadgeNavy, tint: color.bgInfo, label: KIND_LABELS[event.kind ?? ''] ?? 'Hearing' }
 }
 
 // The tinted source-icon tile dimensions, shared by the web EventSourceIcon and

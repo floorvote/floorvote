@@ -73,6 +73,7 @@ import migrationSql76 from '../migrations/0076_bill_status_stage.sql?raw'
 import migrationSql77 from '../migrations/0077_bill_session_slug.sql?raw'
 import migrationSql78 from '../migrations/0078_expired_status_enacted.sql?raw'
 import migrationSql79 from '../migrations/0079_calendar_event_kind.sql?raw'
+import migrationSql82 from '../migrations/0082_calendar_event_covered_by.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -197,6 +198,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql77, '0077_bill_session_slug'),
     parseMigration(migrationSql78, '0078_expired_status_enacted'),
     parseMigration(migrationSql79, '0079_calendar_event_kind'),
+    parseMigration(migrationSql82, '0082_calendar_event_covered_by'),
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)

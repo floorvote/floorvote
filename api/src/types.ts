@@ -99,6 +99,9 @@ export type TenantQueueMessage = {
       location: string | null
       description: string | null
       eventHash: string | null
+      // The UID of the body event that covers the entry, or null. Sent only
+      // for a provider with a calendar of its own (lib/bodyEvents.ts).
+      coveredBy?: string | null
     }[]
     changes: {
       changeType: 'hearing_added' | 'hearing_changed' | 'hearing_cancelled'

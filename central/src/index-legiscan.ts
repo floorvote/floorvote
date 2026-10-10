@@ -6,6 +6,7 @@ import { runSync } from './cron/sync'
 import { assignSessionSlugs } from './lib/sessionSlugs'
 import { loadStateOwners } from './lib/stateProviders'
 import { isSnapshotProvider, runSnapshotSync } from './cron/sync-snapshots'
+import { runBodyEventSync } from './cron/body-events'
 import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
@@ -100,6 +101,10 @@ export default {
     // One job per snapshot provider, so one failing never stops another.
     for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
       ctx.waitUntil(runJob(env, `${provider.id}-sync`, () => runSnapshotSync(provider, env, db)))
+    }
+    // The legislature's own calendar, for providers that publish one, as its own job.
+    for (const provider of PROVIDERS.filter(p => p.listBodyEvents)) {
+      ctx.waitUntil(runJob(env, `${provider.id}-body-events`, () => runBodyEventSync(provider, env, db)))
     }
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))

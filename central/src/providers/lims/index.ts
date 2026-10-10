@@ -2,6 +2,7 @@ import { getBulkData, getCouncilPeriods, getLegislationDetails, getMembers, type
 import { assignCommitteeIds, buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, toMasterListEntry } from './map'
 import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
+import { hearingUid, limsBodyEvents } from './hearings'
 import { vocabulary } from './vocabulary'
 import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
 
@@ -202,6 +203,17 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
    * day. Terminal statuses (vocabulary.ts) are left alone.
    */
   detailsRefresh: { maxAge: '-2 days', perPass: 50 },
+
+  /**
+   * The Council's own calendar (hearings.ts): one keyless call per month to
+   * the feed behind lims.dccouncil.gov/hearings.
+   */
+  listBodyEvents(_state, range, ctx) {
+    return limsBodyEvents(range, ctx.ids, ctx.logCall)
+  },
+
+  // The UIDs the contributor's fork already gave Council hearings.
+  bodyEventUid: hearingUid,
 
   vocabulary,
 }

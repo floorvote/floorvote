@@ -115,8 +115,13 @@ function outranks(a: CalendarRow, b: CalendarRow): boolean {
   return ((a.date ?? '').localeCompare(b.date ?? '') || (a.time ?? '').localeCompare(b.time ?? '') || a.id.localeCompare(b.id)) > 0
 }
 
-/** A bill's entries as instances receive them: one per identity. */
-export function calendarBlockEvents(provider: Provider, rows: CalendarRow[]): CalendarBlock['events'] {
+/**
+ * A bill's entries as instances receive them: one per identity. For a
+ * provider that publishes the legislature's own calendar, each names the UID
+ * of the body event covering it, or null (`coverage`, from calendarCoverage
+ * in lib/bodyEvents.ts, by row id).
+ */
+export function calendarBlockEvents(provider: Provider, rows: CalendarRow[], coverage?: ReadonlyMap<string, string>): CalendarBlock['events'] {
   return [...representatives(rows).values()]
     .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || (a.time ?? '').localeCompare(b.time ?? '') || a.id.localeCompare(b.id))
     .map(r => ({
@@ -127,6 +132,7 @@ export function calendarBlockEvents(provider: Provider, rows: CalendarRow[]): Ca
       location: r.location,
       description: r.description,
       eventHash: r.eventHash,
+      ...(provider.listBodyEvents ? { coveredBy: coverage?.get(r.id) ?? null } : {}),
     }))
 }
 

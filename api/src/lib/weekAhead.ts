@@ -45,8 +45,12 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const endIso = isoDate(7)  // exclusive
 
   // Query non-cancelled events in the window.
-  // Hearings: only those with at least one linked bill with priority.
-  // Custom/other: all.
+  // Custom: all. Anything else: only with at least one linked bill with
+  // priority. A body event (the legislature's own calendar) links its agenda
+  // bills, so one with a prioritized bill on the agenda is in, and the rest of
+  // the week's Council calendar stays out until instances choose which events
+  // they want (#298). Bill entries link their bill by bill_id, so they never
+  // match, as before.
   const rows = await db
     .select({
       eventId: calendarEvents.id,
@@ -76,7 +80,7 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
         gte(calendarEvents.date, todayIso),
         lt(calendarEvents.date, endIso),
         or(
-          ne(calendarEvents.source, 'hearing'),
+          eq(calendarEvents.source, 'custom'),
           exists(
             db.select({ _: sql`1` })
               .from(calendarEventBills)

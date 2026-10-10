@@ -17,7 +17,9 @@ export interface CalendarEventBill {
 export interface CalendarEvent {
   id: string
   uid: string
-  source: string // 'hearing' | 'custom'
+  source: string // 'hearing' (a bill's entry) | 'custom' | 'body' (the legislature's own calendar)
+  /** A synced event's kind from central ('hearing', 'markup', 'meeting', 'deadline'); null for custom events. */
+  kind?: string | null
   /** Canonical hearing identity (null for custom events); used for deep-link focus. */
   eventHash?: string | null
   /** Every event_hash merged into this entry; the sidebar deep-link focus matches any of them. */

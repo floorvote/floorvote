@@ -106,6 +106,23 @@ describe('processCentralNotification — calendar mirror', () => {
     expect(rows.map(r => r.uid)).toEqual(['hearing-legiscan-999-1-house-cmte-on-elections@ri'])
   })
 
+  it('keeps the body event central says covers an entry, and leaves it when a central sends no cover', async () => {
+    const send = (coveredBy?: string | null) => {
+      const block = calendarBlock('hearing_added')
+      if (coveredBy !== undefined) Object.assign(block.events[0], { coveredBy })
+      return processCentralNotification({ tenantId: 'ri', billId: 'legiscan:999', calendar: block } as any, testEnv as any, getDb(env.DB))
+    }
+    const cover = async () => (await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).get())?.coveredBy
+    await send('council-2405@lims.dccouncil.gov')
+    expect(await cover()).toBe('council-2405@lims.dccouncil.gov')
+    await send()
+    expect(await cover()).toBe('council-2405@lims.dccouncil.gov')
+    await send(null)
+    expect(await cover()).toBeNull()
+    // The cover never touches the SEQUENCE: the entry didn't change.
+    expect((await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).get())?.sequence).toBe(0)
+  })
+
   it('writes a hearing_added feed event for a tracked, non-new bill', async () => {
     await processCentralNotification(
       { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,

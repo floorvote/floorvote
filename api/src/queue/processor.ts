@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
 import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
+import { hearingUid } from '../lib/hearingUid'
 import { billHtmlToText } from '../lib/billText'
 import { matchesKeywords } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -799,12 +800,6 @@ export async function processCentralNotification(
   }
 }
 
-function hearingUid(billId: string, identityKey: string, tenantId: string): string {
-  const slug = identityKey.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-  const billPart = billId.replace(/[^a-z0-9]+/gi, '-')
-  return `hearing-${billPart}-${slug}@${tenantId}`
-}
-
 async function reconcileCalendar(
   db: AppDb,
   billInternalId: string,
@@ -827,11 +822,14 @@ async function reconcileCalendar(
     const existing = await db.select({ id: calendarEvents.id, sequence: calendarEvents.sequence, eventHash: calendarEvents.eventHash, status: calendarEvents.status })
       .from(calendarEvents).where(eq(calendarEvents.uid, uid)).get()
 
+    // The body event shown in the entry's place (lib/bodyEvents.ts). A central
+    // that sends no cover leaves the stored one alone.
+    const cover = 'coveredBy' in e ? { coveredBy: e.coveredBy ?? null } : {}
     if (!existing) {
       await db.insert(calendarEvents).values({
         id: crypto.randomUUID(), uid, billId: billInternalId, source: 'hearing', kind: e.kind ?? null, sequence: 0,
         date: e.date, time: e.time, location: e.location, description: e.description,
-        status: 'confirmed', eventHash: e.eventHash, createdAt: now, updatedAt: now,
+        status: 'confirmed', eventHash: e.eventHash, createdAt: now, updatedAt: now, ...cover,
       })
       changedUids.add(uid)
     } else {
@@ -839,7 +837,7 @@ async function reconcileCalendar(
       const reconfirmed = existing.status === 'cancelled'
       const bump = hashChanged || reconfirmed
       await db.update(calendarEvents).set({
-        billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}),
+        billId: billInternalId, status: 'confirmed', ...(e.kind ? { kind: e.kind } : {}), ...cover,
         date: e.date, time: e.time, location: e.location, description: e.description,
         eventHash: e.eventHash, sequence: bump ? existing.sequence + 1 : existing.sequence, updatedAt: now,
       }).where(eq(calendarEvents.uid, uid))

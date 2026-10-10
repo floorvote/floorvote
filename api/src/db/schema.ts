@@ -353,11 +353,18 @@ export const calendarEvents = sqliteTable('calendar_events', {
   id: text('id').primaryKey(),
   uid: text('uid').notNull().unique(),
   billId: text('bill_id'),
+  // 'hearing': a bill's calendar entry, from central. 'custom': the instance's
+  // own. 'body': an event on a legislature's own calendar, from central
+  // (lib/bodyEvents.ts), which links its agenda bills in calendar_event_bills.
   source: text('source').notNull().default('hearing'),
   // A bill calendar entry's kind, as central sent it: 'hearing', 'markup',
   // 'meeting', or 'deadline' (shared/calendarKinds.ts). Null for custom
   // events, and for an entry central hasn't sent since migration 0079.
   kind: text('kind'),
+  // The calendar UID of the body event central says covers this bill entry
+  // (migration 0082): the entry is shown as that event, so a hearing appears
+  // once. Null for an entry nothing covers, and for every other event.
+  coveredBy: text('covered_by'),
   sequence: integer('sequence').notNull().default(0),
   date: text('date'),
   time: text('time'),

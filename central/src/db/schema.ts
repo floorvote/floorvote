@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, primaryKey, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 export const sessions = sqliteTable('sessions', {
@@ -252,6 +252,45 @@ export const billCalendar = sqliteTable('bill_calendar', {
 }, (t) => [
   index('idx_bill_calendar_bill').on(t.billId),
   index('idx_bill_calendar_date').on(t.date),
+])
+
+// A legislature's own calendar: hearings, roundtables, and meetings, with or
+// without bills on the agenda, kept under the provider's event id and never
+// deleted (lib/bodyEvents.ts, migration 0037).
+export const bodyEvents = sqliteTable('body_events', {
+  id:          integer('id').primaryKey({ autoIncrement: true }),
+  provider:    text('provider').notNull(),
+  eventId:     text('event_id').notNull(),
+  state:       text('state').notNull(),
+  kind:        text('kind').notNull(),
+  type:        text('type'),
+  date:        text('date').notNull(),
+  time:        text('time'),
+  timezone:    text('timezone'),
+  committeeId: integer('committee_id'),
+  committee:   text('committee'),
+  jointWith:   text('joint_with'),
+  location:    text('location'),
+  title:       text('title').notNull(),
+  agendaJson:  text('agenda_json').notNull().default('[]'),
+  url:         text('url'),
+  eventHash:   text('event_hash').notNull(),
+  missedPulls: integer('missed_pulls').notNull().default(0),
+  cancelledAt: text('cancelled_at'),
+  createdAt:   text('created_at').notNull().default(sql`(datetime('now'))`),
+  updatedAt:   text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  uniqueIndex('idx_body_events_provider_event').on(t.provider, t.eventId),
+  index('idx_body_events_state_date').on(t.state, t.date),
+])
+
+// The bills on a body event's agenda.
+export const bodyEventBills = sqliteTable('body_event_bills', {
+  bodyEventId: integer('body_event_id').notNull(),
+  billId:      integer('bill_id').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.bodyEventId, t.billId] }),
+  index('idx_body_event_bills_bill').on(t.billId),
 ])
 
 export const rollCalls = sqliteTable('roll_calls', {

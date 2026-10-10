@@ -39,3 +39,7 @@
 **Calendar entry kind**: what a bill's calendar entry is: a hearing, a markup (a committee acting on the bill, such as a mark-up or an executive session), a meeting, or a deadline (a date set in law for the bill's next step, not a meeting). Central sets it from the provider's vocabulary and sends it with every entry. Avoid: reading an entry's kind from its identity or type id.
 
 **Calendar entry identity**: the key central keeps a bill's calendar entry under for as long as it exists, and that instances build its calendar UID from: the provider's own event id, or else the entry's kind, date, and description, never its position. LegiScan's entries keep the identity they always had (type and description). Changing an entry's identity makes every subscriber's calendar show it cancelled and recreated.
+
+**Body event**: an event on a legislature's own calendar (a hearing, roundtable, mark-up, or meeting, with or without bills on its agenda), from a provider that publishes one, such as DC's Council calendar. Central keeps it under the provider's own event id, and a bill's calendar entry it covers is shown as the body event, so a hearing appears once. Avoid: "council event," which names one legislature's; "hearing without a bill" as the name, since a body event can have bills and can be a meeting.
+
+**Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
