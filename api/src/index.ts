@@ -34,6 +34,7 @@ import { refreshMetadata } from './lib/refreshMetadata'
 import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { runJob } from './lib/jobAlert'
 import { healStalledAiBills, HEAL_MAX_ATTEMPTS } from './lib/healStalledAi'
+import { syncBodyEvents } from './lib/bodyEvents'
 import { nowDb } from './lib/dbTime'
 import { runEmailHealth } from './lib/emailHealthJob'
 import { runInviteBounceCheck } from './lib/inviteBounces'
@@ -341,6 +342,19 @@ export default {
           console.warn(
             `[heal-ai] ${result.cappedOut} bill(s) have hit the ${HEAL_MAX_ATTEMPTS}-attempt heal cap and need manual review`,
           )
+        }
+      }))
+      // The legislature's own calendar for covered states whose provider
+      // publishes one (lib/bodyEvents.ts). Logged rather than thrown, like the
+      // jobs above: a central blip changes no event, and the next hour retries.
+      ctx.waitUntil(runJob(env, 'body-events', async () => {
+        try {
+          const r = await syncBodyEvents(env, db)
+          if (r && (r.upserted || r.cancelled || r.removed || r.covered)) {
+            console.log(`[body-events] upserted=${r.upserted} cancelled=${r.cancelled} removed=${r.removed} covered=${r.covered}`)
+          }
+        } catch (err) {
+          console.error(`[body-events] sync failed, skipping this run: ${describeErrorCauseChain(err)}`)
         }
       }))
       return

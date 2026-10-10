@@ -29,6 +29,19 @@ export interface AppConfig {
   /** Data providers the footer credits, e.g. ["legiscan"] or ["lims"]. Absent = LegiScan. */
   dataSources?: string[]
   accountDeletionEnabled?: boolean
+  /**
+   * What each covered state's data can do, by state, from the provider central
+   * reads it from. A state left out has none. Gate features on these, never on
+   * a state's name.
+   */
+  capabilities?: Record<string, StateCapabilities>
+}
+
+export interface StateCapabilities {
+  /** The legislature's own calendar (hearings without bills) reaches the instance's calendar. */
+  bodyEvents: boolean
+  /** Bills carry deadlines as calendar entries. */
+  deadlines: boolean
 }
 
 interface ConfigValue {

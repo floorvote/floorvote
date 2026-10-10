@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
 import { buildVCalendar, tzidForState, type IcalEvent } from '../lib/ical'
+import { visibleCalendarEvent } from '../lib/calendarVisibility'
 import { hearingBody, customBody, customUrl } from '../lib/calendarIcsBody'
 import { billUrl } from '../../../shared/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
@@ -14,6 +15,12 @@ import { importUid, importEventHash, type ImportRow } from '../lib/calendarImpor
 import type { AppEnv } from '../types'
 
 export const calendarRouter = new Hono<AppEnv>()
+
+/** Custom events and body events link their bills through calendar_event_bills, not bill_id. */
+const linksBills = (source: string) => source === 'custom' || source === 'body'
+
+/** Event ids per IN list, under D1's 100 bound parameters a query. */
+const LINK_CHUNK = 80
 
 const daysFromNow = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 const daysAgo = (offsetDays: number) => new Date(Date.now() - offsetDays * 86400_000).toISOString().slice(0, 10)
@@ -109,10 +116,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       isNotNull(calendarEvents.date),
       gte(calendarEvents.date, from),
       lte(calendarEvents.date, to),
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-      ),
+      visibleCalendarEvent,
       or(
         eq(calendarEvents.status, 'confirmed'),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),
@@ -120,10 +124,11 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     ))
     .all()
 
-  // Linked bills for custom events come from the join table.
-  const customIds = rows.filter(r => r.source === 'custom').map(r => r.id)
+  // Linked bills for custom and body events come from the join table.
+  const linkedIds = rows.filter(r => linksBills(r.source)).map(r => r.id)
   const linkMap = new Map<string, Array<{ id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }>>()
-  if (customIds.length > 0) {
+  // In chunks: a covered state's body events can number in the hundreds, past D1's bound-parameter limit.
+  for (let i = 0; i < linkedIds.length; i += LINK_CHUNK) {
     const links = await db
       .select({
         eventId: calendarEventBills.eventId,
@@ -132,7 +137,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       })
       .from(calendarEventBills)
       .innerJoin(bills, eq(calendarEventBills.billId, bills.id))
-      .where(inArray(calendarEventBills.eventId, customIds))
+      .where(inArray(calendarEventBills.eventId, linkedIds.slice(i, i + LINK_CHUNK)))
       .all()
     for (const l of links) {
       const list = linkMap.get(l.eventId) ?? []
@@ -159,7 +164,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   }
 
   const entries: EventResult[] = rows.map(r => {
-    const billsArr: EventBill[] = r.source === 'custom'
+    const billsArr: EventBill[] = linksBills(r.source)
       ? (linkMap.get(r.id) ?? [])
       : (r.billNumber
           ? [{ id: r.billId!, billNumber: r.billNumber, billTitle: billDisplayTitle({ title: r.billTitle, isDraft: r.billIsDraft }), state: r.billState, priority: r.priority, isDraft: r.billIsDraft ?? false }]
@@ -173,6 +178,21 @@ calendarRouter.get('/events', requireAuth, async (c) => {
       bills: billsArr,
     }
   })
+
+  // A body event stands in for the bill entries it covers, so a deep link to
+  // one of them (the sidebar widget links a bill entry's eventHash) finds it.
+  const bodyUids = entries.filter(e => e.source === 'body').map(e => e.uid)
+  const byUid = new Map(entries.map(e => [e.uid, e]))
+  for (let i = 0; i < bodyUids.length; i += LINK_CHUNK) {
+    const covered = await db.select({ coveredBy: calendarEvents.coveredBy, eventHash: calendarEvents.eventHash })
+      .from(calendarEvents)
+      .where(and(eq(calendarEvents.source, 'hearing'), inArray(calendarEvents.coveredBy, bodyUids.slice(i, i + LINK_CHUNK)), isNotNull(calendarEvents.eventHash)))
+      .all()
+    for (const c of covered) {
+      const e = c.coveredBy ? byUid.get(c.coveredBy) : undefined
+      if (e && c.eventHash && !e.eventHashes.includes(c.eventHash)) e.eventHashes.push(c.eventHash)
+    }
+  }
 
   // Custom events pass through individually (each is independently editable).
   // Hearing events that describe the same real hearing — same
@@ -398,10 +418,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     .from(calendarEvents)
     .leftJoin(bills, eq(calendarEvents.billId, bills.id))
     .where(and(
-      or(
-        and(eq(calendarEvents.source, 'hearing'), isNotNull(bills.priority)),
-        eq(calendarEvents.source, 'custom'),
-      ),
+      visibleCalendarEvent,
       or(
         and(eq(calendarEvents.status, 'confirmed'), gte(calendarEvents.date, confirmedCutoff)),
         and(eq(calendarEvents.status, 'cancelled'), gte(calendarEvents.date, cancelCutoff)),
@@ -417,17 +434,17 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
   }
   const calName = `${assocName} — Tracked Hearings`
 
-  const customUids = rows.filter(r => r.source === 'custom').map(r => r.uid)
+  const linkedUids = rows.filter(r => linksBills(r.source)).map(r => r.uid)
   const numbersByUid = new Map<string, string[]>()
-  const stateByUid = new Map<string, string>() // custom event → first linked bill's state
+  const stateByUid = new Map<string, string>() // custom or body event → first linked bill's state
   const firstBillByUid = new Map<string, { id: string; state: string | null; session: string | null; sessionSlug: string | null; billNumber: string }>()
-  if (customUids.length > 0) {
+  for (let i = 0; i < linkedUids.length; i += LINK_CHUNK) {
     const links = await db
       .select({ uid: calendarEvents.uid, billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug })
       .from(calendarEvents)
       .innerJoin(calendarEventBills, eq(calendarEventBills.eventId, calendarEvents.id))
       .innerJoin(bills, eq(calendarEventBills.billId, bills.id))
-      .where(inArray(calendarEvents.uid, customUids))
+      .where(inArray(calendarEvents.uid, linkedUids.slice(i, i + LINK_CHUNK)))
       .all()
     for (const l of links) {
       const list = numbersByUid.get(l.uid) ?? []
@@ -447,7 +464,7 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     const customNumbers = numbersByUid.get(r.uid) ?? []
     let summary: string
     // Title first, then bill number(s): "<description> — <bills>".
-    if (r.source === 'custom') {
+    if (linksBills(r.source)) {
       const desc = (r.description ?? '').trim() || 'Event'
       const suffix = customNumbers.length > 0 ? ` — ${customNumbers.join(', ')}` : ''
       summary = `${desc}${suffix}`
@@ -462,11 +479,11 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     // When no state resolves (multi-state instance + custom event with no linked
     // bill), use the creator's captured browser zone, then the configured
     // default — never a floating time (which calendar clients misread as UTC).
-    const state = (r.source === 'custom' ? stateByUid.get(r.uid) : r.state) || c.env.STATE || null
+    const state = (linksBills(r.source) ? stateByUid.get(r.uid) : r.state) || c.env.STATE || null
 
     let description: string | null = null
     let url: string | null = null
-    if (r.source === 'custom') {
+    if (linksBills(r.source)) {
       const fb = firstBillByUid.get(r.uid)
       const billHref = fb ? encodeURI(`https://${host}${billUrl({ id: fb.id, state: fb.state, session: fb.session, sessionSlug: fb.sessionSlug, billNumber: fb.billNumber })}`) : null
       description = customBody({ details: r.details, url: r.url, billNumbers: customNumbers, billHref, calendarHref, assoc: assocName })
@@ -483,7 +500,8 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
       summary,
       description,
       url,
-      tzid: tzidForState(state) ?? r.timezone ?? fallbackTz,
+      // A body event carries the legislature's own zone, which no linked bill's state can contradict.
+      tzid: (r.source === 'body' ? r.timezone : null) ?? tzidForState(state) ?? r.timezone ?? fallbackTz,
     }
   })
 

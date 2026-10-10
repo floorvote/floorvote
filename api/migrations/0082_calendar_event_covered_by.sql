@@ -1,0 +1,14 @@
+-- A bill calendar entry covered by a body event (#297). Central now marks a
+-- bill's hearing that a legislature's own calendar also lists, such as a DC
+-- Council hearing with the bill on its agenda, and the instance shows the
+-- body event in its place, so the hearing appears once. covered_by holds the
+-- body event's calendar UID, or null while no body event covers the entry and
+-- for every other event.
+--
+-- A nullable column only. Nothing is rewritten, so every event keeps its UID
+-- and SEQUENCE. An entry gets its cover the next time central sends the bill's
+-- calendar or the instance next syncs its body events.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+ALTER TABLE calendar_events ADD COLUMN covered_by TEXT;

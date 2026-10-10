@@ -7,6 +7,7 @@ import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
+import { readStateCapabilities } from '../lib/bodyEvents'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
@@ -46,7 +47,7 @@ configRouter.get('/', async (c) => {
   await ensureAssociationName(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -57,6 +58,7 @@ configRouter.get('/', async (c) => {
     db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_banner')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'demo_reset_at')).get(),
     loadEffectiveTaxonomy(db),
+    readStateCapabilities(db),
   ])
 
   let associationName: string
@@ -139,6 +141,13 @@ configRouter.get('/', async (c) => {
 
   const multiState = computeMultiState(c.env.STATE, coverageRow?.value)
 
+  // What each covered state's data can do, by state, from central's provider
+  // for it (lib/bodyEvents.ts keeps it fresh): gate features on these, never on
+  // a state's name. A state left out has none.
+  const coversAll = !c.env.STATE && (!coverageRow || states.includes('*'))
+  const capabilities = Object.fromEntries(Object.entries(knownCapabilities?.data ?? {})
+    .filter(([state]) => coversAll || states.includes(state)))
+
   const orgNoun = resolveOrgNoun(
     orgNounRow?.value ? JSON.parse(orgNounRow.value) as string : null,
     posLabelRow?.value ? JSON.parse(posLabelRow.value) as string : null,
@@ -211,7 +220,7 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, dataSources: dataSources.length > 0 ? dataSources : ['legiscan'], accountDeletionEnabled, tagTaxonomy, demoBanner })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, dataSources: dataSources.length > 0 ? dataSources : ['legiscan'], accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central
