@@ -302,6 +302,52 @@ describe('DC from LIMS', () => {
   })
 })
 
+describe('committees from LIMS (#299)', () => {
+  it('refers each measure to the Council\'s committees, by their full names', async () => {
+    await claimDc()
+    await syncAndIngest()
+
+    // LegislationDetails names them "Youth Affairs" and "Judiciary and Public Safety".
+    const bill = await getJson(`/bills/${toHandle(B0400)}`)
+    expect(bill.committee).toBeNull()
+    expect(bill.referrals.map((r: any) => [r.date, r.name, r.chamber])).toEqual([
+      ['2025-10-07', 'Committee on Youth Affairs', 'C'],
+      ['2025-10-07', 'Committee on Judiciary and Public Safety', 'C'],
+    ])
+    // Minted from central's id table, clear of LegiScan's ids and LIMS's packed ranges.
+    for (const r of bill.referrals) expect(Number(r.committeeId)).toBeGreaterThan(3_000_000_000)
+
+    const notice = await getJson(`/bills/${toHandle(HN)}`)
+    expect(notice.referrals).toEqual([expect.objectContaining({ name: 'Committee on Health', committeeId: expect.any(String) })])
+
+    // "Retained by the Council" names no committee. The committee asked for
+    // comments stays an extra, not a referral.
+    const reprogramming = await getJson(`/bills/${toHandle(REPROG)}`)
+    expect(reprogramming.referrals).toEqual([{ date: '2026-09-25', committeeId: null, name: 'Retained by the Council', chamber: 'C' }])
+
+    const rows = await drizzle(env.DB, { schema }).select().from(schema.committees).all()
+    expect(rows.map(r => [r.name, r.provider, r.state]).sort()).toEqual([
+      ['Committee on Health', 'lims', 'DC'],
+      ['Committee on Judiciary and Public Safety', 'lims', 'DC'],
+      ['Committee on Youth Affairs', 'lims', 'DC'],
+    ])
+  })
+
+  it('points every measure referred to one committee at the same row, however LIMS spells it', async () => {
+    feed['LegislationDetails/HN26-0171'] = () => json({ ...JSON.parse(detailsHnRaw), committeesReferredTo: ['youth  affairs'] })
+    await claimDc()
+    await syncAndIngest()
+    const youth = (await getJson(`/bills/${toHandle(B0400)}`)).referrals[0]
+    const notice = (await getJson(`/bills/${toHandle(HN)}`)).referrals[0]
+    expect(notice.committeeId).toBe(youth.committeeId)
+    expect(notice.name).toBe(youth.name)
+
+    // The ids hold across ingests.
+    await ingest(B0400)
+    expect((await getJson(`/bills/${toHandle(B0400)}`)).referrals[0].committeeId).toBe(youth.committeeId)
+  })
+})
+
 describe('DC from LIMS fails closed', () => {
   /** A synced and ingested DC, and what central serves for it. */
   async function baseline() {

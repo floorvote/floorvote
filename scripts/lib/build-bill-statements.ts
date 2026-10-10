@@ -50,10 +50,19 @@ export function buildBillStatements(
   stmts.push(`INSERT OR REPLACE INTO bills (bill_id, change_hash, session_id, state, state_id, bill_number, bill_type, bill_type_id, body, body_id, current_body, current_body_id, title, description, status, status_date, completed, pending_committee_id, url, state_link, progress_json)
 VALUES (${num(b.bill_id)}, ${esc(b.change_hash)}, ${num(b.session_id ?? sessionId)}, ${esc(b.state ?? state)}, ${num(b.state_id)}, ${esc(b.bill_number)}, ${esc(b.bill_type ?? 'B')}, ${esc(b.bill_type_id ?? '1')}, ${esc(b.body ?? '')}, ${num(b.body_id ?? 0)}, ${esc(b.current_body ?? '')}, ${num(b.current_body_id ?? 0)}, ${esc(b.title)}, ${esc(b.description)}, ${num(b.status ?? 1)}, ${esc(b.status_date)}, ${num(b.completed ?? 0)}, ${num(pendingCommitteeId)}, ${esc(b.url)}, ${esc(b.state_link)}, ${esc(b.progress ? JSON.stringify(b.progress) : null)});`)
 
-  if (b.committee && !Array.isArray(b.committee) && b.committee.committee_id) {
-    const c = b.committee
-    stmts.push(`INSERT OR IGNORE INTO committees (committee_id, state, session_id, chamber, chamber_id, name)
-VALUES (${num(c.committee_id)}, ${esc(b.state ?? state)}, ${num(b.session_id ?? sessionId)}, ${esc(c.chamber ?? '')}, ${num(c.chamber_id ?? 0)}, ${esc(c.name)});`)
+  // Every committee the bill names, pending or referred, so each referral
+  // points at a committees row (#299). Upserted as central's ingest does
+  // (central/src/lib/committees.ts): the name follows the committee's latest
+  // session, and another provider's row is left alone.
+  const named = new Map<number, any>()
+  for (const c of [...(b.committee && !Array.isArray(b.committee) ? [b.committee] : []), ...(b.referrals ?? [])]) {
+    if (c?.committee_id && String(c.name ?? '').trim()) named.set(Number(c.committee_id), c)
+  }
+  for (const c of named.values()) {
+    stmts.push(`INSERT INTO committees (committee_id, state, session_id, chamber, chamber_id, name, provider)
+VALUES (${num(c.committee_id)}, ${esc(b.state ?? state)}, ${num(b.session_id ?? sessionId)}, ${esc(c.chamber ?? '')}, ${num(c.chamber_id ?? 0)}, ${esc(String(c.name).trim())}, 'legiscan')
+ON CONFLICT(committee_id) DO UPDATE SET name = excluded.name, chamber = excluded.chamber, chamber_id = excluded.chamber_id, session_id = excluded.session_id
+WHERE committees.provider = 'legiscan' AND excluded.session_id >= committees.session_id;`)
   }
 
   for (let i = 0; i < (b.history ?? []).length; i++) {

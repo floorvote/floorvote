@@ -10,6 +10,7 @@ import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
+import { billReferralDetails, pendingCommittee } from '../lib/committees'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -164,7 +165,7 @@ billsRoutes.get('/:id', async (c) => {
         .from(schema.sessions).where(eq(schema.sessions.sessionId, bill.sessionId)).get()
     : null
 
-  const [history, sponsorRows, texts, sasts, rollCalls, calendarEntries, supplementRows, subjectRows, amendmentRows, memberVoteRows, extras] = await Promise.all([
+  const [history, sponsorRows, texts, sasts, rollCalls, calendarEntries, supplementRows, subjectRows, amendmentRows, memberVoteRows, extras, committee, referrals] = await Promise.all([
     db.select().from(schema.billHistory).where(eq(schema.billHistory.billId, numeric)).all(),
     db.select({
       id: schema.billSponsors.id,
@@ -203,6 +204,8 @@ billsRoutes.get('/:id', async (c) => {
       .all(),
     // Fields only the bill's provider publishes, labeled from its vocabulary.
     billExtrasDetail(db, numeric, provider),
+    pendingCommittee(db, bill.pendingCommitteeId),
+    billReferralDetails(db, numeric),
   ])
   const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
   for (const r of memberVoteRows) {
@@ -368,6 +371,10 @@ billsRoutes.get('/:id', async (c) => {
       }
     }),
     subjects: subjectRows.map(s => s.subjectName),
+    // The committee the bill is pending in, and the committees it was referred
+    // to, each named by its committees row so a name reads the same on every bill.
+    committee,
+    referrals,
     // Display only, for the bill page's panel: null when the bill has none.
     extras,
   })
