@@ -220,9 +220,10 @@ export interface MeasureRef {
 export interface MeasureWithDetails {
   measure: CentralMeasure
   /**
-   * The details response (null when the provider found none). Core records
-   * when it was fetched, for `detailsRefresh`. Storing the response itself
-   * comes with the shared raw-record table (#289).
+   * The details response, whole (null when the provider found none). Core
+   * stores it beside the measure's listed record, so a field the mapping
+   * ignores today can be added later without fetching again, and records
+   * when it was fetched, for `detailsRefresh`.
    */
   details: unknown
 }

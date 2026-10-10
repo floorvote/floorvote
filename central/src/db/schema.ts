@@ -376,8 +376,11 @@ export const providerRecords = sqliteTable('provider_records', {
   provider:         text('provider').notNull(),
   nativeKey:        text('native_key').notNull(),
   sessionId:        integer('session_id').notNull(),
+  /** The record as the provider listed it. `rawHash` is its hash, which the snapshot sync compares. */
   rawJson:          text('raw_json').notNull(),
   rawHash:          text('raw_hash').notNull(),
+  /** The per-bill details response the bill was last built from, when its provider has one (0028). */
+  detailsJson:      text('details_json'),
   detailsFetchedAt: text('details_fetched_at'),
   updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })

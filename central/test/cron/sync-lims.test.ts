@@ -223,6 +223,41 @@ describe('routing by the provider column', () => {
   })
 })
 
+describe('the stored LIMS record', () => {
+  it('keeps the LegislationDetails response beside the BulkData record, and the BulkData hash the sync compares', async () => {
+    const db = drizzle(env.DB, { schema })
+    const record = async () =>
+      (await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, B0400)).get())!
+    await runLimsSync(makeEnv().env, db)
+    const listed = await record()
+    expect(listed.detailsJson).toBeNull()
+
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, makeEnv().env, db)
+    const built = await record()
+    expect(JSON.parse(built.detailsJson!)).toEqual(JSON.parse(details0400Raw))
+    expect(built.rawJson).toBe(listed.rawJson)
+    expect(built.rawHash).toBe(listed.rawHash)
+
+    // An unchanged listing queues nothing and leaves the details alone.
+    const again = makeEnv()
+    await runLimsSync(again.env, db)
+    expect(again.limsQueue.sendBatch).not.toHaveBeenCalled()
+    expect((await record()).detailsJson).toBe(built.detailsJson)
+
+    // A changed listing replaces the BulkData record and its hash, and the
+    // details stay until the bill's next ingest fetches them again.
+    const changed = { ...bulk['B26-0400'], title: 'Statutory Neglect Amendment Act of 2026' }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [changed] : []))
+    const relist = makeEnv()
+    await runLimsSync(relist.env, db)
+    const relisted = await record()
+    expect(JSON.parse(relisted.rawJson).title).toBe(changed.title)
+    expect(relisted.rawHash).toBe(await limsMap.bulkHash(changed))
+    expect(relisted.detailsJson).toBe(built.detailsJson)
+    expect(relist.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))).toEqual([B0400])
+  })
+})
+
 describe('details refresh bookkeeping', () => {
   it('records the details fetch only once the bill is built', async () => {
     const db = drizzle(env.DB, { schema })

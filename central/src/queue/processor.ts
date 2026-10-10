@@ -100,7 +100,8 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
 /**
  * Fetch one bill's full record from its provider. A snapshot provider gets the
  * record core stored for the bill, and the bill's session. When the provider
- * also fetched a details response, record when, for its details refresh.
+ * also fetched a details response, store it beside the record, and when, for
+ * its details refresh.
  */
 async function fetchMeasure(billId: number, sessionId: number | null, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
   let ref: MeasureRef
@@ -125,7 +126,13 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
 
   const fetched = await provider.fetchMeasure(ref, providerContext(provider, env, db))
   if (!('measure' in fetched)) return fetched
-  await db.update(providerRecords).set({ detailsFetchedAt: nowDb() }).where(eq(providerRecords.billId, billId))
+  // The whole response, so a field the mapping ignores today can be read later
+  // without fetching it again. raw_hash is left alone: it is the listed
+  // record's, which the snapshot sync compares.
+  await db.update(providerRecords).set({
+    detailsJson: fetched.details == null ? null : JSON.stringify(fetched.details),
+    detailsFetchedAt: nowDb(),
+  }).where(eq(providerRecords.billId, billId))
   return fetched.measure
 }
 
