@@ -7,8 +7,10 @@ export const PAGE_SIZE = 100
 
 // Semantic order for status filter dropdown (most-advanced first, matching sort direction).
 // Module-scoped so the useMemo that consumes it doesn't need it in its deps array.
+// LegiScan's progress codes 7 to 12 sit beside the words central now sends for
+// them (shared/legacyStatusOrder.ts), so either form keeps its place.
 export const STATUS_SEMANTIC_ORDER = [
-  '8', '7', 'Passed', 'Vetoed', 'Failed',
-  'Enrolled', 'Engrossed', '10', '11', '9',
-  'Introduced', 'Pre-filed', '12',
+  '8', 'Chaptered', '7', 'Override', 'Passed', 'Vetoed', 'Failed',
+  'Enrolled', 'Engrossed', '10', 'Report Pass', '11', 'Report DNP', '9', 'Referred',
+  'Introduced', 'Pre-filed', '12', 'Draft',
 ]

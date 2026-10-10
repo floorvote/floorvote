@@ -56,9 +56,27 @@ describe('the status stage and rank central sends', () => {
       .toEqual({ status: '999', statusStage: null, statusRank: 0 })
   })
 
-  it('are left alone when a central from before vocabularies sends neither', async () => {
+  it('come from the status label when a central from before vocabularies sends neither', async () => {
     await seedBill({ externalId: BILL_ID, state: 'DC', status: 'Under Council Review', statusStage: 'in_committee', statusRank: 201 })
-    expect(await notify(centralBill({ status: 'Under Council Review' }), { metadataOnly: true }))
-      .toEqual({ status: 'Under Council Review', statusStage: 'in_committee', statusRank: 201 })
+    expect(await notify(centralBill(), { metadataOnly: true }))
+      .toEqual({ status: 'Under Mayoral Review', statusStage: 'passed', statusRank: 401 })
+  })
+
+  it('store a bare LegiScan code from such a central as the word central sends now', async () => {
+    expect(await notify(centralBill({ state: 'RI', status: '7' }), { stubOnly: true }))
+      .toEqual({ status: 'Override', statusStage: 'enacted', statusRank: 702 })
+  })
+
+  it('reach a tracked bill on a stub refresh, which otherwise leaves it alone', async () => {
+    // A bill analyzed in the past and no longer matched gets only stubOnly
+    // messages, so a one-time resend reaches it through refresh-stubs alone.
+    await seedBill({
+      externalId: BILL_ID, state: 'DC', status: 'Under Council Review', statusStage: 'in_committee', statusRank: 201,
+      title: 'Kept title', aiProcessedAt: '2026-01-01 00:00:00', matchType: null,
+    })
+    expect(await notify(centralBill({ statusStage: 'passed', statusRank: 401 }), { stubOnly: true }))
+      .toEqual({ status: 'Under Mayoral Review', statusStage: 'passed', statusRank: 401 })
+    const row = await getDb(env.DB).select({ title: bills.title }).from(bills).where(eq(bills.externalId, BILL_ID)).get()
+    expect(row?.title).toBe('Kept title')
   })
 })

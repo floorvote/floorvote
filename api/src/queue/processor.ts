@@ -14,6 +14,7 @@ import {
   buildDefaultRelevanceQuestion,
   isAiConfigDefault,
 } from '../../../shared/aiDefaults'
+import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -229,11 +230,25 @@ type CentralBill = {
 }
 
 /**
- * The bill's status stage and rank, when central sent them. A central from
- * before provider vocabularies sends neither, and the bill keeps what it has.
+ * The status as the bill stores it: central's label, or for a bare LegiScan
+ * progress code (which a central from before provider vocabularies still
+ * sends), the word central sends now. Migration 0076 rewrote stored codes the
+ * same way, so the status filter never lists a code and its word separately.
  */
-function statusOrder(b: CentralBill): { statusStage?: string | null; statusRank?: number } {
-  return typeof b.statusRank === 'number' ? { statusStage: b.statusStage ?? null, statusRank: b.statusRank } : {}
+function storedStatus(b: CentralBill): string {
+  const status = b.status ?? ''
+  return LEGISCAN_CODE_WORDS[status] ?? status
+}
+
+/**
+ * The bill's status stage and rank. A central from before provider
+ * vocabularies sends neither, so they come from the status string, from the
+ * table migration 0076 backfilled with.
+ */
+function statusOrder(b: CentralBill): { statusStage: string | null; statusRank: number } {
+  if (typeof b.statusRank === 'number') return { statusStage: b.statusStage ?? null, statusRank: b.statusRank }
+  const legacy = LEGACY_STATUS_ORDER[b.status ?? '']
+  return { statusStage: legacy?.stage ?? null, statusRank: legacy?.rank ?? 0 }
 }
 
 export async function processCentralNotification(
@@ -276,10 +291,17 @@ export async function processCentralNotification(
       // Without this, a bill with ai_processed_at set and match_type NULL
       // (analyzed in the past, no longer keyword-matched) never gets subjects
       // on any path: the operator's stub-refresh route selects exactly these
-      // bills and only ever sends them stubOnly messages.
+      // bills and only ever sends them stubOnly messages. The status, stage,
+      // and rank are refreshed here for the same reason: a one-time resend
+      // after a vocabulary change reaches these bills only through
+      // refresh-stubs.
       if (existing) {
         await db.update(bills)
-          .set({ subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null })
+          .set({
+            subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
+            status: storedStatus(centralBill),
+            ...statusOrder(centralBill),
+          })
           .where(eq(bills.id, existing.id))
         await syncBillSubjects(db, existing.id, centralBill.state, centralBill.subjects ?? [])
       }
@@ -307,7 +329,7 @@ export async function processCentralNotification(
       billNumber: centralBill.number,
       title: centralBill.title,
       state: centralBill.state,
-      status: centralBill.status ?? '',
+      status: storedStatus(centralBill),
       ...statusOrder(centralBill),
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
       sessionId: centralBill.sessionId ?? null,
@@ -363,7 +385,7 @@ export async function processCentralNotification(
       billNumber: centralBill.number,
       title: centralBill.title,
       state: centralBill.state,
-      status: centralBill.status ?? '',
+      status: storedStatus(centralBill),
       ...statusOrder(centralBill),
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
       sessionId: centralBill.sessionId ?? null,
@@ -448,7 +470,7 @@ export async function processCentralNotification(
     billNumber: centralBill.number,
     title: centralBill.title,
     state: centralBill.state,
-    status: centralBill.status ?? '',
+    status: storedStatus(centralBill),
     ...statusOrder(centralBill),
     session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
     sessionId: centralBill.sessionId ?? null,

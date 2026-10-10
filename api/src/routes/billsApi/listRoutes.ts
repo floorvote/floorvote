@@ -7,7 +7,7 @@ import {
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { sessionToSlug } from '../../lib/sessionSlug'
-import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
+import { buildBillsWhere, buildOrderBy, multiFilter, statusFilterValues, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -310,7 +310,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     }
 
     // --- Dimensional filters (each omitted for its own facet counts) ---
-    const statusFilter = multiFilter(bills.status, statuses)
+    const statusFilter = multiFilter(bills.status, statusFilterValues(statuses))
     const stageFilter = multiFilter(bills.statusStage, stages)
     let priorityFilter: SQL | undefined
     if (priorities.length > 0) {
