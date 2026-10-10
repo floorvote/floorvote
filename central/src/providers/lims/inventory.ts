@@ -134,3 +134,28 @@ export const detailsInventory: FieldInventory = {
   'otherDocuments[].documentTitle': 'mapped',
   'otherDocuments[].url': 'mapped',
 }
+
+/**
+ * POST Hearings/API/Public/GetHearingsCalendar (hearings.ts): one event per
+ * item. The feed is undocumented, so this is everything the recorded
+ * responses carry.
+ */
+export const hearingsInventory: FieldInventory = {
+  hearingId: 'mapped',
+  hearingDateTime: 'mapped',
+  hearingTitle: 'mapped',
+  hearingType: 'mapped',
+  location: 'mapped',
+  jointHearingCommittees: 'mapped',
+  topics: 'mapped',
+  'topics[].hearingTopicId': { ignored: 'The topic\'s own id. Nothing links to a topic on its own.' },
+  'topics[].topic': 'mapped',
+  'topics[].legislationNumber': 'mapped',
+  address: { ignored: 'The John A. Wilson Building\'s address in every recorded event, rooms elsewhere included. location names the room.' },
+  locationAddress: { ignored: 'The same as address.' },
+  legislationUrl: { ignored: 'The same prefix in every event. Agenda bills link to their own pages.' },
+  hearingTypeBGColor: { ignored: 'The Council site\'s display colors for the type.' },
+  hearingTypeBorderColor: { ignored: 'The Council site\'s display colors for the type.' },
+  witnessesCount: { ignored: 'Changes as people sign up to testify, which would change the event\'s hash and bump every subscriber\'s copy. The event page shows it.' },
+  witnessListAttachment: { ignored: 'The witness list file, which the event page links.' },
+}

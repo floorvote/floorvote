@@ -10,6 +10,7 @@ import {
   calendarBlockEvents, logCalendarChanges, planCalendarPull, planCalendarRecheck, readCalendarRows, writeCalendarRows,
   type CalendarChange, type CalendarRow,
 } from '../lib/billCalendar'
+import { calendarCoverage } from '../lib/bodyEvents'
 import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
 import { personRow } from '../lib/people'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
@@ -525,7 +526,7 @@ export async function ingestMeasure(
   if (memberVotes.length > 0) await writeMemberVotes(env.DB, memberVotes, { replace: true })
 
   const calendarBlock: CalendarBlock = {
-    events: calendarBlockEvents(provider, calendarPlan.live),
+    events: calendarBlockEvents(provider, calendarPlan.live, await calendarCoverage(db, provider, bill.bill_id, calendarPlan.live)),
     changes: calendarChanges,
   }
   await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
@@ -546,7 +547,7 @@ async function recheckCalendar(billId: number, pullHash: string, provider: Provi
   await writeCalendarRows(db, plan.writes)
   await logCalendarChanges(db, billId, plan.changes, now)
   await notifyTenants(billId, env, db, now, false, false, [], {
-    events: calendarBlockEvents(provider, plan.live),
+    events: calendarBlockEvents(provider, plan.live, await calendarCoverage(db, provider, billId, plan.live)),
     changes: plan.changes,
   })
 }

@@ -119,6 +119,27 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly legacyCalendarIdentity?: boolean
 
   /**
+   * The legislature's own calendar for a state: its hearings, roundtables,
+   * and meetings, with or without bills on the agenda, dated from `range.from`
+   * to `range.to` (YYYY-MM-DD, both inclusive). Core asks for one month at a
+   * time and keeps each event under its `event_id` (lib/bodyEvents.ts). List
+   * every event the feed shows for the range, past ones too. Throw on an
+   * error or a shape the mapping doesn't read, and core changes nothing for
+   * that month. An empty list is no evidence that anything went away.
+   * Omitted when the provider publishes no calendar of its own.
+   */
+  listBodyEvents?(state: string, range: { from: string; to: string }, ctx: ProviderContext<K>): Promise<BodyEvent[]>
+
+  /**
+   * The calendar UID instances give one of the provider's body events. Only
+   * a provider whose events already have UIDs in someone's calendars sets
+   * this: LIMS keeps the UIDs the contributor's fork issued for Council
+   * hearings. Every other provider's events get core's (bodyEventUid in
+   * lib/bodyEvents.ts). Must never change for an event.
+   */
+  bodyEventUid?(eventId: string): string
+
+  /**
    * The provider's per-member vote datasets for a state, one per session, each
    * with a hash that changes whenever its contents do. With
    * `fetchVoteDataset`, drives the weekly per-member vote load: core compares
@@ -585,6 +606,47 @@ export interface MeasureCalendarEntry {
    * removed flag in the feed. Core cancels the entry with the same identity at
    * once. An entry that is just missing is cancelled only after two pulls.
    */
+  cancelled?: boolean
+}
+
+/**
+ * One event on a legislature's own calendar (`Provider.listBodyEvents`): a
+ * hearing, roundtable, mark-up, or meeting, with or without bills on its
+ * agenda. Core links the agenda's bills, and a bill's calendar entry on the
+ * same day is then shown once, as this event.
+ */
+export interface BodyEvent {
+  /** The provider's own id for the event, which it publishes and keeps. The event's identity. */
+  event_id: string
+  /** What the event is. Every one of the provider's events of one type should share a kind. */
+  kind: CalendarKind
+  /** The provider's own name for the event's type ("Performance Oversight Hearing"). */
+  type: string
+  /** YYYY-MM-DD, in `timezone`. */
+  date: string
+  /** HH:MM, in `timezone`, or null when the feed gives no time. */
+  time: string | null
+  /** The IANA zone the date and time are in. */
+  timezone: string
+  /**
+   * The committee holding it, or null for a meeting of the whole body. Its id,
+   * name, and chamber are the ones the provider gives the committee in its
+   * referrals (for a minted id, `ctx.ids('committee', ...)` under the same
+   * key), so both point at one committees row.
+   */
+  committee: { committee_id: number; name: string; chamber: string } | null
+  /** The committees it is held jointly with, as the feed words it. */
+  joint_with: string | null
+  location: string | null
+  /** A short name for the event, such as "Health roundtable". Keep it stable. */
+  title: string
+  /** The agenda, in order. `bill_number` is the measure number as the provider's bills carry it. */
+  agenda: { topic: string; bill_number: string | null }[]
+  /** The event's own page, http(s). */
+  url: string | null
+  /** Changes whenever anything shown changes, which is what instances bump an event's ICS sequence on. */
+  event_hash: string
+  /** Positive evidence that the event was cancelled: a cancelled status on the event itself. */
   cancelled?: boolean
 }
 

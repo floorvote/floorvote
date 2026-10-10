@@ -76,6 +76,16 @@ describe('TenantApi cross-tenant object-level authz (props.tenantId)', () => {
       expect(res.status).toBe(403)
     })
 
+    it('blocks body-events for another tenant with 403', async () => {
+      const res = await bindingCall(RI, 'GET', '/api/tenants/nj/body-events?from=2026-10-01&to=2026-10-31')
+      expect(res.status).toBe(403)
+    })
+
+    it('allows body-events for its own tenant (not 403)', async () => {
+      const res = await bindingCall(RI, 'GET', '/api/tenants/ri/body-events?from=2026-10-01&to=2026-10-31')
+      expect(res.status).toBe(200)
+    })
+
     it('blocks admin sync-keywords for another tenant with 403', async () => {
       const res = await bindingCall(RI, 'POST', '/api/admin/sync-keywords/nj')
       expect(res.status).toBe(403)

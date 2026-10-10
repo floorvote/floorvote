@@ -11,6 +11,8 @@ import { ownerOfState } from '../lib/stateProviders'
 import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
 import { calendarKind } from '../lib/billCalendar'
+import { calendarCoverage } from '../lib/bodyEvents'
+import { providerCapabilities } from '../lib/capabilities'
 import { billReferralDetails, pendingCommittee } from '../lib/committees'
 import type { Env } from '../types'
 
@@ -53,12 +55,14 @@ billsRoutes.get('/labels', async (c) => {
   if (!state || !/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state is required' }, 400)
   const db = drizzle(c.env.DB, { schema })
   const provider = findProvider(await ownerOfState(db, state)) ?? getProvider(DEFAULT_PROVIDER_ID)
+  const capabilities = providerCapabilities(provider)
   return c.json({
     state,
     ...vocabularyLabels(provider),
-    // Whether the state's provider publishes the legislature's own events
-    // (hearings without bills). None does yet.
-    hasEvents: false,
+    // Whether the state's provider publishes the legislature's own calendar
+    // (body events: hearings without bills), and the state's other capabilities.
+    hasEvents: capabilities.bodyEvents,
+    capabilities,
   })
 })
 
@@ -210,6 +214,7 @@ billsRoutes.get('/:id', async (c) => {
     pendingCommittee(db, bill.pendingCommitteeId),
     billReferralDetails(db, numeric),
   ])
+  const coverage = await calendarCoverage(db, provider, numeric, calendarEntries)
   const legislatorVotesByRc = new Map<number, { personId: string; name: string; vote: string }[]>()
   for (const r of memberVoteRows) {
     if (r.peopleId == null || !r.vote) continue
@@ -341,6 +346,8 @@ billsRoutes.get('/:id', async (c) => {
       time: e.time ?? null,
       location: e.location ?? null,
       description: e.description ?? null,
+      // The body event the entry is shown as (lib/bodyEvents.ts), by its UID, from a provider with a calendar of its own.
+      ...(provider.listBodyEvents ? { coveredBy: coverage.get(e.id) ?? null } : {}),
     })),
     supplements: supplementRows.map(s => {
       const { dateResolved, dateInferred } = resolveItemDate(s.date, s.description ?? s.title, { yearStart: session?.yearStart, yearEnd: session?.yearEnd })

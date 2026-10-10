@@ -139,6 +139,12 @@ export type CalendarBlock = {
     location: string | null
     description: string | null
     eventHash: string | null
+    /**
+     * The UID of the body event covering the entry (lib/bodyEvents.ts), which
+     * instances show in its place, or null. Only from a provider that
+     * publishes the legislature's own calendar.
+     */
+    coveredBy?: string | null
   }[]
   changes: {
     changeType: 'hearing_added' | 'hearing_changed' | 'hearing_cancelled'
