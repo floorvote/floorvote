@@ -8,7 +8,7 @@ import {
   buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
   councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
 } from '../../../src/providers/lims/map'
-import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../../src/providers/lims/ids'
+import { limsBillId, limsPeopleId, limsSessionId, LIMS_DOC_ID_BASE } from '../../../src/providers/lims/ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../../src/providers/lims/client'
 
 const bulk = JSON.parse(bulkRaw) as Record<string, LimsBulkRecord>
@@ -101,7 +101,7 @@ describe('buildLimsBill: B26-0400 (bill with full history, details and votes)', 
     const types = b.texts.map(t => t.type)
     expect(types).toEqual(expect.arrayContaining(['Introduced', 'Committee Print', 'Engrossed', 'Enrolled', 'Signed Act']))
     for (const t of b.texts) {
-      expect(isLimsDocId(t.doc_id)).toBe(true)
+      expect(t.doc_id).toBeGreaterThan(LIMS_DOC_ID_BASE)
       expect(t.text_hash).toMatch(/^[0-9a-f]{64}$/)
       expect(t.state_link).toMatch(/^https:\/\/lims\.dccouncil\.gov\/downloads\//)
     }

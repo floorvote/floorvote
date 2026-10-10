@@ -375,6 +375,31 @@ describe('POST /admin/backfill-stub-actions/:tenantId', () => {
     expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
   })
 
+  it("asks LegiScan only for its own sessions, by each session's provider", async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values({
+      tenantId: 'bf-dc', name: 'bf-dc', active: true, stateCoverage: '["DC"]',
+    })
+    const session = { state: 'DC', stateId: 51, yearStart: 2026, yearEnd: 2026, sessionName: '2026', sessionTitle: '2026' }
+    // A LIMS session whose id is a LegiScan-sized number: only its provider
+    // column says LegiScan has never heard of it.
+    await db.insert(schema.sessions).values([
+      { sessionId: 40, ...session },
+      { sessionId: 41, ...session, provider: 'lims', sessionTag: 'CP26' },
+    ])
+    vi.mocked(legiscan.getMasterListBySession).mockReset().mockResolvedValue([])
+    const mockEnv = { ...(env as any), TENANT_QUEUE_BF_DC: { sendBatch: vi.fn(), send: vi.fn() } }
+
+    const res = await app.request(
+      '/api/admin/backfill-stub-actions/bf-dc',
+      { method: 'POST', headers: { 'x-admin-secret': 'test-secret' } },
+      mockEnv,
+    )
+
+    expect(res.status).toBe(200)
+    expect(vi.mocked(legiscan.getMasterListBySession).mock.calls.map(c => c[0])).toEqual([40])
+  })
+
   it('returns typed 429 with Retry-After header when queue.sendBatch throws', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.tenants).values({

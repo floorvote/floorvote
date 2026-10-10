@@ -25,7 +25,6 @@ export const LIMS_SESSION_ID_BASE = 1_000_000_000
 export const LIMS_DOC_ID_BASE = 2_000_000_000
 export const LIMS_PEOPLE_ID_BASE = 1_000_000_000
 export const LIMS_ROLL_CALL_ID_BASE = 1_000_000_000_000
-const RANGE = 1_000_000_000
 
 /**
  * Measure-number prefixes, in a fixed order: the index is part of the bill id,
@@ -38,18 +37,6 @@ const PREFIXES = [
 
 const NUMBER_RE = /^([A-Z]+)(\d{1,2})-(\d{1,5})$/
 
-export function isLimsBillId(billId: number): boolean {
-  return billId >= LIMS_BILL_ID_BASE && billId < LIMS_BILL_ID_BASE + RANGE
-}
-
-export function isLimsSessionId(sessionId: number): boolean {
-  return sessionId >= LIMS_SESSION_ID_BASE && sessionId < LIMS_SESSION_ID_BASE + RANGE
-}
-
-export function isLimsDocId(docId: number): boolean {
-  return docId >= LIMS_DOC_ID_BASE && docId < LIMS_DOC_ID_BASE + RANGE
-}
-
 /**
  * Bill id for a LIMS measure number such as "B26-0400" or "REPROG26-0153".
  * Returns null for a number whose shape or prefix this code does not know, so
@@ -61,17 +48,6 @@ export function limsBillId(legislationNumber: string): number | null {
   const code = PREFIXES.indexOf(m[1] as typeof PREFIXES[number]) + 1
   if (code === 0) return null
   return LIMS_BILL_ID_BASE + code * 10_000_000 + Number(m[2]) * 100_000 + Number(m[3])
-}
-
-/** Inverse of limsBillId: 1_012_600_400 -> "B26-0400". */
-export function limsNumberFromBillId(billId: number): string | null {
-  if (!isLimsBillId(billId)) return null
-  const n = billId - LIMS_BILL_ID_BASE
-  const prefix = PREFIXES[Math.floor(n / 10_000_000) - 1]
-  if (!prefix) return null
-  const period = Math.floor(n / 100_000) % 100
-  const seq = n % 100_000
-  return `${prefix}${period}-${String(seq).padStart(4, '0')}`
 }
 
 export function limsPeopleId(memberId: number): number {

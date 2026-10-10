@@ -1,6 +1,6 @@
 import { getBulkData, getCouncilPeriods, getLegislationDetails, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from './client'
 import { buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, LIMS_STATUS_LABELS, limsStatusCode, toMasterListEntry } from './map'
-import { limsBillId, limsPeopleId, limsSessionId, LIMS_SESSION_ID_BASE } from './ids'
+import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
 import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
 
@@ -63,9 +63,9 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
    */
   async listPeople(sessions, ctx) {
     const current = sessions.find(s => s.prior === 0)
-    const periodIds = [...new Set(sessions.filter(s => s !== current).map(s => s.sessionId - LIMS_SESSION_ID_BASE))]
+    const periodIds = [...new Set(sessions.filter(s => s !== current).map(councilPeriodOf))]
       .sort((a, b) => a - b)
-    if (current) periodIds.push(current.sessionId - LIMS_SESSION_ID_BASE)
+    if (current) periodIds.push(councilPeriodOf(current))
     const people: ProviderPerson[] = []
     for (const councilPeriodId of periodIds) {
       const members = await getMembers(councilPeriodId, ctx.env.LIMS_API_KEY!,
@@ -101,7 +101,7 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
   },
 
   async snapshot(session, ctx) {
-    const councilPeriodId = session.sessionId - LIMS_SESSION_ID_BASE
+    const councilPeriodId = councilPeriodOf(session)
     // One call per category, serially: LIMS rejects concurrent bursts.
     const records: ProviderRecord[] = []
     for (const categoryId of limsCategories(ctx.env)) {
@@ -143,7 +143,7 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
     const measure = await buildLimsBill(rec, details, billId, hash, {
       session: {
         session_id: sessionId,
-        session_name: session?.sessionName ?? `Council Period ${sessionId - LIMS_SESSION_ID_BASE}`,
+        session_name: session?.sessionName ?? `Council Period ${/^[A-Z]+(\d+)-/.exec(nativeKey)?.[1] ?? ''}`,
         year_start: session?.yearStart ?? 0,
         year_end: session?.yearEnd ?? 0,
       },
@@ -216,6 +216,13 @@ async function limsRecord(rec: LimsBulkRecord): Promise<ProviderRecord | null> {
     return null
   }
   return { billId, nativeKey: clean(rec.legislationNumber), raw: rec, hash: await bulkHash(rec) }
+}
+
+/** A session's Council Period, from its tag ("CP26", as `limsSession` writes it). */
+function councilPeriodOf(session: { sessionTag: string }): number {
+  const m = /^CP(\d+)$/.exec(session.sessionTag)
+  if (!m) throw new Error(`[lims] session tag "${session.sessionTag}" names no Council Period`)
+  return Number(m[1])
 }
 
 function pickCurrentPeriod(periods: LimsCouncilPeriod[], today: string): LimsCouncilPeriod | null {

@@ -68,9 +68,13 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     }
   }
 
+  // The provider's own sessions, by each row's `provider` column. Other
+  // providers' sessions share this table: they are synced by their own
+  // provider, and this one has never heard of their ids.
   const sessionRows = await db.select({
     sessionId: sessions.sessionId,
     state: sessions.state,
+    provider: sessions.provider,
     sessionName: sessions.sessionName,
     sessionTag: sessions.sessionTag,
     yearStart: sessions.yearStart,
@@ -81,7 +85,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     rawSyncHoursEt: sessions.rawSyncHoursEt,
   })
     .from(sessions)
-    .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.provider, 'legiscan')))
+    .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.provider, provider.id)))
     .all()
 
   const tenantsByState = new Map<string, { tenantId: string; stateCoverage: string; queueId: string | null }[]>()
@@ -100,8 +104,6 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   // (D1 reads, queue sends, LegiScan calls) interleave across sessions instead
   // of stacking serially. Promise.allSettled ensures one session's failure
   // doesn't reject the whole batch.
-  // Other providers' sessions share this table (excluded above): they are synced
-  // by their own provider, and LegiScan has never heard of their ids.
   const sessionsToProcess = sessionRows
     .map(session => ({ session, mode: decideMode(session, etHour) }))
     // A provider with no cheap hash list has no raw pass: its sessions sync in
@@ -149,6 +151,7 @@ async function refreshSessions(state: string, provider: Provider, env: Env, db: 
       sessionTag:   s.session_tag ?? '',
       sessionTitle: s.session_name,
       sessionName:  s.session_name,
+      provider:     provider.id,
     }).onConflictDoUpdate({
       target: sessions.sessionId,
       set: {
@@ -162,7 +165,7 @@ async function refreshSessions(state: string, provider: Provider, env: Env, db: 
 }
 
 async function runFullPass(
-  session: SessionRef & { sessionName: string },
+  session: SessionRef & { sessionName: string; provider: string },
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
   provider: Provider,
   env: Env,
@@ -182,8 +185,8 @@ async function runFullPass(
  * Returns the bill ids it queued for the ingestor.
  */
 export async function applyMasterList(
-  /** `provider`, the provider's id, is written to new bill rows; LegiScan when absent. */
-  session: { sessionId: number; state: string; sessionName: string; provider?: string },
+  /** `provider`, the session row's provider, is written to new bill rows. */
+  session: { sessionId: number; state: string; sessionName: string; provider: string },
   list: SyncEntry[],
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
   env: Env,
@@ -265,7 +268,7 @@ export async function applyMasterList(
           changeHash: entry.change_hash,
           sessionId: session.sessionId,
           state: session.state,
-          provider: session.provider ?? 'legiscan',
+          provider: session.provider,
           stateId: 0,
           billNumber: entry.number,
           title: entry.title ?? entry.number,
@@ -411,7 +414,7 @@ export async function applyMasterList(
 }
 
 async function runRawPass(
-  session: SessionRef & { sessionName: string },
+  session: SessionRef & { sessionName: string; provider: string },
   coveringTenants: { tenantId: string; stateCoverage: string }[],
   provider: Provider,
   env: Env,
@@ -467,6 +470,7 @@ async function runRawPass(
           changeHash: '',  // sentinel: forces full update when ingestor/full-pass next sees this bill
           sessionId: session.sessionId,
           state: session.state,
+          provider: session.provider,
           stateId: 0,
           billNumber: entry.number,
           title: entry.number,

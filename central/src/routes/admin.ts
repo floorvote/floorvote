@@ -1,10 +1,10 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, isNotNull, inArray, like, ne } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
-import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
+import { findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
@@ -502,12 +502,12 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const hasDeliveryPath = !!getTenantQueue(c.env, tenantId) || (!!tenant.queueId && queuesRestEnabled(c.env))
   if (!hasDeliveryPath) return c.json({ error: `no delivery path for tenant ${tenantId} (no binding, no queue_id)` }, 400)
 
-  // Resolve which sessions to check, as the provider needs them.
+  // Resolve which sessions to check, as their provider needs them.
   const sessionRef = {
     sessionId: sessions.sessionId, state: sessions.state, sessionTag: sessions.sessionTag,
-    yearStart: sessions.yearStart, yearEnd: sessions.yearEnd,
+    yearStart: sessions.yearStart, yearEnd: sessions.yearEnd, provider: sessions.provider,
   }
-  let sessionRefs: SessionRef[]
+  let sessionRefs: (SessionRef & { provider: string })[]
   if (sessionIdParam) {
     const sid = parseInt(sessionIdParam, 10)
     if (isNaN(sid)) return c.json({ error: 'invalid sessionId' }, 400)
@@ -536,25 +536,20 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const notifyIds = new Set<number>()
   let refreshed = 0
 
-  // Sessions don't record their provider yet, so every session is the default provider's.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
-  // The provider logs each call as it goes out, so the row records the outbound
-  // attempt, not the intent to make one; these params say why it was spent.
-  const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
-
-  // Other providers' sessions have no LegiScan masterlist; their stubs refresh
-  // on their own provider's sync.
-  const directSessionIds = new Set(sessionIds.length === 0 ? [] : (await db.select({ sessionId: sessions.sessionId })
-    .from(sessions).where(and(inArray(sessions.sessionId, sessionIds), ne(sessions.provider, 'legiscan'))).all())
-    .map(r => r.sessionId))
-
   for (const session of sessionRefs) {
     const { sessionId } = session
-    if (directSessionIds.has(sessionId)) continue
-    // 1 LegiScan call per session.
+    // Each session's list comes from its own provider, by the row's `provider`
+    // column. A snapshot provider has no list to call here: its stubs refresh
+    // on its own sync.
+    const provider = findProvider(session.provider)
+    if (!provider?.listMeasures) continue
+    // The provider logs each call as it goes out, so the row records the outbound
+    // attempt, not the intent to make one; these params say why it was spent.
+    const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
+    // 1 LegiScan call per LegiScan session.
     let list: SyncEntry[]
     try {
-      list = await provider.listMeasures!(session, ctx)
+      list = await provider.listMeasures(session, ctx)
     } catch (err) {
       console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)

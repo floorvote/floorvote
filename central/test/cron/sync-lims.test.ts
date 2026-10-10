@@ -36,7 +36,7 @@ import { processIngestorQueue } from '../../src/queue/processor'
 import * as lims from '../../src/providers/lims/client'
 import * as limsMap from '../../src/providers/lims/map'
 import * as legiscan from '../../src/providers/legiscan/client'
-import { limsBillId, limsSessionId, isLimsDocId } from '../../src/providers/lims/ids'
+import { limsBillId, limsSessionId, LIMS_DOC_ID_BASE } from '../../src/providers/lims/ids'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
 const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSnapshotSync(limsProvider, e, db, opts)
@@ -148,7 +148,7 @@ describe('ingesting a LIMS bill', () => {
     const texts = await db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, B0400)).all()
     expect(texts.length).toBeGreaterThan(3)
     for (const t of texts) {
-      expect(isLimsDocId(t.docId)).toBe(true)
+      expect(t.docId).toBeGreaterThan(LIMS_DOC_ID_BASE)
       expect(t.textHash).toBeTruthy()
       expect(t.r2Key).toBeTruthy()
     }
@@ -178,6 +178,48 @@ describe('ingesting a LIMS bill', () => {
     await runLimsSync(second.env, db)
     const queued = second.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
     expect(queued).not.toContain(B0400)
+  })
+})
+
+describe('routing by the provider column', () => {
+  it("builds a bill from LIMS when its row says so, whatever its id", async () => {
+    // A LegiScan-sized id, as a bill keeps when a cutover moves its state to
+    // LIMS. Nothing about the id says LIMS: only the rows do.
+    const db = drizzle(env.DB, { schema })
+    const BILL = 1_950_000
+    const rec = bulk['B26-0400']
+    await db.insert(schema.sessions).values({
+      sessionId: limsSessionId(26), state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2026,
+      sessionTag: 'CP26', sessionTitle: 'Council Period 26', sessionName: '2025-2026 Council Period 26', provider: 'lims',
+    })
+    await db.insert(schema.bills).values({
+      billId: BILL, changeHash: '', sessionId: limsSessionId(26), state: 'DC', stateId: 51,
+      billNumber: 'B26-0400', title: 'B26-0400', provider: 'lims',
+    })
+    await db.insert(schema.providerRecords).values({
+      billId: BILL, provider: 'lims', nativeKey: 'B26-0400', sessionId: limsSessionId(26),
+      rawJson: JSON.stringify(rec), rawHash: await limsMap.bulkHash(rec),
+    })
+    await db.insert(schema.billTenants).values({ billId: BILL, tenantId: 'oca', matchType: 'keyword' })
+    const { env: e, tenantQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+
+    const retry = vi.fn()
+    await processIngestorQueue({ messages: [{ body: { billId: BILL }, ack: vi.fn(), retry }] } as any, e, db)
+
+    expect(retry).not.toHaveBeenCalled()
+    expect(legiscan.getBill).not.toHaveBeenCalled()
+    expect(lims.getLegislationDetails).toHaveBeenCalledWith('B26-0400', 'lims-key', expect.any(Function))
+    const { app } = await import('../../src/index-legiscan')
+    const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${BILL}`, {
+      headers: { 'x-admin-secret': 'test-secret' },
+    }), e)
+    const body = await res.json() as { billId: string; title: string; status: string }
+    expect(body).toMatchObject({ billId: `legiscan:${BILL}`, title: 'Statutory Neglect Amendment Act of 2025', status: 'Official Law' })
+    const sent = [
+      ...tenantQueue.send.mock.calls.map(c => c[0]),
+      ...tenantQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)),
+    ]
+    expect(sent.some((m: any) => m.billId === `legiscan:${BILL}`)).toBe(true)
   })
 })
 
