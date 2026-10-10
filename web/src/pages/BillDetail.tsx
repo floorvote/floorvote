@@ -416,7 +416,7 @@ type BillDetailData = {
   url?: string | null
   legiscanUrl?: string | null
   committee: string | null
-  referrals?: { date: string; committee_id: number; chamber: string; name: string }[]
+  referrals?: { date: string | null; committeeId: string | null; chamber: string | null; name: string }[]
   tenantSummary: string | null
   tags: string[]
   relevanceScore: number | null
@@ -1671,10 +1671,10 @@ export function BillDetail() {
               <>
                 <span style={{ color: color.textMuted, marginRight: 4 }}>Referrals:</span>
                 {(bill.referrals ?? []).map((r, i) => (
-                  <span key={r.committee_id}>
+                  <span key={i}>
                     {i > 0 && <span style={{ color: color.borderStrong, margin: '0 6px' }}>·</span>}
                     {r.name}
-                    <span style={{ color: color.textMuted, marginLeft: 4 }}>{r.date.slice(0, 7)}</span>
+                    {r.date && <span style={{ color: color.textMuted, marginLeft: 4 }}>{r.date.slice(0, 7)}</span>}
                   </span>
                 ))}
               </>
