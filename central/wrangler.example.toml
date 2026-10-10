@@ -103,7 +103,7 @@ EMAIL_PROVIDER = "cloudflare"
 # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
 # Maryland (mgaleg.maryland.gov, src/providers/mga) and Virginia
 # (lis.virginia.gov, src/providers/lis) need no key. Virginia bill text needs
-# the LIS API, which is not used yet.
+# the LIS API, which isn't used because its terms are non-commercial.
 # For one release only, these older vars still seed a state's claim on the
 # first sync, when the state has none. Remove them once the claim exists.
 # LIMS_STATES = "DC"

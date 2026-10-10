@@ -290,8 +290,14 @@ async function storeRecords(
       .from(bills).where(inArray(bills.billId, chunk)).all()) storedDesc.set(r.billId, r.description)
   }
 
+  // Written as it goes, a batch at a time, so a pass that changes every
+  // record (the first one) never holds every record's JSON at once.
   const now = nowDb()
-  const stmts: any[] = []
+  let stmts: any[] = []
+  const flush = async () => {
+    if (stmts.length > 0) await db.batch(stmts as [any, ...any[]])
+    stmts = []
+  }
   const entries = []
   for (const record of records) {
     if (storedHash.get(record.billId) !== record.hash) {
@@ -306,13 +312,11 @@ async function storeRecords(
       }
       const { billId: _id, ...update } = values
       stmts.push(db.insert(providerRecords).values(values).onConflictDoUpdate({ target: providerRecords.billId, set: update }))
+      if (stmts.length >= FLUSH_BATCH) await flush()
     }
     entries.push(await provider.toEntry(record, { description: storedDesc.get(record.billId) ?? null }, ctx))
   }
-  for (let i = 0; i < stmts.length; i += FLUSH_BATCH) {
-    const chunk = stmts.slice(i, i + FLUSH_BATCH) as [any, ...any[]]
-    if (chunk.length > 0) await db.batch(chunk)
-  }
+  await flush()
   return entries
 }
 

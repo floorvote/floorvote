@@ -322,6 +322,13 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * The central ids already minted for these keys, without minting any: a key
+   * central has never seen is left out. For linking to a record the provider
+   * isn't sure exists, such as the earlier session's copy of a carried-over
+   * bill.
+   */
+  knownIds(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
+  /**
    * The people core has stored for this provider, by central id ascending, for
    * resolving the names its records use.
    */

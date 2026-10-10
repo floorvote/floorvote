@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import { apiCallLog, people } from '../db/schema'
 import { nowDb } from './dbTime'
-import { providerIdsFor } from './providerIds'
+import { knownProviderIds, providerIdsFor } from './providerIds'
 import type { Provider, ProviderContext } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -26,6 +26,7 @@ export function providerContext(
     },
     today: nowDb().slice(0, 10),
     ids: (kind, nativeKeys) => providerIdsFor(db, provider.id, kind, nativeKeys),
+    knownIds: (kind, nativeKeys) => knownProviderIds(db, provider.id, kind, nativeKeys),
     people: () => db.select({ peopleId: people.peopleId, name: people.name, role: people.role })
       .from(people)
       .where(eq(people.provider, provider.id))
