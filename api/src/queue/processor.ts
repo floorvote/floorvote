@@ -750,6 +750,13 @@ export async function processCentralNotification(
       set: { type: t.note, date: t.date, mime: link?.mediaType ?? 'text/html', stateLink: link?.url ?? null, altStateLink: altLink?.url ?? null, updatedAt: now },
     })
   }
+  // Central never drops a text except when a cutover moves the bill to another
+  // provider, which clears the old provider's. A text it no longer lists would
+  // only fail to open, so it goes here too.
+  await db.delete(billTexts).where(and(
+    eq(billTexts.billId, billInternalId),
+    sql`${billTexts.docId} NOT IN (SELECT value FROM json_each(${JSON.stringify(centralBill.texts.map(t => t.docId))}))`,
+  ))
 
   // Feed events: only for tracked bills (keyword or manual) with AI data and detected changes from central.
   // F5+B5: switched gate from `!existing.isStub` to `existing.matchType !== null` (canonical field).

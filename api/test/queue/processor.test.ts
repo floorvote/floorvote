@@ -674,6 +674,22 @@ describe('processCentralNotification', () => {
     expect(texts[0].stateLink).toBe('https://legisinfo.ri.gov/HB100.html')
   })
 
+  it('drops the texts central no longer lists, as after a cutover to another provider', async () => {
+    const db = getDb(env.DB)
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+
+    // The bill's new provider has its own document, and central cleared the old one.
+    const newText = { docId: 'lims-doc-1', note: 'Introduction', date: '2026-01-02', links: [{ url: 'https://lims.dccouncil.gov/1.pdf', mediaType: 'application/pdf' }] }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>New text</p>' }) })
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, texts: [newText], updatedAt: '2026-02-01T00:00:00Z' }) })
+    }))
+    await processCentralNotification(msg, testEnv as any, db)
+    const bill = await db.select().from(bills).get()
+    expect((await db.select().from(billTexts).where(eq(billTexts.billId, bill!.id)).all()).map(t => t.docId)).toEqual(['lims-doc-1'])
+  })
+
   it('emits bill_updated feed event when AI-processed bill has status change', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
