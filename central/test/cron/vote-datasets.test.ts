@@ -177,6 +177,21 @@ describe('weekly LegiScan member votes', () => {
     expect(ingestorSend.mock.calls.map(c => c[0].sessionId)).toEqual([1])
   })
 
+  it('leaves out a state another provider owns, and that provider\'s sessions', async () => {
+    await db.update(schema.tenants).set({ stateCoverage: JSON.stringify(['RI', 'DC', 'MD']) })
+    await db.insert(schema.sessions).values([
+      // DC reads from LIMS on this central, so LegiScan's DC datasets aren't checked.
+      { sessionId: 4, state: 'DC', stateId: 51, yearStart: 2026, yearEnd: 2026, sessionName: 'DC 2026', sessionTitle: 'Regular' },
+      // A session the MGA provider wrote, though Maryland is back on LegiScan.
+      { sessionId: 3_000_000_001, state: 'MD', stateId: 20, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular Session', sessionTitle: '2026 Regular Session', source: 'mga' },
+    ])
+
+    await checkVoteDatasets({ ...mockEnv(), LIMS_API_KEY: 'k', LIMS_STATES: 'DC' }, db)
+
+    const ops = fetchMock.mock.calls.map(c => new URL(c[0] as string))
+    expect(ops.map(u => [u.searchParams.get('op'), u.searchParams.get('state')])).toEqual([['getDatasetList', 'RI']])
+  })
+
   it('costs one getDatasetList call a week while the dataset is unchanged', async () => {
     await checkVoteDatasets(mockEnv(), db)
     await deliverQueued()
