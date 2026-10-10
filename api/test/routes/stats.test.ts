@@ -174,6 +174,22 @@ describe('GET /stats/sidebar — upcoming hearings from central', () => {
     expect(body.upcomingHearings[0].date).toBe(dateFromNow(3))
     expect(body.upcomingHearings[0].bills[0].billNumber).toBe('A1129')
   })
+
+  it('leaves out a deadline, which central sends with its own kind', async () => {
+    const central = {
+      fetch: async () => Response.json([
+        { eventHash: 'eh1', type: 'Hearing', kind: 'hearing', date: dateFromNow(3), time: '10:00:00', location: 'Room 11',
+          description: 'Committee hearing', billId: 2099974, billNumber: 'A1129', billTitle: 'Drop boxes', state: 'NJ', sessionName: null },
+        { eventHash: 'eh2', type: 'Deadline', kind: 'deadline', date: dateFromNow(4), time: null, location: null,
+          description: "Mayor's response due", billId: 2099974, billNumber: 'A1129', billTitle: 'Drop boxes', state: 'NJ', sessionName: null },
+      ]),
+    }
+    const res = await app.request('/api/stats/sidebar',
+      { headers: { Cookie: `session=${memberToken}` } },
+      { ...env, CENTRAL: central } as never)
+    const body = await res.json() as { upcomingHearings: Array<{ date: string }> }
+    expect(body.upcomingHearings.map(h => h.date)).toEqual([dateFromNow(3)])
+  })
 })
 
 describe('GET /api/stats memberCount', () => {
