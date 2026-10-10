@@ -67,14 +67,16 @@ export function mgaStatus(r: MgaRecord): number {
   // Passed, no chapter, and back on the floor: a veto override vote deferred
   // ("Special Order vote on veto until next session") or postponed for good.
   if (r.PassedByMGA && /veto|Postpone Indefinitely/i.test(s)) return MGA_STATUS.vetoed
-  if (/Withdrawn/i.test(s) || [r.ReportActionHouseOfOrigin, r.ReportActionOppositeHouse].some(a => /^Withdrawn/i.test(a ?? ''))) {
+  // "Withdrawn" as an action of its own ("...; Withdrawn", "In the House - Withdrawn by Sponsor"), not inside a motion's text.
+  if (/(^|; |- )Withdrawn\b/i.test(s) || [r.ReportActionHouseOfOrigin, r.ReportActionOppositeHouse].some(a => /^Withdrawn/i.test(a ?? ''))) {
     return MGA_STATUS.withdrawn
   }
   if (/Unfavorable Report/i.test(s)) return MGA_STATUS.unfavorableReport
   if (/Postpone Indefinitely.*Adopted/i.test(s)) return MGA_STATUS.postponed
   // A House or Senate resolution is done once its own chamber adopts it.
   const readings = [r.SecondReadingActionHouseOfOrigin, r.ThirdReadingActionHouseOfOrigin]
-  if (mgaBillType(r.BillNumber).type === 'R' && (r.PassedByMGA || readings.some(a => /^Adopted/i.test(a ?? '')))) {
+  const adopted = r.PassedByMGA || readings.some(a => /^Adopted/i.test(a ?? '')) || /^(In the (House|Senate) - )?Adopted\b/i.test(s)
+  if (mgaBillType(r.BillNumber).type === 'R' && adopted) {
     return MGA_STATUS.adopted
   }
   if (r.PassedByMGA) return MGA_STATUS.passedGeneralAssembly
@@ -211,7 +213,7 @@ export function toMgaMasterListEntry(
 export interface MgaIds {
   /** Central bill id of a bill in this session, by its MGA number ("SB0002"). */
   bill(billNumber: string): number | undefined
-  /** Central person id for a sponsor, by the name as written ("Delegate Crosby"). */
+  /** Central person id for a sponsor, by the name as written ("Delegate Crosby"), keyed in the id table by mgaPersonKey. */
   person(name: string): number
   /** Central document id, by key (see mgaDocKeys). */
   doc(key: string): number
@@ -307,6 +309,17 @@ export function mgaSponsorNames(r: MgaRecord): string[] {
   return [...new Set([primary, ...others].filter((n): n is string => !!n))]
 }
 
+/**
+ * A sponsor's native key in central's id table. A Delegate or Senator is
+ * keyed by name as written ("Delegate Long, J."), so a member keeps one id
+ * across bills and sessions. An office ("Speaker", "Chair, Appropriations
+ * Committee") is held by different people over time, so it is keyed by
+ * session too, and a legislator page never merges two Speakers.
+ */
+export function mgaPersonKey(sessionCode: string, name: string): string {
+  return /^(Delegate|Senator) /.test(name) ? name : `${sessionCode}/${name}`
+}
+
 /** "Delegate Crosby" → { role: "Delegate", name: "Crosby" }; committee and officer sponsors keep their whole name. */
 function splitSponsor(full: string): { role: string; name: string } {
   const m = /^(Delegate|Senator)\s+(.+)$/.exec(full)
@@ -395,18 +408,20 @@ export async function buildMgaBill(
     mime: 'application/pdf', url: '', state_link: paths.fiscalNote, supplement_size: 0, supplement_hash: '',
   }] : []
 
+  // A hearing's description is its identity, so a slot with no committee
+  // named still says which slot it is, and two such can't collapse into one.
   const hearings = [
-    { at: r.HearingDateTimePrimaryHouseOfOrigin, c: origin, committee: r.CommitteePrimaryOrigin },
-    { at: r.HearingDateTimeSecondaryHouseOfOrigin, c: origin, committee: r.CommitteeSecondaryOrigin },
-    { at: r.HearingDateTimePrimaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteePrimaryOpposite },
-    { at: r.HearingDateTimeSecondaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteeSecondaryOpposite },
+    { at: r.HearingDateTimePrimaryHouseOfOrigin, c: origin, committee: r.CommitteePrimaryOrigin, unnamed: 'committee' },
+    { at: r.HearingDateTimeSecondaryHouseOfOrigin, c: origin, committee: r.CommitteeSecondaryOrigin, unnamed: 'second committee' },
+    { at: r.HearingDateTimePrimaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteePrimaryOpposite, unnamed: 'committee' },
+    { at: r.HearingDateTimeSecondaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteeSecondaryOpposite, unnamed: 'second committee' },
   ]
   const calendar: CentralMeasure['calendar'] = []
   for (const h of hearings) {
     if (!h.at) continue
     const date = h.at.slice(0, 10)
     const time = h.at.slice(11, 16)
-    const description = `${CHAMBER_NAME[h.c]} ${h.committee?.trim() || 'committee'} hearing`
+    const description = `${CHAMBER_NAME[h.c]} ${h.committee?.trim() || h.unnamed} hearing`
     calendar.push({
       type_id: 1, type: 'Hearing', date, time, location: '', description,
       event_hash: (await sha256Hex(`1|${date}|${time}|${description}`)).slice(0, 32),

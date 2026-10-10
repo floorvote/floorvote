@@ -444,6 +444,7 @@ describe('Maryland fails closed', () => {
 
   it.each([
     ['an empty list', () => json([])],
+    ['null', () => json(null)],
     ['no file', () => new Response('not found', { status: 404 })],
   ] as [string, () => Response][])('reads %s as nothing new, never as bills removed', async (_what, answer) => {
     const before = await baseline()
@@ -454,6 +455,18 @@ describe('Maryland fails closed', () => {
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before.bill)
     expect(await getJson('/bills/sessions?state=MD')).toEqual(before.sessions)
+  })
+
+  it('reads a statute whose article or sections are null, as the mapping does', async () => {
+    const records = sample()
+    records.find(r => r.BillNumber === 'HB0001')!.Statutes = [
+      { Article: { Code: 'gpu', Title: null }, Sections: [{ Section: '4-504' }] },
+      { Article: null, Sections: null },
+    ]
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    expect((await getJson(`/bills/${toHandle(await billId('HB1'))}`)).extras.fields.find((f: any) => f.key === 'statutes').value).toBe('§ 4-504')
   })
 
   it('changes nothing when the session list can\'t be read', async () => {

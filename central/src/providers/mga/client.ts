@@ -58,7 +58,7 @@ export interface MgaRecord {
   NarrowSubjects: MgaCode[]
   BillType: string                   // "Pre-Filed", "Regular"
   BillVersion: string                // latest text: "F" first reader, "T" third reader, "E" enrolled
-  Statutes: { Article: { Code: string; Title: string }; Sections: { Section: string }[] }[]
+  Statutes: { Article: { Code: string; Title: string | null } | null; Sections: { Section: string | null }[] | null }[] | null
   YearAndSession: string             // "2026 Regular Session"
   /** One timestamp for the whole file; changes on every regeneration. */
   StatusCurrentAsOf: string
@@ -98,6 +98,8 @@ export async function getMgaSession(sessionCode: string, etag?: string | null, o
   } catch {
     throw new Error(`MGA ${sessionCode}: the session file isn't JSON`)
   }
+  // A null body is an empty file, like [].
+  if (data === null) return { unchanged: false, records: [], etag: null }
   if (!Array.isArray(data)) throw unexpected(sessionCode, 'not a list')
   for (const record of data) checkRecord(sessionCode, record)
   return { unchanged: false, records: data as MgaRecord[], etag: res.headers.get('ETag') }
@@ -139,6 +141,7 @@ const LIST_KEYS = ['Sponsors', 'BroadSubjects', 'NarrowSubjects', 'Statutes'] as
 const hasText = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || typeof o[key] === 'string')
 const hasFlag = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || typeof o[key] === 'boolean')
 const hasList = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || Array.isArray(o[key]))
+const hasRecord = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || isObject(o[key]))
 const listOf = (o: Record<string, unknown>, key: string) => (o[key] ?? []) as unknown[]
 
 function checkRecord(sessionCode: string, r: unknown): void {
@@ -157,7 +160,8 @@ function checkRecord(sessionCode: string, r: unknown): void {
       throw unexpected(sessionCode, `a subject of ${bill} without its code and name`)
     }
   }
-  const statuteOk = (st: unknown) => isObject(st) && isObject(st.Article) && typeof st.Article.Title === 'string' &&
-    Array.isArray(st.Sections) && st.Sections.every(x => isObject(x) && typeof x.Section === 'string')
+  const statuteOk = (st: unknown) => isObject(st) && hasRecord(st, 'Article') && hasList(st, 'Sections') &&
+    (st.Article === null || hasText(st.Article as Record<string, unknown>, 'Title')) &&
+    listOf(st, 'Sections').every(x => isObject(x) && hasText(x, 'Section'))
   if (!listOf(r, 'Statutes').every(statuteOk)) throw unexpected(sessionCode, `a statute of ${bill} without its article and sections`)
 }

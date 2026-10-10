@@ -68,7 +68,7 @@ export const vocabulary: ProviderVocabulary = {
     },
     212: {
       label: 'Adopted', stage: 'enacted', rank: 701, terminal: true,
-      explainer: 'Adopted: by its chamber, for a House or Senate resolution, or by the General Assembly, for a joint resolution. A resolution doesn\'t go to the Governor.',
+      explainer: 'Adopted by its chamber, for a House or Senate resolution, or by the General Assembly, for a joint resolution. Some joint resolutions take effect without a vote, unless the General Assembly rejects them in time.',
     },
     213: {
       label: 'Approved by the Governor', stage: 'enacted', rank: 702, terminal: true,
@@ -91,7 +91,7 @@ export const vocabulary: ProviderVocabulary = {
   billTypes: {
     B: { label: 'Bill', explainer: 'A proposed law. It becomes law if both chambers pass it and the Governor signs it, lets it become law unsigned, or has a veto overridden.' },
     R: { label: 'Resolution', explainer: 'A statement or decision of the House or the Senate alone. It doesn\'t make law, and doesn\'t go to the Governor.' },
-    JR: { label: 'Joint Resolution', explainer: 'A resolution of both chambers, often a statement of the General Assembly\'s position. It doesn\'t make law.' },
+    JR: { label: 'Joint Resolution', explainer: 'A resolution of both chambers. Most state the General Assembly\'s position. Some have legal effect, such as one setting officials\' salaries, which takes effect unless the General Assembly rejects it.' },
   },
 
   eventTypes: {

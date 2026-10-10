@@ -1,6 +1,6 @@
 import { getMgaSession, mgaSessionExists, type MgaRecord } from './client'
 import {
-  assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
+  assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaPersonKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
 } from './map'
 import { vocabulary } from './vocabulary'
 import type { Provider, ProviderRecord, SyncSession } from '../sdk'
@@ -82,7 +82,7 @@ export const mga: Provider<'MGA_STATES'> = {
     const code = nativeKey.split('/')[0]
     const year = Number(code.slice(0, 4))
 
-    const people = await ctx.ids('person', mgaSponsorNames(r))
+    const people = await ctx.ids('person', mgaSponsorNames(r).map(name => mgaPersonKey(code, name)))
     const docs = await ctx.ids('doc', mgaDocKeys(code, r))
     const subjects = await ctx.ids('subject', mgaSubjectKeys(r))
     const crossfile = r.CrossfileBillNumber?.trim()
@@ -95,7 +95,7 @@ export const mga: Provider<'MGA_STATES'> = {
       year_end: session?.yearEnd ?? year,
     }, {
       bill: n => (n === crossfile ? crossfileId : undefined),
-      person: name => people.get(name)!,
+      person: name => people.get(mgaPersonKey(code, name))!,
       doc: key => docs.get(key)!,
       subject: key => subjects.get(key)!,
     })
