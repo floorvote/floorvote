@@ -42,6 +42,7 @@ import * as mga from '../../src/providers/mga/client'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { limsBillId, limsSessionId } from '../../src/providers/lims/ids'
 import { nowDb } from '../../src/lib/dbTime'
+import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
 const db = drizzle(env.DB, { schema })
 const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
@@ -53,14 +54,17 @@ const LS_DC_SESSION = 2150
 function makeEnv(extra: Record<string, unknown> = {}) {
   const limsQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn() }
   const ingestor = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn() }
+  const tenantQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
   return {
-    limsQueue, ingestor,
+    limsQueue, ingestor, tenantQueue,
     env: {
       ...(env as any),
       ADMIN_SECRET: 'test-secret',
       LIMS_API_KEY: 'lims-key', LIMS_CATEGORIES: '1,18',
       LIMS_INGESTOR_QUEUE: limsQueue,
       INGESTOR_QUEUE: ingestor,
+      [tenantQueueBindingName('oca')]: tenantQueue,
+      [tenantQueueBindingName('team')]: tenantQueue,
       ...extra,
     },
   }
@@ -92,8 +96,22 @@ async function trackLegiscanDcBill(billId: number, tenantId: string, matchType: 
   await db.insert(schema.billTenants).values({ billId, tenantId, matchType })
 }
 
+/** A LIMS DC bill linked to an instance, as on a central that already reads DC from LIMS. */
+async function trackLimsDcBill(number: string, tenantId: string) {
+  const billId = limsBillId(number)!
+  await db.insert(schema.sessions).values({ sessionId: limsSessionId(26), state: 'DC', stateId: 51, yearStart: 2025, yearEnd: 2026, sessionTag: 'CP26', sessionTitle: 'CP26', sessionName: 'CP26', provider: 'lims' })
+    .onConflictDoNothing()
+  await db.insert(schema.bills).values({ billId, changeHash: 'h', sessionId: limsSessionId(26), state: 'DC', stateId: 51, billNumber: number, title: 't', provider: 'lims' })
+    .onConflictDoNothing()
+  await db.insert(schema.billTenants).values({ billId, tenantId, matchType: 'keyword' })
+}
+
 /** The states the LegiScan sync asked LegiScan about (its 5 ET session refresh). */
 const legiscanStates = () => vi.mocked(legiscan.getSessionList).mock.calls.map(c => c[0]).sort()
+
+/** Logged lines that match, from a console spy. */
+const logged = (spy: { mock: { calls: unknown[][] } }, pattern: RegExp) =>
+  spy.mock.calls.map(c => c.map(String).join(' ')).filter(line => pattern.test(line))
 
 beforeEach(async () => {
   await setupLsDb()
@@ -200,6 +218,7 @@ describe('claiming a state for a provider', () => {
   it('checks its input and the provider', async () => {
     const { env: e } = makeEnv()
     expect((await claim(e, 'DC', {})).status).toBe(400)
+    expect((await claim(e, 'DC', null)).status).toBe(400)
     expect((await claim(e, 'DC', { provider: 'nope' })).status).toBe(400)
     expect((await claim(e, 'DCX', { provider: 'lims' })).status).toBe(400)
     // LIMS serves DC only.
@@ -207,6 +226,17 @@ describe('claiming a state for a provider', () => {
     // Without its API key LIMS can't run, and DC would go dark.
     expect((await claim(makeEnv({ LIMS_API_KEY: undefined }).env, 'DC', { provider: 'lims' })).status).toBe(400)
     expect((await ownership(e)).states).toEqual([])
+  })
+
+  it('must come first for a LIMS import, which links bills only in states LIMS owns', async () => {
+    const { env: e } = makeEnv()
+    const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
+      method: 'POST',
+      headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'oca', numbers: ['B26-0400'] }),
+    }), e)
+    expect(res.status).toBe(409)
+    expect(lims.getBulkData).not.toHaveBeenCalled()
   })
 
   it('needs the admin secret', async () => {
@@ -252,7 +282,7 @@ describe('seeding ownership from the old env vars (one release)', () => {
     expect(legiscanStates()).toEqual(['DC', 'MD'])
   })
 
-  it('is refused while LegiScan has tracked bills in the state, logs it, and the state keeps syncing from LegiScan', async () => {
+  it('is refused while LegiScan has tracked bills in the state, logs it once an hour, and the state keeps syncing from LegiScan', async () => {
     const warn = vi.spyOn(console, 'warn')
     const { env: e, limsQueue } = makeEnv({ LIMS_STATES: 'DC' })
     await trackLegiscanDcBill(9001, 'oca', 'keyword')
@@ -261,12 +291,56 @@ describe('seeding ownership from the old env vars (one release)', () => {
     expect(lims.getBulkData).not.toHaveBeenCalled()
     expect(limsQueue.sendBatch).not.toHaveBeenCalled()
     expect((await ownership(e)).states).toEqual([])
-    expect(warn.mock.calls.flat().join('\n'))
-      .toMatch(/not seeding DC for lims from LIMS_STATES: legiscan has 1 tracked bills there \(instances: oca\)/)
 
     await runSync(e, db)
     expect(legiscanStates()).toEqual(['DC', 'MD'])
     expect(vi.mocked(legiscan.getMasterListBySession).mock.calls.map(c => c[0])).toEqual([LS_DC_SESSION])
+    // Logged by the LegiScan sync only, so once an hour rather than once per job.
+    expect(logged(warn, /not seeding DC for lims from LIMS_STATES: legiscan has 1 tracked bills there \(instances: oca\)/))
+      .toHaveLength(1)
+  })
+
+  it('logs an error for a split state, where both providers have tracked bills, and leaves it with its owner', async () => {
+    const error = vi.spyOn(console, 'error')
+    const { env: e } = makeEnv({ LIMS_STATES: 'DC' })
+    await trackLegiscanDcBill(9001, 'oca', 'keyword')
+    await trackLimsDcBill('B26-0400', 'team')
+
+    await runSync(e, db)
+    await runSnapshotSync(limsProvider, e, db)
+
+    expect(logged(error, /DC is split: legiscan has 1 tracked bills there \(instances: oca\) and lims has 1 \(instances: team\)/))
+      .toHaveLength(1)
+    expect((await ownership(e)).states).toEqual([])
+    expect(legiscanStates()).toEqual(['DC', 'MD'])
+    expect(lims.getBulkData).not.toHaveBeenCalled()
+  })
+
+  it("counts only the current owner's links, so a central already reading DC from LIMS seeds it to LIMS", async () => {
+    const warn = vi.spyOn(console, 'warn')
+    const { env: e } = makeEnv({ LIMS_STATES: 'DC' })
+    await trackLimsDcBill('B26-0400', 'oca')
+    await trackLimsDcBill('B26-0769', 'team')
+
+    await runSync(e, db)
+    expect((await ownership(e)).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims', previousProvider: 'legiscan' })])
+    expect(logged(warn, /not seeding/)).toEqual([])
+    expect(legiscanStates()).toEqual(['MD'])
+  })
+
+  it('writes each row once when every job runs at the same time in the first hour', async () => {
+    const log = vi.spyOn(console, 'log')
+    const { env: e } = makeEnv({ LIMS_STATES: 'DC', MGA_STATES: 'MD' })
+
+    await Promise.all([runSync(e, db), runSnapshotSync(limsProvider, e, db), runSnapshotSync(mgaProvider, e, db)])
+
+    expect((await ownership(e)).states).toEqual([
+      expect.objectContaining({ state: 'DC', provider: 'lims' }),
+      expect.objectContaining({ state: 'MD', provider: 'mga' }),
+    ])
+    expect(logged(log, /DC now syncs from lims, seeded from LIMS_STATES/)).toHaveLength(1)
+    expect(logged(log, /MD now syncs from mga, seeded from MGA_STATES/)).toHaveLength(1)
+    expect(legiscanStates()).toEqual([])
   })
 
   it('decides each state on its own: a refused DC never holds up Maryland', async () => {
@@ -281,5 +355,68 @@ describe('seeding ownership from the old env vars (one release)', () => {
 
     await runSync(e, db)
     expect(legiscanStates()).toEqual(['DC'])
+  })
+})
+
+describe('a provider that owns a state but has lost its key', () => {
+  it('leaves the state unsynced, with a warning, rather than handing it back to LegiScan', async () => {
+    const warn = vi.spyOn(console, 'warn')
+    await db.insert(schema.stateProviders).values({ state: 'DC', provider: 'lims', previousProvider: 'legiscan' })
+    const { env: e } = makeEnv({ LIMS_API_KEY: undefined })
+
+    expect(await runSnapshotSync(limsProvider, e, db)).toEqual([])
+    expect(lims.getCouncilPeriods).not.toHaveBeenCalled()
+    expect(logged(warn, /\[sync-lims\] owns DC but isn't configured/)).toHaveLength(1)
+
+    await runSync(e, db)
+    expect(legiscanStates()).toEqual(['MD'])
+    expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
+  })
+})
+
+describe('a claim that lands while a sync is running', () => {
+  const NEW_BILL = { bill_id: 9100, number: 'B26-9100', change_hash: 'c1', title: 'Child Neglect Prevention Act', description: '' }
+  const links = async () => (await db.select().from(schema.billTenants).all()).map(l => `${l.billId}:${l.tenantId}:${l.matchType}`).sort()
+
+  it('without a claim, the LegiScan pass links and queues a new DC bill', async () => {
+    const { env: e, ingestor } = makeEnv()
+    vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([NEW_BILL])
+    await runSync(e, db)
+    expect(await links()).toEqual(['9100:oca:keyword', '9100:team:null'])
+    expect(queuedIds(ingestor)).toEqual([9100])
+  })
+
+  it('stops the LegiScan pass from linking, queueing, or notifying in the state it just lost', async () => {
+    const { env: e, ingestor, tenantQueue } = makeEnv()
+    let claimStatus = 0
+    vi.mocked(legiscan.getMasterListBySession).mockImplementation(async () => {
+      claimStatus = (await claim(e, 'DC', { provider: 'lims' })).status
+      return [NEW_BILL]
+    })
+
+    await runSync(e, db)
+
+    expect(claimStatus).toBe(200)
+    expect(await links()).toEqual([])
+    expect(ingestor.sendBatch).not.toHaveBeenCalled()
+    expect(tenantQueue.sendBatch).not.toHaveBeenCalled()
+    expect((await ownership(e)).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
+  })
+
+  it('stops a snapshot pass the same way', async () => {
+    await db.insert(schema.stateProviders).values({ state: 'MD', provider: 'mga', previousProvider: 'legiscan' })
+    const { env: e, ingestor, tenantQueue } = makeEnv()
+    let claimStatus = 0
+    vi.mocked(mga.getMgaSession).mockImplementation(async code => {
+      claimStatus = (await claim(e, 'MD', { provider: 'legiscan' })).status
+      return code === MGA_CODE ? JSON.parse(mgaSampleRaw) : null
+    })
+
+    await runSnapshotSync(mgaProvider, e, db)
+
+    expect(claimStatus).toBe(200)
+    expect(await links()).toEqual([])
+    expect(ingestor.sendBatch).not.toHaveBeenCalled()
+    expect(tenantQueue.sendBatch).not.toHaveBeenCalled()
   })
 })

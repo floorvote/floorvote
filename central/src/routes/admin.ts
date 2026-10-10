@@ -12,7 +12,7 @@ import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
 import { providerConfigured } from '../lib/providerRouting'
-import { claimState, listStateOwnership } from '../lib/stateProviders'
+import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -75,10 +75,14 @@ adminRoutes.get('/state-providers', async (c) => {
 adminRoutes.post('/state-providers/:state', async (c) => {
   const state = c.req.param('state').toUpperCase()
   if (!/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state must be a two-letter code' }, 400)
-  const body = await c.req.json<{ provider?: unknown }>().catch(() => ({} as { provider?: unknown }))
-  if (typeof body.provider !== 'string') return c.json({ error: 'provider is required' }, 400)
+  const body = await c.req.json<{ provider?: unknown } | null>().catch(() => null)
+  if (!body || typeof body.provider !== 'string') return c.json({ error: 'provider is required' }, 400)
   const provider = findProvider(body.provider)
   if (!provider) return c.json({ error: `unknown provider "${body.provider}"` }, 400)
+  // Only the default provider's sync and the snapshot sync read the table.
+  if (provider.id !== DEFAULT_PROVIDER_ID && !isSnapshotProvider(provider)) {
+    return c.json({ error: `nothing syncs provider "${provider.id}" by state` }, 400)
+  }
   if (provider.states && !provider.states.includes(state)) {
     return c.json({ error: `provider "${provider.id}" serves ${provider.states.join(', ')}, not ${state}` }, 400)
   }
@@ -109,6 +113,13 @@ adminRoutes.post('/lims-import', async (c) => {
   if (!body.tenantId || numbers.length === 0) return c.json({ error: 'tenantId and a non-empty numbers array are required' }, 400)
   if (numbers.length > 200) return c.json({ error: 'at most 200 numbers per request' }, 400)
   const db = drizzle(c.env.DB, { schema })
+  // The sync links bills only in states their provider owns, so an import
+  // into a state LIMS doesn't own would leave its bills half linked.
+  const owners = await loadStateOwners(c.env, db)
+  const unowned = (getProvider('lims').states ?? []).filter(state => ownerOf(owners, state) !== 'lims')
+  if (unowned.length > 0) {
+    return c.json({ error: `lims doesn't own ${unowned.join(', ')}. Claim it first (POST /api/admin/state-providers/:state).` }, 409)
+  }
   try {
     const result = await importProviderMeasures(getProvider('lims'), c.env, db, body.tenantId, numbers)
     return c.json({ ok: true, ...result })

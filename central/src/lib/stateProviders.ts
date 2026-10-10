@@ -56,13 +56,42 @@ export function statesOwnedBy(owners: StateOwners, providerId: string): string[]
 /**
  * Every state's owner, as a sync reads it. For one release it first seeds rows
  * from the providers' old env vars (seedFromEnv), so whichever sync runs first
- * writes them and every sync agrees.
+ * writes them and every sync agrees. `reportRefusals` logs each refused seed:
+ * only the LegiScan sync sets it, so a refusal is logged once an hour, not
+ * once per job.
  */
-export async function loadStateOwners(env: Env, db: Db): Promise<StateOwners> {
+export async function loadStateOwners(env: Env, db: Db, opts: { reportRefusals?: boolean } = {}): Promise<StateOwners> {
   const read = async () => new Map((await db.select({ state: stateProviders.state, provider: stateProviders.provider })
     .from(stateProviders).all()).map(r => [r.state, r.provider]))
   const owners = await read()
-  return (await seedFromEnv(env, db, owners)) ? read() : owners
+  return (await seedFromEnv(env, db, owners, !!opts.reportRefusals)) ? read() : owners
+}
+
+/** One state's owner, read now. */
+export async function ownerOfState(db: Db, state: string): Promise<string> {
+  const row = await db.select({ provider: stateProviders.provider }).from(stateProviders)
+    .where(eq(stateProviders.state, state)).get()
+  return row?.provider ?? DEFAULT_PROVIDER_ID
+}
+
+/**
+ * Link a bill to an instance, in one statement that writes only while
+ * `provider` still owns the bill's state. A sync reads ownership once, when it
+ * starts, so a claim can land while it runs. This makes the link and the claim
+ * serialize: either the link lands first and the claim counts it and is
+ * refused, or the claim lands first and the link isn't written. An existing
+ * link is left alone.
+ */
+export function insertLinkWhileOwner(
+  db: Db, link: { billId: number; tenantId: string; matchType: string | null }, state: string, provider: string,
+) {
+  // A query builder rather than db.run, so it can go in a db.batch. Drizzle
+  // inserts every bill_tenants column in schema order: bill_id, tenant_id,
+  // notified_at, match_type.
+  return db.insert(billTenants).select(sql`
+    SELECT ${link.billId}, ${link.tenantId}, NULL, ${link.matchType}
+    WHERE COALESCE((SELECT provider FROM state_providers WHERE state = ${state}), ${DEFAULT_PROVIDER_ID}) = ${provider}`)
+    .onConflictDoNothing()
 }
 
 /** Every row, by state. */
@@ -137,11 +166,12 @@ async function writeClaim(db: Db, state: string, providerId: string, owner: stri
  * For one release, then to be removed: each state that a provider's old env
  * var names (Provider.statesEnvKey, such as LIMS_STATES) and that has no row
  * gets one, under the claim's refusal rule, so a central that turned a
- * provider on that way keeps it with no steps. A refusal is logged and the
- * state stays on LegiScan. A provider that isn't configured seeds nothing,
- * since its env var alone never turned it on. Returns whether it tried a write.
+ * provider on that way keeps it with no steps. A refused state stays on
+ * LegiScan, and with `reportRefusals` the refusal is logged. A provider that
+ * isn't configured seeds nothing, since its env var alone never turned it on.
+ * Returns whether it tried a write.
  */
-async function seedFromEnv(env: Env, db: Db, owners: StateOwners): Promise<boolean> {
+async function seedFromEnv(env: Env, db: Db, owners: StateOwners, reportRefusals: boolean): Promise<boolean> {
   let tried = false
   for (const provider of PROVIDERS) {
     const key = provider.statesEnvKey
@@ -153,9 +183,7 @@ async function seedFromEnv(env: Env, db: Db, owners: StateOwners): Promise<boole
       tried = true
       const refusal = await trackedBills(db, state, DEFAULT_PROVIDER_ID)
       if (refusal.trackedBills > 0) {
-        console.warn(`[state-providers] not seeding ${state} for ${provider.id} from ${key}: ` +
-          `${refusal.owner} has ${refusal.trackedBills} tracked bills there (instances: ${refusal.instances.join(', ')}). ` +
-          `${state} stays on ${refusal.owner} until a cutover moves them.`)
+        if (reportRefusals) await reportRefusedSeed(db, state, provider.id, key, refusal)
       } else if (await writeClaim(db, state, provider.id, DEFAULT_PROVIDER_ID, 'seed')) {
         console.log(`[state-providers] ${state} now syncs from ${provider.id}, seeded from ${key}. ` +
           `${key} can be removed now that the row exists.`)
@@ -163,4 +191,24 @@ async function seedFromEnv(env: Env, db: Db, owners: StateOwners): Promise<boole
     }
   }
   return tried
+}
+
+/**
+ * Log a refused seed. When the env var's provider has tracked bills in the
+ * state as well, instances hold bills from both providers: a split state,
+ * which no claim or seed can settle, so it is logged as an error for an
+ * operator. Either way the state stays with its owner and keeps syncing.
+ */
+async function reportRefusedSeed(db: Db, state: string, providerId: string, key: string, refusal: ClaimRefusal): Promise<void> {
+  const own = await trackedBills(db, state, providerId)
+  if (own.trackedBills > 0) {
+    console.error(`[state-providers] ${state} is split: ${refusal.owner} has ${refusal.trackedBills} tracked bills there ` +
+      `(instances: ${refusal.instances.join(', ')}) and ${providerId} has ${own.trackedBills} ` +
+      `(instances: ${own.instances.join(', ')}). Not seeding ${state} for ${providerId} from ${key}. ` +
+      `${state} stays on ${refusal.owner}, and an operator needs to move one provider's bills off it.`)
+    return
+  }
+  console.warn(`[state-providers] not seeding ${state} for ${providerId} from ${key}: ` +
+    `${refusal.owner} has ${refusal.trackedBills} tracked bills there (instances: ${refusal.instances.join(', ')}). ` +
+    `${state} stays on ${refusal.owner} until a cutover moves them.`)
 }

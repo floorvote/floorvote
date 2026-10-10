@@ -31,8 +31,9 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly envKeys: readonly K[]
 
   /**
-   * The states the provider can serve. Omitted when it can serve any state.
-   * Which provider a state actually syncs from is core's state ownership table
+   * The states the provider can serve. Every snapshot provider lists them.
+   * LegiScan leaves it out, since it serves any state. Which provider a state
+   * actually syncs from is core's state ownership table
    * (lib/stateProviders.ts), and a claim for a state not listed here is refused.
    */
   readonly states?: readonly string[]
