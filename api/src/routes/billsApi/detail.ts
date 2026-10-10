@@ -7,6 +7,7 @@ import {
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { isHandle, toHandle } from '../../../../shared/billHandle'
+import type { BillExtras } from '../../../../shared/providerExtras'
 import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
@@ -37,6 +38,8 @@ type CentralBillRich = {
     url: string | null
     stateLink: string | null
   }>
+  /** Fields only the bill's provider publishes, labeled by central. Display only. */
+  extras?: BillExtras | null
 }
 
 export async function buildBillDetail(
@@ -278,6 +281,9 @@ export async function buildBillDetail(
       : (centralRich?.calendar ?? []),
     amendments: centralRich?.amendments ?? [],
     supplements: centralRich?.supplements ?? [],
+    // Passed through for the bill page's provider panel, never stored: nothing
+    // in an instance sorts, filters, notifies, or runs AI on extras.
+    extras: centralRich?.extras ?? null,
     customFieldValues: {} as Record<string, { value: string; setBy: string | null; updatedAt: string }>,
   }
 
