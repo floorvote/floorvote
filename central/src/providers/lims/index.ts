@@ -27,7 +27,7 @@ const CATEGORY_BY_PREFIX: Record<string, number> = {
 
 export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> = {
   id: 'lims',
-  displayName: 'DC Council LIMS',
+  displayName: 'DC Council',
   envKeys: ['LIMS_API_KEY', 'LIMS_STATES', 'LIMS_CATEGORIES'],
   states: [LIMS_STATE],
   configured: env => !!env.LIMS_API_KEY,

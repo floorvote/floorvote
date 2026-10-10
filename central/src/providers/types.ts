@@ -27,8 +27,10 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly id: string
 
   /**
-   * The provider's name as members and operators read it, such as "DC Council
-   * LIMS". It titles the bill page's panel of the provider's extras.
+   * The provider's name as members and operators read it, such as "DC
+   * Council". It titles the bill page's panel of the provider's extras
+   * ("Additional information from DC Council"), so it names the publisher
+   * rather than the system.
    */
   readonly displayName: string
 
@@ -501,6 +503,12 @@ interface MeasureHistoryEntry {
   chamber: string
   chamber_id: number
   importance: number  // 1=major, 2=minor
+  /**
+   * A recording of the meeting the action happened at, when the provider
+   * publishes one (LIMS: hearing, mark-up, and floor-reading videos). Core
+   * keeps only an http(s) URL.
+   */
+  video_url?: string
 }
 
 interface MeasureSast {

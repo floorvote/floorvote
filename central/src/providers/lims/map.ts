@@ -1,5 +1,5 @@
 import { sha256Hex, type CentralMeasure, type MeasureCalendarEntry, type SyncEntry } from '../sdk'
-import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './client'
+import type { LimsBulkRecord, LimsCouncilPeriod, LimsDocument, LimsLegislationDetails, LimsMember } from './client'
 import { limsDocId, limsRollCallId, limsSessionId } from './ids'
 import { vocabulary } from './vocabulary'
 
@@ -138,6 +138,21 @@ function docHash(id: number): Promise<string> {
   return sha256Hex(`lims-doc:${id}`)
 }
 
+/**
+ * A title for a document LIMS gives none, from its file name less the measure
+ * number: "B26-0400-Request_to_Agendize.pdf" is "Request to Agendize". Most
+ * documents typed "Other" have only this to tell them apart.
+ */
+function documentTitle(doc: LimsDocument, number: string): string {
+  const given = clean(doc.documentTitle)
+  if (given) return given
+  const file = /\/([^/?]+)\.[A-Za-z0-9]+(?:\?|$)/.exec(doc.url ?? '')?.[1] ?? ''
+  let name = file
+  try { name = decodeURIComponent(file) } catch { /* keep the raw name */ }
+  const prefix = number.replace(/[^A-Za-z0-9]/g, c => `\\${c}`)
+  return clean(name.replace(new RegExp(`^${prefix}[-_]?`, 'i'), '').replace(/_/g, ' ')) || clean(doc.documentTypeName)
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
 /**
@@ -190,7 +205,6 @@ function isOversightCategory(rec: { legislationCategory: string }): boolean {
   return /Oversight Hearing\/Roundtable/i.test(rec.legislationCategory)
 }
 
-/** Only notices go on the calendar; a hearing record would duplicate its notice. */
 /**
  * The change_hash a LIMS bill is stored and compared under: the bulk hash, plus
  * how many history entries are now in the past. The bulk record does not change
@@ -209,6 +223,7 @@ export function limsBillUrl(number: string): string {
   return `https://lims.dccouncil.gov/Legislation/${number}`
 }
 
+/** Only notices go on the calendar; a hearing record would duplicate its notice. */
 function isNoticeCategory(rec: { legislationCategory: string }): boolean {
   return /Oversight Hearing\/Roundtable Notice/i.test(rec.legislationCategory)
 }
@@ -295,6 +310,72 @@ function voteBucket(vote: string): { key: 'yea' | 'nay' | 'nv' | 'absent'; id: n
   return { key: 'nv', id: 3 }
 }
 
+/**
+ * Meeting videos from the details response, each with the history entry it
+ * records: a hearing's goes on that day's hearing entry, a mark-up's on that
+ * day's mark-up entry, and a floor reading's on the entry with the reading's
+ * own wording ("First Reading, CC"). A video with no such entry is left out
+ * (a reading's video still links from its roll call).
+ */
+function historyVideos(details: LimsLegislationDetails | null): (date: string | null, action: string) => string | undefined {
+  const videos: { date: string | null; matches: (action: string) => boolean; url: string }[] = []
+  for (const h of details?.committeeHearing ?? []) {
+    if (clean(h.videoLink)) videos.push({ date: limsDate(h.hearingDate), matches: a => HEARING_RE.test(a), url: clean(h.videoLink) })
+  }
+  for (const m of details?.committeeMarkup ?? []) {
+    if (clean(m.videoLink)) videos.push({ date: limsDate(m.committeeActionDate), matches: a => MARKUP_RE.test(a), url: clean(m.videoLink) })
+  }
+  for (const a of details?.actions ?? []) {
+    const wording = clean(a.action).toLowerCase()
+    if (clean(a.videoLink)) videos.push({ date: limsDate(a.actionDate), matches: x => x.toLowerCase() === wording, url: clean(a.videoLink) })
+  }
+  return (date, action) => {
+    const i = videos.findIndex(v => v.date !== null && v.date === date && v.matches(action))
+    return i < 0 ? undefined : videos.splice(i, 1)[0].url
+  }
+}
+
+/** A string field's value for an extra, or null for anything else. */
+function extraText(value: unknown): string | null {
+  return typeof value === 'string' ? clean(value) || null : null
+}
+
+/** A date field's value for an extra, as YYYY-MM-DD, or null. */
+function extraDate(value: unknown): string | null {
+  return typeof value === 'string' ? limsDate(value) : null
+}
+
+/**
+ * The measure's extras (vocabulary.ts): numbers, review dates, and the like
+ * from the details response, with the bulk record's copies where details have
+ * none.
+ */
+export function limsExtras(rec: LimsBulkRecord, details: LimsLegislationDetails | null): Record<string, string | null> {
+  const mayor = details?.mayoralReview
+  const congress = details?.congressionalReview
+  const actRes = extraText(rec.actResNumber) ?? ''
+  const comments = (details?.committeesReferredToWithComments ?? []).map(extraText).filter(Boolean)
+  return {
+    lawNumber: extraText(congress?.lawNumber) ?? extraText(rec.lawNumber),
+    actNumber: extraText(mayor?.actNumber) ?? (/^A\d/i.test(actRes) ? actRes : null),
+    resolutionNumber: /^R\d/i.test(actRes) ? actRes : null,
+    requestedBy: extraText(details?.atTheRequestOf),
+    commentCommittees: comments.length > 0 ? comments.join(', ') : null,
+    sentToMayor: extraDate(mayor?.transmittedDate),
+    mayorDeadline: extraDate(mayor?.responseDueDate),
+    signedByMayor: extraDate(mayor?.signedDate),
+    vetoedByMayor: extraDate(mayor?.vetoDate),
+    enacted: extraDate(mayor?.enactedDate),
+    actExpires: extraDate(mayor?.expirationDate),
+    sentToCongress: extraDate(congress?.transmittedDate),
+    projectedLawDate: extraDate(congress?.lawProjectedDate) ?? extraDate(rec.projectedLawDate),
+    lawEffective: extraDate(congress?.effectiveDate),
+    lawExpires: extraDate(congress?.expirationDate),
+    withdrawnBy: extraText(details?.withdrawnBy),
+    withdrawnOn: extraDate(details?.withdrawnDate),
+  }
+}
+
 export async function buildLimsBill(
   rec: LimsBulkRecord,
   details: LimsLegislationDetails | null,
@@ -354,11 +435,13 @@ export async function buildLimsBill(
       await addDoc(parseDocUrl(hr.cancellationHearingNotice), date, 'Hearing Cancellation Notice')
     }
     for (const d of details.otherDocuments ?? []) {
-      await addDoc(parseDocUrl(d.url), null, clean(d.documentTitle) || clean(d.documentTypeName), d.documentTypeName)
+      await addDoc(parseDocUrl(d.url), null, documentTitle(d, number), d.documentTypeName)
     }
     for (const a of details.actions ?? []) {
       await addDoc(parseDocUrl(a.attachment), limsDate(a.actionDate), clean(a.action))
     }
+    const mayor = details.mayoralReview
+    if (typeof mayor?.signedAct === 'string') await addDoc(parseDocUrl(mayor.signedAct), limsDate(mayor.signedDate), 'Signed Act')
   }
 
   // ── Calendar: hearings and mark-ups from history; notices are hearings themselves ──
@@ -455,6 +538,7 @@ export async function buildLimsBill(
   const last = lastAction(rec, ctx.today)
   const description = clean(details?.shortDescription) || clean(details?.additionalInformation)
     || (isOversightCategory(rec) ? clean(rec.committeeReferral) : '') || clean(rec.title)
+  const videoFor = historyVideos(details)
 
   return {
     bill_id: billId,
@@ -483,10 +567,14 @@ export async function buildLimsBill(
     sponsors,
     history: history
       .filter(h => h.date && h.action)
-      .map(h => ({
-        date: h.date!, action: h.action, chamber: 'C', chamber_id: 0,
-        importance: /Introduced|Reading|Enacted|Law |Signed|Vetoed|Withdrawn|Adopted|Approved|Disapproved|Tabled/i.test(h.action) ? 1 : 2,
-      })),
+      .map(h => {
+        const video = videoFor(h.date, h.action)
+        return {
+          date: h.date!, action: h.action, chamber: 'C', chamber_id: 0,
+          importance: /Introduced|Reading|Enacted|Law |Signed|Vetoed|Withdrawn|Adopted|Approved|Disapproved|Tabled/i.test(h.action) ? 1 : 2,
+          ...(video ? { video_url: video } : {}),
+        }
+      }),
     sasts: [],
     subjects: [],
     votes,
@@ -494,5 +582,6 @@ export async function buildLimsBill(
     calendar,
     amendments,
     supplements,
+    extras: limsExtras(rec, details),
   }
 }

@@ -115,6 +115,8 @@ export const billHistory = sqliteTable('bill_history', {
   chamberId: integer('chamber_id'),
   importance: integer('importance').notNull().default(1),
   seq:       integer('seq').notNull(),
+  // A recording of the meeting, when the provider publishes one (0033).
+  videoUrl:  text('video_url'),
 }, (t) => [index('idx_bill_history_bill').on(t.billId)])
 
 export const billSponsors = sqliteTable('bill_sponsors', {

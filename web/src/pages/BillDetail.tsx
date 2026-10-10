@@ -428,7 +428,7 @@ type BillDetailData = {
   coSponsors: CoSponsor[]
   lastAction: string | null
   lastActionDate: string | null
-  history: { date: string; action: string; chamber: string; importance?: number }[]
+  history: { date: string; action: string; chamber: string; importance?: number; videoUrl?: string }[]
   voteSummary?: VoteSummaryEntry[]
   subjects: string[]
   relatedBillIds: RelatedBill[]

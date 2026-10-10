@@ -9,8 +9,10 @@ import {
   councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
 } from '../../../src/providers/lims/map'
 import { vocabulary } from '../../../src/providers/lims/vocabulary'
+import { bulkRecordInventory, detailsInventory } from '../../../src/providers/lims/inventory'
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_DOC_ID_BASE } from '../../../src/providers/lims/ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../../src/providers/lims/client'
+import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 
 const bulk = JSON.parse(bulkRaw) as Record<string, LimsBulkRecord>
 const d0400 = JSON.parse(details0400Raw) as LimsLegislationDetails
@@ -30,6 +32,128 @@ async function build(number: string, details: LimsLegislationDetails | null) {
   const rec = bulk[number]
   return buildLimsBill(rec, details, limsBillId(number)!, await bulkHash(rec), ctx)
 }
+
+describe('the LIMS field inventories', () => {
+  it('list every field of the recorded BulkData records', () => {
+    expect(inventoryProblems(bulkRecordInventory, Object.values(bulk), vocabulary)).toEqual([])
+  })
+
+  it('list every field of the recorded LegislationDetails responses', () => {
+    expect(inventoryProblems(detailsInventory, [d0400, dHn, dReprog], vocabulary)).toEqual([])
+  })
+
+  it('fail when LIMS sends a field nobody has decided about', () => {
+    const details = { ...d0400, fiscalImpact: 'none', mayoralReview: { ...d0400.mayoralReview!, pocketVeto: null } }
+    expect(inventoryProblems(detailsInventory, [details], vocabulary)).toEqual([
+      'not in the inventory: fiscalImpact',
+      'not in the inventory: mayoralReview.pocketVeto',
+    ])
+  })
+
+  it('name a field for every extra the vocabulary declares, and the mapping sets no other', async () => {
+    // The resolution number comes only from the bulk record's actResNumber,
+    // which is listed as mapped, since it also sets an earlier period's status.
+    expect(unfedExtras(vocabulary, bulkRecordInventory, detailsInventory)).toEqual(['resolutionNumber'])
+    const b = await build('B26-0400', d0400)
+    expect(Object.keys(b.extras!).sort()).toEqual(Object.keys(vocabulary.extras!).sort())
+  })
+})
+
+describe('every recorded category', () => {
+  it('maps to a status and bill type the vocabulary declares', async () => {
+    const types = new Set(Object.keys(vocabulary.billTypes).map(t => t.toLowerCase()))
+    const details: Record<string, LimsLegislationDetails> = { 'B26-0400': d0400, 'HN26-0171': dHn, 'REPROG26-0153': dReprog }
+    const categories = new Set<string>()
+    for (const number of Object.keys(bulk)) {
+      const b = await build(number, details[number] ?? null)
+      categories.add(bulk[number].legislationCategory)
+      expect(vocabulary.statuses[b.status], `${number} status ${b.status}`).toBeDefined()
+      expect(types.has(b.bill_type.toLowerCase()), `${number} type ${b.bill_type}`).toBe(true)
+    }
+    expect([...categories].sort()).toEqual(['Bill', 'Grant Budget Modification', 'Oversight Hearing/Roundtable Notice', 'Reprogramming', 'Resolution'])
+  })
+})
+
+describe('extras', () => {
+  it('carry the law and act numbers and the review dates, as YYYY-MM-DD', async () => {
+    const b = await build('B26-0400', d0400)
+    expect(Object.fromEntries(Object.entries(b.extras!).filter(([, v]) => v !== null))).toEqual({
+      lawNumber: 'L26-0129',
+      actNumber: 'A26-0309',
+      sentToMayor: '2026-04-13',
+      mayorDeadline: '2026-04-28',
+      signedByMayor: '2026-04-24',
+      enacted: '2026-04-24',
+      sentToCongress: '2026-04-29',
+      lawEffective: '2026-06-11',
+    })
+  })
+
+  it('carry a withdrawal, a veto, expirations, and a projected law date', async () => {
+    const b = await build('B26-0400', {
+      ...d0400,
+      withdrawnBy: 'Councilmember Parker ',
+      withdrawnDate: '2026-02-01T00:00:00',
+      mayoralReview: { ...d0400.mayoralReview!, vetoDate: '2026-04-20T00:00:00', expirationDate: '2026-07-23T00:00:00' },
+      congressionalReview: { ...d0400.congressionalReview!, lawProjectedDate: '2026-06-10T00:00:00', expirationDate: '2027-01-21T00:00:00' },
+    })
+    expect(b.extras).toMatchObject({
+      withdrawnBy: 'Councilmember Parker', withdrawnOn: '2026-02-01', vetoedByMayor: '2026-04-20',
+      actExpires: '2026-07-23', projectedLawDate: '2026-06-10', lawExpires: '2027-01-21',
+    })
+  })
+
+  it('fall back to the bulk record\'s numbers, and tell an act number from a resolution number', async () => {
+    const act = await build('B26-0001', null)
+    expect(act.extras).toMatchObject({ actNumber: 'A26-0003', resolutionNumber: null })
+    const resolution = await buildLimsBill({ ...bulk['PR26-0808'], actResNumber: 'R26-0190' }, null, limsBillId('PR26-0808')!, 'h', ctx)
+    expect(resolution.extras).toMatchObject({ actNumber: null, resolutionNumber: 'R26-0190' })
+  })
+
+  it('name who asked for a measure and the committees asked for comments', async () => {
+    const b = await build('REPROG26-0153', dReprog)
+    expect(b.extras).toMatchObject({ requestedBy: 'Mayor', commentCommittees: 'Youth Affairs' })
+  })
+
+  it('leave out values that aren\'t text', async () => {
+    const odd = { ...d0400, withdrawnBy: 42, mayoralReview: { ...d0400.mayoralReview!, actNumber: { id: 1 }, signedDate: 'soon' } } as unknown as LimsLegislationDetails
+    const b = await build('B26-0400', odd)
+    expect(b.extras).toMatchObject({ withdrawnBy: null, actNumber: 'A26-0309', signedByMayor: null })
+  })
+})
+
+describe('meeting videos', () => {
+  it('attach to the history entries they record', async () => {
+    const b = await build('B26-0400', d0400)
+    expect(b.history.filter(h => h.video_url).map(h => [h.date, h.action])).toEqual([
+      ['2025-11-13', 'Public Hearing on B26-0400 View Public Hearing Record'],
+      ['2026-01-27', 'Committee Mark-up of B26-0400 by the Youth Affairs Committee'],
+      ['2026-02-23', 'Committee Mark-up of B26-0400 by the Judiciary and Public Safety Committee'],
+      ['2026-03-03', 'First Reading, CC'],
+      ['2026-03-31', 'Final Reading, CC'],
+    ])
+    expect(b.history.find(h => h.date === '2025-11-13')?.video_url).toBe(d0400.committeeHearing![0].videoLink)
+  })
+
+  it('attach to nothing when no history entry records that meeting', async () => {
+    const b = await build('B26-0400', { ...d0400, committeeHearing: [{ ...d0400.committeeHearing![0], hearingDate: '2025-11-14T00:00:00' }] })
+    expect(b.history.some(h => h.date === '2025-11-13' && h.video_url)).toBe(false)
+  })
+})
+
+describe('documents', () => {
+  it('title a document LIMS gives no title from its file name', async () => {
+    const b = await build('B26-0400', d0400)
+    expect(b.supplements.filter(s => s.type === 'Other').map(s => s.title).sort())
+      .toEqual(['Law Notice 26-129', 'REIA B26-0400 Statutory Neglect Print', 'Request to Agendize'])
+  })
+
+  it('keep the signed act from the Mayor\'s review when the history lacks it', async () => {
+    const rec = { ...bulk['B26-0400'], legislationHistory: bulk['B26-0400'].legislationHistory.filter(h => !/Signed_Act/.test(h.downloadURL)) }
+    const b = await buildLimsBill(rec, d0400, limsBillId('B26-0400')!, 'h', ctx)
+    expect(b.texts.find(t => t.type === 'Signed Act')).toMatchObject({ date: '2026-04-24', state_link: d0400.mayoralReview!.signedAct })
+  })
+})
 
 describe('lims-map helpers', () => {
   it('parses both LIMS date formats', () => {

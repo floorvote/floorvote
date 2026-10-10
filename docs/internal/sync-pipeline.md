@@ -43,6 +43,28 @@ None of these feeds has a modified-since filter, so each is read as a snapshot b
 
 Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `provider_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Ids only identify rows. Whatever picks a provider for a bill, session, or person reads that row's `provider` column (the ingestor, the LegiScan sync's session list, the stub backfill, status labels, and sponsor links), never an id range.
 
+### DC Council (LIMS)
+
+DC syncs from the Council's LIMS API once an operator claims it (`POST /admin/state-providers/DC` with `{"provider":"lims"}`, which needs `LIMS_API_KEY`), or for one release from `LIMS_STATES=DC` (below). Until then DC stays on LegiScan. A session is a Council Period, tagged `CP26`. LIMS bill, session, people, and document ids are packed into reserved ranges from the measure number and LIMS's own ids (`providers/lims/ids.ts`), so a fork that already ran DC on LIMS keeps every id.
+
+- **What it pulls.** One BulkData call per category per Council Period, for the current period and, for a year after it ends, the previous one. `LIMS_CATEGORIES` defaults to bills (1), resolutions (6), grant budget modifications (13), reprogrammings (14), and oversight hearing notices (18). Each ingest adds one LegislationDetails call. `POST /admin/lims-import` pulls named measures from any period, and answers 409 unless LIMS owns DC.
+- **Sponsors across Council Periods.** After each session refresh, LIMS returns the members of every Council Period central holds DC measures in, not just the current one, so a bill keeps a sponsor who has since left the Council.
+- **What maps where** (`providers/lims/map.ts`). Bulk history is the history and most of the documents. Introductions, committee prints, engrossments, enrollments, and signed acts are texts. Committee reports, hearing notices and records, memos, and other documents are supplements under their LIMS type, and a document LIMS gives no title is titled from its file name. Each floor reading's per-member votes go through `writeMemberVotes`. Hearing, mark-up, and reading videos attach to the history entries they record (`bill_history.video_url`, migration 0033), and the bill page links each one. Hearings and mark-ups go on the calendar, and an oversight hearing notice is a calendar entry of its own.
+- **Vocabulary decisions.** DC's Approved and Deemed Approved aren't terminal, so the details refresh keeps checking them. Expired is in the enacted stage, after Official Law, since what expires is mostly emergency and temporary acts that were law until their term ran out (tenant migration 0078 moved bills an instance had already staged). Not Applicable, which hearing notices carry, has no stage and is terminal.
+- **Extras.** The D.C. Law, act, and resolution numbers, the Mayoral and Congressional review dates, who asked for a measure, the committees asked for comments, and the withdrawal. The bill page shows them under "Additional information from DC Council".
+- **Field inventories.** `providers/lims/inventory.ts` keeps one for the BulkData record and one for the LegislationDetails response, and `test/providers/lims/map.test.ts` checks the recorded fixtures against both.
+- **Fails closed.** The client (`providers/lims/client.ts`) throws on an HTTP error, a body that isn't JSON, or a shape the mapping doesn't read, including details for a different measure. A key the mapping reads must be present, though it may be null: a missing key isn't read as an empty one, so a key LIMS renames can't quietly strip every DC bill of that field. The sync stops for the hour, and the ingest retries, without writing anything from that answer. An empty list, or a null BulkData or Members answer, means nothing new, never that measures, sessions, or members went away. `test/cron/lims-provider.test.ts` covers each case at the main seam.
+- **Concurrency 1.** LIMS answers 429 above about two concurrent requests. Its ingests go to `LIMS_INGESTOR_QUEUE` when that binding exists, and to `INGESTOR_QUEUE` otherwise, and both consumers run at `max_concurrency = 1` (`central/wrangler.example.toml`). The client also paces itself at one request a second.
+
+**After deploying a LIMS mapping change, re-ingest DC's tracked bills.** A bill's extras, documents, and videos change only when the bill is next ingested, and an enacted DC bill (the ones with law numbers) is terminal, so the details refresh never re-fetches it. For each tenant covering DC:
+
+```bash
+curl -X POST "$CENTRAL/api/admin/reingest-tenant/$TENANT?provider=lims" -H "x-admin-secret: $ADMIN_SECRET"               # dry run: how many
+curl -X POST "$CENTRAL/api/admin/reingest-tenant/$TENANT?provider=lims&confirm=true" -H "x-admin-secret: $ADMIN_SECRET"  # queue them
+```
+
+`?provider=lims` queues only the tenant's LIMS bills, on the LIMS queue. It spends no LegiScan calls, and one LIMS details call per bill, paced at one a second.
+
 ### State ownership
 
 Which provider a state syncs from is a central table, `state_providers` (`central/src/lib/stateProviders.ts`): one row per state, with its provider, a status (`active`), the provider it had before, and when the row was written. **A state with no row is LegiScan's**, so a LegiScan-only central has no rows. Each sync reads the table once per run: the LegiScan sync and the weekly vote-dataset check skip only the states another provider owns, and each snapshot provider syncs only the states whose row names it. Every state is decided on its own, so a problem in one state never pauses another.
@@ -99,10 +121,10 @@ A field only one provider publishes, such as a DC law number, is still shown on 
 
 **Adding an extra needs a backfill.** A new extra, or a fix to how one is mapped, reaches a bill only when that bill is ingested again. That happens when its record changes, and for LIMS also on the details refresh, which skips terminal statuses. The bills an extra matters most for are often the ones that no longer change, such as enacted DC laws with their law numbers. So shipping an extra includes re-ingesting the provider's tracked bills:
 
-- `POST /api/admin/reingest-bill/:billId` queues one bill. List the provider's tracked bills with `SELECT DISTINCT b.bill_id FROM bills b JOIN bill_tenants bt ON bt.bill_id = b.bill_id WHERE b.provider = '<id>' AND bt.match_type IS NOT NULL`.
-- `POST /api/admin/reingest-tenant/:tenantId?confirm=true` queues every tracked bill of an instance, from every provider. Use it only for an instance whose tracked bills all come from that provider: each LegiScan bill it queues costs a `getBill` call.
+- `POST /api/admin/reingest-tenant/:tenantId?provider=<id>&confirm=true` queues every bill an instance tracks from that provider, on the provider's `ingestQueue` (without `confirm`, it's a dry run that says how many). For a provider other than LegiScan it spends no LegiScan calls. Run it for each instance covering the provider's states. Without `provider`, it queues the instance's tracked bills from every provider, on `INGESTOR_QUEUE`, and each LegiScan bill costs a `getBill` call.
+- `POST /api/admin/reingest-bill/:billId` queues one bill, on `INGESTOR_QUEUE`.
 
-Both routes queue to `INGESTOR_QUEUE`, not the provider's `ingestQueue`, so pace a large LIMS backfill rather than queueing it all at once (LIMS rate-limits above about two concurrent requests). Neither route runs AI, and an extra changing alone sends instances no changes.
+Neither route runs AI, and an extra changing alone sends instances no changes. For LIMS's own steps, see "DC Council (LIMS)" above.
 
 **When an extra becomes a shared column.** Promote an extra to a shared column (or table) on central's bills, with a tenant column if instances need it, when either of these holds:
 
@@ -117,7 +139,7 @@ Promoting means a migration for the column, mapping it in every provider that ha
 expect(inventoryProblems(inventory, fixtures, vocabulary)).toEqual([])
 ```
 
-The check fails on any fixture field the inventory doesn't list, and on an inventory entry naming an extra the vocabulary lacks. `unfedExtras(vocabulary, ...inventories)` from the same helper lists the declared extras no inventory entry names, across all of a provider's inventories. An ignored object or array covers everything inside it, while a mapped one doesn't, so a field the feed starts sending fails the test until someone decides what to do with it. The test-only example provider (`central/test/providers/example/`) shows the whole path: its vocabulary declares extras, its inventory lists its fixture's fields, its mapping test runs the check, and `central/test/cron/provider-extras.test.ts` follows the extras from the feed to the bill API at the main seam. LIMS, Maryland, and Virginia get their inventories with their provider tickets. LegiScan doesn't keep one, since central's shapes are LegiScan's own.
+The check fails on any fixture field the inventory doesn't list, and on an inventory entry naming an extra the vocabulary lacks. `unfedExtras(vocabulary, ...inventories)` from the same helper lists the declared extras no inventory entry names, across all of a provider's inventories. An ignored object or array covers everything inside it, while a mapped one doesn't, so a field the feed starts sending fails the test until someone decides what to do with it. The test-only example provider (`central/test/providers/example/`) shows the whole path: its vocabulary declares extras, its inventory lists its fixture's fields, its mapping test runs the check, and `central/test/cron/provider-extras.test.ts` follows the extras from the feed to the bill API at the main seam. LIMS keeps two, for its BulkData record and its LegislationDetails response (`central/src/providers/lims/inventory.ts`). Maryland and Virginia get theirs with their provider tickets. LegiScan doesn't keep one, since central's shapes are LegiScan's own.
 
 ---
 
@@ -305,7 +327,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 | `POST /admin/backfill-stub-actions/:tenantId` | No (direct, `stubOnly: true`) | 1 `getMasterList` per covered session | One-off heal for stubs whose `last_action` went stale (pre-fix swallow). Re-pulls masterlist, refreshes central's `bills` row for stale stubs, then notifies. Scope with `?sessionId=`. |
 | `POST /admin/fetch-missing-texts/:tenantId` | Yes, `forceMetadata: true` | 1 `getBill` per bill missing R2 text | Heal text gaps. |
 | `POST /admin/reingest-bill/:billId` | Yes | 1 `getBill` | Single-bill refresh through the unified path. |
-| `POST /admin/reingest-tenant/:tenantId` | Yes (dry-run by default; `?confirm=true` to fire) | 1 `getBill` per matched bill | Bulk tenant backfill. |
+| `POST /admin/reingest-tenant/:tenantId` | Yes (dry-run by default; `?confirm=true` to fire) | 1 `getBill` per matched bill | Bulk tenant backfill. `?provider=lims` limits it to the tenant's LIMS bills, on the LIMS queue, for 1 LIMS details call each and no LegiScan calls. |
 | `POST /tenants/promote-bill/:tenantId/:billId` | Yes, `forceAI: true` | 1 `getBill` | Manually add a bill: sets `match_type='manual'` and forces AI. |
 | Bulk seed (`scripts/seed-legiscan.ts --from-dir`) | Yes, `skipFetch: true` | 0 `getBill`; 1 `getBillText` per text whose `state_link` fails | Seed central D1 from LegiScan bulk JSON dump. |
 
@@ -316,7 +338,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **Cron logic**: `central/src/cron/sync.ts` (`runFullPass`, `applyMasterList`, `runRawPass`)
 - **Ingestor**: `central/src/queue/processor.ts` (`processBill`, `ingestMeasure`)
 - **LegiScan calls**: `central/src/providers/legiscan/` (the API client, and the provider that maps it onto the interface in `central/src/providers/types.ts`)
-- **Snapshot providers**: `central/src/cron/sync-snapshots.ts` (`runSnapshotSync`), and `central/src/providers/{lims,mga,lis}/`
+- **Snapshot providers**: `central/src/cron/sync-snapshots.ts` (`runSnapshotSync`), and `central/src/providers/{lims,mga,lis}/` (LIMS's field inventories are `providers/lims/inventory.ts`)
 - **State ownership**: `central/src/lib/stateProviders.ts` (`loadStateOwners`, `claimState`), and the `/state-providers` routes in `central/src/routes/admin.ts`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
