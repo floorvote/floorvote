@@ -613,7 +613,13 @@ export interface MeasureCalendarEntry {
   location: string
   description: string
   event_hash: string
-  /** The provider's own id for the event, when it publishes one. It is then the entry's identity. */
+  /**
+   * The entry's identity, when it has one that never changes: the feed's own
+   * id for the event, or a key that names one event of the measure for good
+   * (LIMS's deadlines use their kind of deadline). Never a position, a
+   * counter, or anything that changes when the event moves or is retitled.
+   * Without it, the identity is the kind, date, and description.
+   */
   event_id?: string
   /**
    * Positive evidence that the event was cancelled: a notice tied to it, or a
@@ -687,7 +693,13 @@ export interface CentralMeasure {
   subjects: MeasureSubject[]
   votes: MeasureVote[]
   texts: MeasureText[]
-  calendar: MeasureCalendarEntry[]
+  /**
+   * Every calendar entry the provider lists for the measure. An empty list is
+   * a calendar with nothing on it, which counts toward cancelling entries that
+   * are missing. Leave it out only when the provider has no calendar to say
+   * anything about (a bad answer, say), which core reads as no evidence.
+   */
+  calendar?: MeasureCalendarEntry[]
   amendments: MeasureAmendment[]
   supplements: MeasureSupplement[]
   /**

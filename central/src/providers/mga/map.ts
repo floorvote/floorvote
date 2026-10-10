@@ -373,6 +373,11 @@ export async function assignMgaCommitteeIds(
   if (committee) measure.pending_committee_id = committee.committee_id
 }
 
+/** A hearing slot's event id: "2026RS/SB0002/S/primary". */
+export function mgaHearingId(sessionCode: string, billNumber: string, chamber: 'H' | 'S', slot: 'primary' | 'secondary'): string {
+  return `${sessionCode}/${billNumber.trim()}/${chamber}/${slot}`
+}
+
 export interface MgaSession { session_id: number; session_name: string; year_start: number; year_end: number }
 
 export async function buildMgaBill(
@@ -408,23 +413,30 @@ export async function buildMgaBill(
     mime: 'application/pdf', url: '', state_link: paths.fiscalNote, supplement_size: 0, supplement_hash: '',
   }] : []
 
-  // A hearing's description is its identity, so a slot with no committee
-  // named still says which slot it is, and two such can't collapse into one.
+  // Each chamber's primary and secondary committee has one hearing slot in the
+  // record. The MGA publishes no event ids, but the slot is the hearing's own
+  // key: the same slot is the same hearing wherever the committee moves it,
+  // so it's the entry's event id (mgaHearingId), and a moved hearing reads as
+  // changed. An emptied slot isn't positive evidence of a cancellation, since
+  // the file doesn't say that hearing was cancelled, so core's two-pull rule
+  // decides. A slot with no committee named still says which slot it is.
   const hearings = [
-    { at: r.HearingDateTimePrimaryHouseOfOrigin, c: origin, committee: r.CommitteePrimaryOrigin, unnamed: 'committee' },
-    { at: r.HearingDateTimeSecondaryHouseOfOrigin, c: origin, committee: r.CommitteeSecondaryOrigin, unnamed: 'second committee' },
-    { at: r.HearingDateTimePrimaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteePrimaryOpposite, unnamed: 'committee' },
-    { at: r.HearingDateTimeSecondaryOppositeHouse, c: otherChamber(origin), committee: r.CommitteeSecondaryOpposite, unnamed: 'second committee' },
-  ]
+    { at: r.HearingDateTimePrimaryHouseOfOrigin, c: origin, slot: 'primary', committee: r.CommitteePrimaryOrigin },
+    { at: r.HearingDateTimeSecondaryHouseOfOrigin, c: origin, slot: 'secondary', committee: r.CommitteeSecondaryOrigin },
+    { at: r.HearingDateTimePrimaryOppositeHouse, c: otherChamber(origin), slot: 'primary', committee: r.CommitteePrimaryOpposite },
+    { at: r.HearingDateTimeSecondaryOppositeHouse, c: otherChamber(origin), slot: 'secondary', committee: r.CommitteeSecondaryOpposite },
+  ] as const
   const calendar: CentralMeasure['calendar'] = []
   for (const h of hearings) {
     if (!h.at) continue
     const date = h.at.slice(0, 10)
     const time = h.at.slice(11, 16)
-    const description = `${CHAMBER_NAME[h.c]} ${h.committee?.trim() || h.unnamed} hearing`
+    const unnamed = h.slot === 'primary' ? 'committee' : 'second committee'
+    const description = `${CHAMBER_NAME[h.c]} ${h.committee?.trim() || unnamed} hearing`
     calendar.push({
       type_id: 1, type: 'Hearing', date, time, location: '', description,
       event_hash: (await sha256Hex(`1|${date}|${time}|${description}`)).slice(0, 32),
+      event_id: mgaHearingId(sessionCode, r.BillNumber, h.c, h.slot),
     })
   }
 

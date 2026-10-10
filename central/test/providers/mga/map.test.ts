@@ -173,7 +173,9 @@ describe('buildMgaBill', () => {
 
     expect(b.calendar).toEqual([expect.objectContaining({
       type: 'Hearing', date: '2026-01-28', time: '15:00', description: 'House Environment and Transportation hearing',
+      event_id: '2026RS/HB0001/H/primary',
     })])
+    expect(b.calendar[0].cancelled).toBeUndefined()
 
     expect(b.sponsors[0]).toMatchObject({ name: 'Crosby', role: 'Delegate', sponsor_type_id: 1, sponsor_order: 1 })
     expect(b.sponsors.slice(1).every(s => s.sponsor_type_id === 2)).toBe(true)
@@ -291,7 +293,9 @@ describe('buildMgaBill', () => {
     r.CommitteePrimaryOrigin = ''
     r.HearingDateTimeSecondaryHouseOfOrigin = '2026-02-05T13:00:00'
     const b = await buildMgaBill(r, '2026RS', 1, 'h', SESSION, ids)
-    expect(b.calendar.map(c => c.description)).toEqual(['Senate committee hearing', 'Senate second committee hearing'])
+    expect(b.calendar.map(c => [c.event_id, c.description])).toEqual([
+      ['2026RS/SB0002/S/primary', 'Senate committee hearing'], ['2026RS/SB0002/S/secondary', 'Senate second committee hearing'],
+    ])
   })
 
   it('keys a member by name, and an office by session too', () => {

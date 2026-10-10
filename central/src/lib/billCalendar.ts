@@ -14,8 +14,9 @@ import type { CalendarBlock, Db } from '../types'
  *   (`Provider.legacyCalendarIdentity`).
  * - **Cancellation.** Only on positive evidence (the provider marks the entry
  *   cancelled), or once the entry is missing from two successful pulls in a
- *   row. A pull that lists no live entries counts for nothing, and a date
- *   passing never cancels anything.
+ *   row. A measure that comes with no calendar at all (`calendar` undefined)
+ *   is no evidence either way, while an empty list is a calendar with nothing
+ *   on it, and counts. A date passing never cancels anything.
  * - **No deletes.** A cancelled entry keeps its row, and comes back under the
  *   same identity if the provider lists it again.
  *
@@ -65,6 +66,11 @@ type IdentityFields = { typeId: number | null; date: string | null; description:
 function identityOf(provider: Provider, entry: IdentityFields): string {
   if (provider.legacyCalendarIdentity) return legacyCalendarKey(entry)
   if (entry.eventId) return `id:${entry.eventId}`
+  return describedIdentity(provider, entry)
+}
+
+/** The identity of an entry without an event id: its kind, date, and description. */
+function describedIdentity(provider: Provider, entry: Omit<IdentityFields, 'eventId'>): string {
   return `${calendarKind(provider, entry.typeId)}|${entry.date ?? ''}|${normalizeDescription(entry.description)}`
 }
 
@@ -246,19 +252,21 @@ function groupBy<T>(items: Iterable<T>, key: (item: T) => string): Map<string, T
 
 /**
  * What one pull of a bill does to its calendar: `incoming` is every entry the
- * provider lists for the bill, and `pullHash` the bill's change hash in that
- * pull. `now` is central's clock (nowDb()).
+ * provider lists for the bill (undefined when the measure came with no
+ * calendar), and `pullHash` the bill's change hash in that pull. `now` is
+ * central's clock (nowDb()).
  */
 export function planCalendarPull(
   provider: Provider,
   billId: number,
   prior: CalendarRow[],
-  incoming: MeasureCalendarEntry[],
+  incoming: MeasureCalendarEntry[] | undefined,
   pullHash: string,
   now: string,
 ): CalendarPlan {
   const rows = new Rows(prior)
-  if (incoming.length === 0) return rows.plan(provider, now)
+  // No calendar is no evidence that any entry went away.
+  if (incoming === undefined) return rows.plan(provider, now)
 
   // Each entry once: listed twice, the last listing counts, unless one says cancelled.
   const listed = new Map<string, { identity: string; entry: MeasureCalendarEntry }>()
@@ -271,40 +279,52 @@ export function planCalendarPull(
     if (!listed.get(key)?.entry.cancelled) listed.set(key, { identity, entry })
   }
 
-  const stored = groupBy(rows.all, row => rowIdentity(provider, row))
   const accounted = new Set<string>()
-  for (const [identity, group] of groupBy(listed.values(), l => l.identity)) {
-    for (const [e, row] of pairWithRows(group.map(l => l.entry), stored.get(identity) ?? [])) {
-      if (e.cancelled) {
-        // Positive evidence cancels at once. An entry never stored has nothing to cancel.
-        if (!row) continue
-        accounted.add(row.id)
-        if (!row.cancelledAt) {
-          row.cancelledAt = now
-          rows.touch(row)
-        }
-        continue
-      }
-      const fields = {
-        typeId: e.type_id || null, type: e.type || null, date: e.date || null, time: e.time || null,
-        location: e.location || null, description: e.description || null, eventHash: e.event_hash || null,
-        eventId: e.event_id || null,
-      }
-      if (!row) {
-        rows.touch({ id: crypto.randomUUID(), billId, ...fields, identityKey: identity, missedPulls: 0, missedHash: null, cancelledAt: null })
-        continue
-      }
+  const apply = (e: MeasureCalendarEntry, row: CalendarRow | undefined, identity: string) => {
+    if (e.cancelled) {
+      // Positive evidence cancels at once. An entry never stored has nothing to cancel.
+      if (!row) return
       accounted.add(row.id)
-      const before = { ...row }
-      // A row stored before identities were keeps the identity instances know it by.
-      Object.assign(row, fields, { identityKey: sentIdentity(before), missedPulls: 0, missedHash: null, cancelledAt: null })
-      if ((Object.keys(row) as (keyof CalendarRow)[]).some(k => row[k] !== before[k])) rows.touch(row)
+      if (!row.cancelledAt) {
+        row.cancelledAt = now
+        rows.touch(row)
+      }
+      return
     }
+    const fields = {
+      typeId: e.type_id || null, type: e.type || null, date: e.date || null, time: e.time || null,
+      location: e.location || null, description: e.description || null, eventHash: e.event_hash || null,
+      eventId: e.event_id || null,
+    }
+    if (!row) {
+      rows.touch({ id: crypto.randomUUID(), billId, ...fields, identityKey: identity, missedPulls: 0, missedHash: null, cancelledAt: null })
+      return
+    }
+    accounted.add(row.id)
+    const before = { ...row }
+    // A row stored before identities were keeps the identity instances know it by.
+    Object.assign(row, fields, { identityKey: sentIdentity(before), missedPulls: 0, missedHash: null, cancelledAt: null })
+    if ((Object.keys(row) as (keyof CalendarRow)[]).some(k => row[k] !== before[k])) rows.touch(row)
   }
 
-  // A pull that lists no live entry (none at all, or only cancellations) is
-  // no evidence that any other went away.
-  if (![...listed.values()].some(l => !l.entry.cancelled)) return rows.plan(provider, now)
+  const stored = groupBy(rows.all, row => rowIdentity(provider, row))
+  const unstoredById: { e: MeasureCalendarEntry; identity: string }[] = []
+  for (const [identity, group] of groupBy(listed.values(), l => l.identity)) {
+    for (const [e, row] of pairWithRows(group.map(l => l.entry), stored.get(identity) ?? [])) {
+      if (!row && e.event_id) unstoredById.push({ e, identity })
+      else apply(e, row, identity)
+    }
+  }
+  // An entry with an event id that no row has yet may be one stored before
+  // identities were, which answers to its kind, date, and description.
+  const legacy = provider.legacyCalendarIdentity ? new Map<string, CalendarRow[]>() : groupBy(
+    rows.all.filter(r => r.identityKey === null),
+    r => describedIdentity(provider, { typeId: r.typeId, date: r.date, description: (r.description ?? '').replace(LEGACY_ORDINAL, '') }),
+  )
+  for (const { e, identity } of unstoredById) {
+    const key = describedIdentity(provider, { typeId: e.type_id || null, date: e.date || null, description: e.description || null })
+    apply(e, legacy.get(key)?.find(r => !accounted.has(r.id)), identity)
+  }
 
   for (const row of rows.all) {
     if (accounted.has(row.id) || row.cancelledAt || rows.wrote(row)) continue
@@ -344,9 +364,13 @@ export async function writeCalendarRows(db: Db, rows: CalendarRow[]): Promise<vo
   }
 }
 
-/** Record calendar changes in the bill's change log. */
+/**
+ * Record calendar changes in the bill's change log. A deadline isn't logged:
+ * the log names every calendar change as a hearing's.
+ */
 export async function logCalendarChanges(db: Db, billId: number, changes: CalendarChange[], now: string): Promise<void> {
   for (const change of changes) {
+    if (change.kind === 'deadline') continue
     await db.insert(billChangeLog).values({
       id: crypto.randomUUID(),
       billId,

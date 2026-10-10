@@ -242,7 +242,7 @@ export async function ingestMeasure(
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
   // new, and like its other data they aren't reported as changes.
-  const calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar ?? [], bill.change_hash, now)
+  const calendarPlan = planCalendarPull(provider, bill.bill_id, priorCalendar, bill.calendar, bill.change_hash, now)
   if (existingBillRow) {
     calendarChanges = calendarPlan.changes
     await logCalendarChanges(db, bill.bill_id, calendarChanges, now)
@@ -541,10 +541,17 @@ async function recheckCalendar(billId: number, pullHash: string, provider: Provi
   // The bill has moved on since the pass listed it, and its ingest pulls it fresh.
   if (bill?.changeHash !== pullHash) return
   const now = nowDb()
-  const plan = planCalendarRecheck(provider, await readCalendarRows(db, billId), pullHash, now)
-  if (plan.writes.length === 0) return
-  await writeCalendarRows(db, plan.writes)
-  await logCalendarChanges(db, billId, plan.changes, now)
+  const prior = await readCalendarRows(db, billId)
+  // Nothing was missing from the pull with this hash.
+  if (!prior.some(r => r.missedHash === pullHash)) return
+  const plan = planCalendarRecheck(provider, prior, pullHash, now)
+  if (plan.writes.length > 0) {
+    await writeCalendarRows(db, plan.writes)
+    await logCalendarChanges(db, billId, plan.changes, now)
+  }
+  // Sent even when there is nothing new to write: a retried recheck whose
+  // first try wrote its rows and then failed to reach instances must still
+  // reach them, and instances reconcile the same block idempotently.
   await notifyTenants(billId, env, db, now, false, false, [], {
     events: calendarBlockEvents(provider, plan.live),
     changes: plan.changes,
