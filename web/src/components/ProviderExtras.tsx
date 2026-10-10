@@ -49,7 +49,8 @@ function ExtraValue({ field }: { field: BillExtraField }) {
       // One click selects the whole identifier, for copying.
       return <span style={{ fontWeight: fontWeight.medium, fontVariantNumeric: 'tabular-nums', userSelect: 'all' }}>{field.value}</span>
     default:
-      return <span style={{ overflowWrap: 'anywhere' }}>{field.value}</span>
+      // pre-line keeps a multi-paragraph value's line breaks.
+      return <span style={{ overflowWrap: 'anywhere', whiteSpace: 'pre-line' }}>{field.value}</span>
   }
 }
 
