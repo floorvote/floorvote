@@ -4,14 +4,15 @@ import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
-import { findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
+import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
-import { providerEnabled } from '../lib/providerRouting'
+import { providerConfigured } from '../lib/providerRouting'
+import { claimState, listStateOwnership } from '../lib/stateProviders'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -51,13 +52,51 @@ adminRoutes.post('/trigger-sync', async (c) => {
 async function runSnapshotNow(c: Context<{ Bindings: Env }>, id: string) {
   const provider = findProvider(id)
   if (!isSnapshotProvider(provider)) return c.json({ error: `unknown provider "${id}"` }, 404)
-  if (!providerEnabled(provider, c.env)) return c.json({ error: `provider "${id}" is not configured on this central` }, 400)
+  if (!providerConfigured(provider, c.env)) return c.json({ error: `provider "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
   const passes = await runSnapshotSync(provider, c.env, db, { force: true })
   return c.json({ ok: true, passes })
 }
 adminRoutes.post('/providers/:id/sync', c => runSnapshotNow(c, c.req.param('id')))
 adminRoutes.post('/lims-sync', c => runSnapshotNow(c, 'lims'))
+
+// State ownership (lib/stateProviders.ts): which provider each state syncs
+// from. A state with no row is the default provider's. Operator-only, so
+// neither route is on the tenant surface allowlist.
+adminRoutes.get('/state-providers', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  return c.json({ defaultProvider: DEFAULT_PROVIDER_ID, states: await listStateOwnership(db) })
+})
+
+// Claim a state for a provider. Body: { "provider": "lims" }. Answers 409,
+// naming the current owner, its tracked bill count, and the instances tracking
+// them, and leaves the row as it is, while the owner has tracked bills there:
+// only a cutover moves those.
+adminRoutes.post('/state-providers/:state', async (c) => {
+  const state = c.req.param('state').toUpperCase()
+  if (!/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state must be a two-letter code' }, 400)
+  const body = await c.req.json<{ provider?: unknown }>().catch(() => ({} as { provider?: unknown }))
+  if (typeof body.provider !== 'string') return c.json({ error: 'provider is required' }, 400)
+  const provider = findProvider(body.provider)
+  if (!provider) return c.json({ error: `unknown provider "${body.provider}"` }, 400)
+  if (provider.states && !provider.states.includes(state)) {
+    return c.json({ error: `provider "${provider.id}" serves ${provider.states.join(', ')}, not ${state}` }, 400)
+  }
+  if (!providerConfigured(provider, c.env)) {
+    return c.json({ error: `provider "${provider.id}" is not configured on this central` }, 400)
+  }
+  const db = drizzle(c.env.DB, { schema })
+  const result = await claimState(db, state, provider.id)
+  if (!result.ok) {
+    const { ok: _ok, ...refusal } = result
+    return c.json({
+      error: `${state} syncs from ${refusal.owner}, which has ${refusal.trackedBills} tracked bills there. ` +
+        `A cutover has to move them before ${state} can change provider.`,
+      ...refusal,
+    }, 409)
+  }
+  return c.json({ ok: true, changed: result.changed, ownership: result.ownership })
+})
 
 // Import specific LIMS measures from any Council Period and track them for one
 // tenant as manual picks (full ingest + AI). Body: { "tenantId": "oca",

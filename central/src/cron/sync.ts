@@ -8,7 +8,7 @@ import { providerContext } from '../lib/providerContext'
 import { toHandle } from '../lib/billHandle'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
-import { directStates } from '../lib/providerRouting'
+import { loadStateOwners, ownerOf } from '../lib/stateProviders'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -44,13 +44,14 @@ export async function runSync(env: Env, db: Db): Promise<void> {
 
   const trackedStates = await loadTrackedStates(db, activeTenants)
 
-  // States read from another provider are synced by that provider (cron/sync-snapshots.ts).
-  for (const state of directStates(env)) trackedStates.delete(state)
+  // This sync runs LegiScan, for the states it owns: every state with no
+  // ownership row, and any whose row names it. A state another provider owns
+  // is synced by that provider (cron/sync-snapshots.ts).
+  const provider = getProvider(DEFAULT_PROVIDER_ID)
+  const owners = await loadStateOwners(env, db)
+  for (const state of trackedStates) if (ownerOf(owners, state) !== provider.id) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
-
-  // States don't record their provider yet, so every state syncs from the default.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
 
   const etHour = getCurrentEtHour()
   console.log(`[sync-ls] tick at ET hour ${etHour}`)

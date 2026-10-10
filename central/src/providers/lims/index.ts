@@ -32,10 +32,8 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
   id: 'lims',
   envKeys: ['LIMS_API_KEY', 'LIMS_STATES', 'LIMS_CATEGORIES'],
   states: [LIMS_STATE],
-  // Off unless a LIMS key is configured and LIMS_STATES names DC, so a
-  // deployment without one keeps DC on LegiScan.
-  enabled: env => !!env.LIMS_API_KEY &&
-    (env.LIMS_STATES ?? '').split(',').some(s => s.trim().toUpperCase() === LIMS_STATE),
+  configured: env => !!env.LIMS_API_KEY,
+  statesEnvKey: 'LIMS_STATES',
   // LIMS answers 429 above about two concurrent requests.
   ingestQueue: 'LIMS_INGESTOR_QUEUE',
 

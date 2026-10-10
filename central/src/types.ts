@@ -14,11 +14,14 @@ export type Env = {
   DEAD_LETTER_QUEUE?: string
   LEGISCAN_API_KEY: string
   /**
-   * DC Council LIMS developer key. With it set and "DC" in LIMS_STATES, DC comes
-   * from LIMS instead of LegiScan (src/providers/lims). Unset → LIMS is off.
+   * DC Council LIMS developer key (src/providers/lims). Needed for DC to sync
+   * from LIMS, which also takes DC's row in the state ownership table.
    */
   LIMS_API_KEY?: string
-  /** Comma-separated states read from LIMS rather than LegiScan. Only "DC" is supported. */
+  /**
+   * "DC" to seed DC's ownership row for LIMS on the first sync, when DC has no
+   * row (lib/stateProviders.ts). Kept for one release.
+   */
   LIMS_STATES?: string
   /**
    * Comma-separated LIMS category ids to sync (GET LegislationCategories).
@@ -33,13 +36,14 @@ export type Env = {
    */
   LIMS_INGESTOR_QUEUE?: Queue
   /**
-   * "MD" to read Maryland from the General Assembly's own open data
-   * (src/providers/mga) instead of LegiScan. No key needed. Unset → off.
+   * "MD" to seed Maryland's ownership row for the General Assembly's open data
+   * (src/providers/mga) on the first sync, when MD has no row. Kept for one release.
    */
   MGA_STATES?: string
   /**
-   * "VA" to read Virginia from the Legislative Information System's public data
-   * files (src/providers/lis) instead of LegiScan. No key needed. Unset → off.
+   * "VA" to seed Virginia's ownership row for the Legislative Information
+   * System's data files (src/providers/lis) on the first sync, when VA has no
+   * row. Kept for one release.
    */
   LIS_STATES?: string
   ADMIN_SECRET: string
