@@ -213,8 +213,11 @@ describe('routing by the provider column', () => {
     const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${BILL}`, {
       headers: { 'x-admin-secret': 'test-secret' },
     }), e)
-    const body = await res.json() as { billId: string; title: string; status: string }
-    expect(body).toMatchObject({ billId: `legiscan:${BILL}`, title: 'Statutory Neglect Amendment Act of 2025', status: 'Official Law' })
+    const body = await res.json() as { billId: string; title: string; status: string; statusStage: string; statusRank: number }
+    expect(body).toMatchObject({
+      billId: `legiscan:${BILL}`, title: 'Statutory Neglect Amendment Act of 2025',
+      status: 'Official Law', statusStage: 'enacted', statusRank: 705,
+    })
     const sent = [
       ...tenantQueue.send.mock.calls.map(c => c[0]),
       ...tenantQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)),
@@ -383,7 +386,20 @@ describe('Codex review fixes', () => {
     expect(queued).toEqual([B0400])
   })
 
-  it('does not re-fetch a settled bill', async () => {
+  it('re-fetches details for a Deemed Approved bill, which is not terminal', async () => {
+    const db = drizzle(env.DB, { schema })
+    const deemed = { ...bulk['B26-0400'], status: 'Deemed Approved' }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [deemed] : []))
+    vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), status: 'Deemed Approved' })
+    await passAndIngest(db)
+    await env.DB.prepare(`UPDATE provider_records SET details_fetched_at = datetime('now', '-3 days') WHERE bill_id = ?`).bind(B0400).run()
+    const later = makeEnv()
+    await runLimsSync(later.env, db)
+    const queued = later.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
+    expect(queued).toEqual([B0400])
+  })
+
+  it('does not re-fetch a bill in a terminal status', async () => {
     const db = drizzle(env.DB, { schema })
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [bulk['B26-0400']] : []))
     await passAndIngest(db)   // B26-0400 is Official Law

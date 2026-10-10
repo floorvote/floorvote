@@ -19,20 +19,6 @@ export const LIS_STATE = 'VA'
 /** LegiScan's state_id for Virginia, so LIS rows look like VA rows everywhere. */
 export const VA_STATE_ID = 46
 
-export const LIS_STATUS_LABELS: Record<number, string> = {
-  1: 'Introduced',
-  2: 'Passed the House',
-  3: 'Passed the Senate',
-  4: 'Passed the General Assembly',
-  5: 'Approved by the Governor',
-  6: 'Enacted',
-  7: 'Vetoed by the Governor',
-  8: 'Agreed to',
-  9: 'Continued to next session',
-  10: 'Failed',
-  11: 'Continued from last session',
-}
-
 /** One bill's slice of a session's files. */
 export interface LisRecord {
   /** The BILLS.CSV row, keyed by its header. */
@@ -191,6 +177,7 @@ function isResolution(number: string): boolean {
   return /^(HJ|SJ|HR|SR)/.test(number)
 }
 
+/** The code a LIS bill stores in `bills.status` (labeled in vocabulary.ts). */
 export function lisStatus(rec: LisRecord, sessionYear: number): number {
   const b = rec.bill
   if (b.Chapter_id) return yes(b.Approved) ? 5 : 6

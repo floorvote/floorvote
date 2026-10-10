@@ -5,9 +5,10 @@ import detailsHnRaw from '../../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../../fixtures/lims/members-26.json?raw'
 import {
-  buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
+  buildLimsBill, bulkHash, limsDate, limsStatusCode, personKey, toMasterListEntry,
   councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
 } from '../../../src/providers/lims/map'
+import { vocabulary } from '../../../src/providers/lims/vocabulary'
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_DOC_ID_BASE } from '../../../src/providers/lims/ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../../src/providers/lims/client'
 
@@ -49,8 +50,8 @@ describe('lims-map helpers', () => {
     expect(limsStatusCode('Official Law')).toBe(105)
     expect(limsStatusCode('Under Congressional Review ')).toBe(106)
     expect(limsStatusCode('')).toBe(100)
-    expect(LIMS_STATUS_LABELS[105]).toBe('Official Law')
-    expect(LIMS_STATUS_LABELS[100]).toBe('Not Applicable')
+    expect(vocabulary.statuses[105].label).toBe('Official Law')
+    expect(vocabulary.statuses[100].label).toBe('Not Applicable')
   })
 
   it('names Council Periods with a leading year span', () => {

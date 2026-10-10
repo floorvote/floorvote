@@ -4,9 +4,10 @@ import s2027Raw from '../../fixtures/lis/20271-sample.json?raw'
 import { parseCsv, parseCsvRecords } from '../../../src/providers/lis/csv'
 import type { LisFiles } from '../../../src/providers/lis/client'
 import {
-  buildLisBill, LisAssembler, LIS_FILE_ORDER, lisBillNumber, lisCarriedOver, lisDate, lisStatus, LIS_STATUS_LABELS,
+  buildLisBill, LisAssembler, LIS_FILE_ORDER, lisBillNumber, lisCarriedOver, lisDate, lisStatus,
   parseVotes, toLisMasterListEntry, type LisIds,
 } from '../../../src/providers/lis/map'
+import { vocabulary } from '../../../src/providers/lis/vocabulary'
 
 // Real rows from https://lis.blob.core.windows.net/lisfiles/{20261,20271}/, trimmed to a few bills.
 function assembleLisRecords(files: LisFiles) {
@@ -16,7 +17,7 @@ function assembleLisRecords(files: LisFiles) {
 }
 const y2026 = assembleLisRecords(JSON.parse(s2026Raw) as LisFiles)
 const y2027 = assembleLisRecords(JSON.parse(s2027Raw) as LisFiles)
-const label = (n: string, year = 2026, set = y2026) => LIS_STATUS_LABELS[lisStatus(set.records.get(n)!, year)]
+const label = (n: string, year = 2026, set = y2026) => vocabulary.statuses[lisStatus(set.records.get(n)!, year)].label
 
 const SESSION = { session_id: 3000000001, session_name: '2026 Regular Session', year_start: 2026, year_end: 2026 }
 const counter = (base: number) => { const m = new Map<string, number>(); return (k: string) => m.get(k) ?? (m.set(k, base + m.size), base + m.size - 1) }

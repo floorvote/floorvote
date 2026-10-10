@@ -7,6 +7,7 @@ import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
+import { statusFields } from '../lib/vocabulary'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -127,7 +128,7 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
-  // The provider that wrote the bill, for its status labels.
+  // The provider that wrote the bill, for its vocabulary.
   const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
 
   const session = bill.sessionId
@@ -257,7 +258,8 @@ billsRoutes.get('/:id', async (c) => {
     number: bill.billNumber,
     title: bill.title,
     abstract: bill.description ?? null,
-    status: provider.statusLabels[bill.status] ?? String(bill.status),
+    // The status label, stage, and rank, from the provider's vocabulary.
+    ...statusFields(provider, bill.status),
     statusDate: bill.statusDate ?? null,
     lastAction: bill.lastAction ?? null,
     lastActionDate: bill.lastActionDate ?? null,

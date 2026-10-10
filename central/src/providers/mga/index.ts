@@ -1,5 +1,6 @@
 import { getMgaSession, mgaSessionExists, type MgaRecord } from './client'
-import { buildMgaBill, MD_STATE_ID, MGA_STATE, MGA_STATUS_LABELS, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, toMgaMasterListEntry } from './map'
+import { buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, toMgaMasterListEntry } from './map'
+import { vocabulary } from './vocabulary'
 import type { Provider, ProviderRecord, SyncSession } from '../sdk'
 
 /**
@@ -91,7 +92,7 @@ export const mga: Provider<'MGA_STATES'> = {
     })
   },
 
-  statusLabels: MGA_STATUS_LABELS,
+  vocabulary,
 }
 
 /** "2026RS" → "2026 Regular Session", "2021S1" → "2021 Special Session 1". */

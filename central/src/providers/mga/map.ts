@@ -16,32 +16,15 @@ export const MGA_STATE = 'MD'
 /** LegiScan's state_id for Maryland, so MGA rows look like MD rows everywhere. */
 export const MD_STATE_ID = 20
 
-/**
- * Status codes MGA bills store in `bills.status`. The file's own Status field
- * is the last action as free text (over a thousand distinct values a session),
- * so the code is derived from the structured fields, and the text is kept as
- * the last action.
- */
-export const MGA_STATUS_LABELS: Record<number, string> = {
-  1: 'Pre-filed',
-  2: 'Introduced',
-  3: 'Passed the House',
-  4: 'Passed the Senate',
-  5: 'Passed the General Assembly',
-  6: 'Approved by the Governor',
-  7: "Enacted without the Governor's signature",
-  8: "Enacted over the Governor's veto",
-  9: 'Enacted, subject to referendum',
-  10: 'Adopted',
-  11: 'Vetoed by the Governor',
-  12: 'Unfavorable report',
-  13: 'Withdrawn',
-  14: 'Postponed indefinitely',
-}
-
 /** Outcomes the Governor or the constitution decides: the file gives them no date. */
 const UNDATED_OUTCOMES = new Set([6, 7, 8, 9, 10, 11])
 
+/**
+ * The code an MGA bill stores in `bills.status` (labeled in vocabulary.ts).
+ * The file's own Status field is the last action as free text (over a
+ * thousand distinct values a session), so the code is derived from the
+ * structured fields, and the text is kept as the last action.
+ */
 export function mgaStatus(r: MgaRecord): number {
   const s = r.Status ?? ''
   if (/Veto Override/i.test(s)) return 8

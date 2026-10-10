@@ -1,7 +1,8 @@
 import { getBulkData, getCouncilPeriods, getLegislationDetails, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from './client'
-import { buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, LIMS_STATUS_LABELS, limsStatusCode, toMasterListEntry } from './map'
+import { buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, toMasterListEntry } from './map'
 import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
+import { vocabulary } from './vocabulary'
 import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
 
 /**
@@ -16,10 +17,6 @@ import type { Provider, ProviderImport, ProviderPerson, ProviderRecord, SyncSess
  * dashboard leaves out of the LegiScan budget.
  */
 
-/** Final statuses: nothing further arrives in LegislationDetails. */
-const SETTLED_STATUSES = ['Official Law', 'Withdrawn', 'Failed', 'Disapproved', 'Deemed Disapproved', 'Expired', 'Approved', 'Deemed Approved']
-  .map(limsStatusCode)
-  .concat(limsStatusCode(''))  // oversight notices: details add nothing
 const MEMBER_BIO_URL = 'https://dccouncil.gov/councilmembers/'
 
 /** LIMS category id for each measure-number prefix (GET LegislationCategories). */
@@ -201,11 +198,12 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
   /**
    * LegislationDetails can change while the bulk record does not: a committee
    * report is filed after its mark-up, a vote is recorded, a hearing is
-   * cancelled. With three passes a day this is at most 150 extra LIMS calls a day.
+   * cancelled. With three passes a day this is at most 150 extra LIMS calls a
+   * day. Terminal statuses (vocabulary.ts) are left alone.
    */
-  detailsRefresh: { maxAge: '-2 days', perPass: 50, settledStatuses: SETTLED_STATUSES },
+  detailsRefresh: { maxAge: '-2 days', perPass: 50 },
 
-  statusLabels: LIMS_STATUS_LABELS,
+  vocabulary,
 }
 
 /** A BulkData row as a provider record, or null for a measure number ids.ts cannot encode. */

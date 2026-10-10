@@ -2,6 +2,7 @@ import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } fro
 import { sessions, bills, billTenants, tenants, people, providerRecords } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
+import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerEnabled } from '../lib/providerRouting'
 import { applyMasterList } from './sync'
@@ -219,7 +220,7 @@ async function runSnapshotPass(
     { deferQueuedUpdates: true }))
 
   const refreshed = provider.detailsRefresh
-    ? await refreshStaleDetails(provider.detailsRefresh, session.sessionId, queued, queue, db)
+    ? await refreshStaleDetails(provider, provider.detailsRefresh, session.sessionId, queued, queue, db)
     : 0
   if (refreshed > 0) console.log(`[sync-${provider.id}] refreshing details for ${refreshed} tracked bills`)
   return { records: records.length, queued: queued.size, refreshed }
@@ -272,8 +273,9 @@ async function storeRecords(
   return entries
 }
 
-/** Re-queue tracked, unsettled bills whose details are stale. */
+/** Re-queue tracked bills whose details are stale, unless their status is terminal. */
 async function refreshStaleDetails(
+  provider: Provider,
   cfg: NonNullable<Provider['detailsRefresh']>,
   sessionId: number,
   queued: Set<number>,
@@ -287,7 +289,7 @@ async function refreshStaleDetails(
     .where(and(
       eq(providerRecords.sessionId, sessionId),
       isNotNull(billTenants.matchType),
-      notInArray(bills.status, [...cfg.settledStatuses]),
+      notInArray(bills.status, terminalStatuses(provider)),
       or(isNull(providerRecords.detailsFetchedAt), lt(providerRecords.detailsFetchedAt, sql`datetime('now', ${cfg.maxAge})`)),
     ))
     .orderBy(asc(providerRecords.detailsFetchedAt))

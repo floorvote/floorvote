@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  buildMgaBill, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, MGA_STATUS_LABELS, mgaTextVersions,
+  buildMgaBill, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
+import { vocabulary } from '../../../src/providers/mga/vocabulary'
 
 // Real records from https://mgaleg.maryland.gov/2026RS/misc/billsmasterlist/legislation.json
 const sample = new Map((JSON.parse(sampleRaw) as MgaRecord[]).map(r => [r.BillNumber, r]))
 const rec = (n: string) => structuredClone(sample.get(n)!)
-const label = (r: MgaRecord) => MGA_STATUS_LABELS[mgaStatus(r)]
+const label = (r: MgaRecord) => vocabulary.statuses[mgaStatus(r)].label
 
 const SESSION = { session_id: 3000000001, session_name: '2026 Regular Session', year_start: 2026, year_end: 2026 }
 const counter = (base: number) => { const m = new Map<string, number>(); return (k: string) => m.get(k) ?? (m.set(k, base + m.size), base + m.size - 1) }

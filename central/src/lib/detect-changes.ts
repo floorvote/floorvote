@@ -1,5 +1,6 @@
 import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureCalendarEntry, type Provider } from '../providers'
 import type { CalendarBlock } from '../types'
+import { statusChangeLabel } from './vocabulary'
 
 export type ChangeRecord = {
   changeType:
@@ -49,8 +50,7 @@ export function detectChanges(
   provider: Provider = getProvider(DEFAULT_PROVIDER_ID),
 ): ChangeRecord[] {
   const changes: ChangeRecord[] = []
-  const statusLabels = provider.statusChangeLabels ?? provider.statusLabels
-  const statusLabel = (status: number) => statusLabels[status] ?? String(status)
+  const statusLabel = (status: number) => statusChangeLabel(provider, status)
 
   // 1. Status change (skip when snapshot.status is null — bill is new/unknown)
   if (snapshot.status !== null && bill.status !== snapshot.status) {
