@@ -87,6 +87,62 @@ The check and the write are one SQL statement, so a link or another claim landin
 
 **For one release, the old env vars seed rows.** On the first sync after the upgrade, each state named by `LIMS_STATES` (with `LIMS_API_KEY` set), `MGA_STATES`, or `LIS_STATES` that has no row gets one, under the claim's refusal rule (`Provider.statesEnvKey`). Whichever sync runs first writes it, and every sync agrees from then on. A seeded row is logged, and the env var can then be removed. A refused seed is logged once an hour, by the LegiScan sync, and the state stays on LegiScan. If the env var's provider also has tracked bills in that state, instances hold bills from both providers. That split state is logged as an error for an operator to settle, and the state still stays on LegiScan. The env vars never change a state that has a row. A later release removes the seeding.
 
+### Moving a state to another provider (cutover)
+
+A claim can't move a state whose provider has tracked bills there. A cutover does, without writing to any instance's database, and an undo puts it back (`central/src/lib/cutover.ts`, from #296). Both are operator-only and off the tenant surface allowlist, and both are dry runs unless `?confirm=true`:
+
+```bash
+curl -X POST "$CENTRAL/api/admin/state-providers/DC/cutover" -H "x-admin-secret: $ADMIN_SECRET" \
+  -H 'content-type: application/json' -d '{"provider":"lims"}'                          # dry run
+curl -X POST "$CENTRAL/api/admin/state-providers/DC/cutover?confirm=true" -H "x-admin-secret: $ADMIN_SECRET" \
+  -H 'content-type: application/json' -d '{"provider":"lims"}'                          # cut over
+curl -X POST "$CENTRAL/api/admin/state-providers/DC/undo-cutover" -H "x-admin-secret: $ADMIN_SECRET"               # what an undo would do
+curl -X POST "$CENTRAL/api/admin/state-providers/DC/undo-cutover?confirm=true" -H "x-admin-secret: $ADMIN_SECRET"  # undo
+```
+
+The new provider must be a snapshot provider that serves the state and is configured (the same 400s as a claim).
+
+**The dry run** reads the new provider's sessions, records, and legislators, and writes nothing, not even the API call log. It reports:
+
+- matched bills, each with the handle it keeps;
+- unmatched bills on both sides. `old` lists the losing provider's bills nothing matched (tracked ones flagged), which keep their rows and links but stop syncing. `new` lists the new provider's bills nothing matched, which arrive as new bills;
+- `ambiguous` match keys, and `conflicts`: bills the new provider already holds under another row, which are left unmatched;
+- for each moved bill with calendar entries, the entries that keep their identity, the ones that will be cancelled, and the ones that will be added;
+- matched people, with what agreed (`on`) and the weak ones flagged, and unmatched people on both sides.
+
+For LIMS, the dry run costs one LegislationDetails call per moved bill that has calendar entries.
+
+**Matching.**
+
+- **Bills** match on the session's first year, whether it's a special session, and the bill number without padding (`HB0001` is `HB1`), as #259's planner did. A key two bills on one side share matches neither. Bills from sessions earlier than the new provider's stay as they are.
+- **People** match on name, chamber, and district, each compared only where both records have it, and any that disagree rule a pair out (`central/src/lib/cutoverMatch.ts`). Whole names are tried first, then last name and first initial, then last name alone where a record has no first name. A pair counts only when each is the other's one candidate, so two Smiths in one chamber match no one. A match that chamber and district don't both confirm is weak. Every DC, Maryland, and Virginia match is weak: LIMS gives titles rather than chambers or wards, Maryland names its sponsors by title and last name, and Virginia's files have no districts. Weak matches are kept, so check them in the dry run before confirming.
+
+**The cutover** plans again, so it acts on what the feed says now, then writes everything in one D1 batch, which is one transaction:
+
+1. It records the cutover (`cutovers`, `cutover_bills`, `cutover_people`, migration 0036), but only while the state still has the provider the plan read and that provider has added no bills there since. Otherwise nothing is written, and it answers 409.
+2. Each moved bill keeps its central row id, so its handle and every instance's copy of it stay as they are. The new provider's key for it maps to that id in `provider_ids`, so Maryland and Virginia, which mint ids from that table, give the kept id everywhere, cross-filed and carried-over bills included. LIMS packs its ids from measure numbers, so core gives the kept ids in its place wherever its records reach core (`central/src/lib/carriedIds.ts`). Legislators work the same way: core swaps the kept person id into the provider's people, sponsors, and votes.
+3. It writes the new provider's sessions, moves each matched bill to its new provider and session, and clears the bill's texts, supplements, amendments, roll calls, and member votes. The ingest upserts those by their own ids rather than replacing them, so the two providers' would otherwise mix.
+4. It marks the losing provider's sessions in the state prior and sine die, so they leave the dashboard's active list.
+5. Last, it flips `state_providers`, with no claim's refusal check, since moving tracked bills is the point.
+
+If anything fails, nothing is written and the state stays on its provider. Once the batch lands, the new provider's sync runs at once, and its answer is in the response.
+
+**The first ingest of each moved bill** (flagged by `bills.carried_from`) is quiet. It writes no change log entries and sends instances no `changes` and no calendar changes, so instances write no feed events and members get no "bill changed" emails. It still bumps `updated_at`, so instances fetch the bill again with the new data, and run AI again if its text changed. It clears the old provider's documents again first, in case an ingest from the old provider was in flight. Then it carries the calendar over (`carryCalendar` in `central/src/lib/billCalendar.ts`):
+
+- Each live entry is paired with the new provider's entry on the same date and of the same kind, each side's kind from its own vocabulary. It keeps its identity, so the event keeps its UID in every subscriber's calendar, now with the new provider's details.
+- An old entry nothing pairs with is cancelled at once, since nothing will list it again.
+- The new provider's other entries arrive under identities of their own.
+
+So an entry that doesn't match is cancelled and recreated once, and the dry run lists it.
+
+**Session slugs.** A moved bill moves to the new provider's session. When that session's name asks for the slug the old session holds, as LIMS's "2025-2026 Council Period 26" does beside LegiScan's, it gets `-2` (`cp26-2`), since slugs never change (#290). Instances store the new slug when the bill next reaches them, so its URL becomes `/DC/cp26-2/B26-0400`. Old links keep resolving through the tenant's computed-slug fallback while no other bill answers to them exactly.
+
+**What stays behind.** The losing provider's unmatched bills keep their rows and links, frozen. Its committee rows stay, with no bill pointing at them, and unmatched legislators keep their rows. R2 copies of the cleared documents stay in the bucket.
+
+**Undo** reverses the state's latest cutover. The state goes back to its previous provider, each moved bill to its old session, and the previous provider's sessions to the flags they had. The new provider's sessions in the state are marked ended, and moved legislators go back to the previous provider. The moved bills' documents are cleared again, and their next ingest from the previous provider is quiet and carries the calendar back the same way, so entries instances have kept through both moves keep their identities. The previous provider's sync then rewrites the bills: a snapshot provider's runs at once, and LegiScan's at its next pass, for one `getBill` per tracked moved bill. Bills the new provider added in the meantime stay with it, frozen, and the undo's dry run counts them (`added`).
+
+**Instances** see none of this except their usual notifications. Their queue consumer drops a text central no longer lists, so the old provider's documents leave the bill page instead of failing to open. `POST /tenants/seed-session/:tenantId` answers 409 for a session whose provider doesn't own its state, so it can't hand an instance copies of the bills a cutover moved, and it links bills only while that holds, as the sync does. `GET /tenants/current-session/:state` prefers a session still in progress when two providers have one for the same year.
+
 ### Status vocabulary
 
 Each provider keeps one vocabulary file, `providers/<id>/vocabulary.ts` (`Provider.vocabulary`). It lists every status code the provider writes to `bills.status`, with:
@@ -357,6 +413,8 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 | `POST /admin/reingest-bill/:billId` | Yes | 1 `getBill` | Single-bill refresh through the unified path. |
 | `POST /admin/reingest-tenant/:tenantId` | Yes (dry-run by default; `?confirm=true` to fire) | 1 `getBill` per matched bill | Bulk tenant backfill. `?provider=lims` limits it to the tenant's LIMS bills, on the LIMS queue, for 1 LIMS details call each and no LegiScan calls. |
 | `POST /tenants/promote-bill/:tenantId/:billId` | Yes, `forceAI: true` | 1 `getBill` | Manually add a bill: sets `match_type='manual'` and forces AI. |
+| `POST /admin/state-providers/:state/cutover` | Yes, through the new provider's sync (dry run by default; `?confirm=true` to cut over) | The new provider's snapshot, and for LIMS 1 details call per moved bill with calendar entries in the dry run. No LegiScan calls | Move a state instances track to another provider, keeping every bill's handle. See "Moving a state to another provider (cutover)". |
+| `POST /admin/state-providers/:state/undo-cutover` | Yes, at the previous provider's next pass (dry run by default) | LegiScan: 1 `getBill` per tracked moved bill, at its next pass | Put a state back on its previous provider. |
 | Bulk seed (`scripts/seed-legiscan.ts --from-dir`) | Yes, `skipFetch: true` | 0 `getBill`; 1 `getBillText` per text whose `state_link` fails | Seed central D1 from LegiScan bulk JSON dump. |
 
 ---
@@ -368,6 +426,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **LegiScan calls**: `central/src/providers/legiscan/` (the API client, and the provider that maps it onto the interface in `central/src/providers/types.ts`)
 - **Snapshot providers**: `central/src/cron/sync-snapshots.ts` (`runSnapshotSync`), and `central/src/providers/{lims,mga,lis}/` (LIMS's field inventories are `providers/lims/inventory.ts`)
 - **State ownership**: `central/src/lib/stateProviders.ts` (`loadStateOwners`, `claimState`), and the `/state-providers` routes in `central/src/routes/admin.ts`
+- **Cutovers**: `central/src/lib/cutover.ts` (`planCutover`, `applyCutover`, `applyUndo`), `central/src/lib/cutoverMatch.ts`, `central/src/lib/carriedIds.ts`, `carryCalendar` in `central/src/lib/billCalendar.ts`, and `carried_from` in `ingestMeasure`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`, and `central/src/lib/billCalendar.ts` for calendar entries
 - **Status vocabulary**: `central/src/providers/<id>/vocabulary.ts`, `central/src/lib/vocabulary.ts`, `shared/statusStages.ts`, and `GET /bills/labels` in `central/src/routes/bills.ts`
