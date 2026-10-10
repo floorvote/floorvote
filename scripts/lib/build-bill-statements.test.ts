@@ -152,10 +152,28 @@ describe('buildBillStatements', () => {
     expect(stmts[0]).toContain('INSERT OR REPLACE INTO bills')
   })
 
+  it('writes a committees row for every committee a referral names, once each', () => {
+    const stmts = buildBillStatements({
+      ...completeBill,
+      referrals: [
+        ...completeBill.referrals,
+        { date: '2026-02-03', committee_id: 120, chamber: 'S', chamber_id: 27, name: 'Judiciary' },
+        { date: '2026-02-04', committee_id: 0, chamber: 'S', chamber_id: 27, name: 'Rules' },
+      ],
+    }, 'WI', 2154)
+    const committeeStmts = stmts.filter(s => s.includes('INTO committees'))
+    // The pending committee (99) is also the first referral: one row for it.
+    expect(committeeStmts).toHaveLength(2)
+    expect(committeeStmts[0]).toContain('VALUES (99,')
+    expect(committeeStmts[1]).toContain("VALUES (120, 'WI', 2154, 'S', 27, 'Judiciary', 'legiscan')")
+    expect(committeeStmts[1]).toContain('ON CONFLICT(committee_id) DO UPDATE')
+    expect(committeeStmts[1]).toContain('excluded.session_id >= committees.session_id')
+  })
+
   it('handles committee being an empty array (not an object) without writing committees', () => {
     // LegiScan returns committee:[] for bills with no committee; the script must
     // treat that as "no committee" rather than crashing.
-    const stmts = buildBillStatements({ ...completeBill, committee: [] }, 'WI', 2154)
+    const stmts = buildBillStatements({ ...completeBill, committee: [], referrals: [] }, 'WI', 2154)
     expect(stmts.some(s => s.includes('INTO committees'))).toBe(false)
     // bills row should still have NULL pending_committee_id (column present, value NULL)
     expect(stmts[0]).toContain('INTO bills')
