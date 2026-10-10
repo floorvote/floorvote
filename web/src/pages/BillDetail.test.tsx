@@ -222,6 +222,27 @@ describe('BillDetail org noun labels', () => {
   })
 })
 
+describe('BillDetail referrals', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('lists every referral, including two to one committee and one with no date', async () => {
+    makeMockApiFetch({
+      committee: null,
+      referrals: [
+        { date: '2026-01-16', committeeId: '7001', name: 'Committee on Health', chamber: 'C' },
+        { date: '2026-03-02', committeeId: '7001', name: 'Committee on Health', chamber: 'C' },
+        { date: null, committeeId: null, name: 'Retained by the Council', chamber: 'C' },
+      ],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(screen.getByText('Referrals:')).toBeInTheDocument()
+    expect(screen.getAllByText('Committee on Health')).toHaveLength(2)
+    expect(screen.getByText('2026-03')).toBeInTheDocument()
+    expect(screen.getByText('Retained by the Council')).toBeInTheDocument()
+  })
+})
+
 describe('BillDetail item dates', () => {
   beforeEach(() => vi.restoreAllMocks())
 

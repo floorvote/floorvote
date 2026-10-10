@@ -40,6 +40,9 @@ type CentralBillRich = {
   }>
   /** Fields only the bill's provider publishes, labeled by central. Display only. */
   extras?: BillExtras | null
+  /** The committee the bill is pending in, and its referrals, each named by central's committee row. */
+  committee?: { committeeId: string; name: string; chamber: string | null } | null
+  referrals?: Array<{ date: string | null; committeeId: string | null; name: string; chamber: string | null }>
 }
 
 export async function buildBillDetail(
@@ -211,7 +214,9 @@ export async function buildBillDetail(
     legiscanUrl: centralRich?.legiscanUrl ?? null,
     billType: centralRich?.billType ?? null,
     body: centralRich?.body ?? null,
-    committee: bill.committee,
+    // Central's committee name when it has one. Only demo seeds fill bills.committee.
+    committee: centralRich?.committee?.name ?? bill.committee,
+    referrals: centralRich?.referrals ?? [],
     tenantSummary: bill.tenantSummary,
     tags: filterTagsToTaxonomy(JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,

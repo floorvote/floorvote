@@ -1,5 +1,5 @@
 import { getBulkData, getCouncilPeriods, getLegislationDetails, getMembers, type LimsBulkRecord, type LimsCouncilPeriod } from './client'
-import { buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, toMasterListEntry } from './map'
+import { assignCommitteeIds, buildLimsBill, bulkHash, clean, councilPeriodName, DC_STATE_ID, effectiveChangeHash, indexPeople, LIMS_STATE, toMasterListEntry } from './map'
 import { limsBillId, limsPeopleId, limsSessionId } from './ids'
 import { limsCategories } from './config'
 import { vocabulary } from './vocabulary'
@@ -146,6 +146,7 @@ export const lims: Provider<'LIMS_API_KEY' | 'LIMS_STATES' | 'LIMS_CATEGORIES'> 
       people: byKey,
       today: ctx.today,
     })
+    await assignCommitteeIds(measure, ctx.ids)
     return { measure, details }
   },
 
