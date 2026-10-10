@@ -1,0 +1,13 @@
+-- The SESSION in a bill's /STATE/SESSION/BILL URL, as central assigned it to
+-- the bill's session: unique within the state, so two sessions with the same
+-- name pattern (two providers' "2026 Regular Session", say) never share one.
+-- Central sends it with each bill, and the queue processor stores it.
+--
+-- Null on every existing bill until central next sends it. Until then the
+-- bill's slug is computed from its session name, as before, so no bill URL
+-- changes at upgrade. The resolve routes also accept the computed slug for a
+-- bill whose stored one differs, so links made before keep working.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+ALTER TABLE bills ADD COLUMN session_slug TEXT;

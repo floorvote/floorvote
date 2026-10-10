@@ -20,6 +20,8 @@ export const sessions = sqliteTable('sessions', {
   rawSyncHoursEt:  text('raw_sync_hours_et'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   provider:        text('provider').notNull().default('legiscan'),
+  /** The SESSION in /STATE/SESSION/BILL, unique within the state. Null until lib/sessionSlugs.ts assigns it. */
+  slug:            text('slug'),
   // Weekly per-member vote load from the provider's vote datasets (cron/vote-datasets.ts).
   votesDatasetHash: text('votes_dataset_hash'),
   votesCheckedAt:   text('votes_checked_at'),

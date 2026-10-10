@@ -8,6 +8,7 @@ import { providerContext } from '../lib/providerContext'
 import { toHandle } from '../lib/billHandle'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
+import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
 
 const BATCH = 80
@@ -163,6 +164,7 @@ async function refreshSessions(state: string, provider: Provider, env: Env, db: 
       },
     })
   }
+  await assignSessionSlugs(db)
 }
 
 async function runFullPass(
