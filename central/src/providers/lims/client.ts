@@ -210,9 +210,13 @@ async function limsFetch(
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isText = (v: unknown) => v === null || v === undefined || typeof v === 'string'
-const isList = (v: unknown) => v === null || v === undefined || Array.isArray(v)
-const isRecord = (v: unknown) => v === null || v === undefined || isObject(v)
+
+// Each check needs the key present, with null allowed. A missing key isn't
+// read as null: if LIMS renamed one, every measure would quietly lose that
+// field (its sponsors, say) on its next ingest.
+const hasText = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || typeof o[key] === 'string')
+const hasList = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || Array.isArray(o[key]))
+const hasRecord = (o: Record<string, unknown>, key: string) => Object.hasOwn(o, key) && (o[key] === null || isObject(o[key]))
 
 function unexpected(path: string, what: string): Error {
   return new Error(`LIMS ${path}: unexpected response (${what})`)
@@ -244,11 +248,12 @@ export async function getBulkData(
   if (data === null) return []
   if (!Array.isArray(data)) throw unexpected(path, 'not a list')
   for (const rec of data) {
-    if (!isObject(rec) || typeof rec.legislationNumber !== 'string' || !isText(rec.status) || !isList(rec.legislationHistory)) {
+    // A record without its history would hash as changed and wipe the bill's history on ingest.
+    if (!isObject(rec) || typeof rec.legislationNumber !== 'string' || !hasText(rec, 'status') || !hasList(rec, 'legislationHistory')) {
       throw unexpected(path, 'a record without its number, status, or history')
     }
     for (const h of (rec.legislationHistory as unknown[] | null) ?? []) {
-      if (!isObject(h) || !isText(h.actionDate) || !isText(h.actionDescription) || !isText(h.downloadURL)) {
+      if (!isObject(h) || !hasText(h, 'actionDate') || !hasText(h, 'actionDescription') || !hasText(h, 'downloadURL')) {
         throw unexpected(path, `a history entry of ${rec.legislationNumber} that isn't one`)
       }
     }
@@ -256,11 +261,13 @@ export async function getBulkData(
   return data as LimsBulkRecord[]
 }
 
+// What the mapping reads from LegislationDetails, which must be present
+// (null allowed). linkedLegislation isn't here: the mapping ignores it.
 const DETAIL_LISTS = [
   'introducers', 'coIntroducers', 'coSponsors', 'committeesReferredTo', 'committeesReferredToWithComments',
-  'committeeHearing', 'committeeMarkup', 'actions', 'otherDocuments', 'linkedLegislation',
+  'committeeHearing', 'committeeMarkup', 'actions', 'otherDocuments',
 ] as const
-const DETAIL_TEXT = ['title', 'status', 'shortDescription', 'additionalInformation', 'withdrawnBy', 'withdrawnDate'] as const
+const DETAIL_TEXT = ['title', 'shortDescription', 'additionalInformation', 'withdrawnBy', 'withdrawnDate'] as const
 
 /**
  * One measure's details. Anything but the details of the measure asked for
@@ -279,20 +286,28 @@ export async function getLegislationDetails(
   if (typeof number !== 'string' || number.trim().toUpperCase() !== legislationNumber.trim().toUpperCase()) {
     throw unexpected(path, `the details of ${JSON.stringify(number ?? null)}`)
   }
+  if (typeof data.status !== 'string') throw unexpected(path, 'no status')
   for (const key of DETAIL_LISTS) {
-    const list = data[key]
-    if (!isList(list) || ((list as unknown[] | null) ?? []).some(item => item === null || item === undefined)) {
+    if (!hasList(data, key) || ((data[key] as unknown[] | null) ?? []).some(item => item === null || item === undefined)) {
       throw unexpected(path, `${key} isn't a list`)
     }
   }
-  for (const key of DETAIL_TEXT) if (!isText(data[key])) throw unexpected(path, `${key} isn't text`)
-  if (!isRecord(data.mayoralReview) || !isRecord(data.congressionalReview)) throw unexpected(path, 'a review that isn\'t an object')
+  for (const key of DETAIL_TEXT) if (!hasText(data, key)) throw unexpected(path, `${key} isn't text`)
+  for (const key of ['mayoralReview', 'congressionalReview']) {
+    if (!hasRecord(data, key)) throw unexpected(path, `${key} isn't an object`)
+  }
   return data as unknown as LimsLegislationDetails
 }
 
+/**
+ * The Council Period's members. A `null` answer, as BulkData gives for an
+ * empty category (a period not yet seated, say), is read as none, so it
+ * doesn't stop the sync.
+ */
 export async function getMembers(councilPeriodId: number, apiKey: string, onRequest?: () => void): Promise<LimsCouncilMember[]> {
   const path = `Members/${councilPeriodId}`
   const data = await limsFetch(path, apiKey, {}, onRequest)
+  if (data === null) return []
   if (!Array.isArray(data)) throw unexpected(path, 'not a list')
   for (const m of data) {
     if (!isObject(m) || typeof m.id !== 'number' || typeof m.name !== 'string') throw unexpected(path, 'a member without an id and name')

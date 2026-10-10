@@ -316,6 +316,10 @@ describe('DC from LIMS fails closed', () => {
     ...broken,
     ['a record without its number', () => json([{ ...bulk['B26-0400'], legislationNumber: undefined }, bulk['B26-0769']])],
     ['a record whose history isn\'t a list', () => json([{ ...bulk['B26-0400'], legislationHistory: 'none' }])],
+    ['a record without its history', () => {
+      const { legislationHistory: _h, ...rest } = bulk['B26-0400']
+      return json([rest, bulk['B26-0769']])
+    }],
   ] as [string, () => Response][])('changes nothing when BulkData answers with %s', async (_what, answer) => {
     const before = await baseline()
     feed['BulkData/1/26'] = answer
@@ -380,10 +384,26 @@ describe('DC from LIMS fails closed', () => {
     expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
   })
 
+  it('keeps syncing when Members answers null, as a period not yet seated might', async () => {
+    const before = await baseline()
+    feed['Members/26'] = () => json(null)
+    calls = []
+    const run = makeEnv()
+    await runSnapshotSync(lims, run.env, drizzle(env.DB, { schema }))
+    expect(calls.some(u => u.endsWith('/BulkData/1/26'))).toBe(true)
+    expect(sentToTenant(run)).toEqual([])
+    expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
+  })
+
   it.each([
     ...broken,
     ['null', () => json(null)],
     ['an empty object', () => json({})],
+    ['only its number', () => json({ legislationNumber: 'B26-0400' })],
+    ['its sponsors missing', () => {
+      const { introducers: _i, coIntroducers: _c, ...rest } = JSON.parse(details0400Raw)
+      return json(rest)
+    }],
     ['a list', () => json([JSON.parse(details0400Raw)])],
     ['another measure\'s details', () => json(JSON.parse(detailsHnRaw))],
     ['actions that aren\'t a list', () => json({ ...JSON.parse(details0400Raw), actions: { voteDetails: null } })],
