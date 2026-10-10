@@ -13,6 +13,8 @@ export type DigestEvent = {
   type: string; metadata: string; createdAt: string
   billId: string; billNumber: string; billTitle: string
   billState: string | null; billSession: string; priority: string | null
+  /** The slug central assigned the bill's session. Absent = computed from billSession. */
+  billSessionSlug?: string | null
   summary: string | null; userName: string | null
   /** Lets the card label an untitled draft "Untitled draft". Absent = filed. */
   billIsDraft?: boolean
@@ -21,6 +23,8 @@ export type DigestEvent = {
 export type NewMatchDigestItem = {
   billId: string; billNumber: string; billTitle: string
   billState: string | null; billSession: string; relevanceScore: number | null
+  /** The slug central assigned the bill's session. Absent = computed from billSession. */
+  billSessionSlug?: string | null
 }
 
 function escHtml(s: string): string {
@@ -65,7 +69,7 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
   const first = events[0]
 
   // Same canonical bill URL Feed links to (/STATE/SLUG/BILL), made absolute.
-  const billHref = `${appUrl}${billUrl({ id: first.billId, state: model.state, session: first.billSession, billNumber: model.billNumber })}`
+  const billHref = `${appUrl}${billUrl({ id: first.billId, state: model.state, session: first.billSession, sessionSlug: first.billSessionSlug, billNumber: model.billNumber })}`
   // Links inherit surrounding color + no underline, so the card looks identical to before but is clickable (like Feed).
   const link = (href: string, inner: string) => `<a href="${escHtml(href)}" style="color:inherit;text-decoration:none;">${inner}</a>`
 
@@ -102,7 +106,7 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
 function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): string {
   if (items.length === 0) return ''
   const rows = items.map(it => {
-    const href = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, billNumber: it.billNumber })}`
+    const href = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
     const badgeText = it.billState ? `${escHtml(it.billState)} ${escHtml(it.billNumber)}` : escHtml(it.billNumber)
     return `<tr>
       <td style="padding:8px 0;border-top:1px solid ${color.borderDefault};">

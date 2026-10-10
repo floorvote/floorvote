@@ -52,7 +52,7 @@ export async function runDigest(
     .select({
       type: feedEvents.type, metadata: feedEvents.metadata, createdAt: feedEvents.createdAt,
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
-      billState: bills.state, billSession: bills.session, priority: bills.priority,
+      billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, priority: bills.priority,
       summary: bills.tenantSummary, billIsDraft: bills.isDraft,
       userName: userDisplayNameSql,
     })
@@ -70,7 +70,7 @@ export async function runDigest(
   const threshold = await getNewMatchMinRelevance(db)
   const newMatches: NewMatchDigestItem[] = await db.select({
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
-      billState: bills.state, billSession: bills.session, relevanceScore: bills.relevanceScore,
+      billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, relevanceScore: bills.relevanceScore,
     })
     .from(bills)
     .where(and(
