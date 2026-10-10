@@ -872,6 +872,9 @@ async function upsertBill(
       set: {
         ...updateFields,
         matchType: sql`CASE WHEN ${bills.matchType} = 'manual' THEN 'manual' WHEN excluded.match_type IS NOT NULL THEN excluded.match_type ELSE ${bills.matchType} END`,
+        // Central never changes a session slug once assigned, so a null (an
+        // older central, or a session it hasn't slugged yet) keeps the stored one.
+        sessionSlug: sql`COALESCE(excluded.session_slug, ${bills.sessionSlug})`,
         updatedAt: (updateFields as any).updatedAt ?? sql`updated_at`,
       },
     })
