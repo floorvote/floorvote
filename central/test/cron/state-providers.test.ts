@@ -123,7 +123,8 @@ beforeEach(async () => {
       : categoryId === 18 ? [bulk['HN26-0171']] : [])
   vi.mocked(lims.getLegislationDetails).mockResolvedValue(JSON.parse(details0400Raw))
   vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === MGA_CODE)
-  vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === MGA_CODE ? JSON.parse(mgaSampleRaw) : null))
+  vi.mocked(mga.getMgaSession).mockImplementation(async code =>
+    (code === MGA_CODE ? { unchanged: false, records: JSON.parse(mgaSampleRaw), etag: null } : null))
   await db.insert(schema.tenants).values([
     { tenantId: 'oca', name: 'OCA', stateCoverage: '["DC"]', active: true },
     { tenantId: 'team', name: 'Team', stateCoverage: '["DC","MD"]', active: true },
@@ -409,7 +410,7 @@ describe('a claim that lands while a sync is running', () => {
     let claimStatus = 0
     vi.mocked(mga.getMgaSession).mockImplementation(async code => {
       claimStatus = (await claim(e, 'MD', { provider: 'legiscan' })).status
-      return code === MGA_CODE ? JSON.parse(mgaSampleRaw) : null
+      return code === MGA_CODE ? { unchanged: false, records: JSON.parse(mgaSampleRaw), etag: null } : null
     })
 
     await runSnapshotSync(mgaProvider, e, db)

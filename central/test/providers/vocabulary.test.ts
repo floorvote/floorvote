@@ -61,7 +61,7 @@ describe('the codes each provider writes', () => {
   })
 
   it('covers every code the Maryland and Virginia mappings derive', () => {
-    expect(codes('mga')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+    expect(codes('mga')).toEqual([201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216])
     expect(codes('lis')).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
   })
 

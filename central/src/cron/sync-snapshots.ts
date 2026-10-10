@@ -1,11 +1,11 @@
-import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
+import { eq, and, or, inArray, notInArray, lt, gt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
 import { sessions, bills, billTenants, tenants, people, providerRecords } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { terminalStatuses } from '../lib/vocabulary'
 import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
-import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
+import { loadStateOwners, ownerOfState, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
@@ -26,6 +26,8 @@ import type { Env, Db } from '../types'
 
 const BATCH = 80
 const FLUSH_BATCH = 200
+/** Stored records read per query when a feed answers 304. */
+const STORED_PAGE = 500
 
 export interface SnapshotPassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
 
@@ -82,7 +84,7 @@ export async function runSnapshotSync(
     // A snapshot is the only kind of pull, so only the session's full-pass hours run it.
     if (!force && decideMode(session, etHour) !== 'full') continue
     console.log(`[sync-${provider.id}] full pass: ${session.sessionName}`)
-    const counts = await runSnapshotPass(provider, session, covering, env, db, ctx)
+    const counts = await runSnapshotPass(provider, session, covering, env, db, ctx, force)
     reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
     await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
   }
@@ -198,6 +200,20 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
   if (stmts.length > 0) await db.batch(stmts as [typeof stmts[0], ...typeof stmts])
 }
 
+/**
+ * One full pass of a session. A forced run reads in full, and so does a
+ * session with no stored ETag. Otherwise the provider gets the ETag of the
+ * last snapshot a pass finished, and a feed that says nothing changed (304)
+ * saves the download, not the pass: the records stored from the last read
+ * stand in for the snapshot. applyMasterList still runs on every record,
+ * since it is what links bills to an instance that newly covers the state,
+ * re-queues a changed bill whose ingest failed (its change_hash stays
+ * behind until the ingest succeeds), and moves links whose keywords no
+ * longer match. The new ETag is stored only once the pass has queued and
+ * sent everything, and only while the provider still owns the state, so a
+ * pass that fails or loses the state to a claim midway reads in full next
+ * time.
+ */
 async function runSnapshotPass(
   provider: SnapshotProvider,
   session: SessionRow,
@@ -205,21 +221,52 @@ async function runSnapshotPass(
   env: Env,
   db: Db,
   ctx: ProviderContext,
+  force: boolean,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
-  const { records, people: listedPeople } = await provider.snapshot(storedSession(session), ctx)
-  if (listedPeople && listedPeople.length > 0) await upsertProviderPeople(db, provider.id, listedPeople)
+  const etag = force ? null : session.snapshotEtag ?? null
+  const snapshot = await provider.snapshot({ ...storedSession(session), etag }, ctx)
+  if (snapshot.people && snapshot.people.length > 0) await upsertProviderPeople(db, provider.id, snapshot.people)
+  if (snapshot.unchanged) console.log(`[sync-${provider.id}] ${session.sessionName} unchanged since its last read; matching its stored records`)
+  const records = snapshot.unchanged ? await storedRecords(db, provider.id, session.sessionId) : snapshot.records
+  // An empty answer is nothing new.
   if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
 
   const entries = await storeRecords(provider, session, records, db, ctx)
   const queue = ingestQueueFor(provider, env)
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
     { deferQueuedUpdates: true }))
+  const newEtag = snapshot.unchanged ? session.snapshotEtag ?? null : snapshot.etag ?? null
+  if (newEtag !== (session.snapshotEtag ?? null) && await ownerOfState(db, session.state) === provider.id) {
+    await db.update(sessions).set({ snapshotEtag: newEtag }).where(eq(sessions.sessionId, session.sessionId))
+  }
 
   const refreshed = provider.detailsRefresh
     ? await refreshStaleDetails(provider, provider.detailsRefresh, session.sessionId, queued, queue, db)
     : 0
   if (refreshed > 0) console.log(`[sync-${provider.id}] refreshing details for ${refreshed} tracked bills`)
   return { records: records.length, queued: queued.size, refreshed }
+}
+
+/**
+ * The records stored for a session from the provider's last full read, as
+ * `snapshot` would list them, for a pass whose feed answered 304. Read in
+ * pages, since a session's records can run to megabytes.
+ */
+async function storedRecords(db: Db, providerId: string, sessionId: number): Promise<ProviderRecord[]> {
+  const out: ProviderRecord[] = []
+  for (let after = -1; ;) {
+    const page = await db.select({
+      billId: providerRecords.billId, nativeKey: providerRecords.nativeKey,
+      rawJson: providerRecords.rawJson, rawHash: providerRecords.rawHash,
+    }).from(providerRecords)
+      .where(and(eq(providerRecords.provider, providerId), eq(providerRecords.sessionId, sessionId), gt(providerRecords.billId, after)))
+      .orderBy(asc(providerRecords.billId))
+      .limit(STORED_PAGE)
+      .all()
+    for (const r of page) out.push({ billId: r.billId, nativeKey: r.nativeKey, raw: JSON.parse(r.rawJson), hash: r.rawHash })
+    if (page.length < STORED_PAGE) return out
+    after = page[page.length - 1].billId
+  }
 }
 
 /**
