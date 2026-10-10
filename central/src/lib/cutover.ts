@@ -453,6 +453,12 @@ async function mintPlaceholders(db: Db, plan: CutoverPlan, wanted: number[]): Pr
  */
 export async function applyCutover(env: Env, db: Db, plan: CutoverPlan): Promise<{ id: string }> {
   const { state, from, to } = plan
+  // With nothing matched, a cutover would only strand the old provider's
+  // bills. A state none of whose bills an instance tracks needs a claim.
+  if (plan.moved.length === 0) {
+    throw new CutoverError(409, `none of ${from.id}'s ${state} bills matched one of ${to.id}'s, so a cutover would move nothing. ` +
+      'Check the dry run, or claim the state if no instance tracks its bills.')
+  }
   const real = await mintPlaceholders(db, plan, [
     ...plan.sessions.map(s => s.listed.session_id),
     ...plan.people.matched.map(m => m.to.id),

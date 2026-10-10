@@ -295,6 +295,15 @@ describe('a cutover\'s dry run', () => {
     await env.DB.prepare(`INSERT INTO state_providers (state, provider, previous_provider) VALUES ('DC', 'lims', 'legiscan')`).run()
     expect((await cutover(run)).status).toBe(409)
   })
+
+  it('is refused when nothing would match, since a cutover would only strand LegiScan\'s bills', async () => {
+    await env.DB.prepare(`UPDATE bills SET bill_number = 'B26-9' || bill_id WHERE bill_id IN (?, ?)`).bind(B0400, B0001).run()
+    const before = await snapshotTables()
+    const res = await cutover(makeEnv(), '?confirm=true')
+    expect(res.status).toBe(409)
+    expect((await res.json() as any).error).toMatch(/would move nothing/)
+    expect(await snapshotTables()).toEqual(before)
+  })
 })
 
 describe('a cutover', () => {
