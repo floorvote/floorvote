@@ -1,4 +1,4 @@
-import { asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { billReferrals, committees } from '../db/schema'
 import type { CentralMeasure, Provider } from '../providers'
 import type { Db } from '../types'
@@ -20,8 +20,9 @@ const INSERT_CHUNK = 12
  * DC's "Retained by the Council") names no committee and writes no row.
  *
  * A committee keeps the provider and id that first wrote it. Its name and
- * chamber follow the latest ingest that names it, so a renamed committee is
- * renamed on every bill at once. Its session is the latest that named it.
+ * chamber follow the latest ingest that names it from its latest session, so
+ * a renamed committee is renamed on every bill at once, and re-ingesting an
+ * older session's bill can't bring back an old name.
  */
 export async function upsertCommittees(db: Db, measure: CentralMeasure, provider: Provider): Promise<void> {
   const named = new Map<number, typeof committees.$inferInsert>()
@@ -47,11 +48,12 @@ export async function upsertCommittees(db: Db, measure: CentralMeasure, provider
         name: sql`excluded.name`,
         chamber: sql`excluded.chamber`,
         chamberId: sql`excluded.chamber_id`,
-        sessionId: sql`max(${committees.sessionId}, excluded.session_id)`,
+        sessionId: sql`excluded.session_id`,
       },
-      // Another provider's row under the same id is left alone. Minted ids
-      // start above 3e9, so this only guards against a provider's mistake.
-      setWhere: eq(committees.provider, provider.id),
+      // Only from the committee's latest session. Another provider's row under
+      // the same id is left alone: minted ids start above 3e9, so that only
+      // guards against a provider's mistake.
+      setWhere: and(eq(committees.provider, provider.id), sql`excluded.session_id >= ${committees.sessionId}`),
     }))
   }
   await db.batch(inserts as [typeof inserts[0], ...typeof inserts])

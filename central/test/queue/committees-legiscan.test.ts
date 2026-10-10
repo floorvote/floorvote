@@ -103,6 +103,19 @@ describe('committees from LegiScan', () => {
     expect((await getBill(9002)).referrals.map((r: any) => r.name)).toEqual(['Campaigns and Elections'])
   })
 
+  it('keeps the name from the committee\'s latest session when an older session\'s bill is ingested again', async () => {
+    const renamed = { ...ELECTIONS, name: 'Campaigns and Elections' }
+    await ingest(getBillResponse(9001, 'AB1', renamed, [{ ...renamed, date: '2026-01-16' }]))
+    const older = {
+      ...getBillResponse(8001, 'AB7', [], [{ ...ELECTIONS, date: '2024-01-16' }]),
+      session_id: 2100,
+      session: { session_id: 2100, session_name: '2023-2024 Regular Session', year_start: 2023, year_end: 2024 },
+    }
+    await ingest(older)
+    expect((await getBill(8001)).referrals.map((r: any) => [r.committeeId, r.name])).toEqual([['7001', 'Campaigns and Elections']])
+    expect((await getBill(9001)).committee.name).toBe('Campaigns and Elections')
+  })
+
   it('serves no committee for a bill LegiScan gives none, and keeps a referral that names no committee id', async () => {
     await ingest(getBillResponse(9003, 'AB3', [], [{ committee_id: 0, chamber: 'A', chamber_id: 26, name: 'Rules', date: '2026-01-18' }]))
     const bill = await getBill(9003)
