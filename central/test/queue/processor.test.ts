@@ -531,7 +531,7 @@ describe('LIMS ids never reach LegiScan', () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.bills).values({
       billId: LIMS_BILL, changeHash: '', sessionId: limsSessionId(26), state: 'DC', stateId: 51,
-      billNumber: 'B26-0400', title: 'B26-0400', source: 'lims',
+      billNumber: 'B26-0400', title: 'B26-0400', provider: 'lims',
     })
     const batch = makeBatch(LIMS_BILL)
 

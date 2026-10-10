@@ -1,0 +1,12 @@
+-- The per-bill details response a provider record's bill was last built from
+-- (for LIMS, the LegislationDetails response), kept beside the listed record
+-- in raw_json. With both, a field the mapping ignores today can be added
+-- later from what central already holds, without fetching it again.
+--
+-- raw_hash stays the hash of the listed record alone, since that is what the
+-- snapshot sync compares to find changed records. details_fetched_at already
+-- records when the details were fetched.
+--
+-- A new nullable column only. Rows written before it, and records whose
+-- provider has no details response, hold null.
+ALTER TABLE provider_records ADD COLUMN details_json TEXT;

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { detectChanges, type BillSnapshot, detectCalendarChanges, calendarIdentityKey, type PriorCalendarRow, calendarBlockFromRows, type StoredCalendarRow } from '../../src/lib/detect-changes'
-import type { CentralMeasure, MeasureCalendarEntry } from '../../src/providers'
+import { getProvider, type CentralMeasure, type MeasureCalendarEntry } from '../../src/providers'
+
+const legiscan = getProvider('legiscan')
 
 const baseSnapshot: BillSnapshot = {
   status: 1,
@@ -137,12 +139,12 @@ function baseBill(overrides: Partial<CentralMeasure> = {}): CentralMeasure {
 
 describe('detectChanges', () => {
   it('returns empty array when nothing changed', () => {
-    const changes = detectChanges(baseSnapshot, baseBill())
+    const changes = detectChanges(baseSnapshot, baseBill(), legiscan)
     expect(changes).toHaveLength(0)
   })
 
   it('detects status_change', () => {
-    const changes = detectChanges(baseSnapshot, baseBill({ status: 4 }))
+    const changes = detectChanges(baseSnapshot, baseBill({ status: 4 }), legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('status_change')
     expect(changes[0].oldValue).toBe('Introduced')
@@ -150,7 +152,7 @@ describe('detectChanges', () => {
   })
 
   it('detects title_changed', () => {
-    const changes = detectChanges(baseSnapshot, baseBill({ title: 'An Act Relating to Voting Rights' }))
+    const changes = detectChanges(baseSnapshot, baseBill({ title: 'An Act Relating to Voting Rights' }), legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('title_changed')
     expect(changes[0].oldValue).toBe('An Act Relating to Elections')
@@ -158,7 +160,7 @@ describe('detectChanges', () => {
   })
 
   it('detects description_changed', () => {
-    const changes = detectChanges(baseSnapshot, baseBill({ description: 'Relates to absentee ballots' }))
+    const changes = detectChanges(baseSnapshot, baseBill({ description: 'Relates to absentee ballots' }), legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('description_changed')
     expect(changes[0].oldValue).toBe('Relates to voter registration')
@@ -174,7 +176,7 @@ describe('detectChanges', () => {
         { date: '2026-02-20', action: 'Passed committee', chamber: 'H', chamber_id: 1, importance: 1 },
       ],
     })
-    const changes = detectChanges(baseSnapshot, billWithNewAction)
+    const changes = detectChanges(baseSnapshot, billWithNewAction, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('action_added')
     expect(changes[0].newValue).toBe('Passed committee')
@@ -191,7 +193,7 @@ describe('detectChanges', () => {
       { date: '2026-02-15', action: 'Committee Hearing', chamber: 'H', chamber_id: 1, importance: 1 },
       { date: '2026-02-20', action: 'Passed Committee', chamber: 'H', chamber_id: 1, importance: 2 },
     ]
-    const changes = detectChanges(snapshot, bill)
+    const changes = detectChanges(snapshot, bill, legiscan)
     // Only one action_added record, for the latest entry
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('action_added')
@@ -221,7 +223,7 @@ describe('detectChanges', () => {
         alt_text_hash: '',
       },
     ]
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes.length).toBeGreaterThanOrEqual(2)
     const types = changes.map(c => c.changeType)
     expect(types).toContain('status_change')
@@ -251,7 +253,7 @@ describe('detectChanges', () => {
         alt_text_hash: '',
       },
     ]
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('text_added')
     expect(changes[0].newValue).toBe('103')
@@ -275,7 +277,7 @@ describe('detectChanges', () => {
         },
       ],
     })
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('amendment_added')
     expect(changes[0].newValue).toBe('401')
@@ -299,7 +301,7 @@ describe('detectChanges', () => {
         supplement_hash: 'shash2',
       },
     ]
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('supplement_added')
     expect(changes[0].newValue).toBe('202')
@@ -320,7 +322,7 @@ describe('detectChanges', () => {
         sponsor_order: 2,
       },
     ]
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('sponsor_added')
     expect(changes[0].newValue).toBe('Rep. John Doe (R)')
@@ -328,7 +330,7 @@ describe('detectChanges', () => {
 
   it('detects sponsor_removed when a sponsor disappears', () => {
     const bill = baseBill({ sponsors: [] })
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('sponsor_removed')
     expect(changes[0].oldValue).toBe('Rep. Jane Smith (D)')
@@ -354,7 +356,7 @@ describe('detectChanges', () => {
         state_link: 'https://www.njleg.state.nj.us/votes/302',
       },
     ]
-    const changes = detectChanges(baseSnapshot, bill)
+    const changes = detectChanges(baseSnapshot, bill, legiscan)
     expect(changes).toHaveLength(1)
     expect(changes[0].changeType).toBe('vote_added')
     expect(changes[0].newValue).toBe('302')
@@ -380,13 +382,13 @@ describe('detectChanges', () => {
         },
       ],
     })
-    const changes = detectChanges(snapshotWithNameKey, bill)
+    const changes = detectChanges(snapshotWithNameKey, bill, legiscan)
     expect(changes).toHaveLength(0)
   })
 
   it('does not emit status_change when snapshot.status is null', () => {
     const snapshotNoStatus: BillSnapshot = { ...baseSnapshot, status: null }
-    const changes = detectChanges(snapshotNoStatus, baseBill({ status: 4 }))
+    const changes = detectChanges(snapshotNoStatus, baseBill({ status: 4 }), legiscan)
     const statusChanges = changes.filter((c) => c.changeType === 'status_change')
     expect(statusChanges).toHaveLength(0)
   })

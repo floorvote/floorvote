@@ -6,6 +6,7 @@ import {
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
+import { isHandle, toHandle } from '../../../../shared/billHandle'
 import { sessionToSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
@@ -54,7 +55,7 @@ export async function buildBillDetail(
   // Fetch rich supplemental data from central for LegiScan bills (calendar, supplements, votes, etc.)
   // Purely a read — no queue messages, no API calls, no AI.
   let centralRich: CentralBillRich | null = null
-  if (bill.externalId?.startsWith('legiscan:')) {
+  if (isHandle(bill.externalId)) {
     try {
       const res = await centralFetch(env, `/bills/${bill.externalId}`)
       if (res.ok) centralRich = await res.json() as CentralBillRich
@@ -161,8 +162,7 @@ export async function buildBillDetail(
   let resolvedRelated: ResolvedRelated[] = []
   if (centralRich?.relatedBills?.length) {
     const externalIds = centralRich.relatedBills
-      .filter(r => r.sastBillId != null)
-      .map(r => `legiscan:${r.sastBillId}`)
+      .flatMap(r => r.sastBillId != null ? [toHandle(r.sastBillId)] : [])
     const internalRows = externalIds.length > 0
       ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, state: bills.state })
           .from(bills)
@@ -174,7 +174,7 @@ export async function buildBillDetail(
       billId: r.sastBillId ?? 0,
       billNumber: r.identifier,
       type: r.relationType,
-      route: r.sastBillId != null ? (routeByExternal.get(`legiscan:${r.sastBillId}`) ?? null) : null,
+      route: r.sastBillId != null ? (routeByExternal.get(toHandle(r.sastBillId)) ?? null) : null,
     }))
   } else {
     // Fallback: stored JSON may be an array of bill-number strings (legacy format)

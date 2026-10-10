@@ -19,7 +19,7 @@ export const sessions = sqliteTable('sessions', {
   fullSyncHoursEt: text('full_sync_hours_et'),
   rawSyncHoursEt:  text('raw_sync_hours_et'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
-  source:          text('source').notNull().default('legiscan'),
+  provider:        text('provider').notNull().default('legiscan'),
   // Weekly per-member vote load from the provider's vote datasets (cron/vote-datasets.ts).
   votesDatasetHash: text('votes_dataset_hash'),
   votesCheckedAt:   text('votes_checked_at'),
@@ -48,7 +48,7 @@ export const people = sqliteTable('people', {
   bioguideId:    text('bioguide_id'),
   bioJson:       text('bio_json'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
-  source:        text('source').notNull().default('legiscan'),
+  provider:      text('provider').notNull().default('legiscan'),
 })
 
 export const bills = sqliteTable('bills', {
@@ -79,7 +79,7 @@ export const bills = sqliteTable('bills', {
   updatedAt:       text('updated_at').notNull().default(sql`(datetime('now'))`),
   textsFetchedAt:  text('texts_fetched_at'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
-  source:          text('source').notNull().default('legiscan'),
+  provider:        text('provider').notNull().default('legiscan'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
@@ -369,23 +369,26 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
 
 /**
  * The raw record each snapshot provider's bill was last built from, and its hash;
- * see migrations-legiscan/0025_source_provenance.sql.
+ * see migrations-legiscan/0025_source_provenance.sql (renamed by 0027).
  */
-export const sourceRecords = sqliteTable('source_records', {
+export const providerRecords = sqliteTable('provider_records', {
   billId:           integer('bill_id').primaryKey(),
-  source:           text('source').notNull(),
+  provider:         text('provider').notNull(),
   nativeKey:        text('native_key').notNull(),
   sessionId:        integer('session_id').notNull(),
+  /** The record as the provider listed it. `rawHash` is its hash, which the snapshot sync compares. */
   rawJson:          text('raw_json').notNull(),
   rawHash:          text('raw_hash').notNull(),
+  /** The per-bill details response the bill was last built from, when its provider has one (0028). */
+  detailsJson:      text('details_json'),
   detailsFetchedAt: text('details_fetched_at'),
   updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
-/** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations-legiscan/0026_source_ids.sql and lib/sourceIds.ts. */
-export const sourceIds = sqliteTable('source_ids', {
+/** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations-legiscan/0026_source_ids.sql (renamed by 0027) and lib/providerIds.ts. */
+export const providerIds = sqliteTable('provider_ids', {
   id:        integer('id').primaryKey({ autoIncrement: true }),
-  source:    text('source').notNull(),
+  provider:  text('provider').notNull(),
   kind:      text('kind').notNull(),
   nativeKey: text('native_key').notNull(),
 })

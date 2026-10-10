@@ -183,7 +183,7 @@ describe('weekly LegiScan member votes', () => {
       // DC reads from LIMS on this central, so LegiScan's DC datasets aren't checked.
       { sessionId: 4, state: 'DC', stateId: 51, yearStart: 2026, yearEnd: 2026, sessionName: 'DC 2026', sessionTitle: 'Regular' },
       // A session the MGA provider wrote, though Maryland is back on LegiScan.
-      { sessionId: 3_000_000_001, state: 'MD', stateId: 20, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular Session', sessionTitle: '2026 Regular Session', source: 'mga' },
+      { sessionId: 3_000_000_001, state: 'MD', stateId: 20, yearStart: 2026, yearEnd: 2026, sessionName: '2026 Regular Session', sessionTitle: '2026 Regular Session', provider: 'mga' },
     ])
 
     await checkVoteDatasets({ ...mockEnv(), LIMS_API_KEY: 'k', LIMS_STATES: 'DC' }, db)

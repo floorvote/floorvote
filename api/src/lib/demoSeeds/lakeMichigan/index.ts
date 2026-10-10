@@ -1,5 +1,6 @@
 import { stripHtml, truncateWithEllipsis, COMMENT_PREVIEW_MAX } from '../../../../../shared/feedUtils'
 import type { DemoSeed, DemoSeedFeedEvent } from '../types'
+import { parseHandle } from '../../../../../shared/billHandle'
 import { LM_ORG } from './org'
 import { LM_CUSTOM_FIELDS, LM_ROLES, LM_USER_ROLES, LM_USERS } from './roster'
 import {
@@ -47,7 +48,7 @@ const voteMilestones: DemoSeedFeedEvent[] = Object.entries(
   .map(([externalId, vs]) => {
     const newest = vs.reduce((a, b) => (a.daysAgo <= b.daysAgo ? a : b))
     return {
-      id: `lm-fe-v-${externalId.replace('legiscan:', '')}`,
+      id: `lm-fe-v-${parseHandle(externalId)}`,
       type: 'vote_milestone' as const,
       externalId,
       userId: newest.userId,

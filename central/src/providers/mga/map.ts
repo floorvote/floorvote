@@ -68,7 +68,7 @@ export function mgaDisplayNumber(billNumber: string): string {
   return m ? `${m[1]}${m[2]}` : billNumber.trim()
 }
 
-/** The bill's key in source_ids and source_records: "2026RS/HB0001". */
+/** The bill's key in provider_ids and provider_records: "2026RS/HB0001". */
 export function mgaNativeKey(sessionCode: string, billNumber: string): string {
   return `${sessionCode}/${billNumber.trim()}`
 }

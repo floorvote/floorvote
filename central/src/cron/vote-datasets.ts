@@ -95,7 +95,7 @@ export async function checkVoteDatasets(env: Env, db: Db): Promise<void> {
     .from(sessions)
     .where(and(
       inArray(sessions.state, [...trackedStates]),
-      eq(sessions.source, provider.id),
+      eq(sessions.provider, provider.id),
       eq(sessions.syncEnabled, true),
       ne(sessions.sineDie, 1),
       or(isNull(sessions.votesCheckedAt), lt(sessions.votesCheckedAt, sql`datetime('now', ${CHECK_INTERVAL})`)),

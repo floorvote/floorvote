@@ -3,7 +3,7 @@ import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureRef,
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants,
-  billChangeLog, rollCalls, people, tenants, sessions, sourceRecords,
+  billChangeLog, rollCalls, people, tenants, sessions, providerRecords,
 } from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
 import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
@@ -14,6 +14,7 @@ import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
+import { toHandle } from '../lib/billHandle'
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -57,11 +58,11 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
-  // The provider that wrote the bill, by its row's `source` column, and its
+  // The provider that wrote the bill, by its row's `provider` column, and its
   // session, in one read. A bill central has no row for is the default's.
-  const known = await db.select({ source: bills.source, sessionId: bills.sessionId })
+  const known = await db.select({ provider: bills.provider, sessionId: bills.sessionId })
     .from(bills).where(eq(bills.billId, msg.billId)).get()
-  const provider = getProvider(known?.source ?? DEFAULT_PROVIDER_ID)
+  const provider = getProvider(known?.provider ?? DEFAULT_PROVIDER_ID)
 
   if (msg.skipFetch) {
     // Data already in DB from bulk seed — skip the provider's API, just download text and notify
@@ -99,13 +100,14 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
 /**
  * Fetch one bill's full record from its provider. A snapshot provider gets the
  * record core stored for the bill, and the bill's session. When the provider
- * also fetched a details response, record when, for its details refresh.
+ * also fetched a details response, store it beside the record, and when, for
+ * its details refresh.
  */
 async function fetchMeasure(billId: number, sessionId: number | null, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
   let ref: MeasureRef
   if (provider.snapshot) {
-    const row = await db.select().from(sourceRecords)
-      .where(and(eq(sourceRecords.billId, billId), eq(sourceRecords.source, provider.id))).get()
+    const row = await db.select().from(providerRecords)
+      .where(and(eq(providerRecords.billId, billId), eq(providerRecords.provider, provider.id))).get()
     if (!row) throw new Error(`bill ${billId} has no stored ${provider.id} record; the ${provider.id} sync has not seen it`)
     const s = await db.select().from(sessions).where(eq(sessions.sessionId, row.sessionId)).get()
     ref = {
@@ -124,7 +126,13 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
 
   const fetched = await provider.fetchMeasure(ref, providerContext(provider, env, db))
   if (!('measure' in fetched)) return fetched
-  await db.update(sourceRecords).set({ detailsFetchedAt: nowDb() }).where(eq(sourceRecords.billId, billId))
+  // The whole response, so a field the mapping ignores today can be read later
+  // without fetching it again. raw_hash is left alone: it is the listed
+  // record's, which the snapshot sync compares.
+  await db.update(providerRecords).set({
+    detailsJson: fetched.details == null ? null : JSON.stringify(fetched.details),
+    detailsFetchedAt: nowDb(),
+  }).where(eq(providerRecords.billId, billId))
   return fetched.measure
 }
 
@@ -150,7 +158,6 @@ export async function ingestMeasure(
   opts: IngestOptions,
 ): Promise<void> {
   const { forceMetadata, forceAI, interactive, forceTextRefetch } = opts
-  const source = provider.id
   const now = nowDb()
 
   // --- Change detection ---
@@ -251,7 +258,7 @@ export async function ingestMeasure(
     changeHash:         bill.change_hash,
     sessionId:          bill.session_id,
     state:              bill.state,
-    source,
+    provider:           provider.id,
     stateId:            bill.state_id,
     billNumber:         bill.bill_number,
     billType:           bill.bill_type,
@@ -319,8 +326,8 @@ export async function ingestMeasure(
     if (s.people_id) {
       const personValues = personRow(s, bill.state_id ?? null)
       const { peopleId: _omit, ...personUpdate } = personValues
-      // A person keeps the source that first wrote them: set on insert only.
-      await db.insert(people).values({ ...personValues, source }).onConflictDoUpdate({
+      // A person keeps the provider that first wrote them: set on insert only.
+      await db.insert(people).values({ ...personValues, provider: provider.id }).onConflictDoUpdate({
         target: people.peopleId,
         set: personUpdate,
       })
@@ -510,7 +517,7 @@ export async function ingestMeasure(
     if (v.member_votes) {
       memberVotes.push({
         rollCallId: v.roll_call_id,
-        // A vote whose member the source couldn't resolve has no person to
+        // A vote whose member the provider couldn't resolve has no person to
         // show it under (the bill API skips those), so it isn't stored.
         votes: v.member_votes.filter(mv => mv.people_id != null)
           .map(mv => ({ peopleId: mv.people_id!, voteId: mv.vote_id, voteText: mv.vote_text })),
@@ -727,7 +734,7 @@ async function notifyTenants(
   for (const t of matchingTenants) {
     const body: NotificationMessage = {
       tenantId: t.tenantId,
-      billId: `legiscan:${billId}`,
+      billId: toHandle(billId),
       forceMetadata,
       forceAI,
       matchType: (t.matchType ?? null) as 'keyword' | 'manual' | null,

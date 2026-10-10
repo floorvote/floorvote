@@ -10,6 +10,7 @@ import { sendMagicLink } from '../lib/email'
 import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords } from '../lib/keywords'
 import { centralFetch } from '../lib/centralFetch'
+import { parseHandle } from '../../../shared/billHandle'
 import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -1113,7 +1114,7 @@ adminApiRouter.post('/reprocess-llm-all', async (c) => {
 })
 
 // POST /admin/promote-bill/:billId — promote a stub bill to full tracking.
-// Looks up the bill's externalId (e.g. 'legiscan:12345'), strips the prefix,
+// Looks up the bill's handle (externalId), parses out central's bill id,
 // and proxies to central /tenants/promote-bill/:tenantId/:billId.
 adminApiRouter.post('/promote-bill/:billId', async (c) => {
   const billId = c.req.param('billId')
@@ -1127,12 +1128,12 @@ adminApiRouter.post('/promote-bill/:billId', async (c) => {
   if (!bill.externalId) {
     return c.json({ error: 'bill has no externalId' }, 400)
   }
-  if (!bill.externalId.startsWith('legiscan:')) {
+  const centralBillId = parseHandle(bill.externalId)
+  if (centralBillId === null) {
     return c.json({ error: 'bill is not a LegiScan-backed bill, cannot promote' }, 400)
   }
-  const lsBillId = bill.externalId.slice('legiscan:'.length)
 
-  const res = await centralFetch(c.env, `/tenants/promote-bill/${c.env.TENANT_ID}/${lsBillId}`, {
+  const res = await centralFetch(c.env, `/tenants/promote-bill/${c.env.TENANT_ID}/${centralBillId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ interactive: true }),

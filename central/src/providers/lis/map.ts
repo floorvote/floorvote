@@ -71,7 +71,7 @@ export function lisDate(s: string): string {
   return m ? `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}` : ''
 }
 
-/** The bill's key in source_ids and source_records: "20261/HB1". */
+/** The bill's key in provider_ids and provider_records: "20261/HB1". */
 export function lisNativeKey(sessionCode: string, billNumber: string): string {
   return `${sessionCode}/${lisBillNumber(billNumber)}`
 }

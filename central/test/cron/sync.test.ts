@@ -646,7 +646,7 @@ describe('runSync: LIMS sessions', () => {
       fullSyncHoursEt: JSON.stringify([etHour]), rawSyncHoursEt: JSON.stringify([]) }
     await db.insert(sessions).values([
       { sessionId: 9300, ...both },
-      { sessionId: limsSessionId(26), ...both, source: 'lims' },
+      { sessionId: limsSessionId(26), ...both, provider: 'lims' },
     ])
     await db.insert(tenants).values({ tenantId: 'test-lims', name: 'T', stateCoverage: JSON.stringify(['DC']), active: true })
     vi.mocked(legiscan.getMasterListBySession).mockResolvedValue([])

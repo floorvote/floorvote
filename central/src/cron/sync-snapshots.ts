@@ -1,5 +1,5 @@
 import { eq, and, or, inArray, notInArray, lt, isNull, isNotNull, asc, sql } from 'drizzle-orm'
-import { sessions, bills, billTenants, tenants, people, sourceRecords } from '../db/schema'
+import { sessions, bills, billTenants, tenants, people, providerRecords } from '../db/schema'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -23,7 +23,7 @@ import type { Env, Db } from '../types'
 const BATCH = 80
 const FLUSH_BATCH = 200
 
-export interface SourcePassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
+export interface SnapshotPassReport { sessionId: number; sessionName: string; records: number; queued: number; refreshed: number }
 
 type Covering = { tenantId: string; stateCoverage: string; queueId: string | null }
 type SessionRow = typeof sessions.$inferSelect
@@ -39,9 +39,9 @@ export function isSnapshotProvider(provider: Provider | undefined): provider is 
  * `force` (the admin "run now" route) ignores the hour of day: the provider
  * refreshes its sessions and every synced session gets a full pass.
  */
-export async function runSourceSync(
+export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
-): Promise<SourcePassReport[]> {
+): Promise<SnapshotPassReport[]> {
   if (!isSnapshotProvider(provider) || !providerEnabled(provider, env)) return []
 
   const active = await db.select().from(tenants).where(eq(tenants.active, true)).all()
@@ -67,12 +67,12 @@ export async function runSourceSync(
   const legacy = await db.select({ n: sql<number>`COUNT(*)` })
     .from(bills)
     .innerJoin(billTenants, eq(billTenants.billId, bills.billId))
-    .where(and(inArray(bills.state, states), eq(bills.source, 'legiscan')))
+    .where(and(inArray(bills.state, states), eq(bills.provider, 'legiscan')))
     .get()
   if (Number(legacy?.n ?? 0) > 0) {
     throw new Error(
       `[sync-${provider.id}] ${legacy!.n} LegiScan bill links exist in ${states.join(', ')}; ` +
-      `the ${provider.id} sync is paused until they are cut over. These states are not syncing from either source meanwhile.`)
+      `the ${provider.id} sync is paused until they are cut over. These states are not syncing from either provider meanwhile.`)
   }
 
   const ctx = providerContext(provider, env, db)
@@ -81,14 +81,14 @@ export async function runSourceSync(
   const toSync: SessionRow[] = []
   for (const state of provider.states) toSync.push(...await sessionsToSync(provider, state, ctx, etHour, force, db))
 
-  const reports: SourcePassReport[] = []
+  const reports: SnapshotPassReport[] = []
   for (const session of toSync) {
     const covering = coveringByState.get(session.state)
     if (!covering) continue
     // A snapshot is the only kind of pull, so only the session's full-pass hours run it.
     if (!force && decideMode(session, etHour) !== 'full') continue
     console.log(`[sync-${provider.id}] full pass: ${session.sessionName}`)
-    const counts = await runSourcePass(provider, session, covering, env, db, ctx)
+    const counts = await runSnapshotPass(provider, session, covering, env, db, ctx)
     reports.push({ sessionId: session.sessionId, sessionName: session.sessionName, ...counts })
     await db.update(sessions).set({ lastSyncedAt: nowDb() }).where(eq(sessions.sessionId, session.sessionId))
   }
@@ -108,14 +108,14 @@ async function sessionsToSync(
   const due = provider.selectSessions(stored, ctx.today)
   if (!force && etHour !== 5 && due.length > 0) return due
 
-  await refreshSourceSessions(provider, state, ctx, db)
+  await refreshProviderSessions(provider, state, ctx, db)
   const refreshed = provider.selectSessions(await providerSessions(db, provider.id, state), ctx.today)
   if (refreshed.length === 0) console.warn(`[sync-${provider.id}] no current session for ${state}; skipping`)
   return refreshed
 }
 
 async function providerSessions(db: Db, providerId: string, state: string): Promise<SessionRow[]> {
-  return db.select().from(sessions).where(and(eq(sessions.state, state), eq(sessions.source, providerId))).all()
+  return db.select().from(sessions).where(and(eq(sessions.state, state), eq(sessions.provider, providerId))).all()
 }
 
 function storedSession(row: SessionRow): StoredSession {
@@ -140,7 +140,7 @@ function sessionValues(providerId: string, state: string, s: SyncSession) {
     sessionTag:   s.session_tag ?? '',
     sessionTitle: s.session_name,
     sessionName:  s.session_name,
-    source:       providerId,
+    provider:     providerId,
   }
 }
 
@@ -150,7 +150,7 @@ function sessionValues(providerId: string, state: string, s: SyncSession) {
  * answer changes nothing). Then the provider's people are refreshed, for the
  * sessions just listed and every other one central holds its measures in.
  */
-export async function refreshSourceSessions(provider: Provider, state: string, ctx: ProviderContext, db: Db): Promise<void> {
+export async function refreshProviderSessions(provider: Provider, state: string, ctx: ProviderContext, db: Db): Promise<void> {
   const listed = await provider.listSessions(state, ctx)
   if (listed.length === 0) return
   for (const s of listed) {
@@ -162,16 +162,16 @@ export async function refreshSourceSessions(provider: Provider, state: string, c
   }
   const listedIds = listed.map(s => s.session_id)
   await db.update(sessions).set({ prior: 1 })
-    .where(and(eq(sessions.source, provider.id), eq(sessions.state, state), notInArray(sessions.sessionId, listedIds)))
+    .where(and(eq(sessions.provider, provider.id), eq(sessions.state, state), notInArray(sessions.sessionId, listedIds)))
 
   if (!provider.listPeople) return
-  const holding = (await db.selectDistinct({ id: sourceRecords.sessionId }).from(sourceRecords)
-    .where(eq(sourceRecords.source, provider.id)).all()).map(r => r.id)
+  const holding = (await db.selectDistinct({ id: providerRecords.sessionId }).from(providerRecords)
+    .where(eq(providerRecords.provider, provider.id)).all()).map(r => r.id)
   const ids = [...new Set([...listedIds, ...holding])]
   const rows: SessionRow[] = []
   for (let i = 0; i < ids.length; i += BATCH) {
     rows.push(...await db.select().from(sessions)
-      .where(and(eq(sessions.source, provider.id), inArray(sessions.sessionId, ids.slice(i, i + BATCH)))).all())
+      .where(and(eq(sessions.provider, provider.id), inArray(sessions.sessionId, ids.slice(i, i + BATCH)))).all())
   }
   await upsertProviderPeople(db, provider.id, await provider.listPeople(rows.map(storedSession), ctx))
 }
@@ -193,7 +193,7 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
       ...(p.middle_name !== undefined ? { middleName: p.middle_name } : {}),
       ...(p.last_name !== undefined ? { lastName: p.last_name } : {}),
       ...(p.bio !== undefined ? { bioJson: JSON.stringify(p.bio) } : {}),
-      source: providerId,
+      provider: providerId,
     }
     const { peopleId: _id, ...update } = values
     return db.insert(people).values(values).onConflictDoUpdate({ target: people.peopleId, set: update })
@@ -201,7 +201,7 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
   if (stmts.length > 0) await db.batch(stmts as [typeof stmts[0], ...typeof stmts])
 }
 
-async function runSourcePass(
+async function runSnapshotPass(
   provider: SnapshotProvider,
   session: SessionRow,
   covering: Covering[],
@@ -226,7 +226,7 @@ async function runSourcePass(
 }
 
 /**
- * Store each record whose hash changed in source_records, and return the
+ * Store each record whose hash changed in provider_records, and return the
  * full-pass entries for all of them.
  */
 async function storeRecords(
@@ -240,8 +240,8 @@ async function storeRecords(
   const storedDesc = new Map<number, string | null>()
   for (let i = 0; i < ids.length; i += BATCH) {
     const chunk = ids.slice(i, i + BATCH)
-    for (const r of await db.select({ billId: sourceRecords.billId, rawHash: sourceRecords.rawHash })
-      .from(sourceRecords).where(inArray(sourceRecords.billId, chunk)).all()) storedHash.set(r.billId, r.rawHash)
+    for (const r of await db.select({ billId: providerRecords.billId, rawHash: providerRecords.rawHash })
+      .from(providerRecords).where(inArray(providerRecords.billId, chunk)).all()) storedHash.set(r.billId, r.rawHash)
     for (const r of await db.select({ billId: bills.billId, description: bills.description })
       .from(bills).where(inArray(bills.billId, chunk)).all()) storedDesc.set(r.billId, r.description)
   }
@@ -253,7 +253,7 @@ async function storeRecords(
     if (storedHash.get(record.billId) !== record.hash) {
       const values = {
         billId: record.billId,
-        source: provider.id,
+        provider: provider.id,
         nativeKey: record.nativeKey,
         sessionId: session.sessionId,
         rawJson: JSON.stringify(record.raw),
@@ -261,7 +261,7 @@ async function storeRecords(
         updatedAt: now,
       }
       const { billId: _id, ...update } = values
-      stmts.push(db.insert(sourceRecords).values(values).onConflictDoUpdate({ target: sourceRecords.billId, set: update }))
+      stmts.push(db.insert(providerRecords).values(values).onConflictDoUpdate({ target: providerRecords.billId, set: update }))
     }
     entries.push(await provider.toEntry(record, { description: storedDesc.get(record.billId) ?? null }, ctx))
   }
@@ -280,17 +280,17 @@ async function refreshStaleDetails(
   queue: Queue,
   db: Db,
 ): Promise<number> {
-  const stale = await db.selectDistinct({ billId: sourceRecords.billId, fetchedAt: sourceRecords.detailsFetchedAt })
-    .from(sourceRecords)
-    .innerJoin(billTenants, eq(billTenants.billId, sourceRecords.billId))
-    .innerJoin(bills, eq(bills.billId, sourceRecords.billId))
+  const stale = await db.selectDistinct({ billId: providerRecords.billId, fetchedAt: providerRecords.detailsFetchedAt })
+    .from(providerRecords)
+    .innerJoin(billTenants, eq(billTenants.billId, providerRecords.billId))
+    .innerJoin(bills, eq(bills.billId, providerRecords.billId))
     .where(and(
-      eq(sourceRecords.sessionId, sessionId),
+      eq(providerRecords.sessionId, sessionId),
       isNotNull(billTenants.matchType),
       notInArray(bills.status, [...cfg.settledStatuses]),
-      or(isNull(sourceRecords.detailsFetchedAt), lt(sourceRecords.detailsFetchedAt, sql`datetime('now', ${cfg.maxAge})`)),
+      or(isNull(providerRecords.detailsFetchedAt), lt(providerRecords.detailsFetchedAt, sql`datetime('now', ${cfg.maxAge})`)),
     ))
-    .orderBy(asc(sourceRecords.detailsFetchedAt))
+    .orderBy(asc(providerRecords.detailsFetchedAt))
     .limit(cfg.perPass + queued.size)
     .all()
   const refresh = stale.map(r => r.billId).filter(id => !queued.has(id)).slice(0, cfg.perPass)
@@ -312,7 +312,7 @@ export interface ImportReport {
  * analysis whatever the tenant's keywords. A session central has never seen
  * is created as the provider lists it. Behind POST /admin/lims-import.
  */
-export async function importSourceMeasures(
+export async function importProviderMeasures(
   provider: Provider, env: Env, db: Db, tenantId: string, numbers: string[],
 ): Promise<ImportReport> {
   if (!isSnapshotProvider(provider) || !provider.importMeasures) throw new Error(`${provider.id} can't import measures`)

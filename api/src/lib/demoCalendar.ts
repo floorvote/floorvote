@@ -1,10 +1,9 @@
 import { and, eq, gte, lte, isNotNull, asc } from 'drizzle-orm'
 import { calendarEvents, bills } from '../db/schema'
 import type { getDb } from '../db/client'
+import { parseHandle } from '../../../shared/billHandle'
 
 type Db = ReturnType<typeof getDb>
-
-const LEGISCAN_PREFIX = 'legiscan:'
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const addDaysISO = (baseISO: string, n: number) =>
@@ -31,8 +30,8 @@ export interface UpcomingHearingRow {
 
 /**
  * DEMO ONLY. Confirmed `source='hearing'` events within `[today, today+days]`, joined to
- * their LegiScan bill. `billId` is the integer parsed from `external_id` ('legiscan:<n>')
- * so downstream code can re-key via `legiscan:<billId>`.
+ * their central bill. `billId` is central's bill id, parsed from the handle in `external_id`,
+ * so downstream code can re-key via `toHandle(billId)`.
  */
 export async function loadUpcomingDemoHearings(db: Db, days: number): Promise<UpcomingHearingRow[]> {
   const today = todayISO()
@@ -64,10 +63,8 @@ export async function loadUpcomingDemoHearings(db: Db, days: number): Promise<Up
     .all()
 
   return rows.flatMap((r) => {
-    const ext = r.externalId ?? ''
-    if (!ext.startsWith(LEGISCAN_PREFIX)) return []
-    const billId = Number(ext.slice(LEGISCAN_PREFIX.length))
-    if (!Number.isFinite(billId)) return []
+    const billId = parseHandle(r.externalId)
+    if (billId === null) return []
     return [{
       eventHash: r.eventHash ?? '',
       type: 'Hearing',

@@ -1,16 +1,16 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, isNotNull, inArray, like, ne } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
-import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
+import { findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
-import { importSourceMeasures, isSnapshotProvider, runSourceSync } from '../cron/sync-sources'
+import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
 import { providerEnabled } from '../lib/providerRouting'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
@@ -20,6 +20,7 @@ import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
 import { guardCallerTenantParam } from '../lib/callerTenant'
+import { parseHandle, toHandle } from '../lib/billHandle'
 
 // Per-tenant cooldown for sync-keywords. Module-scoped Map is intentional —
 // Worker instances are isolated, so this is effectively a per-instance cooldown.
@@ -44,24 +45,24 @@ adminRoutes.post('/trigger-sync', async (c) => {
   return c.json({ ok: true, message: 'sync triggered' })
 })
 
-// Run a snapshot provider's sync now (cron/sync-sources.ts) instead of waiting
+// Run a snapshot provider's sync now (cron/sync-snapshots.ts) instead of waiting
 // for its full-pass hours: the provider refreshes its sessions, then every
 // synced session gets a full pass. /lims-sync is the original name for DC.
-async function runSourceNow(c: Context<{ Bindings: Env }>, id: string) {
+async function runSnapshotNow(c: Context<{ Bindings: Env }>, id: string) {
   const provider = findProvider(id)
-  if (!isSnapshotProvider(provider)) return c.json({ error: `unknown source "${id}"` }, 404)
-  if (!providerEnabled(provider, c.env)) return c.json({ error: `source "${id}" is not configured on this central` }, 400)
+  if (!isSnapshotProvider(provider)) return c.json({ error: `unknown provider "${id}"` }, 404)
+  if (!providerEnabled(provider, c.env)) return c.json({ error: `provider "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
-  const passes = await runSourceSync(provider, c.env, db, { force: true })
+  const passes = await runSnapshotSync(provider, c.env, db, { force: true })
   return c.json({ ok: true, passes })
 }
-adminRoutes.post('/sources/:id/sync', c => runSourceNow(c, c.req.param('id')))
-adminRoutes.post('/lims-sync', c => runSourceNow(c, 'lims'))
+adminRoutes.post('/providers/:id/sync', c => runSnapshotNow(c, c.req.param('id')))
+adminRoutes.post('/lims-sync', c => runSnapshotNow(c, 'lims'))
 
 // Import specific LIMS measures from any Council Period and track them for one
 // tenant as manual picks (full ingest + AI). Body: { "tenantId": "oca",
-// "numbers": ["B25-0345", "B25-0291"] }. See importSourceMeasures in
-// cron/sync-sources.ts and importMeasures in providers/lims.
+// "numbers": ["B25-0345", "B25-0291"] }. See importProviderMeasures in
+// cron/sync-snapshots.ts and importMeasures in providers/lims.
 adminRoutes.post('/lims-import', async (c) => {
   if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
   const body = await c.req.json<{ tenantId?: string; numbers?: unknown }>().catch(() => ({} as { tenantId?: string; numbers?: unknown }))
@@ -70,7 +71,7 @@ adminRoutes.post('/lims-import', async (c) => {
   if (numbers.length > 200) return c.json({ error: 'at most 200 numbers per request' }, 400)
   const db = drizzle(c.env.DB, { schema })
   try {
-    const result = await importSourceMeasures(getProvider('lims'), c.env, db, body.tenantId, numbers)
+    const result = await importProviderMeasures(getProvider('lims'), c.env, db, body.tenantId, numbers)
     return c.json({ ok: true, ...result })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 404)
@@ -447,7 +448,7 @@ async function refreshTenantLinks(
 
   const bodies = links.map(l => ({
     tenantId,
-    billId: `legiscan:${l.billId}`,
+    billId: toHandle(l.billId),
     [opts.flag]: true,
   } as NotificationMessage))
 
@@ -501,12 +502,12 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const hasDeliveryPath = !!getTenantQueue(c.env, tenantId) || (!!tenant.queueId && queuesRestEnabled(c.env))
   if (!hasDeliveryPath) return c.json({ error: `no delivery path for tenant ${tenantId} (no binding, no queue_id)` }, 400)
 
-  // Resolve which sessions to check, as the provider needs them.
+  // Resolve which sessions to check, as their provider needs them.
   const sessionRef = {
     sessionId: sessions.sessionId, state: sessions.state, sessionTag: sessions.sessionTag,
-    yearStart: sessions.yearStart, yearEnd: sessions.yearEnd,
+    yearStart: sessions.yearStart, yearEnd: sessions.yearEnd, provider: sessions.provider,
   }
-  let sessionRefs: SessionRef[]
+  let sessionRefs: (SessionRef & { provider: string })[]
   if (sessionIdParam) {
     const sid = parseInt(sessionIdParam, 10)
     if (isNaN(sid)) return c.json({ error: 'invalid sessionId' }, 400)
@@ -535,25 +536,20 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   const notifyIds = new Set<number>()
   let refreshed = 0
 
-  // Sessions don't record their provider yet, so every session is the default provider's.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
-  // The provider logs each call as it goes out, so the row records the outbound
-  // attempt, not the intent to make one; these params say why it was spent.
-  const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
-
-  // Other providers' sessions have no LegiScan masterlist; their stubs refresh
-  // on their own provider's sync.
-  const directSessionIds = new Set(sessionIds.length === 0 ? [] : (await db.select({ sessionId: sessions.sessionId })
-    .from(sessions).where(and(inArray(sessions.sessionId, sessionIds), ne(sessions.source, 'legiscan'))).all())
-    .map(r => r.sessionId))
-
   for (const session of sessionRefs) {
     const { sessionId } = session
-    if (directSessionIds.has(sessionId)) continue
-    // 1 LegiScan call per session.
+    // Each session's list comes from its own provider, by the row's `provider`
+    // column. A snapshot provider has no list to call here: its stubs refresh
+    // on its own sync.
+    const provider = findProvider(session.provider)
+    if (!provider?.listMeasures) continue
+    // The provider logs each call as it goes out, so the row records the outbound
+    // attempt, not the intent to make one; these params say why it was spent.
+    const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
+    // 1 LegiScan call per LegiScan session.
     let list: SyncEntry[]
     try {
-      list = await provider.listMeasures!(session, ctx)
+      list = await provider.listMeasures(session, ctx)
     } catch (err) {
       console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)
@@ -636,7 +632,7 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   // one tenant's run freshens central, a subsequent run for a different tenant
   // still notifies that tenant's stubs even though refreshed === 0.
   const notifyBodies = [...notifyIds].map(billId => (
-    { tenantId, billId: `legiscan:${billId}`, stubOnly: true } as NotificationMessage
+    { tenantId, billId: toHandle(billId), stubOnly: true } as NotificationMessage
   ))
 
   let notified = 0
@@ -677,8 +673,8 @@ adminRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(),
   for (let i = 0; i < body.updates.length; i += BATCH) {
     const chunk = body.updates.slice(i, i + BATCH)
     const stmts = chunk.flatMap(({ externalId, matchType }) => {
-      const billId = parseInt(externalId.replace('legiscan:', ''), 10)
-      if (isNaN(billId)) return []
+      const billId = parseHandle(externalId)
+      if (billId === null) return []
       if (matchType === null) {
         // Only demote from 'keyword' — never touch 'manual' rows
         return [db.update(schema.billTenants)
