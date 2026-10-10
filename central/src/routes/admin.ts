@@ -13,6 +13,7 @@ import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
+import { applyCutover, applyUndo, CutoverError, cutoverReport, planCutover, planUndo, undoReport } from '../lib/cutover'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -100,6 +101,77 @@ adminRoutes.post('/state-providers/:state', async (c) => {
     }, 409)
   }
   return c.json({ ok: true, changed: result.changed, ownership: result.ownership })
+})
+
+// Cut a state that instances already track over to another provider
+// (lib/cutover.ts). Body: { "provider": "lims" }. A dry run unless
+// ?confirm=true: it reads the new provider's feed, reports matched and
+// unmatched bills, calendar entries, and people, and writes nothing. With
+// confirm, every matched bill keeps its row id and handle, ownership flips
+// last, and the new provider's sync runs at once. Operator-only, like the
+// claim, so it isn't on the tenant surface allowlist.
+adminRoutes.post('/state-providers/:state/cutover', async (c) => {
+  const state = c.req.param('state').toUpperCase()
+  if (!/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state must be a two-letter code' }, 400)
+  const body = await c.req.json<{ provider?: unknown } | null>().catch(() => null)
+  if (!body || typeof body.provider !== 'string') return c.json({ error: 'provider is required' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const dryRun = c.req.query('confirm') !== 'true'
+  try {
+    const plan = await planCutover(c.env, db, state, body.provider, { dryRun })
+    if (dryRun) return c.json({ dryRun: true, ...cutoverReport(plan) })
+    const { id } = await applyCutover(c.env, db, plan)
+    // The new provider's first pass stores its records under the kept ids and
+    // queues the moved bills' first ingests. If it fails, the hourly sync runs it.
+    let sync: { passes: Awaited<ReturnType<typeof runSnapshotSync>> } | { error: string }
+    try {
+      sync = { passes: await runSnapshotSync(plan.to, c.env, db, { force: true }) }
+    } catch (err) {
+      console.error(`[cutover] ${plan.to.id}'s first sync of ${state} failed; the hourly sync will retry:`, err)
+      sync = { error: err instanceof Error ? err.message : String(err) }
+    }
+    const report = cutoverReport(plan)
+    return c.json({
+      ok: true, cutover: id, state, from: plan.from.id, to: plan.to.id,
+      bills: { matched: report.bills.matched, tracked: report.bills.tracked,
+        unmatched: { old: report.bills.unmatched.old.length, new: report.bills.unmatched.new.length } },
+      people: { matched: report.people.matched, weak: report.people.weak },
+      sync,
+    })
+  } catch (err) {
+    if (err instanceof CutoverError) return c.json({ error: err.message }, err.status)
+    // A provider's feed failing closed, or the batch failing: nothing was written.
+    console.error(`[cutover] ${state} stopped:`, err)
+    return c.json({ error: `the cutover stopped, and nothing changed: ${err instanceof Error ? err.message : String(err)}` }, 502)
+  }
+})
+
+// Undo a state's latest cutover: the state goes back to its previous
+// provider, whose sync then rewrites the moved bills. A dry run unless
+// ?confirm=true.
+adminRoutes.post('/state-providers/:state/undo-cutover', async (c) => {
+  const state = c.req.param('state').toUpperCase()
+  if (!/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state must be a two-letter code' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  try {
+    const plan = await planUndo(c.env, db, state)
+    if (c.req.query('confirm') !== 'true') return c.json({ dryRun: true, ...undoReport(plan) })
+    await applyUndo(c.env, db, plan)
+    // A snapshot provider syncs the state back now. LegiScan's hourly sync does it on its own schedule.
+    let sync: { passes: Awaited<ReturnType<typeof runSnapshotSync>> } | { error: string } | undefined
+    if (isSnapshotProvider(plan.from)) {
+      try {
+        sync = { passes: await runSnapshotSync(plan.from, c.env, db, { force: true }) }
+      } catch (err) {
+        sync = { error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+    return c.json({ ok: true, ...undoReport(plan), ...(sync ? { sync } : {}) })
+  } catch (err) {
+    if (err instanceof CutoverError) return c.json({ error: err.message }, err.status)
+    console.error(`[cutover] undo of ${state} stopped:`, err)
+    return c.json({ error: `the undo stopped, and nothing changed: ${err instanceof Error ? err.message : String(err)}` }, 502)
+  }
 })
 
 // Import specific LIMS measures from any Council Period and track them for one

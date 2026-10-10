@@ -8,6 +8,7 @@ import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList } from './sync'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
+import { carriedBillIds, carriedPeopleIds, withCarriedBillIds, withCarriedPeople } from '../lib/carriedIds'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -112,7 +113,7 @@ async function providerSessions(db: Db, providerId: string, state: string): Prom
   return db.select().from(sessions).where(and(eq(sessions.state, state), eq(sessions.provider, providerId))).all()
 }
 
-function storedSession(row: SessionRow): StoredSession {
+export function storedSession(row: SessionRow): StoredSession {
   return {
     sessionId: row.sessionId, state: row.state, sessionTag: row.sessionTag,
     yearStart: row.yearStart, yearEnd: row.yearEnd, sessionName: row.sessionName, prior: row.prior,
@@ -120,7 +121,7 @@ function storedSession(row: SessionRow): StoredSession {
 }
 
 /** The `sessions` row for a session a provider listed. */
-function sessionValues(providerId: string, state: string, s: SyncSession) {
+export function sessionValues(providerId: string, state: string, s: SyncSession) {
   return {
     sessionId:    s.session_id,
     state,
@@ -176,10 +177,13 @@ export async function refreshProviderSessions(provider: Provider, state: string,
 /**
  * Upsert a provider's people, under its id. Only the fields a person carries
  * are written, so a row keeps what the provider doesn't list (such as a
- * party the ingest stored from a sponsor record).
+ * party the ingest stored from a sponsor record). A person a cutover matched
+ * keeps the id they had (lib/carriedIds.ts).
  */
 async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPerson[]): Promise<void> {
-  const stmts = list.map(p => {
+  if (list.length === 0) return
+  const carried = withCarriedPeople(list, await carriedPeopleIds(db, providerId))
+  const stmts = carried.map(p => {
     const values = {
       peopleId: p.people_id,
       name: p.name,
@@ -206,9 +210,11 @@ async function runSnapshotPass(
   db: Db,
   ctx: ProviderContext,
 ): Promise<{ records: number; queued: number; refreshed: number }> {
-  const { records, people: listedPeople } = await provider.snapshot(storedSession(session), ctx)
+  const { records: listed, people: listedPeople } = await provider.snapshot(storedSession(session), ctx)
   if (listedPeople && listedPeople.length > 0) await upsertProviderPeople(db, provider.id, listedPeople)
-  if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
+  if (listed.length === 0) return { records: 0, queued: 0, refreshed: 0 }
+  // Bills a cutover moved to this provider keep their row ids (lib/carriedIds.ts).
+  const records = withCarriedBillIds(listed, await carriedBillIds(db, provider.id, session.state))
 
   const entries = await storeRecords(provider, session, records, db, ctx)
   const queue = ingestQueueFor(provider, env)
@@ -325,14 +331,15 @@ export async function importProviderMeasures(
   const queue = ingestQueueFor(provider, env)
   const covering = [{ tenantId, stateCoverage: tenant.stateCoverage, queueId: tenant.queueId ?? null }]
 
-  for (const { state, session: listed, records, numbers: imported } of found.sessions) {
+  for (const { state, session: listed, records: listedRecords, numbers: imported } of found.sessions) {
     // An existing row is left alone, so importing from the current session changes nothing.
     await db.insert(sessions).values(sessionValues(provider.id, state, listed)).onConflictDoNothing()
     await assignSessionSlugs(db)
     const session = await db.select().from(sessions).where(eq(sessions.sessionId, listed.session_id)).get()
     if (!session) throw new Error(`[${provider.id}-import] session ${listed.session_name} was not written`)
-    if (records.length === 0) continue
+    if (listedRecords.length === 0) continue
 
+    const records = withCarriedBillIds(listedRecords, await carriedBillIds(db, provider.id, state))
     const entries = await storeRecords(provider, session, records, db, ctx)
     const ids = records.map(r => r.billId)
     const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue, { deferQueuedUpdates: true }))

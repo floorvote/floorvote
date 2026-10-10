@@ -41,6 +41,8 @@ describe('TenantApi deny-by-default forwarder', () => {
       ['POST', '/api/admin/backfill-match-types'],
       ['GET', '/api/admin/state-providers'],
       ['POST', '/api/admin/state-providers/dc'],
+      ['POST', '/api/admin/state-providers/dc/cutover'],
+      ['POST', '/api/admin/state-providers/dc/undo-cutover'],
       ['POST', '/api/tenants/ri/demo-reset'],
       ['POST', '/api/tenants/ri/run-digest'],
       ['POST', '/api/tenants/ri/refresh-metadata'],

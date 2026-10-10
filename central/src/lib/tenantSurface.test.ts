@@ -36,9 +36,11 @@ describe('tenantSurface allowlist matcher', () => {
       ['POST', '/api/admin/anomaly-watch'],
       ['POST', '/api/admin/trigger-sync'],
       ['POST', '/api/admin/backfill-match-types'],
-      // state ownership is operator-only
+      // state ownership and cutovers are operator-only
       ['GET', '/api/admin/state-providers'],
       ['POST', '/api/admin/state-providers/dc'],
+      ['POST', '/api/admin/state-providers/dc/cutover'],
+      ['POST', '/api/admin/state-providers/dc/undo-cutover'],
       ['POST', '/api/tenants/ri/demo-reset'],
       ['POST', '/api/tenants/ri/run-digest'],
       ['POST', '/api/tenants/ri/refresh-metadata'],

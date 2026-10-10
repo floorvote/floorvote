@@ -82,6 +82,12 @@ export const bills = sqliteTable('bills', {
   textsFetchedAt:  text('texts_fetched_at'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   provider:        text('provider').notNull().default('legiscan'),
+  /**
+   * The provider whose data a bill a cutover moved still holds, until its new
+   * provider's first ingest, which is quiet and carries its calendar over
+   * (0036, lib/cutover.ts). Null otherwise.
+   */
+  carriedFrom:     text('carried_from'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
   index('idx_bills_state').on(t.state),
@@ -431,3 +437,36 @@ export const providerIds = sqliteTable('provider_ids', {
   kind:      text('kind').notNull(),
   nativeKey: text('native_key').notNull(),
 })
+
+/**
+ * Cutovers: a state moved from one provider to another with every matched bill
+ * keeping its central row id (lib/cutover.ts, migrations-legiscan/0036_cutovers.sql).
+ */
+export const cutovers = sqliteTable('cutovers', {
+  id:           text('id').primaryKey(),
+  state:        text('state').notNull(),
+  fromProvider: text('from_provider').notNull(),
+  toProvider:   text('to_provider').notNull(),
+  /** The losing provider's sessions in the state and their flags before the cutover ended them, for an undo. */
+  sessionsJson: text('sessions_json').notNull().default('[]'),
+  createdAt:    text('created_at').notNull().default(sql`(datetime('now'))`),
+  undoneAt:     text('undone_at'),
+}, (t) => [index('idx_cutovers_state').on(t.state, t.createdAt)])
+
+/** Each bill a cutover moved, under its kept row id, with the new provider's own key for it. */
+export const cutoverBills = sqliteTable('cutover_bills', {
+  cutoverId:     text('cutover_id').notNull(),
+  billId:        integer('bill_id').notNull(),
+  nativeKey:     text('native_key').notNull(),
+  fromSessionId: integer('from_session_id').notNull(),
+  toSessionId:   integer('to_session_id').notNull(),
+}, (t) => [primaryKey({ columns: [t.cutoverId, t.billId] })])
+
+/** Each legislator a cutover matched: the person id they keep, given in place of the new provider's id for them. */
+export const cutoverPeople = sqliteTable('cutover_people', {
+  cutoverId:        text('cutover_id').notNull(),
+  peopleId:         integer('people_id').notNull(),
+  providerPeopleId: integer('provider_people_id').notNull(),
+  matchedOn:        text('matched_on').notNull(),
+  weak:             integer('weak').notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.cutoverId, t.providerPeopleId] })])

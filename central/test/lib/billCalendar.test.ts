@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
-  legacyCalendarKey, planCalendarPull, planCalendarRecheck, calendarBlockEvents, type CalendarRow,
+  carryCalendar, legacyCalendarKey, planCalendarPull, planCalendarRecheck, calendarBlockEvents, type CalendarRow,
 } from '../../src/lib/billCalendar'
 import { getProvider, type MeasureCalendarEntry, type Provider } from '../../src/providers'
 
@@ -224,6 +224,53 @@ describe('changes', () => {
     const rows = stored(legiscan, [entry(), entry({ type_id: 2, description: 'Exec' }), entry({ type_id: 3, description: 'Markup' })])
     expect(calendarBlockEvents(legiscan, rows).map(e => e.kind).sort()).toEqual(['hearing', 'markup', 'markup'])
     expect(calendarBlockEvents(lims, stored(lims, [entry({ type_id: 10, description: 'Mayor\'s response due' })])).map(e => e.kind)).toEqual(['deadline'])
+  })
+})
+
+describe('a cutover\'s carry-over', () => {
+  // LegiScan's rows for a bill a cutover moved to LIMS, and what LIMS lists.
+  const ls = [
+    legacyRow({ id: 'hearing', typeId: 1, date: '2026-06-10', description: 'Committee on Health' }),
+    legacyRow({ id: 'markup', typeId: 3, type: 'Markup Session', date: '2026-06-17', description: 'Committee on Health', identityKey: '3|committee on health' }),
+    legacyRow({ id: 'gone', typeId: 1, date: '2026-06-24', description: 'Committee of the Whole', identityKey: '1|committee of the whole' }),
+    legacyRow({ id: 'was-cancelled', typeId: 1, date: '2026-06-03', description: 'Old', identityKey: '1|old', cancelledAt: '2026-06-01 00:00:00' }),
+  ]
+  const limsHearing = entry({ type_id: 1, date: '2026-06-10', description: 'Public Hearing on B26-0001', event_hash: 'l1' })
+  // Same date as LegiScan's hearing, but a mark-up: a different kind, so no pair.
+  const limsMarkup = entry({ type_id: 3, type: 'Markup Session', date: '2026-06-10', description: 'Committee Mark-up of B26-0001', event_hash: 'l2' })
+  const limsSecondMarkup = entry({ type_id: 3, type: 'Markup Session', date: '2026-06-17', description: 'Committee Mark-up of B26-0001', event_hash: 'l3' })
+
+  it('keeps the identity of each entry on the same date and of the same kind, and cancels the rest of the old ones once', () => {
+    const incoming = [limsHearing, limsMarkup, limsSecondMarkup]
+    const carry = carryCalendar(legiscan, lims, ls, incoming, NOW)
+    expect(carry.kept.map(k => [k.identityKey, k.row.date, k.row.description])).toEqual([
+      ['1|committee on health', '2026-06-10', 'Public Hearing on B26-0001'],
+      ['3|committee on health', '2026-06-17', 'Committee Mark-up of B26-0001'],
+    ])
+    expect(carry.cancelled.map(r => [r.id, r.identityKey, r.cancelledAt])).toEqual([['gone', '1|committee of the whole', NOW]])
+    expect(carry.added).toEqual([limsMarkup])
+    // An entry already cancelled is left as it was.
+    expect(carry.writes.map(r => r.id)).not.toContain('was-cancelled')
+
+    // The pull that follows pairs each carried row with its entry, so instances
+    // see the identities they know, and LIMS's own for the new entry.
+    const pulled = planCalendarPull(lims, BILL, carry.rows, incoming, 'lims-1', NOW)
+    expect(calendarBlockEvents(lims, pulled.live).map(e => [e.identityKey, e.kind, e.date]).sort()).toEqual([
+      ['1|committee on health', 'hearing', '2026-06-10'],
+      ['3|committee on health', 'markup', '2026-06-17'],
+      ['markup|2026-06-10|committee mark-up of b26-0001', 'markup', '2026-06-10'],
+    ])
+    expect(pulled.writes.map(w => w.id)).not.toContain('hearing')
+  })
+
+  it('pairs two entries in one slot by time, and cancels every old entry when the new provider lists none', () => {
+    const morning = legacyRow({ id: 'am', typeId: 1, date: '2026-06-10', time: '09:00', description: 'A', identityKey: '1|a' })
+    const afternoon = legacyRow({ id: 'pm', typeId: 1, date: '2026-06-10', time: '14:00', description: 'B', identityKey: '1|b' })
+    const carry = carryCalendar(legiscan, lims, [afternoon, morning], [
+      entry({ date: '2026-06-10', time: '15:00', description: 'Later' }), entry({ date: '2026-06-10', time: '10:00', description: 'Earlier' }),
+    ], NOW)
+    expect(carry.kept.map(k => [k.identityKey, k.row.description])).toEqual([['1|a', 'Earlier'], ['1|b', 'Later']])
+    expect(carryCalendar(legiscan, lims, [morning], [], NOW).cancelled.map(r => r.id)).toEqual(['am'])
   })
 })
 

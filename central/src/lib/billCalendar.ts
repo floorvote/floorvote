@@ -316,6 +316,77 @@ export function planCalendarPull(
   return rows.plan(provider, now)
 }
 
+/** What a cutover's carry-over does to a bill's calendar (`carryCalendar`). */
+export interface CalendarCarry {
+  /** Every row, as the carry leaves it, for the pull that follows. */
+  rows: CalendarRow[]
+  /** The rows it changed. */
+  writes: CalendarRow[]
+  /** Each live row that keeps its identity, as it was and as it is now, and the entry it carries. */
+  kept: { identityKey: string; before: CalendarRow; row: CalendarRow; entry: MeasureCalendarEntry }[]
+  /** Live rows nothing pairs with, cancelled. */
+  cancelled: CalendarRow[]
+  /** Live entries nothing pairs with, which arrive under identities of their own. */
+  added: MeasureCalendarEntry[]
+}
+
+/**
+ * A cutover's carry-over (lib/cutover.ts), run on the first ingest of a bill
+ * the cutover moved from provider `from` to provider `to`. Each live row
+ * `from` wrote is paired with a live entry `to` lists on the same date and of
+ * the same kind (each side's kind from its own vocabulary), in time order, and
+ * takes that entry's fields while keeping the identity instances know it by.
+ * The pull that follows then pairs the two, so the entry stays one event in
+ * every subscriber's calendar. A live row nothing pairs with is cancelled at
+ * once, since `from` no longer serves the bill and will never list it again.
+ * Entries nothing pairs with are new, and get identities of their own.
+ */
+export function carryCalendar(
+  from: Provider, to: Provider, prior: CalendarRow[], incoming: MeasureCalendarEntry[], now: string,
+): CalendarCarry {
+  const rows = prior.map(r => ({ ...r }))
+  const writes: CalendarRow[] = []
+  const kept: CalendarCarry['kept'] = []
+  const order = (a: { time: string | null; description: string | null }, b: { time: string | null; description: string | null }) =>
+    (a.time ?? '').localeCompare(b.time ?? '') || normalizeDescription(a.description).localeCompare(normalizeDescription(b.description))
+
+  const live = rows.filter(r => !r.cancelledAt)
+  const rowsBySlot = groupBy(live, r => `${r.date ?? ''}|${calendarKind(from, r.typeId)}`)
+  const entries = incoming.filter(e => !e.cancelled)
+  const entriesBySlot = groupBy(entries, e => `${e.date || ''}|${calendarKind(to, e.type_id || null)}`)
+  const paired = new Set<string>()
+  const added: MeasureCalendarEntry[] = []
+
+  for (const [slot, group] of entriesBySlot) {
+    const free = [...(rowsBySlot.get(slot) ?? [])].sort((a, b) => order(a, b) || a.id.localeCompare(b.id))
+    const sorted = [...group].sort((a, b) => order({ time: a.time || null, description: a.description || null }, { time: b.time || null, description: b.description || null }))
+    for (const entry of sorted) {
+      const row = free.shift()
+      if (!row) { added.push(entry); continue }
+      const identityKey = sentIdentity(row)
+      const before = { ...row }
+      Object.assign(row, {
+        typeId: entry.type_id || null, type: entry.type || null, date: entry.date || null, time: entry.time || null,
+        location: entry.location || null, description: entry.description || null, eventHash: entry.event_hash || null,
+        eventId: entry.event_id || null, identityKey, missedPulls: 0, missedHash: null,
+      })
+      paired.add(row.id)
+      writes.push(row)
+      kept.push({ identityKey, before, row, entry })
+    }
+  }
+
+  const cancelled: CalendarRow[] = []
+  for (const row of live) {
+    if (paired.has(row.id)) continue
+    // Keep the identity it was sent under, so an instance cancels the event it has.
+    Object.assign(row, { identityKey: sentIdentity(row), cancelledAt: now })
+    writes.push(row)
+    cancelled.push(row)
+  }
+  return { rows, writes, kept, cancelled, added }
+}
+
 /**
  * A recheck: a sync pass found the bill's change hash still `pullHash`, the
  * hash of the pull its missing entries were last missing from. The provider
