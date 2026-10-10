@@ -97,10 +97,15 @@ export default {
       await assignSessionSlugs(db)
     }))
     ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
-    // One job per snapshot provider, so one failing never stops another.
-    for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
-      ctx.waitUntil(runJob(env, `${provider.id}-sync`, () => runSnapshotSync(provider, env, db)))
-    }
+    // One job per snapshot provider, so one failing never stops another, run
+    // one after another: a pass holds a session's whole snapshot in memory
+    // (Virginia's largest session needs about 70 MB at its peak), and two at
+    // once could pass a Worker's 128 MB. See "Memory" in docs/internal/sync-pipeline.md.
+    ctx.waitUntil((async () => {
+      for (const provider of PROVIDERS.filter(isSnapshotProvider)) {
+        await runJob(env, `${provider.id}-sync`, () => runSnapshotSync(provider, env, db))
+      }
+    })())
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))
     }
