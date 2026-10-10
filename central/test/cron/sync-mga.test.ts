@@ -33,6 +33,7 @@ import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { nowDb } from '../../src/lib/dbTime'
 
 const sample = JSON.parse(sampleRaw) as mga.MgaRecord[]
+const file = (records: mga.MgaRecord[]): mga.MgaSessionFile => ({ unchanged: false, records, etag: null })
 const PDF = '%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n'
 const THIS_YEAR = Number(nowDb().slice(0, 4))
 const CODE = `${THIS_YEAR}RS`
@@ -64,7 +65,7 @@ beforeEach(async () => {
   await setupLsDb()
   vi.clearAllMocks()
   vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
-  vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE ? structuredClone(sample) : null))
+  vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE ? file(structuredClone(sample)) : null))
   fetchMock.mockImplementation(async () => new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } }))
   const db = drizzle(env.DB, { schema })
   await db.insert(schema.tenants).values({ tenantId: 'team', name: 'Team', stateCoverage: '["MD"]', active: true })
@@ -104,7 +105,7 @@ describe('Maryland session refresh', () => {
     const { env: e } = makeEnv()
     const S1 = `${THIS_YEAR}S1`
     vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
-    vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE || code === S1 ? structuredClone(sample) : null))
+    vi.mocked(mga.getMgaSession).mockImplementation(async code => (code === CODE || code === S1 ? file(structuredClone(sample)) : null))
     await runSnapshotSync(mgaProvider, e, db)
     expect(vi.mocked(mga.getMgaSession).mock.calls.map(c => c[0]).sort()).toEqual([CODE, S1])
 
@@ -162,7 +163,7 @@ describe('the Maryland sync', () => {
         .where(eq(schema.providerRecords.billId, b!.billId)).get())!.rawHash }).where(eq(schema.bills.billId, b!.billId))
     }
     vi.mocked(mga.getMgaSession).mockImplementation(async () =>
-      structuredClone(sample).map(r => ({ ...r, StatusCurrentAsOf: '2099-01-01T00:00:00' })))
+      file(structuredClone(sample).map(r => ({ ...r, StatusCurrentAsOf: '2099-01-01T00:00:00' }))))
     const second = makeEnv()
     await runSnapshotSync(mgaProvider, second.env, db)
     expect(queuedIds(second.ingestor)).toEqual([])

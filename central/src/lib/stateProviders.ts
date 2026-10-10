@@ -1,5 +1,5 @@
 import { and, asc, countDistinct, eq, sql } from 'drizzle-orm'
-import { bills, billTenants, stateProviders } from '../db/schema'
+import { bills, billTenants, sessions, stateProviders } from '../db/schema'
 import { DEFAULT_PROVIDER_ID, PROVIDERS } from '../providers'
 import { providerConfigured } from './providerRouting'
 import type { Db, Env } from '../types'
@@ -159,7 +159,19 @@ async function writeClaim(db: Db, state: string, providerId: string, owner: stri
       WHERE bills.state = ${state} AND bills.provider = ${owner}
     )
     ON CONFLICT (state) ${onConflict}`)
-  return result.meta.changes > 0
+  if (result.meta.changes === 0) return false
+  await forgetSnapshotEtags(db, state)
+  return true
+}
+
+/**
+ * Drop the snapshot ETags stored for a state's sessions, so the first pass of
+ * its new owner reads each file in full, matching every bill to instances
+ * again, rather than taking a 304 from an ETag stored the last time it owned
+ * the state. Anything that changes a state's owner calls this.
+ */
+export async function forgetSnapshotEtags(db: Db, state: string): Promise<void> {
+  await db.update(sessions).set({ snapshotEtag: null }).where(eq(sessions.state, state))
 }
 
 /**

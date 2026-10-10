@@ -25,6 +25,8 @@ export const sessions = sqliteTable('sessions', {
   // Weekly per-member vote load from the provider's vote datasets (cron/vote-datasets.ts).
   votesDatasetHash: text('votes_dataset_hash'),
   votesCheckedAt:   text('votes_checked_at'),
+  /** A snapshot provider's ETag for the session's file, as of its last completed pass (cron/sync-snapshots.ts). */
+  snapshotEtag:     text('snapshot_etag'),
 })
 
 export const people = sqliteTable('people', {

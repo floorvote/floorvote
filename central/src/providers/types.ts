@@ -136,8 +136,13 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   /** Which of the provider's stored sessions for a state to sync now. */
   selectSessions?<S extends StoredSession>(sessions: S[], today: string): S[]
 
-  /** Every record the provider lists for one session, and any legislators the listing names. */
-  snapshot?(session: SessionRef, ctx: ProviderContext<K>): Promise<ProviderSnapshot>
+  /**
+   * Every record the provider lists for one session, and any legislators the
+   * listing names. A provider whose feed answers conditional requests can
+   * return its file's ETag, and say the file is unchanged when a later
+   * request with `session.etag` comes back 304.
+   */
+  snapshot?(session: SnapshotSession, ctx: ProviderContext<K>): Promise<ProviderSnapshot>
 
   /**
    * The full-pass entry for one record. `stored` is what central already holds
@@ -310,6 +315,16 @@ export interface SessionRef {
   yearEnd: number
 }
 
+/** A session handed to `snapshot`. */
+export interface SnapshotSession extends SessionRef {
+  /**
+   * The ETag the provider returned with the last snapshot central finished a
+   * pass on, for a conditional request. Null on the first pass, after the
+   * state is claimed, and on a forced run, when the provider reads in full.
+   */
+  etag: string | null
+}
+
 /** A measure as central knows it, handed to `fetchMeasure`. */
 export interface MeasureRef {
   billId: number
@@ -359,6 +374,17 @@ export interface ProviderSnapshot {
   records: ProviderRecord[]
   /** Legislators the listing names, for core to upsert into `people`. */
   people?: ProviderPerson[]
+  /**
+   * The ETag of what the provider read, opaque to core. Core stores it once
+   * the pass completes and hands it back as `SnapshotSession.etag`. A
+   * provider reading several files can pack their ETags into one string.
+   */
+  etag?: string | null
+  /**
+   * The feed answered `SnapshotSession.etag` with 304 Not Modified. Core
+   * skips the pass (`records` is then empty) and keeps the stored ETag.
+   */
+  unchanged?: boolean
 }
 
 /**

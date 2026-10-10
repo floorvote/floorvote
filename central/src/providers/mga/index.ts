@@ -6,8 +6,10 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
 /**
  * The Maryland General Assembly's open data (client.ts, map.ts): one JSON file
  * per session with every bill, so a pass is one request and a bill is built
- * from its stored record with no further calls. Ids come from central's id
- * table. The data needs no key, and its requests aren't logged as API calls.
+ * from its stored record with no further calls. The request carries the ETag
+ * of the last file read, so an unchanged file costs a 304 and no pass. Ids
+ * come from central's id table. The data needs no key, and its requests
+ * aren't logged as API calls.
  */
 export const mga: Provider<'MGA_STATES'> = {
   id: 'mga',
@@ -53,8 +55,10 @@ export const mga: Provider<'MGA_STATES'> = {
 
   async snapshot(session, ctx) {
     const code = session.sessionTag
-    const rows = await getMgaSession(code)
-    if (!rows) return { records: [] }
+    const file = await getMgaSession(code, session.etag)
+    if (!file) return { records: [] }
+    if (file.unchanged) return { records: [], unchanged: true }
+    const rows = file.records
     const ids = await ctx.ids('bill', rows.map(r => mgaNativeKey(code, r.BillNumber)))
     const records = await Promise.all(rows.map(async (r): Promise<ProviderRecord> => ({
       billId: ids.get(mgaNativeKey(code, r.BillNumber))!,
@@ -62,7 +66,7 @@ export const mga: Provider<'MGA_STATES'> = {
       raw: r,
       hash: await mgaRecordHash(r),
     })))
-    return { records }
+    return { records, etag: file.etag }
   },
 
   async toEntry(record, stored) {
