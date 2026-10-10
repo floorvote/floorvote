@@ -18,8 +18,9 @@ ALTER TABLE committees ADD COLUMN provider TEXT NOT NULL DEFAULT 'legiscan';
 -- without waiting for their next getBill. Each committee takes its name,
 -- chamber, state, and session from its latest referral (SQLite fills the
 -- other columns from the row that holds the MAX). Only LegiScan wrote
--- referral committee ids before now. Other providers wrote none, and every
--- table read here exists since 0001.
+-- referral committee ids before now. Other providers wrote none. Both tables
+-- read here exist since 0001, and bills.provider since 0025 (added as source)
+-- and 0027 (renamed), which every path applies before this file.
 INSERT OR IGNORE INTO committees (committee_id, state, session_id, chamber, chamber_id, name, provider)
   SELECT committee_id, state, session_id, chamber, chamber_id, name, 'legiscan'
   FROM (
