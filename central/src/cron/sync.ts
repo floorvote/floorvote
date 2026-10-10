@@ -7,7 +7,7 @@ import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
-import { directStates } from '../sources'
+import { directStates } from '../lib/providerRouting'
 
 const BATCH = 80
 const FLUSH_BATCH = 500
@@ -43,7 +43,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
 
   const trackedStates = await loadTrackedStates(db, activeTenants)
 
-  // States read from a direct source (src/sources) are synced by that source.
+  // States read from another provider are synced by that provider (cron/sync-sources.ts).
   for (const state of directStates(env)) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
@@ -99,8 +99,8 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   // (D1 reads, queue sends, LegiScan calls) interleave across sessions instead
   // of stacking serially. Promise.allSettled ensures one session's failure
   // doesn't reject the whole batch.
-  // Direct-source sessions share this table (excluded above): they are synced by
-  // their own source, and LegiScan has never heard of their ids.
+  // Other providers' sessions share this table (excluded above): they are synced
+  // by their own provider, and LegiScan has never heard of their ids.
   const sessionsToProcess = sessionRows
     .map(session => ({ session, mode: decideMode(session, etHour) }))
     // A provider with no cheap hash list has no raw pass: its sessions sync in
@@ -167,7 +167,8 @@ async function runFullPass(
   env: Env,
   db: Db,
 ): Promise<void> {
-  const list = await provider.listMeasures(session, providerContext(provider, env, db))
+  // runSync runs the default provider, which lists measures rather than snapshots.
+  const list = await provider.listMeasures!(session, providerContext(provider, env, db))
   await applyMasterList(session, list, coveringTenants, env, db)
 }
 
@@ -180,7 +181,7 @@ async function runFullPass(
  * Returns the bill ids it queued for the ingestor.
  */
 export async function applyMasterList(
-  /** `source` is written to new bill rows; LegiScan when absent. */
+  /** `source`, the provider's id, is written to new bill rows; LegiScan when absent. */
   session: { sessionId: number; state: string; sessionName: string; source?: string },
   list: SyncEntry[],
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
@@ -192,8 +193,8 @@ export async function applyMasterList(
      * Leave the bills row of a changed bill that is being queued for the
      * ingestor to update, instead of writing the masterlist's status and title
      * first. The ingestor diffs against the stored row, so a status written
-     * here is a status_change it can no longer see. LIMS sets this, because every
-     * LIMS pass is a full pass.
+     * here is a status_change it can no longer see. The snapshot sync sets this,
+     * because every one of its passes is a full pass.
      */
     deferQueuedUpdates?: boolean
   } = {},

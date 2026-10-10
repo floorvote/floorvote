@@ -46,7 +46,7 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
 export function detectChanges(
   snapshot: BillSnapshot,
   bill: CentralMeasure,
-  provider: Pick<Provider, 'statusLabels' | 'statusChangeLabels'> = getProvider(DEFAULT_PROVIDER_ID),
+  provider: Provider = getProvider(DEFAULT_PROVIDER_ID),
 ): ChangeRecord[] {
   const changes: ChangeRecord[] = []
   const statusLabels = provider.statusChangeLabels ?? provider.statusLabels

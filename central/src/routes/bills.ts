@@ -5,8 +5,7 @@ import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
-import { DEFAULT_PROVIDER_ID, getProvider } from '../providers'
-import { directSource } from '../sources'
+import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -127,8 +126,8 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
-  // Bills don't record their provider yet, so every bill is the default provider's.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
+  // The provider that wrote the bill, for its status labels.
+  const provider = findProvider(bill.source) ?? getProvider(DEFAULT_PROVIDER_ID)
 
   const session = bill.sessionId
     ? await db.select({
@@ -225,8 +224,8 @@ billsRoutes.get('/:id', async (c) => {
           url = bio.social?.biography ?? null
         } catch { /* ignore */ }
       }
-      // Only LegiScan's people have a legiscan.com profile.
-      if (!url && s.peopleId && (s.personSource ?? 'legiscan') === 'legiscan') url = provider.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
+      // A profile link from the provider that wrote the person, when it has one.
+      if (!url && s.peopleId) url = findProvider(s.personSource ?? DEFAULT_PROVIDER_ID)?.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
       return {
         name,
         party: s.party ?? null,
@@ -257,7 +256,7 @@ billsRoutes.get('/:id', async (c) => {
     number: bill.billNumber,
     title: bill.title,
     abstract: bill.description ?? null,
-    status: (directSource(bill.source)?.statusLabels ?? provider.statusLabels)[bill.status] ?? String(bill.status),
+    status: provider.statusLabels[bill.status] ?? String(bill.status),
     statusDate: bill.statusDate ?? null,
     lastAction: bill.lastAction ?? null,
     lastActionDate: bill.lastActionDate ?? null,

@@ -4,15 +4,14 @@ import { eq, and, isNull, isNotNull, inArray, like, ne } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
 import { matchesUnion } from '../lib/keywords'
-import { DEFAULT_PROVIDER_ID, getProvider, type SessionRef, type SyncEntry } from '../providers'
+import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
-import { importLimsMeasures } from '../cron/sync-lims'
-import { runSourceSync } from '../cron/sync-sources'
-import { directSource } from '../sources'
+import { importSourceMeasures, runSourceSync } from '../cron/sync-sources'
+import { providerEnabled } from '../lib/providerRouting'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -45,15 +44,15 @@ adminRoutes.post('/trigger-sync', async (c) => {
   return c.json({ ok: true, message: 'sync triggered' })
 })
 
-// Run a direct source's sync now (src/sources, cron/sync-sources.ts) instead of
-// waiting for its full-pass hours: the source refreshes its sessions, then every
+// Run a snapshot provider's sync now (cron/sync-sources.ts) instead of waiting
+// for its full-pass hours: the provider refreshes its sessions, then every
 // synced session gets a full pass. /lims-sync is the original name for DC.
 async function runSourceNow(c: Context<{ Bindings: Env }>, id: string) {
-  const source = directSource(id)
-  if (!source) return c.json({ error: `unknown source "${id}"` }, 404)
-  if (!source.enabled(c.env)) return c.json({ error: `source "${id}" is not configured on this central` }, 400)
+  const provider = findProvider(id)
+  if (!provider?.snapshot) return c.json({ error: `unknown source "${id}"` }, 404)
+  if (!providerEnabled(provider, c.env)) return c.json({ error: `source "${id}" is not configured on this central` }, 400)
   const db = drizzle(c.env.DB, { schema })
-  const passes = await runSourceSync(source, c.env, db, { force: true })
+  const passes = await runSourceSync(provider, c.env, db, { force: true })
   return c.json({ ok: true, passes })
 }
 adminRoutes.post('/sources/:id/sync', c => runSourceNow(c, c.req.param('id')))
@@ -61,7 +60,8 @@ adminRoutes.post('/lims-sync', c => runSourceNow(c, 'lims'))
 
 // Import specific LIMS measures from any Council Period and track them for one
 // tenant as manual picks (full ingest + AI). Body: { "tenantId": "oca",
-// "numbers": ["B25-0345", "B25-0291"] }. See importLimsMeasures in cron/sync-lims.ts.
+// "numbers": ["B25-0345", "B25-0291"] }. See importSourceMeasures in
+// cron/sync-sources.ts and importMeasures in providers/lims.
 adminRoutes.post('/lims-import', async (c) => {
   if (!c.env.LIMS_API_KEY) return c.json({ error: 'LIMS is not configured (LIMS_API_KEY unset)' }, 400)
   const body = await c.req.json<{ tenantId?: string; numbers?: unknown }>().catch(() => ({} as { tenantId?: string; numbers?: unknown }))
@@ -70,7 +70,7 @@ adminRoutes.post('/lims-import', async (c) => {
   if (numbers.length > 200) return c.json({ error: 'at most 200 numbers per request' }, 400)
   const db = drizzle(c.env.DB, { schema })
   try {
-    const result = await importLimsMeasures(c.env, db, body.tenantId, numbers)
+    const result = await importSourceMeasures(getProvider('lims'), c.env, db, body.tenantId, numbers)
     return c.json({ ok: true, ...result })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 404)
@@ -541,8 +541,8 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   // attempt, not the intent to make one; these params say why it was spent.
   const ctx = providerContext(provider, c.env, db, { reason: 'backfill-stub-actions', tenantId })
 
-  // Direct-source sessions have no LegiScan masterlist; their stubs refresh on
-  // their own source's sync.
+  // Other providers' sessions have no LegiScan masterlist; their stubs refresh
+  // on their own provider's sync.
   const directSessionIds = new Set(sessionIds.length === 0 ? [] : (await db.select({ sessionId: sessions.sessionId })
     .from(sessions).where(and(inArray(sessions.sessionId, sessionIds), ne(sessions.source, 'legiscan'))).all())
     .map(r => r.sessionId))
@@ -553,7 +553,7 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
     // 1 LegiScan call per session.
     let list: SyncEntry[]
     try {
-      list = await provider.listMeasures(session, ctx)
+      list = await provider.listMeasures!(session, ctx)
     } catch (err) {
       console.error('[backfill-stub-actions] master list fetch failed for session', sessionId, err)
       return c.json({ ok: false, error: 'masterlist_fetch_failed', sessionId }, 500)

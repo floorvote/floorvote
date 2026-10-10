@@ -1,11 +1,9 @@
-import type { CentralMeasure, SyncEntry } from '../providers'
-import type { LisFiles } from './lis'
+import { htmlToText, sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
+import type { LisFiles } from './client'
 import { forEachCsvRecord, forEachCsvRow } from './csv'
-import { htmlToText } from './htmlToText'
-import { sha256Hex } from './lims-map'
 
 /**
- * Mapping from Virginia's LIS data files (lib/lis.ts) to the LegiScan shapes
+ * Mapping from Virginia's LIS data files (client.ts) to the LegiScan shapes
  * the central pipeline ingests. No I/O: ids come in through `LisIds`.
  *
  * A session's files are joined into one record per bill (assembleLisRecords):

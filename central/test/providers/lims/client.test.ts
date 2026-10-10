@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { getBulkData, getLegislationDetails, getCouncilPeriods } from '../../src/lib/lims'
+import { getBulkData, getLegislationDetails, getCouncilPeriods } from '../../../src/providers/lims/client'
 
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)

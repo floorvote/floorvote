@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
-import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
-import detailsHnRaw from '../fixtures/lims/details-HN26-0171.json?raw'
-import detailsReprogRaw from '../fixtures/lims/details-REPROG26-0153.json?raw'
-import membersRaw from '../fixtures/lims/members-26.json?raw'
+import bulkRaw from '../../fixtures/lims/bulk-records.json?raw'
+import details0400Raw from '../../fixtures/lims/details-B26-0400.json?raw'
+import detailsHnRaw from '../../fixtures/lims/details-HN26-0171.json?raw'
+import detailsReprogRaw from '../../fixtures/lims/details-REPROG26-0153.json?raw'
+import membersRaw from '../../fixtures/lims/members-26.json?raw'
 import {
   buildLimsBill, bulkHash, limsDate, limsStatusCode, LIMS_STATUS_LABELS, personKey, toMasterListEntry,
   councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
-} from '../../src/lib/lims-map'
-import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../src/lib/lims-ids'
-import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../src/lib/lims'
+} from '../../../src/providers/lims/map'
+import { limsBillId, limsPeopleId, isLimsDocId, limsSessionId } from '../../../src/providers/lims/ids'
+import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../../src/providers/lims/client'
 
 const bulk = JSON.parse(bulkRaw) as Record<string, LimsBulkRecord>
 const d0400 = JSON.parse(details0400Raw) as LimsLegislationDetails

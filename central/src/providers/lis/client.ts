@@ -1,4 +1,4 @@
-import { rateLimitedFetch } from './rateLimitedFetch'
+import { rateLimitedFetch } from '../sdk'
 
 /**
  * Client for the Virginia General Assembly's Legislative Information System
@@ -36,7 +36,7 @@ function fileUrl(sessionCode: string, name: string): string {
 
 /** One file's text, or '' when the session does not publish it. */
 export async function getLisFile(sessionCode: string, file: LisFile, onRequest?: () => void): Promise<string> {
-  const res = await rateLimitedFetch(fileUrl(sessionCode, LIS_FILES[file]), undefined, { ratePerSec: LIS_RATE_PER_SEC, onRequest })
+  const res = await rateLimitedFetch(fileUrl(sessionCode, LIS_FILES[file]), undefined, { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest })
   if (res.status === 404) return ''
   if (!res.ok) throw new Error(`LIS HTTP ${res.status} for ${sessionCode}/${LIS_FILES[file]}`)
   return res.text()
@@ -45,7 +45,7 @@ export async function getLisFile(sessionCode: string, file: LisFile, onRequest?:
 /** Whether a session's bill list exists: a session appears with its first prefiled bills. */
 export async function lisSessionExists(sessionCode: string, onRequest?: () => void): Promise<boolean> {
   const res = await rateLimitedFetch(fileUrl(sessionCode, LIS_FILES.bills), { method: 'HEAD' },
-    { ratePerSec: LIS_RATE_PER_SEC, onRequest })
+    { ratePerSec: LIS_RATE_PER_SEC, bucketKey: 'lis', onRequest })
   if (res.status === 404) return false
   if (!res.ok) throw new Error(`LIS HTTP ${res.status} for ${sessionCode}`)
   return true

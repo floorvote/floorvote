@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import sampleRaw from '../fixtures/mga/2026RS-sample.json?raw'
-import type { MgaRecord } from '../../src/lib/mga'
+import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
+import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
   buildMgaBill, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, MGA_STATUS_LABELS, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
-} from '../../src/lib/mga-map'
+} from '../../../src/providers/mga/map'
 
 // Real records from https://mgaleg.maryland.gov/2026RS/misc/billsmasterlist/legislation.json
 const sample = new Map((JSON.parse(sampleRaw) as MgaRecord[]).map(r => [r.BillNumber, r]))

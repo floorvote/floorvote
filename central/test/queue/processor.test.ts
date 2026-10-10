@@ -21,7 +21,7 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { processIngestorQueue, validateTextPayload, ingestMeasure, isVersionAddressable } from '../../src/queue/processor'
 import { getProvider } from '../../src/providers'
-import { limsBillId, limsDocId, limsSessionId } from '../../src/lib/lims-ids'
+import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
 
@@ -478,7 +478,7 @@ describe('per-member votes', () => {
       votes: [{ roll_call_id: 777, date: '2026-02-03', desc: 'Passed', yea: 0, nay: 0, nv: 0, absent: 0, total: n, passed: 1,
         chamber: 'H', chamber_id: 1, url: '', state_link: '', member_votes: memberVotes(n) }],
     })
-    const opts = { forceMetadata: false, forceAI: false, interactive: false, legiscanTextFallback: true }
+    const opts = { forceMetadata: false, forceAI: false, interactive: false }
     const count = async () => (await db.select().from(schema.rollCallVotes).where(eq(schema.rollCallVotes.rollCallId, 777)).all()).length
 
     await ingestMeasure(bill(250), getProvider('legiscan'), makeEnv(), db, opts)
@@ -501,7 +501,7 @@ describe('LIMS ids never reach LegiScan', () => {
     bill_id: LIMS_BILL, session_id: limsSessionId(26), state: 'DC', bill_number: 'B26-0400',
     texts: [limsPdf], votes: [], amendments: [], supplements: [], sasts: [],
   })
-  const ingestOpts = { forceMetadata: false, forceAI: false, interactive: false, legiscanTextFallback: false, source: 'lims' }
+  const ingestOpts = { forceMetadata: false, forceAI: false, interactive: false }
 
   it('does not call getBill for a LIMS bill whose stored record is missing, and retries the message', async () => {
     const db = drizzle(env.DB, { schema })
@@ -518,14 +518,14 @@ describe('LIMS ids never reach LegiScan', () => {
     expect(batch.messages[0].ack).not.toHaveBeenCalled()
   })
 
-  it('skips the getBillText fallback when legiscanTextFallback is false', async () => {
+  it('skips the getBillText fallback for a LIMS bill', async () => {
     const db = drizzle(env.DB, { schema })
     vi.mocked(legiscan.getBillText).mockClear()
     fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
       status: 200, headers: { 'content-type': 'text/html' },
     }))
 
-    await ingestMeasure(limsBill(), getProvider('legiscan'), makeEnv(), db, ingestOpts)
+    await ingestMeasure(limsBill(), getProvider('lims'), makeEnv(), db, ingestOpts)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, limsPdf.doc_id)).get()
     expect(legiscan.getBillText).not.toHaveBeenCalled()
@@ -538,7 +538,7 @@ describe('LIMS ids never reach LegiScan', () => {
     fetchMock.mockResolvedValue(new Response(IN_APP_SHELL, {
       status: 200, headers: { 'content-type': 'text/html' },
     }))
-    await ingestMeasure(limsBill(), getProvider('legiscan'), makeEnv(), db, ingestOpts)
+    await ingestMeasure(limsBill(), getProvider('lims'), makeEnv(), db, ingestOpts)
     vi.mocked(legiscan.getBillText).mockClear()
 
     await processIngestorQueue(makeBatch(LIMS_BILL, { skipFetch: true }), makeEnv(), db)
@@ -553,7 +553,7 @@ describe('LIMS ids never reach LegiScan', () => {
       status: 200, headers: { 'content-type': 'application/pdf' },
     }))
 
-    await ingestMeasure(limsBill(), getProvider('legiscan'), makeEnv(), db, ingestOpts)
+    await ingestMeasure(limsBill(), getProvider('lims'), makeEnv(), db, ingestOpts)
 
     const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, limsPdf.doc_id)).get()
     expect(row!.r2Key).toBe(`bills/legiscan-${LIMS_BILL}/texts/${limsPdf.doc_id}.pdf`)

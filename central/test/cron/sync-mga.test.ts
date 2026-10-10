@@ -6,8 +6,8 @@ import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import sampleRaw from '../fixtures/mga/2026RS-sample.json?raw'
 
-vi.mock('../../src/lib/mga', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/mga')>('../../src/lib/mga')
+vi.mock('../../src/providers/mga/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/mga/client')>('../../src/providers/mga/client')
   return { ...actual, getMgaSession: vi.fn(), mgaSessionExists: vi.fn() }
 })
 vi.mock('../../src/providers/legiscan/client', async () => {
@@ -25,8 +25,8 @@ vi.stubGlobal('fetch', fetchMock)
 import { runSourceSync } from '../../src/cron/sync-sources'
 import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
-import { mgaSource } from '../../src/sources/mga'
-import * as mga from '../../src/lib/mga'
+import { mga as mgaSource } from '../../src/providers/mga'
+import * as mga from '../../src/providers/mga/client'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { nowDb } from '../../src/lib/dbTime'

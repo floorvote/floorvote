@@ -1,9 +1,8 @@
-import type { CentralMeasure, SyncEntry } from '../providers'
-import { MGA_BASE, type MgaRecord } from './mga'
-import { sha256Hex } from './lims-map'
+import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
+import { MGA_BASE, type MgaRecord } from './client'
 
 /**
- * Pure mapping from Maryland General Assembly records (lib/mga.ts) to the
+ * Pure mapping from Maryland General Assembly records (client.ts) to the
  * LegiScan shapes the central pipeline ingests. No I/O: ids come in through
  * `MgaIds`, allocated by the caller.
  *

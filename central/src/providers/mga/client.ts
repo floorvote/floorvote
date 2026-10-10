@@ -1,4 +1,4 @@
-import { rateLimitedFetch } from './rateLimitedFetch'
+import { rateLimitedFetch } from '../sdk'
 
 /**
  * Client for the Maryland General Assembly's open data: one JSON file per
@@ -8,7 +8,7 @@ import { rateLimitedFetch } from './rateLimitedFetch'
  * The file (about 8 MB, regenerated through the day) carries sponsors, status,
  * committees, each chamber's readings and hearing times, subjects and statute
  * citations. Text, fiscal notes and votes are PDFs; the first two sit at paths
- * built from the bill number (see lib/mga-map.ts).
+ * built from the bill number (see map.ts).
  */
 export const MGA_BASE = 'https://mgaleg.maryland.gov'
 
@@ -71,7 +71,7 @@ function sessionUrl(sessionCode: string): string {
 /** Every record of one session ("2026RS", "2021S1"), or null when the session has no file yet. */
 export async function getMgaSession(sessionCode: string, onRequest?: () => void): Promise<MgaRecord[] | null> {
   const res = await rateLimitedFetch(sessionUrl(sessionCode), { headers: { Accept: 'application/json' } },
-    { ratePerSec: MGA_RATE_PER_SEC, onRequest })
+    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest })
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`MGA HTTP ${res.status} for ${sessionCode}`)
   return (await res.json()) as MgaRecord[]
@@ -80,7 +80,7 @@ export async function getMgaSession(sessionCode: string, onRequest?: () => void)
 /** Whether a session's file exists: a regular session appears with its first prefiled bills. */
 export async function mgaSessionExists(sessionCode: string, onRequest?: () => void): Promise<boolean> {
   const res = await rateLimitedFetch(sessionUrl(sessionCode), { method: 'HEAD' },
-    { ratePerSec: MGA_RATE_PER_SEC, onRequest })
+    { ratePerSec: MGA_RATE_PER_SEC, bucketKey: 'mga', onRequest })
   if (res.status === 404) return false
   if (!res.ok) throw new Error(`MGA HTTP ${res.status} for ${sessionCode}`)
   return true

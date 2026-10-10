@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from './db/schema'
 import { runSync } from './cron/sync'
 import { runSourceSync } from './cron/sync-sources'
-import { SOURCES } from './sources'
+import { PROVIDERS } from './providers'
 import { checkVoteDatasets, VOTE_DATASET_CHECK_HOUR_ET } from './cron/vote-datasets'
 import { getCurrentEtHour } from './lib/sync-schedule'
 import { pullEngagementStats, shouldRunEngagementPull } from './cron/engagement-pull'
@@ -87,9 +87,9 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     const db = drizzle(env.DB, { schema })
     ctx.waitUntil(runJob(env, 'ls-sync', () => runSync(env, db)))
-    // One job per direct source, so one source failing never stops another.
-    for (const source of SOURCES) {
-      ctx.waitUntil(runJob(env, `${source.id}-sync`, () => runSourceSync(source, env, db)))
+    // One job per snapshot provider, so one failing never stops another.
+    for (const provider of PROVIDERS.filter(p => p.snapshot)) {
+      ctx.waitUntil(runJob(env, `${provider.id}-sync`, () => runSourceSync(provider, env, db)))
     }
     if (getCurrentEtHour() === VOTE_DATASET_CHECK_HOUR_ET) {
       ctx.waitUntil(runJob(env, 'vote-datasets', () => checkVoteDatasets(env, db)))

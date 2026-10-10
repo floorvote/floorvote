@@ -15,7 +15,7 @@ export type Env = {
   LEGISCAN_API_KEY: string
   /**
    * DC Council LIMS developer key. With it set and "DC" in LIMS_STATES, DC comes
-   * from LIMS instead of LegiScan (cron/sync-lims.ts). Unset → LIMS is off.
+   * from LIMS instead of LegiScan (src/providers/lims). Unset → LIMS is off.
    */
   LIMS_API_KEY?: string
   /** Comma-separated states sourced from LIMS rather than LegiScan. Only "DC" is supported. */
@@ -34,12 +34,12 @@ export type Env = {
   LIMS_INGESTOR_QUEUE?: Queue
   /**
    * "MD" to read Maryland from the General Assembly's own open data
-   * (src/sources/mga.ts) instead of LegiScan. No key needed. Unset → off.
+   * (src/providers/mga) instead of LegiScan. No key needed. Unset → off.
    */
   MGA_STATES?: string
   /**
    * "VA" to read Virginia from the Legislative Information System's public data
-   * files (src/sources/lis.ts) instead of LegiScan. No key needed. Unset → off.
+   * files (src/providers/lis) instead of LegiScan. No key needed. Unset → off.
    */
   LIS_STATES?: string
   ADMIN_SECRET: string

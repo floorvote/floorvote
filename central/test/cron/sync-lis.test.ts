@@ -6,8 +6,8 @@ import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import sampleRaw from '../fixtures/lis/20261-sample.json?raw'
 
-vi.mock('../../src/lib/lis', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/lis')>('../../src/lib/lis')
+vi.mock('../../src/providers/lis/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/lis/client')>('../../src/providers/lis/client')
   return { ...actual, getLisFile: vi.fn(), lisSessionExists: vi.fn() }
 })
 vi.mock('../../src/providers/legiscan/client', async () => {
@@ -23,8 +23,8 @@ vi.stubGlobal('fetch', vi.fn())
 
 import { runSourceSync } from '../../src/cron/sync-sources'
 import { processIngestorQueue } from '../../src/queue/processor'
-import { lisSource } from '../../src/sources/lis'
-import * as lis from '../../src/lib/lis'
+import { lis as lisSource } from '../../src/providers/lis'
+import * as lis from '../../src/providers/lis/client'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 import { nowDb } from '../../src/lib/dbTime'

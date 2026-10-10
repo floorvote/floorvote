@@ -97,15 +97,15 @@ EMAIL_PROVIDER = "cloudflare"
 # SUPERADMIN_JWT_PUBLIC_KEY = "{...ES256 public JWK JSON...}"  # pairs with private key secret
 # DC Council LIMS (lims.dccouncil.gov) as DC's source instead of LegiScan.
 # Needs the LIMS_API_KEY secret too; without it LIMS stays off and DC comes
-# from LegiScan as before. See src/cron/sync-lims.ts.
+# from LegiScan as before. See src/providers/lims.
 # LIMS_STATES = "DC"
 # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
 # The Maryland General Assembly's open data (mgaleg.maryland.gov) as MD's
-# source instead of LegiScan. No key needed. See src/sources/mga.ts.
+# source instead of LegiScan. No key needed. See src/providers/mga.
 # MGA_STATES = "MD"
 # Virginia's Legislative Information System data files (lis.virginia.gov) as
 # VA's source instead of LegiScan. No key needed; bill text needs the LIS
-# API, which is not used yet. See src/sources/lis.ts.
+# API, which is not used yet. See src/providers/lis.
 # LIS_STATES = "VA"
 
 [env.legiscan.triggers]

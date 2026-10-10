@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import s2026Raw from '../fixtures/lis/20261-sample.json?raw'
-import s2027Raw from '../fixtures/lis/20271-sample.json?raw'
-import { parseCsv, parseCsvRecords } from '../../src/lib/csv'
-import type { LisFiles } from '../../src/lib/lis'
+import s2026Raw from '../../fixtures/lis/20261-sample.json?raw'
+import s2027Raw from '../../fixtures/lis/20271-sample.json?raw'
+import { parseCsv, parseCsvRecords } from '../../../src/providers/lis/csv'
+import type { LisFiles } from '../../../src/providers/lis/client'
 import {
   buildLisBill, LisAssembler, LIS_FILE_ORDER, lisBillNumber, lisCarriedOver, lisDate, lisStatus, LIS_STATUS_LABELS,
   parseVotes, toLisMasterListEntry, type LisIds,
-} from '../../src/lib/lis-map'
+} from '../../../src/providers/lis/map'
 
 // Real rows from https://lis.blob.core.windows.net/lisfiles/{20261,20271}/, trimmed to a few bills.
 function assembleLisRecords(files: LisFiles) {

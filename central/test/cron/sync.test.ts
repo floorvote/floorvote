@@ -27,7 +27,7 @@ import { runSync } from '../../src/cron/sync'
 import * as legiscan from '../../src/providers/legiscan/client'
 import * as queuesRest from '../../src/lib/queuesRest'
 import { setupLsDb } from '../helpers/setupLsDb'
-import { limsSessionId } from '../../src/lib/lims-ids'
+import { limsSessionId } from '../../src/providers/lims/ids'
 
 function getCurrentEtHour(): number {
   return parseInt(

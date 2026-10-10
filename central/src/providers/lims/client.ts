@@ -1,4 +1,4 @@
-import { rateLimitedFetch } from './rateLimitedFetch'
+import { rateLimitedFetch } from '../sdk'
 
 /**
  * Client for the DC Council Legislative Information Management System (LIMS)
@@ -153,7 +153,7 @@ async function limsFetch<T>(
       ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(method === 'POST' ? { body: JSON.stringify(init.body ?? {}) } : {}),
-  }, { ratePerSec: LIMS_RATE_PER_SEC, onRequest })
+  }, { ratePerSec: LIMS_RATE_PER_SEC, bucketKey: 'lims', onRequest })
   if (!res.ok) throw new Error(`LIMS HTTP ${res.status} for ${path}`)
   return (await res.json()) as T
 }

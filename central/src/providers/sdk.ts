@@ -6,3 +6,5 @@
  */
 export type * from './types'
 export { rateLimitedFetch } from '../lib/rateLimitedFetch'
+export { sha256Hex } from '../lib/sha256'
+export { htmlToText } from '../lib/htmlToText'

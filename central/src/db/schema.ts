@@ -18,7 +18,7 @@ export const sessions = sqliteTable('sessions', {
   syncEnabled:     integer('sync_enabled', { mode: 'boolean' }).notNull().default(true),
   fullSyncHoursEt: text('full_sync_hours_et'),
   rawSyncHoursEt:  text('raw_sync_hours_et'),
-  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   source:          text('source').notNull().default('legiscan'),
   // Weekly per-member vote load from the provider's vote datasets (cron/vote-datasets.ts).
   votesDatasetHash: text('votes_dataset_hash'),
@@ -47,7 +47,7 @@ export const people = sqliteTable('people', {
   ballotpedia:   text('ballotpedia'),
   bioguideId:    text('bioguide_id'),
   bioJson:       text('bio_json'),
-  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   source:        text('source').notNull().default('legiscan'),
 })
 
@@ -78,7 +78,7 @@ export const bills = sqliteTable('bills', {
   createdAt:       text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt:       text('updated_at').notNull().default(sql`(datetime('now'))`),
   textsFetchedAt:  text('texts_fetched_at'),
-  /** 'legiscan', or the id of the direct source that wrote it (src/sources). */
+  /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   source:          text('source').notNull().default('legiscan'),
 }, (t) => [
   index('idx_bills_session').on(t.sessionId),
@@ -368,7 +368,7 @@ export const resendUsageDaily = sqliteTable('resend_usage_daily', {
 })
 
 /**
- * The raw record each direct-source bill was last built from, and its hash;
+ * The raw record each snapshot provider's bill was last built from, and its hash;
  * see migrations-legiscan/0025_source_provenance.sql.
  */
 export const sourceRecords = sqliteTable('source_records', {
@@ -382,7 +382,7 @@ export const sourceRecords = sqliteTable('source_records', {
   updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
-/** Central ids for direct-source records; see migrations-legiscan/0026_source_ids.sql and lib/sourceIds.ts. */
+/** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations-legiscan/0026_source_ids.sql and lib/sourceIds.ts. */
 export const sourceIds = sqliteTable('source_ids', {
   id:        integer('id').primaryKey({ autoIncrement: true }),
   source:    text('source').notNull(),

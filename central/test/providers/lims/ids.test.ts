@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   isLimsBillId, isLimsSessionId, isLimsDocId, limsBillId, limsSessionId, limsDocId,
   limsNumberFromBillId, limsRollCallId,
-} from '../../src/lib/lims-ids'
+} from '../../../src/providers/lims/ids'
 
 describe('lims-ids', () => {
   it('maps LIMS ids into their reserved ranges and recognises them', () => {

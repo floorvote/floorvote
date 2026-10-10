@@ -36,8 +36,9 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   /**
    * One entry per measure in a session, with enough to keyword-match it and a
    * `change_hash` that moves whenever the measure does. Drives the full pass.
+   * A provider lists a session's measures either this way or with `snapshot`.
    */
-  listMeasures(session: SessionRef, ctx: ProviderContext<K>): Promise<SyncEntry[]>
+  listMeasures?(session: SessionRef, ctx: ProviderContext<K>): Promise<SyncEntry[]>
 
   /**
    * The cheap form of `listMeasures`: each measure's id, number, and change
@@ -47,8 +48,11 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   listChangeHashes?(session: SessionRef, ctx: ProviderContext<K>): Promise<SyncHashEntry[]>
 
-  /** One measure's full record. */
-  fetchMeasure(measure: MeasureRef, ctx: ProviderContext<K>): Promise<CentralMeasure>
+  /**
+   * One measure's full record. A provider that builds it from a per-measure
+   * details response returns that response too.
+   */
+  fetchMeasure(measure: MeasureRef, ctx: ProviderContext<K>): Promise<CentralMeasure | MeasureWithDetails>
 
   /**
    * The provider's own copy of one text document (`MeasureText.doc_id`), for
@@ -88,6 +92,67 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    * entries and fails a load that has none of the three.
    */
   fetchVoteDataset?(dataset: VoteDataset, ctx: ProviderContext<K>): Promise<ReadableStream<Uint8Array>>
+
+  // Snapshot providers. A feed with no modified-since filter and no cheap
+  // change list is read as a snapshot: every record of a session, raw, with a
+  // hash. Core's snapshot sync (cron/sync-sources.ts) stores each changed
+  // record and hands it back, to `toEntry` for the full pass and to
+  // `fetchMeasure` for the ingest. Its sessions refresh through `listSessions`
+  // once a day, and whenever none is due to sync.
+
+  /**
+   * States the provider reads when it's enabled. The LegiScan sync leaves them
+   * alone. Until state ownership moves to a table (#292), an env var turns a
+   * provider on.
+   */
+  readonly states?: readonly string[]
+
+  /** Whether this deployment is configured to read the provider, judged from its own env keys. */
+  enabled?(env: Readonly<Pick<Env, K>>): boolean
+
+  /** Which of the provider's stored sessions for a state to sync now. */
+  selectSessions?<S extends StoredSession>(sessions: S[], today: string): S[]
+
+  /** Every record the provider lists for one session, and any legislators the listing names. */
+  snapshot?(session: SessionRef, ctx: ProviderContext<K>): Promise<ProviderSnapshot>
+
+  /**
+   * The full-pass entry for one record. `stored` is what central already holds
+   * for the measure, which a listed record may lack.
+   */
+  toEntry?(record: ProviderRecord, stored: { description: string | null }, ctx: ProviderContext<K>): Promise<SyncEntry>
+
+  /**
+   * The provider's legislators, for core to upsert into `people` after a
+   * session refresh. `sessions` are the sessions just listed and every other
+   * session central holds this provider's measures in, so a sponsor who has
+   * since left still resolves.
+   */
+  listPeople?(sessions: StoredSession[], ctx: ProviderContext<K>): Promise<ProviderPerson[]>
+
+  /**
+   * Specific measures by number, from any session, for an operator importing
+   * measures the scheduled sync doesn't cover. Core creates each session that
+   * is missing, stores the records, and tracks the measures for the instance.
+   */
+  importMeasures?(numbers: string[], ctx: ProviderContext<K>): Promise<ProviderImport>
+
+  /**
+   * The env key of a queue binding for this provider's ingests, for an API
+   * that needs less concurrency than the shared ingestor queue allows. Core
+   * falls back to INGESTOR_QUEUE when the binding is unset. The provider never
+   * sees the queue itself.
+   */
+  readonly ingestQueue?: ProviderEnvKey
+
+  /**
+   * For a provider whose per-measure details can change while its listed
+   * record doesn't: core re-queues tracked measures not in a settled status
+   * once their details are older than `maxAge` (an SQLite datetime modifier,
+   * such as '-2 days'), at most `perPass` per pass. The settled statuses move
+   * to the vocabulary's terminal flags in #291.
+   */
+  readonly detailsRefresh?: { maxAge: string; perPass: number; settledStatuses: readonly number[] }
 }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
@@ -112,6 +177,20 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    * (pass it as `rateLimitedFetch`'s `onRequest`), not once per intent.
    */
   logCall(callType: string, params: Record<string, unknown>): void
+  /** Today's date (YYYY-MM-DD, UTC), by core's clock. */
+  today: string
+  /**
+   * Central ids for the provider's own keys of one kind (such as 'bill',
+   * 'session', 'person', or 'doc'), minted from central's id table on first
+   * sight and the same ever after. For a provider whose native ids aren't
+   * integers, or could collide with another provider's.
+   */
+  ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
+  /**
+   * The people core has stored for this provider, by central id ascending, for
+   * resolving the names its records use.
+   */
+  people(): Promise<{ peopleId: number; name: string; role: string | null }[]>
 }
 
 /** A session as central stores it, handed to the list methods. */
@@ -129,11 +208,79 @@ export interface MeasureRef {
   billId: number
   /** The measure's session, when central already has a row for the measure. */
   sessionId: number | null
-  /**
-   * The provider's own key for the measure. Not set yet: central starts
-   * recording native keys when a provider mints its own ids.
-   */
+  /** The provider's own key for the measure, from the record core stored for a snapshot provider. */
   nativeKey?: string
+  /** A snapshot provider's stored record for the measure, and its hash. */
+  record?: { raw: unknown; hash: string }
+  /** The measure's session row, when central has one. */
+  session?: StoredSession
+}
+
+/** `fetchMeasure`'s result for a provider that also fetched a per-measure details response. */
+export interface MeasureWithDetails {
+  measure: CentralMeasure
+  /**
+   * The details response (null when the provider found none). Core records
+   * when it was fetched, for `detailsRefresh`. Storing the response itself
+   * comes with the shared raw-record table (#289).
+   */
+  details: unknown
+}
+
+/** A session as central stores it, with what `selectSessions` and `listPeople` read. */
+export interface StoredSession extends SessionRef {
+  sessionName: string
+  /** 1 when the session is no longer current. */
+  prior: number
+}
+
+/**
+ * One record a snapshot provider lists: the measure's central id, the
+ * provider's own key for it, the record as listed, and a hash that moves
+ * whenever the record does.
+ */
+export interface ProviderRecord {
+  billId: number
+  nativeKey: string
+  raw: unknown
+  hash: string
+}
+
+/** What `snapshot` returns. */
+export interface ProviderSnapshot {
+  records: ProviderRecord[]
+  /** Legislators the listing names, for core to upsert into `people`. */
+  people?: ProviderPerson[]
+}
+
+/**
+ * A legislator as a provider lists them, for core to upsert into `people`
+ * under the provider's id. A field left undefined is left alone on an existing
+ * row, and null clears it.
+ */
+export interface ProviderPerson {
+  people_id: number
+  name: string
+  state_id?: number
+  role?: string
+  role_id?: number
+  first_name?: string | null
+  middle_name?: string | null
+  last_name?: string | null
+  bio?: MeasurePerson['bio']
+}
+
+/** What `importMeasures` returns. */
+export interface ProviderImport {
+  /** Numbers that aren't any of the provider's measure numbers, as given. */
+  invalid: string[]
+  /** Numbers the provider looked for and didn't find. */
+  notFound: string[]
+  /**
+   * What it found, by session, with the numbers found there. A session may
+   * have no records, and core creates it anyway.
+   */
+  sessions: { state: string; session: SyncSession; records: ProviderRecord[]; numbers: string[] }[]
 }
 
 /** A document's bytes, from the provider's own copy (`Provider.fetchDocument`). */

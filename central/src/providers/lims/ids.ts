@@ -7,7 +7,7 @@
  * never reaches (its bill, doc and session ids are in the low millions at most).
  *
  * Which source a row came from is recorded in its `source` column (see
- * src/sources); the ranges only keep LIMS ids from colliding with LegiScan's.
+ * src/providers); the ranges only keep LIMS ids from colliding with LegiScan's.
  *
  *   bill_id      = LIMS_BILL_ID_BASE + typeCode*1e7 + councilPeriod*1e5 + seq
  *                  (computed from the measure number, e.g. B26-0400 -> 1_012_600_400,

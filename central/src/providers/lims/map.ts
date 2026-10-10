@@ -1,6 +1,6 @@
-import type { CentralMeasure, MeasureCalendarEntry, SyncEntry } from '../providers'
-import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './lims'
-import { limsDocId, limsRollCallId, limsSessionId } from './lims-ids'
+import { sha256Hex, type CentralMeasure, type MeasureCalendarEntry, type SyncEntry } from '../sdk'
+import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './client'
+import { limsDocId, limsRollCallId, limsSessionId } from './ids'
 
 /**
  * Pure mapping from DC Council LIMS records to the LegiScan shapes the central
@@ -88,11 +88,6 @@ export function limsDate(s: string | null | undefined): string | null {
   const m = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4})$/.exec(s.trim())
   if (m && MONTHS[m[1]]) return `${m[3]}-${MONTHS[m[1]]}-${m[2].padStart(2, '0')}`
   return null
-}
-
-export async function sha256Hex(s: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 const SUFFIX_RE = /,?\s+(Jr|Sr|II|III|IV)\.?(?=,|$)/i

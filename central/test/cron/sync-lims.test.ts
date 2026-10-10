@@ -8,8 +8,8 @@ import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 
-vi.mock('../../src/lib/lims', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/lims')>('../../src/lib/lims')
+vi.mock('../../src/providers/lims/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/lims/client')>('../../src/providers/lims/client')
   return { ...actual, getCouncilPeriods: vi.fn(), getMembers: vi.fn(), getBulkData: vi.fn(), getLegislationDetails: vi.fn() }
 })
 vi.mock('../../src/providers/legiscan/client', async () => {
@@ -24,14 +24,17 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runLimsSync, refreshCouncilPeriod } from '../../src/cron/sync-lims'
+import { runSourceSync, refreshSourceSessions } from '../../src/cron/sync-sources'
+import { lims as limsProvider } from '../../src/providers/lims'
+import { providerContext } from '../../src/lib/providerContext'
 import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
-import * as lims from '../../src/lib/lims'
+import * as lims from '../../src/providers/lims/client'
 import * as legiscan from '../../src/providers/legiscan/client'
-import { limsBillId, limsSessionId, isLimsDocId } from '../../src/lib/lims-ids'
+import { limsBillId, limsSessionId, isLimsDocId } from '../../src/providers/lims/ids'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
+const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSourceSync(limsProvider, e, db, opts)
 const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
 const PERIOD = { councilPeriodId: 26, councilPeriod: '26 (2025-26)', startDate: '2025-01-02T00:00:00', endDate: '2026-12-31T00:00:00' }
 const B0400 = limsBillId('B26-0400')!
@@ -498,7 +501,7 @@ describe('sponsors of earlier Council Periods', () => {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: 'oca', numbers: ['B25-0345'] }),
     }), e)
 
-    await refreshCouncilPeriod('lims-key', db, '2026-09-30')
+    await refreshSourceSessions(limsProvider, 'DC', providerContext(limsProvider, e, db), db)
     expect(vi.mocked(lims.getMembers).mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([25, 26]))
 
     const billId = limsBillId('B25-0345')!

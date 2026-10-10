@@ -1,15 +1,15 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type Provider } from '../providers'
+import { getProvider, type CentralMeasure, type MeasureRef, type Provider } from '../providers'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants,
-  billChangeLog, rollCalls, people, tenants,
+  billChangeLog, rollCalls, people, tenants, sessions, sourceRecords,
 } from '../db/schema'
 import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSnapshot, type ChangeRecord, type CalendarChange, type PriorCalendarRow } from '../lib/detect-changes'
 import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
 import { personRow } from '../lib/people'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
-import { billSource, directSource } from '../sources'
+import { billProviderId } from '../lib/providerRouting'
 import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -58,8 +58,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
-  // Bills don't record their provider yet, so every bill is the default provider's.
-  const provider = getProvider(DEFAULT_PROVIDER_ID)
+  const provider = getProvider(await billProviderId(db, msg.billId))
 
   if (msg.skipFetch) {
     // Data already in DB from bulk seed — skip the provider's API, just download text and notify
@@ -77,12 +76,9 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
       ))
       .all()
 
-    const legiscanTextFallback = textsToDownload.some(t => t.stateLink)
-      && (await billSource(db, msg.billId)) === 'legiscan'
     for (const t of textsToDownload) {
       if (t.stateLink) {
-        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', provider, env, db, t.textSize, t.textHash,
-          legiscanTextFallback)
+        await downloadTextToR2(msg.billId, t.docId, t.stateLink, t.mime ?? 'text/html', provider, env, db, t.textSize, t.textHash)
       }
     }
 
@@ -90,50 +86,59 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
     return
   }
 
-  const source = await billSource(db, msg.billId)
-  const measure = await fetchMeasureForIngest(msg.billId, source, provider, env, db)
+  const measure = await fetchMeasure(msg.billId, provider, env, db)
   await ingestMeasure(measure, provider, env, db, {
     forceMetadata, forceAI, interactive,
-    legiscanTextFallback: source === 'legiscan',
     forceTextRefetch: msg.forceTextRefetch ?? false,
-    source,
   })
 }
 
 /**
- * Fetch the full record for one bill. A bill from a direct source
- * (src/sources) is built by that source, never sent to LegiScan.
+ * Fetch one bill's full record from its provider. A snapshot provider gets the
+ * record core stored for the bill, and the bill's session. When the provider
+ * also fetched a details response, record when, for its details refresh.
  */
-async function fetchMeasureForIngest(billId: number, source: string, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
-  const direct = directSource(source)
-  if (direct) return await direct.buildBill(billId, env, db)
-  const known = await db.select({ sessionId: bills.sessionId }).from(bills).where(eq(bills.billId, billId)).get()
-  return provider.fetchMeasure(
-    { billId, sessionId: known?.sessionId ?? null },
-    providerContext(provider, env, db),
-  )
+async function fetchMeasure(billId: number, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
+  let ref: MeasureRef
+  if (provider.snapshot) {
+    const row = await db.select().from(sourceRecords)
+      .where(and(eq(sourceRecords.billId, billId), eq(sourceRecords.source, provider.id))).get()
+    if (!row) throw new Error(`bill ${billId} has no stored ${provider.id} record; the ${provider.id} sync has not seen it`)
+    const s = await db.select().from(sessions).where(eq(sessions.sessionId, row.sessionId)).get()
+    ref = {
+      billId,
+      sessionId: row.sessionId,
+      nativeKey: row.nativeKey,
+      record: { raw: JSON.parse(row.rawJson), hash: row.rawHash },
+      session: s ? {
+        sessionId: s.sessionId, state: s.state, sessionTag: s.sessionTag,
+        yearStart: s.yearStart, yearEnd: s.yearEnd, sessionName: s.sessionName, prior: s.prior,
+      } : undefined,
+    }
+  } else {
+    const known = await db.select({ sessionId: bills.sessionId }).from(bills).where(eq(bills.billId, billId)).get()
+    ref = { billId, sessionId: known?.sessionId ?? null }
+  }
+
+  const fetched = await provider.fetchMeasure(ref, providerContext(provider, env, db))
+  if (!('measure' in fetched)) return fetched
+  await db.update(sourceRecords).set({ detailsFetchedAt: nowDb() }).where(eq(sourceRecords.billId, billId))
+  return fetched.measure
 }
 
 export type IngestOptions = {
   forceMetadata: boolean
   forceAI: boolean
   interactive: boolean
-  /**
-   * Whether a failed direct document download may fall back to LegiScan's
-   * getBillText. Only LegiScan documents exist there; for any other source the
-   * fallback would spend a quota call on an id LegiScan has never issued.
-   */
-  legiscanTextFallback: boolean
   /** Re-download every text even when R2 already has it (admin refetch-fragment-texts). */
   forceTextRefetch?: boolean
-  /** Which source the bill comes from (src/sources); written to new rows. LegiScan when absent. */
-  source?: string
 }
 
 /**
  * Write one measure into central: change detection, the bill row and its child
  * tables, text downloads to R2, and the tenant notifications. Provider-neutral:
- * the caller fetches the measure from its provider and hands it here.
+ * the caller fetches the measure from its provider and hands it here, and new
+ * rows record that provider.
  */
 export async function ingestMeasure(
   bill: CentralMeasure,
@@ -142,8 +147,8 @@ export async function ingestMeasure(
   db: Db,
   opts: IngestOptions,
 ): Promise<void> {
-  const { forceMetadata, forceAI, interactive, legiscanTextFallback, forceTextRefetch } = opts
-  const source = opts.source ?? 'legiscan'
+  const { forceMetadata, forceAI, interactive, forceTextRefetch } = opts
+  const source = provider.id
   const now = nowDb()
 
   // --- Change detection ---
@@ -195,7 +200,7 @@ export async function ingestMeasure(
       sponsorDetailByKey,
     }
 
-    detectedChanges = detectChanges(snapshot, bill, directSource(source) ?? provider)
+    detectedChanges = detectChanges(snapshot, bill, provider)
 
     // Write change records
     if (detectedChanges.length > 0) {
@@ -393,8 +398,7 @@ export async function ingestMeasure(
     const stored = await db.select({ r2Key: billTexts.r2Key })
       .from(billTexts).where(eq(billTexts.docId, t.doc_id)).get()
     if ((forceTextRefetch || !stored?.r2Key) && t.state_link) {
-      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash ?? null,
-        legiscanTextFallback)
+      await downloadTextToR2(bill.bill_id, t.doc_id, t.state_link, t.mime, provider, env, db, t.text_size ?? null, t.text_hash ?? null)
     }
   }
 
@@ -465,7 +469,7 @@ export async function ingestMeasure(
   // Upsert roll calls (vote summaries from getBill). Per-legislator vote rows
   // (roll_call_votes) would cost a getRollCall call each, so for LegiScan they
   // come from the weekly vote-dataset load instead (cron/vote-datasets.ts).
-  // Sources whose records carry them inline, such as DC LIMS, set member_votes.
+  // Providers whose records carry them inline, such as DC LIMS, set member_votes.
   const memberVotes: RollCallMemberVotes[] = []
   for (const v of bill.votes ?? []) {
     await db.insert(rollCalls).values({
@@ -606,7 +610,6 @@ async function downloadTextToR2(
   db: Db,
   declaredSize: number | null = null,
   declaredHash: string | null = null,
-  providerFallback = true,
 ): Promise<void> {
   const ext = mime.includes('pdf') ? 'pdf' : 'html'
   const r2Key = `bills/legiscan-${billId}/texts/${docId}.${ext}`
@@ -639,9 +642,9 @@ async function downloadTextToR2(
 
   // Attempt 2: the provider's own copy, when it keeps one (LegiScan's
   // getBillText). That can cost an API call per document, so it only runs when
-  // the direct fetch produced nothing usable, and only for documents the
-  // provider actually issued.
-  if (!body && providerFallback && provider.fetchDocument) {
+  // the direct fetch produced nothing usable. The provider is the bill's own,
+  // so it is only ever asked for documents it issued.
+  if (!body && provider.fetchDocument) {
     console.warn(`[processor-ls] doc ${docId}: ${failure} — falling back to the ${provider.id} copy`)
     try {
       const doc = await provider.fetchDocument(docId, providerContext(provider, env, db))
