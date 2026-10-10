@@ -100,7 +100,8 @@ async function billId(number: string, code = '20261'): Promise<number> {
 async function syncAndIngest(run = makeEnv()) {
   const db = drizzle(env.DB, { schema })
   await runSnapshotSync(lis, run.env, db)
-  const messages = queuedIds(run).map(id => ({ body: { billId: id }, ack: vi.fn(), retry: vi.fn() }))
+  // Whole bodies, so a calendar recheck reaches the ingestor as one.
+  const messages = run.ingestor.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => ({ body: m.body, ack: vi.fn(), retry: vi.fn() })))
   if (messages.length > 0) await processIngestorQueue({ messages } as any, run.env, db)
   for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
   return { run, messages }
@@ -247,6 +248,59 @@ describe('a carried-over bill', () => {
     await syncAndIngest()
     expect(gets('20271').sort()).toEqual(Object.keys(LIS_FILES).sort())
     expect(await billId('HB1532', '20271')).toBeGreaterThan(3_000_000_000)
+  })
+})
+
+describe('Virginia dockets on the calendar', () => {
+  const calendarOf = (run: Run, handle: string) =>
+    sentToTenant(run).filter((m: any) => m.billId === handle && m.calendar).map((m: any) => m.calendar)
+  /** The 2026 files with more docket rows. */
+  const withDockets = (rows: string) => { const f = s2026(); f.dockets += rows; return f }
+
+  it('puts each committee docket on the calendar as a hearing', async () => {
+    await claim('lis')
+    await syncAndIngest()
+    const bill = await getJson(`/bills/${toHandle(await billId('HB61'))}`)
+    expect(bill.calendar.map((e: any) => [e.date, e.description, e.kind, e.type])).toEqual(expect.arrayContaining([
+      ['2026-02-25', 'Senate General Laws and Technology docket', 'hearing', 'Hearing'],
+      ['2026-03-03', 'Senate Finance and Appropriations docket', 'hearing', 'Hearing'],
+    ]))
+    const labels = await getJson('/bills/labels?state=VA')
+    expect(labels.eventTypes).toEqual([expect.objectContaining({ typeId: 1, label: 'Hearing', kind: 'hearing' })])
+  })
+
+  it('gives one committee\'s dockets on two days identities of their own', async () => {
+    serve('20261', withDockets('"S05","10/05/2026","1","HB61"\n"S05","10/12/2026","1","HB61"\n'))
+    await claim('lis')
+    const { run } = await syncAndIngest()
+    const [cal] = calendarOf(run, toHandle(await billId('HB61')))
+    const upcoming = cal.events.filter((e: any) => e.date >= '2026-10-01')
+    expect(upcoming.map((e: any) => e.description)).toEqual(['Senate Finance and Appropriations docket', 'Senate Finance and Appropriations docket'])
+    expect(new Set(upcoming.map((e: any) => e.identityKey)).size).toBe(2)
+  })
+
+  it('cancels a docket that leaves the files only after two successful pulls', async () => {
+    serve('20261', withDockets('"S05","10/05/2026","1","HB61"\n'))
+    await claim('lis')
+    await syncAndIngest()
+    const handle = toHandle(await billId('HB61'))
+    const upcoming = async () => (await getJson(`/bills/${handle}`)).calendar.filter((e: any) => e.date === '2026-10-05')
+    expect(await upcoming()).toHaveLength(1)
+
+    // The docket comes off DOCKET.CSV: the next pull reads the change, and the entry stays.
+    serve('20261', s2026(), 'v2')
+    const first = await syncAndIngest()
+    expect(await upcoming()).toHaveLength(1)
+    expect(calendarOf(first.run, handle).flatMap((c: any) => c.changes).filter((ch: any) => ch.changeType === 'hearing_cancelled')).toEqual([])
+
+    // The pull after that finds the files unchanged, which confirms it, and cancels the docket.
+    calls = []
+    const second = await syncAndIngest()
+    expect(gets()).toEqual([])
+    expect(await upcoming()).toEqual([])
+    expect(calendarOf(second.run, handle).flatMap((c: any) => c.changes)).toEqual([
+      expect.objectContaining({ changeType: 'hearing_cancelled', date: '2026-10-05' }),
+    ])
   })
 })
 
