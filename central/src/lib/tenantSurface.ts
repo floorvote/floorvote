@@ -35,6 +35,7 @@ const ALLOW: SurfacePattern[] = [
   { method: 'GET', segments: ['api', 'bills', ':id', 'text', ':docId'] },
   { method: 'GET', segments: ['api', 'bills', ':id', 'changes'] },
   { method: 'GET', segments: ['api', 'bills', 'sessions'] },
+  { method: 'GET', segments: ['api', 'bills', 'labels'] },
   { method: 'POST', segments: ['api', 'bills', 'rich-batch'] },
   { method: 'POST', segments: ['api', 'tenants', 'register'] },
   { method: 'POST', segments: ['api', 'tenants', 'reprocess', ':id'] },
@@ -48,9 +49,10 @@ const ALLOW: SurfacePattern[] = [
   { method: 'GET', segments: ['api', 'admin', 'superadmin', 'emails'] },
 ]
 
-// Note: `GET /api/bills/sessions` matches BOTH the `:id` and the `sessions`
-// patterns above (both GET). That is harmless — the matcher returns true if ANY
-// pattern matches, and both are legitimately allowed.
+// Note: `GET /api/bills/sessions` and `GET /api/bills/labels` each match BOTH
+// the `:id` pattern and their own pattern above (all GET). That is harmless —
+// the matcher returns true if ANY pattern matches, and all are legitimately
+// allowed.
 
 /**
  * Normalize a request path into lowercased, decoded, non-empty segments.

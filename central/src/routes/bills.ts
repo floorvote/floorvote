@@ -7,7 +7,8 @@ import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
-import { statusFields } from '../lib/vocabulary'
+import { stateProvider } from '../lib/providerRouting'
+import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -35,6 +36,21 @@ billsRoutes.get('/sessions', async (c) => {
     .where(eq(schema.sessions.state, state))
     .all()
   return c.json({ sessions })
+})
+
+// Explainers for a state's statuses, bill types, and event types, and its
+// display details, from the vocabulary of the provider that reads the state.
+// Instances show the explainers as tooltips. Registered before GET /:id.
+billsRoutes.get('/labels', (c) => {
+  const state = c.req.query('state')?.toUpperCase()
+  if (!state || !/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state is required' }, 400)
+  return c.json({
+    state,
+    ...vocabularyLabels(stateProvider(state, c.env)),
+    // Whether the state's provider publishes the legislature's own events
+    // (hearings without bills). None does yet.
+    hasEvents: false,
+  })
 })
 
 // Bulk rich-data lookup for the tenant data export. Returns amendments,
