@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  buildMgaBill, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
+  buildMgaBill, mgaBillType, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
 import { vocabulary } from '../../../src/providers/mga/vocabulary'
@@ -142,6 +142,16 @@ describe('buildMgaBill', () => {
     expect(enacted.calendar.map(c => `${c.date} ${c.time} ${c.description.split(' ')[0]}`)).toEqual([
       '2026-01-29 13:00 House', '2026-04-01 13:00 Senate',
     ])
+  })
+
+  it('types House and Senate resolutions as resolutions, and joint resolutions as joint', async () => {
+    // The port typed "HS" (no such prefix) as a resolution, so every House resolution was a bill.
+    expect(mgaBillType('HR0001')).toEqual({ type: 'R', typeId: '2' })
+    expect(mgaBillType('SR0003')).toEqual({ type: 'R', typeId: '2' })
+    expect(mgaBillType('HJ0005')).toEqual({ type: 'JR', typeId: '3' })
+    expect(mgaBillType('SB0002')).toEqual({ type: 'B', typeId: '1' })
+    const hr = { ...rec('HJ0005'), BillNumber: 'HR0001', CrossfileBillNumber: '', ChapterNumber: '' }
+    expect((await buildMgaBill(hr, '2026RS', 1, 'h', SESSION, ids)).bill_type).toBe('R')
   })
 
   it('writes MGA numbers the way LegiScan does', () => {

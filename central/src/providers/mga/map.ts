@@ -66,10 +66,11 @@ function otherChamber(c: 'H' | 'S'): 'H' | 'S' {
 
 const CHAMBER_NAME = { H: 'House', S: 'Senate' } as const
 
-function billType(billNumber: string): { type: string; typeId: string } {
-  const prefix = /^[A-Z]+/.exec(billNumber)?.[0] ?? ''
+/** HB/SB bills, HJ/SJ joint resolutions, and HR/SR resolutions of one chamber. */
+export function mgaBillType(billNumber: string): { type: string; typeId: string } {
+  const prefix = /^[A-Z]+/.exec(billNumber.trim())?.[0] ?? ''
   if (prefix === 'HJ' || prefix === 'SJ') return { type: 'JR', typeId: '3' }
-  if (prefix === 'HS' || prefix === 'SR') return { type: 'R', typeId: '2' }
+  if (prefix === 'HR' || prefix === 'SR') return { type: 'R', typeId: '2' }
   return { type: 'B', typeId: '1' }
 }
 
@@ -207,7 +208,7 @@ export async function buildMgaBill(
   const origin = originChamber(r)
   const status = mgaStatus(r)
   const history = milestones(r)
-  const type = billType(r.BillNumber)
+  const type = mgaBillType(r.BillNumber)
   const paths = docPaths(sessionCode, r.BillNumber)
   const yearStart = `${session.year_start}-01-01`
 
