@@ -5,6 +5,7 @@ import { matchesUnion } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
+import { toHandle } from '../lib/billHandle'
 import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { directStates } from '../lib/providerRouting'
@@ -345,7 +346,7 @@ export async function applyMasterList(
         const msgs = stubMessagesByTenant.get(t.tenantId) ?? []
         msgs.push({
           tenantId: t.tenantId,
-          billId: `legiscan:${entry.bill_id}`,
+          billId: toHandle(entry.bill_id),
           stubOnly: true,
         })
         stubMessagesByTenant.set(t.tenantId, msgs)

@@ -5,6 +5,7 @@ import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
 import { resolveItemDate } from '../lib/itemDate'
+import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import type { Env } from '../types'
 
@@ -44,8 +45,8 @@ billsRoutes.post('/rich-batch', async (c) => {
   const rawIds = Array.isArray((body as { ids?: unknown }).ids) ? (body as { ids: unknown[] }).ids : []
   const numericIds = [...new Set(
     rawIds
-      .map(id => parseInt(String(id).replace('legiscan:', ''), 10))
-      .filter(n => !isNaN(n)),
+      .map(id => parseHandle(String(id)))
+      .filter((n): n is number => n !== null),
   )]
 
   type Rich = {
@@ -119,8 +120,8 @@ billsRoutes.post('/rich-batch', async (c) => {
 
 billsRoutes.get('/:id', async (c) => {
   const rawId = c.req.param('id')
-  const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
-  if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)
+  const numeric = parseHandle(rawId)
+  if (numeric === null) return c.json({ error: 'invalid bill id' }, 400)
 
   const db = drizzle(c.env.DB, { schema })
 
@@ -247,7 +248,7 @@ billsRoutes.get('/:id', async (c) => {
   }))
 
   return c.json({
-    billId: `legiscan:${bill.billId}`,
+    billId: toHandle(bill.billId),
     sessionId:   String(bill.sessionId),
     sessionName: session?.sessionName ?? null,
     yearStart:   session?.yearStart   ?? null,
@@ -339,10 +340,8 @@ billsRoutes.get('/:id', async (c) => {
 
 billsRoutes.get('/:id/changes', async (c) => {
   const rawId = c.req.param('id')
-  const numericId = rawId.startsWith('legiscan:')
-    ? parseInt(rawId.split(':')[1], 10)
-    : parseInt(rawId, 10)
-  if (isNaN(numericId)) return c.json({ error: 'invalid bill id' }, 400)
+  const numericId = parseHandle(rawId)
+  if (numericId === null) return c.json({ error: 'invalid bill id' }, 400)
 
   const db = drizzle(c.env.DB, { schema })
   const changes = await db
@@ -358,8 +357,8 @@ billsRoutes.get('/:id/changes', async (c) => {
 
 billsRoutes.get('/:id/text/:docId', async (c) => {
   const rawId = c.req.param('id')
-  const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
-  if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)
+  const numeric = parseHandle(rawId)
+  if (numeric === null) return c.json({ error: 'invalid bill id' }, 400)
   const docId = parseInt(c.req.param('docId'), 10)
   if (isNaN(docId)) return c.json({ error: 'invalid doc id' }, 400)
 
@@ -393,8 +392,8 @@ billsRoutes.get('/:id/text/:docId', async (c) => {
 
 billsRoutes.get('/:id/text', async (c) => {
   const rawId = c.req.param('id')
-  const numeric = parseInt(rawId.replace('legiscan:', ''), 10)
-  if (isNaN(numeric)) return c.json({ error: 'invalid bill id' }, 400)
+  const numeric = parseHandle(rawId)
+  if (numeric === null) return c.json({ error: 'invalid bill id' }, 400)
 
   const db = drizzle(c.env.DB, { schema })
 

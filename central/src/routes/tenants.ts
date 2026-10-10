@@ -14,6 +14,7 @@ import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
 import { isSafeTenantApiUrl } from '../lib/safeUrl'
 import { guardCallerTenantParam, guardCallerTenantBody } from '../lib/callerTenant'
+import { toHandle } from '../lib/billHandle'
 
 const REPROCESS_LIMIT = 1000
 
@@ -350,7 +351,7 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
     .where(eq(schema.tenants.tenantId, tenantId))
     .get()
   const nonKeywordBodies = nonKeywordIds.map(billId => ({
-    tenantId, billId: `legiscan:${billId}`, forceMetadata: true,
+    tenantId, billId: toHandle(billId), forceMetadata: true,
   }))
   try {
     const outcome = await deliverBatchToTenant(c.env, tenantId, tenantRow?.queueId ?? null, nonKeywordBodies)
@@ -606,7 +607,7 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
     }
 
     const bodies = chunk.map(r => {
-      const msg: Record<string, unknown> = { tenantId, billId: `legiscan:${r.billId}`, forceMetadata: true }
+      const msg: Record<string, unknown> = { tenantId, billId: toHandle(r.billId), forceMetadata: true }
       const cal = calByBillId.get(r.billId)
       if (targeted && cal && cal.length > 0) msg.calendar = calendarBlockFromRows(cal)
       return msg

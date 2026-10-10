@@ -9,7 +9,8 @@ import {
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
+import { backfillCalendar } from '../../lib/calendarBackfill'
+import { parseHandle } from '../../../../shared/billHandle'
 import { nowDb } from '../../lib/dbTime'
 import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
@@ -298,7 +299,7 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       })
       const row = await db.select({ externalId: bills.externalId, matchType: bills.matchType })
         .from(bills).where(eq(bills.id, id)).get()
-      const legiscanId = parseLegiScanId(row?.externalId)
+      const legiscanId = parseHandle(row?.externalId)
       // Backfill hearings for this newly-prioritized bill (fire-and-forget).
       if (legiscanId !== null) c.executionCtx.waitUntil(backfillCalendar(c.env, [legiscanId]))
       // Promote a lightweight LegiScan stub to full tracking + AI (zero-cost on central;

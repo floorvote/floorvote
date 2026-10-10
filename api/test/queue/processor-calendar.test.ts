@@ -97,6 +97,15 @@ describe('processCentralNotification — calendar mirror', () => {
     expect(rows[0].uid).toContain('@ri')
   })
 
+  it('keeps hearing UIDs byte-for-byte stable, so calendar subscribers see no churn', async () => {
+    await processCentralNotification(
+      { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,
+      testEnv as any, getDb(env.DB),
+    )
+    const rows = await getDb(env.DB).select().from(calendarEvents).where(eq(calendarEvents.billId, billId)).all()
+    expect(rows.map(r => r.uid)).toEqual(['hearing-legiscan-999-1-house-cmte-on-elections@ri'])
+  })
+
   it('writes a hearing_added feed event for a tracked, non-new bill', async () => {
     await processCentralNotification(
       { tenantId: 'ri', billId: 'legiscan:999', calendar: calendarBlock('hearing_added') } as any,

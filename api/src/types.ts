@@ -73,7 +73,7 @@ export type AppDb = DrizzleD1Database<typeof schema>
 
 export type TenantQueueMessage = {
   tenantId: string
-  billId: string // "legiscan:{bill_id}" (older data and tests may hold legacy "ocd-bill/{uuid}" ids)
+  billId: string // the bill handle, "legiscan:{bill_id}" (older data and tests may hold legacy "ocd-bill/{uuid}" ids)
   forceMetadata?: boolean // Skip providerUpdatedAt dedup; re-upsert metadata; still gates AI on keywords
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred

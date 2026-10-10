@@ -14,6 +14,7 @@ import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
 import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
+import { toHandle } from '../lib/billHandle'
 
 export async function processIngestorQueue(
   batch: MessageBatch<IngestorMessage>,
@@ -727,7 +728,7 @@ async function notifyTenants(
   for (const t of matchingTenants) {
     const body: NotificationMessage = {
       tenantId: t.tenantId,
-      billId: `legiscan:${billId}`,
+      billId: toHandle(billId),
       forceMetadata,
       forceAI,
       matchType: (t.matchType ?? null) as 'keyword' | 'manual' | null,
