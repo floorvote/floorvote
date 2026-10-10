@@ -549,7 +549,7 @@ describe('DC calendar entries', () => {
     const { run } = await syncAndIngest()
     expect(await billCalendar(B0400)).toContainEqual(['deadline', '2026-04-28', 'Mayor\'s response due'])
     expect(lastCalendar(run, B0400).events).toContainEqual(expect.objectContaining({
-      identityKey: 'deadline|2026-04-28|mayor\'s response due', kind: 'deadline', description: 'Mayor\'s response due',
+      identityKey: 'id:deadline:mayor-response', kind: 'deadline', description: 'Mayor\'s response due',
     }))
     const labels = await getJson('/bills/labels?state=DC')
     expect(labels.eventTypes).toContainEqual({ typeId: 10, label: 'Deadline', kind: 'deadline', explainer: expect.any(String) })

@@ -360,7 +360,7 @@ describe('a cutover', () => {
       ['1|committee on youth affairs', 'hearing', '2025-11-13'],
       ['3|committee on youth affairs', 'markup', '2026-01-27'],
       [expect.stringMatching(/^markup\|2026-02-23\|/), 'markup', '2026-02-23'],
-      ['deadline|2026-04-28|mayor\'s response due', 'deadline', '2026-04-28'],
+      ['id:deadline:mayor-response', 'deadline', '2026-04-28'],
     ]))
     expect(events.map((e: any) => e[0])).not.toContain('1|committee of the whole')
     expect(bill.calendar.map((c: any) => c.date)).not.toContain('2026-12-01')

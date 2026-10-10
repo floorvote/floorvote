@@ -183,8 +183,10 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const hearingGroups = new Map<string, EventResult>()
   for (const e of entries) {
     if (e.source !== 'hearing') { result.push(e); continue }
-    // Kind too, so a deadline never merges into a hearing. An entry stored before kinds were is a hearing.
-    const key = `${e.kind ?? 'hearing'}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+    // A deadline never merges into a meeting. Other kinds aren't told apart:
+    // an entry central hasn't resent since kinds arrived has none, and must
+    // still merge with the same meeting on another bill.
+    const key = `${e.kind === 'deadline' ? 'deadline' : 'event'}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
     const g = hearingGroups.get(key)
     if (!g) {
       hearingGroups.set(key, e)

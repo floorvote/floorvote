@@ -149,13 +149,23 @@ describe('cancellation', () => {
     expect(third.changes).toEqual([])
   })
 
-  it('never counts a pull with no entries at all', () => {
+  it('never counts a measure that came with no calendar at all', () => {
     const prior = stored(legiscan, [entry()])
     for (const hash of ['pull-1', 'pull-2', 'pull-3']) {
-      const plan = planCalendarPull(legiscan, BILL, prior, [], hash, NOW)
+      const plan = planCalendarPull(legiscan, BILL, prior, undefined, hash, NOW)
       expect(plan.writes).toEqual([])
       expect(plan.live).toHaveLength(1)
     }
+  })
+
+  it('counts an empty calendar, so a bill\'s only hearing is cancelled after two of them', () => {
+    const prior = stored(legiscan, [entry()])
+    const first = planCalendarPull(legiscan, BILL, prior, [], 'pull-1', NOW)
+    expect(first.changes).toEqual([])
+    expect(first.live).toHaveLength(1)
+    const second = planCalendarPull(legiscan, BILL, merge(prior, first.writes), [], 'pull-2', NOW)
+    expect(kinds(second)).toEqual(['hearing_cancelled'])
+    expect(second.live).toEqual([])
   })
 
   it('cancels at once on positive evidence', () => {
@@ -165,13 +175,21 @@ describe('cancellation', () => {
     expect(plan.live).toEqual([])
   })
 
-  it('counts nothing missing from a pull that lists only cancellations', () => {
+  it('counts a pull that lists only cancellations, like any other calendar', () => {
     const prior = stored(lims, [entry({ description: 'Public Hearing on B26-0769' }), entry({ type_id: 3, description: 'Committee Mark-up of B26-0769' })])
-    for (const hash of ['pull-1', 'pull-2']) {
-      const plan = planCalendarPull(lims, BILL, prior, [entry({ description: 'Public Hearing on B26-0769', cancelled: true })], hash, NOW)
-      expect(plan.live.map(r => r.description)).toEqual(['Committee Mark-up of B26-0769'])
-      expect(plan.writes.every(r => r.missedPulls === 0)).toBe(true)
-    }
+    const cancelled = [entry({ description: 'Public Hearing on B26-0769', cancelled: true })]
+    const first = planCalendarPull(lims, BILL, prior, cancelled, 'pull-1', NOW)
+    expect(first.live.map(r => [r.description, r.missedPulls])).toEqual([['Committee Mark-up of B26-0769', 1]])
+    const second = planCalendarPull(lims, BILL, merge(prior, first.writes), cancelled, 'pull-2', NOW)
+    expect(second.live).toEqual([])
+  })
+
+  it('adopts a row stored before identities were for an entry that now comes with an event id', () => {
+    const withIds: Provider = { ...lims, id: 'with-ids' }
+    const prior = [legacyRow({ typeId: 10, description: 'Mayor\'s response due', date: '2026-06-10' })]
+    const plan = planCalendarPull(withIds, BILL, prior, [entry({ type_id: 10, description: 'Mayor\'s response due', date: '2026-06-10', event_id: 'deadline:mayor-response' })], 'pull-1', NOW)
+    expect(plan.live.map(r => [r.id, r.identityKey, r.eventId])).toEqual([[prior[0].id, '10|mayor\'s response due', 'deadline:mayor-response']])
+    expect(plan.changes).toEqual([])
   })
 
   it('never cancels on a date passing, and cancels a past entry quietly', () => {
