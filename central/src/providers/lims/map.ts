@@ -316,14 +316,17 @@ const EXPIRES_RE = new RegExp(`Expires on ${LIMS_DATE}`, 'i')
  * date, the projected law date at the end of Congressional review, and when an
  * emergency act or temporary law expires. LIMS states each date, so none is
  * computed (the projected law date already counts only the days Congress is in
- * session). Each comes from the details response's review, or else from the
- * latest history entry that states it, since a re-transmittal or a new
- * publication restates it. Each deadline's text is fixed, so only its date
- * tells two of a kind apart.
+ * session). The latest history entry that states each one wins, since a
+ * re-transmittal or a new publication restates it. Each deadline's text is
+ * fixed, so only its date tells two of a kind apart.
+ *
+ * Only the BulkData record, never the details response: core rechecks a
+ * missing calendar entry against the record's hash (lib/billCalendar.ts),
+ * which covers the bulk record alone. The extras show the details' copies of
+ * these dates.
  */
 export function limsDeadlines(
   rec: Pick<LimsBulkRecord, 'legislationSubCategory' | 'projectedLawDate' | 'legislationHistory'>,
-  details: Pick<LimsLegislationDetails, 'mayoralReview' | 'congressionalReview'> | null,
 ): { date: string; description: string }[] {
   const stated = (re: RegExp): string | null => {
     let found: string | null = null
@@ -333,14 +336,12 @@ export function limsDeadlines(
     }
     return found
   }
-  const mayor = details?.mayoralReview
-  const congress = details?.congressionalReview
   const out: { date: string; description: string }[] = []
-  const due = extraDate(mayor?.responseDueDate) ?? stated(MAYOR_DUE_RE)
+  const due = stated(MAYOR_DUE_RE)
   if (due) out.push({ date: due, description: 'Mayor\'s response due' })
-  const projected = extraDate(congress?.lawProjectedDate) ?? limsDate(clean(rec.projectedLawDate)) ?? stated(PROJECTED_RE)
+  const projected = limsDate(clean(rec.projectedLawDate)) ?? stated(PROJECTED_RE)
   if (projected) out.push({ date: projected, description: 'Congressional review ends' })
-  const expires = extraDate(congress?.expirationDate) ?? extraDate(mayor?.expirationDate) ?? stated(EXPIRES_RE)
+  const expires = stated(EXPIRES_RE)
   if (expires) {
     const sub = clean(rec.legislationSubCategory).toLowerCase()
     const description = sub.includes('emergency') ? 'Emergency act expires'
@@ -583,11 +584,15 @@ export async function buildLimsBill(
       events.push({ type_id: HEARING_TYPE_ID, type: 'Hearing', date, description: `${type} on ${number}`, location: '', cancelled: true })
     }
   }
-  for (const d of limsDeadlines(rec, details)) {
+  for (const d of limsDeadlines(rec)) {
     events.push({ type_id: DEADLINE_TYPE_ID, type: 'Deadline', date: d.date, description: d.description, location: '' })
   }
   events.sort((a, b) => a.date.localeCompare(b.date))
+  // Every measure's history starts with its introduction, so a record with
+  // none is a bad answer, not a measure whose hearings all went away. It
+  // sends no calendar at all, which core reads as no evidence either way.
   const calendar: MeasureCalendarEntry[] = []
+  if (history.length === 0 && !isNoticeCategory(rec)) events.length = 0
   for (const e of events) {
     calendar.push({
       ...e, time: '',

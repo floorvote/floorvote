@@ -382,13 +382,13 @@ describe('buildLimsBill: calendar edge cases', () => {
 describe('deadlines', () => {
   const hist = (n: string, rows: [string, string][]) => rows.map(([actionDate, actionDescription]) => ({ legislationNumber: n, actionDate, actionDescription, downloadURL: '' }))
 
-  it('reads the Mayor\'s due date and an emergency act\'s expiration from the history when details lack them', () => {
+  it('reads the Mayor\'s due date and an emergency act\'s expiration from the history', () => {
     const rec = { legislationSubCategory: 'Emergency Bill', projectedLawDate: null, legislationHistory: hist('B26-0001', [
       ['Jan 23, 2025', 'Transmitted to Mayor, Response Due on Feb 06, 2025'],
       ['Feb 03, 2025', 'Signed by the Mayor and Enacted with Act Number A26-0003, Expires on May 04, 2025'],
       ['Feb 07, 2025', 'Act A26-0003 Published in DC Register Vol 72 and Page 001133, Expires on May 04, 2025'],
     ]) }
-    expect(limsDeadlines(rec, null)).toEqual([
+    expect(limsDeadlines(rec)).toEqual([
       { date: '2025-02-06', description: "Mayor's response due" },
       { date: '2025-05-04', description: 'Emergency act expires' },
     ])
@@ -399,25 +399,24 @@ describe('deadlines', () => {
       ['Sep 01, 2026', 'Transmitted to Congress, Projected Law Date is Nov 13, 2026'],
       ['Nov 20, 2026', 'Law L26-0100, Effective from Nov 14, 2026 Published in DC Register Vol 73 and Page 000001, Expires on Jun 27, 2027'],
     ]) }
-    expect(limsDeadlines(rec, null)).toEqual([
+    expect(limsDeadlines(rec)).toEqual([
       { date: '2026-11-14', description: 'Congressional review ends' },
       { date: '2027-06-27', description: 'Temporary law expires' },
     ])
   })
 
-  it('takes the dates the details response\'s reviews state over the history', () => {
-    const rec = { legislationSubCategory: 'Temporary Bill', projectedLawDate: null, legislationHistory: hist('B26-0174', [
-      ['Sep 01, 2026', 'Transmitted to Mayor, Response Due on Sep 15, 2026'],
-    ]) }
-    const details = {
-      mayoralReview: { ...d0400.mayoralReview!, responseDueDate: '2026-09-16T00:00:00', expirationDate: null },
-      congressionalReview: { ...d0400.congressionalReview!, lawProjectedDate: '2026-11-20T00:00:00', expirationDate: '2027-07-01T00:00:00' },
+  it('reads only the BulkData record, which the change hash covers, so a details answer can\'t move one', async () => {
+    const withoutReviews = { ...d0400, mayoralReview: null, congressionalReview: null }
+    for (const details of [d0400, withoutReviews, null]) {
+      const b = await build('B26-0400', details)
+      expect(b.calendar.filter(c => c.type_id === 10).map(c => [c.date, c.description])).toEqual([['2026-04-28', "Mayor's response due"]])
     }
-    expect(limsDeadlines(rec, details)).toEqual([
-      { date: '2026-09-16', description: "Mayor's response due" },
-      { date: '2026-11-20', description: 'Congressional review ends' },
-      { date: '2027-07-01', description: 'Temporary law expires' },
-    ])
+  })
+
+  it('sends no calendar from a record with no history, rather than one with every hearing gone', async () => {
+    const rec = { ...bulk['B26-0400'], legislationHistory: [], projectedLawDate: 'Nov 14, 2026' }
+    const b = await buildLimsBill(rec, d0400, limsBillId('B26-0400')!, await bulkHash(rec), ctx)
+    expect(b.calendar).toEqual([])
   })
 
   it('keeps the latest restated date, and finds none for a bill without deadlines', () => {
@@ -425,8 +424,8 @@ describe('deadlines', () => {
       ['Mar 01, 2026', 'Transmitted to Mayor, Response Due on Mar 15, 2026'],
       ['Mar 20, 2026', 'Transmitted to Mayor, Response Due on Apr 03, 2026'],
     ]) }
-    expect(limsDeadlines(rec, null)).toEqual([{ date: '2026-04-03', description: "Mayor's response due" }])
-    expect(limsDeadlines({ ...rec, legislationHistory: [] }, null)).toEqual([])
+    expect(limsDeadlines(rec)).toEqual([{ date: '2026-04-03', description: "Mayor's response due" }])
+    expect(limsDeadlines({ ...rec, legislationHistory: [] })).toEqual([])
   })
 })
 
