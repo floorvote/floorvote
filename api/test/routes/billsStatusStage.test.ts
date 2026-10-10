@@ -46,6 +46,14 @@ describe('status stage and rank in the bill list', () => {
     expect((await list('stage=enacted&state=VA&match=any')).sort()).toEqual(['B26-0001', 'HB 2', 'HB 3', 'HB 4'])
   })
 
+  it('matches a word status from a saved view or link that names its old bare code', async () => {
+    await seedBill({ billNumber: 'HB 5', state: 'RI', status: 'Override', statusStage: 'enacted', statusRank: 702 })
+    expect(await list('status=7')).toEqual(['HB 5'])
+    expect(await list('status=Override')).toEqual(['HB 5'])
+    const res = await SELF.fetch('http://localhost/api/bills/facets?status=7', { headers: { Cookie: cookie } })
+    expect((await res.json() as { stage: Record<string, number> }).stage).toEqual({ enacted: 1 })
+  })
+
   it('counts each stage, leaving the stage filter out of its own counts', async () => {
     const facets = async (query: string) => {
       const res = await SELF.fetch(`http://localhost/api/bills/facets?${query}`, { headers: { Cookie: cookie } })
