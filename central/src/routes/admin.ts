@@ -18,6 +18,7 @@ import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
 import { guardCallerTenantParam } from '../lib/callerTenant'
+import { parseHandle, toHandle } from '../lib/billHandle'
 
 // Per-tenant cooldown for sync-keywords. Module-scoped Map is intentional —
 // Worker instances are isolated, so this is effectively a per-instance cooldown.
@@ -412,7 +413,7 @@ async function refreshTenantLinks(
 
   const bodies = links.map(l => ({
     tenantId,
-    billId: `legiscan:${l.billId}`,
+    billId: toHandle(l.billId),
     [opts.flag]: true,
   } as NotificationMessage))
 
@@ -594,7 +595,7 @@ adminRoutes.post('/backfill-stub-actions/:tenantId', async (c) => {
   // one tenant's run freshens central, a subsequent run for a different tenant
   // still notifies that tenant's stubs even though refreshed === 0.
   const notifyBodies = [...notifyIds].map(billId => (
-    { tenantId, billId: `legiscan:${billId}`, stubOnly: true } as NotificationMessage
+    { tenantId, billId: toHandle(billId), stubOnly: true } as NotificationMessage
   ))
 
   let notified = 0
@@ -635,8 +636,8 @@ adminRoutes.post('/update-bill-match-types/:tenantId', guardCallerTenantParam(),
   for (let i = 0; i < body.updates.length; i += BATCH) {
     const chunk = body.updates.slice(i, i + BATCH)
     const stmts = chunk.flatMap(({ externalId, matchType }) => {
-      const billId = parseInt(externalId.replace('legiscan:', ''), 10)
-      if (isNaN(billId)) return []
+      const billId = parseHandle(externalId)
+      if (billId === null) return []
       if (matchType === null) {
         // Only demote from 'keyword' — never touch 'manual' rows
         return [db.update(schema.billTenants)

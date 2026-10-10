@@ -5,7 +5,8 @@ import { getDb } from '../../db/client'
 import { bills, officialPositions, feedEvents, billCustomFieldValues, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
-import { backfillCalendar, parseLegiScanId } from '../../lib/calendarBackfill'
+import { backfillCalendar } from '../../lib/calendarBackfill'
+import { isHandle, parseHandle } from '../../../../shared/billHandle'
 import { nowDb } from '../../lib/dbTime'
 import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
@@ -168,14 +169,14 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           ext.push(...rows)
         }
         const legiscanIds = ext
-          .map(r => parseLegiScanId(r.externalId))
+          .map(r => parseHandle(r.externalId))
           .filter((n): n is number => n !== null)
         // Backfill hearings for the newly-prioritized bills (fire-and-forget).
         c.executionCtx.waitUntil(backfillCalendar(c.env, legiscanIds))
         // Promote null-match LegiScan stubs to full tracking + AI in one central call.
         const promoteIds = ext
           .filter(r => r.matchType === null)
-          .map(r => parseLegiScanId(r.externalId))
+          .map(r => parseHandle(r.externalId))
           .filter((n): n is number => n !== null)
         // As in draftRoutes: promotion runs AI, which a demo must never do.
         if (promoteIds.length > 0 && c.env.DEMO_MODE !== 'true') {
@@ -507,7 +508,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       for (const row of billRows) {
         const key = row.priority ?? 'null'
         priorityCounts[key] = (priorityCounts[key] ?? 0) + 1
-        if (row.matchType === null && parseLegiScanId(row.externalId) !== null) nullMatchCount++
+        if (row.matchType === null && isHandle(row.externalId)) nullMatchCount++
         if (row.matchType === 'keyword' && row.newMatchAt && !row.triagedAt && (row.relevanceScore ?? 0) >= newMatchMin) newMatchCount++
       }
 
