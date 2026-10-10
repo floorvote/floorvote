@@ -1,5 +1,5 @@
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { getProvider, type CentralMeasure, type MeasureRef, type Provider } from '../providers'
+import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureRef, type Provider } from '../providers'
 import {
   bills, billHistory, billSponsors, billTexts, billSupplements, billAmendments,
   billSasts, billSubjects, billReferrals, billCalendar, billTenants,
@@ -9,7 +9,6 @@ import { detectChanges, detectCalendarChanges, calendarIdentityKey, type BillSna
 import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
 import { personRow } from '../lib/people'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
-import { billProviderId } from '../lib/providerRouting'
 import { loadVoteDataset, VOTE_DATASET_DEFER_SECONDS, VOTE_DATASET_RETRY_SECONDS } from '../cron/vote-datasets'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -58,7 +57,11 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   const forceMetadata = msg.forceMetadata ?? false
   const forceAI = msg.forceAI ?? false
   const interactive = msg.interactive ?? false
-  const provider = getProvider(await billProviderId(db, msg.billId))
+  // The provider that wrote the bill, by its row's `source` column, and its
+  // session, in one read. A bill central has no row for is the default's.
+  const known = await db.select({ source: bills.source, sessionId: bills.sessionId })
+    .from(bills).where(eq(bills.billId, msg.billId)).get()
+  const provider = getProvider(known?.source ?? DEFAULT_PROVIDER_ID)
 
   if (msg.skipFetch) {
     // Data already in DB from bulk seed — skip the provider's API, just download text and notify
@@ -86,7 +89,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
     return
   }
 
-  const measure = await fetchMeasure(msg.billId, provider, env, db)
+  const measure = await fetchMeasure(msg.billId, known?.sessionId ?? null, provider, env, db)
   await ingestMeasure(measure, provider, env, db, {
     forceMetadata, forceAI, interactive,
     forceTextRefetch: msg.forceTextRefetch ?? false,
@@ -98,7 +101,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
  * record core stored for the bill, and the bill's session. When the provider
  * also fetched a details response, record when, for its details refresh.
  */
-async function fetchMeasure(billId: number, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
+async function fetchMeasure(billId: number, sessionId: number | null, provider: Provider, env: Env, db: Db): Promise<CentralMeasure> {
   let ref: MeasureRef
   if (provider.snapshot) {
     const row = await db.select().from(sourceRecords)
@@ -116,8 +119,7 @@ async function fetchMeasure(billId: number, provider: Provider, env: Env, db: Db
       } : undefined,
     }
   } else {
-    const known = await db.select({ sessionId: bills.sessionId }).from(bills).where(eq(bills.billId, billId)).get()
-    ref = { billId, sessionId: known?.sessionId ?? null }
+    ref = { billId, sessionId }
   }
 
   const fetched = await provider.fetchMeasure(ref, providerContext(provider, env, db))
