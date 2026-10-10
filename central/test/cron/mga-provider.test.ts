@@ -150,9 +150,86 @@ describe('Maryland from the General Assembly', () => {
     expect(calls.every(c => c.url.startsWith('https://mgaleg.maryland.gov/'))).toBe(true)
 
     const bill = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
-    expect(bill).toMatchObject({ number: 'HB1', state: 'MD', status: 'Passed the House', statusStage: 'passed_one_chamber', statusRank: 301 })
+    expect(bill).toMatchObject({
+      number: 'HB1', state: 'MD', status: 'Passed the House', statusStage: 'passed_one_chamber', statusRank: 301, billType: 'B',
+      stateUrl: 'https://mgaleg.maryland.gov/mgawebsite/Legislation/Details/hb0001?ys=2026RS',
+    })
+    expect(bill.sponsors[0]).toMatchObject({ name: 'Crosby', primary: true })
+    expect(bill.sponsors).toHaveLength(26)
+    expect(bill.relatedBills).toEqual([expect.objectContaining({ identifier: 'SB2', sastBillId: await billId('SB2') })])
+
+    // The fiscal and policy note is a supplement, and the readers are texts.
+    expect(bill.supplements).toEqual([expect.objectContaining({
+      type: 'Fiscal Note', title: 'Fiscal and Policy Note',
+      stateLink: 'https://mgaleg.maryland.gov/2026RS/fnotes/bil_0001/hb0001.pdf',
+    })])
+    expect(bill.texts.map((t: any) => t.note)).toEqual(['First Reader', 'Third Reader'])
+
+    // Subjects, without the printed index's cross-references.
+    expect(bill.subjects).toEqual(expect.arrayContaining(['Utility Regulation', 'Contracts', 'Public Service Commission']))
+    expect(bill.subjects.some((s: string) => s.includes('see also'))).toBe(false)
+
+    // The extras panel, titled with the provider's name, in vocabulary order.
+    expect(bill.extras).toEqual({ providerName: 'Maryland General Assembly', fields: [
+      expect.objectContaining({ key: 'statutes', label: 'Statutes affected', display: 'text', value: 'Public Utilities § 4-504' }),
+    ] })
+
     const full = sentToTenant(run).filter((m: any) => !m.stubOnly).map((m: any) => m.billId)
-    expect(full).toEqual(expect.arrayContaining([toHandle(await billId('HB1'))]))
+    expect(full).toEqual(expect.arrayContaining([toHandle(await billId('HB1')), toHandle(await billId('SB2')), toHandle(await billId('HB2'))]))
+  })
+
+  it('shows an enacted bill\'s chapter, and the emergency and constitutional amendment flags when set', async () => {
+    const records = sample()
+    const hb14 = records.find(r => r.BillNumber === 'HB0014')!
+    hb14.Title = `${hb14.Title} (tax)`
+    hb14.EmergencyBill = true
+    hb14.ConstitutionalAmendment = true
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+
+    const bill = await getJson(`/bills/${toHandle(await billId('HB14'))}`)
+    expect(bill).toMatchObject({ status: 'Approved by the Governor', statusStage: 'enacted', statusRank: 702 })
+    expect(bill.extras.fields.map((f: any) => [f.label, f.value])).toEqual([
+      ['Chapter', 'Chapter 775 of 2026'],
+      ['Statutes affected', 'Education § 7-424'],
+      ['Emergency bill', 'Yes'],
+      ['Constitutional amendment', 'Yes'],
+      ['Between the chambers', 'Conference Committee Appointed'],
+    ])
+
+    // Maryland publishes sponsors by name only. Each name gets one id from the id table, on every bill it sponsors.
+    const foley = bill.sponsors[0]
+    expect(foley).toMatchObject({ name: 'Foley', primary: true })
+    expect(Number(foley.personId)).toBeGreaterThan(3_000_000_000)
+    const hb1 = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    expect(hb1.sponsors.find((s: any) => s.name === 'Foley').personId).toBe(foley.personId)
+  })
+
+  it('maps every record to a bill type and status Maryland\'s labels list, and a House resolution to a resolution', async () => {
+    const records = sample()
+    records.push({ ...records.find(r => r.BillNumber === 'HJ0005')!, BillNumber: 'HR0001', CrossfileBillNumber: '', ChapterNumber: '',
+      PassedByMGA: false, Status: 'In the House - Adopted', ThirdReadingActionHouseOfOrigin: 'Adopted', ThirdReadingDateHouseOfOrigin: '2026-02-01' })
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    // Ingest the records no keyword matched too.
+    const db = drizzle(env.DB, { schema })
+    const messages = (await db.select({ id: schema.bills.billId }).from(schema.bills).all())
+      .map(r => ({ body: { billId: r.id }, ack: vi.fn(), retry: vi.fn() }))
+    await processIngestorQueue({ messages } as any, makeEnv().env, db)
+    for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
+
+    const labels = await getJson('/bills/labels?state=MD')
+    const types = new Set(labels.billTypes.map((t: any) => t.value.toLowerCase()))
+    const statuses = new Set(labels.statuses.map((s: any) => s.label))
+    for (const r of records) {
+      const number = String(r.BillNumber).replace(/^([A-Z]+)0*/, '$1')
+      const bill = await getJson(`/bills/${toHandle(await billId(number))}`)
+      expect(types.has(String(bill.billType).toLowerCase()), `${number}: ${bill.billType}`).toBe(true)
+      expect(statuses.has(bill.status), `${number}: ${bill.status}`).toBe(true)
+    }
+    expect(await getJson(`/bills/${toHandle(await billId('HR1'))}`)).toMatchObject({ billType: 'R', status: 'Adopted', supplements: [] })
   })
 })
 

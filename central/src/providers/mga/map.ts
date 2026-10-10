@@ -72,10 +72,12 @@ export function mgaStatus(r: MgaRecord): number {
   }
   if (/Unfavorable Report/i.test(s)) return MGA_STATUS.unfavorableReport
   if (/Postpone Indefinitely.*Adopted/i.test(s)) return MGA_STATUS.postponed
-  if (r.PassedByMGA) return MGA_STATUS.passedGeneralAssembly
   // A House or Senate resolution is done once its own chamber adopts it.
   const readings = [r.SecondReadingActionHouseOfOrigin, r.ThirdReadingActionHouseOfOrigin]
-  if (mgaBillType(r.BillNumber).type === 'R' && readings.some(a => /^Adopted/i.test(a ?? ''))) return MGA_STATUS.adopted
+  if (mgaBillType(r.BillNumber).type === 'R' && (r.PassedByMGA || readings.some(a => /^Adopted/i.test(a ?? '')))) {
+    return MGA_STATUS.adopted
+  }
+  if (r.PassedByMGA) return MGA_STATUS.passedGeneralAssembly
   if ([r.ThirdReadingActionHouseOfOrigin, r.ThirdReadingActionOppositeHouse].some(a => /^Failed/i.test(a ?? ''))) {
     return MGA_STATUS.failed
   }
@@ -213,14 +215,84 @@ export interface MgaIds {
   person(name: string): number
   /** Central document id, by key (see mgaDocKeys). */
   doc(key: string): number
+  /** Central subject id, by key (see mgaSubjectKeys). */
+  subject(key: string): number
 }
 
 /** Every document key buildMgaBill asks MgaIds for. */
 export function mgaDocKeys(sessionCode: string, r: MgaRecord): string[] {
   return [
     ...mgaTextVersions(r).map(v => `${sessionCode}/${r.BillNumber}${v}`),
-    `${sessionCode}/${r.BillNumber}/fiscal-note`,
+    ...(hasFiscalNote(r) ? [`${sessionCode}/${r.BillNumber}/fiscal-note`] : []),
   ]
+}
+
+/**
+ * The Department of Legislative Services writes a fiscal and policy note for
+ * every bill and joint resolution once it is introduced, and none for a
+ * resolution of one chamber.
+ */
+function hasFiscalNote(r: MgaRecord): boolean {
+  return !!r.FirstReadingDateHouseOfOrigin && mgaBillType(r.BillNumber).type !== 'R'
+}
+
+/**
+ * The MGA's subjects: broad ones ("Utility Regulation") and narrow index
+ * terms, each with a short code. Keyed by kind and code, since the two lists
+ * are separate code sets.
+ */
+function subjectList(r: MgaRecord): { key: string; name: string }[] {
+  return [
+    ...(r.BroadSubjects ?? []).map(s => ({ key: `broad/${s.Code}`, name: s.Name })),
+    ...(r.NarrowSubjects ?? []).map(s => ({ key: `narrow/${s.Code}`, name: s.Name })),
+  ]
+}
+
+/** Every subject key buildMgaBill asks MgaIds for. */
+export function mgaSubjectKeys(r: MgaRecord): string[] {
+  return subjectList(r).map(s => s.key)
+}
+
+/**
+ * A subject as members read it. Narrow index terms carry cross-references
+ * for the printed index ("Contracts -see also- Procurement", "Work, Labor,
+ * and Employment -see also- JobTrn; Leave; etc."), which aren't part of the
+ * subject.
+ */
+function subjectName(name: string): string {
+  return name.replace(/\s*-see also-.*$/i, '').trim()
+}
+
+/** "CH0775" → "Chapter 775 of 2026", "JR0003" → "Joint Resolution 3 of 2026". */
+function chapterExtra(chapter: string, year: number): string | null {
+  const m = /^(CH|JR)0*(\d+)$/.exec(chapter.trim().toUpperCase())
+  if (!m) return chapter.trim() || null
+  return `${m[1] === 'CH' ? 'Chapter' : 'Joint Resolution'} ${m[2]} of ${year}`
+}
+
+/**
+ * The statutes a bill affects, one article a line: "Public Utilities
+ * § 4-504", or "Education §§ 7-424, 7-425".
+ */
+function statutesExtra(statutes: MgaRecord['Statutes'] | null): string | null {
+  const lines = (statutes ?? []).map(st => {
+    const sections = (st.Sections ?? []).map(s => s.Section?.trim()).filter(Boolean)
+    const title = st.Article?.Title?.trim() ?? ''
+    if (sections.length === 0) return title
+    return `${title} ${sections.length === 1 ? '§' : '§§'} ${sections.join(', ')}`.trim()
+  }).filter(Boolean)
+  return lines.length > 0 ? lines.join('\n') : null
+}
+
+/** The extras (vocabulary.ts) for one record. A flag shows only when it's set. */
+export function mgaExtras(r: MgaRecord, year: number): NonNullable<CentralMeasure['extras']> {
+  return {
+    chapter: chapterExtra(r.ChapterNumber ?? '', year),
+    statutes: statutesExtra(r.Statutes),
+    emergency: r.EmergencyBill ? 'Yes' : null,
+    constitutionalAmendment: r.ConstitutionalAmendment ? 'Yes' : null,
+    chamberInteraction: r.InteractionBetweenChambers?.trim() || null,
+  }
 }
 
 /**
@@ -270,8 +342,7 @@ export async function buildMgaBill(
     }
   })
 
-  // Every bill and joint resolution gets a fiscal and policy note.
-  const supplements: CentralMeasure['supplements'] = r.FirstReadingDateHouseOfOrigin ? [{
+  const supplements: CentralMeasure['supplements'] = hasFiscalNote(r) && r.FirstReadingDateHouseOfOrigin ? [{
     supplement_id: ids.doc(`${sessionCode}/${r.BillNumber}/fiscal-note`), date: r.FirstReadingDateHouseOfOrigin,
     type_id: 1, type: 'Fiscal Note', title: 'Fiscal and Policy Note', description: '',
     mime: 'application/pdf', url: '', state_link: paths.fiscalNote, supplement_size: 0, supplement_hash: '',
@@ -322,12 +393,12 @@ export async function buildMgaBill(
     ? [{ type_id: 1, type: 'Cross-filed', sast_bill_number: mgaDisplayNumber(crossfile), sast_bill_id: crossfileId }]
     : []
 
-  const subjectCodes = [...(r.BroadSubjects ?? []), ...(r.NarrowSubjects ?? [])]
-  const subjects: CentralMeasure['subjects'] = await Promise.all(subjectCodes.map(async s => ({
-    // Subjects carry a short code, not a number; this keeps the id stable per code.
-    subject_id: parseInt((await sha256Hex(`mga-subject|${s.Code}`)).slice(0, 7), 16),
-    subject_name: s.Name,
-  })))
+  // Broad subjects first. A narrow term that reads the same as one listed already is left out.
+  const subjects: CentralMeasure['subjects'] = []
+  for (const s of subjectList(r)) {
+    const name = subjectName(s.name)
+    if (name && !subjects.some(x => x.subject_name === name)) subjects.push({ subject_id: ids.subject(s.key), subject_name: name })
+  }
 
   const historyOut = history.map(h => ({ date: h.date, action: h.action, chamber: h.chamber, chamber_id: 0, importance: h.importance }))
 
@@ -365,5 +436,6 @@ export async function buildMgaBill(
     calendar,
     amendments: [],
     supplements,
+    extras: mgaExtras(r, session.year_start),
   }
 }

@@ -2,7 +2,7 @@ import type { ProviderVocabulary } from '../sdk'
 
 /**
  * Maryland's statuses (the codes `mgaStatus` derives in map.ts), bill types,
- * and calendar event types.
+ * calendar event types, and extras.
  *
  * The session file has no status codes of its own: its Status field is the
  * last action as free text. So the codes are Maryland's own, MGA_STATUS_BASE
@@ -96,5 +96,28 @@ export const vocabulary: ProviderVocabulary = {
 
   eventTypes: {
     1: { label: 'Hearing', explainer: 'A committee hearing on the bill, where the public can testify or submit written testimony.' },
+  },
+
+  extras: {
+    chapter: {
+      label: 'Chapter', display: 'identifier',
+      explainer: 'Where the act is printed in the session laws (the Laws of Maryland) for its year, or the joint resolution\'s number.',
+    },
+    statutes: {
+      label: 'Statutes affected', display: 'text',
+      explainer: 'The articles and sections of the Annotated Code of Maryland the bill adds, amends, or repeals.',
+    },
+    emergency: {
+      label: 'Emergency bill', display: 'text',
+      explainer: 'Takes effect as soon as the Governor signs it, rather than on a later date. Passing it takes three-fifths of each chamber.',
+    },
+    constitutionalAmendment: {
+      label: 'Constitutional amendment', display: 'text',
+      explainer: 'Proposes an amendment to the Maryland Constitution. It needs three-fifths of each chamber, skips the Governor, and goes to the voters at the next general election.',
+    },
+    chamberInteraction: {
+      label: 'Between the chambers', display: 'text',
+      explainer: 'The latest step in settling differences between the House and Senate versions, such as a conference committee.',
+    },
   },
 }

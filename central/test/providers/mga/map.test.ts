@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  buildMgaBill, MGA_STATUS, mgaBillType, mgaDisplayNumber, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
+  buildMgaBill, MGA_STATUS, mgaBillType, mgaDisplayNumber, mgaDocKeys, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
 import { vocabulary } from '../../../src/providers/mga/vocabulary'
+import { recordInventory } from '../../../src/providers/mga/inventory'
+import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 
 // Real records from https://mgaleg.maryland.gov/2026RS/misc/billsmasterlist/legislation.json
 const sample = new Map((JSON.parse(sampleRaw) as MgaRecord[]).map(r => [r.BillNumber, r]))
@@ -18,7 +20,24 @@ const ids: MgaIds = {
   bill: n => (n === 'SB0002' ? 3000000102 : undefined),
   person: counter(3000000200),
   doc: counter(3000000300),
+  subject: counter(3000000400),
 }
+
+describe('the MGA field inventory', () => {
+  it('lists every field of the recorded records', () => {
+    expect(inventoryProblems(recordInventory, [...sample.values()], vocabulary)).toEqual([])
+  })
+
+  it('fails when the MGA sends a field nobody has decided about', () => {
+    const r = { ...rec('HB0001'), FiscalNoteUrl: 'https://mgaleg.maryland.gov/2026RS/fnotes/bil_0001/hb0001.pdf' }
+    expect(inventoryProblems(recordInventory, [r], vocabulary)).toEqual(['not in the inventory: FiscalNoteUrl'])
+  })
+
+  it('feeds every extra but the chapter, which the status reads too', () => {
+    // ChapterNumber is listed as mapped, since it also decides the status.
+    expect(unfedExtras(vocabulary, recordInventory)).toEqual(['chapter'])
+  })
+})
 
 describe('mgaStatus', () => {
   it('reads the stage from the structured fields, not the free-text Status', () => {
@@ -180,6 +199,53 @@ describe('buildMgaBill', () => {
     expect(mgaBillType('SB0002')).toEqual({ type: 'B', typeId: '1' })
     const hr = { ...rec('HJ0005'), BillNumber: 'HR0001', CrossfileBillNumber: '', ChapterNumber: '' }
     expect((await buildMgaBill(hr, '2026RS', 1, 'h', SESSION, ids)).bill_type).toBe('R')
+  })
+
+  it('sets the chapter, statutes, flags, and the step between chambers as extras', async () => {
+    const enacted = await buildMgaBill(rec('HB0014'), '2026RS', 2, 'h', SESSION, ids)
+    expect(enacted.extras).toEqual({
+      chapter: 'Chapter 775 of 2026',
+      statutes: 'Education § 7-424',
+      emergency: null,
+      constitutionalAmendment: null,
+      chamberInteraction: 'Conference Committee Appointed',
+    })
+    expect((await buildMgaBill(rec('HJ0005'), '2026RS', 1, 'h', SESSION, ids)).extras)
+      .toMatchObject({ chapter: 'Joint Resolution 3 of 2026', statutes: null })
+
+    const r = rec('HB0001')
+    r.EmergencyBill = true
+    r.ConstitutionalAmendment = true
+    r.Statutes = [
+      { Article: { Code: 'gpu', Title: 'Public Utilities' }, Sections: [{ Section: '4-504' }, { Section: '7-306' }] },
+      { Article: { Code: 'gtg', Title: 'Tax - General' }, Sections: [{ Section: '10-207' }] },
+    ]
+    expect((await buildMgaBill(r, '2026RS', 1, 'h', SESSION, ids)).extras).toMatchObject({
+      statutes: 'Public Utilities §§ 4-504, 7-306\nTax - General § 10-207',
+      emergency: 'Yes',
+      constitutionalAmendment: 'Yes',
+      chamberInteraction: null,
+    })
+  })
+
+  it('names subjects without the index\'s cross-references, broad ones first, each once', async () => {
+    const b = await buildMgaBill(rec('HB0001'), '2026RS', 1, 'h', SESSION, ids)
+    expect(b.subjects.map(s => s.subject_name)).toEqual([
+      'Utility Regulation', 'Committees and Commissions', 'Contracts', 'Plans and Proposals', 'Publications',
+      'Public Service Commission', 'Salaries and Compensation', 'Standards and Best Practices', 'Time', 'Utilities',
+      'Work, Labor, and Employment',
+    ])
+    // Ids come from the id table, by kind and code.
+    expect(b.subjects[0].subject_id).toBe(ids.subject('broad/c5'))
+    expect(b.subjects[1].subject_id).toBe(ids.subject('narrow/commitco'))
+  })
+
+  it('gives a bill and a joint resolution a fiscal and policy note, and a resolution none', async () => {
+    expect((await buildMgaBill(rec('HJ0005'), '2026RS', 1, 'h', SESSION, ids)).supplements.map(s => s.state_link))
+      .toEqual(['https://mgaleg.maryland.gov/2026RS/fnotes/bil_0005/hj0005.pdf'])
+    const hr = { ...rec('HJ0005'), BillNumber: 'HR0001', CrossfileBillNumber: '', ChapterNumber: '' }
+    expect((await buildMgaBill(hr, '2026RS', 1, 'h', SESSION, ids)).supplements).toEqual([])
+    expect(mgaDocKeys('2026RS', hr)).toEqual(['2026RS/HR0001F'])
   })
 
   it('writes MGA numbers the way LegiScan does', () => {
