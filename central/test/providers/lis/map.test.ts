@@ -220,6 +220,14 @@ describe('buildLisBill', () => {
     expect(b.calendar.every(c => c.type === 'Hearing' && /docket$/.test(c.description))).toBe(true)
   })
 
+  it('sends an empty calendar only when the pass read a docket file', async () => {
+    // 2026 read DOCKET.CSV, and HB9 is on no docket: its calendar is empty, which counts as a pull.
+    expect((await buildLisBill(y2026.records.get('HB9')!, '20261', 1, 'h', SESSION, ids())).calendar).toEqual([])
+    // 2027 publishes no docket files yet: the calendar says nothing, so nothing is cancelled.
+    expect(y2027.records.get('HB9')!.dockets).toBeNull()
+    expect((await buildLisBill(y2027.records.get('HB9')!, '20271', 1, 'h', SESSION, ids())).calendar).toBeUndefined()
+  })
+
   it('refers a bill to one committee per chamber and name', async () => {
     const committee = counter(3000000800)
     const rec = record('SB2', {}, [

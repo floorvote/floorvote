@@ -63,8 +63,13 @@ export interface LisRecord {
    * Worker (11,000 votes of up to 100 members each).
    */
   votes: Record<string, string>
-  /** [YYYY-MM-DD, docket description] for each committee or subcommittee docket. */
-  dockets: [string, string][]
+  /**
+   * [YYYY-MM-DD, docket description] for each committee or subcommittee
+   * docket. Null when the pass read neither docket file (a session whose
+   * committees haven't met), so the bill's calendar says nothing rather than
+   * that it is empty.
+   */
+  dockets: [string, string][] | null
 }
 
 export interface LisMember { id: string; name: string; chamber: 'H' | 'S' }
@@ -134,7 +139,7 @@ export class LisAssembler {
   constructor(private readonly sessionCode: string, billsCsv: string) {
     this.fold('bills', () => forEachCsvRecord(billsCsv, b => {
       const id = lisBillNumber(b.Bill_id)
-      if (id) this.records.set(id, { bill: { ...b, Bill_id: id }, history: '', sponsors: [], summaries: [], fiscal: [], votes: {}, dockets: [] })
+      if (id) this.records.set(id, { bill: { ...b, Bill_id: id }, history: '', sponsors: [], summaries: [], fiscal: [], votes: {}, dockets: null })
     }, COLUMNS.bills))
   }
 
@@ -221,9 +226,11 @@ export class LisAssembler {
       case 'dockets':
       case 'subdockets': {
         const chamberName = (no: string) => (no.startsWith('S') ? 'Senate' : 'House')
+        // A docket file was read, so a bill on no docket has an empty calendar.
+        for (const rec of records.values()) rec.dockets ??= []
         return this.fold(file, () => forEachCsvRecord(text, d => {
           const committee = `${chamberName(d.Com_no)} ${this.committees.get(d.Com_no) ?? d.Com_no}`
-          records.get(lisBillNumber(d.Bill_no))?.dockets.push([lisDate(d.Doc_date),
+          records.get(lisBillNumber(d.Bill_no))?.dockets!.push([lisDate(d.Doc_date),
             file === 'subdockets' ? `${committee} subcommittee ${Number(d.Sub_no)} docket` : `${committee} docket`])
         }, COLUMNS[file]))
       }
@@ -541,8 +548,10 @@ export async function buildLisBill(
     mime: 'application/pdf', url: '', state_link: url, supplement_size: 0, supplement_hash: '',
   }))
 
-  const calendar: CentralMeasure['calendar'] = []
-  for (const [date, desc] of rec.dockets) {
+  // Left out when the pass read no docket file: no evidence, rather than an empty calendar.
+  const calendar: CentralMeasure['calendar'] = rec.dockets ? [] : undefined
+  for (const [date, desc] of rec.dockets ?? []) {
+    if (!calendar) break
     if (!date || calendar.some(c => c.date === date && c.description === desc)) continue
     calendar.push({
       type_id: 1, type: 'Hearing', date, time: '', location: '', description: desc,
