@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  buildMgaBill, MGA_STATUS, mgaBillType, mgaDisplayNumber, mgaDocKeys, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
+  assignMgaCommitteeIds, buildMgaBill, MGA_STATUS, mgaCommitteeKey, mgaBillType, mgaDisplayNumber, mgaDocKeys, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
 import { vocabulary } from '../../../src/providers/mga/vocabulary'
@@ -246,6 +246,31 @@ describe('buildMgaBill', () => {
     const hr = { ...rec('HJ0005'), BillNumber: 'HR0001', CrossfileBillNumber: '', ChapterNumber: '' }
     expect((await buildMgaBill(hr, '2026RS', 1, 'h', SESSION, ids)).supplements).toEqual([])
     expect(mgaDocKeys('2026RS', hr)).toEqual(['2026RS/HR0001F'])
+  })
+
+  it('names the committee a bill waits in, and gives each committee one id per chamber', async () => {
+    const mint = counter(3000000500)
+    const idTable = async (_kind: string, keys: readonly string[]) => new Map(keys.map(k => [k, mint(k)]))
+
+    // HB 1 passed the House and had its first reading in the Senate: it waits in the Senate committee.
+    const hb1 = await buildMgaBill(rec('HB0001'), '2026RS', 1, 'h', SESSION, ids)
+    await assignMgaCommitteeIds(hb1, idTable)
+    const senate = mint(mgaCommitteeKey('S', 'Education, Energy, and the Environment'))
+    expect(hb1.committee).toEqual({ committee_id: senate, chamber: 'S', chamber_id: 0, name: 'Education, Energy, and the Environment' })
+    expect(hb1.pending_committee_id).toBe(senate)
+    expect(hb1.referrals.map(r => r.committee_id)).toEqual([mint(mgaCommitteeKey('H', 'Environment and Transportation')), senate])
+
+    // Each chamber has a Rules committee, and they're different committees.
+    expect(mgaCommitteeKey('H', 'Rules and Executive Nominations')).not.toBe(mgaCommitteeKey('S', 'Rules and Executive Nominations'))
+    expect(mgaCommitteeKey('H', ' Ways  and Means')).toBe(mgaCommitteeKey('H', 'ways and means'))
+
+    // SB 2 waits in its own chamber's committee. An enacted bill waits in none.
+    const sb2 = await buildMgaBill(rec('SB0002'), '2026RS', 2, 'h', SESSION, ids)
+    expect(sb2.committee).toMatchObject({ chamber: 'S', name: 'Education, Energy, and the Environment' })
+    const enacted = await buildMgaBill(rec('HB0014'), '2026RS', 3, 'h', SESSION, ids)
+    expect(enacted.committee).toBeNull()
+    await assignMgaCommitteeIds(enacted, idTable)
+    expect(enacted.pending_committee_id).toBe(0)
   })
 
   it('writes MGA numbers the way LegiScan does', () => {

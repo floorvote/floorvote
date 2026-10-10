@@ -313,6 +313,53 @@ function splitSponsor(full: string): { role: string; name: string } {
   return m ? { role: m[1], name: m[2] } : { role: '', name: full }
 }
 
+/**
+ * The committee a bill waits in: its chamber of origin's primary committee
+ * until it is reported or leaves committee, then the second chamber's
+ * primary committee from that chamber's first reading until its report.
+ * Null once no committee holds it.
+ */
+function pendingCommittee(r: MgaRecord, status: number): { chamber: 'H' | 'S'; name: string } | null {
+  const origin = originChamber(r)
+  const name = (n: string | null) => n?.trim() || null
+  if (status === MGA_STATUS.inCommittee) {
+    const n = name(r.CommitteePrimaryOrigin)
+    return n ? { chamber: origin, name: n } : null
+  }
+  if ((status === MGA_STATUS.passedHouse || status === MGA_STATUS.passedSenate) && r.FirstReadingDateOppositeHouse && !r.ReportDateOppositeHouse) {
+    const n = name(r.CommitteePrimaryOpposite)
+    return n ? { chamber: otherChamber(origin), name: n } : null
+  }
+  return null
+}
+
+/**
+ * A committee's native key in central's id table: its chamber and its name,
+ * with case and spacing folded. Both chambers have committees of the same
+ * name (each has a Rules committee), and they're different committees.
+ */
+export function mgaCommitteeKey(chamber: string, name: string): string {
+  return `${chamber}/${name.trim().replace(/\s+/g, ' ').toLowerCase()}`
+}
+
+/**
+ * Give the measure's pending committee and each referral their central
+ * committee ids, minted from central's id table (kind 'committee') by
+ * mgaCommitteeKey, so every bill referred to a committee points at the same
+ * committees row.
+ */
+export async function assignMgaCommitteeIds(
+  measure: CentralMeasure,
+  ids: (kind: string, nativeKeys: readonly string[]) => Promise<Map<string, number>>,
+): Promise<void> {
+  const committee = measure.committee && !Array.isArray(measure.committee) ? measure.committee : null
+  const named = [...measure.referrals, ...(committee ? [committee] : [])]
+  if (named.length === 0) return
+  const byKey = await ids('committee', named.map(c => mgaCommitteeKey(c.chamber, c.name)))
+  for (const c of named) c.committee_id = byKey.get(mgaCommitteeKey(c.chamber, c.name)) ?? 0
+  if (committee) measure.pending_committee_id = committee.committee_id
+}
+
 export interface MgaSession { session_id: number; session_name: string; year_start: number; year_end: number }
 
 export async function buildMgaBill(
@@ -374,6 +421,7 @@ export async function buildMgaBill(
     }
   })
 
+  // Committee ids come from the id table, in fetchMeasure (assignMgaCommitteeIds).
   const referrals: CentralMeasure['referrals'] = []
   const firstOrigin = r.FirstReadingDateHouseOfOrigin
   const firstOpposite = r.FirstReadingDateOppositeHouse
@@ -403,6 +451,7 @@ export async function buildMgaBill(
   const historyOut = history.map(h => ({ date: h.date, action: h.action, chamber: h.chamber, chamber_id: 0, importance: h.importance }))
 
   const current = /^In the Senate/.test(r.Status ?? '') ? 'S' : /^In the House/.test(r.Status ?? '') ? 'H' : origin
+  const pending = pendingCommittee(r, status)
   return {
     bill_id: billId,
     bill_number: number,
@@ -424,7 +473,7 @@ export async function buildMgaBill(
     pending_committee_id: 0,
     session_id: session.session_id,
     session,
-    committee: null,
+    committee: pending ? { committee_id: 0, chamber: pending.chamber, chamber_id: 0, name: pending.name } : null,
     referrals,
     progress: [],
     sponsors,

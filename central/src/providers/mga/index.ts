@@ -1,6 +1,6 @@
 import { getMgaSession, mgaSessionExists, type MgaRecord } from './client'
 import {
-  buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
+  assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
 } from './map'
 import { vocabulary } from './vocabulary'
 import type { Provider, ProviderRecord, SyncSession } from '../sdk'
@@ -88,7 +88,7 @@ export const mga: Provider<'MGA_STATES'> = {
     const crossfile = r.CrossfileBillNumber?.trim()
     const crossfileKey = crossfile ? mgaNativeKey(code, crossfile) : undefined
     const crossfileId = crossfileKey ? (await ctx.ids('bill', [crossfileKey])).get(crossfileKey) : undefined
-    return buildMgaBill(r, code, billId, record.hash, {
+    const measure = await buildMgaBill(r, code, billId, record.hash, {
       session_id: sessionId,
       session_name: session?.sessionName ?? sessionName(code),
       year_start: session?.yearStart ?? year,
@@ -99,6 +99,8 @@ export const mga: Provider<'MGA_STATES'> = {
       doc: key => docs.get(key)!,
       subject: key => subjects.get(key)!,
     })
+    await assignMgaCommitteeIds(measure, ctx.ids)
+    return measure
   },
 
   vocabulary,
