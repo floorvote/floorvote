@@ -38,6 +38,7 @@ import { CARD } from '../lib/cardStyle'
 import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
+import { dcTypeExplainer, dcStatusExplainer, DC_LEGISLATION_GUIDE_URL } from '../../../shared/dcLegislation'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
 import { ChangeHistoryTooltip, type ChangeRecord } from '../components/ChangeHistoryTooltip'
 import { RichTextEditor } from '../components/RichTextEditor'
@@ -1265,7 +1266,12 @@ export function BillDetail() {
               return `https://${instanceDomain}${window.location.pathname}`
             })()}
           />
-          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />}
+          {bill.isDraft ? <DraftChip /> : (() => {
+            const chip = <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+            // DC statuses (from the Council's LIMS) carry timing that matters: explain them.
+            const explainer = bill.state === 'DC' ? dcStatusExplainer(decodeStatus(bill.status)) : null
+            return explainer ? <HoverTooltip text={explainer} maxWidth={320}>{chip}</HoverTooltip> : chip
+          })()}
           {bill.session && (
             <SessionChip
               session={bill.session}
@@ -1565,7 +1571,20 @@ export function BillDetail() {
 
           // Collect all display items, then render with · separators only between items
           const metaItems: React.ReactNode[] = []
-          if (bodyLabel) metaItems.push(<span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+          // DC legislation types (emergency, temporary, permanent, ...) get a plain-language
+          // explainer, since the difference decides how long an act lasts and whether
+          // Congress reviews it.
+          const typeExplainer = bill.state === 'DC' ? dcTypeExplainer(bill.billType) : null
+          if (bodyLabel && typeExplainer) metaItems.push(
+            <span key="body" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              {bodyLabel}
+              <InfoTooltip text={typeExplainer} maxWidth={340} align="center" label={`What "${bill.billType}" means`} />
+            </span>
+          )
+          else if (bodyLabel) metaItems.push(<span key="body" style={{ whiteSpace: 'nowrap' }}>{bodyLabel}</span>)
+          if (typeExplainer) metaItems.push(
+            <a key="dc-guide" href={DC_LEGISLATION_GUIDE_URL} target="_blank" rel="noopener noreferrer" className="blue-link" style={{ whiteSpace: 'nowrap' }}>How DC legislation works</a>
+          )
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
           grouped.forEach((related, type) => {
             const label = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
