@@ -35,10 +35,12 @@ describe('the provider migrations', () => {
     await setupDb(before0025)
     const B0400 = limsBillId('B26-0400')!
     const CP26 = limsSessionId(26)
+    const CP25 = limsSessionId(25)
     const GRAY = limsPeopleId(150)
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_tag, session_title, session_name)
-        VALUES (?, 51, 'DC', 2025, 2026, 'CP26', 'Council Period 26', 'Council Period 26'), (2154, 39, 'RI', 2026, 2026, '', '2026', '2026')`).bind(CP26),
+        VALUES (?, 51, 'DC', 2025, 2026, 'CP26', 'Council Period 26', 'Council Period 26'), (?, 51, 'DC', 2023, 2024, '', 'Council Period 25', 'Council Period 25'),
+          (2154, 39, 'RI', 2026, 2026, '', '2026', '2026')`).bind(CP26, CP25),
       env.DB.prepare(`INSERT INTO bills (bill_id, change_hash, session_id, state, state_id, bill_number, title)
         VALUES (?, 'h', ?, 'DC', 51, 'B26-0400', 'DC bill'), (9001, 'h', 2154, 'RI', 39, 'H1', 'RI bill')`).bind(B0400, CP26),
       env.DB.prepare(`INSERT INTO people (people_id, name) VALUES (?, 'Vincent C. Gray'), (5, 'Ann Able')`).bind(GRAY),
@@ -51,7 +53,10 @@ describe('the provider migrations', () => {
     const providers = async (sql: string) =>
       Object.fromEntries((await env.DB.prepare(sql).all<{ id: number; provider: string }>()).results.map(r => [r.id, r.provider]))
     expect(await providers('SELECT bill_id AS id, provider FROM bills')).toEqual({ [B0400]: 'lims', 9001: 'legiscan' })
-    expect(await providers('SELECT session_id AS id, provider FROM sessions')).toEqual({ [CP26]: 'lims', 2154: 'legiscan' })
+    expect(await providers('SELECT session_id AS id, provider FROM sessions')).toEqual({ [CP26]: 'lims', [CP25]: 'lims', 2154: 'legiscan' })
+    // A LIMS session without its tag gets the one its id encodes, and nothing else changes.
+    const tags = await env.DB.prepare('SELECT session_id, session_tag FROM sessions').all<{ session_id: number; session_tag: string }>()
+    expect(Object.fromEntries(tags.results.map(r => [r.session_id, r.session_tag]))).toEqual({ [CP26]: 'CP26', [CP25]: 'CP25', 2154: '' })
     expect(await providers('SELECT people_id AS id, provider FROM people')).toEqual({ [GRAY]: 'lims', 5: 'legiscan' })
 
     expect((await env.DB.prepare('SELECT * FROM provider_records').all()).results).toEqual([expect.objectContaining({
