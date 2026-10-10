@@ -1,13 +1,14 @@
 /**
- * Id ranges for records sourced from the DC Council LIMS API.
+ * Id ranges for records read from the DC Council LIMS API.
  *
- * LIMS rows live in the same central tables as LegiScan rows, so tenants keep
- * addressing every bill as `legiscan:<int>` and nothing downstream changes. To
- * keep the two sources from colliding, LIMS ids are offset into a range LegiScan
- * never reaches (its bill, doc and session ids are in the low millions at most).
+ * LIMS rows live in the same central tables as LegiScan rows, so instances
+ * address every bill by the same kind of handle (`toHandle` in core) and
+ * nothing downstream changes. To keep the two providers from colliding, LIMS
+ * ids are offset into a range LegiScan never reaches (its bill, doc and
+ * session ids are in the low millions at most).
  *
- * Which source a row came from is recorded in its `source` column (see
- * src/providers); the ranges only keep LIMS ids from colliding with LegiScan's.
+ * The ranges only mint ids. Which provider a row came from is recorded in its
+ * `provider` column, and core routes by that, never by range.
  *
  *   bill_id      = LIMS_BILL_ID_BASE + typeCode*1e7 + councilPeriod*1e5 + seq
  *                  (computed from the measure number, e.g. B26-0400 -> 1_012_600_400,

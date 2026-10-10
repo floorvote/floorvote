@@ -18,7 +18,7 @@ export type Env = {
    * from LIMS instead of LegiScan (src/providers/lims). Unset → LIMS is off.
    */
   LIMS_API_KEY?: string
-  /** Comma-separated states sourced from LIMS rather than LegiScan. Only "DC" is supported. */
+  /** Comma-separated states read from LIMS rather than LegiScan. Only "DC" is supported. */
   LIMS_STATES?: string
   /**
    * Comma-separated LIMS category ids to sync (GET LegislationCategories).

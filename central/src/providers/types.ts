@@ -95,7 +95,7 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
 
   // Snapshot providers. A feed with no modified-since filter and no cheap
   // change list is read as a snapshot: every record of a session, raw, with a
-  // hash. Core's snapshot sync (cron/sync-sources.ts) stores each changed
+  // hash. Core's snapshot sync (cron/sync-snapshots.ts) stores each changed
   // record and hands it back, to `toEntry` for the full pass and to
   // `fetchMeasure` for the ingest. Its sessions refresh through `listSessions`
   // once a day, and whenever none is due to sync.
@@ -321,11 +321,11 @@ export interface SyncEntry {
   last_action_date?: string
   url?: string
   /**
-   * The source's own page for the bill. LegiScan masterlists don't carry it
+   * The provider's own page for the bill. LegiScan masterlists don't carry it
    * (getBill fills it later); LIMS sets it so monitor stubs link out too.
    */
   state_link?: string
-  /** Bill type label, when the source's list carries one (LIMS: "Emergency Bill", "Permanent Bill", ...). */
+  /** Bill type label, when the provider's list carries one (LIMS: "Emergency Bill", "Permanent Bill", ...). */
   bill_type?: string
 }
 
@@ -420,7 +420,7 @@ interface MeasureVote {
   state_link: string
   /**
    * Per-member votes. getBill never returns these (LegiScan needs a getRollCall
-   * per vote); sources that include them inline, such as DC LIMS, set this and
+   * per vote); providers that include them inline, such as DC LIMS, set this and
    * the ingestor writes roll_call_votes. vote_id follows LegiScan: 1 Yea, 2 Nay,
    * 3 NV, 4 Absent.
    */

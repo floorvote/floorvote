@@ -44,7 +44,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
 
   const trackedStates = await loadTrackedStates(db, activeTenants)
 
-  // States read from another provider are synced by that provider (cron/sync-sources.ts).
+  // States read from another provider are synced by that provider (cron/sync-snapshots.ts).
   for (const state of directStates(env)) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return
@@ -81,7 +81,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
     rawSyncHoursEt: sessions.rawSyncHoursEt,
   })
     .from(sessions)
-    .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.source, 'legiscan')))
+    .where(and(inArray(sessions.state, [...trackedStates]), eq(sessions.provider, 'legiscan')))
     .all()
 
   const tenantsByState = new Map<string, { tenantId: string; stateCoverage: string; queueId: string | null }[]>()
@@ -182,8 +182,8 @@ async function runFullPass(
  * Returns the bill ids it queued for the ingestor.
  */
 export async function applyMasterList(
-  /** `source`, the provider's id, is written to new bill rows; LegiScan when absent. */
-  session: { sessionId: number; state: string; sessionName: string; source?: string },
+  /** `provider`, the provider's id, is written to new bill rows; LegiScan when absent. */
+  session: { sessionId: number; state: string; sessionName: string; provider?: string },
   list: SyncEntry[],
   coveringTenants: { tenantId: string; stateCoverage: string; queueId: string | null }[],
   env: Env,
@@ -265,7 +265,7 @@ export async function applyMasterList(
           changeHash: entry.change_hash,
           sessionId: session.sessionId,
           state: session.state,
-          source: session.source ?? 'legiscan',
+          provider: session.provider ?? 'legiscan',
           stateId: 0,
           billNumber: entry.number,
           title: entry.title ?? entry.number,

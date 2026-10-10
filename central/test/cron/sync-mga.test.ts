@@ -22,11 +22,11 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runSourceSync, refreshSourceSessions } from '../../src/cron/sync-sources'
+import { runSnapshotSync, refreshProviderSessions } from '../../src/cron/sync-snapshots'
 import { providerContext } from '../../src/lib/providerContext'
 import { runSync } from '../../src/cron/sync'
 import { processIngestorQueue } from '../../src/queue/processor'
-import { mga as mgaSource } from '../../src/providers/mga'
+import { mga as mgaProvider } from '../../src/providers/mga'
 import * as mga from '../../src/providers/mga/client'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
@@ -74,23 +74,23 @@ beforeEach(async () => {
 describe('Maryland session refresh', () => {
   it('makes a session the MGA stops listing prior, and leaves sessions alone when it lists none', async () => {
     const db = drizzle(env.DB, { schema })
-    const ctx = providerContext(mgaSource, makeEnv().env, db)
+    const ctx = providerContext(mgaProvider, makeEnv().env, db)
     const S1 = `${THIS_YEAR}S1`
     // A LegiScan Maryland session, which the MGA refresh must never touch.
     await db.insert(schema.sessions).values({ sessionId: 2100, state: 'MD', stateId: 20, yearStart: THIS_YEAR, yearEnd: THIS_YEAR, sessionTitle: 'LS', sessionName: 'LS' })
     const prior = async () => Object.fromEntries((await db.select().from(schema.sessions).all())
-      .map(s => [s.source === 'mga' ? s.sessionTag : `${s.source}:${s.sessionId}`, s.prior]))
+      .map(s => [s.provider === 'mga' ? s.sessionTag : `${s.provider}:${s.sessionId}`, s.prior]))
 
     vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE || code === S1)
-    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
     expect(await prior()).toEqual({ [CODE]: 0, [S1]: 0, 'legiscan:2100': 0 })
 
     vi.mocked(mga.mgaSessionExists).mockImplementation(async code => code === CODE)
-    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
     expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
 
     vi.mocked(mga.mgaSessionExists).mockResolvedValue(false)
-    await refreshSourceSessions(mgaSource, 'MD', ctx, db)
+    await refreshProviderSessions(mgaProvider, 'MD', ctx, db)
     expect(await prior()).toEqual({ [CODE]: 0, [S1]: 1, 'legiscan:2100': 0 })
   })
 })
@@ -98,23 +98,23 @@ describe('Maryland session refresh', () => {
 describe('the Maryland sync', () => {
   it('does nothing unless MGA_STATES names MD', async () => {
     const db = drizzle(env.DB, { schema })
-    expect(await runSourceSync(mgaSource, makeEnv({ MGA_STATES: '' }).env, db)).toEqual([])
+    expect(await runSnapshotSync(mgaProvider, makeEnv({ MGA_STATES: '' }).env, db)).toEqual([])
     expect(mga.getMgaSession).not.toHaveBeenCalled()
   })
 
   it('finds the session, stores every record, and queues the matched bills', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e, ingestor } = makeEnv()
-    const reports = await runSourceSync(mgaSource, e, db)
+    const reports = await runSnapshotSync(mgaProvider, e, db)
 
     const session = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionTag, CODE)).get()
-    expect(session).toMatchObject({ state: 'MD', source: 'mga', sessionName: `${THIS_YEAR} Regular Session`, special: 0 })
+    expect(session).toMatchObject({ state: 'MD', provider: 'mga', sessionName: `${THIS_YEAR} Regular Session`, special: 0 })
     expect(session!.sessionId).toBeGreaterThan(3_000_000_000)
     expect(reports).toEqual([expect.objectContaining({ sessionId: session!.sessionId, records: sample.length })])
 
-    expect((await db.select().from(schema.sourceRecords).all()).length).toBe(sample.length)
+    expect((await db.select().from(schema.providerRecords).all()).length).toBe(sample.length)
     const hb1 = await billByNumber('HB1')
-    expect(hb1).toMatchObject({ source: 'mga', state: 'MD', status: 3 })
+    expect(hb1).toMatchObject({ provider: 'mga', state: 'MD', status: 3 })
     // HB 1 and its cross-file SB 2 share a title, so both match "cost recovery".
     expect(queuedIds(ingestor).sort()).toEqual([hb1!.billId, (await billByNumber('SB2'))!.billId].sort())
   })
@@ -122,16 +122,16 @@ describe('the Maryland sync', () => {
   it('queues nothing when only the file timestamp moved', async () => {
     const db = drizzle(env.DB, { schema })
     const first = makeEnv()
-    await runSourceSync(mgaSource, first.env, db)
+    await runSnapshotSync(mgaProvider, first.env, db)
     for (const n of ['HB1', 'SB2']) {
       const b = await billByNumber(n)
-      await db.update(schema.bills).set({ changeHash: (await db.select().from(schema.sourceRecords)
-        .where(eq(schema.sourceRecords.billId, b!.billId)).get())!.rawHash }).where(eq(schema.bills.billId, b!.billId))
+      await db.update(schema.bills).set({ changeHash: (await db.select().from(schema.providerRecords)
+        .where(eq(schema.providerRecords.billId, b!.billId)).get())!.rawHash }).where(eq(schema.bills.billId, b!.billId))
     }
     vi.mocked(mga.getMgaSession).mockImplementation(async () =>
       structuredClone(sample).map(r => ({ ...r, StatusCurrentAsOf: '2099-01-01T00:00:00' })))
     const second = makeEnv()
-    await runSourceSync(mgaSource, second.env, db)
+    await runSnapshotSync(mgaProvider, second.env, db)
     expect(queuedIds(second.ingestor)).toEqual([])
   })
 
@@ -147,7 +147,7 @@ describe('the Maryland sync', () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.bills).values({ billId: 77, changeHash: 'x', sessionId: 2200, state: 'MD', stateId: 20, billNumber: 'HB9', title: 'T' })
     await db.insert(schema.billTenants).values({ billId: 77, tenantId: 'team', matchType: 'keyword' })
-    await expect(runSourceSync(mgaSource, makeEnv().env, db)).rejects.toThrow(/LegiScan bill links exist in MD/)
+    await expect(runSnapshotSync(mgaProvider, makeEnv().env, db)).rejects.toThrow(/LegiScan bill links exist in MD/)
     expect(mga.getMgaSession).not.toHaveBeenCalled()
   })
 })
@@ -156,7 +156,7 @@ describe('ingesting a Maryland bill', () => {
   it('builds it from the stored record with no further calls, and serves MGA labels and links', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e } = makeEnv()
-    await runSourceSync(mgaSource, e, db)
+    await runSnapshotSync(mgaProvider, e, db)
     const hb1 = (await billByNumber('HB1'))!
     vi.mocked(mga.getMgaSession).mockClear()
 
@@ -178,7 +178,7 @@ describe('ingesting a Maryland bill', () => {
       .innerJoin(schema.billSponsors, eq(schema.billSponsors.peopleId, schema.people.peopleId))
       .where(eq(schema.billSponsors.billId, hb1.billId)).all()
     expect(sponsors.length).toBeGreaterThan(20)
-    expect(sponsors.every(s => s.people.source === 'mga')).toBe(true)
+    expect(sponsors.every(s => s.people.provider === 'mga')).toBe(true)
 
     const { app } = await import('../../src/index-legiscan')
     const res = await app.fetch(new Request(`http://central/api/bills/legiscan:${hb1.billId}`, {

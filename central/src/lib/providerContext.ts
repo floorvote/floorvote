@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm'
 import { apiCallLog, people } from '../db/schema'
 import { nowDb } from './dbTime'
-import { sourceIdsFor } from './sourceIds'
+import { providerIdsFor } from './providerIds'
 import type { Provider, ProviderContext } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -25,10 +25,10 @@ export function providerContext(
         .catch(err => console.error('[rate-limit] failed to log API call:', err))
     },
     today: nowDb().slice(0, 10),
-    ids: (kind, nativeKeys) => sourceIdsFor(db, provider.id, kind, nativeKeys),
+    ids: (kind, nativeKeys) => providerIdsFor(db, provider.id, kind, nativeKeys),
     people: () => db.select({ peopleId: people.peopleId, name: people.name, role: people.role })
       .from(people)
-      .where(eq(people.source, provider.id))
+      .where(eq(people.provider, provider.id))
       .orderBy(asc(people.peopleId))
       .all(),
   }

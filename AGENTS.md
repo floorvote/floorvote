@@ -12,7 +12,7 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 
 **Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret.
 
-**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off unless an env var names their state, and synced as snapshots by `cron/sync-sources.ts` (see `docs/internal/sync-pipeline.md`).
+**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off unless an env var names their state, and synced as snapshots by `cron/sync-snapshots.ts` (see `docs/internal/sync-pipeline.md`).
 
 **Bill pipeline:**
 1. Central hourly cron → per-state keyword union filter → queue matching bills to ingestor

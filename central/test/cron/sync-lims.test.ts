@@ -28,7 +28,7 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runSourceSync, refreshSourceSessions } from '../../src/cron/sync-sources'
+import { runSnapshotSync, refreshProviderSessions } from '../../src/cron/sync-snapshots'
 import { lims as limsProvider } from '../../src/providers/lims'
 import { providerContext } from '../../src/lib/providerContext'
 import { runSync } from '../../src/cron/sync'
@@ -39,7 +39,7 @@ import * as legiscan from '../../src/providers/legiscan/client'
 import { limsBillId, limsSessionId, isLimsDocId } from '../../src/providers/lims/ids'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
-const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSourceSync(limsProvider, e, db, opts)
+const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSnapshotSync(limsProvider, e, db, opts)
 const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
 const PERIOD = { councilPeriodId: 26, councilPeriod: '26 (2025-26)', startDate: '2025-01-02T00:00:00', endDate: '2026-12-31T00:00:00' }
 const B0400 = limsBillId('B26-0400')!
@@ -94,7 +94,7 @@ describe('runLimsSync', () => {
     expect(session?.sessionName).toBe('2025-2026 Council Period 26')
     expect(session?.state).toBe('DC')
     expect((await db.select().from(schema.people).all()).length).toBe(15)
-    expect((await db.select().from(schema.sourceRecords).all()).length).toBe(4)
+    expect((await db.select().from(schema.providerRecords).all()).length).toBe(4)
 
     const links = new Map((await db.select().from(schema.billTenants).all()).map(l => [l.billId, l.matchType]))
     expect(links.get(B0400)).toBe('keyword')
@@ -143,7 +143,7 @@ describe('ingesting a LIMS bill', () => {
 
     const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, B0400)).get()
     expect(bill?.title).toBe('Statutory Neglect Amendment Act of 2025')
-    expect(bill?.changeHash).toBe((await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.rawHash)
+    expect(bill?.changeHash).toBe((await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, B0400)).get())?.rawHash)
 
     const texts = await db.select().from(schema.billTexts).where(eq(schema.billTexts.billId, B0400)).all()
     expect(texts.length).toBeGreaterThan(3)
@@ -187,7 +187,7 @@ describe('details refresh bookkeeping', () => {
     const { env: e } = makeEnv()
     await runLimsSync(e, db)
     const fetchedAt = async () =>
-      (await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.detailsFetchedAt
+      (await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, B0400)).get())?.detailsFetchedAt
 
     vi.mocked(limsMap.buildLimsBill).mockRejectedValueOnce(new Error('unexpected details shape'))
     const retry = vi.fn()
@@ -291,7 +291,7 @@ describe('Codex review fixes', () => {
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [pending] : []))
     vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), status: 'Under Council Review' })
     await passAndIngest(db)
-    expect((await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.detailsFetchedAt).toBeTruthy()
+    expect((await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, B0400)).get())?.detailsFetchedAt).toBeTruthy()
 
     // Fresh details, unchanged bulk: nothing to do.
     const fresh = makeEnv()
@@ -299,7 +299,7 @@ describe('Codex review fixes', () => {
     expect(fresh.limsQueue.sendBatch).not.toHaveBeenCalled()
 
     // Three days later the same bill is re-fetched though bulk has not changed.
-    await env.DB.prepare(`UPDATE source_records SET details_fetched_at = datetime('now', '-3 days') WHERE bill_id = ?`).bind(B0400).run()
+    await env.DB.prepare(`UPDATE provider_records SET details_fetched_at = datetime('now', '-3 days') WHERE bill_id = ?`).bind(B0400).run()
     const later = makeEnv()
     await runLimsSync(later.env, db)
     const queued = later.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
@@ -310,7 +310,7 @@ describe('Codex review fixes', () => {
     const db = drizzle(env.DB, { schema })
     vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => (c === 1 ? [bulk['B26-0400']] : []))
     await passAndIngest(db)   // B26-0400 is Official Law
-    await env.DB.prepare(`UPDATE source_records SET details_fetched_at = datetime('now', '-30 days')`).run()
+    await env.DB.prepare(`UPDATE provider_records SET details_fetched_at = datetime('now', '-30 days')`).run()
     const later = makeEnv()
     await runLimsSync(later.env, db)
     expect(later.limsQueue.sendBatch).not.toHaveBeenCalled()
@@ -412,23 +412,23 @@ describe('POST /api/admin/lims-sync', () => {
   })
 })
 
-describe('POST /api/admin/sources/:id/sync', () => {
+describe('POST /api/admin/providers/:id/sync', () => {
   const post = async (id: string) => {
     const { app } = await import('../../src/index-legiscan')
     const { env: e } = makeEnv({ ADMIN_SECRET: 'test-secret' })
-    return app.fetch(new Request(`http://central/api/admin/sources/${id}/sync`, {
+    return app.fetch(new Request(`http://central/api/admin/providers/${id}/sync`, {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret' },
     }), e)
   }
 
-  it('runs the named source', async () => {
+  it('runs the named provider', async () => {
     const res = await post('lims')
     expect(res.status).toBe(200)
     const body = await res.json() as { passes: { sessionId: number }[] }
     expect(body.passes.map(p => p.sessionId)).toEqual([limsSessionId(26)])
   })
 
-  it('answers 404 for a source central does not know', async () => {
+  it('answers 404 for a provider central does not know', async () => {
     expect((await post('nope')).status).toBe(404)
   })
 })
@@ -526,7 +526,7 @@ describe('sponsors of earlier Council Periods', () => {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: 'oca', numbers: ['B25-0345'] }),
     }), e)
 
-    await refreshSourceSessions(limsProvider, 'DC', providerContext(limsProvider, e, db), db)
+    await refreshProviderSessions(limsProvider, 'DC', providerContext(limsProvider, e, db), db)
     expect(vi.mocked(lims.getMembers).mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([25, 26]))
 
     const billId = limsBillId('B25-0345')!

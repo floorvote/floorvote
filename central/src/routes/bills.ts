@@ -128,7 +128,7 @@ billsRoutes.get('/:id', async (c) => {
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
   // The provider that wrote the bill, for its status labels.
-  const provider = findProvider(bill.source) ?? getProvider(DEFAULT_PROVIDER_ID)
+  const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
 
   const session = bill.sessionId
     ? await db.select({
@@ -150,7 +150,7 @@ billsRoutes.get('/:id', async (c) => {
       party: schema.people.party,
       role: schema.people.role,
       bioJson: schema.people.bioJson,
-      personSource: schema.people.source,
+      personProvider: schema.people.provider,
     })
       .from(schema.billSponsors)
       .leftJoin(schema.people, eq(schema.billSponsors.peopleId, schema.people.peopleId))
@@ -226,7 +226,7 @@ billsRoutes.get('/:id', async (c) => {
         } catch { /* ignore */ }
       }
       // A profile link from the provider that wrote the person, when it has one.
-      if (!url && s.peopleId) url = findProvider(s.personSource ?? DEFAULT_PROVIDER_ID)?.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
+      if (!url && s.peopleId) url = findProvider(s.personProvider ?? DEFAULT_PROVIDER_ID)?.personUrl?.({ state: bill.state, name, peopleId: s.peopleId }) ?? null
       return {
         name,
         party: s.party ?? null,

@@ -21,9 +21,9 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 })
 vi.stubGlobal('fetch', vi.fn())
 
-import { runSourceSync } from '../../src/cron/sync-sources'
+import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { processIngestorQueue } from '../../src/queue/processor'
-import { lis as lisSource } from '../../src/providers/lis'
+import { lis as lisProvider } from '../../src/providers/lis'
 import * as lis from '../../src/providers/lis/client'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
@@ -60,25 +60,25 @@ describe('the Virginia sync', () => {
   it('stores a record per bill, writes the members as people, and queues the matched bills', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e, ingestor } = makeEnv()
-    const reports = await runSourceSync(lisSource, e, db)
+    const reports = await runSnapshotSync(lisProvider, e, db)
 
     const session = await db.select().from(schema.sessions).where(eq(schema.sessions.sessionTag, CODE)).get()
-    expect(session).toMatchObject({ state: 'VA', source: 'lis', sessionName: `${THIS_YEAR} Regular Session`, special: 0 })
+    expect(session).toMatchObject({ state: 'VA', provider: 'lis', sessionName: `${THIS_YEAR} Regular Session`, special: 0 })
     expect(reports).toEqual([expect.objectContaining({ records: 6 })])
-    expect((await db.select().from(schema.sourceRecords).all()).length).toBe(6)
+    expect((await db.select().from(schema.providerRecords).all()).length).toBe(6)
 
-    const members = await db.select().from(schema.people).where(eq(schema.people.source, 'lis')).all()
+    const members = await db.select().from(schema.people).where(eq(schema.people.provider, 'lis')).all()
     expect(members.length).toBeGreaterThan(100)
     expect(members.find(p => p.name === 'Jeion A. Ward')).toMatchObject({ role: 'Delegate', stateId: 46 })
 
     const hb1 = await db.select().from(schema.bills).where(eq(schema.bills.billNumber, 'HB1')).get()
-    expect(hb1).toMatchObject({ source: 'lis', state: 'VA', status: 5 })
+    expect(hb1).toMatchObject({ provider: 'lis', state: 'VA', status: 5 })
     expect(queuedIds(ingestor)).toEqual([hb1!.billId])
   })
 
   it('does nothing unless LIS_STATES names VA', async () => {
     const db = drizzle(env.DB, { schema })
-    expect(await runSourceSync(lisSource, makeEnv({ LIS_STATES: '' }).env, db)).toEqual([])
+    expect(await runSnapshotSync(lisProvider, makeEnv({ LIS_STATES: '' }).env, db)).toEqual([])
     expect(lis.getLisFile).not.toHaveBeenCalled()
   })
 })
@@ -87,7 +87,7 @@ describe('ingesting a Virginia bill', () => {
   it('builds it from the stored record, with per-member votes that resolve to names', async () => {
     const db = drizzle(env.DB, { schema })
     const { env: e } = makeEnv()
-    await runSourceSync(lisSource, e, db)
+    await runSnapshotSync(lisProvider, e, db)
     const hb1 = (await db.select().from(schema.bills).where(eq(schema.bills.billNumber, 'HB1')).get())!
     vi.mocked(lis.getLisFile).mockClear()
 

@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { sourceIds } from '../db/schema'
+import { providerIds } from '../db/schema'
 import type { Db } from '../types'
 
 /** D1 binds at most 100 parameters per statement. */
@@ -8,19 +8,19 @@ const INSERT_CHUNK = 30
 
 /**
  * Central integer ids for a provider's records, one per (provider, kind,
- * native key), allocated on first sight from one sequence (source_ids).
+ * native key), allocated on first sight from one sequence (provider_ids).
  * The same key always maps to the same id. Providers reach it as
  * ProviderContext.ids.
  */
-export async function sourceIdsFor(
-  db: Db, source: string, kind: string, keys: readonly string[],
+export async function providerIdsFor(
+  db: Db, provider: string, kind: string, keys: readonly string[],
 ): Promise<Map<string, number>> {
   const unique = [...new Set(keys)]
   const ids = new Map<string, number>()
   const lookup = async (wanted: string[]) => {
     for (let i = 0; i < wanted.length; i += SELECT_CHUNK) {
-      const rows = await db.select({ id: sourceIds.id, key: sourceIds.nativeKey }).from(sourceIds)
-        .where(and(eq(sourceIds.source, source), eq(sourceIds.kind, kind), inArray(sourceIds.nativeKey, wanted.slice(i, i + SELECT_CHUNK))))
+      const rows = await db.select({ id: providerIds.id, key: providerIds.nativeKey }).from(providerIds)
+        .where(and(eq(providerIds.provider, provider), eq(providerIds.kind, kind), inArray(providerIds.nativeKey, wanted.slice(i, i + SELECT_CHUNK))))
         .all()
       for (const r of rows) ids.set(r.key, r.id)
     }
@@ -31,8 +31,8 @@ export async function sourceIdsFor(
 
   const stmts = []
   for (let i = 0; i < missing.length; i += INSERT_CHUNK) {
-    stmts.push(db.insert(sourceIds)
-      .values(missing.slice(i, i + INSERT_CHUNK).map(nativeKey => ({ source, kind, nativeKey })))
+    stmts.push(db.insert(providerIds)
+      .values(missing.slice(i, i + INSERT_CHUNK).map(nativeKey => ({ provider, kind, nativeKey })))
       .onConflictDoNothing())
   }
   await db.batch(stmts as [typeof stmts[0], ...typeof stmts])
