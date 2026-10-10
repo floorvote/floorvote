@@ -6,7 +6,7 @@ import {
   billSubjects,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { sessionToSlug } from '../../lib/sessionSlug'
+import { billSlug } from '../../lib/sessionSlug'
 import { buildBillsWhere, buildOrderBy, multiFilter, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
@@ -220,7 +220,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       state: b.state,
       status: b.status,
       session: b.session,
-      sessionSlug: b.isDraft ? String(b.yearStart ?? '') : sessionToSlug(b.session),
+      sessionSlug: billSlug(b),
       sessionId: b.sessionId,
       yearStart: b.yearStart ?? null,
       yearEnd:   b.yearEnd   ?? null,

@@ -6,6 +6,7 @@ import { providerContext } from '../lib/providerContext'
 import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { loadStateOwners, statesOwnedBy } from '../lib/stateProviders'
 import { applyMasterList } from './sync'
+import { assignSessionSlugs } from '../lib/sessionSlugs'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, StoredSession, SyncSession } from '../providers'
 import type { Env, Db } from '../types'
 
@@ -137,10 +138,12 @@ function sessionValues(providerId: string, state: string, s: SyncSession) {
 }
 
 /**
- * Upsert the sessions the provider lists for a state. Any other session of the
- * provider's stops being current, unless it listed none (a failed or empty
- * answer changes nothing). Then the provider's people are refreshed, for the
- * sessions just listed and every other one central holds its measures in.
+ * Upsert the sessions the provider lists for a state, with whether each has
+ * adjourned sine die. Any other session of the provider's has ended: it stops
+ * being current and is marked sine die, unless the provider listed none (a
+ * failed or empty answer changes nothing). Then the provider's people are
+ * refreshed, for the sessions just listed and every other one central holds
+ * its measures in.
  */
 export async function refreshProviderSessions(provider: Provider, state: string, ctx: ProviderContext, db: Db): Promise<void> {
   const listed = await provider.listSessions(state, ctx)
@@ -149,12 +152,13 @@ export async function refreshProviderSessions(provider: Provider, state: string,
     const values = sessionValues(provider.id, state, s)
     await db.insert(sessions).values(values).onConflictDoUpdate({
       target: sessions.sessionId,
-      set: { sessionTitle: values.sessionTitle, sessionName: values.sessionName, prior: values.prior },
+      set: { sessionTitle: values.sessionTitle, sessionName: values.sessionName, prior: values.prior, sineDie: values.sineDie },
     })
   }
   const listedIds = listed.map(s => s.session_id)
-  await db.update(sessions).set({ prior: 1 })
+  await db.update(sessions).set({ prior: 1, sineDie: 1 })
     .where(and(eq(sessions.provider, provider.id), eq(sessions.state, state), notInArray(sessions.sessionId, listedIds)))
+  await assignSessionSlugs(db)
 
   if (!provider.listPeople) return
   const holding = (await db.selectDistinct({ id: providerRecords.sessionId }).from(providerRecords)
@@ -313,6 +317,8 @@ export async function importProviderMeasures(
 
   const ctx = providerContext(provider, env, db)
   const found = await provider.importMeasures(numbers, ctx)
+  // Owners seeded before any session is slugged: the plain slug goes to the owner's session.
+  await loadStateOwners(env, db)
   const result: ImportReport = { imported: [], notFound: found.notFound, invalid: found.invalid }
   const queue = ingestQueueFor(provider, env)
   const covering = [{ tenantId, stateCoverage: tenant.stateCoverage, queueId: tenant.queueId ?? null }]
@@ -320,6 +326,7 @@ export async function importProviderMeasures(
   for (const { state, session: listed, records, numbers: imported } of found.sessions) {
     // An existing row is left alone, so importing from the current session changes nothing.
     await db.insert(sessions).values(sessionValues(provider.id, state, listed)).onConflictDoNothing()
+    await assignSessionSlugs(db)
     const session = await db.select().from(sessions).where(eq(sessions.sessionId, listed.session_id)).get()
     if (!session) throw new Error(`[${provider.id}-import] session ${listed.session_name} was not written`)
     if (records.length === 0) continue

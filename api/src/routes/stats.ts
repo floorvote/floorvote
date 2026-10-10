@@ -5,7 +5,7 @@ import { getDb } from '../db/client'
 import { users, bills, memberVotes, associationConfig, calendarEvents } from '../db/schema'
 import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'drizzle-orm'
 import type { AppEnv } from '../types'
-import { sessionToSlug } from '../lib/sessionSlug'
+import { filedSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
@@ -91,6 +91,7 @@ statsRouter.get('/sidebar', async (c) => {
         id: bills.id,
         billNumber: bills.billNumber,
         session: bills.session,
+        sessionSlug: bills.sessionSlug,
         state: bills.state,
         title: bills.title,
         summary: bills.tenantSummary,
@@ -115,7 +116,7 @@ statsRouter.get('/sidebar', async (c) => {
     unvotedPriorityCount,
     upcomingHearings,
     upcomingHearingsDays,
-    priorityBills: priorityBillList.map(b => ({ ...b, sessionSlug: sessionToSlug(b.session) })),
+    priorityBills: priorityBillList.map(({ sessionSlug, ...b }) => ({ ...b, sessionSlug: filedSlug({ session: b.session, sessionSlug }) ?? '' })),
   })
 })
 
@@ -258,6 +259,7 @@ async function fetchUpcomingHearings(
       priority: bills.priority,
       state: bills.state,
       session: bills.session,
+      sessionSlug: bills.sessionSlug,
       isDraft: bills.isDraft,
     })
     .from(bills)
@@ -285,7 +287,7 @@ async function fetchUpcomingHearings(
       summary: row.summary,
       priority: row.priority as HearingBill['priority'],
       state: row.state,
-      sessionSlug: row.session ? sessionToSlug(row.session) : null,
+      sessionSlug: filedSlug(row),
       myVote: myVoteByBillId.get(row.id) ?? null,
       isDraft: row.isDraft,
     })

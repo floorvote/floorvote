@@ -119,6 +119,8 @@ export interface MentionEmailInput {
     /** Lets the card label an untitled draft "Untitled draft". Absent = filed. */
     isDraft?: boolean
     state: string | null; session: string
+    /** The slug central assigned the bill's session. Absent = computed from `session`. */
+    sessionSlug?: string | null
     priority: 'high' | 'medium' | 'low' | null
     tenantSummary: string | null
   }
@@ -144,7 +146,7 @@ export function renderMentionEmail(input: MentionEmailInput): string {
     billSessionSlug: null, billState: bill.state, billSummary: bill.tenantSummary ?? null,
     billPriority: bill.priority, billMatchType: null, billIsDraft: bill.isDraft ?? false, date: '', events: [],
   })
-  const billHref = `${appUrl}${billUrl({ id: bill.id, state: bill.state, session: bill.session, billNumber: bill.billNumber })}`
+  const billHref = `${appUrl}${billUrl({ id: bill.id, state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}`
   const commentUrl = `${billHref}#comment-${comment.id}`
   const subtitle = author.subtitle ? truncate(author.subtitle, 60) : null
   const commentRow = renderCommentRow({
@@ -325,6 +327,7 @@ async function sendMentionEmails(
       id: bills.id,
       state: bills.state,
       session: bills.session,
+      sessionSlug: bills.sessionSlug,
       priority: bills.priority,
       tenantSummary: bills.tenantSummary,
     })
@@ -360,7 +363,7 @@ async function sendMentionEmails(
       author: { name: displayName(author), subtitle: author.subtitle },
       bill: {
         id: bill.id, billNumber: bill.billNumber, title: bill.title, isDraft: bill.isDraft,
-        state: bill.state, session: bill.session, priority: bill.priority,
+        state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, priority: bill.priority,
         tenantSummary: bill.tenantSummary,
       },
       comment: { id: commentId, createdAt: commentCreatedAt, html },

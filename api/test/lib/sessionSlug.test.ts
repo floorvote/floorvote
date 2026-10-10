@@ -27,6 +27,14 @@ describe('sessionToSlug', () => {
     expect(sessionToSlug('2026 3rd Special Session')).toBe('2026-s3')
   })
 
+  it('encodes a special session numbered after its name as -sN, as Maryland and Virginia name theirs', () => {
+    expect(sessionToSlug('2026 Special Session 1')).toBe('2026-s1')
+    expect(sessionToSlug('2026 Special Session II')).toBe('2026-s2')
+    expect(sessionToSlug('2021 Special Session iv')).toBe('2021-s4')
+    // No number after it: the year, as before.
+    expect(sessionToSlug('2026 Special Session')).toBe('2026')
+  })
+
   it('falls back to a kebab slug when there is no leading year', () => {
     expect(sessionToSlug('Special Joint Session')).toBe('special-joint-session')
   })

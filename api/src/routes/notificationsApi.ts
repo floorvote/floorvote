@@ -3,7 +3,7 @@ import { eq, desc, isNull, and, inArray } from 'drizzle-orm'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { commentMentions, comments, users, bills, roles } from '../db/schema'
-import { sessionToSlug } from '../lib/sessionSlug'
+import { filedSlug } from '../lib/sessionSlug'
 import { stripHtml } from '../lib/mentions'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
@@ -35,6 +35,7 @@ notificationsRouter.get('/', async (c) => {
       billAbstract: bills.abstract,
       billState: bills.state,
       billSession: bills.session,
+      billSessionSlug: bills.sessionSlug,
       billIsDraft: bills.isDraft,
     })
     .from(commentMentions)
@@ -70,7 +71,7 @@ notificationsRouter.get('/', async (c) => {
       // draft is fully commentable, so a mention on one is an ordinary case,
       // not a corner one.
       billIsDraft: m.billIsDraft,
-      sessionSlug: m.billSession ? sessionToSlug(m.billSession) : null,
+      sessionSlug: filedSlug({ session: m.billSession, sessionSlug: m.billSessionSlug }),
       authorId: m.authorId,
       authorName: m.authorName,
       authorSubtitle: m.authorSubtitle,

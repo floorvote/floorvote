@@ -96,6 +96,10 @@ export const bills = sqliteTable('bills', {
   status: text('status').notNull().default(''),
   session: text('session').notNull().default(''),
   sessionId: text('session_id'),
+  // The SESSION in /STATE/SESSION/BILL, as central assigned it (unique within
+  // the state). Null for a bill central hasn't sent one for: lib/sessionSlug.ts
+  // computes it from `session` then.
+  sessionSlug: text('session_slug'),
   yearStart: integer('year_start'),
   yearEnd: integer('year_end'),
   abstract: text('abstract'),

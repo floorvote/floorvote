@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { isTransientD1Error } from './seed-legiscan-db'
+import { DatabaseSync } from 'node:sqlite'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { isTransientD1Error, sessionUpsertSql } from './seed-legiscan-db'
 
 describe('isTransientD1Error', () => {
   // These are exactly the blips that the original narrow filter (timeout/503 only)
@@ -40,5 +43,32 @@ describe('isTransientD1Error', () => {
     'no such column: foo',
   ])('treats %j as NON-transient', (msg) => {
     expect(isTransientD1Error(msg)).toBe(false)
+  })
+})
+
+describe('sessionUpsertSql', () => {
+  // Central's real sessions table: every central migration, in filename order.
+  const migrated = () => {
+    const db = new DatabaseSync(':memory:')
+    const dir = join(__dirname, '../../central/migrations-legiscan')
+    for (const file of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(join(dir, file), 'utf8'))
+    return db
+  }
+  const session = { state_id: 39, year_start: 2026, year_end: 2026, session_tag: 'Regular Session', session_title: '2026 Regular Session', session_name: '2026 Regular Session' }
+
+  it('writes a new session', () => {
+    const db = migrated()
+    db.exec(sessionUpsertSql(2154, 'RI', session))
+    expect(db.prepare('SELECT state, session_name, provider, slug FROM sessions').all())
+      .toEqual([{ state: 'RI', session_name: '2026 Regular Session', provider: 'legiscan', slug: null }])
+  })
+
+  it("updates an existing session's dataset fields, and keeps its slug, provider, and sync settings", () => {
+    const db = migrated()
+    db.exec(`INSERT INTO sessions (session_id, state, state_id, year_start, year_end, session_title, session_name, provider, slug, sync_enabled, full_sync_hours_et)
+      VALUES (2154, 'RI', 39, 2026, 2026, 'old', 'old', 'legiscan', '2026', 0, '[5]')`)
+    db.exec(sessionUpsertSql(2154, 'RI', { ...session, sine_die: 1 }))
+    expect(db.prepare('SELECT session_name, sine_die, provider, slug, sync_enabled, full_sync_hours_et FROM sessions').all())
+      .toEqual([{ session_name: '2026 Regular Session', sine_die: 1, provider: 'legiscan', slug: '2026', sync_enabled: 0, full_sync_hours_et: '[5]' }])
   })
 })

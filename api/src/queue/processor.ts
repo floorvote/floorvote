@@ -202,6 +202,8 @@ type CentralBill = {
   billId: string
   sessionId: string | null
   sessionName: string | null
+  /** Unique within the state. Null from a central older than the slug, or for a session it hasn't slugged yet. */
+  sessionSlug?: string | null
   yearStart: number | null
   yearEnd: number | null
   state: string
@@ -298,6 +300,7 @@ export async function processCentralNotification(
       state: centralBill.state,
       status: centralBill.status ?? '',
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
+      sessionSlug: centralBill.sessionSlug ?? null,
       sessionId: centralBill.sessionId ?? null,
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
@@ -353,6 +356,7 @@ export async function processCentralNotification(
       state: centralBill.state,
       status: centralBill.status ?? '',
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
+      sessionSlug: centralBill.sessionSlug ?? null,
       sessionId: centralBill.sessionId ?? null,
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
@@ -437,6 +441,7 @@ export async function processCentralNotification(
     state: centralBill.state,
     status: centralBill.status ?? '',
     session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
+    sessionSlug: centralBill.sessionSlug ?? null,
     sessionId: centralBill.sessionId ?? null,
     yearStart: centralBill.yearStart ?? null,
     yearEnd:   centralBill.yearEnd   ?? null,
@@ -867,6 +872,9 @@ async function upsertBill(
       set: {
         ...updateFields,
         matchType: sql`CASE WHEN ${bills.matchType} = 'manual' THEN 'manual' WHEN excluded.match_type IS NOT NULL THEN excluded.match_type ELSE ${bills.matchType} END`,
+        // Central never changes a session slug once assigned, so a null (an
+        // older central, or a session it hasn't slugged yet) keeps the stored one.
+        sessionSlug: sql`COALESCE(excluded.session_slug, ${bills.sessionSlug})`,
         updatedAt: (updateFields as any).updatedAt ?? sql`updated_at`,
       },
     })

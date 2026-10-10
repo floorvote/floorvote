@@ -1,10 +1,18 @@
 /**
- * Converts a LegiScan session name to a URL slug.
+ * Converts a session name to a URL slug.
  * "2026-2027 Regular Session" → "2026-2027"
  * "2026 1st Special Session" → "2026-s1"
+ * "2026 Special Session 1"   → "2026-s1"   (Maryland)
+ * "2026 Special Session II"  → "2026-s2"   (Virginia)
  * "2025 Regular Session"     → "2025"
+ *
+ * This is the slug a session asks for. Central stores each session's slug,
+ * unique within its state (a second session asking for one gets "-2"), and
+ * sends it with each bill. Tenants call this only for bills stored before
+ * central sent it.
  */
 const COUNCIL_PERIOD = /\bCouncil Period (\d+)\b/i
+const ROMAN: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 }
 
 export function sessionToSlug(sessionName: string): string {
   // A DC Council Period gets its own slug ("cp26"). Its year span alone
@@ -14,8 +22,23 @@ export function sessionToSlug(sessionName: string): string {
   if (cp) return `cp${cp[1]}`
   const special = sessionName.match(/(\d{4}(?:-\d{4})?)\s+(\d+)(?:st|nd|rd|th)\s+special/i)
   if (special) return `${special[1]}-s${special[2]}`
+  // The number after "Special Session", as Maryland and Virginia name theirs.
+  // Without this, each one slugs to its year, which its regular session holds.
+  const numbered = sessionName.match(/^(\d{4}(?:-\d{4})?)\s+special\s+session\s+(\d+|[ivx]+)\b/i)
+  const n = numbered && (ROMAN[numbered[2].toLowerCase()] ?? Number(numbered[2]))
+  if (numbered && n) return `${numbered[1]}-s${n}`
   const m = sessionName.match(/^(\d{4}(?:-\d{4})?)/)
   return m ? m[1] : sessionName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
+
+/**
+ * The first of `wanted`, `wanted-2`, `wanted-3`, ... that no other session of
+ * the state holds. Central assigns slugs this way (central/src/lib/sessionSlugs.ts).
+ */
+export function firstFreeSlug(wanted: string, taken: ReadonlySet<string>): string {
+  let slug = wanted
+  for (let n = 2; taken.has(slug); n++) slug = `${wanted}-${n}`
+  return slug
 }
 
 /**
