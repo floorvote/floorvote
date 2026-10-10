@@ -40,6 +40,19 @@ export function inventoryProblems(
   return [...problems].sort()
 }
 
+/**
+ * The extras a vocabulary declares that no inventory entry names: an extra no
+ * feed field feeds. Pass every inventory the provider keeps (a listing and a
+ * details response, say), since an extra may come from either:
+ *
+ *   expect(unfedExtras(vocabulary, recordInventory, detailsInventory)).toEqual([])
+ */
+export function unfedExtras(vocabulary: ProviderVocabulary, ...inventories: FieldInventory[]): string[] {
+  const named = new Set(inventories.flatMap(inv => Object.values(inv))
+    .flatMap(use => (typeof use === 'object' && 'extra' in use ? [use.extra] : [])))
+  return Object.keys(vocabulary.extras ?? {}).filter(key => !named.has(key)).sort()
+}
+
 /** The path of every field in a value, as `inventoryProblems` names them. */
 export function fieldPaths(value: unknown, path = ''): string[] {
   if (Array.isArray(value)) return value.flatMap(item => fieldPaths(item, `${path}[]`))

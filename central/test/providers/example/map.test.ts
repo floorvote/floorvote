@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import sessionRaw from '../../fixtures/example/session-2026.json?raw'
-import { inventoryProblems } from '../../helpers/fieldInventory'
+import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 import { example, type ExampleRecord } from '.'
 import { inventory } from './inventory'
 import { vocabulary } from './vocabulary'
@@ -25,6 +25,12 @@ describe('the example feed', () => {
       'not in the inventory: Sponsor.Party',
       'not in the inventory: Ward',
     ])
+  })
+
+  it('feeds every extra its vocabulary declares from some field', () => {
+    expect(unfedExtras(vocabulary, inventory)).toEqual([])
+    const { Packet: _dropped, ...withoutPacket } = inventory
+    expect(unfedExtras(vocabulary, withoutPacket)).toEqual(['packet'])
   })
 
   it('fails the check when the inventory names an extra the vocabulary lacks', () => {
