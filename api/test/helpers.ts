@@ -70,6 +70,7 @@ import migrationSql70 from '../migrations/0070_draft_numbers_and_years.sql?raw'
 import migrationSql73 from '../migrations/0073_email_health.sql?raw'
 import migrationSql75 from '../migrations/0075_auth_events_email_changed.sql?raw'
 import migrationSql76 from '../migrations/0076_bill_status_stage.sql?raw'
+import migrationSql77 from '../migrations/0077_bill_session_slug.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -191,6 +192,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql73, '0073_email_health'),
     parseMigration(migrationSql75, '0075_auth_events_email_changed'),
     parseMigration(migrationSql76, '0076_bill_status_stage'),
+    parseMigration(migrationSql77, '0077_bill_session_slug'),
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
@@ -271,6 +273,8 @@ export async function seedBill(overrides?: {
   statusRank?: number
   session?: string
   sessionId?: string
+  /** The slug central assigned the bill's session. Omit for a bill stored before central sent one. */
+  sessionSlug?: string | null
   abstract?: string
   url?: string
   stateUrl?: string
@@ -314,6 +318,7 @@ export async function seedBill(overrides?: {
     statusRank: overrides?.statusRank ?? 0,
     session: overrides?.session ?? '2026 Regular Session',
     sessionId: overrides?.sessionId ?? 'ri:2026',
+    sessionSlug: overrides?.sessionSlug ?? null,
     abstract: overrides?.abstract ?? null,
     url: overrides?.url ?? null,
     stateUrl: overrides?.stateUrl ?? null,

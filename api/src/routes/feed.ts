@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { eq, desc, count, ne, and, or, sql, isNotNull, notInArray } from 'drizzle-orm'
-import { sessionToSlug } from '../lib/sessionSlug'
+import { filedSlug } from '../lib/sessionSlug'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { feedEvents, bills, users } from '../db/schema'
@@ -75,6 +75,7 @@ feedRouter.get('/', async (c) => {
         billSummary: bills.tenantSummary,
         billPriority: bills.priority,
         billSession: bills.session,
+        billSessionSlug: bills.sessionSlug,
         billState: bills.state,
         billMatchType: bills.matchType,
         billIsDraft: bills.isDraft,
@@ -133,7 +134,7 @@ feedRouter.get('/', async (c) => {
       billSummary: r.billSummary ?? null,
       billPriority: r.billPriority ?? null,
       billMatchType: r.billMatchType ?? null,
-      billSessionSlug: r.billSession ? sessionToSlug(r.billSession) : null,
+      billSessionSlug: filedSlug({ session: r.billSession, sessionSlug: r.billSessionSlug }),
       billState: r.billState ?? null,
       billIsDraft: r.billIsDraft ?? false,
       userId: r.userId,

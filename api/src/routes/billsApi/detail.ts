@@ -8,7 +8,7 @@ import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { isHandle, toHandle } from '../../../../shared/billHandle'
 import type { BillExtras } from '../../../../shared/providerExtras'
-import { sessionToSlug } from '../../lib/sessionSlug'
+import { billSlug, filedSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
@@ -167,12 +167,12 @@ export async function buildBillDetail(
     const externalIds = centralRich.relatedBills
       .flatMap(r => r.sastBillId != null ? [toHandle(r.sastBillId)] : [])
     const internalRows = externalIds.length > 0
-      ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, state: bills.state })
+      ? await db.select({ id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber, session: bills.session, sessionSlug: bills.sessionSlug, state: bills.state })
           .from(bills)
           .where(inArray(bills.externalId, externalIds))
           .all()
       : []
-    const routeByExternal = new Map(internalRows.map(r => [r.externalId, { id: r.id, billNumber: r.billNumber, sessionSlug: sessionToSlug(r.session), state: r.state }]))
+    const routeByExternal = new Map(internalRows.map(r => [r.externalId, { id: r.id, billNumber: r.billNumber, sessionSlug: filedSlug(r) ?? '', state: r.state }]))
     resolvedRelated = centralRich.relatedBills.map(r => ({
       billId: r.sastBillId ?? 0,
       billNumber: r.identifier,
@@ -200,7 +200,7 @@ export async function buildBillDetail(
     state: bill.state,
     status: bill.status,
     session: bill.session,
-    sessionSlug: bill.isDraft ? String(bill.yearStart ?? '') : sessionToSlug(bill.session),
+    sessionSlug: billSlug(bill),
     sessionId: bill.sessionId,
     yearStart: bill.yearStart ?? null,
     yearEnd: bill.yearEnd ?? null,

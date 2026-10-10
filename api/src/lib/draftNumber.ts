@@ -55,6 +55,7 @@ export async function findNumberCollision(
     .select({
       id: bills.id,
       session: bills.session,
+      sessionSlug: bills.sessionSlug,
       isDraft: bills.isDraft,
       yearStart: bills.yearStart,
     })
