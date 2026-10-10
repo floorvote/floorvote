@@ -141,6 +141,17 @@ export const billSubjects = sqliteTable('bill_subjects', {
   subjectName: text('subject_name').notNull(),
 }, (t) => [index('idx_bill_subjects_bill').on(t.billId)])
 
+/**
+ * Values of a bill's provider extras (0032). The provider's vocabulary holds
+ * each key's label and display type. The ingest replaces a bill's rows each time.
+ */
+export const billExtras = sqliteTable('bill_extras', {
+  billId:   integer('bill_id').notNull(),
+  provider: text('provider').notNull(),
+  key:      text('key').notNull(),
+  value:    text('value').notNull(),
+}, (t) => [primaryKey({ columns: [t.billId, t.provider, t.key] })])
+
 export const billTexts = sqliteTable('bill_texts', {
   docId:        integer('doc_id').primaryKey(),
   billId:       integer('bill_id').notNull(),

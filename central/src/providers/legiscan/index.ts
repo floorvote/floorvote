@@ -9,6 +9,7 @@ import type { Provider } from '../sdk'
  */
 export const legiscan: Provider<'LEGISCAN_API_KEY'> = {
   id: 'legiscan',
+  displayName: 'LegiScan',
   envKeys: ['LEGISCAN_API_KEY'],
 
   listSessions: (state, ctx) =>

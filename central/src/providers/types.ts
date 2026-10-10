@@ -1,5 +1,6 @@
 import type { Env } from '../types'
 import type { StatusStage } from '../../../shared/statusStages'
+import type { ExtraDisplay } from '../../../shared/providerExtras'
 
 /**
  * The provider interface, and every shape that crosses the boundary between
@@ -24,6 +25,12 @@ import type { StatusStage } from '../../../shared/statusStages'
 export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   /** Stable id. Never shown to members. */
   readonly id: string
+
+  /**
+   * The provider's name as members and operators read it, such as "DC Council
+   * LIMS". It titles the bill page's panel of the provider's extras.
+   */
+  readonly displayName: string
 
   /**
    * The env keys this provider reads, such as its API key. `ctx.env` holds
@@ -178,6 +185,14 @@ export interface ProviderVocabulary {
   readonly eventTypes: Readonly<Record<number, VocabularyTerm>>
   /** The name of the legislature's own calendar, when the provider reads one. */
   readonly calendarName?: string
+  /**
+   * Fields only this provider publishes, by the key its measures use in
+   * `CentralMeasure.extras`. The bill page shows them, in this order, under the
+   * provider's display name. Display only: a field that needs sorting,
+   * filtering, notifications, or AI, or that a second provider publishes,
+   * becomes a shared column instead.
+   */
+  readonly extras?: Readonly<Record<string, VocabularyExtra>>
 }
 
 /**
@@ -213,7 +228,37 @@ export interface VocabularyTerm {
   readonly explainer?: string
 }
 
-export type { StatusStage }
+/** One extra field (`ProviderVocabulary.extras`). */
+export interface VocabularyExtra {
+  /** What the bill page calls it. Unique within the provider. */
+  readonly label: string
+  /** What it means, shown on hover. */
+  readonly explainer?: string
+  /** How the bill page shows its value. */
+  readonly display: ExtraDisplay
+}
+
+/**
+ * Every field a provider's feed returns, and what the provider does with it,
+ * by path. A path is dotted from the response's root, and `[]` steps into an
+ * array's items (`Sponsors[].Name`). Each field is:
+ * - `'mapped'`: read into central's shapes;
+ * - `{ extra: key }`: shown as that extra from the vocabulary;
+ * - `{ ignored: reason }`: deliberately dropped, and why. An ignored object or
+ *   array covers everything inside it.
+ *
+ * Reviewers read it to see that nothing in the feed is dropped silently, and
+ * the provider's mapping test checks its recorded fixtures against it, so a
+ * field the feed starts sending fails the test until someone decides what to
+ * do with it. A provider with several responses (a listing and a per-measure
+ * details response, say) keeps one inventory for each.
+ */
+export type FieldInventory = Readonly<Record<string, FieldUse>>
+
+/** What a provider does with one feed field (`FieldInventory`). */
+export type FieldUse = 'mapped' | { readonly extra: string } | { readonly ignored: string }
+
+export type { StatusStage, ExtraDisplay }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {
@@ -565,4 +610,12 @@ export interface CentralMeasure {
   calendar: MeasureCalendarEntry[]
   amendments: MeasureAmendment[]
   supplements: MeasureSupplement[]
+  /**
+   * Values of the provider's extras (`ProviderVocabulary.extras`), by key.
+   * Core replaces the bill's stored extras with these on every ingest, so a
+   * key left out (or null or empty) clears that extra. A `date` is
+   * YYYY-MM-DD and a `link` an http(s) URL. Core drops a value that isn't, or
+   * whose key the vocabulary doesn't declare.
+   */
+  extras?: Readonly<Record<string, string | null>>
 }
