@@ -11,7 +11,7 @@ import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
 import { importProviderMeasures, isSnapshotProvider, runSnapshotSync } from '../cron/sync-snapshots'
-import { providerConfigured } from '../lib/providerRouting'
+import { ingestQueueFor, providerConfigured } from '../lib/providerRouting'
 import { claimState, listStateOwnership, loadStateOwners, ownerOf } from '../lib/stateProviders'
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
@@ -773,32 +773,42 @@ adminRoutes.post('/reingest-bill/:billId', async (c) => {
 //
 // SAFETY: defaults to dry run. Pass ?confirm=true to actually queue. Each queued
 // message triggers one getBill() LegiScan call — be mindful of the monthly quota (10k on the free tier).
+//
+// ?provider=<id> limits it to that provider's bills, on that provider's ingest
+// queue. `?provider=lims` re-ingests a tenant's DC bills with one LIMS details
+// call each and no LegiScan calls (after a LIMS mapping change, say).
 adminRoutes.post('/reingest-tenant/:tenantId', async (c) => {
   const tenantId = c.req.param('tenantId')
   const confirm = c.req.query('confirm') === 'true'
+  const providerId = c.req.query('provider')
+  const provider = providerId ? findProvider(providerId) : undefined
+  if (providerId && !provider) return c.json({ error: `unknown provider ${providerId}` }, 400)
   const db = drizzle(c.env.DB, { schema })
 
   const tenant = await db.select().from(tenants).where(eq(tenants.tenantId, tenantId)).get()
   if (!tenant) return c.json({ error: 'tenant not found' }, 404)
 
-  const rows = await db.select({ billId: billTenants.billId })
-    .from(billTenants)
-    .where(and(
-      eq(billTenants.tenantId, tenantId),
-      isNotNull(billTenants.matchType),
-    ))
-    .all()
+  const tracked = and(eq(billTenants.tenantId, tenantId), isNotNull(billTenants.matchType))
+  const rows = provider
+    ? await db.select({ billId: billTenants.billId }).from(billTenants)
+      .innerJoin(bills, eq(bills.billId, billTenants.billId))
+      .where(and(tracked, eq(bills.provider, provider.id))).all()
+    : await db.select({ billId: billTenants.billId }).from(billTenants).where(tracked).all()
 
   if (!confirm) {
     return c.json({
       tenantId,
+      ...(provider ? { provider: provider.id } : {}),
       matched: rows.length,
       wouldQueue: rows.length,
       dryRun: true,
-      note: 'Pass ?confirm=true to actually queue. Each queued message triggers one getBill() LegiScan call.',
+      note: provider && provider.id !== DEFAULT_PROVIDER_ID
+        ? `Pass ?confirm=true to actually queue. Each queued message makes ${provider.id}'s per-bill calls, and no LegiScan call.`
+        : 'Pass ?confirm=true to actually queue. Each queued message triggers one getBill() LegiScan call.',
     })
   }
 
+  const queue = provider ? ingestQueueFor(provider, c.env) : c.env.INGESTOR_QUEUE
   let queued = 0
   const BATCH = 100
   for (let i = 0; i < rows.length; i += BATCH) {
@@ -806,10 +816,10 @@ adminRoutes.post('/reingest-tenant/:tenantId', async (c) => {
       body: { billId: r.billId } as IngestorMessage,
     }))
     if (batch.length > 0) {
-      await c.env.INGESTOR_QUEUE.sendBatch(batch)
+      await queue.sendBatch(batch)
       queued += batch.length
     }
   }
 
-  return c.json({ tenantId, matched: rows.length, queued, dryRun: false })
+  return c.json({ tenantId, ...(provider ? { provider: provider.id } : {}), matched: rows.length, queued, dryRun: false })
 })
