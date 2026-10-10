@@ -1,0 +1,14 @@
+# Maintainers who review changes to each data provider. The provider
+# interface, registry, and SDK come first, with the lint rule and check that
+# hold the boundary. Each provider directory then names whoever maintains that
+# adapter. A later line wins for the paths it matches, so keep each provider's
+# line below the providers/ line.
+
+/central/src/providers/                        @wtadler
+/central/eslint.config.mjs                     @wtadler
+/central/eslint-provider-boundary.mjs          @wtadler
+/central/scripts/check-provider-boundary.mjs   @wtadler
+/central/src/providers/legiscan/               @wtadler
+/central/src/providers/lims/                   @wtadler
+/central/src/providers/mga/                    @wtadler
+/central/src/providers/lis/                    @wtadler

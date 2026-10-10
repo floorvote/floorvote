@@ -32,7 +32,6 @@ const fakeCentralBill = {
   status: 'introduced',
   statusDate: '2026-01-01',
   updatedAt: '2026-01-10T12:00:00Z',
-  openstatesUrl: 'https://openstates.org/ri/bills/2026/HB100/',
   stateUrl: 'https://legisinfo.ri.gov/bills/HB100',
   textHash: 'hash-abc123',
   textR2Key: 'bills/test-uuid-00000000-0001/ver-001.html',
@@ -94,7 +93,7 @@ describe('processCentralNotification', () => {
     expect(row!.externalId).toBe(BILL_ID)
     expect(row!.state).toBe('RI')
     expect(row!.abstract).toBe('An act relating to election administration')
-    expect(row!.url).toBe('https://openstates.org/ri/bills/2026/HB100/')
+    expect(row!.url).toBe('https://legisinfo.ri.gov/bills/HB100')
     expect(row!.stateUrl).toBe('https://legisinfo.ri.gov/bills/HB100')
     expect(row!.status).toBe('introduced')
     expect(row!.providerUpdatedAt).toBe('2026-01-10T12:00:00Z')

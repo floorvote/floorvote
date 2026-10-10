@@ -18,9 +18,6 @@ Set up two accounts before you start:
 > [!IMPORTANT]
 > LegiScan provides the bill data through their API but is not involved with FloorVote. If you sign up for LegiScan, please don't contact them for help with FloorVote.
 
-> [!NOTE]
-> FloorVote also contains some code for interfacing with the [OpenStates API](https://v3.openstates.org/) as an alternative to LegiScan, but this code path is not actively maintained and lacks features present in the LegiScan path.
-
 ## Cloudflare API tokens
 
 You'll use two kinds of Cloudflare API token. Knowing the difference up front makes the rest of this guide clearer:
@@ -84,7 +81,7 @@ wrangler queues create central-legiscan-ingestor
 Save the `database_id` from the D1 output — you'll need it in the next step.
 
 > [!IMPORTANT]
-> **The `-ls` suffix is required, not stylistic.** `npm run deploy:legiscan` applies migrations to a database named exactly `central-bills-ls`. The unsuffixed names belong to the OpenStates path, so the two providers can coexist on one account without colliding.
+> **The `-ls` suffix is required, not stylistic.** `npm run deploy:legiscan` applies migrations to a database named exactly `central-bills-ls`, and the example config names the bucket and queue the same way.
 
 > [!TIP]
 > `--location` sets the D1 primary region, and it defaults to wherever *you* are when you run the command — not where your users are. Pick the hint nearest your audience (`enam`, `wnam`, `weur`, `eeur`, `apac`, `oc`). Getting this wrong adds a cross-ocean round trip to every query, and changing it later means recreating the database and reseeding.
@@ -101,7 +98,6 @@ main = "src/index-legiscan.ts"
 [env.legiscan.vars]
 # optional — shown as a credit in each team's footer
 OPERATOR_NAME = "Your Organization Name"
-BILL_PROVIDER = "legiscan"
 
 [[env.legiscan.d1_databases]]
 binding = "DB"

@@ -15,23 +15,18 @@ export async function demoResetAndSeed(env: Env): Promise<{ ok: boolean; billsSe
   const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(bills).all()
   let billsSeeded = false
   if (count === 0) {
-    if (env.PROVIDER === 'legiscan') {
-      let offset = 0
-      for (let iter = 0; iter < 200; iter++) {
-        const res = await centralFetch(env, `/tenants/reprocess/${env.TENANT_ID}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ offset }),
-        })
-        if (!res.ok) break
-        billsSeeded = true
-        const j = await res.json().catch(() => ({})) as { hasMore?: boolean; nextOffset?: number }
-        if (!j.hasMore) break
-        offset = typeof j.nextOffset === 'number' ? j.nextOffset : offset + 1000
-      }
-    } else {
-      const res = await centralFetch(env, `/admin/reprocess-tenant/${env.TENANT_ID}`, { method: 'POST' })
-      billsSeeded = res.ok
+    let offset = 0
+    for (let iter = 0; iter < 200; iter++) {
+      const res = await centralFetch(env, `/tenants/reprocess/${env.TENANT_ID}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ offset }),
+      })
+      if (!res.ok) break
+      billsSeeded = true
+      const j = await res.json().catch(() => ({})) as { hasMore?: boolean; nextOffset?: number }
+      if (!j.hasMore) break
+      offset = typeof j.nextOffset === 'number' ? j.nextOffset : offset + 1000
     }
   }
   await runDemoReset(env.DB, resolveDemoSeed(env.DEMO_SEED))

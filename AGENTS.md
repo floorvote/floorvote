@@ -12,14 +12,14 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 
 **Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret.
 
+**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off unless an env var names their state, and synced as snapshots by `cron/sync-sources.ts` (see `docs/internal/sync-pipeline.md`).
+
 **Bill pipeline:**
 1. Central hourly cron → per-state keyword union filter → queue matching bills to ingestor
 2. Ingestor → fetch bill + text from LegiScan → store in R2 → notify tenants
 3. Tenant queue consumer → fetch from central → run AI → upsert to tenant D1
 
 For the full sync pipeline (cron passes, ingestor fast/full path, deduplication, tenant message flags), see [`docs/internal/sync-pipeline.md`](docs/internal/sync-pipeline.md). The interactive companions are served from the docs site at [floorvote.org/docs/internal/sync-flow.html](https://floorvote.org/docs/internal/sync-flow.html) and [architecture.html](https://floorvote.org/docs/internal/architecture.html); their source lives in `docs/content/public/internal/`.
-
-**Providers:** LegiScan is the recommended and actively maintained provider (`legiscan` wrangler env). An OpenStates provider also exists but is experimental and not at feature parity — see the note at the bottom of [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md).
 
 Maintainer-grade docs (sync pipeline, LegiScan API reference, email/calendar/Turnstile internals, style-token and date conventions) live in [docs/internal/](docs/internal/README.md) — flat, and not on the published docs site.
 
@@ -43,7 +43,7 @@ This is the canonical project layout — the README intentionally does not dupli
 |---|---|
 | Backend | Hono 4.13 on Cloudflare Workers |
 | Database | Cloudflare D1 (SQLite via Drizzle ORM) |
-| Storage | Cloudflare R2 (bill text + masterlist cache) |
+| Storage | Cloudflare R2 (bill text) |
 | Queues | Cloudflare Queues (ingestor + per-tenant delivery) |
 | Frontend | React 19 + React Router 7 + Vite 8 (Workers Assets) |
 | Email | Cloudflare Email Service (magic link auth); Resend available as a fallback via `EMAIL_PROVIDER` |
@@ -62,8 +62,7 @@ Each tenant is a separate wrangler environment. Configuration lives in `api/wran
 npm run deploy:tenant -- <env-name>
 
 # Deploy central (from central/)
-npm run deploy:legiscan     # LegiScan central (recommended)
-npm run deploy              # OpenStates central (experimental)
+npm run deploy:legiscan     # `npm run deploy` is an alias
 ```
 
 `deploy.sh` builds the frontend, applies pending D1 migrations, and deploys the Worker. **Never run `wrangler deploy --env <tenant>` directly** — it skips migrations and the web build.
@@ -91,7 +90,6 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | `APP_URL` | Base URL for magic links and email links |
 | `TENANT_ID` | Unique identifier for this org |
 | `CENTRAL_API_URL` | URL of the central worker |
-| `PROVIDER` | `legiscan` (recommended) or `openstates` |
 | `STATE` | Two-letter state abbreviation (empty for multi-state) |
 | `AI_GATEWAY_ENABLED` | `"true"` to route Gemini through Cloudflare AI Gateway |
 | `CF_ACCOUNT_ID` | Cloudflare account ID (required for AI Gateway) |
@@ -118,7 +116,6 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 
 | Var | Purpose |
 |---|---|
-| `BILL_PROVIDER` | `legiscan` |
 | `OPERATOR_NAME` | Display name for the operator |
 | `ADMIN_APP_URL` | Base URL for the admin dashboard (for magic-link emails) |
 | `CF_ACCOUNT_ID` | Cloudflare account ID (for analytics queries) |
@@ -129,7 +126,7 @@ For local dev: `cp api/.dev.vars.example api/.dev.vars` (and `central/.dev.vars.
 
 ### Database
 
-Tenant migrations: `api/migrations/`. Central migrations: `central/migrations/`. Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema.ts` / `schema-legiscan.ts` (central).
+Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-legiscan/`. Schema source of truth: `api/src/db/schema.ts` (tenant), `central/src/db/schema.ts` (central).
 
 **Always add new migration files — never edit existing ones.**
 
@@ -145,7 +142,7 @@ cd central && npm run migrate:remote
 
 ### LegiScan API quota
 
-30,000 calls/month on the free tier. Never bulk-queue bills to the ingestor without `skipFetch: true`. Safe bulk operations: `reprocess` (zero API calls), `redownload-texts` (`skipFetch: true`, downloads from legislature site).
+10,000 calls/month on the free tier. Never bulk-queue bills to the ingestor without `skipFetch: true`. Safe bulk operations: `reprocess` (zero API calls), `redownload-texts` (`skipFetch: true`, downloads from legislature site).
 
 ---
 

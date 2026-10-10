@@ -1,29 +1,30 @@
-import type { BillProvider } from './types'
-import type { Env, CentralDb } from '../types'
-import { createOpenStatesProvider } from './openstates'
-import { createLegiscanProvider } from './legiscan'
-import { sql } from 'drizzle-orm'
-import { apiCallLog } from '../db/schema'
+/**
+ * The provider registry: the one place core reaches a provider. Core asks for a
+ * provider by id and talks to it through the interface in ./types, which this
+ * module re-exports. ESLint keeps core from importing a provider any other way.
+ */
+import { legiscan } from './legiscan'
+import { lims } from './lims'
+import { mga } from './mga'
+import { lis } from './lis'
+import type { Provider } from './types'
 
-export type { BillProvider } from './types'
-export { deriveStatus } from './openstates'
+export type * from './types'
 
-export function getProvider(env: Env, db: CentralDb): BillProvider {
-  const providerName = env.BILL_PROVIDER ?? 'legiscan'
+/** Every provider central knows. A deployment turns on each non-default one by configuration. */
+export const PROVIDERS: readonly Provider[] = [legiscan, lims, mga, lis]
 
-  const trackCall = () => {
-    const date = new Date().toISOString().split('T')[0] // ts-write-ok: date-only (YYYY-MM-DD) key, format-agnostic
-    db.insert(apiCallLog)
-      .values({ date, provider: providerName, callCount: 1 })
-      .onConflictDoUpdate({
-        target: [apiCallLog.date, apiCallLog.provider],
-        set: { callCount: sql`${apiCallLog.callCount} + 1` },
-      })
-      .catch(err => console.error('[rate-limit] failed to log API call:', err))
-  }
+/** The provider central uses wherever nothing names another. */
+export const DEFAULT_PROVIDER_ID = 'legiscan'
 
-  if (providerName === 'legiscan') {
-    return createLegiscanProvider(env.LEGISCAN_API_KEY)
-  }
-  return createOpenStatesProvider(env.OPENSTATES_API_KEY, trackCall)
+/** The provider with this id. Throws for an id central doesn't know. */
+export function getProvider(id: string): Provider {
+  const provider = findProvider(id)
+  if (!provider) throw new Error(`unknown provider: ${id}`)
+  return provider
+}
+
+/** The provider with this id, or undefined for an id central doesn't know. */
+export function findProvider(id: string | null | undefined): Provider | undefined {
+  return PROVIDERS.find(p => p.id === id)
 }

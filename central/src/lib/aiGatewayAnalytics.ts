@@ -1,6 +1,6 @@
-import type { LsEnv } from '../types-legiscan'
+import type { Env } from '../types'
 
-type AiAnalyticsEnv = Pick<LsEnv, 'CF_ANALYTICS_TOKEN' | 'CF_ACCOUNT_ID' | 'CF_AIG_GATEWAY'>
+type AiAnalyticsEnv = Pick<Env, 'CF_ANALYTICS_TOKEN' | 'CF_ACCOUNT_ID' | 'CF_AIG_GATEWAY'>
 
 const GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql'
 const DAY_MS = 24 * 60 * 60 * 1000

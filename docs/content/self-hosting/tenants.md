@@ -129,7 +129,6 @@ OPERATOR_SOURCE_URL = "https://github.com/yourorg/floorvote"
 STATE = "[STATE]"
 
 TENANT_ID = "[slug]"
-PROVIDER = "legiscan"
 CENTRAL_API_URL = "https://<your-central>.workers.dev"
 AI_GATEWAY_ENABLED = "true"
 CF_ACCOUNT_ID = "<your-account-id>"

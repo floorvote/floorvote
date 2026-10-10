@@ -16,14 +16,12 @@ export interface SeedCentralDbOptions {
   /** Skip both roll_calls and roll_call_votes entirely. */
   skipVotes?: boolean
   /**
-   * Include the per-legislator rows (`roll_call_votes`). Defaults to false
-   * because nothing in the codebase reads them — central exposes only
-   * `roll_calls` aggregates, the tenant never sees individuals, the UI shows
-   * aggregates only on the bill timeline, and the live ingestor doesn't write
-   * them. Skipping cuts ~100k+ orphan rows on US-scale seeds. If we ever build
-   * partisan-vote analysis or "how did my legislator vote", flip this on (or
-   * use `--individual-votes-only` in seed-legiscan.ts to backfill against an
-   * already-seeded session without redoing aggregates).
+   * Include the per-legislator rows (`roll_call_votes`), which bill pages show
+   * under each roll call. Defaults to false: central's weekly dataset load
+   * fills them for every session instances cover (the ones the hourly sync
+   * polls), so a seed of a current session doesn't need them. Turn this on, or
+   * use `--individual-votes-only` in seed-legiscan.ts, for an older session
+   * the weekly load never visits. See docs/internal/legiscan-member-votes.md.
    */
   includeIndividualVotes?: boolean
 }
@@ -226,8 +224,9 @@ VALUES (${num(p.people_id)}, ${esc(p.person_hash)}, ${num(p.state_id)}, ${esc(p.
 
   const includeIndividual = opts.includeIndividualVotes ?? false
   if (!includeIndividual) {
-    console.log(`  Note: skipping per-legislator roll_call_votes rows (nothing reads them).`)
-    console.log(`        Backfill later with: --individual-votes-only --from-dir <same path>`)
+    console.log(`  Note: skipping per-legislator roll_call_votes rows. Central's weekly dataset load`)
+    console.log(`        fills them for covered sessions. For an older session, backfill with:`)
+    console.log(`        --individual-votes-only --from-dir <same path>`)
   }
 
   for (const name of voteFiles) {

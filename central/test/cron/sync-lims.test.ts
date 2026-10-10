@@ -2,18 +2,22 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
-import * as schema from '../../src/db/schema-legiscan'
+import * as schema from '../../src/db/schema'
 import { setupLsDb } from '../helpers/setupLsDb'
 import bulkRaw from '../fixtures/lims/bulk-records.json?raw'
 import details0400Raw from '../fixtures/lims/details-B26-0400.json?raw'
 import membersRaw from '../fixtures/lims/members-26.json?raw'
 
-vi.mock('../../src/lib/lims', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/lims')>('../../src/lib/lims')
+vi.mock('../../src/providers/lims/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/lims/client')>('../../src/providers/lims/client')
   return { ...actual, getCouncilPeriods: vi.fn(), getMembers: vi.fn(), getBulkData: vi.fn(), getLegislationDetails: vi.fn() }
 })
-vi.mock('../../src/lib/legiscan', async () => {
-  const actual = await vi.importActual<typeof import('../../src/lib/legiscan')>('../../src/lib/legiscan')
+vi.mock('../../src/providers/lims/map', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/lims/map')>('../../src/providers/lims/map')
+  return { ...actual, buildLimsBill: vi.fn(actual.buildLimsBill) }
+})
+vi.mock('../../src/providers/legiscan/client', async () => {
+  const actual = await vi.importActual<typeof import('../../src/providers/legiscan/client')>('../../src/providers/legiscan/client')
   return { ...actual, getBill: vi.fn(), getBillText: vi.fn(), getSessionList: vi.fn().mockResolvedValue([]),
     getMasterListBySession: vi.fn().mockResolvedValue([]), getMasterListRaw: vi.fn().mockResolvedValue([]) }
 })
@@ -24,14 +28,18 @@ vi.mock('../../src/lib/sync-schedule', async () => {
 const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
-import { runLimsSync, refreshCouncilPeriod } from '../../src/cron/sync-lims'
-import { runLsSync } from '../../src/cron/sync-legiscan'
-import { processLsIngestorQueue } from '../../src/queue/processor-legiscan'
-import * as lims from '../../src/lib/lims'
-import * as legiscan from '../../src/lib/legiscan'
-import { limsBillId, limsSessionId, isLimsDocId } from '../../src/lib/lims-ids'
+import { runSourceSync, refreshSourceSessions } from '../../src/cron/sync-sources'
+import { lims as limsProvider } from '../../src/providers/lims'
+import { providerContext } from '../../src/lib/providerContext'
+import { runSync } from '../../src/cron/sync'
+import { processIngestorQueue } from '../../src/queue/processor'
+import * as lims from '../../src/providers/lims/client'
+import * as limsMap from '../../src/providers/lims/map'
+import * as legiscan from '../../src/providers/legiscan/client'
+import { limsBillId, limsSessionId, isLimsDocId } from '../../src/providers/lims/ids'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
+const runLimsSync = (e: any, db: any, opts: { force?: boolean } = {}) => runSourceSync(limsProvider, e, db, opts)
 const bulk = JSON.parse(bulkRaw) as Record<string, lims.LimsBulkRecord>
 const PERIOD = { councilPeriodId: 26, councilPeriod: '26 (2025-26)', startDate: '2025-01-02T00:00:00', endDate: '2026-12-31T00:00:00' }
 const B0400 = limsBillId('B26-0400')!
@@ -113,7 +121,7 @@ describe('runLimsSync', () => {
     const db = drizzle(env.DB, { schema })
     const { env: e } = makeEnv()
     await runLimsSync(e, db)
-    await runLsSync(e, db)
+    await runSync(e, db)
     expect(legiscan.getSessionList).not.toHaveBeenCalled()
     expect(legiscan.getMasterListBySession).not.toHaveBeenCalled()
   })
@@ -126,7 +134,7 @@ describe('ingesting a LIMS bill', () => {
     await runLimsSync(e, db)
 
     const ack = vi.fn(); const retry = vi.fn()
-    await processLsIngestorQueue({ messages: [{ body: { billId: B0400 }, ack, retry }] } as any, e, db)
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack, retry }] } as any, e, db)
 
     expect(retry).not.toHaveBeenCalled()
     expect(ack).toHaveBeenCalled()
@@ -165,11 +173,31 @@ describe('ingesting a LIMS bill', () => {
     const db = drizzle(env.DB, { schema })
     const first = makeEnv()
     await runLimsSync(first.env, db)
-    await processLsIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, first.env, db)
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, first.env, db)
     const second = makeEnv()
     await runLimsSync(second.env, db)
     const queued = second.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
     expect(queued).not.toContain(B0400)
+  })
+})
+
+describe('details refresh bookkeeping', () => {
+  it('records the details fetch only once the bill is built', async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e } = makeEnv()
+    await runLimsSync(e, db)
+    const fetchedAt = async () =>
+      (await db.select().from(schema.sourceRecords).where(eq(schema.sourceRecords.billId, B0400)).get())?.detailsFetchedAt
+
+    vi.mocked(limsMap.buildLimsBill).mockRejectedValueOnce(new Error('unexpected details shape'))
+    const retry = vi.fn()
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry }] } as any, e, db)
+    expect(lims.getLegislationDetails).toHaveBeenCalled()
+    expect(retry).toHaveBeenCalled()
+    expect(await fetchedAt()).toBeNull()
+
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, e, db)
+    expect(await fetchedAt()).toBeTruthy()
   })
 })
 
@@ -179,7 +207,7 @@ describe('review fixes', () => {
     await runLimsSync(run.env, db)
     const ids = run.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
     for (const billId of ids) {
-      await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
+      await processIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
     }
     return ids
   }
@@ -252,7 +280,7 @@ describe('Codex review fixes', () => {
     await runLimsSync(run.env, db)
     const ids = run.limsQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId))
     for (const billId of ids) {
-      await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
+      await processIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
     }
     return { ids, run }
   }
@@ -325,7 +353,7 @@ describe('cancellations', () => {
       vi.mocked(lims.getLegislationDetails).mockResolvedValue(details as any)
       const run = makeEnv()
       await runLimsSync(run.env, db)
-      await processLsIngestorQueue({ messages: [{ body: { billId: B0769 }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
+      await processIngestorQueue({ messages: [{ body: { billId: B0769 }, ack: vi.fn(), retry: vi.fn() }] } as any, run.env, db)
       return run
     }
 
@@ -453,7 +481,7 @@ describe('POST /api/admin/lims-import', () => {
     // The ingestor builds it like any LIMS bill.
     vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), legislationNumber: 'B25-0345' })
     const retry = vi.fn()
-    await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry }] } as any, e, db)
+    await processIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry }] } as any, e, db)
     expect(retry).not.toHaveBeenCalled()
     const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, billId)).get()
     expect(bill?.stateLink).toBe('https://lims.dccouncil.gov/Legislation/B25-0345')
@@ -477,7 +505,7 @@ describe('bill types', () => {
     await runLimsSync(makeEnv().env, db)
     const stub = await db.select().from(schema.bills).where(eq(schema.bills.billId, limsBillId('B26-0001')!)).get()
     expect(stub?.billType).toBe(bulk['B26-0001'].legislationSubCategory)
-    await processLsIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, makeEnv().env, db)
+    await processIngestorQueue({ messages: [{ body: { billId: B0400 }, ack: vi.fn(), retry: vi.fn() }] } as any, makeEnv().env, db)
     const ingested = await db.select().from(schema.bills).where(eq(schema.bills.billId, B0400)).get()
     expect(ingested?.billType).toBe('Permanent Bill')
   })
@@ -498,12 +526,12 @@ describe('sponsors of earlier Council Periods', () => {
       method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: 'oca', numbers: ['B25-0345'] }),
     }), e)
 
-    await refreshCouncilPeriod('lims-key', db, '2026-09-30')
+    await refreshSourceSessions(limsProvider, 'DC', providerContext(limsProvider, e, db), db)
     expect(vi.mocked(lims.getMembers).mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([25, 26]))
 
     const billId = limsBillId('B25-0345')!
     vi.mocked(lims.getLegislationDetails).mockResolvedValue({ ...JSON.parse(details0400Raw), legislationNumber: 'B25-0345', introducers: [{ memberName: 'Gray, Vincent C.', memberTitle: 'Councilmember' }] })
-    await processLsIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, e, db)
+    await processIngestorQueue({ messages: [{ body: { billId }, ack: vi.fn(), retry: vi.fn() }] } as any, e, db)
     const sponsors = await db.select().from(schema.billSponsors).where(eq(schema.billSponsors.billId, billId)).all()
     expect(sponsors.map(s => s.peopleId)).toContain(1_000_000_150)
     vi.mocked(lims.getMembers).mockResolvedValue(JSON.parse(membersRaw))

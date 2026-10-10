@@ -213,7 +213,6 @@ type CentralBill = {
   lastAction?: string | null
   lastActionDate?: string | null
   updatedAt: string
-  openstatesUrl: string | null
   stateUrl: string | null
   textHash: string | null
   textR2Key: string | null
@@ -303,7 +302,7 @@ export async function processCentralNotification(
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
       abstract: centralBill.abstract ?? null,
-      url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+      url: centralBill.stateUrl ?? null,
       stateUrl: centralBill.stateUrl ?? null,
       providerUpdatedAt: centralBill.updatedAt,
       sponsor: primarySponsorStub?.name ?? null,
@@ -358,7 +357,7 @@ export async function processCentralNotification(
       yearStart: centralBill.yearStart ?? null,
       yearEnd:   centralBill.yearEnd   ?? null,
       abstract: centralBill.abstract ?? null,
-      url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+      url: centralBill.stateUrl ?? null,
       stateUrl: centralBill.stateUrl ?? null,
       providerUpdatedAt: centralBill.updatedAt,
       sponsor: primarySponsorMd?.name ?? null,
@@ -403,7 +402,7 @@ export async function processCentralNotification(
     return
   }
 
-  // Map normalized sponsors — OpenStates marks all as primary:true, so treat first as primary, rest as co-sponsors
+  // Map normalized sponsors: the first primary sponsor (or the first listed) is the sponsor, the rest are co-sponsors
   const primarySponsor = centralBill.sponsors.find(s => s.primary) ?? centralBill.sponsors[0] ?? null
   const coSponsorList = centralBill.sponsors
     .filter(s => s !== primarySponsor)
@@ -442,7 +441,7 @@ export async function processCentralNotification(
     yearStart: centralBill.yearStart ?? null,
     yearEnd:   centralBill.yearEnd   ?? null,
     abstract: centralBill.abstract ?? null,
-    url: centralBill.openstatesUrl ?? centralBill.stateUrl ?? null,
+    url: centralBill.stateUrl ?? null,
     stateUrl: centralBill.stateUrl ?? null,
     providerUpdatedAt: centralBill.updatedAt,
     sponsor: primarySponsor?.name ?? null,
@@ -462,7 +461,7 @@ export async function processCentralNotification(
   // Determine if AI should run
   const kwRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
   const keywords: string[] = kwRow ? JSON.parse(kwRow.value) : []
-  // Empty means "match nothing", matching central: tenants-legiscan.ts:218 is an
+  // Empty means "match nothing", matching central: routes/tenants.ts is an
   // explicit `keywords.length > 0 ? matchesUnion(...) : false`. Treating empty as
   // match-everything here would stamp match_type='keyword' on a keyword-less tenant
   // during a forceAI re-queue, and empty keywords are now the documented default.
@@ -846,7 +845,7 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
   if (!sessionId) return ''
   // synthesized seed sessions: "seed:RI:2026" → "2026"
   if (sessionId.startsWith('seed:')) return sessionId.split(':').pop() ?? sessionId
-  // OpenStates session IDs: "ri:2026" → "2026"
+  // Legacy "ri:2026"-style session ids (from the removed OpenStates central), kept for older data and tests
   if (/^[a-z]{2}:\d{4}/.test(sessionId)) return sessionId.split(':').pop() ?? sessionId
   return sessionId
 }

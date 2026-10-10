@@ -1,18 +1,19 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { sourceIds } from '../db/schema-legiscan'
-import type { LsDb } from '../types-legiscan'
+import { sourceIds } from '../db/schema'
+import type { Db } from '../types'
 
 /** D1 binds at most 100 parameters per statement. */
 const SELECT_CHUNK = 90
 const INSERT_CHUNK = 30
 
 /**
- * Central integer ids for a direct source's records, one per (source, kind,
+ * Central integer ids for a provider's records, one per (provider, kind,
  * native key), allocated on first sight from one sequence (source_ids).
- * The same key always maps to the same id.
+ * The same key always maps to the same id. Providers reach it as
+ * ProviderContext.ids.
  */
 export async function sourceIdsFor(
-  db: LsDb, source: string, kind: string, keys: readonly string[],
+  db: Db, source: string, kind: string, keys: readonly string[],
 ): Promise<Map<string, number>> {
   const unique = [...new Set(keys)]
   const ids = new Map<string, number>()
@@ -37,8 +38,4 @@ export async function sourceIdsFor(
   await db.batch(stmts as [typeof stmts[0], ...typeof stmts])
   await lookup(missing)
   return ids
-}
-
-export async function sourceIdFor(db: LsDb, source: string, kind: string, key: string): Promise<number> {
-  return (await sourceIdsFor(db, source, kind, [key])).get(key)!
 }

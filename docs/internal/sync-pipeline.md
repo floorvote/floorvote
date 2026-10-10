@@ -2,7 +2,7 @@
 
 Canonical, code-grounded description of how legislative data flows from LegiScan into tenant DBs. Update this file whenever the pipeline changes. The visual companion is [`architecture.html`](../content/public/internal/architecture.html), served at `floorvote.org/docs/internal/architecture.html` — keep both in sync, but treat this file as the source of truth.
 
-> **Scope:** the LegiScan central env (`floorvote-central-legiscan`). The OpenStates env is structurally similar but lighter; this doc describes the LegiScan path.
+> **Scope:** the LegiScan central env (`floorvote-central-legiscan`), the only central.
 
 ---
 
@@ -15,9 +15,37 @@ LegiScan API  →  central cron  →  central ingestor queue  →  per-tenant qu
 
 Three queue boundaries. LegiScan API quota is **10,000 calls/month total** (reduced from 30,000 on October 1, 2026). Calls happen only in Phases 1 and 2 — the cron polls masterlist endpoints, the ingestor calls `getBill` once per queued bill. Phase 3 is internal data movement, zero API cost.
 
+### Where LegiScan sits
+
+LegiScan is the default **provider** (`central/src/providers/legiscan/`). Core (the cron and the ingestor) decides what to fetch and when, and writes the results. The provider calls the API and maps each response into the shapes in `central/src/providers/types.ts`. Each provider method maps to one LegiScan op, logged to `api_call_log` under the op's name:
+
+| Provider method | LegiScan op | Called from |
+|---|---|---|
+| `listSessions` | `getSessionList` | Cron, once a day at 5 ET |
+| `listMeasures` | `getMasterList?id=` (logged as `getMasterListBySession`) | Cron full pass; `backfill-stub-actions` |
+| `listChangeHashes` (optional) | `getMasterListRaw` | Cron raw pass. A provider without it skips raw-pass hours. |
+| `fetchMeasure` | `getBill` | Ingestor |
+| `fetchDocument` (optional) | `getBillText` | Ingestor, on both the normal and `skipFetch` paths, only when a text's `state_link` fails or selects its version with a URL fragment the server never sees |
+| `listVoteDatasets` (optional) | `getDatasetList` | Cron, once a day at 3 ET, for states with a session due its weekly vote check ([legiscan-member-votes.md](legiscan-member-votes.md)) |
+| `fetchVoteDataset` (optional) | `getDatasetRaw` | Ingestor, for a `vote-dataset` message, when a session's dataset hash changed |
+
+Two things hold the split. ESLint (`central/eslint-provider-boundary.mjs`) lets core reach the provider only through the registry (`central/src/providers/index.ts`), and lets provider code reach core only through `central/src/providers/sdk.ts`. And a provider's `ctx.env` holds only the env keys it declares (LegiScan's is `LEGISCAN_API_KEY`), so it never gets the database, buckets, or queues.
+
+### Snapshot providers (DC, Maryland, Virginia)
+
+Three opt-in providers read a legislature's own feed: DC Council LIMS (`providers/lims/`), the Maryland General Assembly's open data (`providers/mga/`), and Virginia's LIS data files (`providers/lis/`). Each is off unless its env var names its state (`LIMS_STATES` with `LIMS_API_KEY`, `MGA_STATES`, or `LIS_STATES`). Then the LegiScan sync and the weekly vote-dataset check leave that state alone.
+
+None of these feeds has a modified-since filter, so each is read as a snapshot by its own hourly job (`central/src/cron/sync-sources.ts`):
+
+1. **Sessions.** At 5 ET, or whenever none of the provider's stored sessions would sync, core calls `listSessions` and upserts what it returns. A session the provider no longer lists stops being current. A provider with `listPeople` then returns its legislators, and core upserts them. `selectSessions` picks which stored sessions to sync.
+2. **Full pass.** In a session's full-pass hours, `snapshot` returns every record with a hash. Core stores each changed record in `source_records`, maps each record through `toEntry`, and runs the same `applyMasterList` as the LegiScan full pass. Queued bills go to the provider's `ingestQueue` binding when it is bound (LIMS: `LIMS_INGESTOR_QUEUE`), and to `INGESTOR_QUEUE` otherwise. With `detailsRefresh` (LIMS), tracked, unsettled bills whose details are stale are re-queued too.
+3. **Ingest.** The ingestor routes each bill to its provider by the `source` column of its `bills` row, and passes `fetchMeasure` the stored record and its session. LIMS also returns its LegislationDetails response, and core records when it was fetched.
+
+Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `source_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Moving a state off LegiScan while instances track its LegiScan bills is refused until a cutover exists.
+
 ---
 
-## Phase 1 — Cron (`central/src/cron/sync-legiscan.ts`)
+## Phase 1 — Cron (`central/src/cron/sync.ts`)
 
 Triggered hourly (`0 * * * *`). Per session, picks a mode via `decideMode(session, etHour)`:
 
@@ -50,30 +78,30 @@ For each masterlist-raw entry:
 
 #### Why the raw pass leaves unmatched hashes stale
 
-The full pass is the **only** pass that refreshes `last_action`/`status` for monitoring-only bills and sends them `stubOnly` notifications, and it gates that work on `billChanged = stored.change_hash !== masterlist.change_hash`. The raw masterlist carries no `last_action`/`status` and the raw pass never notifies stub tenants — so if the raw pass advanced an unmatched bill's `change_hash`, the *next full pass would see no delta and silently swallow the change forever* (until some later change happened to land in a full-pass window first). Because ~7 of every 10 passes are raw, that swallow was the common case. Leaving the unmatched hash stale lets the full pass reliably detect and propagate the change (≤8h latency). Fixed in `runRawPass` ([sync-legiscan.ts](../../central/src/cron/sync-legiscan.ts)); the one-off `POST /admin/backfill-stub-actions/:tenantId` route heals stubs that were already swallowed before the fix.
+The full pass is the **only** pass that refreshes `last_action`/`status` for monitoring-only bills and sends them `stubOnly` notifications, and it gates that work on `billChanged = stored.change_hash !== masterlist.change_hash`. The raw masterlist carries no `last_action`/`status` and the raw pass never notifies stub tenants — so if the raw pass advanced an unmatched bill's `change_hash`, the *next full pass would see no delta and silently swallow the change forever* (until some later change happened to land in a full-pass window first). Because ~7 of every 10 passes are raw, that swallow was the common case. Leaving the unmatched hash stale lets the full pass reliably detect and propagate the change (≤8h latency). Fixed in `runRawPass` ([sync.ts](../../central/src/cron/sync.ts)); the one-off `POST /admin/backfill-stub-actions/:tenantId` route heals stubs that were already swallowed before the fix.
 
 ### Cron design consequences
 
-- `getBill` is called for matched bills (`match_type ∈ {'keyword', 'manual'}`) **and** for changed masterlist entries with no title, matched or not (`runFullPass` in [sync-legiscan.ts](../../central/src/cron/sync-legiscan.ts) — untitled entries are queued before the per-tenant match loop runs). The cron is the API gate; apart from that untitled-entry exception, unmatched changes never touch the ingestor.
+- `getBill` is called for matched bills (`match_type ∈ {'keyword', 'manual'}`) **and** for changed masterlist entries with no title, matched or not (`runFullPass` in [sync.ts](../../central/src/cron/sync.ts) — untitled entries are queued before the per-tenant match loop runs). The cron is the API gate; apart from that untitled-entry exception, unmatched changes never touch the ingestor.
 - New keyword matches surface in full passes only ⇒ ≤8h latency.
 - Monitoring-only bill metadata updates surface in full passes only ⇒ ≤8h latency. The raw pass leaves unmatched bills' `change_hash` stale precisely so the full pass keeps detecting them (see "Why the raw pass leaves unmatched hashes stale"); advancing it there used to swallow the change.
 - **Ordering note**: the cron writes the new `change_hash` and masterlist fields to central D1 *before* sending the queue message. By the time the ingestor's snapshot reads `bills.change_hash`, it already matches what `getBill` will return. This means `bill_change_log` rows for `title_changed` / `status_change` / `description_changed` are not emitted for cron-triggered messages — the snapshot reads the post-change value. Child-collection diffs (history, sponsors, votes, supplements, amendments) are still captured correctly. This is a known caveat.
 
 ---
 
-## Phase 2 — Central ingestor (`central/src/queue/processor-legiscan.ts`)
+## Phase 2 — Central ingestor (`central/src/queue/processor.ts`)
 
 Consumes from `central-legiscan-ingestor` queue. Message shape: `{ billId: number; skipFetch?: boolean; forceMetadata?: boolean; forceAI?: boolean }`.
 
 ### skipFetch branch
 
-Used by the bulk-seed script and the `redownload-texts` admin route. Skips `getBill` entirely. Downloads any `bill_texts` row with null `r2_key` from `state_link`, then calls `notifyLsTenants` and returns. Zero LegiScan API cost.
+Used by the bulk-seed script and the `redownload-texts` admin route. Skips `getBill` entirely. Downloads any `bill_texts` row with null `r2_key` from `state_link`, then calls `notifyTenants` and returns. No `getBill` calls, but a text whose `state_link` fails (or names its version with a fragment) still falls back to `getBillText`, one LegiScan call per document.
 
 ### Normal branch (the common path)
 
-Always calls `getBill(billId)` — **one LegiScan quota tick per message**. The cron is the only gate preventing that tick.
+`processBill` always calls the provider's `fetchMeasure(billId)`, which is LegiScan's `getBill` — **one LegiScan quota tick per message**. The cron is the only gate preventing that tick.
 
-After `getBill`, the ingestor unconditionally:
+It hands the result to `ingestMeasure`, which unconditionally:
 
 1. Reads existing `bills` row (if any) and snapshots its child rows.
 2. Runs `detectChanges` to compute a list of `ChangeRecord`s.
@@ -83,11 +111,11 @@ After `getBill`, the ingestor unconditionally:
 6. **Upsert** these child tables: `bill_texts`, `bill_supplements`, `bill_amendments`, `roll_calls`.
 7. Downloads any text without an R2 key to `bills/legiscan-{billId}/texts/{docId}.{ext}`.
 8. Stamps `bills.texts_fetched_at` → derives `text_status` for the response.
-9. Calls `notifyLsTenants` for each covering tenant.
+9. Calls `notifyTenants` for each covering tenant.
 
-**Note:** per-legislator vote rows (`roll_call_votes`) are **not** populated by this path — `getBill` returns vote summaries (`LegiscanVoteSummary`) only. Bulk-seeded bills have per-legislator rows; live-ingested bills don't. Architecture-review §B4.
+**Note:** per-legislator vote rows (`roll_call_votes`) are **not** populated by this path — `getBill` returns vote summaries (`MeasureVote`) only. Bulk-seeded bills have per-legislator rows; live-ingested bills don't. Architecture-review §B4.
 
-### notifyLsTenants
+### notifyTenants
 
 Reads `bill_tenants` rows for this bill (joined to `tenants` for `queue_id`), then sends one message per covering tenant to that tenant's queue: `{ tenantId, billId: 'legiscan:<id>', forceMetadata, forceAI, matchType, changes }`. Sets `bill_tenants.notified_at`.
 
@@ -99,7 +127,7 @@ Delivery goes through `deliverToTenant` ([central/src/lib/tenantDelivery.ts](../
 
 Each tenant has its own queue (`floorvote-{id}-queue`). Messages come from three places:
 
-1. **Ingestor `notifyLsTenants`** — bills that just went through `getBill`. Normal flow.
+1. **Ingestor `notifyTenants`** — bills that just went through `getBill`. Normal flow.
 2. **Cron's full pass directly** — `stubOnly` messages for monitoring-only bills whose masterlist row changed.
 3. **Admin endpoints** — `reprocess`, `refresh-stubs`, `refresh-metadata`. Bypass the ingestor.
 
@@ -154,7 +182,7 @@ const tier: 'flex' | 'priority' = msg.interactive ? 'priority' : 'flex'
 | Tier | When | Why |
 |---|---|---|
 | `flex` | **The default** — every cron-, ingestor-, and admin-driven message | Bulk ingestion is throughput work with nobody watching. Flex is the cheapest tier and the first Google sheds under load, which is exactly the right trade for a backlog that can be retried for hours. |
-| `priority` | Only when the message carries `interactive: true` | Set **only** by the promote-bill and reprocess-bill routes (`interactive` in [api/src/types.ts](../../api/src/types.ts) and [central/src/types-legiscan.ts](../../central/src/types-legiscan.ts)); it is never inferred from anything else. It means a human clicked something on a page and is watching a spinner for this one bill. |
+| `priority` | Only when the message carries `interactive: true` | Set **only** by the promote-bill and reprocess-bill routes (`interactive` in [api/src/types.ts](../../api/src/types.ts) and [central/src/types.ts](../../central/src/types.ts)); it is never inferred from anything else. It means a human clicked something on a page and is watching a spinner for this one bill. |
 | `standard` | Never chosen up front — only as a one-shot fallback after a shed `priority` call | The escalation step below. |
 
 Escalation on a shed (`isGeminiShed` = upstream HTTP 429 or 503):
@@ -181,7 +209,7 @@ So `POST /tenants/reprocess/:tenantId` (`forceMetadata: true`) gets past the ear
 
 - **Tenant D1** — the `bills` row (with denormalized JSON for actions/sponsors), member votes, official positions, comments, notes, feed events, custom fields, AI summary + tags + relevance.
 - **Central D1 (LS)** — bills + all relational children (`bill_history`, `bill_sponsors`, `bill_texts`, `bill_supplements`, `bill_amendments`, `bill_sasts`, `bill_subjects`, `bill_calendar`, `bill_referrals`, `roll_calls`, `roll_call_votes`*, people, committees, sessions, `bill_change_log`, `api_call_log`, `session_sync_log`).
-- **Central R2** — bill text files at `bills/legiscan-{billId}/texts/{docId}.{ext}` and masterlist cache at `sessions/{id}/masterlist.json`.
+- **Central R2** — bill text files at `bills/legiscan-{billId}/texts/{docId}.{ext}`.
 
 *`roll_call_votes` are populated only by the bulk-seed script (see §B4 note).
 
@@ -203,17 +231,19 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 | `POST /admin/reingest-bill/:billId` | Yes | 1 `getBill` | Single-bill refresh through the unified path. |
 | `POST /admin/reingest-tenant/:tenantId` | Yes (dry-run by default; `?confirm=true` to fire) | 1 `getBill` per matched bill | Bulk tenant backfill. |
 | `POST /tenants/promote-bill/:tenantId/:billId` | Yes, `forceAI: true` | 1 `getBill` | Manually add a bill: sets `match_type='manual'` and forces AI. |
-| Bulk seed (`scripts/seed-legiscan.ts --from-dir`) | Yes, `skipFetch: true` | 0 | Seed central D1 from LegiScan bulk JSON dump. |
+| Bulk seed (`scripts/seed-legiscan.ts --from-dir`) | Yes, `skipFetch: true` | 0 `getBill`; 1 `getBillText` per text whose `state_link` fails | Seed central D1 from LegiScan bulk JSON dump. |
 
 ---
 
 ## Things to grep when this gets out of date
 
-- **Cron logic**: `central/src/cron/sync-legiscan.ts` (`runFullPass`, `runRawPass`)
-- **Ingestor**: `central/src/queue/processor-legiscan.ts` (`processLsBill`)
+- **Cron logic**: `central/src/cron/sync.ts` (`runFullPass`, `applyMasterList`, `runRawPass`)
+- **Ingestor**: `central/src/queue/processor.ts` (`processBill`, `ingestMeasure`)
+- **LegiScan calls**: `central/src/providers/legiscan/` (the API client, and the provider that maps it onto the interface in `central/src/providers/types.ts`)
+- **Snapshot providers**: `central/src/cron/sync-sources.ts` (`runSourceSync`), and `central/src/providers/{lims,mga,lis}/`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)
-- **Central bill detail API**: `central/src/routes/bills-legiscan.ts`
+- **Central bill detail API**: `central/src/routes/bills.ts`
 - **Tenant bill detail API**: `api/src/routes/billsApi/detail.ts` (`buildBillDetail`)
-- **Schemas**: `central/src/db/schema-legiscan.ts`, `api/src/db/schema.ts`
+- **Schemas**: `central/src/db/schema.ts`, `api/src/db/schema.ts`

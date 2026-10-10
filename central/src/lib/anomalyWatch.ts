@@ -1,10 +1,10 @@
-import type { LsEnv } from '../types-legiscan'
+import type { Env } from '../types'
 import { listTrackedD1Dbs, fetchDailyRowsRead, type DailyRowsRead } from './d1Analytics'
 import { sendOpsAlert } from './jobAlert'
 import { PRODUCT_NAME } from '../../../shared/brand'
 
 type WatchEnv = Pick<
-  LsEnv,
+  Env,
   | 'CF_ANALYTICS_TOKEN'
   | 'CF_ACCOUNT_ID'
   | 'D1_ANOMALY_FACTOR'

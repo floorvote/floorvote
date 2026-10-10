@@ -158,9 +158,6 @@ async function fetchUpcomingHearings(
   // client so the value can be shown (and made UI-configurable) later.
   const DEFAULT_LOOKAHEAD_DAYS = 30
 
-  const provider = (c.env as { PROVIDER?: string }).PROVIDER ?? 'openstates'
-  if (provider !== 'legiscan') return { hearings: [], lookaheadDays: DEFAULT_LOOKAHEAD_DAYS }
-
   // Load modules config
   const modulesRow = await db
     .select({ value: associationConfig.value })

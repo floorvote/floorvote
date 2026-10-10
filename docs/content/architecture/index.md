@@ -11,7 +11,7 @@ flowchart TB
     LS[(LegiScan API)]
     subgraph CENTRAL [Central Worker]
         Cron[Cron<br/>0 * * * *]
-        Ingestor[Ingestor<br/>processLsBill]
+        Ingestor[Ingestor<br/>processBill]
     end
     CentralDB[("Central D1<br/>bills + children")]
     CentralR2[("Central R2<br/>bill text files")]
@@ -32,7 +32,7 @@ flowchart TB
     Ingestor -->|"getBill"| LS
     Ingestor -->|"writes everything"| CentralDB
     Ingestor -->|"downloads bill text"| CentralR2
-    Ingestor -->|"notifyLsTenants"| TQ
+    Ingestor -->|"notifyTenants"| TQ
     TQ --> TenantProc
     TenantProc -->|"GET /bills/:id<br/>(no API call)"| CentralDB
     TenantProc -->|"upserts row + AI"| TenantDB
@@ -49,7 +49,7 @@ The central-and-tenant split isn't just a diagram — each piece answers a real 
 
 **One cache, one caller.** Legislative APIs meter and rate-limit per account, and the same bill is usually of interest to more than one tenant. Central holds the provider account and the only copy of the bill text, so a bill is fetched once and read many times, and every request to the provider comes from a single hourly sync rather than from N tenants calling independently and racing each other's rate limits. Quota is then something you can see and plan for in one place — which is also why the seeding tools prefer the provider's bulk datasets over the API. Size your provider plan to the coverage and volume you actually need; see [How much does it cost?](/overview/how-much-does-it-cost#legiscan-free-for-most-paid-for-heavy-users).
 
-**One provider interface.** Central reads legislative data through a provider interface (`central/src/providers/`), not a hardcoded vendor. LegiScan is the maintained implementation; an OpenStates provider sits alongside it, and adding another means writing one adapter against that interface rather than touching the pipeline. Everything downstream of central — storage, fan-out, tenants, AI — is provider-agnostic.
+**One place that knows the provider.** Central is the only part of FloorVote that talks to a legislative data provider, which today is LegiScan. Everything downstream of central—storage, fan-out, tenants, AI—reads central's bill API rather than the provider's, so a change of data source is a change to central alone.
 
 **Full tenant isolation.** Each tenant is a separate Worker with its own database, users, votes, and positions. One organization's members, comments, and official positions never mix with another's, even though they're both fed by the same central pipeline. A tenant can be added, removed, or reconfigured without touching anyone else's deployment.
 

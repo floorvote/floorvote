@@ -1,6 +1,5 @@
-import { directSource } from '../sources'
-import type { LegiscanBill, LegiscanCalendarEntry } from './legiscan'
-import type { CalendarBlock } from '../types-legiscan'
+import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureCalendarEntry, type Provider } from '../providers'
+import type { CalendarBlock } from '../types'
 
 export type ChangeRecord = {
   changeType:
@@ -35,20 +34,6 @@ export type BillSnapshot = {
   sponsorDetailByKey: Map<string, string>
 }
 
-const STATUS_LABELS: Record<number, string> = {
-  0: 'Pre-filed',
-  1: 'Introduced',
-  2: 'Engrossed',
-  3: 'Enrolled',
-  4: 'Passed',
-  5: 'Vetoed',
-  6: 'Failed/Dead',
-}
-
-function statusLabel(status: number, source: string): string {
-  return (directSource(source)?.statusLabels ?? STATUS_LABELS)[status] ?? String(status)
-}
-
 function sponsorKey(peopleId: number | null | undefined, name: string): string {
   return peopleId ? `p${peopleId}` : `n${name}`
 }
@@ -58,15 +43,21 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
   return `${role}${sponsor.name} (${sponsor.party})`
 }
 
-export function detectChanges(snapshot: BillSnapshot, bill: LegiscanBill, source = 'legiscan'): ChangeRecord[] {
+export function detectChanges(
+  snapshot: BillSnapshot,
+  bill: CentralMeasure,
+  provider: Provider = getProvider(DEFAULT_PROVIDER_ID),
+): ChangeRecord[] {
   const changes: ChangeRecord[] = []
+  const statusLabels = provider.statusChangeLabels ?? provider.statusLabels
+  const statusLabel = (status: number) => statusLabels[status] ?? String(status)
 
   // 1. Status change (skip when snapshot.status is null — bill is new/unknown)
   if (snapshot.status !== null && bill.status !== snapshot.status) {
     changes.push({
       changeType: 'status_change',
-      oldValue: statusLabel(snapshot.status, source),
-      newValue: statusLabel(bill.status, source),
+      oldValue: statusLabel(snapshot.status),
+      newValue: statusLabel(bill.status),
       detail: null,
     })
   }
@@ -223,7 +214,7 @@ function isPast(date: string | null, today: string): boolean {
 
 export function detectCalendarChanges(
   prior: PriorCalendarRow[],
-  incoming: LegiscanCalendarEntry[],
+  incoming: MeasureCalendarEntry[],
   today: string,
 ): CalendarChange[] {
   const priorByKey = new Map(prior.map(p => [p.identityKey, p]))
