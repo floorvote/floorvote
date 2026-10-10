@@ -1,4 +1,4 @@
-import { and, asc, countDistinct, eq, sql } from 'drizzle-orm'
+import { and, asc, countDistinct, eq, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { bills, billTenants, sessions, stateProviders } from '../db/schema'
 import { DEFAULT_PROVIDER_ID, PROVIDERS } from '../providers'
 import { providerConfigured } from './providerRouting'
@@ -146,32 +146,47 @@ async function trackedBills(db: Db, state: string, owner: string): Promise<Claim
  * writes only a state with no row. Returns whether it wrote.
  */
 async function writeClaim(db: Db, state: string, providerId: string, owner: string, mode: 'claim' | 'seed'): Promise<boolean> {
-  const onConflict = mode === 'seed'
-    ? sql`DO NOTHING`
-    : sql`DO UPDATE SET provider = excluded.provider, status = excluded.status,
-        previous_provider = excluded.previous_provider, claimed_at = excluded.claimed_at
-      WHERE state_providers.provider = ${owner}`
-  const result = await db.run(sql`
-    INSERT INTO state_providers (state, provider, status, previous_provider, claimed_at)
+  // Query builders rather than db.run, so the claim and the forgetting of
+  // the state's snapshot ETags go in one batch and a claim can't land
+  // without them. Drizzle inserts every state_providers column in schema
+  // order: state, provider, status, previous_provider, claimed_at.
+  const insert = db.insert(stateProviders).select(sql`
     SELECT ${state}, ${providerId}, 'active', ${owner}, datetime('now')
     WHERE NOT EXISTS (
       SELECT 1 FROM bills INNER JOIN bill_tenants ON bill_tenants.bill_id = bills.bill_id
       WHERE bills.state = ${state} AND bills.provider = ${owner}
-    )
-    ON CONFLICT (state) ${onConflict}`)
-  if (result.meta.changes === 0) return false
-  await forgetSnapshotEtags(db, state)
-  return true
+    )`)
+  const claim = mode === 'seed'
+    ? insert.onConflictDoNothing()
+    : insert.onConflictDoUpdate({
+      target: stateProviders.state,
+      set: {
+        provider: sql`excluded.provider`, status: sql`excluded.status`,
+        previousProvider: sql`excluded.previous_provider`, claimedAt: sql`excluded.claimed_at`,
+      },
+      setWhere: eq(stateProviders.provider, owner),
+    })
+  // Clears ETags only once the row names the new provider, so a refused claim forgets nothing.
+  const forget = forgetEtags(db, state, sql`EXISTS (SELECT 1 FROM state_providers WHERE state = ${state} AND provider = ${providerId})`)
+  const [result] = await db.batch([claim, forget])
+  return result.meta.changes > 0
 }
 
 /**
  * Drop the snapshot ETags stored for a state's sessions, so the first pass of
- * its new owner reads each file in full, matching every bill to instances
- * again, rather than taking a 304 from an ETag stored the last time it owned
- * the state. Anything that changes a state's owner calls this.
+ * its new owner reads each file in full rather than taking a 304 from an ETag
+ * stored the last time it owned the state. (A 304 pass still matches the
+ * stored records to instances, so this keeps a new owner from trusting
+ * records it stored long ago.) Anything that changes a state's owner calls
+ * this, in the same batch as the change where it can.
  */
 export async function forgetSnapshotEtags(db: Db, state: string): Promise<void> {
-  await db.update(sessions).set({ snapshotEtag: null }).where(eq(sessions.state, state))
+  await forgetEtags(db, state)
+}
+
+function forgetEtags(db: Db, state: string, condition?: SQL) {
+  return db.update(sessions).set({ snapshotEtag: null })
+    .where(and(eq(sessions.state, state), isNotNull(sessions.snapshotEtag), condition))
 }
 
 /**

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import sampleRaw from '../../fixtures/mga/2026RS-sample.json?raw'
 import type { MgaRecord } from '../../../src/providers/mga/client'
 import {
-  assignMgaCommitteeIds, buildMgaBill, MGA_STATUS, mgaCommitteeKey, mgaBillType, mgaDisplayNumber, mgaDocKeys, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
+  assignMgaCommitteeIds, buildMgaBill, MGA_STATUS, mgaCommitteeKey, mgaPersonKey, mgaBillType, mgaDisplayNumber, mgaDocKeys, mgaRecordHash, mgaSponsorNames, mgaStatus, mgaTextVersions,
   toMgaMasterListEntry, type MgaIds,
 } from '../../../src/providers/mga/map'
 import { vocabulary } from '../../../src/providers/mga/vocabulary'
@@ -91,6 +91,19 @@ describe('mgaStatus', () => {
     expect(label(hr)).toBe('Adopted')
     // The same reading action on a bill means nothing on its own.
     expect(label({ ...hr, BillNumber: 'HB0004' })).toBe('In committee')
+  })
+
+  it('reads a resolution\'s adoption from the status text when the reading fields are empty', () => {
+    const hr = { ...rec('SB0002'), BillNumber: 'SR0002', Status: 'In the Senate - Adopted' }
+    expect(label(hr)).toBe('Adopted')
+  })
+
+  it('reads Withdrawn only as an action of its own, not inside another action\'s text', () => {
+    const r = rec('HB0001')
+    r.Status = 'In the Senate - Third Reading Passed (Amendment 123456/1 Withdrawn)'
+    expect(label(r)).toBe('Passed the House')
+    r.Status = 'In the House - Withdrawn by Sponsor'
+    expect(label(r)).toBe('Withdrawn')
   })
 
   it('writes Maryland\'s own codes, never LegiScan\'s', () => {
@@ -271,6 +284,20 @@ describe('buildMgaBill', () => {
     expect(enacted.committee).toBeNull()
     await assignMgaCommitteeIds(enacted, idTable)
     expect(enacted.pending_committee_id).toBe(0)
+  })
+
+  it('keeps two hearings whose committees aren\'t named apart', async () => {
+    const r = rec('SB0002')
+    r.CommitteePrimaryOrigin = ''
+    r.HearingDateTimeSecondaryHouseOfOrigin = '2026-02-05T13:00:00'
+    const b = await buildMgaBill(r, '2026RS', 1, 'h', SESSION, ids)
+    expect(b.calendar.map(c => c.description)).toEqual(['Senate committee hearing', 'Senate second committee hearing'])
+  })
+
+  it('keys a member by name, and an office by session too', () => {
+    expect(mgaPersonKey('2026RS', 'Delegate Long, J.')).toBe('Delegate Long, J.')
+    expect(mgaPersonKey('2026RS', 'Speaker')).toBe('2026RS/Speaker')
+    expect(mgaPersonKey('2027RS', 'Chair, Appropriations Committee')).toBe('2027RS/Chair, Appropriations Committee')
   })
 
   it('writes MGA numbers the way LegiScan does', () => {

@@ -233,6 +233,31 @@ describe('Maryland from the General Assembly', () => {
   })
 })
 
+describe('committees from the MGA (#299)', () => {
+  it('points each referral and the committee a bill waits in at one committee row per chamber and name', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const hb1 = await getJson(`/bills/${toHandle(await billId('HB1'))}`)
+    const sb2 = await getJson(`/bills/${toHandle(await billId('SB2'))}`)
+
+    // HB 1 passed the House and waits in the Senate committee, where SB 2 started.
+    expect(hb1.referrals.map((r: any) => [r.chamber, r.name])).toEqual([
+      ['H', 'Environment and Transportation'], ['S', 'Education, Energy, and the Environment'],
+    ])
+    expect(hb1.committee).toMatchObject({ name: 'Education, Energy, and the Environment', chamber: 'S' })
+    expect(sb2.committee).toEqual(hb1.committee)
+    expect(sb2.referrals[0].committeeId).toBe(hb1.committee.committeeId)
+    expect(hb1.referrals.every((r: any) => Number(r.committeeId) > 3_000_000_000)).toBe(true)
+
+    const rows = await drizzle(env.DB, { schema }).select().from(schema.committees).all()
+    expect(rows.map(r => [r.provider, r.state, r.chamber, r.name]).sort()).toEqual([
+      ['mga', 'MD', 'H', 'Environment and Transportation'],
+      ['mga', 'MD', 'H', 'Ways and Means'],
+      ['mga', 'MD', 'S', 'Education, Energy, and the Environment'],
+    ])
+  })
+})
+
 describe('Maryland hearings on the calendar', () => {
   const calendarOf = (run: Run, handle: string) =>
     sentToTenant(run).filter((m: any) => m.billId === handle && m.calendar).map((m: any) => m.calendar)
@@ -281,7 +306,7 @@ describe('Maryland hearings on the calendar', () => {
 })
 
 describe('reading the session file with its ETag', () => {
-  it('asks with the last ETag, and skips the pass when the file hasn\'t changed', async () => {
+  it('asks with the last ETag, and changes nothing when the file hasn\'t changed', async () => {
     await claim('mga')
     await syncAndIngest()
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual([null])
@@ -291,10 +316,53 @@ describe('reading the session file with its ETag', () => {
     const run = makeEnv()
     const reports = await runSnapshotSync(mga, run.env, drizzle(env.DB, { schema }))
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
-    expect(reports).toEqual([expect.objectContaining({ records: 0, queued: 0 })])
+    // The stored records stand in for the file, and nothing in them changed.
+    expect(reports).toEqual([expect.objectContaining({ records: sample().length, queued: 0 })])
     expect(queuedIds(run)).toEqual([])
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before)
+  })
+
+  it('links an instance that newly covers Maryland when the file hasn\'t changed', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values({ tenantId: 'second', name: 'Second', stateCoverage: '["MD"]', active: true })
+    await db.insert(schema.keywordRegistry).values({ tenantId: 'second', keyword: 'tax' })
+
+    calls = []
+    const run = makeEnv()
+    const secondQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+    run.env[tenantQueueBindingName('second')] = secondQueue
+    await runSnapshotSync(mga, run.env, db)
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
+
+    const links = await db.select().from(schema.billTenants).where(eq(schema.billTenants.tenantId, 'second')).all()
+    expect(links).toHaveLength(sample().length)
+    const hb2 = await billId('HB2')
+    expect(links.find(l => l.billId === hb2)?.matchType).toBe('keyword')
+    // HB 2 is tracked there now, and the other bills reach it as monitor stubs.
+    expect(queuedIds(run)).toEqual([await billId('HB2')])
+    const stubs = secondQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)).filter((m: any) => m.stubOnly)
+    expect(stubs).toHaveLength(sample().length - 1)
+  })
+
+  it('re-queues a changed bill whose ingest failed when the file hasn\'t changed since', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    const changed = sample()
+    changed.find(r => r.BillNumber === 'SB0002')!.Status = 'In the Senate - Favorable Report by Finance'
+    serve(changed, '"v2"')
+    // The pass queues SB 2, and its ingest never lands.
+    const failed = makeEnv()
+    await runSnapshotSync(mga, failed.env, drizzle(env.DB, { schema }))
+    expect(queuedIds(failed)).toEqual([await billId('SB2')])
+
+    calls = []
+    const run = makeEnv()
+    await runSnapshotSync(mga, run.env, drizzle(env.DB, { schema }))
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v2"'])
+    expect(queuedIds(run)).toEqual([await billId('SB2')])
   })
 
   it('reads a changed file in full, and asks with its new ETag next time', async () => {
@@ -331,6 +399,16 @@ describe('reading the session file with its ETag', () => {
     calls = []
     await runSnapshotSync(mga, makeEnv().env, db)
     expect(fileRequests().map(c => c.ifNoneMatch)).toEqual([null])
+  })
+
+  it('keeps the ETag when a claim is refused', async () => {
+    await claim('mga')
+    await syncAndIngest()
+    // Instances track Maryland bills now, so only a cutover could move the state.
+    expect((await claim('legiscan')).status).toBe(409)
+    calls = []
+    await runSnapshotSync(mga, makeEnv().env, drizzle(env.DB, { schema }))
+    expect(fileRequests().map(c => c.ifNoneMatch)).toEqual(['"v1"'])
   })
 
   it('keeps asking in full while the file comes without an ETag', async () => {
@@ -401,6 +479,7 @@ describe('Maryland fails closed', () => {
 
   it.each([
     ['an empty list', () => json([])],
+    ['null', () => json(null)],
     ['no file', () => new Response('not found', { status: 404 })],
   ] as [string, () => Response][])('reads %s as nothing new, never as bills removed', async (_what, answer) => {
     const before = await baseline()
@@ -411,6 +490,18 @@ describe('Maryland fails closed', () => {
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(await billId('HB1'))}`)).toEqual(before.bill)
     expect(await getJson('/bills/sessions?state=MD')).toEqual(before.sessions)
+  })
+
+  it('reads a statute whose article or sections are null, as the mapping does', async () => {
+    const records = sample()
+    records.find(r => r.BillNumber === 'HB0001')!.Statutes = [
+      { Article: { Code: 'gpu', Title: null }, Sections: [{ Section: '4-504' }] },
+      { Article: null, Sections: null },
+    ]
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    expect((await getJson(`/bills/${toHandle(await billId('HB1'))}`)).extras.fields.find((f: any) => f.key === 'statutes').value).toBe('§ 4-504')
   })
 
   it('changes nothing when the session list can\'t be read', async () => {

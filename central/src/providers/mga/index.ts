@@ -1,6 +1,6 @@
 import { getMgaSession, mgaSessionExists, type MgaRecord } from './client'
 import {
-  assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
+  assignMgaCommitteeIds, buildMgaBill, MD_STATE_ID, MGA_STATE, mgaDocKeys, mgaNativeKey, mgaPersonKey, mgaRecordHash, mgaSponsorNames, mgaSubjectKeys, toMgaMasterListEntry,
 } from './map'
 import { vocabulary } from './vocabulary'
 import type { Provider, ProviderRecord, SyncSession } from '../sdk'
@@ -9,7 +9,8 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
  * The Maryland General Assembly's open data (client.ts, map.ts): one JSON file
  * per session with every bill, so a pass is one request and a bill is built
  * from its stored record with no further calls. The request carries the ETag
- * of the last file read, so an unchanged file costs a 304 and no pass. Ids
+ * of the last file read, so an unchanged file costs a 304 and no download,
+ * and the pass runs on the records stored from the last read. Ids
  * come from central's id table. The data needs no key, and its requests
  * aren't logged as API calls.
  */
@@ -82,7 +83,7 @@ export const mga: Provider<'MGA_STATES'> = {
     const code = nativeKey.split('/')[0]
     const year = Number(code.slice(0, 4))
 
-    const people = await ctx.ids('person', mgaSponsorNames(r))
+    const people = await ctx.ids('person', mgaSponsorNames(r).map(name => mgaPersonKey(code, name)))
     const docs = await ctx.ids('doc', mgaDocKeys(code, r))
     const subjects = await ctx.ids('subject', mgaSubjectKeys(r))
     const crossfile = r.CrossfileBillNumber?.trim()
@@ -95,7 +96,7 @@ export const mga: Provider<'MGA_STATES'> = {
       year_end: session?.yearEnd ?? year,
     }, {
       bill: n => (n === crossfile ? crossfileId : undefined),
-      person: name => people.get(name)!,
+      person: name => people.get(mgaPersonKey(code, name))!,
       doc: key => docs.get(key)!,
       subject: key => subjects.get(key)!,
     })
