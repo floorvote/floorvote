@@ -66,7 +66,10 @@ const sentToTenant = (run: Run) => [
   ...run.tenantQueue.send.mock.calls.map(c => c[0]),
   ...run.tenantQueue.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)),
 ]
-const queuedIds = (run: Run) => run.ingestor.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body.billId as number))
+/** Every message queued for the ingestor: ingests, and calendar rechecks (#295). */
+const queuedBodies = (run: Run) => run.ingestor.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+/** The bills queued for an ingest. */
+const queuedIds = (run: Run) => queuedBodies(run).filter((b: any) => b.calendarRecheck === undefined).map((b: any) => b.billId as number)
 const fileRequests = () => calls.filter(c => c.method === 'GET' && c.url === FILE)
 
 async function central(method: string, path: string, run: Run, body?: unknown) {
@@ -99,7 +102,7 @@ async function billId(number: string): Promise<number> {
 async function syncAndIngest(run = makeEnv()) {
   const db = drizzle(env.DB, { schema })
   await runSnapshotSync(mga, run.env, db)
-  const messages = queuedIds(run).map(id => ({ body: { billId: id }, ack: vi.fn(), retry: vi.fn() }))
+  const messages = queuedBodies(run).map((body: any) => ({ body, ack: vi.fn(), retry: vi.fn() }))
   if (messages.length > 0) await processIngestorQueue({ messages } as any, run.env, db)
   for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
   return { run, messages }
@@ -277,7 +280,9 @@ describe('Maryland hearings on the calendar', () => {
     })])
     const [added] = calendarOf(first.run, handle)
     expect(added.changes).toEqual([expect.objectContaining({ changeType: 'hearing_added', date: '2026-10-06' })])
+    // The MGA has no event ids, so the hearing's slot is its id: the Senate committee's primary hearing on SB 2.
     const identity = added.changes[0].identityKey
+    expect(identity).toBe('id:2026RS/SB0002/S/primary')
 
     // The committee moves the hearing: the same hearing, changed, not one cancelled and another added.
     sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-08T15:00:00'
@@ -298,10 +303,37 @@ describe('Maryland hearings on the calendar', () => {
     await claim('mga')
     const { run } = await syncAndIngest()
     const [cal] = calendarOf(run, toHandle(await billId('SB2')))
-    expect(cal.events.map((e: any) => e.description)).toEqual([
-      'Senate Education, Energy, and the Environment hearing', 'Senate Budget and Taxation hearing',
+    expect(cal.events.map((e: any) => [e.identityKey, e.description]).sort()).toEqual([
+      ['id:2026RS/SB0002/S/primary', 'Senate Education, Energy, and the Environment hearing'],
+      ['id:2026RS/SB0002/S/secondary', 'Senate Budget and Taxation hearing'],
     ])
-    expect(new Set(cal.events.map((e: any) => e.identityKey)).size).toBe(2)
+  })
+
+  it('cancels a hearing whose slot empties only after two pulls, since the file doesn\'t say it was cancelled', async () => {
+    const records = sample()
+    const sb2 = records.find(r => r.BillNumber === 'SB0002')!
+    sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-06T13:00:00'
+    sb2.CommitteeSecondaryOrigin = 'Budget and Taxation'
+    sb2.HearingDateTimeSecondaryHouseOfOrigin = '2026-10-07T13:00:00'
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    const handle = toHandle(await billId('SB2'))
+
+    // The secondary slot empties: one miss, and the hearing stays on calendars.
+    sb2.HearingDateTimeSecondaryHouseOfOrigin = null
+    serve(records, '"v2"')
+    const first = await syncAndIngest()
+    expect(calendarOf(first.run, handle).flatMap((c: any) => c.changes)).toEqual([])
+    expect((await getJson(`/bills/${handle}`)).calendar).toHaveLength(2)
+
+    // The next pass finds SB 2 unchanged (a 304), and its recheck counts the second miss.
+    const second = await syncAndIngest()
+    expect(queuedBodies(second.run)).toEqual([{ billId: await billId('SB2'), calendarRecheck: expect.any(String) }])
+    expect(calendarOf(second.run, handle).flatMap((c: any) => c.changes))
+      .toEqual([expect.objectContaining({ changeType: 'hearing_cancelled', identityKey: 'id:2026RS/SB0002/S/secondary' })])
+    expect((await getJson(`/bills/${handle}`)).calendar.map((e: any) => e.description))
+      .toEqual(['Senate Education, Energy, and the Environment hearing'])
   })
 })
 
