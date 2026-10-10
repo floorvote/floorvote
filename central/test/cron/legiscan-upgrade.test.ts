@@ -6,8 +6,8 @@ import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } fro
 
 // A LegiScan-only central upgrading onto the provider model: built from
 // main's migrations, synced through the network (LegiScan's API stubbed with
-// recorded-shape responses), and checked only where an instance or the call
-// budget would notice.
+// recorded-shape responses) in a full-pass hour and then a raw-pass hour, and
+// checked only where an instance or the call budget would notice.
 
 vi.mock('../../src/lib/sync-schedule', async () => {
   const actual = await vi.importActual<typeof import('../../src/lib/sync-schedule')>('../../src/lib/sync-schedule')
@@ -17,6 +17,7 @@ const fetchMock = vi.fn()
 vi.stubGlobal('fetch', fetchMock)
 
 import { runSync } from '../../src/cron/sync'
+import { getCurrentEtHour } from '../../src/lib/sync-schedule'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
@@ -62,6 +63,16 @@ function legiscanResponse(op: string, id: string | null): unknown {
       } }
     case 'getMasterList:2200':
       return { masterlist: { session: session(2200, '2027 Regular Session') } }
+    // The raw list after the ingest: the stored hashes, and one new bill.
+    case 'getMasterListRaw:2154':
+      return { masterlist: {
+        0: { bill_id: 9001, number: 'H1', change_hash: 'full-9001', title: 'Voter access act', description: '' },
+        1: { bill_id: 9002, number: 'H2', change_hash: 'full-9002', title: 'Voter roll maintenance', description: '' },
+        2: { bill_id: 9003, number: 'H3', change_hash: 'h1', title: 'Bridge naming', description: '' },
+        3: { bill_id: 9004, number: 'H4', change_hash: 'h1', title: 'Harbor dredging', description: '' },
+      } }
+    case 'getMasterListRaw:2200':
+      return { masterlist: {} }
     case 'getBill:9001':
       return { bill: bill(9001, 'H1', 2, 'Voter access act') }
     case 'getBill:9002':
@@ -152,5 +163,24 @@ describe('a LegiScan-only central after the upgrade', () => {
       expect.objectContaining({ billId: 'legiscan:9002', matchType: 'keyword' }),
     ]))
     expect(sent).toHaveLength(3)
+
+    // A raw-pass hour: one getMasterListRaw per session and nothing else. The
+    // new bill's row is LegiScan's too, and nothing unchanged is queued.
+    const callsBefore = legiscanCalls().length
+    const rawIngestor = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(getCurrentEtHour).mockReturnValue(7)
+    try {
+      await runSync({ ...e, INGESTOR_QUEUE: rawIngestor }, db)
+    } finally {
+      vi.mocked(getCurrentEtHour).mockReturnValue(5)
+    }
+    expect(legiscanCalls().slice(callsBefore).sort()).toEqual(['getMasterListRaw:2154', 'getMasterListRaw:2200'])
+    expect(rawIngestor.sendBatch).not.toHaveBeenCalled()
+    const h4 = await env.DB.prepare('SELECT provider, session_id FROM bills WHERE bill_id = 9004').first()
+    expect(h4).toEqual({ provider: 'legiscan', session_id: 2154 })
+    for (const table of ['bills', 'sessions', 'people']) {
+      const rows = (await env.DB.prepare(`SELECT DISTINCT provider FROM ${table}`).all<{ provider: string }>()).results
+      expect(rows).toEqual([{ provider: 'legiscan' }])
+    }
   })
 })

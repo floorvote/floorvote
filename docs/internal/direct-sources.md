@@ -1,6 +1,6 @@
 # Direct sources and the shared legislative model
 
-> **Status note.** #283 (Opt-In Data Providers Alongside LegiScan) supersedes this proposal wherever the two differ, for example "provider" in place of "source," a state ownership table in place of env vars, and a per-provider vocabulary file for labels. The page stays for reference: the reasoning and the field-by-field notes on each feed still hold. The code now lives in `central/src/providers/` (see [sync-pipeline.md](sync-pipeline.md)).
+> **Status note.** #283 (Opt-In Data Providers Alongside LegiScan) supersedes this proposal wherever the two differ, for example "provider" in place of "source," a state ownership table in place of env vars, and a per-provider vocabulary file for labels. Its `source_ids` and `source_records` tables landed under those names (now `provider_ids` / `provider_records`). The page stays for reference: the reasoning and the field-by-field notes on each feed still hold. The code now lives in `central/src/providers/` (see [sync-pipeline.md](sync-pipeline.md)).
 
 Status: **proposal**. This page describes a model to settle with the maintainers before more sources land, and the stacked draft PRs that try it out on three legislatures.
 
