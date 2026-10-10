@@ -213,6 +213,15 @@ describe('the provider extras panel on a bill page', () => {
     expect(screen.getByText('javascript:alert(1)').closest('a')).toBeNull()
   })
 
+  it('keeps the line breaks of a multi-paragraph text value', async () => {
+    renderBillDetail({
+      state: 'DC', billNumber: 'B26-0001',
+      extras: { providerName: 'DC Council LIMS', fields: [{ key: 'note', label: 'Note', explainer: null, display: 'text', value: 'First paragraph.\nSecond paragraph.' }] },
+    })
+    await screen.findByRole('button', { name: /Additional information from/ })
+    expect(screen.getByText(/First paragraph\./)).toHaveStyle({ whiteSpace: 'pre-line' })
+  })
+
   it('isn\'t there when the bill has no extras', async () => {
     renderBillDetail({ extras: null })
     await screen.findByText('Test Bill')

@@ -76,6 +76,27 @@ async function centralGet(path: string) {
   return res.json() as Promise<any>
 }
 
+/**
+ * Ingest B26-0001, then return a way to ingest it again as the example
+ * provider builds it with some extras overridden. Each call returns the
+ * tenant queue it notified.
+ */
+async function builtEnacted() {
+  await syncAndIngest()
+  const enacted = await billId('B26-0001')
+  const db = drizzle(env.DB, { schema })
+  const record = (await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, enacted)).get())!
+  const built = await example.fetchMeasure({ billId: enacted, sessionId: record.sessionId, record: { raw: JSON.parse(record.rawJson), hash: record.rawHash } }, {} as never)
+  if ('measure' in built) throw new Error('unexpected details response')
+  const ingest = async (extras: Record<string, string | null>) => {
+    const e = makeEnv()
+    await ingestMeasure({ ...built, extras: { ...built.extras, ...extras } }, example, e.env, db,
+      { forceMetadata: false, forceAI: false, interactive: false })
+    return e.tenantQueue
+  }
+  return { enacted, ingest }
+}
+
 beforeEach(async () => {
   await setupLsDb()
   vi.clearAllMocks()
@@ -150,16 +171,21 @@ describe('provider extras', () => {
   })
 
   it('keep only the keys the provider\'s vocabulary declares', async () => {
-    await syncAndIngest()
-    const enacted = await billId('B26-0001')
-    const db = drizzle(env.DB, { schema })
-    const record = (await db.select().from(schema.providerRecords).where(eq(schema.providerRecords.billId, enacted)).get())!
-    const built = await example.fetchMeasure({ billId: enacted, sessionId: record.sessionId, record: { raw: JSON.parse(record.rawJson), hash: record.rawHash } }, {} as never)
-    if ('measure' in built) throw new Error('unexpected details response')
-    await ingestMeasure({ ...built, extras: { ...built.extras, stageDirections: 'Exit, pursued by a bear' } }, example, makeEnv().env, db,
-      { forceMetadata: false, forceAI: false, interactive: false })
+    const { enacted, ingest } = await builtEnacted()
+    await ingest({ stageDirections: 'Exit, pursued by a bear' })
 
     const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string }[]
     expect(fields.map(f => f.key)).toEqual(['lawNumber', 'effectiveDate', 'packet'])
+  })
+
+  it('drop impossible dates and values that aren\'t strings, and the rest of the ingest still runs', async () => {
+    const { enacted, ingest } = await builtEnacted()
+    for (const [effectiveDate, withdrawnBy] of [['2026-13-01', 42], ['0000-00-00', true], ['2026-02-30', { name: 'x' }]] as const) {
+      const tenantQueue = await ingest({ effectiveDate, withdrawnBy: withdrawnBy as never })
+      const fields = (await centralGet(`/bills/legiscan:${enacted}`)).extras.fields as { key: string }[]
+      expect(fields.map(f => f.key), effectiveDate).toEqual(['lawNumber', 'packet'])
+      // The ingest reached its tenant notification.
+      expect(sentToTenant(tenantQueue).map((m: any) => m.billId), effectiveDate).toEqual([`legiscan:${enacted}`])
+    }
   })
 })

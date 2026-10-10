@@ -60,14 +60,17 @@ export function CollapsibleSection({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+        {/* With a closed summary beside it, the header keeps its width and the
+            summary truncates. Otherwise a long label (a provider's name, say)
+            wraps instead of being clipped on a narrow screen. */}
         <button
           onClick={onToggle}
           aria-expanded={open}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit', textAlign: 'left', flexShrink: 0 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontFamily: 'inherit', textAlign: 'left', ...(!open && closedSummary ? { flexShrink: 0 } : { flexShrink: 1, minWidth: 0 }) }}
         >
-          <span style={SECTION_LABEL}>{label}</span>
-          {count != null && <span style={COUNT_BADGE}>{count}</span>}
-          <span style={{ ...CHROME_TEXT, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: chevTransition }}>▼</span>
+          <span style={{ ...SECTION_LABEL, minWidth: 0, overflowWrap: 'anywhere' }}>{label}</span>
+          {count != null && <span style={{ ...COUNT_BADGE, flexShrink: 0 }}>{count}</span>}
+          <span style={{ ...CHROME_TEXT, display: 'inline-block', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: chevTransition }}>▼</span>
           {open && openHint}
         </button>
         {!open && closedSummary}
