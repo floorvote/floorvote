@@ -783,6 +783,8 @@ adminRoutes.post('/reingest-tenant/:tenantId', async (c) => {
   const providerId = c.req.query('provider')
   const provider = providerId ? findProvider(providerId) : undefined
   if (providerId && !provider) return c.json({ error: `unknown provider ${providerId}` }, 400)
+  // Every message would fail at fetchMeasure (LIMS without LIMS_API_KEY, say).
+  if (provider && !providerConfigured(provider, c.env)) return c.json({ error: `${provider.id} isn't configured on this central` }, 409)
   const db = drizzle(c.env.DB, { schema })
 
   const tenant = await db.select().from(tenants).where(eq(tenants.tenantId, tenantId)).get()

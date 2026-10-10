@@ -292,6 +292,13 @@ describe('DC from LIMS', () => {
     expect(queuedIds(run).sort()).toEqual([B0400, HN, REPROG].sort())
     expect(run.ingestor.sendBatch).not.toHaveBeenCalled()
     expect((await central('POST', '/admin/reingest-tenant/oca?provider=nope', makeEnv())).status).toBe(400)
+
+    // Without its key, LIMS can't ingest anything, so nothing is queued.
+    const unkeyed = makeEnv()
+    unkeyed.env.LIMS_API_KEY = undefined
+    const refused = await central('POST', '/admin/reingest-tenant/oca?provider=lims&confirm=true', unkeyed)
+    expect(refused.status).toBe(409)
+    expect(unkeyed.limsQueue.sendBatch).not.toHaveBeenCalled()
   })
 })
 
