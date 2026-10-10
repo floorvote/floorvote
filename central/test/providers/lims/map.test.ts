@@ -5,7 +5,7 @@ import detailsHnRaw from '../../fixtures/lims/details-HN26-0171.json?raw'
 import detailsReprogRaw from '../../fixtures/lims/details-REPROG26-0153.json?raw'
 import membersRaw from '../../fixtures/lims/members-26.json?raw'
 import {
-  buildLimsBill, bulkHash, limsDate, limsStatusCode, personKey, toMasterListEntry,
+  assignCommitteeIds, buildLimsBill, bulkHash, committeeKey, limsDate, limsStatusCode, personKey, referralParts, toMasterListEntry,
   councilPeriodName, indexPeople, effectiveChangeHash, limsMeasureStatus, type BuildContext, type LimsPerson,
 } from '../../../src/providers/lims/map'
 import { vocabulary } from '../../../src/providers/lims/vocabulary'
@@ -205,6 +205,59 @@ describe('toMasterListEntry', () => {
   it('keeps a stored description and uses the committee for hearing notices', () => {
     expect(toMasterListEntry(bulk['B26-0400'], 1, 'h', 'Updates neglect', TODAY).description).toBe('Updates neglect')
     expect(toMasterListEntry(bulk['HN26-0171'], 1, 'h', null, TODAY).description).toBe('Committee on Health')
+  })
+})
+
+describe('LIMS referrals', () => {
+  it('name a committee the same from LegislationDetails and from the BulkData sentence', async () => {
+    const names = ['Committee on Youth Affairs', 'Committee on Judiciary and Public Safety']
+    expect((await build('B26-0400', d0400)).referrals.map(r => r.name)).toEqual(names)
+    expect((await build('B26-0400', null)).referrals.map(r => r.name)).toEqual(names)
+    expect((await build('HN26-0171', null)).referrals.map(r => r.name)).toEqual(['Committee on Health'])
+    expect((await build('HN26-0171', dHn)).referrals.map(r => r.name)).toEqual(['Committee on Health'])
+  })
+
+  it('keep a referral that follows a comments clause', () => {
+    expect(referralParts('Committee on Health with comments from the Committee on Housing, and Committee on Transportation and the Environment'))
+      .toEqual(['Committee on Health', 'Committee on Transportation and the Environment'])
+    expect(referralParts('Retained by the Council with comments from the Committee of the Whole'))
+      .toEqual(['Retained by the Council'])
+  })
+
+  it('leave out committees asked only for comments', async () => {
+    expect((await build('GBM26-0061', null)).referrals.map(r => r.name)).toEqual(['Retained by the Council'])
+    expect((await build('REPROG26-0153', null)).referrals.map(r => r.name)).toEqual(['Retained by the Council'])
+  })
+
+  it('split and complete each form LIMS writes', () => {
+    expect(referralParts('Committee of the Whole')).toEqual(['Committee of the Whole'])
+    expect(referralParts('Committee on Health, Committee on Housing, and the Committee of the Whole'))
+      .toEqual(['Committee on Health', 'Committee on Housing', 'Committee of the Whole'])
+    expect(referralParts('Special Committee on COVID-19 Pandemic Recovery'))
+      .toEqual(['Special Committee on COVID-19 Pandemic Recovery'])
+    expect(referralParts('Transportation and the Environment')).toEqual(['Committee on Transportation and the Environment'])
+    expect(referralParts('Whole')).toEqual(['Committee of the Whole'])
+    expect(referralParts('the Whole')).toEqual(['Committee of the Whole'])
+    expect(referralParts('')).toEqual([])
+    expect(referralParts(null)).toEqual([])
+  })
+
+  it('get one central id per committee, whatever the case or spacing, and none for "Retained by the Council"', async () => {
+    const asked: string[][] = []
+    const ids = async (kind: string, keys: readonly string[]) => {
+      expect(kind).toBe('committee')
+      asked.push([...keys])
+      return new Map(keys.map(k => [k, k === 'committee on youth affairs' ? 3_000_000_001 : 3_000_000_002]))
+    }
+    const b = await build('B26-0400', { ...d0400, committeesReferredTo: ['Youth  AFFAIRS', 'Judiciary and Public Safety', 'Retained by the Council'] })
+    await assignCommitteeIds(b, ids)
+    expect(b.referrals.map(r => [r.name, r.committee_id])).toEqual([
+      ['Committee on Youth AFFAIRS', 3_000_000_001],
+      ['Committee on Judiciary and Public Safety', 3_000_000_002],
+      ['Retained by the Council', 0],
+    ])
+    expect(asked).toEqual([['committee on youth affairs', 'committee on judiciary and public safety']])
+    expect(committeeKey(' Committee on  Youth Affairs ')).toBe('committee on youth affairs')
   })
 })
 

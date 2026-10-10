@@ -16,6 +16,7 @@ import { deliverToTenant } from '../lib/tenantDelivery'
 import { safeFetch } from '../lib/safeFetch'
 import { toHandle } from '../lib/billHandle'
 import { replaceBillExtras } from '../lib/billExtras'
+import { upsertCommittees } from '../lib/committees'
 import { httpUrl } from '../../../shared/httpUrl'
 
 export async function processIngestorQueue(
@@ -362,6 +363,8 @@ export async function ingestMeasure(
     })
   }
 
+  // The committees the bill names, before the referrals that point at them.
+  await upsertCommittees(db, bill, provider)
   await db.delete(billReferrals).where(eq(billReferrals.billId, bill.bill_id))
   for (const r of bill.referrals ?? []) {
     await db.insert(billReferrals).values({

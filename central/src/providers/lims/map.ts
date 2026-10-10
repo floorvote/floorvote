@@ -376,6 +376,53 @@ export function limsExtras(rec: LimsBulkRecord, details: LimsLegislationDetails 
   }
 }
 
+/**
+ * The referrals one LIMS referral field names, each in its canonical form.
+ * LegislationDetails lists committees by short name ("Youth Affairs"), and a
+ * BulkData record in one sentence ("Committee on Youth Affairs, and Committee
+ * on Judiciary and Public Safety", or "Retained by the Council with comments
+ * from the Committee of the Whole"). Both become the Council's own names
+ * ("Committee on Youth Affairs"), so a committee reads the same on every
+ * measure. Committees asked only for comments aren't referrals (they're the
+ * commentCommittees extra), and "Retained by the Council" stays as it is,
+ * since it names no committee.
+ */
+export function referralParts(field: string | null | undefined): string[] {
+  // A comments clause runs to the next ", and Committee ...", which is a referral again.
+  const text = clean(field).replace(/\s+with comments from\b.*?(?=,?\s+and\s+(?:the\s+)?committee\b|$)/i, '')
+  if (!text) return []
+  return text
+    .split(/,?\s+and\s+(?=(?:the\s+)?(?:special\s+)?committee\b)|,\s*(?=(?:the\s+)?(?:special\s+)?committee\b)/i)
+    .map(part => clean(part).replace(/^the\s+/i, ''))
+    .filter(Boolean)
+    .map(part => (/^whole$/i.test(part) ? 'Committee of the Whole'
+      : /\bcommittee\b/i.test(part) || /^retained by\b/i.test(part) ? part
+      : `Committee on ${part}`))
+}
+
+/** Whether a canonical referral names a committee (and isn't "Retained by the Council"). */
+const namesCommittee = (name: string) => /\bcommittee\b/i.test(name)
+
+/** A committee's native key in central's id table: its canonical name, with case and spacing folded. */
+export function committeeKey(name: string): string {
+  return clean(name).toLowerCase()
+}
+
+/**
+ * Give each referral that names a committee its central committee id, minted
+ * from central's id table (kind 'committee') by committeeKey, so every measure
+ * referred to a committee points at the same committees row.
+ */
+export async function assignCommitteeIds(
+  measure: CentralMeasure,
+  ids: (kind: string, nativeKeys: readonly string[]) => Promise<Map<string, number>>,
+): Promise<void> {
+  const named = measure.referrals.filter(r => namesCommittee(r.name))
+  if (named.length === 0) return
+  const byKey = await ids('committee', named.map(r => committeeKey(r.name)))
+  for (const r of named) r.committee_id = byKey.get(committeeKey(r.name)) ?? 0
+}
+
 export async function buildLimsBill(
   rec: LimsBulkRecord,
   details: LimsLegislationDetails | null,
@@ -528,12 +575,13 @@ export async function buildLimsBill(
     })
   }
 
-  // ── Referrals ──
+  // ── Referrals ── (fetchMeasure sets their committee ids, assignCommitteeIds)
   const referralDate = limsDate(details?.committeeReferralDate) ?? ''
   const referralNames = details?.committeesReferredTo?.length
-    ? details.committeesReferredTo
-    : (clean(rec.committeeReferral) ? [clean(rec.committeeReferral)] : [])
-  const referrals = referralNames.map(name => ({ date: referralDate, committee_id: 0, chamber: 'C', chamber_id: 0, name: clean(name) }))
+    ? details.committeesReferredTo.flatMap(referralParts)
+    : referralParts(rec.committeeReferral)
+  const referrals = [...new Set(referralNames)]
+    .map(name => ({ date: referralDate, committee_id: 0, chamber: 'C', chamber_id: 0, name }))
 
   const last = lastAction(rec, ctx.today)
   const description = clean(details?.shortDescription) || clean(details?.additionalInformation)
