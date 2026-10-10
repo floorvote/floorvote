@@ -1,6 +1,7 @@
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import type * as schema from './db/schema'
 import type { RateLimiter } from '../../shared/rateLimit'
+import type { CalendarKind } from '../../shared/calendarKinds'
 
 export type Env = {
   DB: D1Database
@@ -114,11 +115,25 @@ export type BillMessage = {
    * re-fetch a no-op. Used by /admin/refetch-fragment-texts.
    */
   forceTextRefetch?: boolean
+  /**
+   * Recheck the bill's calendar instead of ingesting it: a sync pass listed
+   * the bill with this change hash, the hash of the pull its missing calendar
+   * entries were missing from (lib/billCalendar.ts). Calls no provider.
+   */
+  calendarRecheck?: string
 }
 
+/**
+ * A bill's calendar, as instances receive it with a notification. `events` is
+ * every entry that isn't cancelled, and an instance cancels any entry of the
+ * bill's that isn't in it. `changes` names what changed since the last pull.
+ * Each entry's `identityKey` never changes (lib/billCalendar.ts), and
+ * instances build its calendar UID from it.
+ */
 export type CalendarBlock = {
   events: {
     identityKey: string
+    kind: CalendarKind
     date: string | null
     time: string | null
     location: string | null
@@ -128,6 +143,7 @@ export type CalendarBlock = {
   changes: {
     changeType: 'hearing_added' | 'hearing_changed' | 'hearing_cancelled'
     identityKey: string
+    kind: CalendarKind
     date: string | null
     time: string | null
     location: string | null

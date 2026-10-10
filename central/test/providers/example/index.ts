@@ -4,9 +4,9 @@ import { vocabulary } from './vocabulary'
 /**
  * A provider for tests only: a made-up legislature in state ZZ whose feed is
  * one JSON array of records per session, like the MGA's. It exercises what
- * every provider shares (a snapshot, the mapping, extras, and a field
- * inventory) with no network. Tests set `exampleFeed.records` and add the
- * provider to the registry with vi.mock.
+ * every provider shares (a snapshot, the mapping, extras, a field inventory,
+ * and calendar entries with the feed's own event ids) with no network. Tests
+ * set `exampleFeed.records` and add the provider to the registry with vi.mock.
  */
 export interface ExampleRecord {
   Number: string
@@ -20,6 +20,8 @@ export interface ExampleRecord {
   WithdrawnBy: string | null
   InternalId: number
   Attachments: { Name: string; Url: string; Size: number }[]
+  /** Meetings with the measure on their agenda, each with the feed's own id. Removed ones stay listed, flagged. */
+  Meetings?: { Id: string; Date: string; Title: string; Removed: boolean }[]
 }
 
 export const EXAMPLE_STATE = 'ZZ'
@@ -71,7 +73,13 @@ export const example: Provider = {
       session: { session_id: sessionId, session_name: session?.sessionName ?? '2026 Session', year_start: 2026, year_end: 2026 },
       committee: null, referrals: [], progress: [], sponsors: [],
       history: [{ date: r.Introduced, action: 'Introduced', chamber: 'C', chamber_id: 0, importance: 1 }],
-      sasts: [], subjects: [], votes: [], texts: [], calendar: [], amendments: [], supplements: [],
+      sasts: [], subjects: [], votes: [], texts: [], amendments: [], supplements: [],
+      calendar: await Promise.all((r.Meetings ?? []).map(async m => ({
+        type_id: 1, type: 'Meeting', date: m.Date, time: '', location: '', description: m.Title,
+        event_hash: (await sha256Hex(`${m.Date}|${m.Title}`)).slice(0, 32),
+        event_id: m.Id,
+        ...(m.Removed ? { cancelled: true } : {}),
+      }))),
       extras: { lawNumber: r.LawNumber, effectiveDate: r.EffectiveDate, packet: r.Packet, withdrawnBy: r.WithdrawnBy },
     }
     return measure

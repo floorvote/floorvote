@@ -93,8 +93,8 @@ export const vocabulary: ProviderVocabulary = {
   },
 
   eventTypes: {
-    1: { label: 'Hearing', explainer: 'A committee meeting on the bill, where the public can usually testify or submit written comments.' },
-    2: { label: 'Executive Session', explainer: 'A committee meeting where members discuss and vote on bills. The public can usually watch but not testify.' },
-    3: { label: 'Markup Session', explainer: 'A committee meeting where members amend the bill and vote on whether to report it.' },
+    1: { label: 'Hearing', kind: 'hearing', explainer: 'A committee meeting on the bill, where the public can usually testify or submit written comments.' },
+    2: { label: 'Executive Session', kind: 'markup', explainer: 'A committee meeting where members discuss and vote on bills. The public can usually watch but not testify.' },
+    3: { label: 'Markup Session', kind: 'markup', explainer: 'A committee meeting where members amend the bill and vote on whether to report it.' },
   },
 }
