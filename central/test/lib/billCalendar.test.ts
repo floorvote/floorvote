@@ -47,6 +47,22 @@ describe('LegiScan\'s identity', () => {
     expect(calendarBlockEvents(legiscan, stored(legiscan, [entry()])).map(e => e.identityKey)).toEqual(['1|house cmte on elections'])
   })
 
+  it('keeps a row for each LegiScan entry that shares an identity, and sends instances one', () => {
+    // Two hearings before the same committee: one identity, one calendar UID, as always.
+    const twice = [entry({ date: '2026-06-10' }), entry({ date: '2026-06-17', event_hash: 'h2' })]
+    const rows = stored(legiscan, twice)
+    expect(rows.map(r => r.date).sort()).toEqual(['2026-06-10', '2026-06-17'])
+    expect(calendarBlockEvents(legiscan, rows).map(e => [e.identityKey, e.date])).toEqual([['1|house cmte on elections', '2026-06-17']])
+    // Listed again, both rows are kept as they are.
+    expect(planCalendarPull(legiscan, BILL, rows, twice, 'pull-1', NOW).writes).toEqual([])
+    // Once the later one goes, the earlier one is what instances see, as a change, not a cancellation.
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const first = planCalendarPull(legiscan, BILL, rows, [twice[0]], 'pull-1', NOW)
+    const second = planCalendarPull(legiscan, BILL, merge(rows, first.writes), [twice[0]], 'pull-2', NOW)
+    expect(kinds(second)).toEqual(['hearing_changed'])
+    expect(calendarBlockEvents(legiscan, second.live).map(e => e.date)).toEqual(['2026-06-10'])
+  })
+
   it('reads a moved LegiScan hearing as changed, not cancelled and added', () => {
     const prior = stored(legiscan, [entry()])
     const plan = planCalendarPull(legiscan, BILL, prior, [entry({ date: '2026-06-12', event_hash: 'h2' })], 'pull-1', NOW)
@@ -105,6 +121,15 @@ describe('cancellation', () => {
     expect(second.live.map(r => r.description)).toEqual(['House Cmte on Elections'])
     // Kept, not deleted.
     expect(second.writes.find(r => r.description === 'Markup')?.cancelledAt).toBe(NOW)
+  })
+
+  it('counts a pull of the same record once, however often it is ingested', () => {
+    const prior = stored(legiscan, [entry(), entry({ type_id: 3, description: 'Markup' })])
+    const first = planCalendarPull(legiscan, BILL, prior, [entry()], 'pull-1', NOW)
+    // The same message retried, or the bill re-ingested at the same hash.
+    const retried = planCalendarPull(legiscan, BILL, merge(prior, first.writes), [entry()], 'pull-1', NOW)
+    expect(retried.writes).toEqual([])
+    expect(retried.live).toHaveLength(2)
   })
 
   it('counts a recheck of the same record as the second pull', () => {

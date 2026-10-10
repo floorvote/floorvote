@@ -170,6 +170,31 @@ describe('LegiScan calendar entries', () => {
     ])
   })
 
+  it('keep both of two hearings before one committee on the bill, under the one identity instances know', async () => {
+    const again = { ...HEARING, date: '2026-11-03', event_hash: 'e-hearing-2' }
+    served = { hash: 'v2', calendar: [HEARING, MARKUP, again] }
+    const { sent } = await tick(15)
+    expect(await billCalendar()).toEqual([
+      ['hearing', '2026-10-20', 'House Cmte on Elections'],
+      ['markup', '2026-10-27', 'House Cmte on Elections'],
+      ['hearing', '2026-11-03', 'House Cmte on Elections'],
+    ])
+    // One calendar UID for the two, as before: the later hearing.
+    expect(events(sent[0])).toEqual([
+      ['3|house cmte on elections', 'markup', '2026-10-27'],
+      ['1|house cmte on elections', 'hearing', '2026-11-03'],
+    ])
+  })
+
+  it('count an ingest of a record already pulled as the same pull', async () => {
+    served = { hash: 'v2', calendar: [HEARING] }
+    await tick(15)
+    // An operator re-ingests the bill at the same hash: still one pull, so nothing is cancelled.
+    const db = drizzle(env.DB, { schema })
+    await processIngestorQueue({ messages: [{ body: { billId: BILL }, ack: vi.fn(), retry: vi.fn() }] } as any, e(), db)
+    expect(await billCalendar()).toHaveLength(2)
+  })
+
   it('read a moved hearing as changed, under the same identity', async () => {
     served = { hash: 'v2', calendar: [{ ...HEARING, date: '2026-10-21', event_hash: 'e-hearing-2' }, MARKUP] }
     const { sent } = await tick(15)
@@ -218,7 +243,7 @@ describe('LegiScan calendar entries', () => {
     expect(await billCalendar()).toHaveLength(2)
   })
 
-  it('never cancel an entry because its day has passed', async () => {
+  it('keep a past entry on the calendar, live, for as long as LegiScan lists it', async () => {
     vi.setSystemTime(new Date('2026-11-15T17:00:00Z'))
     served = { hash: 'v2', calendar: [HEARING, MARKUP] }
     await tick(15)
