@@ -14,7 +14,7 @@ vi.mock('../context/DemoContext', () => ({
 }))
 
 const noFilters = {
-  status: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
+  status: [], stage: [], priority: [], position: [], year: [], state: [], tag: [], subject: [],
   q: '', minRelevance: 0, myBills: false, unvoted: false, newMatches: false, drafts: false, matchAny: false, cf: {},
 }
 

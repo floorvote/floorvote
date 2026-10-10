@@ -38,7 +38,7 @@ Three opt-in providers read a legislature's own feed: DC Council LIMS (`provider
 None of these feeds has a modified-since filter, so each is read as a snapshot by its own hourly job (`central/src/cron/sync-snapshots.ts`):
 
 1. **Sessions.** At 5 ET, or whenever none of the provider's stored sessions would sync, core calls `listSessions` and upserts what it returns. A session the provider no longer lists stops being current. A provider with `listPeople` then returns its legislators, and core upserts them. `selectSessions` picks which stored sessions to sync.
-2. **Full pass.** In a session's full-pass hours, `snapshot` returns every record with a hash. Core stores each changed record in `provider_records`, maps each record through `toEntry`, and runs the same `applyMasterList` as the LegiScan full pass. Queued bills go to the provider's `ingestQueue` binding when it is bound (LIMS: `LIMS_INGESTOR_QUEUE`), and to `INGESTOR_QUEUE` otherwise. With `detailsRefresh` (LIMS), tracked, unsettled bills whose details are stale are re-queued too.
+2. **Full pass.** In a session's full-pass hours, `snapshot` returns every record with a hash. Core stores each changed record in `provider_records`, maps each record through `toEntry`, and runs the same `applyMasterList` as the LegiScan full pass. Queued bills go to the provider's `ingestQueue` binding when it is bound (LIMS: `LIMS_INGESTOR_QUEUE`), and to `INGESTOR_QUEUE` otherwise. With `detailsRefresh` (LIMS), tracked bills whose details are stale are re-queued too, unless their status is terminal in the provider's vocabulary (below).
 3. **Ingest.** The ingestor routes each bill to its provider by the `provider` column of its `bills` row, and passes `fetchMeasure` the stored record and its session. LIMS also returns its LegislationDetails response, which core stores in `provider_records` beside the listed record (so a field ignored today can be mapped later without fetching it again), and records when it was fetched. The record's hash stays the listed record's.
 
 Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `provider_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Ids only identify rows. Whatever picks a provider for a bill, session, or person reads that row's `provider` column (the ingestor, the LegiScan sync's session list, the stub backfill, status labels, and sponsor links), never an id range.
@@ -64,6 +64,29 @@ The check and the write are one SQL statement, so a link or another claim landin
 **A state whose provider loses its key goes unsynced.** If a provider owns a state but is no longer configured (for example, `LIMS_API_KEY` was removed after DC was claimed), its sync skips the state with a warning every hour, and LegiScan doesn't take it back, since that would duplicate the provider's tracked bills. The state stays unsynced until the key is restored or the state is claimed for another provider.
 
 **For one release, the old env vars seed rows.** On the first sync after the upgrade, each state named by `LIMS_STATES` (with `LIMS_API_KEY` set), `MGA_STATES`, or `LIS_STATES` that has no row gets one, under the claim's refusal rule (`Provider.statesEnvKey`). Whichever sync runs first writes it, and every sync agrees from then on. A seeded row is logged, and the env var can then be removed. A refused seed is logged once an hour, by the LegiScan sync, and the state stays on LegiScan. If the env var's provider also has tracked bills in that state, instances hold bills from both providers. That split state is logged as an error for an operator to settle, and the state still stays on LegiScan. The env vars never change a state that has a row. A later release removes the seeding.
+
+### Status vocabulary
+
+Each provider keeps one vocabulary file, `providers/<id>/vocabulary.ts` (`Provider.vocabulary`). It lists every status code the provider writes to `bills.status`, with:
+
+- a **label**, which is what the bill API sends as the bill's `status` and what members see;
+- a common **stage** from `shared/statusStages.ts` (Introduced, In committee, Passed one chamber, Passed legislature, Failed, Vetoed, Enacted), or none for a status outside the legislative path, like a DC hearing notice's;
+- a **rank**: the stage's position in that list times 100, plus the provider's own order within the stage (Enacted is 7, so LegiScan's Chaptered is 703). Failed and Vetoed sit below Enacted because that is where LegiScan's status sort always put them;
+- a **terminal** flag, for a measure that is done changing. It stays in central, where it stops the details refresh (DC's Approved and Deemed Approved are not terminal);
+- a plain-language **explainer**.
+
+It also labels the provider's bill types and calendar event types. `central/test/providers/vocabulary.test.ts` checks the rank formula, that labels and ranks are unique, and that each provider's mapping can't write a code its vocabulary lacks.
+
+The bill API sends each bill's label, stage, and rank (`status`, `statusStage`, `statusRank`). Tenants store the stage and rank on `bills` (migration 0076), filter the bill list by stage, and sort status by rank, so bills from different providers sort together. Central used to send LegiScan's progress codes 7 to 12 as bare digits. 0076 rewrote stored digits to the words central sends now, the queue consumer does the same for a central that still sends digits, and the status filter accepts each digit as an alias of its word, so saved views and links keep working (`shared/legacyStatusOrder.ts`). When a central sends no stage or rank, the queue consumer looks them up in the same file, from the table 0076 backfilled with. `GET /bills/labels?state=XX` serves the explainers of the state's owner (above), plus the calendar name and whether the state has events. It is on the tenant surface allowlist, and the web app shows a status's explainer when a member hovers over the status chip on a bill page.
+
+**Changing a status's stage or rank needs a one-time metadata resend for that provider's states.** Instances keep what central last sent, so their bills would keep the old stage and rank until each one changes. Ship the vocabulary change, then, for every tenant covering an affected state, send both:
+
+```bash
+curl -X POST "$CENTRAL/api/admin/refresh-metadata/$TENANT?state=DC" -H "x-admin-secret: $ADMIN_SECRET"   # tracked bills
+curl -X POST "$CENTRAL/api/admin/refresh-stubs/$TENANT?state=DC" -H "x-admin-secret: $ADMIN_SECRET"      # monitor stubs
+```
+
+Neither makes a provider call or runs AI. Changing a label needs the same resend, and also leaves saved views and links that filter on the old label matching nothing. Explainers can change freely, since instances read them from central each time.
 
 ---
 
@@ -266,6 +289,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **State ownership**: `central/src/lib/stateProviders.ts` (`loadStateOwners`, `claimState`), and the `/state-providers` routes in `central/src/routes/admin.ts`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
+- **Status vocabulary**: `central/src/providers/<id>/vocabulary.ts`, `central/src/lib/vocabulary.ts`, `shared/statusStages.ts`, and `GET /bills/labels` in `central/src/routes/bills.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)
 - **Central bill detail API**: `central/src/routes/bills.ts`
 - **Tenant bill detail API**: `api/src/routes/billsApi/detail.ts` (`buildBillDetail`)

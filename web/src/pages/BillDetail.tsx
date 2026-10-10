@@ -13,6 +13,7 @@ import { NewMatchTriageControl } from '../components/NewMatchTriageControl'
 import { CompactPositionSelect } from '../components/CompactPositionSelect'
 import { StatusChip } from '../components/StatusChip'
 import { decodeStatus } from '../lib/legislativeStatus'
+import { useStatusExplainer } from '../lib/statusExplainers'
 import { getNoAnalysisMessage } from '../lib/billDetailCopy'
 import { REGENERATE_PRESERVES_DESCRIPTION } from '../lib/billDetailCopy'
 import { OverflowMenu, type OverflowMenuRow } from '../components/ui/OverflowMenu'
@@ -627,6 +628,9 @@ export function BillDetail() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
   const multiState = useMultiState()
+  // What the bill's status means, from its state's provider vocabulary, shown
+  // on hover over the status chip.
+  const statusExplainer = useStatusExplainer(bill && !bill.isDraft ? bill.state : null, bill ? decodeStatus(bill.status) : null)
   const [promoting, setPromoting] = useState(false)
   const [promoteError, setPromoteError] = useState<string | null>(null)
   const [pendingPromote, setPendingPromote] = useState(false)
@@ -1265,7 +1269,10 @@ export function BillDetail() {
               return `https://${instanceDomain}${window.location.pathname}`
             })()}
           />
-          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />}
+          {bill.isDraft ? <DraftChip /> : (() => {
+            const chip = <StatusChip status={decodeStatus(bill.status)} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
+            return statusExplainer ? <HoverTooltip text={statusExplainer} maxWidth={320}>{chip}</HoverTooltip> : chip
+          })()}
           {bill.session && (
             <SessionChip
               session={bill.session}

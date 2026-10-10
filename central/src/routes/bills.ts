@@ -7,6 +7,8 @@ import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
+import { ownerOfState } from '../lib/stateProviders'
+import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
@@ -37,6 +39,24 @@ billsRoutes.get('/sessions', async (c) => {
     .where(eq(schema.sessions.state, state))
     .all()
   return c.json({ sessions })
+})
+
+// Explainers for a state's statuses, bill types, and event types, and its
+// display details, from the vocabulary of the provider that owns the state
+// (state_providers). Instances show the explainers as tooltips. Registered
+// before GET /:id.
+billsRoutes.get('/labels', async (c) => {
+  const state = c.req.query('state')?.toUpperCase()
+  if (!state || !/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state is required' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const provider = findProvider(await ownerOfState(db, state)) ?? getProvider(DEFAULT_PROVIDER_ID)
+  return c.json({
+    state,
+    ...vocabularyLabels(provider),
+    // Whether the state's provider publishes the legislature's own events
+    // (hearings without bills). None does yet.
+    hasEvents: false,
+  })
 })
 
 // Bulk rich-data lookup for the tenant data export. Returns amendments,
@@ -130,7 +150,7 @@ billsRoutes.get('/:id', async (c) => {
 
   const bill = await db.select().from(schema.bills).where(eq(schema.bills.billId, numeric)).get()
   if (!bill) return c.json({ error: 'not found' }, 404)
-  // The provider that wrote the bill, for its status labels.
+  // The provider that wrote the bill, for its vocabulary.
   const provider = findProvider(bill.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
 
   const session = bill.sessionId
@@ -264,7 +284,8 @@ billsRoutes.get('/:id', async (c) => {
     number: bill.billNumber,
     title: bill.title,
     abstract: bill.description ?? null,
-    status: provider.statusLabels[bill.status] ?? String(bill.status),
+    // The status label, stage, and rank, from the provider's vocabulary.
+    ...statusFields(provider, bill.status),
     statusDate: bill.statusDate ?? null,
     lastAction: bill.lastAction ?? null,
     lastActionDate: bill.lastActionDate ?? null,

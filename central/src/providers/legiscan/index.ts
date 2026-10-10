@@ -1,4 +1,5 @@
 import { getBill, getBillText, getDatasetList, getDatasetRaw, getMasterListBySession, getMasterListRaw, getSessionList } from './client'
+import { vocabulary } from './vocabulary'
 import type { Provider } from '../sdk'
 
 /**
@@ -35,15 +36,7 @@ export const legiscan: Provider<'LEGISCAN_API_KEY'> = {
     return { bytes: base64ToBytes(text.doc).buffer as ArrayBuffer, mime: text.mime, size: text.text_size }
   },
 
-  statusLabels: {
-    0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
-    3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed',
-  },
-  // The change log has always said "Failed/Dead" where the bill API says "Failed".
-  statusChangeLabels: {
-    0: 'Pre-filed', 1: 'Introduced', 2: 'Engrossed',
-    3: 'Enrolled', 4: 'Passed', 5: 'Vetoed', 6: 'Failed/Dead',
-  },
+  vocabulary,
 
   personUrl: ({ state, name, peopleId }) =>
     `https://legiscan.com/${state}/people/${name.replace(/ /g, '-')}/id/${peopleId}`,

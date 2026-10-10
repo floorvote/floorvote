@@ -112,6 +112,13 @@ describe('TenantApi deny-by-default forwarder', () => {
       expect(res.status).not.toBe(403)
     })
 
+    it('forwards GET /api/bills/labels, the status explainers instances show', async () => {
+      const res = await callTenantApi('GET', '/api/bills/labels?state=RI')
+      expect(res.status).toBe(200)
+      const body = await res.json() as { statuses: { label: string; explainer: string }[] }
+      expect(body.statuses.find(s => s.label === 'Engrossed')?.explainer).toMatch(/first chamber/)
+    })
+
     it('injects x-admin-secret so the admin route auth passes (would 401 without it)', async () => {
       // /api/admin/superadmin/check sits behind the x-admin-secret middleware.
       // If the forwarder failed to inject the secret we'd get 401, not 200.

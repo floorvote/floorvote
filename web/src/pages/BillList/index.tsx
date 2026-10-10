@@ -139,7 +139,7 @@ export function BillList() {
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [facetCounts, setFacetCounts] = useState<FacetCounts>(() => {
-    const initial = cachedFacetCounts ?? { status: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
+    const initial = cachedFacetCounts ?? { status: {}, stage: {}, priority: {}, session: {}, year: {}, state: {}, position: {}, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts: false }
     if (cachedFacetCounts) updateKnownStates(cachedFacetCounts)
     return initial
   })
@@ -205,12 +205,12 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
+    resetDeps: [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
     const paramsStr = billsApiParams({
-      statuses: f.filterStatuses, priorities: f.filterPriorities, positions: f.filterPositions,
+      statuses: f.filterStatuses, stages: f.filterStages, priorities: f.filterPriorities, positions: f.filterPositions,
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
       myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
       tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
@@ -249,11 +249,12 @@ export function BillList() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
+  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
     if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
+    f.filterStages.forEach(s => params.append('stage', s))
     if (f.filterPriorities.length > 0) f.filterPriorities.forEach(p => params.append('priority', p))
     if (f.filterPositions.length > 0) f.filterPositions.forEach(p => params.append('position', p))
     if (f.filterYears.length > 0) f.filterYears.forEach(y => params.append('year', String(y)))
@@ -278,7 +279,7 @@ export function BillList() {
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -595,6 +596,7 @@ export function BillList() {
   const activeFilterGroups = buildActiveFilterGroups({
     filterStates: f.filterStates,
     filterStatuses: f.filterStatuses,
+    filterStages: f.filterStages,
     filterPositions: f.filterPositions,
     filterPriorities: f.filterPriorities,
     filterYears: f.filterYears,
@@ -607,6 +609,7 @@ export function BillList() {
     isMultiState: f.isMultiState,
     onRemoveState: s => f.setFilterStates(prev => prev.filter(x => x !== s)),
     onRemoveStatus: s => f.setFilterStatuses(prev => prev.filter(x => x !== s)),
+    onRemoveStage: s => f.setFilterStages(prev => prev.filter(x => x !== s)),
     onRemovePosition: p => f.setFilterPositions(prev => prev.filter(x => x !== p)),
     onRemovePriority: p => f.setFilterPriorities(prev => prev.filter(x => x !== p)),
     onRemoveYear: y => f.setFilterYears(prev => prev.filter(x => x !== y)),
@@ -837,6 +840,16 @@ export function BillList() {
               onChange={f.setFilterStatuses}
               multi
               counts={filterCounts.status}
+            />
+          </HoverTooltip>
+          <HoverTooltip text="Filter by common stage, which compares bills across states whose statuses differ">
+            <FilterDropdown
+              placeholder={filterDimensionLabel('stage')}
+              options={f.stageOptions}
+              selected={f.filterStages}
+              onChange={f.setFilterStages}
+              multi
+              counts={filterCounts.stage ?? {}}
             />
           </HoverTooltip>
           {f.yearFacetKeys.length > 0 && (
@@ -1143,6 +1156,7 @@ export function BillList() {
         isOpen={f.filterSheetOpen}
         onClose={() => f.setFilterSheetOpen(false)}
         statuses={f.filterStatuses}
+        stages={f.filterStages}
         priorities={f.filterPriorities}
         positions={f.filterPositions}
         tags={f.selectedTags}
@@ -1164,6 +1178,7 @@ export function BillList() {
         uniqueStates={f.uniqueStates}
         isMultiState={f.isMultiState}
         statusOptions={f.statuses.map(s => ({ value: s, label: decodeStatus(s) ?? s }))}
+        stageOptions={f.stageOptions}
         priorityOptions={[
           { value: 'high', label: 'High' },
           { value: 'medium', label: 'Medium' },
@@ -1179,6 +1194,7 @@ export function BillList() {
         cfFilters={f.cfFilters}
         onCfFilterChange={f.setCfFilter}
         onStatusChange={f.setFilterStatuses}
+        onStageChange={f.setFilterStages}
         onPriorityChange={f.setFilterPriorities}
         onPositionChange={f.setFilterPositions}
         onTagChange={f.handleTagsChange}

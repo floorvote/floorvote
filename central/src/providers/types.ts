@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import type { StatusStage } from '../../../shared/statusStages'
 
 /**
  * The provider interface, and every shape that crosses the boundary between
@@ -85,14 +86,14 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   fetchDocument?(docId: number, ctx: ProviderContext<K>): Promise<ProviderDocument>
 
-  /** Labels for the status codes this provider writes to `bills.status`, as the bill API sends them. */
-  readonly statusLabels: Readonly<Record<number, string>>
-
   /**
-   * Labels for the old and new values of a `status_change` record, when they
-   * differ from `statusLabels`. Defaults to `statusLabels`.
+   * What the provider's codes mean: a label, stage, rank, terminal flag, and
+   * explainer for every status code it writes to `bills.status`, and labels
+   * for its bill and calendar event types. Kept in the provider's
+   * `vocabulary.ts`. The bill API sends each bill's label, stage, and rank,
+   * and `/bills/labels` serves the explainers.
    */
-  readonly statusChangeLabels?: Readonly<Record<number, string>>
+  readonly vocabulary: ProviderVocabulary
 
   /** A sponsor's profile page on the provider's site, for a person record with no link of its own. */
   personUrl?(person: { state: string; name: string; peopleId: number }): string
@@ -160,13 +161,59 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
 
   /**
    * For a provider whose per-measure details can change while its listed
-   * record doesn't: core re-queues tracked measures not in a settled status
-   * once their details are older than `maxAge` (an SQLite datetime modifier,
-   * such as '-2 days'), at most `perPass` per pass. The settled statuses move
-   * to the vocabulary's terminal flags in #291.
+   * record doesn't: core re-queues tracked measures whose status isn't
+   * terminal in the vocabulary once their details are older than `maxAge` (an
+   * SQLite datetime modifier, such as '-2 days'), at most `perPass` per pass.
    */
-  readonly detailsRefresh?: { maxAge: string; perPass: number; settledStatuses: readonly number[] }
+  readonly detailsRefresh?: { maxAge: string; perPass: number }
 }
+
+/** A provider's vocabulary (`Provider.vocabulary`). */
+export interface ProviderVocabulary {
+  /** Every status code the provider writes to `bills.status`. */
+  readonly statuses: Readonly<Record<number, VocabularyStatus>>
+  /** Bill types, by the value the provider writes to `bills.bill_type` (compared without regard to case). */
+  readonly billTypes: Readonly<Record<string, VocabularyTerm>>
+  /** Calendar event types, by the `type_id` of the provider's calendar entries. */
+  readonly eventTypes: Readonly<Record<number, VocabularyTerm>>
+  /** The name of the legislature's own calendar, when the provider reads one. */
+  readonly calendarName?: string
+}
+
+/**
+ * One status. Changing a status's stage or rank changes how bills already in
+ * instances sort and filter, so it ships with a one-time metadata resend for
+ * the provider's states (see docs/internal/sync-pipeline.md).
+ */
+export interface VocabularyStatus {
+  /** What members see, and what the bill API sends as the bill's status. Unique within the provider. */
+  readonly label: string
+  /** The common stage, or null for a status outside the legislative path (a notice, say). */
+  readonly stage: StatusStage | null
+  /**
+   * The sort key: the stage's position (`stagePosition`, from 1) times 100,
+   * plus the provider's own order within the stage (1 to 99). 0 when `stage`
+   * is null. Unique within the provider.
+   */
+  readonly rank: number
+  /**
+   * Whether the measure is done changing: nothing more the provider publishes
+   * will move it. Stays in central, where it stops the details refresh.
+   */
+  readonly terminal: boolean
+  /** A plain-language sentence or two on what the status means for the bill. */
+  readonly explainer: string
+  /** The label for the change log, when it says something else (LegiScan's "Failed/Dead"). */
+  readonly changeLabel?: string
+}
+
+/** A bill type or calendar event type. */
+export interface VocabularyTerm {
+  readonly label: string
+  readonly explainer?: string
+}
+
+export type { StatusStage }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {

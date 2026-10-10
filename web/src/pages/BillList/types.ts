@@ -61,6 +61,8 @@ export type SortDir = 'asc' | 'desc'
 
 export type FacetCounts = {
   status:   Record<string, number>
+  /** By common stage key (shared/statusStages.ts). */
+  stage:    Record<string, number>
   priority: Record<string, number>
   session:  Record<string, number>
   year:     Record<string, number>

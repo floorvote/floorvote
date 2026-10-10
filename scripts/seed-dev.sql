@@ -79,6 +79,12 @@ INSERT OR IGNORE INTO bills (id, external_id, bill_number, title, state, status,
   ('bill-rolls', 'legiscan:1900112', 'SB 2100', 'An Act Relating to Elections - Voter Roll Maintenance', 'RI', '2', '2025-2026', 'Updates procedures for maintaining voter registration rolls.', 'Modernizes voter roll maintenance procedures including automated address updates via USPS data, cross-state duplicate checking via ERIC, and standardized list maintenance timelines. Prohibits mass purges within 90 days of an election. Requires public notice before any systematic removal program.', '["Voter Registration","Election Security","Data Management"]', NULL, 'Sen. Frank Lombardi', 'Democrat', 'In committee', '2026-02-10', '[{"date":"2026-01-08","action":"Introduced","chamber":"Senate"},{"date":"2026-01-15","action":"Referred to Senate Judiciary","chamber":"Senate"},{"date":"2026-02-10","action":"Committee hearing scheduled","chamber":"Senate"}]', 'https://www.rilegislature.gov/billtracker', 'Senate Judiciary', '[]', 7, 'keyword', '2026-02-10 12:00:00', 'in_r2', 'bills/legiscan-1900112/texts/10016.pdf', 10016, 2025, 2026, '2026-01-08 10:00:00', '2026-02-10 12:00:00'),
   ('bill-stub-nomatch', 'legiscan:1900113', 'SB 2411', 'An Act Relating to Elections - Municipal Election Consolidation Study', 'RI', '1', '2025-2026', 'Directs a legislative study on consolidating municipal election dates.', NULL, '[]', NULL, 'Sen. Louis DiPalma', 'Democrat', 'Introduced; referred to committee', '2026-03-05', '[{"date":"2026-03-05","action":"Introduced","chamber":"Senate"},{"date":"2026-03-06","action":"Referred to Senate Judiciary","chamber":"Senate"}]', 'https://www.rilegislature.gov/billtracker', 'Senate Judiciary', '[]', NULL, NULL, NULL, NULL, NULL, NULL, 2025, 2026, '2026-03-05 10:00:00', '2026-03-06 09:00:00');
 
+-- Each bill's status stage and rank, as central sends them (the dev seed loads
+-- after the migrations, so 0076's backfill never sees these rows).
+UPDATE bills SET status_stage = 'introduced', status_rank = 103 WHERE status = '1';
+UPDATE bills SET status_stage = 'passed_one_chamber', status_rank = 301 WHERE status = '2';
+UPDATE bills SET status_stage = 'enacted', status_rank = 701 WHERE status = '4';
+
 -- === BILL TEXTS ===
 INSERT OR IGNORE INTO bill_texts (id, bill_id, doc_id, type, date, mime, text_hash, state_link) VALUES
   ('bt-1', 'bill-voter-id', 10001, 'Introduced', '2026-01-10', 'application/pdf', 'hash1', 'https://www.rilegislature.gov/docs/HB5042-intro.pdf'),

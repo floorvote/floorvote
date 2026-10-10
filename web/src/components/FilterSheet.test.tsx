@@ -10,6 +10,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     isOpen: true,
     onClose: vi.fn(),
     statuses: [],
+    stages: [],
     priorities: [],
     positions: [],
     tags: [],
@@ -29,6 +30,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     uniqueStates: ['UT'],
     isMultiState: false,
     statusOptions: [{ value: 'active', label: 'Active' }, { value: 'dead', label: 'Dead' }],
+    stageOptions: [{ value: 'enacted', label: 'Enacted' }, { value: 'introduced', label: 'Introduced' }],
     priorityOptions: [{ value: 'high', label: 'High' }],
     positionOptions: [{ value: 'support', label: 'Support' }],
     tagOptions: ['Education', 'Health Care'],
@@ -40,6 +42,7 @@ function makeDefaults(): ComponentProps<typeof FilterSheet> {
     cfFilters: {},
     onCfFilterChange: vi.fn(),
     onStatusChange: vi.fn(),
+    onStageChange: vi.fn(),
     onPriorityChange: vi.fn(),
     onPositionChange: vi.fn(),
     onTagChange: vi.fn(),
@@ -256,6 +259,16 @@ describe('FilterSheet — drilling into a dimension', () => {
     fireEvent.click(screen.getByRole('button', { name: /status/i }))
     fireEvent.click(screen.getByText('Active'))
     expect(onStatusChange).toHaveBeenCalledWith(['active'])
+  })
+
+  it('drills into Stage and toggles a stage through its change callback, with counts', () => {
+    const onStageChange = vi.fn()
+    renderSheet({ onStageChange, counts: { status: {}, stage: { enacted: 4 }, priority: {}, position: {}, session: {}, tags: {} } })
+    fireEvent.click(screen.getByRole('button', { name: /^stage$/i }))
+    const enacted = screen.getByRole('button', { name: /enacted/i })
+    expect(within(enacted).getByText('4')).toBeInTheDocument()
+    fireEvent.click(enacted)
+    expect(onStageChange).toHaveBeenCalledWith(['enacted'])
   })
 
   it('resets to the dimension list whenever the sheet re-opens', () => {

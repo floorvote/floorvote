@@ -1,5 +1,6 @@
 import { getLisFile, lisSessionExists, type LisFile } from './client'
-import { buildLisBill, LisAssembler, LIS_FILE_ORDER, LIS_STATE, LIS_STATUS_LABELS, lisCarriedOver, lisNativeKey, lisRecordHash, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisRecord } from './map'
+import { buildLisBill, LisAssembler, LIS_FILE_ORDER, LIS_STATE, lisCarriedOver, lisNativeKey, lisRecordHash, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisRecord } from './map'
+import { vocabulary } from './vocabulary'
 import type { Provider, ProviderPerson, ProviderRecord, SyncSession } from '../sdk'
 
 /**
@@ -115,7 +116,7 @@ export const lis: Provider<'LIS_STATES'> = {
     })
   },
 
-  statusLabels: LIS_STATUS_LABELS,
+  vocabulary,
 }
 
 const ROMAN = ['', 'I', 'II', 'III', 'IV']

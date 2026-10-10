@@ -1,6 +1,7 @@
 import { sha256Hex, type CentralMeasure, type MeasureCalendarEntry, type SyncEntry } from '../sdk'
 import type { LimsBulkRecord, LimsCouncilPeriod, LimsLegislationDetails, LimsMember } from './client'
 import { limsDocId, limsRollCallId, limsSessionId } from './ids'
+import { vocabulary } from './vocabulary'
 
 /**
  * Pure mapping from DC Council LIMS records to the LegiScan shapes the central
@@ -22,31 +23,15 @@ export const LIMS_STATE = 'DC'
 export const DC_STATE_ID = 51
 
 /**
- * LIMS status names by LIMS status id (GET LegislationStatus). Stored in
- * `bills.status` as LIMS_STATUS_BASE + id: DC's stages (under Mayoral or
- * Congressional review, enacted vs official law, deemed approved) are what
- * advocates act on, and LegiScan's seven codes would flatten them.
+ * `bills.status` for a LIMS measure is LIMS_STATUS_BASE plus the LIMS status
+ * id. The vocabulary (vocabulary.ts) labels each code with its LIMS name.
  */
-const LIMS_STATUSES: Record<number, string> = {
-  1: 'New', 5: 'Official Law', 6: 'Under Congressional Review', 7: 'Withdrawn',
-  8: 'Enacted', 9: 'Vetoed', 10: 'Under Mayoral Review', 11: 'Failed',
-  12: 'Disapproved', 13: 'Tabled', 14: 'Under Council Review', 15: 'Approved',
-  17: 'Deemed Approved', 18: 'Deemed Disapproved', 19: 'Postponed Indefinitely',
-  21: 'Expired',
-}
 export const LIMS_STATUS_BASE = 100
 
-/** Labels for LIMS status codes, merged into the LegiScan label maps. */
-export const LIMS_STATUS_LABELS: Record<number, string> = {
-  [LIMS_STATUS_BASE]: 'Not Applicable',
-  ...Object.fromEntries(Object.entries(LIMS_STATUSES).map(([id, name]) => [LIMS_STATUS_BASE + Number(id), name])),
-}
-
-const STATUS_ID_BY_NAME = new Map(Object.entries(LIMS_STATUSES).map(([id, name]) => [name.toLowerCase(), Number(id)]))
+const STATUS_CODE_BY_NAME = new Map(Object.entries(vocabulary.statuses).map(([code, s]) => [s.label.toLowerCase(), Number(code)]))
 
 export function limsStatusCode(name: string | null | undefined): number {
-  const id = STATUS_ID_BY_NAME.get(clean(name).toLowerCase())
-  return LIMS_STATUS_BASE + (id ?? 0)
+  return STATUS_CODE_BY_NAME.get(clean(name).toLowerCase()) ?? LIMS_STATUS_BASE
 }
 
 /**

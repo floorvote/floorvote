@@ -6,11 +6,11 @@ import { FILTER_ANY } from './FilterPanel'
 
 const noop = vi.fn()
 const base = {
-  filterStates: [], filterStatuses: [], filterPositions: [], filterPriorities: [],
+  filterStates: [], filterStatuses: [], filterStages: [], filterPositions: [], filterPriorities: [],
   filterYears: [], selectedTags: [], selectedSubjects: [], cfFilters: {},
   filterMinRelevance: 0,
   positionOptions: [], customFieldDefs: [], isMultiState: false,
-  onRemoveState: noop, onRemoveStatus: noop, onRemovePosition: noop,
+  onRemoveState: noop, onRemoveStatus: noop, onRemoveStage: noop, onRemovePosition: noop,
   onRemovePriority: noop, onRemoveYear: noop, onRemoveTag: noop,
   onRemoveSubject: noop, onRemoveCf: noop, onRemoveMinRelevance: noop,
 }
@@ -50,6 +50,14 @@ describe('buildActiveFilterGroups', () => {
     const groups = buildActiveFilterGroups(withScope)
     expect(groups.map(g => g.key)).not.toContain('unvoted')
     expect(groups.map(g => g.key)).not.toContain('newMatches')
+  })
+
+  it('labels a stage chip with the stage\'s name, after status', () => {
+    const onRemoveStage = vi.fn()
+    const groups = buildActiveFilterGroups({ ...base, filterStatuses: ['Introduced'], filterStages: ['passed'], onRemoveStage })
+    expect(groups.map(g => g.key)).toEqual(['status', 'stage'])
+    render(<>{groups[1].chips}</>)
+    expect(screen.getByText('Passed legislature')).toBeInTheDocument()
   })
 
   it('renders relevance as a single-chip group above zero', () => {

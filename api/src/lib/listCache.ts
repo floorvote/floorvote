@@ -25,6 +25,7 @@ export type CachedListPage = {
 // filters are arrays; everything that affects the page must be present here.
 export type ListCacheParams = {
   statuses: string[]
+  stages: string[]
   priorities: string[]
   positionValues: string[]
   sessions: string[]
@@ -72,6 +73,7 @@ function serializeParams(p: ListCacheParams): string {
     .map((k) => [k, sortedArr(p.cfParamMap[k])] as const)
   const canonical = {
     statuses: sortedArr(p.statuses),
+    stages: sortedArr(p.stages),
     priorities: sortedArr(p.priorities),
     positionValues: sortedArr(p.positionValues),
     sessions: sortedArr(p.sessions),

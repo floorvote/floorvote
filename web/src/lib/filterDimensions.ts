@@ -12,8 +12,8 @@
  *
  * Two "kinds" exist because not every filter dimension is a pick-one-of-N
  * options list:
- *   - 'options': a set of selectable values (State, Status, Session year,
- *     Position, Priority, Tags, Subject). Desktop renders these as a
+ *   - 'options': a set of selectable values (State, Status, Stage, Session
+ *     year, Position, Priority, Tags, Subject). Desktop renders these as a
  *     `FilterDropdown`; mobile renders them as a drill-down chip list.
  *   - 'toggle': a single on/off control (My bills, New matches). Desktop
  *     renders these as a standalone button with a count badge; mobile keeps
@@ -117,6 +117,9 @@ export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   // back off) visible while the Drafts filter is on, regardless of hasDrafts.
   { key: 'drafts',     label: 'Drafts',        kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.hasDrafts || ctx.draftsActive },
   { key: 'status',     label: 'Status',        kind: 'options', scope: 'bill',   isVisible: () => true },
+  // A status's common stage (Introduced, In committee, ..., Enacted), which
+  // compares bills across states whose status names differ.
+  { key: 'stage',      label: 'Stage',         kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'session',    label: 'Session year',  kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'position',   label: 'Position',      kind: 'options', scope: 'bill',   isVisible: () => true },
   { key: 'priority',   label: 'Priority',      kind: 'options', scope: 'bill',   isVisible: () => true },

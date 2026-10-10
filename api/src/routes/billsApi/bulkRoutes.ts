@@ -27,6 +27,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       ids?: string[]
       filter?: {
         status?: string[]
+        stage?: string[]
         priority?: string[]
         position?: string[]
         session?: string[]
@@ -83,6 +84,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const f = body.filter!
       const where = await buildBillsWhere(db, {
         statuses: f.status ?? [],
+        stages: f.stage ?? [],
         priorities: f.priority ?? [],
         positionValues: f.position ?? [],
         sessions: f.session ?? [],
@@ -350,7 +352,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     type Body = {
       ids?: string[]
       filter?: {
-        status?: string[]; priority?: string[]; position?: string[]; session?: string[]
+        status?: string[]; stage?: string[]; priority?: string[]; position?: string[]; session?: string[]
         year?: string[]; state?: string[]; tag?: string[]; subject?: string[]; q?: string; minRelevance?: string
         myBills?: string; unvoted?: string; newMatches?: string; drafts?: string; cf?: Record<string, string[]>
         match?: string
@@ -374,7 +376,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     } else {
       const f = body.filter!
       const where = await buildBillsWhere(db, {
-        statuses: f.status ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
+        statuses: f.status ?? [], stages: f.stage ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
         // Same truncation tradeoff as the other bulk call site above: it can widen the
         // written set under AND or narrow it under match=any, either way diverging from
@@ -435,6 +437,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       billIds = explicitIds
     } else {
       const statuses = params.getAll('status')
+      const stages = params.getAll('stage')
       const priorities = params.getAll('priority')
       const positionValues = params.getAll('position')
       const sessions = params.getAll('session')
@@ -462,7 +465,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       }
 
       const where = await buildBillsWhere(db, {
-        statuses, priorities, positionValues, sessions, years, states, tagFilters,
+        statuses, stages, priorities, positionValues, sessions, years, states, tagFilters,
         subjectFilters,
         q, minRelevance, myBillsParam, unvoted,
         newMatches: newMatchesParam,
