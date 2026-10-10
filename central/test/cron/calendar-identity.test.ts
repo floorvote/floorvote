@@ -58,8 +58,8 @@ type Entry = { type_id: number; type: string; date: string; time: string; locati
 const HEARING: Entry = { type_id: 1, type: 'Hearing', date: '2026-10-20', time: '14:00', location: 'Room 35', description: 'House Cmte on Elections', event_hash: 'e-hearing' }
 const MARKUP: Entry = { type_id: 3, type: 'Markup Session', date: '2026-10-27', time: '10:00', location: 'Room 35', description: 'House Cmte on Elections', event_hash: 'e-markup' }
 
-/** What LegiScan serves for the bill: its change hash and calendar. Tests move it on. */
-let served: { hash: string; calendar: Entry[] }
+/** What LegiScan serves for the bill: its change hash and calendar (none when undefined). Tests move it on. */
+let served: { hash: string; calendar: Entry[] | undefined }
 
 function getBill() {
   return {
@@ -70,7 +70,7 @@ function getBill() {
     session: { session_id: SESSION, session_name: '2026 Regular Session', year_start: 2026, year_end: 2026 },
     committee: [], referrals: [], progress: [], sponsors: [], sasts: [], subjects: [], votes: [], texts: [], amendments: [], supplements: [],
     history: [{ date: '2026-09-01', action: 'Introduced', chamber: 'H', chamber_id: 1, importance: 1 }],
-    calendar: served.calendar,
+    ...(served.calendar ? { calendar: served.calendar } : {}),
   }
 }
 
@@ -234,13 +234,54 @@ describe('LegiScan calendar entries', () => {
     expect(changes(back.sent[0])).toEqual([['hearing_added', '3|house cmte on elections']])
   })
 
-  it('never cancel anything on an empty calendar, however often it comes', async () => {
+  it('cancel a bill\'s only hearing after two pulls once LegiScan drops it', async () => {
+    // First the markup goes, leaving the hearing the bill's only entry.
+    served = { hash: 'v2', calendar: [HEARING] }
+    await tick(15)
+    await tick(17)
+    expect(await billCalendar()).toEqual([['hearing', '2026-10-20', 'House Cmte on Elections']])
+
+    // LegiScan drops it, and getBill comes back with an empty calendar.
+    served = { hash: 'v3', calendar: [] }
+    const once = await tick(19)
+    expect(changes(once.sent[0])).toEqual([])
+    expect(await billCalendar()).toHaveLength(1)
+    const confirmed = await tick(21)
+    expect(confirmed.queued).toEqual([{ billId: BILL, calendarRecheck: 'v3' }])
+    expect(changes(confirmed.sent[0])).toEqual([['hearing_cancelled', '1|house cmte on elections']])
+    expect(confirmed.sent[0].calendar.events).toEqual([])
+    expect(await billCalendar()).toEqual([])
+  })
+
+  it('never cancel anything on a bill that comes with no calendar, however often it comes', async () => {
     for (const [hash, hour] of [['v2', 15], ['v2', 17], ['v3', 15], ['v3', 17]] as const) {
-      served = { hash, calendar: [] }
+      served = { hash, calendar: undefined }
       const { sent } = await tick(hour)
       for (const msg of sent) expect(changes(msg)).toEqual([])
     }
     expect(await billCalendar()).toHaveLength(2)
+  })
+
+  it('still tell the instance of a cancellation when the recheck\'s first delivery fails', async () => {
+    served = { hash: 'v2', calendar: [HEARING] }
+    await tick(15)
+    // The confirming pass, by hand, with the first delivery to the instance failing.
+    const db = drizzle(env.DB, { schema })
+    const ingestor = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(getCurrentEtHour).mockReturnValue(17)
+    await runSync({ ...e(), INGESTOR_QUEUE: ingestor }, db)
+    const [recheck] = ingestor.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body))
+    expect(recheck).toEqual({ billId: BILL, calendarRecheck: 'v2' })
+    tenantQueue.send.mockRejectedValueOnce(new Error('queue unavailable'))
+    const retry = vi.fn()
+    await processIngestorQueue({ messages: [{ body: recheck, ack: vi.fn(), retry }] } as any, e(), db)
+    expect(retry).toHaveBeenCalled()
+
+    // The retry finds the rows already written, and still reaches the instance.
+    tenantQueue.send.mockClear()
+    await processIngestorQueue({ messages: [{ body: recheck, ack: vi.fn(), retry: vi.fn() }] } as any, e(), db)
+    const sent = tenantQueue.send.mock.calls.map(c => c[0])
+    expect(events(sent[0]).map((ev: any) => ev[0])).toEqual(['1|house cmte on elections'])
   })
 
   it('keep a past entry on the calendar, live, for as long as LegiScan lists it', async () => {

@@ -301,7 +301,7 @@ describe('buildLimsBill: B26-0400 (bill with full history, details and votes)', 
     expect(hearings.map(h => h.date)).toEqual(['2025-11-13'])
     expect(hearings[0].description).toBe('Public Hearing on B26-0400')
     expect(markups.map(m => m.date)).toEqual(['2026-01-27', '2026-02-23'])
-    expect(b.calendar.filter(c => c.type_id === 10).map(c => [c.type, c.date, c.description])).toEqual([['Deadline', '2026-04-28', "Mayor's response due"]])
+    expect(b.calendar.filter(c => c.type_id === 10).map(c => [c.type, c.date, c.description, c.event_id])).toEqual([['Deadline', '2026-04-28', "Mayor's response due", 'deadline:mayor-response']])
     // Every entry's type is one the vocabulary declares, so core can name its kind.
     for (const c of b.calendar) expect(vocabulary.eventTypes[c.type_id], c.description).toBeDefined()
   })
@@ -389,8 +389,8 @@ describe('deadlines', () => {
       ['Feb 07, 2025', 'Act A26-0003 Published in DC Register Vol 72 and Page 001133, Expires on May 04, 2025'],
     ]) }
     expect(limsDeadlines(rec)).toEqual([
-      { date: '2025-02-06', description: "Mayor's response due" },
-      { date: '2025-05-04', description: 'Emergency act expires' },
+      { key: 'mayor-response', date: '2025-02-06', description: "Mayor's response due" },
+      { key: 'expires', date: '2025-05-04', description: 'Emergency act expires' },
     ])
   })
 
@@ -400,8 +400,8 @@ describe('deadlines', () => {
       ['Nov 20, 2026', 'Law L26-0100, Effective from Nov 14, 2026 Published in DC Register Vol 73 and Page 000001, Expires on Jun 27, 2027'],
     ]) }
     expect(limsDeadlines(rec)).toEqual([
-      { date: '2026-11-14', description: 'Congressional review ends' },
-      { date: '2027-06-27', description: 'Temporary law expires' },
+      { key: 'congressional-review', date: '2026-11-14', description: 'Congressional review ends' },
+      { key: 'expires', date: '2027-06-27', description: 'Temporary law expires' },
     ])
   })
 
@@ -416,7 +416,7 @@ describe('deadlines', () => {
   it('sends no calendar from a record with no history, rather than one with every hearing gone', async () => {
     const rec = { ...bulk['B26-0400'], legislationHistory: [], projectedLawDate: 'Nov 14, 2026' }
     const b = await buildLimsBill(rec, d0400, limsBillId('B26-0400')!, await bulkHash(rec), ctx)
-    expect(b.calendar).toEqual([])
+    expect(b.calendar).toBeUndefined()
   })
 
   it('keeps the latest restated date, and finds none for a bill without deadlines', () => {
@@ -424,7 +424,7 @@ describe('deadlines', () => {
       ['Mar 01, 2026', 'Transmitted to Mayor, Response Due on Mar 15, 2026'],
       ['Mar 20, 2026', 'Transmitted to Mayor, Response Due on Apr 03, 2026'],
     ]) }
-    expect(limsDeadlines(rec)).toEqual([{ date: '2026-04-03', description: "Mayor's response due" }])
+    expect(limsDeadlines(rec)).toEqual([{ key: 'mayor-response', date: '2026-04-03', description: "Mayor's response due" }])
     expect(limsDeadlines({ ...rec, legislationHistory: [] })).toEqual([])
   })
 })
