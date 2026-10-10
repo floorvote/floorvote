@@ -4,10 +4,11 @@
 -- every value, the 'legiscan' default, and the backfilled LIMS rows as they
 -- are.
 --
--- Both upgrade paths reach this file with 0025 and 0026 applied: a fresh
--- central, and a downstream fork's production (which has lims_records and
--- council_* tables of its own). So every table and column named here exists,
--- and no view or trigger refers to them.
+-- Every upgrade path reaches this file with 0025 and 0026 applied: a fresh
+-- central, a LegiScan-only central at main's migrations (through
+-- 0021_session_votes_dataset), and a downstream fork's production (its own
+-- 0020_lims_records and 0021 to 0024 council_* tables). So every table and
+-- column named here exists, and no view or trigger refers to them.
 --
 -- SQLite can't rename an index, so each index named after the old column or
 -- tables is dropped and created again under its new name.
@@ -15,8 +16,15 @@
 ALTER TABLE bills RENAME COLUMN source TO provider;
 ALTER TABLE sessions RENAME COLUMN source TO provider;
 ALTER TABLE people RENAME COLUMN source TO provider;
+
 DROP INDEX IF EXISTS idx_people_source;
 CREATE INDEX IF NOT EXISTS idx_people_provider ON people(provider);
+
+-- The LIMS provider reads a session's Council Period from its tag (CP26).
+-- Every LIMS session row written so far carries one, but a row without it
+-- would stop the LIMS sync, so give any such row the tag its id encodes.
+UPDATE sessions SET session_tag = 'CP' || (session_id - 1000000000)
+  WHERE provider = 'lims' AND session_tag NOT GLOB 'CP[0-9]*';
 
 ALTER TABLE source_records RENAME TO provider_records;
 ALTER TABLE provider_records RENAME COLUMN source TO provider;

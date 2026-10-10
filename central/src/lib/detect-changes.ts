@@ -1,4 +1,4 @@
-import { DEFAULT_PROVIDER_ID, getProvider, type CentralMeasure, type MeasureCalendarEntry, type Provider } from '../providers'
+import type { CentralMeasure, MeasureCalendarEntry, Provider } from '../providers'
 import type { CalendarBlock } from '../types'
 import { statusChangeLabel } from './vocabulary'
 
@@ -47,7 +47,7 @@ function sponsorDetail(sponsor: { role?: string; name: string; party: string }):
 export function detectChanges(
   snapshot: BillSnapshot,
   bill: CentralMeasure,
-  provider: Provider = getProvider(DEFAULT_PROVIDER_ID),
+  provider: Provider,
 ): ChangeRecord[] {
   const changes: ChangeRecord[] = []
   const statusLabel = (status: number) => statusChangeLabel(provider, status)

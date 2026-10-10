@@ -39,6 +39,8 @@ describe('TenantApi deny-by-default forwarder', () => {
       ['POST', '/api/admin/anomaly-watch'],
       ['POST', '/api/admin/trigger-sync'],
       ['POST', '/api/admin/backfill-match-types'],
+      ['GET', '/api/admin/state-providers'],
+      ['POST', '/api/admin/state-providers/dc'],
       ['POST', '/api/tenants/ri/demo-reset'],
       ['POST', '/api/tenants/ri/run-digest'],
       ['POST', '/api/tenants/ri/refresh-metadata'],

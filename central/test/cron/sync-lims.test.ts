@@ -322,15 +322,16 @@ describe('review fixes', () => {
     expect(row).toMatchObject({ lastAction: 'Codified', lastActionDate: '2026-09-01' })
   })
 
-  it('refuses to run while LegiScan DC bills are linked to tenants', async () => {
+  it('leaves DC on LegiScan while LegiScan DC bills are linked to tenants', async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.bills).values({ billId: 1_950_000, sessionId: 2150, state: 'DC', stateId: 51, billNumber: 'B26-0400', changeHash: 'h', title: 't' } as any)
     await db.insert(schema.billTenants).values({ billId: 1_950_000, tenantId: 'oca', matchType: 'keyword' })
     const { env: e, limsQueue } = makeEnv()
 
-    await expect(runLimsSync(e, db)).rejects.toThrow(/cut over/)
+    expect(await runLimsSync(e, db)).toEqual([])
     expect(lims.getBulkData).not.toHaveBeenCalled()
     expect(limsQueue.sendBatch).not.toHaveBeenCalled()
+    expect(await db.select().from(schema.stateProviders).all()).toEqual([])
   })
 
   it('keeps syncing the previous Council Period for a year after it ends', async () => {

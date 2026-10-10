@@ -31,6 +31,29 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   readonly envKeys: readonly K[]
 
+  /**
+   * The states the provider can serve. Every snapshot provider lists them.
+   * LegiScan leaves it out, since it serves any state. Which provider a state
+   * actually syncs from is core's state ownership table
+   * (lib/stateProviders.ts), and a claim for a state not listed here is refused.
+   */
+  readonly states?: readonly string[]
+
+  /**
+   * Whether this deployment has what the provider needs to run, such as its
+   * API key, judged from its own env keys. Omitted when it needs nothing. A
+   * claim for a provider that isn't configured is refused, and its sync skips.
+   */
+  configured?(env: Readonly<Pick<Env, K>>): boolean
+
+  /**
+   * The env key that named the provider's states before the ownership table,
+   * such as 'LIMS_STATES' (comma-separated). For one release, the first sync
+   * writes an ownership row for each state it names that has no row, under the
+   * same refusal rule as a claim. Goes away with that seeding.
+   */
+  readonly statesEnvKey?: K
+
   /** Every session the provider lists for a state, current and prior. */
   listSessions(state: string, ctx: ProviderContext<K>): Promise<SyncSession[]>
 
@@ -100,16 +123,6 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   // record and hands it back, to `toEntry` for the full pass and to
   // `fetchMeasure` for the ingest. Its sessions refresh through `listSessions`
   // once a day, and whenever none is due to sync.
-
-  /**
-   * States the provider reads when it's enabled. The LegiScan sync leaves them
-   * alone. Until state ownership moves to a table (#292), an env var turns a
-   * provider on.
-   */
-  readonly states?: readonly string[]
-
-  /** Whether this deployment is configured to read the provider, judged from its own env keys. */
-  enabled?(env: Readonly<Pick<Env, K>>): boolean
 
   /** Which of the provider's stored sessions for a state to sync now. */
   selectSessions?<S extends StoredSession>(sessions: S[], today: string): S[]

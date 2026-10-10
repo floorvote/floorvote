@@ -33,7 +33,7 @@ Two things hold the split. ESLint (`central/eslint-provider-boundary.mjs`) lets 
 
 ### Snapshot providers (DC, Maryland, Virginia)
 
-Three opt-in providers read a legislature's own feed: DC Council LIMS (`providers/lims/`), the Maryland General Assembly's open data (`providers/mga/`), and Virginia's LIS data files (`providers/lis/`). Each is off unless its env var names its state (`LIMS_STATES` with `LIMS_API_KEY`, `MGA_STATES`, or `LIS_STATES`). Then the LegiScan sync and the weekly vote-dataset check leave that state alone.
+Three opt-in providers read a legislature's own feed: DC Council LIMS (`providers/lims/`), the Maryland General Assembly's open data (`providers/mga/`), and Virginia's LIS data files (`providers/lis/`). Each syncs only the states it owns in the state ownership table (below). Then the LegiScan sync and the weekly vote-dataset check leave those states alone.
 
 None of these feeds has a modified-since filter, so each is read as a snapshot by its own hourly job (`central/src/cron/sync-snapshots.ts`):
 
@@ -41,7 +41,29 @@ None of these feeds has a modified-since filter, so each is read as a snapshot b
 2. **Full pass.** In a session's full-pass hours, `snapshot` returns every record with a hash. Core stores each changed record in `provider_records`, maps each record through `toEntry`, and runs the same `applyMasterList` as the LegiScan full pass. Queued bills go to the provider's `ingestQueue` binding when it is bound (LIMS: `LIMS_INGESTOR_QUEUE`), and to `INGESTOR_QUEUE` otherwise. With `detailsRefresh` (LIMS), tracked, unsettled bills whose details are stale are re-queued too.
 3. **Ingest.** The ingestor routes each bill to its provider by the `provider` column of its `bills` row, and passes `fetchMeasure` the stored record and its session. LIMS also returns its LegislationDetails response, which core stores in `provider_records` beside the listed record (so a field ignored today can be mapped later without fetching it again), and records when it was fetched. The record's hash stays the listed record's.
 
-Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `provider_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Ids only identify rows. Whatever picks a provider for a bill, session, or person reads that row's `provider` column (the ingestor, the LegiScan sync's session list, the stub backfill, status labels, and sponsor links), never an id range. Moving a state off LegiScan while instances track its LegiScan bills is refused until a cutover exists.
+Core does every read and write. A provider gets `ctx.ids(kind, keys)` to mint central ids from the `provider_ids` table (MGA and LIS; LIMS packs ids into reserved ranges, `providers/lims/ids.ts`), `ctx.people()` for the people it has written, and `ctx.today`. Ids only identify rows. Whatever picks a provider for a bill, session, or person reads that row's `provider` column (the ingestor, the LegiScan sync's session list, the stub backfill, status labels, and sponsor links), never an id range.
+
+### State ownership
+
+Which provider a state syncs from is a central table, `state_providers` (`central/src/lib/stateProviders.ts`): one row per state, with its provider, a status (`active`), the provider it had before, and when the row was written. **A state with no row is LegiScan's**, so a LegiScan-only central has no rows. Each sync reads the table once per run: the LegiScan sync and the weekly vote-dataset check skip only the states another provider owns, and each snapshot provider syncs only the states whose row names it. Every state is decided on its own, so a problem in one state never pauses another.
+
+An operator changes a state's provider with a claim:
+
+```bash
+curl -X POST "$CENTRAL/api/admin/state-providers/DC" -H "x-admin-secret: $ADMIN_SECRET" \
+  -H 'content-type: application/json' -d '{"provider":"lims"}'
+curl "$CENTRAL/api/admin/state-providers" -H "x-admin-secret: $ADMIN_SECRET"   # every row
+```
+
+- **200** when the state's current provider has no tracked bills there, meaning no bill of that provider in the state is linked to an instance. Monitor links count, since instances hold those bills too. Claiming a state for the provider it already has changes nothing.
+- **409** otherwise, naming the current provider (`owner`), its `trackedBills` count, and the `instances` tracking them. The row doesn't change, and the state keeps syncing from its current provider. The new provider would give each tracked bill a second copy under a new id, and instances would see, and pay AI for, both. Only a cutover moves a state with tracked bills.
+- **400** for an unknown provider, a state the provider doesn't serve (`Provider.states`), or a provider that isn't configured on this central (`Provider.configured`, such as LIMS without `LIMS_API_KEY`), since that would leave the state with no working provider.
+
+The check and the write are one SQL statement, so a link or another claim landing in between can't slip past the rule. The other half is in the syncs: each reads ownership once, when it starts, so a claim can land mid-pass. `applyMasterList` therefore writes each new link with a statement that holds only while the row still names the syncing provider (`insertLinkWhileOwner`), and it queues and notifies nothing for a state that changed provider during the pass. Links and claims serialize in D1: either the link lands first and the claim is refused, or the claim lands first and the link isn't written. `POST /admin/lims-import` answers 409 unless LIMS owns DC. Neither ownership route is on the tenant surface allowlist. API keys stay in env vars.
+
+**A state whose provider loses its key goes unsynced.** If a provider owns a state but is no longer configured (for example, `LIMS_API_KEY` was removed after DC was claimed), its sync skips the state with a warning every hour, and LegiScan doesn't take it back, since that would duplicate the provider's tracked bills. The state stays unsynced until the key is restored or the state is claimed for another provider.
+
+**For one release, the old env vars seed rows.** On the first sync after the upgrade, each state named by `LIMS_STATES` (with `LIMS_API_KEY` set), `MGA_STATES`, or `LIS_STATES` that has no row gets one, under the claim's refusal rule (`Provider.statesEnvKey`). Whichever sync runs first writes it, and every sync agrees from then on. A seeded row is logged, and the env var can then be removed. A refused seed is logged once an hour, by the LegiScan sync, and the state stays on LegiScan. If the env var's provider also has tracked bills in that state, instances hold bills from both providers. That split state is logged as an error for an operator to settle, and the state still stays on LegiScan. The env vars never change a state that has a row. A later release removes the seeding.
 
 ---
 
@@ -241,6 +263,7 @@ All central machine routes are served under `/api/*` (e.g. `/api/tenants/reproce
 - **Ingestor**: `central/src/queue/processor.ts` (`processBill`, `ingestMeasure`)
 - **LegiScan calls**: `central/src/providers/legiscan/` (the API client, and the provider that maps it onto the interface in `central/src/providers/types.ts`)
 - **Snapshot providers**: `central/src/cron/sync-snapshots.ts` (`runSnapshotSync`), and `central/src/providers/{lims,mga,lis}/`
+- **State ownership**: `central/src/lib/stateProviders.ts` (`loadStateOwners`, `claimState`), and the `/state-providers` routes in `central/src/routes/admin.ts`
 - **Cadence**: `central/src/lib/sync-schedule.ts`
 - **Change detection**: `central/src/lib/detect-changes.ts`
 - **Tenant consumer**: `api/src/queue/processor.ts` (`processCentralNotification`)

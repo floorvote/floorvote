@@ -14,7 +14,7 @@ export const lis: Provider<'LIS_STATES'> = {
   id: 'lis',
   envKeys: ['LIS_STATES'],
   states: [LIS_STATE],
-  enabled: env => (env.LIS_STATES ?? '').split(',').some(s => s.trim().toUpperCase() === LIS_STATE),
+  statesEnvKey: 'LIS_STATES',
 
   /**
    * The sessions the LIS has published for this year and next: the regular

@@ -6,8 +6,6 @@ import { app } from '../../src/index-legiscan'
 import { setupLsDb } from '../helpers/setupLsDb'
 
 const headers = { 'x-admin-secret': 'test-secret' }
-// A deployment with DC on LIMS: its env var names the state.
-const LIMS_ENV = { ...env, LIMS_API_KEY: 'lims-key', LIMS_STATES: 'DC' }
 
 type Labels = {
   state: string
@@ -18,8 +16,8 @@ type Labels = {
   hasEvents: boolean
 }
 
-async function labels(state: string, e: object = env): Promise<Labels> {
-  const res = await app.request(`/api/bills/labels?state=${state}`, { headers }, e)
+async function labels(state: string): Promise<Labels> {
+  const res = await app.request(`/api/bills/labels?state=${state}`, { headers }, env)
   expect(res.status).toBe(200)
   return res.json() as Promise<Labels>
 }
@@ -47,15 +45,16 @@ describe('GET /bills/labels', () => {
     expect(body.statuses.every(s => !('terminal' in s))).toBe(true)
   })
 
-  it('serves DC\'s own statuses and types when LIMS reads DC', async () => {
-    const body = await labels('DC', LIMS_ENV)
+  it('serves DC\'s own statuses and types when LIMS owns DC', async () => {
+    await drizzle(env.DB, { schema }).insert(schema.stateProviders).values({ state: 'DC', provider: 'lims' })
+    const body = await labels('DC')
     expect(body.statuses.find(s => s.label === 'Under Mayoral Review')?.explainer).toMatch(/10 working days/)
     expect(body.statuses.find(s => s.label === 'Deemed Approved')).toMatchObject({ stage: 'enacted' })
     expect(body.billTypes.find(t => t.value === 'Emergency Bill')?.explainer).toMatch(/90 days/)
     expect(body.calendarName).toBe('DC Council calendar')
   })
 
-  it('serves LegiScan\'s for DC when LIMS is off', async () => {
+  it('serves LegiScan\'s for a state with no owner recorded', async () => {
     const body = await labels('DC')
     expect(body.statuses.some(s => s.label === 'Under Mayoral Review')).toBe(false)
     expect(body.statuses.some(s => s.label === 'Engrossed')).toBe(true)

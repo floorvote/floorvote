@@ -7,7 +7,7 @@ import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
-import { stateProvider } from '../lib/providerRouting'
+import { ownerOfState } from '../lib/stateProviders'
 import { statusFields, vocabularyLabels } from '../lib/vocabulary'
 import type { Env } from '../types'
 
@@ -39,14 +39,17 @@ billsRoutes.get('/sessions', async (c) => {
 })
 
 // Explainers for a state's statuses, bill types, and event types, and its
-// display details, from the vocabulary of the provider that reads the state.
-// Instances show the explainers as tooltips. Registered before GET /:id.
-billsRoutes.get('/labels', (c) => {
+// display details, from the vocabulary of the provider that owns the state
+// (state_providers). Instances show the explainers as tooltips. Registered
+// before GET /:id.
+billsRoutes.get('/labels', async (c) => {
   const state = c.req.query('state')?.toUpperCase()
   if (!state || !/^[A-Z]{2}$/.test(state)) return c.json({ error: 'state is required' }, 400)
+  const db = drizzle(c.env.DB, { schema })
+  const provider = findProvider(await ownerOfState(db, state)) ?? getProvider(DEFAULT_PROVIDER_ID)
   return c.json({
     state,
-    ...vocabularyLabels(stateProvider(state, c.env)),
+    ...vocabularyLabels(provider),
     // Whether the state's provider publishes the legislature's own events
     // (hearings without bills). None does yet.
     hasEvents: false,

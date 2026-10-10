@@ -385,6 +385,20 @@ export const providerRecords = sqliteTable('provider_records', {
   updatedAt:        text('updated_at').notNull().default(sql`(datetime('now'))`),
 })
 
+/**
+ * Which provider central reads each state from; see
+ * migrations-legiscan/0030_state_providers.sql and lib/stateProviders.ts. A
+ * state with no row is LegiScan's.
+ */
+export const stateProviders = sqliteTable('state_providers', {
+  state:            text('state').primaryKey(),
+  provider:         text('provider').notNull(),
+  status:           text('status').notNull().default('active'),
+  /** The provider the state had before the row was last written. */
+  previousProvider: text('previous_provider'),
+  claimedAt:        text('claimed_at').notNull().default(sql`(datetime('now'))`),
+})
+
 /** Central ids that providers mint for their own keys (ProviderContext.ids); see migrations-legiscan/0026_source_ids.sql (renamed by 0027) and lib/providerIds.ts. */
 export const providerIds = sqliteTable('provider_ids', {
   id:        integer('id').primaryKey({ autoIncrement: true }),
