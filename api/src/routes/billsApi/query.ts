@@ -8,6 +8,7 @@ import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -72,6 +73,16 @@ export function subjectMembership(values: Array<{ state: string; name: string }>
     SELECT 1 FROM bill_subjects bs
     WHERE bs.bill_id = ${bills.id} AND (bs.state, bs.subject_name) IN (${pairs})
   )`
+}
+
+/**
+ * Status filter values, with each bare LegiScan progress code (7 to 12) also
+ * matching the word central now sends for it. Bills held the codes until
+ * migration 0076 rewrote them, and saved views and links can still name them.
+ * Shared by the list filter and the facets so the two can't drift.
+ */
+export function statusFilterValues(statuses: string[]): string[] {
+  return [...new Set(statuses.flatMap(s => LEGISCAN_CODE_WORDS[s] ? [s, LEGISCAN_CODE_WORDS[s]] : [s]))]
 }
 
 // Helper: single-value eq or multi-value inArray
@@ -338,7 +349,7 @@ export async function buildBillsWhere(
   const billFacts: SQL[] = []
   const scopes: SQL[] = []
 
-  const statusFilter = multiFilter(bills.status, p.statuses)
+  const statusFilter = multiFilter(bills.status, statusFilterValues(p.statuses))
   if (statusFilter) billFacts.push(statusFilter)
 
   const stageFilter = multiFilter(bills.statusStage, p.stages)

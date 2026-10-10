@@ -4,6 +4,7 @@ import { stagePosition } from '../../../shared/statusStages'
 import { EXTRA_DISPLAYS } from '../../../shared/providerExtras'
 import { limsStatusCode } from '../../src/providers/lims/map'
 import { example } from './example'
+import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 
 // Every provider's vocabulary follows the same rules, which core and
 // instances rely on: rank orders statuses across providers, and instances look
@@ -85,5 +86,32 @@ describe('terminal statuses', () => {
     expect(terminal('lims')).not.toContain('Approved')
     expect(terminal('lims')).not.toContain('Deemed Approved')
     expect(terminal('lims')).toEqual(expect.arrayContaining(['Official Law', 'Withdrawn', 'Failed', 'Disapproved', 'Deemed Disapproved', 'Expired', 'Not Applicable']))
+  })
+})
+
+// Instances backfilled stage and rank from shared/legacyStatusOrder.ts
+// (migration 0076), and fall back to it for a central that sends no rank. It
+// must agree with what central sends.
+describe('the instances\' legacy status table', () => {
+  const legiscan = getProvider('legiscan').vocabulary.statuses
+  const lims = getProvider('lims').vocabulary.statuses
+
+  it('matches LegiScan\'s vocabulary for every label and bare code', () => {
+    for (const [code, s] of Object.entries(legiscan)) {
+      expect(LEGACY_STATUS_ORDER[s.label], s.label).toEqual({ stage: s.stage, rank: s.rank })
+      expect(LEGACY_STATUS_ORDER[code], code).toEqual({ stage: s.stage, rank: s.rank })
+    }
+  })
+
+  it('names LegiScan\'s progress codes with the labels central sends', () => {
+    for (const [code, word] of Object.entries(LEGISCAN_CODE_WORDS)) expect(legiscan[Number(code)].label).toBe(word)
+  })
+
+  it('matches LIMS\'s vocabulary for every status name LegiScan doesn\'t also use', () => {
+    const legiscanLabels = new Set(Object.values(legiscan).map(s => s.label))
+    for (const s of Object.values(lims)) {
+      if (s.stage === null || legiscanLabels.has(s.label)) continue
+      expect(LEGACY_STATUS_ORDER[s.label], s.label).toEqual({ stage: s.stage, rank: s.rank })
+    }
   })
 })
