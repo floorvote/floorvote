@@ -335,6 +335,30 @@ describe('Maryland hearings on the calendar', () => {
     expect((await getJson(`/bills/${handle}`)).calendar.map((e: any) => e.description))
       .toEqual(['Senate Education, Energy, and the Environment hearing'])
   })
+
+  it('cancels a bill\'s only hearing after two pulls once its slot empties', async () => {
+    const records = sample()
+    const sb2 = records.find(r => r.BillNumber === 'SB0002')!
+    sb2.HearingDateTimePrimaryHouseOfOrigin = '2026-10-06T13:00:00'
+    serve(records)
+    await claim('mga')
+    await syncAndIngest()
+    const handle = toHandle(await billId('SB2'))
+
+    // The record now lists no hearing at all. That empty calendar is one miss, not a cancellation.
+    sb2.HearingDateTimePrimaryHouseOfOrigin = null
+    serve(records, '"v2"')
+    const first = await syncAndIngest()
+    expect(calendarOf(first.run, handle).flatMap((c: any) => c.changes)).toEqual([])
+    expect((await getJson(`/bills/${handle}`)).calendar).toHaveLength(1)
+
+    // The next pass finds SB 2 unchanged (a 304), and its recheck counts the second miss.
+    const second = await syncAndIngest()
+    expect(queuedBodies(second.run)).toEqual([{ billId: await billId('SB2'), calendarRecheck: expect.any(String) }])
+    expect(calendarOf(second.run, handle).flatMap((c: any) => c.changes))
+      .toEqual([expect.objectContaining({ changeType: 'hearing_cancelled', identityKey: 'id:2026RS/SB0002/S/primary' })])
+    expect((await getJson(`/bills/${handle}`)).calendar).toEqual([])
+  })
 })
 
 describe('reading the session file with its ETag', () => {
