@@ -12,7 +12,7 @@ import { vocabulary } from '../../../src/providers/lims/vocabulary'
 import { bulkRecordInventory, detailsInventory } from '../../../src/providers/lims/inventory'
 import { limsBillId, limsPeopleId, limsSessionId, LIMS_DOC_ID_BASE } from '../../../src/providers/lims/ids'
 import type { LimsBulkRecord, LimsCouncilMember, LimsLegislationDetails } from '../../../src/providers/lims/client'
-import { inventoryProblems } from '../../helpers/fieldInventory'
+import { inventoryProblems, unfedExtras } from '../../helpers/fieldInventory'
 
 const bulk = JSON.parse(bulkRaw) as Record<string, LimsBulkRecord>
 const d0400 = JSON.parse(details0400Raw) as LimsLegislationDetails
@@ -50,17 +50,12 @@ describe('the LIMS field inventories', () => {
     ])
   })
 
-  it('name only extras the vocabulary declares, and every extra the mapping sets', async () => {
-    const shown = new Set([...Object.values(bulkRecordInventory), ...Object.values(detailsInventory)]
-      .flatMap(use => typeof use === 'object' && 'extra' in use ? [use.extra] : []))
-    // Every declared extra comes from some field (the act and resolution
-    // numbers also from the bulk record's actResNumber, which is mapped).
-    for (const key of Object.keys(vocabulary.extras!)) {
-      if (key === 'resolutionNumber') continue
-      expect(shown.has(key), key).toBe(true)
-    }
+  it('name a field for every extra the vocabulary declares, and the mapping sets no other', async () => {
+    // The resolution number comes only from the bulk record's actResNumber,
+    // which is listed as mapped, since it also sets an earlier period's status.
+    expect(unfedExtras(vocabulary, bulkRecordInventory, detailsInventory)).toEqual(['resolutionNumber'])
     const b = await build('B26-0400', d0400)
-    expect(Object.keys(b.extras!).every(k => k in vocabulary.extras!)).toBe(true)
+    expect(Object.keys(b.extras!).sort()).toEqual(Object.keys(vocabulary.extras!).sort())
   })
 })
 
