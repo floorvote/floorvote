@@ -57,6 +57,18 @@ describe('GET /tenants/current-session/:state', () => {
     expect(await res.json()).toEqual({ yearStart: 2025, yearEnd: 2026, sineDie: true })
   })
 
+  it('prefers the session still in progress when two providers have one for the same year', async () => {
+    // After a cutover: LegiScan's DC session is marked ended, and LIMS's is current.
+    const db = drizzle(env.DB, { schema })
+    const session = { state: 'DC', stateId: 9, yearStart: 2025, yearEnd: 2026, special: 0, sessionTitle: 'x', sessionName: '2025-2026 Council Period 26' }
+    await db.insert(schema.sessions).values([
+      { ...session, sessionId: 2150, sineDie: 1, prior: 1 },
+      { ...session, sessionId: 1000000026, sineDie: 0, provider: 'lims' },
+    ])
+    const res = await app.fetch(new Request('http://central/api/tenants/current-session/DC', { headers: AUTH }), TEST_ENV)
+    expect(await res.json()).toEqual({ yearStart: 2025, yearEnd: 2026, sineDie: false })
+  })
+
   it('404s for a state with no sessions', async () => {
     const res = await app.fetch(
       new Request('http://central/api/tenants/current-session/ZZ', { headers: AUTH }),

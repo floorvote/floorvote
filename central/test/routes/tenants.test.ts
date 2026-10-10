@@ -398,6 +398,45 @@ describe('state_coverage maintenance (register merges, seed-session adds state)'
   })
 })
 
+describe('seed-session and state ownership', () => {
+  // A LegiScan session for DC, while LIMS owns DC (after a claim or a cutover).
+  async function seedDc() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values([
+      { sessionId: 2150, state: 'DC', stateId: 9, yearStart: 2025, yearEnd: 2026, sessionTitle: 'T', sessionName: 'T' },
+      { sessionId: 1000000026, state: 'DC', stateId: 9, yearStart: 2025, yearEnd: 2026, sessionTitle: 'L', sessionName: 'L', provider: 'lims' },
+    ])
+    await db.insert(schema.bills).values([
+      { billId: 800, sessionId: 2150, state: 'DC', stateId: 9, billNumber: 'B26-0001', title: 'X', changeHash: 'h', status: 1 },
+      { billId: 1012600001, sessionId: 1000000026, state: 'DC', stateId: 9, billNumber: 'B26-0001', title: 'X', changeHash: 'h', status: 1, provider: 'lims' },
+    ])
+    await db.insert(schema.tenants).values({ tenantId: 'dc', name: 'DC', stateCoverage: '["DC"]', active: true })
+    await db.insert(schema.stateProviders).values({ state: 'DC', provider: 'lims', previousProvider: 'legiscan' })
+  }
+  const seed = (sessionId: number) => app.fetch(new Request(`http://central/api/tenants/seed-session/dc?sessionId=${sessionId}&skipQueue=true`, {
+    method: 'POST', headers: AUTH,
+  }), TEST_ENV)
+  const links = async () => (await drizzle(env.DB, { schema }).select().from(schema.billTenants).all()).map(l => l.billId)
+
+  it('refuses a session whose provider doesn\'t own its state, and links nothing', async () => {
+    await seedDc()
+    const res = await seed(2150)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ owner: 'lims' })
+    expect(await links()).toEqual([])
+  })
+
+  it('links the owner\'s session', async () => {
+    await seedDc()
+    expect((await seed(1000000026)).status).toBe(200)
+    expect(await links()).toEqual([1012600001])
+  })
+
+  it('404s for a session central doesn\'t have', async () => {
+    expect((await seed(4242)).status).toBe(404)
+  })
+})
+
 describe('POST /tenants/redownload-texts/:tenantId', () => {
   // Regression: this endpoint used to re-derive the keyword match from
   // `title + bill_number`, while seed-session classifies on
