@@ -217,6 +217,13 @@ describe('LIMS referrals', () => {
     expect((await build('HN26-0171', dHn)).referrals.map(r => r.name)).toEqual(['Committee on Health'])
   })
 
+  it('keep a referral that follows a comments clause', () => {
+    expect(referralParts('Committee on Health with comments from the Committee on Housing, and Committee on Transportation and the Environment'))
+      .toEqual(['Committee on Health', 'Committee on Transportation and the Environment'])
+    expect(referralParts('Retained by the Council with comments from the Committee of the Whole'))
+      .toEqual(['Retained by the Council'])
+  })
+
   it('leave out committees asked only for comments', async () => {
     expect((await build('GBM26-0061', null)).referrals.map(r => r.name)).toEqual(['Retained by the Council'])
     expect((await build('REPROG26-0153', null)).referrals.map(r => r.name)).toEqual(['Retained by the Council'])
@@ -229,6 +236,8 @@ describe('LIMS referrals', () => {
     expect(referralParts('Special Committee on COVID-19 Pandemic Recovery'))
       .toEqual(['Special Committee on COVID-19 Pandemic Recovery'])
     expect(referralParts('Transportation and the Environment')).toEqual(['Committee on Transportation and the Environment'])
+    expect(referralParts('Whole')).toEqual(['Committee of the Whole'])
+    expect(referralParts('the Whole')).toEqual(['Committee of the Whole'])
     expect(referralParts('')).toEqual([])
     expect(referralParts(null)).toEqual([])
   })

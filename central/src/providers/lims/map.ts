@@ -388,13 +388,16 @@ export function limsExtras(rec: LimsBulkRecord, details: LimsLegislationDetails 
  * since it names no committee.
  */
 export function referralParts(field: string | null | undefined): string[] {
-  const text = clean(field).replace(/\s+with comments from\b.*$/i, '')
+  // A comments clause runs to the next ", and Committee ...", which is a referral again.
+  const text = clean(field).replace(/\s+with comments from\b.*?(?=,?\s+and\s+(?:the\s+)?committee\b|$)/i, '')
   if (!text) return []
   return text
     .split(/,?\s+and\s+(?=(?:the\s+)?(?:special\s+)?committee\b)|,\s*(?=(?:the\s+)?(?:special\s+)?committee\b)/i)
     .map(part => clean(part).replace(/^the\s+/i, ''))
     .filter(Boolean)
-    .map(part => (/\bcommittee\b/i.test(part) || /^retained by\b/i.test(part) ? part : `Committee on ${part}`))
+    .map(part => (/^whole$/i.test(part) ? 'Committee of the Whole'
+      : /\bcommittee\b/i.test(part) || /^retained by\b/i.test(part) ? part
+      : `Committee on ${part}`))
 }
 
 /** Whether a canonical referral names a committee (and isn't "Retained by the Council"). */
