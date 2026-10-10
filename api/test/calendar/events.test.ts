@@ -135,6 +135,24 @@ describe('GET /api/calendar/events', () => {
     expect(judiciary[0].eventHashes.sort()).toEqual(['eh-a', 'eh-b'])
   })
 
+  it('merges a meeting across bills whatever kind each row holds, but never a deadline into a meeting', async () => {
+    const b1 = await seedBill({ billNumber: 'S 2136', state: 'RI', session: '2026', priority: 'high' })
+    const b2 = await seedBill({ billNumber: 'H 7377', state: 'RI', session: '2026', priority: 'medium' })
+    const same = { date: isoDay(8), time: '10:00:00', location: 'Room 313', description: 'Senate Judiciary Executive Session' }
+    // One row central resent with its kind, and one it hasn't since kinds arrived.
+    await seedCalendarEvent(b1, { ...same, uid: 'es-s2136@t', kind: 'markup', eventHash: 'eh-a' })
+    await seedCalendarEvent(b2, { ...same, uid: 'es-h7377@t', kind: null, eventHash: 'eh-b' })
+    await seedCalendarEvent(b2, { ...same, uid: 'dl-h7377@t', kind: 'deadline', eventHash: 'eh-c' })
+
+    const r = await SELF.fetch('http://localhost/api/calendar/events', { headers: { Cookie: `session=${token}` } })
+    const rows = (await r.json() as Array<EventRow & { kind: string | null; eventHashes: string[] }>)
+      .filter(e => e.description === 'Senate Judiciary Executive Session')
+    expect(rows.map(e => [e.eventHashes.sort(), e.bills.map(b => b.billNumber).sort()])).toEqual([
+      [['eh-a', 'eh-b'], ['H 7377', 'S 2136']],
+      [['eh-c'], ['H 7377']],
+    ])
+  })
+
   it('does NOT merge custom events that happen to share date/time/description', async () => {
     const db = getDb(env.DB)
     for (const n of ['c-dup-1@t', 'c-dup-2@t']) {

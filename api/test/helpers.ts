@@ -433,7 +433,7 @@ export async function seedCommentMention(
 export async function seedCalendarEvent(
   billId: string,
   overrides?: Partial<{
-    uid: string; source: string; sequence: number; date: string; time: string;
+    uid: string; source: string; kind: string | null; sequence: number; date: string; time: string;
     location: string; description: string; status: 'confirmed' | 'cancelled'; eventHash: string;
   }>,
 ): Promise<string> {
@@ -444,6 +444,7 @@ export async function seedCalendarEvent(
     uid: overrides?.uid ?? `hearing-${billId}-${id}@test`,
     billId,
     source: overrides?.source ?? 'hearing',
+    kind: overrides?.kind ?? null,
     sequence: overrides?.sequence ?? 0,
     date: overrides?.date ?? '2026-06-04',
     time: overrides?.time ?? '14:00:00',
