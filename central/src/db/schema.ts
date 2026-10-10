@@ -94,6 +94,8 @@ export const committees = sqliteTable('committees', {
   chamber:     text('chamber').notNull().default(''),
   chamberId:   integer('chamber_id').notNull().default(0),
   name:        text('name').notNull(),
+  /** The id of the provider that wrote the row (0035). Ids come from the provider: LegiScan's own, or minted from provider_ids. */
+  provider:    text('provider').notNull().default('legiscan'),
 })
 
 export const billReferrals = sqliteTable('bill_referrals', {
