@@ -229,6 +229,8 @@ export const billChangeLog = sqliteTable('bill_change_log', {
   index('idx_bill_change_log_date').on(t.detectedAt),
 ])
 
+// A bill's calendar entries, kept under a stable identity and never deleted
+// (lib/billCalendar.ts, migration 0034).
 export const billCalendar = sqliteTable('bill_calendar', {
   id:          text('id').primaryKey(),
   billId:      integer('bill_id').notNull(),
@@ -239,6 +241,12 @@ export const billCalendar = sqliteTable('bill_calendar', {
   time:        text('time'),
   location:    text('location'),
   description: text('description'),
+  eventId:     text('event_id'),
+  // The identity instances know the entry by. Null on a row written before 0034.
+  identityKey: text('identity_key'),
+  missedPulls: integer('missed_pulls').notNull().default(0),
+  missedHash:  text('missed_hash'),
+  cancelledAt: text('cancelled_at'),
 }, (t) => [
   index('idx_bill_calendar_bill').on(t.billId),
   index('idx_bill_calendar_date').on(t.date),

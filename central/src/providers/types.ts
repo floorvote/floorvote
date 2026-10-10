@@ -1,6 +1,7 @@
 import type { Env } from '../types'
 import type { StatusStage } from '../../../shared/statusStages'
 import type { ExtraDisplay } from '../../../shared/providerExtras'
+import type { CalendarKind } from '../../../shared/calendarKinds'
 
 /**
  * The provider interface, and every shape that crosses the boundary between
@@ -108,6 +109,16 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   personUrl?(person: { state: string; name: string; peopleId: number }): string
 
   /**
+   * Keep the calendar identity central gave every entry before identities
+   * were stored: the event type id plus the description, without the date.
+   * Only LegiScan sets this. Its entries' identities are in every subscriber's
+   * calendar UIDs, so they never change. Every other provider's entries are
+   * identified by the shared rule in core's lib/billCalendar.ts: the
+   * provider's own event id, or else the kind, date, and description.
+   */
+  readonly legacyCalendarIdentity?: boolean
+
+  /**
    * The provider's per-member vote datasets for a state, one per session, each
    * with a hash that changes whenever its contents do. With
    * `fetchVoteDataset`, drives the weekly per-member vote load: core compares
@@ -183,8 +194,15 @@ export interface ProviderVocabulary {
   readonly statuses: Readonly<Record<number, VocabularyStatus>>
   /** Bill types, by the value the provider writes to `bills.bill_type` (compared without regard to case). */
   readonly billTypes: Readonly<Record<string, VocabularyTerm>>
-  /** Calendar event types, by the `type_id` of the provider's calendar entries. */
-  readonly eventTypes: Readonly<Record<number, VocabularyTerm>>
+  /**
+   * Calendar event types, by the `type_id` of the provider's calendar entries.
+   * Each names its kind, which central sends with every entry. An entry
+   * without an event id is identified partly by its kind (except LegiScan's,
+   * see `Provider.legacyCalendarIdentity`), so changing an event type's kind
+   * re-identifies its entries, and instances see them cancelled and recreated
+   * once.
+   */
+  readonly eventTypes: Readonly<Record<number, VocabularyEventType>>
   /** The name of the legislature's own calendar, when the provider reads one. */
   readonly calendarName?: string
   /**
@@ -230,6 +248,11 @@ export interface VocabularyTerm {
   readonly explainer?: string
 }
 
+/** A calendar event type: a term, and the kind of entry it is. */
+export interface VocabularyEventType extends VocabularyTerm {
+  readonly kind: CalendarKind
+}
+
 /** One extra field (`ProviderVocabulary.extras`). */
 export interface VocabularyExtra {
   /** What the bill page calls it. Unique within the provider. */
@@ -260,7 +283,7 @@ export type FieldInventory = Readonly<Record<string, FieldUse>>
 /** What a provider does with one feed field (`FieldInventory`). */
 export type FieldUse = 'mapped' | { readonly extra: string } | { readonly ignored: string }
 
-export type { StatusStage, ExtraDisplay }
+export type { StatusStage, ExtraDisplay, CalendarKind }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {
@@ -541,6 +564,12 @@ interface MeasureVote {
   member_votes?: { people_id: number | null; vote_id: number; vote_text: string }[]
 }
 
+/**
+ * One calendar entry on a measure: a hearing, mark-up, meeting, or deadline.
+ * Its kind comes from the vocabulary's event type for `type_id`. Core keeps
+ * each entry under a stable identity (lib/billCalendar.ts), so list every
+ * entry the provider publishes, past ones too, never numbered by position.
+ */
 export interface MeasureCalendarEntry {
   type_id: number
   type: string
@@ -549,6 +578,14 @@ export interface MeasureCalendarEntry {
   location: string
   description: string
   event_hash: string
+  /** The provider's own id for the event, when it publishes one. It is then the entry's identity. */
+  event_id?: string
+  /**
+   * Positive evidence that the event was cancelled: a notice tied to it, or a
+   * removed flag in the feed. Core cancels the entry with the same identity at
+   * once. An entry that is just missing is cancelled only after two pulls.
+   */
+  cancelled?: boolean
 }
 
 interface MeasureAmendment {

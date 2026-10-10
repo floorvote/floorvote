@@ -6,7 +6,8 @@ import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
 import type { Env } from '../types'
-import { calendarBlockFromRows, type StoredCalendarRow } from '../lib/detect-changes'
+import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/billCalendar'
+import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRest'
@@ -514,6 +515,7 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
     SELECT
       bc.event_hash AS eventHash,
       bc.type AS type,
+      bc.type_id AS typeId,
       bc.date AS date,
       bc.time AS time,
       bc.location AS location,
@@ -522,16 +524,21 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
       b.bill_number AS billNumber,
       b.title AS billTitle,
       b.state AS state,
+      b.provider AS provider,
       s.session_name AS sessionName
     FROM bill_calendar bc
     INNER JOIN bill_tenants bt ON bt.bill_id = bc.bill_id AND bt.tenant_id = ?
     INNER JOIN bills b ON b.bill_id = bc.bill_id
     LEFT JOIN sessions s ON s.session_id = b.session_id
-    WHERE bc.date >= ? AND bc.date <= ?${scopeClause}
+    WHERE bc.date >= ? AND bc.date <= ? AND bc.cancelled_at IS NULL${scopeClause}
     ORDER BY bc.date ASC, COALESCE(bc.time, '99:99:99') ASC
-  `).bind(tenantId, today, end, ...billIds).all()
+  `).bind(tenantId, today, end, ...billIds).all<{ typeId: number | null; provider: string } & Record<string, unknown>>()
 
-  return c.json(rows.results ?? [])
+  // Each entry's kind, from the vocabulary of the provider that wrote its bill.
+  return c.json((rows.results ?? []).map(({ typeId, provider, ...row }) => ({
+    ...row,
+    kind: calendarKind(findProvider(provider) ?? getProvider(DEFAULT_PROVIDER_ID), typeId),
+  })))
 })
 
 tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) => {
@@ -588,28 +595,28 @@ tenantsRoutes.post('/reprocess/:tenantId', guardCallerTenantParam(), async (c) =
 
     // Calendar blocks are attached ONLY on the targeted path; untargeted reprocess
     // stays lean metadata-only to avoid bloating 10k+ messages.
-    const calByBillId = new Map<number, StoredCalendarRow[]>()
+    const calByBillId = new Map<number, { provider: string; rows: CalendarRow[] }>()
     if (targeted) {
-      const calRows = await db.select({
-        billId:      schema.billCalendar.billId,
-        typeId:      schema.billCalendar.typeId,
-        description: schema.billCalendar.description,
-        date:        schema.billCalendar.date,
-        time:        schema.billCalendar.time,
-        location:    schema.billCalendar.location,
-        eventHash:   schema.billCalendar.eventHash,
-      }).from(schema.billCalendar).where(inArray(schema.billCalendar.billId, chunk.map(r => r.billId))).all()
-      for (const row of calRows) {
-        const arr = calByBillId.get(row.billId) ?? []
-        arr.push({ typeId: row.typeId, description: row.description, date: row.date, time: row.time, location: row.location, eventHash: row.eventHash })
-        calByBillId.set(row.billId, arr)
+      // The entries that aren't cancelled, each under the identity instances know it by.
+      const calRows = await db.select({ row: schema.billCalendar, provider: schema.bills.provider })
+        .from(schema.billCalendar)
+        .innerJoin(schema.bills, eq(schema.bills.billId, schema.billCalendar.billId))
+        .where(and(inArray(schema.billCalendar.billId, chunk.map(r => r.billId)), isNull(schema.billCalendar.cancelledAt)))
+        .all()
+      for (const { row, provider } of calRows) {
+        const entry = calByBillId.get(row.billId) ?? { provider, rows: [] }
+        entry.rows.push(row)
+        calByBillId.set(row.billId, entry)
       }
     }
 
     const bodies = chunk.map(r => {
       const msg: Record<string, unknown> = { tenantId, billId: toHandle(r.billId), forceMetadata: true }
       const cal = calByBillId.get(r.billId)
-      if (targeted && cal && cal.length > 0) msg.calendar = calendarBlockFromRows(cal)
+      if (targeted && cal) {
+        const provider = findProvider(cal.provider) ?? getProvider(DEFAULT_PROVIDER_ID)
+        msg.calendar = { events: calendarBlockEvents(provider, cal.rows), changes: [] }
+      }
       return msg
     })
     const outcome = await deliverBatchToTenant(c.env, tenantId, queueId, bodies)
