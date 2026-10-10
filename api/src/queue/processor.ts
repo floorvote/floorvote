@@ -209,6 +209,9 @@ type CentralBill = {
   title: string
   abstract: string | null
   status: string | null
+  /** The status's common stage and rank, from the provider's vocabulary. */
+  statusStage?: string | null
+  statusRank?: number
   statusDate: string | null
   lastAction?: string | null
   lastActionDate?: string | null
@@ -223,6 +226,14 @@ type CentralBill = {
   votes: Array<unknown>
   relatedBills: Array<{ identifier: string; session: string; relationType: string }>
   subjects?: string[]
+}
+
+/**
+ * The bill's status stage and rank, when central sent them. A central from
+ * before provider vocabularies sends neither, and the bill keeps what it has.
+ */
+function statusOrder(b: CentralBill): { statusStage?: string | null; statusRank?: number } {
+  return typeof b.statusRank === 'number' ? { statusStage: b.statusStage ?? null, statusRank: b.statusRank } : {}
 }
 
 export async function processCentralNotification(
@@ -297,6 +308,7 @@ export async function processCentralNotification(
       title: centralBill.title,
       state: centralBill.state,
       status: centralBill.status ?? '',
+      ...statusOrder(centralBill),
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
       sessionId: centralBill.sessionId ?? null,
       yearStart: centralBill.yearStart ?? null,
@@ -352,6 +364,7 @@ export async function processCentralNotification(
       title: centralBill.title,
       state: centralBill.state,
       status: centralBill.status ?? '',
+      ...statusOrder(centralBill),
       session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
       sessionId: centralBill.sessionId ?? null,
       yearStart: centralBill.yearStart ?? null,
@@ -436,6 +449,7 @@ export async function processCentralNotification(
     title: centralBill.title,
     state: centralBill.state,
     status: centralBill.status ?? '',
+    ...statusOrder(centralBill),
     session:   centralBill.sessionName ?? resolveSessionLabel(centralBill.sessionId),
     sessionId: centralBill.sessionId ?? null,
     yearStart: centralBill.yearStart ?? null,

@@ -189,9 +189,11 @@ const S_RELEVANCE_ASC   = sql`${bills.relevanceScore} ASC NULLS FIRST`
 const S_LASTACTION_DESC = sql`${bills.lastActionDate} DESC NULLS LAST`
 const S_LASTACTION_ASC  = sql`${bills.lastActionDate} ASC NULLS LAST`
 
-// Status rank: central stores LS codes 0-6 as human labels, 7-12 as numeric strings
-const S_STATUS_DESC = sql`CASE ${bills.status} WHEN '12' THEN 1 WHEN 'Pre-filed' THEN 2 WHEN 'Introduced' THEN 3 WHEN '9' THEN 4 WHEN '11' THEN 5 WHEN '10' THEN 6 WHEN 'Engrossed' THEN 7 WHEN 'Enrolled' THEN 8 WHEN 'Failed' THEN 9 WHEN 'Vetoed' THEN 10 WHEN 'Passed' THEN 11 WHEN '7' THEN 12 WHEN '8' THEN 13 ELSE 0 END DESC`
-const S_STATUS_ASC  = sql`CASE ${bills.status} WHEN '12' THEN 1 WHEN 'Pre-filed' THEN 2 WHEN 'Introduced' THEN 3 WHEN '9' THEN 4 WHEN '11' THEN 5 WHEN '10' THEN 6 WHEN 'Engrossed' THEN 7 WHEN 'Enrolled' THEN 8 WHEN 'Failed' THEN 9 WHEN 'Vetoed' THEN 10 WHEN 'Passed' THEN 11 WHEN '7' THEN 12 WHEN '8' THEN 13 ELSE 0 END ASC`
+// Status: the rank central sends from each provider's vocabulary (stage
+// position times 100 plus the provider's order), so statuses from different
+// providers sort together. 0 (no known status) sorts lowest.
+const S_STATUS_DESC = sql`${bills.statusRank} DESC`
+const S_STATUS_ASC  = sql`${bills.statusRank} ASC`
 // Natural bill-number sort: split bill_number into alphabetic prefix and numeric tail
 // so "HB 9" sorts before "HB 10". Sorts by state first, then prefix, then numeric value —
 // in a single-state instance state is constant so this collapses to bill-number-only order.
@@ -305,6 +307,7 @@ function orderByTiers(col: string, d: 'asc' | 'desc'): SQL[] {
 
 export type BillFilterParams = {
   statuses: string[]
+  stages: string[]
   priorities: string[]
   positionValues: string[]
   sessions: string[]
@@ -337,6 +340,9 @@ export async function buildBillsWhere(
 
   const statusFilter = multiFilter(bills.status, p.statuses)
   if (statusFilter) billFacts.push(statusFilter)
+
+  const stageFilter = multiFilter(bills.statusStage, p.stages)
+  if (stageFilter) billFacts.push(stageFilter)
 
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
   if (p.priorities.length > 0) {

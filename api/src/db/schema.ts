@@ -94,6 +94,12 @@ export const bills = sqliteTable('bills', {
   title: text('title').notNull(),
   state: text('state').notNull(),
   status: text('status').notNull().default(''),
+  // The status's common stage and its sort rank, as central sends them from
+  // the provider's vocabulary (migration 0076). The bill list filters on the
+  // stage and sorts status by rank. No stage and rank 0 for a draft or a
+  // status central has no vocabulary entry for.
+  statusStage: text('status_stage'),
+  statusRank: integer('status_rank').notNull().default(0),
   session: text('session').notNull().default(''),
   sessionId: text('session_id'),
   yearStart: integer('year_start'),

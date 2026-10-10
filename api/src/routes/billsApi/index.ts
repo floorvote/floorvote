@@ -3,6 +3,7 @@ import { requireAuth } from '../../middleware/auth'
 import type { AppEnv } from '../../types'
 import { registerBulkRoutes } from './bulkRoutes'
 import { registerListRoutes } from './listRoutes'
+import { registerLabelRoutes } from './labelRoutes'
 import { registerLookupRoutes } from './lookupRoutes'
 import { registerEngagementRoutes } from './engagementRoutes'
 import { registerDraftRoutes } from './draftRoutes'
@@ -13,7 +14,7 @@ export const billsApiRouter = new Hono<AppEnv>()
 billsApiRouter.use('*', requireAuth)
 
 // Route map (which module owns what). Registration order preserves the original
-// single-file order: static GET routes (/bulk-values, /facets, /drafts,
+// single-file order: static GET routes (/bulk-values, /facets, /labels, /drafts,
 // /draft-defaults, /resolve/*) are registered before the catch-all GET /:id so
 // they can never be captured as an :id param. /drafts and /draft-defaults both
 // live in lookupRoutes.ts, next to /:id, so that ordering constraint stays
@@ -22,6 +23,7 @@ billsApiRouter.use('*', requireAuth)
 // (buildBillDetail — the composite bill payload).
 registerBulkRoutes(billsApiRouter)        // POST /bulk, GET /bulk-values
 registerListRoutes(billsApiRouter)        // GET / (list), GET /facets
+registerLabelRoutes(billsApiRouter)       // GET /labels
 registerLookupRoutes(billsApiRouter)      // GET /:id, GET /resolve/*, GET /drafts, GET /draft-defaults, GET /:id/changes
 registerEngagementRoutes(billsApiRouter)  // votes, position, comments, note, custom-fields
 registerDraftRoutes(billsApiRouter)       // DELETE /:id, POST /draft, POST /:id/link, PATCH /:id/{draft,priority}

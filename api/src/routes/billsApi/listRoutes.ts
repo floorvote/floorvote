@@ -26,6 +26,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       page: pageParam, pageSize: pageSizeParam,
     } = c.req.query()
     const statuses = c.req.queries('status') ?? []
+    const stages = c.req.queries('stage') ?? []
     const priorities = c.req.queries('priority') ?? []
     const positionValues = c.req.queries('position') ?? []
     const sessions = c.req.queries('session') ?? []
@@ -60,6 +61,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     const finalWhere = await buildBillsWhere(db, {
       statuses,
+      stages,
       priorities,
       positionValues,
       sessions,
@@ -93,7 +95,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const ttl = listCacheTtl(c.env)
     const cacheKey = cacheable
       ? cacheKeyFor(c.env, {
-          statuses, priorities, positionValues, sessions, years, states, tagFilters,
+          statuses, stages, priorities, positionValues, sessions, years, states, tagFilters,
           subjectFilters,
           q, minRelevance, cfParamMap, sort: sort ?? 'default', dir: sortDir, page, pageSize,
           drafts: draftsActive,
@@ -273,6 +275,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     // Parse filter params
     const statuses = c.req.queries('status') ?? []
+    const stages = c.req.queries('stage') ?? []
     const priorities = c.req.queries('priority') ?? []
     const positionValues = c.req.queries('position') ?? []
     const sessions = c.req.queries('session') ?? []
@@ -308,6 +311,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     // --- Dimensional filters (each omitted for its own facet counts) ---
     const statusFilter = multiFilter(bills.status, statuses)
+    const stageFilter = multiFilter(bills.statusStage, stages)
     let priorityFilter: SQL | undefined
     if (priorities.length > 0) {
       const hasAny = priorities.includes(FILTER_ANY)
@@ -418,7 +422,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
+      else return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
     }
 
     // Shared by the `unvoted` scope filter above and unvotedCount below, so
@@ -467,7 +471,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // picking a value NARROWS the list rather than widening it, so counts stay
     // absolute (which is also exactly what AND mode does).
     const factFiltersActive = [
-      statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter,
+      statusFilter, stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter,
       tagFilter, positionFilter, subjectFilter, minRelevanceFilter,
       ...Object.values(cfSqlMap),
     ].some(Boolean)
@@ -487,17 +491,18 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       return buildWhere(excludeCfFieldId, ...dimFilters)
     }
 
-    const statusWhere   = buildFacetWhere(undefined, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const priorityWhere = buildFacetWhere(undefined, statusFilter,   yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const yearWhere     = buildFacetWhere(undefined, statusFilter,   priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
-    const stateWhere    = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter, subjectFilter)
-    const positionWhere = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, subjectFilter)
-    const tagWhere      = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter, subjectFilter)
-    const subjectWhere  = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
+    const statusWhere   = buildFacetWhere(undefined, stageFilter,    priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const stageWhere    = buildFacetWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const priorityWhere = buildFacetWhere(undefined, statusFilter,   stageFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const yearWhere     = buildFacetWhere(undefined, statusFilter,   stageFilter, priorityFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const stateWhere    = buildFacetWhere(undefined, statusFilter,   stageFilter, priorityFilter, yearFilter, sessionFilter, tagFilter, positionFilter, subjectFilter)
+    const positionWhere = buildFacetWhere(undefined, statusFilter,   stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, subjectFilter)
+    const tagWhere      = buildFacetWhere(undefined, statusFilter,   stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, positionFilter, subjectFilter)
+    const subjectWhere  = buildFacetWhere(undefined, statusFilter,   stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter)
     // Full WHERE (all filters, combined via the group operator) for myBillsCount,
     // newMatchesCount, and as the fallback when no CF field has an active filter —
     // this one must reflect the actual list, not a per-dimension facet count.
-    const finalWhere    = buildWhere(undefined, statusFilter,   priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
+    const finalWhere    = buildWhere(undefined, statusFilter,   stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)
 
     // Under match=any a facet count is the RESULTING TOTAL — what the list will
     // show if you pick this value — which is what AND mode's disjunctive faceting
@@ -534,9 +539,11 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // queried at all when shiftFacets is active: under AND mode (or with no
     // bill-fact filter active) asResultingTotal is the identity and the value
     // is thrown away, so there is nothing worth a query for.
-    const [statusRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, subjectRows, myInteractionRows, noPositionCountRows, tagSet, currentTotalRows] = await Promise.all([
+    const [statusRows, stageRows, priorityRows, sessionRows, yearRows, stateRows, setPositionRows, tagRows, subjectRows, myInteractionRows, noPositionCountRows, tagSet, currentTotalRows] = await Promise.all([
       db.select({ value: bills.status, count: facetCountExpr })
         .from(bills).where(statusWhere).groupBy(bills.status).all(),
+      db.select({ value: bills.statusStage, count: facetCountExpr })
+        .from(bills).where(stageWhere).groupBy(bills.statusStage).all(),
       db.select({ value: bills.priority, count: facetCountExpr })
         .from(bills).where(priorityWhere).groupBy(bills.priority).all(),
       db.select({ value: bills.session, count: facetCountExpr })
@@ -663,14 +670,14 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // outside the current result produces no row and vanishes from the
       // dropdown. buildFacetWhere keeps the WHERE at the scope, which is what
       // every other dimension does and what the conditional aggregate needs.
-      mergeCfRows(await cfCounts(buildFacetWhere(undefined, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)))
+      mergeCfRows(await cfCounts(buildFacetWhere(undefined, statusFilter, stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter)))
     } else {
       // Per active field, count with that field's own filter excluded (disjunctive).
       // Also exclude any unresolved (non-existent) cf field ids: they aren't a real
       // dimension, so their always-false condition must never narrow a real field's
       // own disjunctive count either.
       const perFieldResults = await Promise.all(
-        cfFieldIds.map(id => cfCounts(buildFacetWhere([id, ...unresolvedCfFieldIds], statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
+        cfFieldIds.map(id => cfCounts(buildFacetWhere([id, ...unresolvedCfFieldIds], statusFilter, stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter), id))
       )
       for (const rows of perFieldResults) mergeCfRows(rows)
 
@@ -684,7 +691,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // (the 1st arg) keeps a stale/garbled cf_ key from zeroing out every real
       // field's count — see the unresolvedCfFieldIds comment above.
       mergeCfRows(await cfCounts(
-        buildFacetWhere(unresolvedCfFieldIds.length ? unresolvedCfFieldIds : undefined, statusFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter),
+        buildFacetWhere(unresolvedCfFieldIds.length ? unresolvedCfFieldIds : undefined, statusFilter, stageFilter, priorityFilter, yearFilter, sessionFilter, stateFilter, tagFilter, positionFilter, subjectFilter),
         undefined,
         cfFieldIds,
       ))
@@ -695,6 +702,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // match=any), any derived sentinel is summed from those, and asResultingTotal
     // shifts the finished map exactly once at the end.
     const statusCounts = asResultingTotal(Object.fromEntries(statusRows.filter(r => r.value).map(r => [r.value!, Number(r.count)])))
+    const stageCounts = asResultingTotal(Object.fromEntries(stageRows.filter(r => r.value).map(r => [r.value!, Number(r.count)])))
     const priorityCounts: Record<string, number> = Object.fromEntries(priorityRows.filter(r => r.value).map(r => [r.value!, Number(r.count)]))
     // Priority is sparse: "Not set" = null priority; "Any" = has a priority.
     priorityCounts['none'] = Number(priorityRows.find(r => r.value == null)?.count ?? 0)
@@ -782,6 +790,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     return c.json({
       status: statusCounts,
+      stage: stageCounts,
       priority: priorityCountsOut,
       year: yearCounts,
       session: sessionCounts,
