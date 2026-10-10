@@ -345,9 +345,11 @@ describe('DC from LIMS fails closed', () => {
   ] as [string, () => Response][])('changes nothing when CouncilPeriods answers with %s', async (_what, answer) => {
     const before = await baseline()
     feed['CouncilPeriods'] = answer
+    calls = []
     const run = makeEnv()
     await expect(runSnapshotSync(lims, run.env, drizzle(env.DB, { schema }))).rejects.toThrow(/LIMS/)
-    expect(calls.filter(u => u.includes('/BulkData/') && calls.indexOf(u) > calls.lastIndexOf(`${LIMS}CouncilPeriods`))).toEqual([])
+    expect(calls.filter(u => u.includes('/BulkData/'))).toEqual([])
+    expect(run.limsQueue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson('/bills/sessions?state=DC')).toEqual(before.sessions)
     expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
@@ -373,6 +375,7 @@ describe('DC from LIMS fails closed', () => {
     feed['Members/26'] = answer
     const run = makeEnv()
     await expect(runSnapshotSync(lims, run.env, drizzle(env.DB, { schema }))).rejects.toThrow(/LIMS/)
+    expect(run.limsQueue.sendBatch).not.toHaveBeenCalled()
     expect(sentToTenant(run)).toEqual([])
     expect(await getJson(`/bills/${toHandle(B0400)}`)).toEqual(before.bill)
   })
