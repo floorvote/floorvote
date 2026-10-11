@@ -8,6 +8,7 @@ import { renderBillCardOpen, BILL_CARD_CLOSE } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink, formatDateRange } from './emailShell'
 import { billUrl } from '../../../shared/sessionSlug'
 import type { GroupedBillEvents, FeedEvent } from '../../../shared/feedUtils'
+import { dbTsToEpoch } from '../../../shared/time'
 
 export type DigestEvent = {
   type: string; metadata: string; createdAt: string
@@ -139,12 +140,21 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
 
   const billCount = billOrder.length
   // Date range the digest covers: last digest → now (falls back to a 24h window if not supplied).
-  const start = fmtDay(input.periodStart ?? new Date(Date.now() - 86400_000).toISOString())
-  const end = fmtDay(input.periodEnd ?? new Date().toISOString()) // ts-write-ok: formatted for email display, not a DB column
+  const periodEnd = input.periodEnd ?? new Date().toISOString()
+  const endMs = periodEnd.length === 10 ? Date.parse(periodEnd) : dbTsToEpoch(periodEnd)
+  const periodStart = input.periodStart ?? new Date(endMs - 86400_000).toISOString()
+  const startMs = periodStart.length === 10 ? Date.parse(periodStart) : dbTsToEpoch(periodStart)
+  const start = fmtDay(new Date(startMs).toISOString())
+  const end = fmtDay(new Date(endMs).toISOString())
   const range = formatDateRange(start, end)
+  const days = (endMs - startMs) / 86400_000
+  const window = days === 1 ? 'in the last day'
+    : days === 7 ? 'in the last week'
+    : Number.isInteger(days) && days > 0 ? `in the last ${days} days`
+    : `since ${new Date(startMs).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'UTC' })} UTC`
   const newMatches = input.newMatches ?? []
   const signal = billCount > 0
-    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated in the last week`
+    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated ${window}`
     : `${newMatches.length} new keyword ${newMatches.length === 1 ? 'match' : 'matches'}`
   const newMatchSection = renderNewMatchSection(newMatches, input.appUrl)
   const cards = billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')

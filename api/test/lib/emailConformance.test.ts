@@ -54,3 +54,13 @@ describe('email date ranges are consistently spaced (en-dash with spaces)', () =
     expect(html).toMatch(/\w+ \d+ – \w+ \d+/)
   })
 })
+
+describe('sample digest cadence', () => {
+  it.each([
+    ['daily', 'in the last day'],
+    ['weekly', 'in the last week'],
+  ] as const)('renders a %s sample', (frequency, wording) => {
+    const { html } = renderSampleEmail('digest', APP, frequency)
+    expect(html).toContain(`were updated ${wording}`)
+  })
+})

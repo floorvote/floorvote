@@ -37,11 +37,30 @@ describe('renderDigestEmail', () => {
       assocName: 'Test Organization',
       appUrl: 'https://ri.example.com',
       periodStart: '2026-06-20T00:00:00.000Z',
-      periodEnd: '2026-06-26T00:00:00.000Z',
+      periodEnd: '2026-06-27T00:00:00.000Z',
     })
     expect(html).toContain('were updated in the last week')
     expect(html).toContain('Test Organization')
     expect(html).toContain('Jun 20')
     expect(html).toContain('H 5001')
+  })
+
+  it.each([
+    ['2026-06-26 00:00:00', 'in the last day'],
+    ['2026-06-20 00:00:00', 'in the last week'],
+    ['2026-06-24 00:00:00', 'in the last 3 days'],
+    ['2026-06-13 00:00:00', 'in the last 14 days'],
+    ['2026-06-26T12:30:00Z', 'since Jun 26, 2026, 12:30:00 PM UTC'],
+  ])('describes the actual window starting at %s', (periodStart, wording) => {
+    const html = renderDigestEmail({
+      events: sampleEvents, assocName: 'Test Organization', appUrl: 'https://ri.example.com',
+      periodStart, periodEnd: '2026-06-27 00:00:00',
+    })
+    expect(html).toContain(`were updated ${wording}`)
+  })
+
+  it('defaults to a daily window', () => {
+    const html = renderDigestEmail({ events: sampleEvents, assocName: 'Test Organization', appUrl: 'https://ri.example.com' })
+    expect(html).toContain('were updated in the last day')
   })
 })

@@ -43,7 +43,7 @@ export const SAMPLE_WEEK_AHEAD_DAYS: WeekAheadDay[] = [
 
 const j = (o: unknown) => JSON.stringify(o)
 export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
-  { type: 'priority_set', metadata: j({ priority: 'high' }), createdAt: '2026-06-09 14:02:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.', userName: 'Dana Reed' },
+  { type: 'priority_set', metadata: j({ priority: 'high' }), createdAt: '2026-06-10 08:02:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.', userName: 'Dana Reed' },
   { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] }), createdAt: '2026-06-10 09:30:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: null },
   { type: 'comment_added', metadata: j({ preview: 'We should testify against this at the hearing.' }), createdAt: '2026-06-10 16:45:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Sam Ortiz' },
   // Long comment, stored cut at COMMENT_PREVIEW_MAX with no trailing marker —
@@ -83,7 +83,8 @@ export interface SampleSendResult { ok: boolean; provider?: string; error?: stri
  * type to `SampleEmailType` + a case here and it is automatically covered by the
  * test and the sender — that's the anti-drift guarantee.
  */
-export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subject: string; html: string } {
+export function renderSampleEmail(type: SampleEmailType, appUrl: string, digestFrequency: 'daily' | 'weekly' = 'daily'): { subject: string; html: string } {
+  const digestPeriod = { periodStart: digestFrequency === 'weekly' ? '2026-06-04T00:00:00Z' : '2026-06-10T00:00:00Z', periodEnd: '2026-06-11T00:00:00Z' }
   switch (type) {
     case 'login':
     case 'invite':
@@ -102,13 +103,13 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
       // Fixed period so the date range is deterministic (committed sample + snapshot).
       return {
         subject: '[Sample] Priority bill updates',
-        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, ...digestPeriod }),
       }
     case 'digest-new-only':
       // Admin digest when there are NO priority-bill updates — only new keyword matches.
       return {
         subject: '[Sample] New bills matching your keywords',
-        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, ...digestPeriod }),
       }
     case 'mention':
       return {

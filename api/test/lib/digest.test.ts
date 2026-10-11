@@ -142,6 +142,32 @@ describe('runDigest', () => {
       .onConflictDoUpdate({ target: associationConfig.key, set: { value: v } })
   }
 
+  it.each([
+    ['daily', '2026-06-02 11:00:00', 'in the last day'],
+    ['weekly', '2026-05-27 11:00:00', 'in the last week'],
+    ['daily', '2026-05-31 11:00:00', 'in the last 3 days'],
+    ['weekly', '2026-05-20 11:00:00', 'in the last 14 days'],
+  ])('%s digest describes its stored window from %s', async (frequency, since, wording) => {
+    const db = getDb(env.DB)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
+    if (frequency === 'weekly') await enableWeekly(db, '3')
+    else await enableModule(db)
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: since })
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    await db.insert(feedEvents).values({
+      id: crypto.randomUUID(), type: 'position_set', billId, userId: 'system',
+      metadata: JSON.stringify({ position: 'Support' }), createdAt: '2026-06-03 10:00:00',
+    })
+    const calls: { html: string }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+      calls.push(JSON.parse(init.body as string)); return new Response('{}', { status: 200 })
+    }))
+    const result = await runDigest(env as any, db)
+    expect(result.sent).toBe(2)
+    expect(calls).toHaveLength(2)
+    for (const message of calls) expect(message.html).toContain(`was updated ${wording}`)
+  })
+
   it('weekly: skips and does NOT stamp last_digest_at on a non-matching weekday', async () => {
     const db = getDb(env.DB)
     // 2026-06-03 is a Wednesday (getUTCDay() === 3); configure weekly on Monday (1).
