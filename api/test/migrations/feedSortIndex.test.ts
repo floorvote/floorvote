@@ -33,6 +33,7 @@ describe('feed sort expression index', () => {
     const feedSql = prepared.find((s) => /order by datetime\(/i.test(s) && /limit/i.test(s))
     expect(feedSql, `no feed query captured among:\n${prepared.join('\n')}`).toBeDefined()
 
+    // EXPLAIN needs a value for every placeholder (LIMIT and OFFSET included), and the plan doesn't depend on them, so bind 'x' to all.
     const params = (feedSql!.match(/\?/g) ?? []).map(() => 'x')
     const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${feedSql}`)
       .bind(...params)

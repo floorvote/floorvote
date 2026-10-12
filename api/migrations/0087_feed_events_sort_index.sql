@@ -5,4 +5,5 @@
 -- temp B-tree over the whole result set. SQLite only uses an expression index when
 -- the query repeats the expression exactly, so api/src/routes/feed.ts must keep
 -- ordering by datetime(feed_events.created_at). No data migration is needed.
+-- api/test/migrations/feedSortIndex.test.ts reads the feed's query plan and fails if the sort stops using this index.
 CREATE INDEX IF NOT EXISTS idx_feed_events_created_dt ON feed_events(datetime(created_at));
