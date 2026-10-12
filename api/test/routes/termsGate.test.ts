@@ -7,6 +7,7 @@ import { termsAcceptances } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { TERMS_EXEMPT } from '../../src/middleware/auth'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
+import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
 
 // The documents' current material version. Any YYYY-MM-DD works for the tests;
 // what matters is the ordering between them.
@@ -245,12 +246,103 @@ describe('GET /auth/me reports acceptance state', () => {
     expect(body.termsAcceptanceRequired).toBe(false)
   })
 
-  it('reports both fields on the superadmin JWT branch, and never calls them a first_login', async () => {
-    // Zero used magic links — bootstrapped from a JWT, never through a link.
+  it('reports both fields on the JWT branch of a non-superadmin session, and never calls it a first_login', async () => {
+    // Zero used magic links — an existing member with no link history.
     // A NOT EXISTS predicate would read that as a first-timer.
-    const jwt = await signSuperadminJwt('super@example.com', 'Super Admin', TEST_SUPERADMIN_PRIV)
-    const body = await me(armed, `superadmin_jwt=${jwt}`)
+    const body = await me(armed)
     expect(body.termsAcceptanceRequired).toBe(true)
     expect(body.termsAcceptanceKind).toBe('existing_member')
+  })
+})
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Central's superadmin list, served as hashes. `list` is mutable so a test can
+// remove someone from it.
+function centralWith(list: string[]) {
+  return {
+    fetch: async (req: Request) => {
+      if (new URL(req.url).pathname === '/api/admin/superadmin/emails') {
+        return new Response(JSON.stringify({ hashes: await Promise.all(list.map(sha256Hex)) }), { status: 200 })
+      }
+      return new Response('not found', { status: 404 })
+    },
+  }
+}
+
+// Operator staff are the provider under an instance's Terms, not users bound by
+// them, so anyone currently on the superadmin list skips the gate.
+describe('superadmins skip the terms gate', () => {
+  const SUPER = 'super@example.com'
+  const asEnv = (list: string[]) => ({ ...armed, CENTRAL: centralWith(list) }) as unknown as typeof armed
+  const acceptRows = async () => getDb(env.DB).select().from(termsAcceptances).all()
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    _resetSuperadminAllowlistCache()
+  })
+
+  async function signedIn(role: 'admin' | 'member' = 'admin') {
+    const id = await seedUser({ email: SUPER, role })
+    await seedMagicLink(id, { used: true })
+    return `session=${await seedSession(id)}`
+  }
+
+  it('lets a dashboard-signed-in superadmin through, with no prompt and no record', async () => {
+    const jwt = await signSuperadminJwt(SUPER, 'Super Admin', TEST_SUPERADMIN_PRIV)
+    const e = asEnv([SUPER])
+    const meRes = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwt}` } }, e)
+    expect(meRes.status).toBe(200)
+    expect((await meRes.json() as { termsAcceptanceRequired?: boolean }).termsAcceptanceRequired).toBe(false)
+    const session = /session=([^;]+)/.exec(meRes.headers.get('set-cookie') ?? '')![1]
+    const res = await app.request('/api/stats/sidebar', { headers: { Cookie: `session=${session}` } }, e)
+    expect(res.status).toBe(200)
+    expect(await acceptRows()).toHaveLength(0)
+  })
+
+  it('lets an emailed-link superadmin through on every route and in /auth/me', async () => {
+    const cookie = await signedIn()
+    const e = asEnv([SUPER])
+    expect((await app.request('/api/bills', { headers: { Cookie: cookie } }, e)).status).toBe(200)
+    const body = await (await app.request('/api/auth/me', { headers: { Cookie: cookie } }, e)).json() as { termsAcceptanceRequired?: boolean }
+    expect(body.termsAcceptanceRequired).toBe(false)
+  })
+
+  it('writes no acceptance record even if the client posts accept-terms', async () => {
+    const cookie = await signedIn()
+    const res = await app.request('/api/auth/accept-terms', { method: 'POST', headers: { Cookie: cookie } }, asEnv([SUPER]))
+    expect(res.status).toBe(204)
+    expect(await acceptRows()).toHaveLength(0)
+  })
+
+  it('gates them on their next request once removed from the list', async () => {
+    const cookie = await signedIn()
+    expect((await app.request('/api/bills', { headers: { Cookie: cookie } }, asEnv([SUPER]))).status).toBe(200)
+    _resetSuperadminAllowlistCache() // the cache refreshes from central; force that refresh
+    const res = await app.request('/api/bills', { headers: { Cookie: cookie } }, asEnv([]))
+    expect(res.status).toBe(403)
+    expect((await res.json() as { code?: string }).code).toBe('terms_not_accepted')
+    const me = await (await app.request('/api/auth/me', { headers: { Cookie: cookie } }, asEnv([]))).json() as { termsAcceptanceRequired?: boolean }
+    expect(me.termsAcceptanceRequired).toBe(true)
+  })
+
+  it('still gates ordinary members and admins who are not on the list', async () => {
+    const e = asEnv([SUPER])
+    for (const role of ['member', 'admin'] as const) {
+      const id = await seedUser({ role })
+      await seedMagicLink(id, { used: true })
+      const res = await app.request('/api/bills', { headers: { Cookie: `session=${await seedSession(id)}` } }, e)
+      expect(res.status).toBe(403)
+    }
+  })
+
+  it('gates everyone, rather than exempting, when central cannot be reached', async () => {
+    const cookie = await signedIn()
+    const down = { ...armed, CENTRAL: { fetch: async () => new Response('boom', { status: 500 }) } } as unknown as typeof armed
+    expect((await app.request('/api/bills', { headers: { Cookie: cookie } }, down)).status).toBe(403)
   })
 })

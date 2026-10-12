@@ -18,7 +18,7 @@ import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
 import { ensureDemoSession, demoSessionCookie } from '../lib/demoSession'
 import { requireAuth } from '../middleware/auth'
-import { termsAcceptanceState } from '../lib/termsAcceptance'
+import { termsAcceptanceState, isTermsExempt } from '../lib/termsAcceptance'
 import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
 
@@ -335,7 +335,7 @@ authRoutes.get('/me', async (c) => {
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
-            ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
+            ...(await termsAcceptanceState(db, c.env, localUser!.id, localUser!.email, true)),
           })
         }
       }
@@ -412,7 +412,7 @@ authRoutes.get('/me', async (c) => {
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
-    ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),
+    ...(await termsAcceptanceState(db, c.env, sessionWithUser.userId, sessionWithUser.email)),
   })
 })
 
@@ -432,6 +432,10 @@ authRoutes.post('/accept-terms', requireAuth, async (c) => {
 
   const db = getDb(c.env.DB)
   const user = c.get('user')
+
+  // Operator staff are not bound by the Terms, so there is nothing for them to
+  // accept and no record is written.
+  if (await isTermsExempt(c.env, user.email)) return new Response(null, { status: 204 })
 
   // Idempotent by read-then-insert rather than a unique constraint: re-acceptance
   // after a bump is a legitimate second row for the same user, so uniqueness on

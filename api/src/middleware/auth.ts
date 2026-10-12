@@ -4,6 +4,7 @@ import { eq, sql, getTableColumns } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { sessions, users } from '../db/schema'
 import { hashToken } from '../lib/crypto'
+import { isTermsExempt } from '../lib/termsAcceptance'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { dbTsToEpoch } from '../../../shared/time'
 import { checkRateLimit } from '../../../shared/rateLimit'
@@ -100,7 +101,7 @@ export const requireAuth = createMiddleware<{
       // Lexicographic on YYYY-MM-DD. Never datetime() -- these are dates, not
       // timestamps, and wrapping either side invites a parse that disagrees.
       const accepted = user.newestTermsAccepted
-      if (!accepted || accepted < termsUpdated) {
+      if ((!accepted || accepted < termsUpdated) && !(await isTermsExempt(c.env, user.email))) {
         return c.json({ error: 'Terms not accepted', code: 'terms_not_accepted' }, 403)
       }
     }
