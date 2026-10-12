@@ -131,9 +131,11 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
 
 /** Render a sample email and send it to a single address via the real send path.
  *  Never throws — returns a normalized result. */
-export async function sendSampleEmail(env: Env, db: AppDb, to: string, type: SampleEmailType): Promise<SampleSendResult> {
+export async function sendSampleEmail(env: Env, _db: AppDb, to: string, type: SampleEmailType): Promise<SampleSendResult> {
   const { subject, html } = renderSampleEmail(type, env.APP_URL)
-  return sendEmail(env, { to: [to], subject, html }, db)
+  // No db: operator mail stays out of email_send_stats, like the health alert,
+  // so a sample's success cannot make a failing provider look recovered.
+  return sendEmail(env, { to: [to], subject, html })
 }
 
 /** Every sample email type — drives the conformance test's iteration. */
