@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { env, applyD1Migrations, reset } from 'cloudflare:test'
 import { getDb } from '../src/db/client'
+import { splitStatements } from '../../shared/sqlStatements'
 import { generateToken, hashToken } from '../src/lib/crypto'
 import { users, sessions, magicLinks, bills, billTexts, roles, userRoles, comments, commentMentions, calendarEvents, authEvents } from '../src/db/schema'
 
@@ -11,44 +12,6 @@ const migrationFiles = import.meta.glob<string>('../migrations/*.sql', { query: 
 
 export function parseMigration(sql: string, name: string) {
   return { name, queries: splitStatements(sql) }
-}
-
-// Split a migration into statements on `;`, dropping `--` and `/* */`
-// comments first and ignoring semicolons inside quotes, so a `;` in a comment
-// can't break it the way it breaks parseMigration. The same splitter central's
-// tests use (central/test/helpers/migrations.ts). Not handled: a CREATE
-// TRIGGER body, whose own semicolons would be split apart.
-export function splitStatements(sql: string): string[] {
-  const statements: string[] = []
-  let current = ''
-  let quote: string | null = null
-  const flush = () => {
-    const s = current.trim()
-    if (s.length > 0) statements.push(s + ';')
-    current = ''
-  }
-  for (let i = 0; i < sql.length; i++) {
-    const c = sql[i]
-    if (quote) {
-      current += c
-      if (c === quote) quote = null
-    } else if (c === "'" || c === '"' || c === '`') {
-      quote = c
-      current += c
-    } else if (c === '-' && sql[i + 1] === '-') {
-      const eol = sql.indexOf('\n', i)
-      i = eol === -1 ? sql.length : eol - 1
-    } else if (c === '/' && sql[i + 1] === '*') {
-      const end = sql.indexOf('*/', i + 2)
-      i = end === -1 ? sql.length : end + 1
-    } else if (c === ';') {
-      flush()
-    } else {
-      current += c
-    }
-  }
-  flush()
-  return statements
 }
 
 /**

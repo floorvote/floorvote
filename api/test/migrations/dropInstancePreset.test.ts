@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { resetDb, applyMigrations, parseMigration } from '../helpers'
 import migrationSql61 from '../../migrations/0061_drop_instance_preset.sql?raw'
 
 // applyMigrations() applies every migration up to and including 0061 once, during
@@ -8,19 +8,7 @@ import migrationSql61 from '../../migrations/0061_drop_instance_preset.sql?raw'
 // d1_migrations table and skips repeats, so calling applyMigrations() a second
 // time after seeding a legacy row would be a no-op — 0061 would never re-run
 // against it. To exercise the migration against pre-existing data, this test
-// executes 0061's own SQL directly with a comment-stripping split.
-function statementsOf(sql: string): string[] {
-  return sql
-    .split(';')
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trimStart().startsWith('--'))
-        .join('\n')
-        .trim(),
-    )
-    .filter((s) => s.length > 0)
-}
+// executes 0061's own SQL directly.
 
 describe('0061_drop_instance_preset', () => {
   beforeEach(async () => {
@@ -38,7 +26,7 @@ describe('0061_drop_instance_preset', () => {
         ('instance_preset', ?), ('ai_context', ?), ('relevance_question', ?), ('tag_taxonomy', ?), ('keywords', ?)`,
     ).bind(JSON.stringify('election_officials'), aiContext, relevanceQuestion, tagTaxonomy, keywords).run()
 
-    for (const statement of statementsOf(migrationSql61)) {
+    for (const statement of parseMigration(migrationSql61, '0061_drop_instance_preset').queries) {
       await env.DB.prepare(statement).run()
     }
 
