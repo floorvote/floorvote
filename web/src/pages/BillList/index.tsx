@@ -66,7 +66,7 @@ export function peekBillsListCache(): { params: string; page: BillsListPage } | 
 // cancels outlives its navigation and keeps hitting a struggling API forever.
 export async function prefetchBills(targetUrl: string, opts?: { signal?: AbortSignal }): Promise<void> {
   const search = new URLSearchParams(targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?') + 1) : '')
-  const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE)
+  const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE, cachedCustomFieldDefs ?? [])
   const data = await apiFetchForLoader<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`, opts)
   billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
 }
@@ -154,6 +154,10 @@ export function BillList() {
 
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
+  // Read by fetchBills for its cache key without joining its deps: defs arriving
+  // must not refetch on their own (a cf filter's key change already does).
+  const customFieldDefsRef = useRef(customFieldDefs)
+  customFieldDefsRef.current = customFieldDefs
 
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -216,7 +220,7 @@ export function BillList() {
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
       myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
       tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
-    }, nextPage, PAGE_SIZE)
+    }, nextPage, PAGE_SIZE, customFieldDefsRef.current)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
       setAllBills(billsListCache!.page.bills)
