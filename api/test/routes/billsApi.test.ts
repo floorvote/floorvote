@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
+import { resetDb, applyMigrations, stubFetch, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
@@ -646,6 +646,7 @@ describe('GET /bills/:id', () => {
         date: hearingDate, time: null, location: null, description: 'Custom deadline', status: 'confirmed', eventHash: null },
     ])
 
+    stubFetch(() => new Response('{}', { status: 404 })) // central's supplemental data is not under test
     const res = await app.request(`/api/bills/${demoBillId}`,
       { headers: { Cookie: `session=${token}` } },
       { ...env, DEMO_MODE: 'true' })

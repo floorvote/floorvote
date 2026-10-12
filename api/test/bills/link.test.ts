@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes,
@@ -13,7 +13,7 @@ async function createDraft(token: string, title: string): Promise<string> {
   // route now rejects with 400 unless a state is supplied — see the empty-state
   // guard in draftRoutes.ts. 'UT' here stands in for a single-state tenant's
   // configured STATE binding; it isn't what these tests are exercising.
-  const res = await SELF.fetch('https://x/api/bills/draft', {
+  const res = await appFetch('https://x/api/bills/draft', {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, state: 'UT' }),
@@ -29,6 +29,7 @@ describe('POST /api/bills/:id/link', () => {
   let adminId: string
 
   beforeEach(async () => {
+    stubFetch() // central lookups and background backfills are answered, never real
     await resetDb()
     await applyMigrations()
     adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
@@ -42,7 +43,7 @@ describe('POST /api/bills/:id/link', () => {
     const draftId = await createDraft(adminToken, 'Pre-file of HB 1')
 
     // Member votes on draft
-    const voteRes = await SELF.fetch(`https://x/api/bills/${draftId}/votes`, {
+    const voteRes = await appFetch(`https://x/api/bills/${draftId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
@@ -50,7 +51,7 @@ describe('POST /api/bills/:id/link', () => {
     expect(voteRes.status).toBe(200)
 
     // Admin sets official position on draft (must use capitalized value)
-    const posRes = await SELF.fetch(`https://x/api/bills/${draftId}/position`, {
+    const posRes = await appFetch(`https://x/api/bills/${draftId}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Oppose' }),
@@ -58,14 +59,14 @@ describe('POST /api/bills/:id/link', () => {
     expect(posRes.status).toBe(200)
 
     // Member posts a comment on draft
-    const commentRes = await SELF.fetch(`https://x/api/bills/${draftId}/comments`, {
+    const commentRes = await appFetch(`https://x/api/bills/${draftId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'a comment' }),
     })
     expect(commentRes.status).toBe(201)
 
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -84,14 +85,14 @@ describe('POST /api/bills/:id/link', () => {
     const filedId = await seedBill({ billNumber: 'HB 2', externalId: 'legiscan:222' })
     const draftId = await createDraft(adminToken, 'Draft 2')
 
-    const selfLink = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const selfLink = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: draftId }),
     })
     expect(selfLink.status).toBe(400)
 
-    const noBody = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const noBody = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -99,14 +100,14 @@ describe('POST /api/bills/:id/link', () => {
     expect(noBody.status).toBe(400)
 
     const draft2 = await createDraft(adminToken, 'Draft 3')
-    const intoDraft = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const intoDraft = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: draft2 }),
     })
     expect(intoDraft.status).toBe(400)
 
-    const fromFiled = await SELF.fetch(`https://x/api/bills/${filedId}/link`, {
+    const fromFiled = await appFetch(`https://x/api/bills/${filedId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: draftId }),
@@ -119,7 +120,7 @@ describe('POST /api/bills/:id/link', () => {
     const draftId = await createDraft(adminToken, 'Draft for HB 3')
 
     // Set position on filed bill ('Support')
-    const filedPosRes = await SELF.fetch(`https://x/api/bills/${filedId}/position`, {
+    const filedPosRes = await appFetch(`https://x/api/bills/${filedId}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Support' }),
@@ -127,14 +128,14 @@ describe('POST /api/bills/:id/link', () => {
     expect(filedPosRes.status).toBe(200)
 
     // Set position on draft ('Oppose')
-    const draftPosRes = await SELF.fetch(`https://x/api/bills/${draftId}/position`, {
+    const draftPosRes = await appFetch(`https://x/api/bills/${draftId}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Oppose' }),
     })
     expect(draftPosRes.status).toBe(200)
 
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -152,18 +153,18 @@ describe('POST /api/bills/:id/link', () => {
     const draftId = await createDraft(adminToken, 'Draft for HB 4')
 
     // Same member votes 'support' on BOTH filed and draft
-    await SELF.fetch(`https://x/api/bills/${filedId}/votes`, {
+    await appFetch(`https://x/api/bills/${filedId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
     })
-    await SELF.fetch(`https://x/api/bills/${draftId}/votes`, {
+    await appFetch(`https://x/api/bills/${draftId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
     })
 
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -180,20 +181,20 @@ describe('POST /api/bills/:id/link', () => {
     const draftId = await createDraft(adminToken, 'Draft for HB 5')
 
     // Same member has a note on BOTH filed and draft
-    const filedNote = await SELF.fetch(`https://x/api/bills/${filedId}/note`, {
+    const filedNote = await appFetch(`https://x/api/bills/${filedId}/note`, {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'filed note (canonical)' }),
     })
     expect(filedNote.status).toBe(200)
-    const draftNote = await SELF.fetch(`https://x/api/bills/${draftId}/note`, {
+    const draftNote = await appFetch(`https://x/api/bills/${draftId}/note`, {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'draft note (should be dropped)' }),
     })
     expect(draftNote.status).toBe(200)
 
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -212,7 +213,7 @@ describe('POST /api/bills/:id/link', () => {
     const filedId = await seedBill({ billNumber: 'HB 6', externalId: 'legiscan:666' })
     const draftId = await createDraft(adminToken, 'Draft for HB 6')
 
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -225,7 +226,7 @@ describe('POST /api/bills/:id/link', () => {
   })
 
   async function link(draftId: string, filedId: string) {
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),

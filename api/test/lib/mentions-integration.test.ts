@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { commentMentions } from '../../src/db/schema'
 import { env } from 'cloudflare:test'
@@ -12,6 +11,7 @@ describe('comment mention extraction (integration)', () => {
   let billId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     adminId = await seedUser({ role: 'admin', name: 'Admin', email: 'admin@example.com' })
@@ -23,7 +23,7 @@ describe('comment mention extraction (integration)', () => {
 
   it('stores user mentions when posting a comment', async () => {
     const content = `<p>Hey <span data-type="mention" data-id="user:${mentionedUserId}" data-label="Jane Smith">@Jane Smith</span> check this</p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -48,7 +48,7 @@ describe('comment mention extraction (integration)', () => {
     await seedUserRole(user2, roleId)
 
     const content = `<p>Attention <span data-type="mention" data-id="role:${roleId}" data-label="Finance">@Finance</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -66,7 +66,7 @@ describe('comment mention extraction (integration)', () => {
 
   it('does not store a mention for the comment author', async () => {
     const content = `<p>Talking to myself <span data-type="mention" data-id="user:${adminId}" data-label="Admin">@Admin</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -83,7 +83,7 @@ describe('comment mention extraction (integration)', () => {
     await seedUserRole(mentionedUserId, roleId)
 
     const content = `<p><span data-type="mention" data-id="user:${mentionedUserId}" data-label="Jane">@Jane</span> and <span data-type="mention" data-id="role:${roleId}" data-label="Team">@Team</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -103,7 +103,7 @@ describe('comment mention extraction (integration)', () => {
     await seedSession(u3)
 
     const content = `<p><span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span> heads up</p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -125,7 +125,7 @@ describe('comment mention extraction (integration)', () => {
     await seedUser({ name: 'Bob', email: 'bob@example.com' })
 
     const content = `<p><span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -142,7 +142,7 @@ describe('comment mention extraction (integration)', () => {
     const memberToken = await seedSession(memberId)
 
     const content = `<p><span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span> and <span data-type="mention" data-id="user:${mentionedUserId}" data-label="Jane">@Jane</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -164,7 +164,7 @@ describe('comment mention extraction (integration)', () => {
 
     // @everyone should not notify pending user
     const everyoneContent = `<p><span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span></p>`
-    const r1 = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const r1 = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: everyoneContent }),
@@ -179,7 +179,7 @@ describe('comment mention extraction (integration)', () => {
     // @role should not notify pending user
     await db.delete(commentMentions)
     const roleContent = `<p><span data-type="mention" data-id="role:${roleId}" data-label="All">@All</span></p>`
-    const r2 = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const r2 = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: roleContent }),
@@ -194,7 +194,7 @@ describe('comment mention extraction (integration)', () => {
     await seedSession(bob)
 
     const content = `<p><span data-type="mention" data-id="user:${mentionedUserId}" data-label="Jane">@Jane</span> <span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span></p>`
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
