@@ -8,9 +8,7 @@ import migrationSql61 from '../../migrations/0061_drop_instance_preset.sql?raw'
 // d1_migrations table and skips repeats, so calling applyMigrations() a second
 // time after seeding a legacy row would be a no-op — 0061 would never re-run
 // against it. To exercise the migration against pre-existing data, this test
-// executes 0061's own SQL directly, using the same comment-stripping split
-// applyMigrations() itself uses for hand-written migrations elsewhere in this
-// suite (see helpers.ts: 0049, 0054, 0057).
+// executes 0061's own SQL directly with a comment-stripping split.
 function statementsOf(sql: string): string[] {
   return sql
     .split(';')
