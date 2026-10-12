@@ -532,6 +532,21 @@ describe('Config — match-all keyword confirm copy', () => {
     expect(msg).not.toMatch(/quota|budget|instance/i)
   })
 
+  it('treats ** as match-all', async () => {
+    const msg = await confirmFor('**', { wouldAdd: 12, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('(~12 bills).')
+  })
+
+  it('uses the singular for one bill', async () => {
+    const msg = await confirmFor('*', { wouldAdd: 1, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('(~1 bill).')
+  })
+
+  it('falls through to the existing text when nothing is left to queue', async () => {
+    const msg = await confirmFor('*', { wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toBe('Save keywords? No bills will be added or downgraded.')
+  })
+
   it('leaves the confirmation unchanged for any other list', async () => {
     const msg = await confirmFor('zoning\n*', { wouldAdd: 897, wouldDemote: 0, wouldProtect: 0 })
     expect(msg).toContain('897 additional bills will be fully analyzed')

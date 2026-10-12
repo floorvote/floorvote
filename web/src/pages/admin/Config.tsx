@@ -332,7 +332,7 @@ export function Config() {
           { method: 'POST', body: JSON.stringify({ keywords: newKeywords }) }
         )
         const parts: string[] = []
-        if (isMatchAll) {
+        if (isMatchAll && preview.wouldAdd > 0) {
           // The match-all list queues every unanalyzed bill, so wouldAdd is the count.
           parts.push(`Every bill in your tracked sessions will be queued for AI analysis (~${preview.wouldAdd.toLocaleString()} ${preview.wouldAdd === 1 ? 'bill' : 'bills'}).`)
         } else if (preview.wouldAdd > 0) {

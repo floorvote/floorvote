@@ -11,6 +11,7 @@ import { registerWithCentral } from '../cron/sync'
 import { matchesKeywords } from '../lib/keywords'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle } from '../../../shared/billHandle'
+import { isWildcardKeyword } from '../../../shared/keywords'
 import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -998,10 +999,20 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
   if (keywords.length === 0) return c.json({ wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
 
   // wouldAdd: lightweight bills that are unprocessed and would now match
+  //
+  // Under the match-all list the count must equal what /keyword-resync will queue: every
+  // unprocessed bill with an externalId, including ones already marked keyword-matched
+  // whose analysis never ran, so the matchType filter is dropped. Stub bills that only
+  // central holds and would promote cannot be counted here, which is why the UI says "~".
+  const matchAll = keywords.length === 1 && isWildcardKeyword(keywords[0])
   const lightweightUnprocessed = await db
     .select({ title: bills.title, abstract: bills.abstract })
     .from(bills)
-    .where(and(isNull(bills.aiProcessedAt), isNotNull(bills.externalId), isNull(bills.matchType)))
+    .where(and(
+      isNull(bills.aiProcessedAt),
+      isNotNull(bills.externalId),
+      ...(matchAll ? [] : [isNull(bills.matchType)]),
+    ))
     .all()
   const wouldAdd = lightweightUnprocessed.filter(b =>
     matchesKeywords(`${b.title} ${b.abstract ?? ''}`, keywords)
