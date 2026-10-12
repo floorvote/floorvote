@@ -251,7 +251,10 @@ export const feedEvents = sqliteTable('feed_events', {
   type: text('type', {
     enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched'],
   }).notNull(),
-  billId: text('bill_id').notNull(),
+  // Null for an event about no single bill (a bulk edit, and later instance-level
+  // events). Such an event keeps what it is about in `metadata`, and survives the
+  // deletion of any bill, which cascades only the events that point at it.
+  billId: text('bill_id'),
   userId: text('user_id').notNull(),
   metadata: text('metadata').notNull().default('{}'),
   suppressed: integer('suppressed', { mode: 'boolean' }).notNull().default(false),
