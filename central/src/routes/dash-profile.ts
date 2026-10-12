@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { requireAdmin, isSuperAdmin, type DashEnv } from '../lib/adminAuth'
-import { setSuperadminCookie } from '../lib/superadminIssuer'
 import {
   getSuperadminProfile,
   saveSuperadminProfile,
@@ -54,8 +53,8 @@ dashProfileRoutes.put('/', async (c) => {
 
   const db = drizzle(c.env.DB, { schema })
   await saveSuperadminProfile(db, email, profile)
-  // Reissue the cross-tenant token now, so an instance signed in to within its
-  // 8-hour life carries this change instead of the old profile.
-  await setSuperadminCookie(c, db, email)
+  // Deliberately no new superadmin_jwt here: only a fresh emailed-link sign-in
+  // mints one, so a 30-day dashboard session can't renew cross-tenant access.
+  // An edit reaches instances at the next dashboard sign-in.
   return c.json({ data: { email, ...profile }, meta: meta() })
 })

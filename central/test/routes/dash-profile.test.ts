@@ -139,14 +139,10 @@ describe('PUT /admin/dash/profile', () => {
     expect((await put({ name: 'A', title: 'B' }, await sessionCookie('removed@example.com'))).status).toBe(403)
   })
 
-  it('reissues the superadmin token cookie so the next instance sign-in carries the change', async () => {
+  it('sets no superadmin_jwt cookie, so a dashboard session cannot be turned into a renewable sign-in token', async () => {
     const res = await put({ name: 'Ada', title: 'Operator support' }, await sessionCookie('admin@example.com'))
-    const setCookie = res.headers.get('Set-Cookie') ?? ''
-    expect(setCookie).toMatch(/superadmin_jwt=/)
-    expect(setCookie).toMatch(/Domain=\.example\.com/i)
-    const jwt = setCookie.match(/superadmin_jwt=([^;,]+)/)![1]
-    const payload = await verifySuperadminJwt(jwt, keys.pub)
-    expect(payload).toMatchObject({ email: 'admin@example.com', name: 'Ada', title: 'Operator support' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Set-Cookie') ?? '').not.toMatch(/superadmin_jwt=/)
   })
 })
 
