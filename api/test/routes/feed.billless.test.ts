@@ -166,3 +166,45 @@ describe('GET /feed/events/:id/bills', () => {
     expect(anon.status).toBe(401)
   })
 })
+
+// A bulk priority edit is a bill-less event, but the bill detail page's "set by"
+// line must still credit it to the bills it named.
+describe('GET /bills/:id priorityMeta with a bulk priority edit', () => {
+  it('credits the bulk edit to every bill it named, and only those', async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin', name: 'Ada Admin', email: 'ada@example.com' })
+    const adminToken = await seedSession(adminId)
+    const otherId = await seedUser({ name: 'Old Setter', email: 'old@example.com' })
+
+    const ids: string[] = []
+    for (let i = 1; i <= 11; i++) ids.push(await seedBill({ billNumber: `HB ${i}` }))
+    const outside = await seedBill({ billNumber: 'HB 99' })
+    // An older per-bill edit on the last bill: the bulk edit is newer and must win.
+    await getDb(env.DB).insert(feedEvents).values({
+      id: crypto.randomUUID(), type: 'priority_set', billId: ids[10], userId: otherId,
+      metadata: '{"priority":"low"}', createdAt: '2020-01-01 00:00:00',
+    })
+    await getDb(env.DB).insert(feedEvents).values({
+      id: crypto.randomUUID(), type: 'priority_set', billId: outside, userId: otherId,
+      metadata: '{"priority":"low"}', createdAt: '2020-01-01 00:00:00',
+    })
+
+    const bulk = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, priority: 'high' }),
+    })
+    expect(bulk.status).toBe(200)
+
+    const meta = async (id: string) => {
+      const res = await SELF.fetch(`http://localhost/api/bills/${id}`, { headers: { Cookie: `session=${adminToken}` } })
+      expect(res.status).toBe(200)
+      return (await res.json() as { priorityMeta: { setByName: string } | null }).priorityMeta
+    }
+    expect((await meta(ids[0]))?.setByName).toBe('Ada Admin')
+    expect((await meta(ids[10]))?.setByName).toBe('Ada Admin')
+    // A bill the bulk edit did not name keeps its own history.
+    expect((await meta(outside))?.setByName).toBe('Old Setter')
+  })
+})
