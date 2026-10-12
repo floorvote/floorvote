@@ -13,6 +13,7 @@ import { parseAppDomains } from '../lib/appDomains'
 import { rememberInstance, forgetInstance } from '../lib/instanceHint'
 import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
+import { applyTokenProfile, isSuperadminUser } from '../lib/superadminProfile'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
@@ -306,6 +307,9 @@ authRoutes.get('/me', async (c) => {
             await db.insert(users).values({ id, email: payload.email, name: payload.name, role: 'admin' })
             localUser = await db.select().from(users).where(eq(users.id, id)).get()!
           }
+          // Central keeps the superadmin's name and title. Each dashboard sign-in
+          // refreshes this instance's copy.
+          localUser = await applyTokenProfile(db, localUser!, payload)
           const sessionToken = await generateToken()
           const sessionHash = await hashToken(sessionToken)
           const expiresInstant = new Date(Date.now() + SESSION_DURATION_MS)
@@ -334,6 +338,7 @@ authRoutes.get('/me', async (c) => {
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
+            isSuperadmin: true,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
             ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
           })
@@ -411,6 +416,7 @@ authRoutes.get('/me', async (c) => {
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
+    isSuperadmin: await isSuperadminUser(c, sessionWithUser.email),
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
     ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),
   })
