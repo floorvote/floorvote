@@ -506,6 +506,39 @@ describe('Config — empty keyword list confirm copy', () => {
   })
 })
 
+describe('Config — match-all keyword confirm copy', () => {
+  async function confirmFor(keywordsValue: string, preview: { wouldAdd: number; wouldDemote: number; wouldProtect: number }) {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, keywords: ['zoning'] }
+      if (path === '/admin/custom-fields') return []
+      if (path === '/admin/keyword-resync-preview') return preview
+      return {}
+    })
+    render(<Config />)
+    const textarea = (await screen.findByLabelText('Keywords')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: keywordsValue } })
+    fireEvent.click(await screen.findByRole('button', { name: /save keywords and sync/i }))
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
+    const msg = confirmSpy.mock.calls[0][0] as string
+    confirmSpy.mockRestore()
+    return msg
+  }
+
+  it('states the approximate bill count when the list is exactly *', async () => {
+    const msg = await confirmFor('  *  \n\n', { wouldAdd: 1897, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('Every bill in your tracked sessions will be queued for AI analysis (~1,897 bills).')
+    expect(msg).not.toMatch(/additional bills will be fully analyzed/i)
+    expect(msg).not.toMatch(/quota|budget|instance/i)
+  })
+
+  it('leaves the confirmation unchanged for any other list', async () => {
+    const msg = await confirmFor('zoning\n*', { wouldAdd: 897, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('897 additional bills will be fully analyzed')
+    expect(msg).not.toMatch(/every bill in your tracked sessions/i)
+  })
+})
+
 describe('Config — org-noun-aware tag hint', () => {
   it('uses the default org noun ("team") in the tag personalization hint', async () => {
     render(<Config />)
