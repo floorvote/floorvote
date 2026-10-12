@@ -8,6 +8,11 @@
 -- and re-creates both indexes the way 0062 had to. Any later rebuild of this
 -- table must do the same, including any index added after this one.
 --
+-- idx_feed_events_created_dt (datetime(created_at), added by migration 0087 for
+-- the Feed's sort) is re-created here too. On a fresh instance 0087 runs before
+-- this rebuild and the DROP would otherwise take it along. IF NOT EXISTS keeps
+-- the order the two land in from mattering.
+--
 -- Existing bulk events (metadata isBulk) were pinned to the first bill of the
 -- batch and stored only a count. They become bill-less here, and keep the one
 -- bill id they hold as billIds. The rest of the batch cannot be recovered, so
@@ -43,3 +48,4 @@ DROP TABLE feed_events;
 ALTER TABLE feed_events_new RENAME TO feed_events;
 CREATE INDEX idx_feed_events_bill_id ON feed_events(bill_id);
 CREATE INDEX idx_feed_events_created ON feed_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feed_events_created_dt ON feed_events(datetime(created_at));

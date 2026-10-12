@@ -42,7 +42,7 @@ describe('migration 0093_feed_events_billless', () => {
     expect(results).toEqual([{ id: 'bulk' }])
   })
 
-  it('carries rows across the rebuild and keeps both indexes', async () => {
+  it('carries rows across the rebuild and keeps every index, including the datetime(created_at) one', async () => {
     await insert('keep', 'comment_added', billB, '{"preview":"hi"}', '2026-02-02 03:04:05')
     await rerun()
     const row = await env.DB.prepare(`SELECT * FROM feed_events WHERE id = 'keep'`).first()
@@ -52,7 +52,7 @@ describe('migration 0093_feed_events_billless', () => {
     })
     const { results } = await env.DB.prepare(`PRAGMA index_list(feed_events)`).all()
     expect((results as Array<{ name: string }>).map((i) => i.name).filter((n) => n.startsWith('idx_')).sort())
-      .toEqual(['idx_feed_events_bill_id', 'idx_feed_events_created'])
+      .toEqual(['idx_feed_events_bill_id', 'idx_feed_events_created', 'idx_feed_events_created_dt'])
   })
 
   it('converts an existing bulk event to bill-less, keeping the one bill id it has', async () => {
