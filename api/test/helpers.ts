@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
-import { env, applyD1Migrations, reset } from 'cloudflare:test'
+import { env, applyD1Migrations, reset, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { vi } from 'vitest'
+import { app } from '../src/index'
 import { getDb } from '../src/db/client'
 import { splitStatements } from '../../shared/sqlStatements'
 import { generateToken, hashToken } from '../src/lib/crypto'
@@ -26,6 +28,33 @@ export function migrationsFromFiles(files: Record<string, string>): { name: stri
     .map(([path, sql]) => ({ name: path.split('/').pop()!.replace(/\.sql$/, ''), sql }))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map(({ name, sql }) => ({ name, queries: splitStatements(sql) }))
+}
+
+// Send a request to the app and wait for the background work it starts
+// (`ctx.waitUntil`, such as a magic-link email or a central backfill) before
+// returning. SELF.fetch cannot do this: workerd runs that work after the
+// response, so it can outlive the test, reach `fetch` once the stub is gone, or
+// race the next test's resetDb(). A rejected background task would only be
+// logged to stderr, so draining it here is what makes it a test failure.
+// Accepts a path or a full URL, and an optional bindings override, like
+// app.request.
+export async function appFetch(input: string, init?: RequestInit, bindings: object = env): Promise<Response> {
+  const ctx = createExecutionContext()
+  const res = await app.request(input, init, bindings, ctx)
+  await waitOnExecutionContext(ctx)
+  return res
+}
+
+// Stub `fetch` (the global guard in test/setup.ts otherwise fails any request)
+// with a handler that answers every request, defaulting to `200 {}`. Returns
+// the spy so a test can assert on the calls.
+export function stubFetch(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response> = () => new Response('{}', { status: 200 }),
+) {
+  const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    handler(input instanceof Request ? input.url : String(input), init))
+  vi.stubGlobal('fetch', spy)
+  return spy
 }
 
 export async function resetDb(): Promise<void> {
