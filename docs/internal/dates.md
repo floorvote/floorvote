@@ -23,10 +23,11 @@ This is the format produced by `datetime('now')`, which is the default on the ti
 - `new Date().toISOString()` is fine for things that are **not** stored timestamp columns: computing relative time windows for comparisons (e.g. `datetime('now','-5 days')` is preferred there too, but ISO literals compared via `datetime(...)` also work), JSON metadata blobs, log lines, email bodies, etc.
 - In app code where a `SQL` expression won't do (a plain string is needed), use the `nowDb()` helper (`api/src/lib/dbTime.ts`, `central/src/lib/dbTime.ts`) — it returns the SQLite space format computed in JS.
 
-### Guard (CI / nightly)
+### Guard (CI)
 
 `scripts/verify-timestamp-writes.ts` fails if `new Date().toISOString()` is used where it
-would land in a stored timestamp column. Run it in the nightly repo-health routine. Non-stored
+would land in a stored timestamp column. It runs in CI (the `check-api` job) on every pull request
+and fails the build on a violation; run it locally with `npx tsx scripts/verify-timestamp-writes.ts`. Non-stored
 uses (response `meta`, date-only `.slice(0, 10)`, log lines, email bodies) are exempt via
 same-line markers or an explicit `// ts-write-ok: <reason>` comment.
 

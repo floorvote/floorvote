@@ -59,6 +59,8 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
+      - name: Timestamp-write guard
+        run: npx tsx scripts/verify-timestamp-writes.ts
       - run: npx tsc --noEmit -p tsconfig.build.json
         working-directory: api
       - run: npm run lint
