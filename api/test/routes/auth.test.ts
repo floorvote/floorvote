@@ -465,6 +465,19 @@ describe('POST /auth/magic-link — superadmin auto-provisioning', () => {
     expect(created!.role).toBe('admin')
   })
 
+  it('matches a mixed-case stored address and creates no duplicate member', async () => {
+    const userId = await seedUser({ email: 'Super@Example.com', role: 'admin' })
+    const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: ['super@example.com'] }) } as unknown as typeof env
+    const res = await app.request(
+      '/api/auth/magic-link',
+      { method: 'POST', body: JSON.stringify({ email: 'SUPER@example.com' }), headers: { 'Content-Type': 'application/json' } },
+      testEnv,
+    )
+    expect(res.status).toBe(200)
+    const rows = await getDb(env.DB).select().from(users).all()
+    expect(rows.filter((u) => u.email.toLowerCase() === 'super@example.com').map((u) => u.id)).toEqual([userId])
+  })
+
   it('does NOT create a user row for an unknown non-superadmin email', async () => {
     const db = getDb(env.DB)
     const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: [] }) } as unknown as typeof env
@@ -584,6 +597,25 @@ describe('GET /auth/me — superadmin JWT fallback', () => {
       env,
     )
     expect(res.status).toBe(401)
+  })
+
+  it('matches a stored address that differs only in case, with no duplicate member', async () => {
+    const userId = await seedUser({ email: 'Super@Example.com', role: 'admin', name: 'Existing Name' })
+    const jwtToken = await signSuperadminJwt('SUPER@example.com', 'JWT Name', TEST_SUPERADMIN_PRIV)
+
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwtToken}` } }, env)
+    expect(res.status).toBe(200)
+    expect((await res.json() as { id: string }).id).toBe(userId)
+
+    const rows = await getDb(env.DB).select().from(users).all()
+    expect(rows.filter((u) => u.email.toLowerCase() === 'super@example.com')).toHaveLength(1)
+  })
+
+  it('stores a new superadmin address lowercased', async () => {
+    const jwtToken = await signSuperadminJwt('New.Super@Example.com', 'JWT Name', TEST_SUPERADMIN_PRIV)
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwtToken}` } }, env)
+    expect(res.status).toBe(200)
+    expect((await res.json() as { email: string }).email).toBe('new.super@example.com')
   })
 
   it('reuses an existing user row if the superadmin was already provisioned in this tenant', async () => {

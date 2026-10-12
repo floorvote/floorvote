@@ -1,4 +1,4 @@
-import { inArray, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { users } from '../db/schema'
 import type { AppDb } from '../types'
 import { isValidEmail } from '../../../shared/email'
@@ -25,6 +25,18 @@ export const ADDRESS_LOOKUP_CHUNK = 90
 /** Lowercase and trim. Punctuation is not stripped: a malformed address is rejected, not repaired. */
 export function normalizeMemberAddress(raw: string | null | undefined): string {
   return (raw ?? '').toLowerCase().trim()
+}
+
+/**
+ * The member whose address matches `raw` without regard to case, or undefined.
+ * Stored addresses can be mixed case (see below), so compare on lower(email).
+ */
+export async function findMemberByAddress(db: AppDb, raw: string | null | undefined) {
+  return db
+    .select()
+    .from(users)
+    .where(eq(sql`lower(${users.email})`, normalizeMemberAddress(raw)))
+    .get()
 }
 
 /**

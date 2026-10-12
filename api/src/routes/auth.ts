@@ -10,6 +10,7 @@ import { sendMagicLink } from '../lib/email'
 import { recordAuthEvent, authReqContext } from '../lib/authEvents'
 import { getSuperAdminCookieDomain } from '../lib/superadmin'
 import { parseAppDomains } from '../lib/appDomains'
+import { findMemberByAddress, normalizeMemberAddress } from '../lib/memberAddress'
 import { rememberInstance, forgetInstance } from '../lib/instanceHint'
 import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
@@ -102,7 +103,7 @@ authRoutes.post('/magic-link', async (c) => {
   const db = getDb(c.env.DB)
   const normalizedEmail = body.email.toLowerCase().trim()
 
-  let user = await db.select().from(users).where(eq(users.email, normalizedEmail)).get()
+  let user = await findMemberByAddress(db, normalizedEmail)
 
   if (!user && (await isSuperadminEmailViaCentral(c.env, normalizedEmail))) {
     const id = crypto.randomUUID()
@@ -300,10 +301,10 @@ authRoutes.get('/me', async (c) => {
         const payload = await verifySuperadminJwt(jwtToken, c.env.SUPERADMIN_JWT_PUBLIC_KEY)
         if (payload) {
           const db = getDb(c.env.DB)
-          let localUser = await db.select().from(users).where(eq(users.email, payload.email)).get()
+          let localUser = await findMemberByAddress(db, payload.email)
           if (!localUser) {
             const id = crypto.randomUUID()
-            await db.insert(users).values({ id, email: payload.email, name: payload.name, role: 'admin' })
+            await db.insert(users).values({ id, email: normalizeMemberAddress(payload.email), name: payload.name, role: 'admin' })
             localUser = await db.select().from(users).where(eq(users.id, id)).get()!
           }
           const sessionToken = await generateToken()
