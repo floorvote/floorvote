@@ -393,6 +393,8 @@ export const magicLinks = sqliteTable('magic_links', {
   index('idx_magic_links_token').on(t.tokenHash),
 ])
 
+// The table still has a `name` column from migration 0008 (NOT NULL DEFAULT ''). Nothing
+// reads or writes it, and it is left out here until a later migration drops it.
 export const adminSessions = sqliteTable('admin_sessions', {
   id:         text('id').primaryKey(),
   email:      text('email').notNull(),
