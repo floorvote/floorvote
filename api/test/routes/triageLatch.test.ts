@@ -1,9 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { eq, inArray } from 'drizzle-orm'
+
+// Setting a priority starts a central calendar backfill in the background, so every
+// test here needs central answered. A test that needs a specific response stubs its own.
+beforeEach(() => { stubFetch() })
 
 const MATCH = '2026-06-20 00:00:00'
 type ListResp = { bills: { billNumber: string }[] }
@@ -20,7 +24,7 @@ describe('setting a priority latches a new match as triaged', () => {
   })
 
   async function setPriority(priority: string | null) {
-    return SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    return appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority }),
@@ -28,7 +32,7 @@ describe('setting a priority latches a new match as triaged', () => {
   }
 
   async function newMatchNumbers(): Promise<string[]> {
-    const res = await SELF.fetch('http://localhost/api/bills?newMatches=1', { headers: { Cookie: `session=${adminToken}` } })
+    const res = await appFetch('http://localhost/api/bills?newMatches=1', { headers: { Cookie: `session=${adminToken}` } })
     return ((await res.json()) as ListResp).bills.map(b => b.billNumber)
   }
 
@@ -56,7 +60,7 @@ describe('setting a priority latches a new match as triaged', () => {
 
     const admin2 = await seedUser({ role: 'admin', email: 'admin2@example.com' })
     const admin2Token = await seedSession(admin2)
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${admin2Token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'medium' }),
@@ -83,7 +87,7 @@ describe('bulk priority-set latches new matches as triaged', () => {
   })
 
   it('stamps triaged_at on all selected bills when a bulk priority is applied', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [a, b], priority: 'low' }),
@@ -101,7 +105,7 @@ describe('bulk priority-set latches new matches as triaged', () => {
     for (let i = 0; i < 120; i++) {
       ids.push(await seedBill({ billNumber: `BIG ${i}`, matchType: 'keyword', newMatchAt: '2026-06-20 00:00:00', relevanceScore: 80 }))
     }
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, priority: 'low' }),

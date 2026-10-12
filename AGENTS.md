@@ -204,7 +204,8 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 9. Never run `wrangler deploy` directly — use `npm run deploy:tenant`.
 10. Don't mock D1 in tests — use real @cloudflare/vitest-pool-workers bindings.
 11. Don't leave `web/dist` around during local dev — it breaks the Vite `/api` proxy.
-12. api tests can't reach the network: `fetch` is a guard that fails the test, naming the URL (`api/test/setup.ts`). Stub it per test (`stubFetch` in `api/test/helpers.ts`). A request that starts background work (`ctx.waitUntil`, such as an email) goes through `appFetch`, not `SELF.fetch`, so the work finishes and any failure fails the test.
+12. Stub `fetch` per test with `stubFetch` (`api/test/helpers.ts`). An unstubbed request fails the test and names its URL (`api/test/setup.ts`).
+13. Send requests that start background work (`ctx.waitUntil`, such as email) through `appFetch`, not `SELF.fetch`. The work then finishes, and a failure in it fails the test.
 
 ### Conventions
 
