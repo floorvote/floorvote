@@ -303,7 +303,7 @@ export function Profile() {
               <span style={FORM_LABEL}>Title</span>
               <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.subtitle || '—'}</div>
               <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
-                Your name and title are managed in the admin dashboard. They update here each time you sign in.
+                Your name and title are managed in the admin dashboard. They update here when you sign in from the admin dashboard.
               </div>
             </div>
           </>

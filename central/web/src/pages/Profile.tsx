@@ -44,7 +44,7 @@ export default function Profile() {
       <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 20, maxWidth: 560 }}>
         Your name and title are kept here once. Each time you sign in to an organization's instance, it
         updates its copy, so you appear the same way everywhere. The title also marks you as operator
-        staff, for example "Operator support".
+        staff, for example "Operator support."
       </p>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: 16, maxWidth: 560 }}>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>Email</div>

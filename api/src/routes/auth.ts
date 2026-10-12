@@ -13,7 +13,7 @@ import { parseAppDomains } from '../lib/appDomains'
 import { rememberInstance, forgetInstance } from '../lib/instanceHint'
 import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
-import { applyTokenProfile, isSuperadminUser } from '../lib/superadminProfile'
+import { applyTokenProfile, isSuperadminUser, refreshProfileFromRequestToken } from '../lib/superadminProfile'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
@@ -378,6 +378,12 @@ authRoutes.get('/me', async (c) => {
   if (dbTsToEpoch(sessionWithUser.sessionExpiry) < Date.now()) {
     return c.json({ error: 'Session expired' }, 401)
   }
+
+  // A superadmin coming back from the dashboard with a live instance session still
+  // gets their central profile refreshed.
+  const profiled = await refreshProfileFromRequestToken(c, db, { ...sessionWithUser, id: sessionWithUser.userId })
+  sessionWithUser.name = profiled.name
+  sessionWithUser.subtitle = profiled.subtitle
 
   const newExpiryInstant = new Date(Date.now() + SESSION_DURATION_MS)
   await db

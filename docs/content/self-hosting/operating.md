@@ -25,7 +25,7 @@ Generate an ES256 keypair with any JWK tool. Central holds the private half; eac
 
 ### Superadmin profile
 
-Each superadmin has one profile, a name and a title, kept in central and edited once on the dashboard's **Your profile** page. Central puts both in the sign-in token it issues. When a superadmin signs in to a tenant through the dashboard, the tenant creates or overwrites its copy of their name and title from the token, so the same person appears the same way everywhere. The title doubles as the visible marker of operator staff, for example "Operator support."
+Each superadmin has one profile, a name and a title, kept in central and edited once on the dashboard's **Your profile** page. Central puts both in the sign-in token it issues. Each time a superadmin reaches a tenant through the dashboard, the tenant creates or overwrites its copy of their name and title from the token, so the same person appears the same way everywhere. A saved change reaches tenants the next time they sign in to the dashboard. The title doubles as the visible marker of operator staff, for example "Operator support."
 
 On a tenant's Profile page, a superadmin's name and title are read-only, with a note that they're managed in the admin dashboard, and the tenant's API refuses edits to them. A superadmin who has not saved a profile yet leaves each tenant's existing name and title alone.
 

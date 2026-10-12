@@ -106,6 +106,44 @@ describe('dashboard sign-in applies the central profile', () => {
   })
 })
 
+describe('/auth/me with a live instance session', () => {
+  async function liveSession() {
+    const id = await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    return `session=${await seedSession(id)}`
+  }
+  const meWith = async (cookie: string) => {
+    const res = await app.request('/api/auth/me', { headers: { Cookie: cookie } }, asEnv([SUPER]))
+    return (await res.json()) as Me
+  }
+
+  it('refreshes the profile from a token sent alongside the session', async () => {
+    const cookie = await liveSession()
+    const body = await meWith(`${cookie}; superadmin_jwt=${await tokenWith('Ada King', 'Engineer')}`)
+    expect([body.name, body.subtitle]).toEqual(['Ada King', 'Engineer'])
+    const row = await userRow(SUPER)
+    expect([row?.name, row?.subtitle]).toEqual(['Ada King', 'Engineer'])
+  })
+
+  it('leaves the profile alone for a token from before profiles', async () => {
+    const cookie = await liveSession()
+    const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
+    const body = await meWith(`${cookie}; superadmin_jwt=${older}`)
+    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+  })
+
+  it('ignores a token issued for a different address', async () => {
+    const cookie = await liveSession()
+    const other = await signSuperadminJwt('someone.else@example.com', 'Else', TEST_SUPERADMIN_PRIV, undefined, 'Other')
+    const body = await meWith(`${cookie}; superadmin_jwt=${other}`)
+    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+  })
+
+  it('does nothing without a token', async () => {
+    const body = await meWith(await liveSession())
+    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+  })
+})
+
 describe('the Profile page data for a superadmin', () => {
   it('reports isSuperadmin on /auth/me after a dashboard sign-in', async () => {
     expect((await dashboardSignIn(await tokenWith('Ada', 'Support'))).body.isSuperadmin).toBe(true)
