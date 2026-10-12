@@ -34,8 +34,14 @@ describe('DELETE /api/bills/:id calendar links', () => {
 
   it('keeps an event whose only linked bill was the deleted draft', async () => {
     const draft = await seedBill({ isDraft: true, matchType: 'manual', title: 'Draft, sole link' })
-    const eventId = await seedCalendarEvent(draft)
     const db = getDb(env.DB)
+    // A custom event has no bill_id of its own, its links live only in calendar_event_bills.
+    const eventId = crypto.randomUUID()
+    await db.insert(calendarEvents).values({
+      id: eventId, uid: `custom-${eventId}@test`, billId: null, source: 'custom', sequence: 0,
+      date: '2026-06-04', time: '14:00:00', location: 'Room 35', description: 'Strategy call',
+      status: 'confirmed', eventHash: 'h1',
+    })
     await db.insert(calendarEventBills).values({ eventId, billId: draft })
 
     const res = await SELF.fetch(`https://x/api/bills/${draft}`, { method: 'DELETE', headers: { Cookie: `session=${adminTok}` } })
