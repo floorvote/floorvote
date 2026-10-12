@@ -335,7 +335,7 @@ authRoutes.get('/me', async (c) => {
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
-            ...(await termsAcceptanceState(db, c.env, localUser!.id, localUser!.email, true)),
+            ...(await termsAcceptanceState(db, c.env, localUser!.id, localUser!.email)),
           })
         }
       }

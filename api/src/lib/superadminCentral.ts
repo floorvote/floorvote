@@ -5,7 +5,8 @@ import type { Env } from '../types'
 // issuer and sets the `superadmin_jwt` cookie itself on dashboard login (closes
 // H2). The only tenant→central superadmin call that remains is checking whether
 // an email is a superadmin, used at magic-link request to auto-provision a
-// superadmin as a local admin.
+// superadmin as a local admin, and by the Terms gate (requireAuth, /auth/me,
+// accept-terms) to exempt operator staff on every request.
 //
 // Finding D3: that check previously hit central once PER request. A flood of
 // random unknown emails (each missing the local-user check) amplified into one

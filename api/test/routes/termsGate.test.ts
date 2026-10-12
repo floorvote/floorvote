@@ -246,7 +246,7 @@ describe('GET /auth/me reports acceptance state', () => {
     expect(body.termsAcceptanceRequired).toBe(false)
   })
 
-  it('reports both fields on the JWT branch of a non-superadmin session, and never calls it a first_login', async () => {
+  it('calls a member with no used-link history an existing_member, never a first_login', async () => {
     // Zero used magic links — an existing member with no link history.
     // A NOT EXISTS predicate would read that as a first-timer.
     const body = await me(armed)
@@ -338,6 +338,23 @@ describe('superadmins skip the terms gate', () => {
       const res = await app.request('/api/bills', { headers: { Cookie: `session=${await seedSession(id)}` } }, e)
       expect(res.status).toBe(403)
     }
+  })
+
+  it('treats a stored email that differs only in case as the listed superadmin', async () => {
+    const id = await seedUser({ email: 'Super@Example.com', role: 'admin' })
+    await seedMagicLink(id, { used: true })
+    const res = await app.request('/api/bills', { headers: { Cookie: `session=${await seedSession(id)}` } }, asEnv([SUPER]))
+    expect(res.status).toBe(200)
+  })
+
+  it('agrees between /auth/me and the gate for a valid JWT whose email is not on the list', async () => {
+    const jwt = await signSuperadminJwt(SUPER, 'Super Admin', TEST_SUPERADMIN_PRIV)
+    const e = asEnv([])
+    const meRes = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwt}` } }, e)
+    expect((await meRes.json() as { termsAcceptanceRequired?: boolean }).termsAcceptanceRequired).toBe(true)
+    const session = /session=([^;]+)/.exec(meRes.headers.get('set-cookie') ?? '')![1]
+    const res = await app.request('/api/bills', { headers: { Cookie: `session=${session}` } }, e)
+    expect(res.status).toBe(403)
   })
 
   it('gates everyone, rather than exempting, when central cannot be reached', async () => {

@@ -28,9 +28,6 @@ export async function termsAcceptanceState(
   env: Env,
   userId: string,
   email: string,
-  // True on the dashboard-JWT branch, where a verified token already proves the
-  // person is a superadmin right now.
-  knownSuperadmin = false,
 ): Promise<TermsAcceptanceState> {
   const termsUpdated = env.LEGAL_TERMS_UPDATED
   const row = await db
@@ -42,7 +39,7 @@ export async function termsAcceptanceState(
 
   // Lexicographic on YYYY-MM-DD, matching the gate in requireAuth.
   const unaccepted = !!termsUpdated && (!newest || newest < termsUpdated)
-  const required = unaccepted && !knownSuperadmin && !(await isTermsExempt(env, email))
+  const required = unaccepted && !(await isTermsExempt(env, email))
 
   // A prior row means they have been through this before, whatever the count of
   // logins says -- so the copy is the "we've updated these" one.
