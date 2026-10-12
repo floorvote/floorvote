@@ -207,7 +207,9 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
+    // currentFilters is memoized over every filter dimension (custom fields
+    // included), so a new dimension added there resets the selection too.
+    resetDeps: [f.currentFilters, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
