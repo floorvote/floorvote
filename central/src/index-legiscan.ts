@@ -19,6 +19,7 @@ import { adminRoutes } from './routes/admin'
 import { healthRoutes } from './routes/health'
 import { dashAuthRoutes } from './routes/dash-auth'
 import { dashRoutes } from './routes/dash'
+import { dashProfileRoutes } from './routes/dash-profile'
 import { dashEngagementRoutes } from './routes/dash-engagement'
 import { dashUnknownLoginsRoutes } from './routes/dash-unknown-logins'
 import { runJob } from './lib/jobAlert'
@@ -50,6 +51,7 @@ app.use('*', async (c, next) => {
 app.route('/admin/dash/auth', dashAuthRoutes)
 app.route('/admin/dash/engagement', dashEngagementRoutes)
 app.route('/admin/dash/unknown-logins', dashUnknownLoginsRoutes)
+app.route('/admin/dash/profile', dashProfileRoutes)
 app.route('/admin/dash', dashRoutes)
 
 // Machine API under /api/* — the canonical prefix. Kept off the bare paths so it

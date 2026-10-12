@@ -396,13 +396,19 @@ export const magicLinks = sqliteTable('magic_links', {
 export const adminSessions = sqliteTable('admin_sessions', {
   id:         text('id').primaryKey(),
   email:      text('email').notNull(),
-  name:       text('name').notNull().default(''),
   tokenHash:  text('token_hash').notNull().unique(),
   expiresAt:  text('expires_at').notNull(),
   createdAt:  text('created_at').notNull().default(sql`(datetime('now'))`),
 }, (t) => [
   index('idx_admin_sessions_token').on(t.tokenHash),
 ])
+
+export const superadminProfiles = sqliteTable('superadmin_profiles', {
+  email:     text('email').primaryKey(),
+  name:      text('name').notNull().default(''),
+  title:     text('title').notNull().default(''),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
 
 export const settings = sqliteTable('settings', {
   key:       text('key').primaryKey(),
