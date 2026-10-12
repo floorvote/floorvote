@@ -101,7 +101,7 @@ authRoutes.post('/magic-link', async (c) => {
   }
 
   const db = getDb(c.env.DB)
-  const normalizedEmail = body.email.toLowerCase().trim()
+  const normalizedEmail = normalizeMemberAddress(body.email)
 
   let user = await findMemberByAddress(db, normalizedEmail)
 
@@ -304,7 +304,12 @@ authRoutes.get('/me', async (c) => {
           let localUser = await findMemberByAddress(db, payload.email)
           if (!localUser) {
             const id = crypto.randomUUID()
-            await db.insert(users).values({ id, email: normalizeMemberAddress(payload.email), name: payload.name, role: 'admin' })
+            await db.insert(users).values({
+              id,
+              email: normalizeMemberAddress(payload.email),
+              name: payload.name,
+              role: 'admin',
+            })
             localUser = await db.select().from(users).where(eq(users.id, id)).get()!
           }
           const sessionToken = await generateToken()

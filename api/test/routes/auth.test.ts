@@ -476,6 +476,7 @@ describe('POST /auth/magic-link — superadmin auto-provisioning', () => {
     expect(res.status).toBe(200)
     const rows = await getDb(env.DB).select().from(users).all()
     expect(rows.filter((u) => u.email.toLowerCase() === 'super@example.com').map((u) => u.id)).toEqual([userId])
+    expect(rows.find((u) => u.id === userId)!.email).toBe('Super@Example.com')
   })
 
   it('does NOT create a user row for an unknown non-superadmin email', async () => {
@@ -609,6 +610,15 @@ describe('GET /auth/me — superadmin JWT fallback', () => {
 
     const rows = await getDb(env.DB).select().from(users).all()
     expect(rows.filter((u) => u.email.toLowerCase() === 'super@example.com')).toHaveLength(1)
+  })
+
+  it('prefers the exact lowercase row when two stored rows differ only in case', async () => {
+    await seedUser({ email: 'A@x.com', role: 'admin' })
+    const lowerId = await seedUser({ email: 'a@x.com', role: 'admin' })
+    const jwtToken = await signSuperadminJwt('a@x.com', 'JWT Name', TEST_SUPERADMIN_PRIV)
+
+    const res = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwtToken}` } }, env)
+    expect((await res.json() as { id: string }).id).toBe(lowerId)
   })
 
   it('stores a new superadmin address lowercased', async () => {
