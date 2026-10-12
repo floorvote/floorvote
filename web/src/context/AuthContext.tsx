@@ -14,6 +14,8 @@ type User = {
   emailWeekAheadEnabled: boolean
   lastSeenFeed: string | null
   isLastOwner: boolean
+  /** Operator staff signed in through central: their name and title are managed in the admin dashboard. */
+  isSuperadmin?: boolean
   /** True while the Legal Terms must be accepted before the app is usable. */
   termsAcceptanceRequired: boolean
   /** Which copy the acceptance interstitial shows. */

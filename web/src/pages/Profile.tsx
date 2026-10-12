@@ -287,6 +287,28 @@ export function Profile() {
       {/* Profile card */}
       <div style={SECTION_CARD}>
         <h1 style={CARD_TITLE}>Profile</h1>
+        {user?.isSuperadmin ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+              <div>
+                <span style={FORM_LABEL}>Name</span>
+                <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>{user.name || '—'}</div>
+              </div>
+              <div>
+                <span style={FORM_LABEL}>Email</span>
+                <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.email}</div>
+              </div>
+            </div>
+            <div>
+              <span style={FORM_LABEL}>Title</span>
+              <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.subtitle || '—'}</div>
+              <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
+                Your name and title are managed in the admin dashboard. They update here each time you sign in.
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
           <div>
             <label style={FORM_LABEL} htmlFor="name-input">Name</label>
@@ -367,6 +389,8 @@ export function Profile() {
             <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, fontWeight: fontWeight.medium }}>{saveError}</span>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* Preferences card */}
