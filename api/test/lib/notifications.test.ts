@@ -138,11 +138,16 @@ describe('GET /notifications', () => {
     expect(body.notifications.map(n => n.commentId)).toEqual([commentId])
   })
 
-  it('also returns the list as `mentions` for web bundles from before the rename', async () => {
+  it('also returns the mentions as `mentions` for web bundles from before the rename', async () => {
     await seedCommentMention(commentId, userId)
+    // Another kind, which an old bundle would draw as a mention with no name.
+    const other = await seedComment(billId, authorId, '<p>Another comment</p>')
+    await env.DB.prepare(`INSERT INTO notifications (id, recipient_id, kind, bill_id, comment_id, actor_id) VALUES ('n-reply', ?, 'reply', ?, ?, ?)`)
+      .bind(userId, billId, other, authorId).run()
 
     const body = await getNotifications(token) as Body & { mentions: Body['notifications'] }
-    expect(body.mentions).toEqual(body.notifications)
+    expect(body.mentions.map(n => n.commentId)).toEqual([commentId])
+    expect(body.mentions).toEqual(body.notifications.filter(n => n.kind === 'mention'))
   })
 
   it('returns 401 without authentication', async () => {
