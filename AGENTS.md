@@ -215,7 +215,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 1. Import colors/radii/font sizes from `web/src/styles/tokens.ts`. Spacing is raw numbers.
 2. Register Material Symbols icons in `icon_names=` in `web/index.html` before use.
 3. Never edit existing migration files — create new ones.
-4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`, which the guard in `scripts/verify-timestamp-writes.ts` honors (see `docs/internal/dates.md`).
+4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`. The guard `scripts/verify-timestamp-writes.ts` enforces this in CI; run it locally with `npm run verify:timestamps` (see `docs/internal/dates.md`).
 5. Relevance scores are 1–10, not 0–100.
 6. Tenants never call legislative APIs directly — all data flows through central.
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.

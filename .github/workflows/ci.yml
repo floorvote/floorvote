@@ -120,6 +120,8 @@ jobs:
       - run: npm ci
       - run: npx vitest run
         working-directory: scripts
+      # Stored-timestamp guard over api/src + central/src (docs/internal/dates.md).
+      - run: npm run verify:timestamps
 
   check-root:
     runs-on: ubuntu-latest

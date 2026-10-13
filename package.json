@@ -7,6 +7,7 @@
     "dev:local": "bash scripts/dev-local.sh",
     "test": "vitest run",
     "test:scripts": "vitest run --project scripts",
+    "verify:timestamps": "tsx scripts/verify-timestamp-writes.ts",
     "gen:email-icons": "tsx scripts/gen-email-icons.ts",
     "gen:brand-assets": "tsx scripts/gen-brand-assets.ts",
     "gen:state-coverage": "tsx scripts/gen-state-coverage.ts",
