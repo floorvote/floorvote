@@ -18,6 +18,8 @@ export const SUPERADMIN_PROFILE_MANAGED_ERROR =
  * Whether the signed-in member is a superadmin: on central's superadmin list (the
  * instance's cached hashed copy), or holding a verified central-issued token for
  * their own address. Never a stored flag, so removal from the list ends it.
+ * Recognition only, which outlasts the token's 8 hours: it keeps the profile
+ * read-only and grants no authority (that is isSuperadminRequest).
  */
 export async function isSuperadminUser<E extends { Bindings: Env }>(c: Context<E, any, any>, email: string): Promise<boolean> {
   const jwt = getCookie(c, 'superadmin_jwt')

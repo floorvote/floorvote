@@ -4,8 +4,10 @@ import type { Env } from '../types'
 // Tenants no longer mint the cross-tenant superadmin token. Central is the SOLE
 // issuer and sets the `superadmin_jwt` cookie itself on dashboard login (closes
 // H2). The only tenant→central superadmin call that remains is checking whether
-// an email is a superadmin, used at magic-link request to auto-provision a
-// superadmin as a local admin.
+// an email is on central's superadmin list. That recognizes a superadmin's
+// account, for example to auto-provision it as a local admin at magic-link
+// request or to keep its centrally managed profile read-only. It never grants
+// authority, which comes only from the token (superadminRequest.ts).
 //
 // Finding D3: that check previously hit central once PER request. A flood of
 // random unknown emails (each missing the local-user check) amplified into one
