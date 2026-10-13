@@ -102,8 +102,10 @@ EMAIL_PROVIDER = "cloudflare"
 # See src/providers/lims.
 # LIMS_CATEGORIES = "1,6,13,14,18"   # bills, resolutions, grant budget mods, reprogrammings, oversight hearing notices
 # Maryland (mgaleg.maryland.gov, src/providers/mga) and Virginia
-# (lis.virginia.gov, src/providers/lis) need no key. Virginia bill text needs
-# the LIS API, which isn't used because its terms are non-commercial.
+# (lis.virginia.gov, src/providers/lis) need no key. Virginia bill text comes
+# from the LIS API, and only when the optional LIS_API_KEY secret is set.
+# Without it Virginia bills have no text. The API's terms allow
+# non-commercial use only, so setting the key accepts them.
 # For one release only, this older var still seeds a state's claim on the
 # first sync, when the state has none. Remove it once the claim exists.
 # LIMS_STATES = "DC"
@@ -140,6 +142,7 @@ namespace_id = "3001"
 # Secrets (set via `wrangler secret put <NAME> --env legiscan`):
 # LEGISCAN_API_KEY      — LegiScan bill data
 # LIMS_API_KEY          — DC Council LIMS developer key (optional; needed for a claim of DC by lims)
+# LIS_API_KEY           — Virginia LIS API key (optional; with it, Virginia bills from lis carry their text; non-commercial use only)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
 # RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)

@@ -12,8 +12,11 @@ import { LIS_STATUS_BASE } from './vocabulary'
  * per-member votes, and committee docket placements. The record is stored
  * whole, so the ingestor builds a bill with no further calls.
  *
- * Bill text is not in the files (it needs the LIS API, whose terms are
- * non-commercial), so the latest summary stands in as the bill's description.
+ * Bill text is not in the files. It comes from the LIS API when the deployment
+ * sets an optional `LIS_API_KEY` (the API's terms allow non-commercial use
+ * only): a pass adds each bill's text versions to its record (`addTexts`), and
+ * the ingest fetches each version's PDF link (client.ts). Without the key,
+ * `texts` is empty. The latest summary is the bill's description either way.
  */
 
 export const LIS_STATE = 'VA'
@@ -70,16 +73,64 @@ export interface LisRecord {
    * that it is empty.
    */
   dockets: [string, string][] | null
-  /** Stub. */
+  /**
+   * The bill's full-text versions from the LIS API, oldest first. Absent when
+   * the pass read no texts (no key) or the bill has none, so a deployment
+   * without a key stores the records it always did. A new version changes the
+   * record's hash, which queues the bill for an ingest.
+   */
   texts?: LisTextVersion[]
 }
 
-/** Stub. */
+/** One version of a bill's text: [LIS text id, document code (trimmed), version, description, draft date (YYYY-MM-DD)]. */
 export type LisTextVersion = [id: number, code: string, version: string, description: string, date: string]
 
-export function lisIsFullText(_versionId: number): boolean { return false }
-export function lisTextBillNumber(_s: string): string { return '' }
-export function lisTextHash(_sessionCode: string, _code: string, _textId: number): Promise<string> { return Promise.resolve('') }
+/**
+ * Whether the API's version id (`LegislationVersionID`) is a full text of the
+ * bill: 1 Introduced, 2 Engrossed, 3 Enrolled, 4 Chaptered, 5 Substitute, 6
+ * Reengrossed, 7 Reenrolled. 8 through 11 are amendments, veto explanations,
+ * governor's recommendations, and conference reports, which are not the bill,
+ * and AI would read an amendment as the bill's newest text.
+ */
+export function lisIsFullText(versionId: number): boolean {
+  return Number.isInteger(versionId) && versionId >= 1 && versionId <= 7
+}
+
+const LIS_VERSION_NAMES: Record<number, string> = {
+  1: 'Introduced', 2: 'Engrossed', 3: 'Enrolled', 4: 'Chaptered', 5: 'Substitute', 6: 'Reengrossed', 7: 'Reenrolled',
+}
+
+/** LegiScan's text type ids, which a bill's texts carry: the closest of them to each LIS version. */
+const TEXT_TYPE_IDS: Record<string, number> = {
+  Introduced: 1, Substitute: 2, Engrossed: 4, Reengrossed: 4, Enrolled: 5, Reenrolled: 5, Chaptered: 6,
+}
+
+/**
+ * A bill number from the text API as the CSVs key it (`lisBillNumber`). The
+ * API writes joint resolutions as HJ and SJ, as the files do, and LegiScan
+ * writes them HJR and SJR, so both spellings land on the same bill.
+ */
+export function lisTextBillNumber(s: string): string {
+  return lisBillNumber(s.replace(/\s+/g, '')).replace(/^([HS]J)R(?=\d)/, '$1')
+}
+
+/**
+ * A text's `text_hash`: the session, the trimmed document code, and the LIS
+ * text id. LIMS and MGA hash a document id the same way: stable, different for
+ * each reading, so a bill's newest text changes the hash, and not empty, since
+ * instances run AI only for texts that carry a hash and compare it to skip one
+ * the model already read. The id is part of it because the LIS reuses a
+ * document code across versions (a substitute written as "SB34" after the
+ * introduced "SB34"), which the code alone would hash alike.
+ */
+export function lisTextHash(sessionCode: string, code: string, textId: number): Promise<string> {
+  return sha256Hex(`lis-text:${sessionCode}:${code.trim()}:${textId}`)
+}
+
+/** The key a text version has in central's id table (kind 'doc', beside the fiscal impact statements' URLs). */
+export function lisTextDocKey(textId: number): string {
+  return `text:${textId}`
+}
 
 export interface LisMember { id: string; name: string; chamber: 'H' | 'S' }
 
@@ -187,7 +238,27 @@ export class LisAssembler {
     this.matched[file] = (this.matched[file] ?? 0) + 1
   }
 
-  addTexts(_rows: LisTextRow[]): void {}
+  /**
+   * Adds the API's text list to the bills' records: each bill's full-text
+   * versions (`lisIsFullText`), oldest first, with each code trimmed and each
+   * date cut to the day, so a draft time that moves doesn't change a record.
+   * A row for a bill the files don't have is ignored, and no bill is made for
+   * it. A bill with no full text keeps a record with no `texts`.
+   */
+  addTexts(rows: LisTextRow[]): void {
+    const byRecord = new Map<LisRecord, Map<number, LisTextVersion>>()
+    for (const r of rows) {
+      if (!lisIsFullText(r.LegislationVersionID)) continue
+      const rec = this.records.get(lisTextBillNumber(r.LegislationNumber))
+      if (!rec) continue
+      const version = (r.Version ?? '').trim() || LIS_VERSION_NAMES[r.LegislationVersionID]
+      const day = /^\d{4}-\d{2}-\d{2}/.exec(r.DraftDate ?? '')?.[0] ?? ''
+      let versions = byRecord.get(rec)
+      if (!versions) byRecord.set(rec, versions = new Map())
+      versions.set(r.LegislationTextID, [r.LegislationTextID, (r.DocumentCode ?? '').trim(), version, (r.Description ?? '').trim(), day])
+    }
+    for (const [rec, versions] of byRecord) rec.texts = [...versions.values()].sort((a, b) => a[4].localeCompare(b[4]) || a[0] - b[0])
+  }
 
   result(): { records: Map<string, LisRecord>; members: LisMember[] } {
     this.refs.clear()
@@ -607,7 +678,7 @@ export interface LisIds {
   person(memberId: string): number
   /** Central roll call id by history reference id, for the bill being built (see lisRollCallKey). */
   rollCall(refid: string): number
-  /** Central supplement id by fiscal impact statement URL. */
+  /** Central supplement id by fiscal impact statement URL, and text id by `lisTextDocKey`. */
   doc(url: string): number
   /** Central committee id by lisCommitteeKey. */
   committee(key: string): number
@@ -628,7 +699,8 @@ function billType(number: string): { type: string; typeId: string } {
 
 export async function buildLisBill(
   rec: LisRecord, sessionCode: string, billId: number, hash: string, session: LisSession, ids: LisIds,
-  _pdfs: ReadonlyMap<number, string> = new Map(),
+  /** The PDF link of each text version of the record that has one, by LIS text id. A version with none is left out. */
+  pdfs: ReadonlyMap<number, string> = new Map(),
 ): Promise<CentralMeasure> {
   const number = rec.bill.Bill_id
   const origin = number.startsWith('S') ? 'S' : 'H'
@@ -699,6 +771,18 @@ export async function buildLisBill(
     })
   }
 
+  const texts: CentralMeasure['texts'] = []
+  for (const [textId, code, version, , date] of rec.texts ?? []) {
+    const link = pdfs.get(textId)
+    if (!link) continue
+    texts.push({
+      doc_id: ids.doc(lisTextDocKey(textId)), date, type: version, type_id: TEXT_TYPE_IDS[version] ?? 1,
+      mime: 'application/pdf', mime_id: 2, url: '', state_link: link,
+      text_size: 0, text_hash: await lisTextHash(sessionCode, code, textId),
+      alt_bill_text: 0, alt_mime: '', alt_mime_id: 0, alt_state_link: '', alt_text_size: 0, alt_text_hash: '',
+    })
+  }
+
   const sasts: CentralMeasure['sasts'] = ids.carriedFrom
     ? [{ type_id: 4, type: 'Carry Over', sast_bill_number: number, sast_bill_id: ids.carriedFrom }]
     : []
@@ -732,8 +816,9 @@ export async function buildLisBill(
     sasts,
     subjects: [],
     votes,
-    // Text needs the LIS API, whose terms are non-commercial; the latest summary stands in as the description.
-    texts: [],
+    // Text comes from the LIS API when the deployment has a key (a version with no PDF link here is left out).
+    // The latest summary is the description either way.
+    texts,
     calendar,
     amendments: [],
     supplements,

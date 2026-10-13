@@ -353,7 +353,7 @@ describe('getLisTextList', () => {
     fetchMock.mockResolvedValue(reply({ LegislationTextList: {}, Success: true }))
     await expect(getLisTextList('20261', 'k')).rejects.toThrow(/LegislationTextList/)
     fetchMock.mockResolvedValue(reply([]))
-    await expect(getLisTextList('20261', 'k')).rejects.toThrow(/LegislationTextList/)
+    await expect(getLisTextList('20261', 'k')).rejects.toThrow(/LIS/)
   })
 
   it('fails closed when the API says it failed', async () => {

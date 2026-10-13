@@ -76,9 +76,10 @@ beforeEach(async () => {
     }
     if (url.startsWith('https://lis.blob.core.windows.net/files/')) return new Response(PDF, { headers: { 'content-type': 'application/pdf' } })
     if (url.startsWith(`${LIS_FILES_BASE}/`)) {
-      const name = url.split('/').pop()!
+      const [code, name] = url.slice(LIS_FILES_BASE.length + 1).split('/')
       const file = (Object.keys(LIS_FILES) as LisFile[]).find(f => LIS_FILES[f] === name)
-      const s = file ? served[file] : null
+      // Only the 2026 regular session is published.
+      const s = file && code === '20261' ? served[file] : null
       if (!s) return new Response('<Error><Code>BlobNotFound</Code></Error>', { status: 404 })
       return new Response(method === 'HEAD' ? null : s.text, { headers: { ETag: s.etag } })
     }
