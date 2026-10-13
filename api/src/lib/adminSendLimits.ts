@@ -57,7 +57,8 @@ export const ADMIN_SEND_LIMIT_MESSAGES = {
  * One limit: at most `limit.max` rows of the claim's event with `column` equal
  * to `value` inside the window. `column` is a fixed set, never user input.
  * `byAdminsOnly` leaves out rows with no actor_id, so a member's own sign-in
- * requests don't count against an admin helping them.
+ * requests don't count against an admin helping them. `requester` counts only
+ * the rows whose actor is the member (`member`) or someone else (`others`).
  */
 export interface SendCheck {
   column: 'actor_id' | 'user_id' | 'email'
@@ -65,6 +66,7 @@ export interface SendCheck {
   limit: SendLimit
   message: string
   byAdminsOnly?: boolean
+  requester?: 'member' | 'others'
 }
 
 /** The auth_events row a send writes. `email` is the address the send goes to. */
@@ -95,9 +97,10 @@ export function adminSendChecks(adminId: string, memberId: string, address: stri
   ]
 }
 
+const REQUESTER_SQL = { member: ' AND actor_id = user_id', others: ' AND actor_id != user_id' } as const
 const countSql = (check: SendCheck) =>
   `(SELECT count(*) FROM auth_events WHERE event = ? AND ${check.column} = ?${check.byAdminsOnly ? ' AND actor_id IS NOT NULL' : ''}`
-  + ` AND created_at > datetime('now', ?))`
+  + `${check.requester ? REQUESTER_SQL[check.requester] : ''} AND created_at > datetime('now', ?))`
 const countBinds = (event: string, check: SendCheck) =>
   [event, check.value, `-${check.limit.windowMinutes} minutes`]
 

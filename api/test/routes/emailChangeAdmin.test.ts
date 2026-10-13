@@ -244,7 +244,7 @@ describe('the request: same rules as a member asking', () => {
 })
 
 describe('the request: send limits', () => {
-  it("counts against the member's three a day, whoever asks, in the admin's words", async () => {
+  it("counts against the member's three a day from admins, whichever admin asks, in the admin's words", async () => {
     for (const n of [1, 2, 3]) expect((await changeFor(adminCookie, jane, `jane${n}@newjob.org`)).status).toBe(200)
     const before = sent.length
     const r = await changeFor(ownerCookie, jane, 'jane4@newjob.org')
@@ -420,6 +420,79 @@ describe('"This wasn\'t me" and an admin-initiated change', () => {
     const r = await pressNotMe(linkSentTo(NOT_ME_LINK, 'jane@oldjob.org'))
     expect(r.status).toBe(200)
     expect(await pending()).toHaveLength(0)
+  })
+})
+
+describe("an admin's change and the member's own requests", () => {
+  // A takeover: someone else moved Jane's account to their own address and
+  // signs back in after "This wasn't me". An admin asks to move it back to the
+  // address Jane really holds. The session's own requests must neither cancel
+  // that change nor use up the admins' allowance for her.
+  const REAL = 'jane@real.org'
+  const ownRequest = (cookie: string, email: string) =>
+    call('/api/users/me/email-change', { method: 'POST', cookie, body: JSON.stringify({ email }) })
+  let takenCookie: string
+
+  beforeEach(async () => {
+    takenCookie = `session=${await seedSession(jane)}`
+  })
+
+  it("refuses the member's own request while an admin's change is pending, and leaves the admin's link working", async () => {
+    expect((await changeFor(adminCookie, jane, REAL)).status).toBe(200)
+    const adminLink = linkSentTo(CONFIRM_LINK, REAL)
+    sent = []
+
+    for (const email of ['jane@thief.org', 'jane@thief2.org']) {
+      const r = await ownRequest(takenCookie, email)
+      expect(r).toMatchObject({ status: 409, body: { error: 'An admin has an email change pending for your account.' } })
+    }
+    expect(sent).toHaveLength(0)
+    expect(await pending()).toMatchObject([{ requestedBy: admin, newEmail: REAL }])
+    expect((await eventsFor(jane)).filter(e => e.event === 'email_change_cancelled')).toHaveLength(0)
+
+    // The refused requests used none of anyone's allowance: the admin can still re-ask.
+    expect((await changeFor(adminCookie, jane, REAL)).status).toBe(200)
+    expect((await confirm(linkSentTo(CONFIRM_LINK, REAL))).status).toBe(200)
+    expect((await member(jane)).email).toBe(REAL)
+    expect((await confirm(adminLink)).status).toBe(404)
+  })
+
+  it("refuses the member's own request when an admin's change lands while it is being checked", async () => {
+    // The admin's request arrives between the member's checks and their write:
+    // here, while the member's new address is looked up on the bounce list.
+    const central = (testEnv() as unknown as { CENTRAL: { emailSuppressionMany: (e: string[]) => Promise<unknown> } }).CENTRAL
+    const racing = {
+      ...central,
+      emailSuppressionMany: async (emails: string[]) => {
+        if (emails.includes('jane@thief.org')) expect((await changeFor(adminCookie, jane, REAL)).status).toBe(200)
+        return central.emailSuppressionMany(emails)
+      },
+    }
+    const r = await call('/api/users/me/email-change', {
+      method: 'POST', cookie: takenCookie, body: JSON.stringify({ email: 'jane@thief.org' }),
+    }, { CENTRAL: racing })
+    expect(r).toMatchObject({ status: 409, body: { error: 'An admin has an email change pending for your account.' } })
+    expect(await pending()).toMatchObject([{ requestedBy: admin, newEmail: REAL }])
+    expect(sent.filter(m => m.to.includes('jane@thief.org'))).toHaveLength(0)
+    const requested = (await eventsFor(jane)).filter(e => e.event === 'email_change_requested')
+    expect(requested.map(e => e.actorId)).toEqual([admin])
+    expect((await confirm(linkSentTo(CONFIRM_LINK, REAL))).status).toBe(200)
+  })
+
+  it("does not count the member's own requests against the admins' three a day", async () => {
+    for (const n of [1, 2, 3]) expect((await ownRequest(takenCookie, `jane${n}@thief.org`)).status).toBe(200)
+    expect((await ownRequest(takenCookie, 'jane4@thief.org')).status).toBe(429)
+    const r = await changeFor(adminCookie, jane, REAL)
+    expect(r.status).toBe(200)
+    expect(await pending()).toMatchObject([{ requestedBy: admin, newEmail: REAL }])
+  })
+
+  it("does not count admins' requests against the member's three, and an expired admin change no longer blocks", async () => {
+    for (const n of [1, 2, 3]) expect((await changeFor(adminCookie, jane, `jane${n}@real.org`)).status).toBe(200)
+    await env.DB.prepare("UPDATE email_changes SET expires_at = datetime('now', '-1 hour')").run()
+    const r = await ownRequest(takenCookie, 'jane@mine.org')
+    expect(r.status).toBe(200)
+    expect(await pending()).toMatchObject([{ requestedBy: jane, newEmail: 'jane@mine.org' }])
   })
 })
 

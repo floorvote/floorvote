@@ -5,7 +5,7 @@ import { generateToken, hashToken } from './crypto'
 import { checkMemberAddresses, normalizeMemberAddress } from './memberAddress'
 import { isPreviouslyBounced } from './bouncedAddresses'
 import { superadminEmailStatus } from './superadminCentral'
-import { claimSend, adminSendChecks, type SendCheck, type SendLimit } from './adminSendLimits'
+import { claimSend, releaseSend, adminSendChecks, type SendCheck, type SendLimit } from './adminSendLimits'
 import { recordAuthEvent } from './authEvents'
 import { sendBatch, resolveAssocName, type EmailMessage } from './email'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail } from './emailChangeEmail'
@@ -38,7 +38,10 @@ import { issueNotMeToken, notMeUrl } from './emailChangeReport'
 /** How long a confirmation link lasts. */
 export const EMAIL_CHANGE_TTL_HOURS = 24
 
-/** Requests per member, from anyone, in a rolling day. */
+/**
+ * Requests per member in a rolling day, counted apart for the member's own and
+ * for admins', so neither can use up the other's.
+ */
 export const EMAIL_CHANGE_LIMIT: SendLimit = { max: 3, windowMinutes: 24 * 60 }
 
 export const EMAIL_CHANGE_ERRORS = {
@@ -49,6 +52,7 @@ export const EMAIL_CHANGE_ERRORS = {
   reserved: "That address can't be used here.",
   superadmin: "Your address is managed centrally, so it can't be changed here.",
   limit: "You've asked to change your email three times in the past day. Please try again tomorrow.",
+  adminPending: 'An admin has an email change pending for your account.',
   sendFailed: "We couldn't send the confirmation email. Please try again in a little while.",
   centralUnavailable: "Can't check this address right now. Try again in a few minutes.",
   // Confirming
@@ -204,7 +208,8 @@ async function recordCancelled(
  * Start a change of `member`'s address to `rawNewEmail`, asked for by
  * `requesterId`. Validates, counts against the daily limit, replaces any
  * pending change (recording it cancelled), and sends the confirmation and the
- * notice to the current address.
+ * notice to the current address. The member's own request is refused while a
+ * change an admin started is live.
  */
 export async function requestEmailChange(
   env: Env,
@@ -235,7 +240,10 @@ export async function requestEmailChange(
       linkType: null, actorId: input.requesterId, ...input.ctx,
     },
     [
-      { column: 'user_id', value: member.id, limit: EMAIL_CHANGE_LIMIT, message: emailChangeError('limit', byAdmin) },
+      {
+        column: 'user_id', value: member.id, limit: EMAIL_CHANGE_LIMIT, message: emailChangeError('limit', byAdmin),
+        requester: byAdmin ? 'others' : 'member',
+      },
       // An admin's request also counts against the admin send limits (#418).
       ...(byAdmin ? adminEmailChangeChecks(input.requesterId, member.id, newEmail) : []),
     ],
@@ -245,10 +253,20 @@ export async function requestEmailChange(
   const rawToken = await generateToken()
   const id = crypto.randomUUID()
   // One batch: the previous pending change goes as this one arrives, so there
-  // is never more than one and the latest request always wins.
-  const [replaced] = await db.batch([
-    db.delete(emailChanges).where(eq(emailChanges.userId, member.id))
-      .returning({ userId: emailChanges.userId, oldEmail: emailChanges.oldEmail, newEmail: emailChanges.newEmail }),
+  // is never more than one and the latest request wins. Except that the
+  // member's own request never replaces a live change an admin started: that
+  // change is how an admin moves a taken-over account back to its owner ("This
+  // wasn't me" leaves it pending for the same reason), and whoever holds the
+  // account must not cancel it by asking for their own. Such a change survives
+  // the delete, so the insert hits the one-per-member index and does nothing.
+  const [replaced, inserted] = await db.batch([
+    db.delete(emailChanges).where(and(
+      eq(emailChanges.userId, member.id),
+      byAdmin ? undefined : or(
+        eq(emailChanges.requestedBy, member.id),
+        sql`datetime(${emailChanges.expiresAt}) <= datetime('now')`,
+      ),
+    )).returning({ userId: emailChanges.userId, oldEmail: emailChanges.oldEmail, newEmail: emailChanges.newEmail }),
     db.insert(emailChanges).values({
       id,
       userId: member.id,
@@ -258,8 +276,13 @@ export async function requestEmailChange(
       requestingSessionId: input.sessionId,
       tokenHash: await hashToken(rawToken),
       expiresAt: sql`datetime('now', ${`+${EMAIL_CHANGE_TTL_HOURS} hours`})`,
-    }),
+    }).onConflictDoNothing({ target: emailChanges.userId }).returning({ id: emailChanges.id }),
   ])
+  if (inserted.length === 0) {
+    // Nothing was sent, so the request uses none of the allowance.
+    await releaseSend(env.DB, claim.id)
+    return { ok: false, status: 409, error: EMAIL_CHANGE_ERRORS.adminPending }
+  }
   await recordCancelled(db, replaced, input.requesterId, input.ctx)
 
   const instanceName = (await resolveAssocName(env, db)) ?? ''
