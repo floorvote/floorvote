@@ -81,3 +81,24 @@ export async function getLisFileEtag(sessionCode: string, file: LisFile, onReque
 export async function lisSessionExists(sessionCode: string, onRequest?: () => void): Promise<boolean> {
   return (await getLisFileEtag(sessionCode, 'bills', onRequest)) !== null
 }
+
+export const LIS_API_BASE = 'https://lis.virginia.gov/LegislationText/api'
+
+/** One row of the API's text list (stub). */
+export interface LisTextRow {
+  LegislationNumber: string
+  LegislationTextID: number
+  LegislationVersionID: number
+  DocumentCode?: string | null
+  Version?: string | null
+  Description?: string | null
+  DraftDate?: string | null
+}
+
+export async function getLisTextList(_sessionCode: string, _apiKey: string, _onRequest?: () => void): Promise<LisTextRow[]> {
+  return []
+}
+
+export async function getLisTextPdf(_textId: number, _apiKey: string, _onRequest?: () => void): Promise<string | null> {
+  return null
+}

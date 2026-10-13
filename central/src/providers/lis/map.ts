@@ -1,5 +1,5 @@
 import { htmlToText, sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
-import type { LisFile } from './client'
+import type { LisFile, LisTextRow } from './client'
 import { CsvError, forEachCsvRecord, forEachCsvRow } from './csv'
 import { LIS_STATUS_BASE } from './vocabulary'
 
@@ -70,7 +70,16 @@ export interface LisRecord {
    * that it is empty.
    */
   dockets: [string, string][] | null
+  /** Stub. */
+  texts?: LisTextVersion[]
 }
+
+/** Stub. */
+export type LisTextVersion = [id: number, code: string, version: string, description: string, date: string]
+
+export function lisIsFullText(_versionId: number): boolean { return false }
+export function lisTextBillNumber(_s: string): string { return '' }
+export function lisTextHash(_sessionCode: string, _code: string, _textId: number): Promise<string> { return Promise.resolve('') }
 
 export interface LisMember { id: string; name: string; chamber: 'H' | 'S' }
 
@@ -177,6 +186,8 @@ export class LisAssembler {
   private count(file: LisFile): void {
     this.matched[file] = (this.matched[file] ?? 0) + 1
   }
+
+  addTexts(_rows: LisTextRow[]): void {}
 
   result(): { records: Map<string, LisRecord>; members: LisMember[] } {
     this.refs.clear()
@@ -617,6 +628,7 @@ function billType(number: string): { type: string; typeId: string } {
 
 export async function buildLisBill(
   rec: LisRecord, sessionCode: string, billId: number, hash: string, session: LisSession, ids: LisIds,
+  _pdfs: ReadonlyMap<number, string> = new Map(),
 ): Promise<CentralMeasure> {
   const number = rec.bill.Bill_id
   const origin = number.startsWith('S') ? 'S' : 'H'

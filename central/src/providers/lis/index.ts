@@ -198,19 +198,19 @@ const EMPTY = 'empty:'
  * session lacks has no key. `docketed` records that some bill was on a
  * docket, so the next pass can tell a docket file cut to its header.
  */
-export function packEtags(files: Record<string, string>, docketed: boolean): string {
+export function packEtags(files: Record<string, string>, docketed: boolean, _texts = false): string {
   return JSON.stringify({ v: ETAG_VERSION, files, docketed })
 }
 
 /** The stored string back, or null for none, or one of another version or shape. */
-export function unpackEtags(etag: string | null): { files: Record<string, string>; docketed: boolean } | null {
+export function unpackEtags(etag: string | null): { files: Record<string, string>; docketed: boolean; texts: boolean } | null {
   if (!etag) return null
   try {
     const parsed = JSON.parse(etag) as { v?: unknown; files?: unknown; docketed?: unknown }
     if (parsed?.v !== ETAG_VERSION || typeof parsed.files !== 'object' || parsed.files === null) return null
     const files = Object.entries(parsed.files)
     if (!files.every(([file, v]) => file in LIS_FILES && typeof v === 'string')) return null
-    return { files: Object.fromEntries(files) as Record<string, string>, docketed: parsed.docketed === true }
+    return { files: Object.fromEntries(files) as Record<string, string>, docketed: parsed.docketed === true, texts: false }
   } catch {
     return null
   }
