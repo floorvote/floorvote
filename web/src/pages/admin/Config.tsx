@@ -17,6 +17,7 @@ import { DropIndicator, ReorderLiveRegion, useDragReorder } from '../../componen
 import { inlineEditSaveStyle, inlineEditCancelStyle } from '../../lib/inlineEditStyles'
 import { ReprocessScopeModal, type ReprocessScope } from '../../components/ReprocessScopeModal'
 import { aiInstructionsChanged, configChanged, type ConfigSnapshot, centralSyncWarning, type KeywordResyncResult } from './aiConfig'
+import { isWildcardKeyword } from '../../../../shared/keywords'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
@@ -313,6 +314,8 @@ export function Config() {
   async function handleSaveKeywords() {
     const newKeywords = keywords.split('\n').map((s) => s.trim()).filter(Boolean)
 
+    const isMatchAll = newKeywords.length === 1 && isWildcardKeyword(newKeywords[0])
+
     // Fetch preview counts before asking the user to confirm
     let confirmMsg = 'Save and sync keywords?'
     if (newKeywords.length === 0) {
@@ -329,7 +332,10 @@ export function Config() {
           { method: 'POST', body: JSON.stringify({ keywords: newKeywords }) }
         )
         const parts: string[] = []
-        if (preview.wouldAdd > 0) {
+        if (isMatchAll && preview.wouldAdd > 0) {
+          // The match-all list queues every unanalyzed bill, so wouldAdd is the count.
+          parts.push(`Every bill in your tracked sessions will be queued for AI analysis (~${preview.wouldAdd.toLocaleString()} ${preview.wouldAdd === 1 ? 'bill' : 'bills'}).`)
+        } else if (preview.wouldAdd > 0) {
           const b = preview.wouldAdd === 1 ? '1 additional bill' : `${preview.wouldAdd} additional bills`
           parts.push(`${b} will be fully analyzed`)
         }

@@ -75,6 +75,7 @@ import migrationSql78 from '../migrations/0078_expired_status_enacted.sql?raw'
 import migrationSql79 from '../migrations/0079_calendar_event_kind.sql?raw'
 import migrationSql82 from '../migrations/0082_calendar_event_covered_by.sql?raw'
 import migrationSql83 from '../migrations/0083_calendar_event_rules.sql?raw'
+import migrationSql87 from '../migrations/0087_feed_events_sort_index.sql?raw'
 import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
@@ -254,6 +255,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql79, '0079_calendar_event_kind'),
     parseMigration(migrationSql82, '0082_calendar_event_covered_by'),
     parseMigration(migrationSql83, '0083_calendar_event_rules'),
+    parseMigration(migrationSql87, '0087_feed_events_sort_index'),
     parseMigration(migrationSql93, '0093_feed_events_billless'),
   ]
   const before = opts.before
