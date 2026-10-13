@@ -37,10 +37,22 @@ function row(number: string, textId: number, versionId: number, code: string | n
 }
 
 const blob = (n: number) => `https://lis.blob.core.windows.net/files/${n}.PDF`
-/** A by-id answer: the blob PDF link and the text as HTML. */
-const byIdAnswer = (textId: number, pdfs: number[] = [textId + 1_000_000]) => ({
-  LegislationTextID: textId, DraftText: '<p>Be it enacted.</p>',
-  PDFFile: pdfs.map(n => ({ FileURL: blob(n), FileName: `${n}.PDF` })), HTMLFile: [], ImpactFile: [], LinkFile: [],
+/**
+ * A by-id answer, trimmed from a real one: the text sits in `TextsList` with its
+ * file lists, and `patch` changes the entry. (The real entry also carries the
+ * text as HTML in `DraftText`, and many more fields, which nothing reads.)
+ */
+const byIdEntry = (textId: number, pdfs: number[] = [textId + 1_000_000], patch: Record<string, unknown> = {}) => ({
+  LegislationTextID: textId, LegislationVersionID: 3, LegislationVersion: 'Enrolled', LegislationNumber: 'HB1',
+  SessionCode: '20261', DocumentCode: 'HB1ER', IsPublic: true,
+  PDFFile: pdfs.map(n => ({
+    PageCount: 1, LegislationTextID: textId, TextFormatID: 1, TextFormat: 'PDF', FileURL: blob(n), ReferenceNumber: null, SessionID: 59, Description: null,
+  })),
+  HTMLFile: [{ LegislationTextID: textId, TextFormatID: 2, TextFormat: 'HTML', FileURL: blob(textId + 2_000_000), ReferenceNumber: null, SessionID: 59, Description: null }],
+  ImpactFile: [], LinkFile: null, ...patch,
+})
+const byIdAnswer = (textId: number, pdfs?: number[], patch?: Record<string, unknown>) => ({
+  TextsList: [byIdEntry(textId, pdfs, patch)], Success: true, FailureMessage: '', CacheKeyName: null,
 })
 
 // ── Pure helpers ──
@@ -399,7 +411,7 @@ describe('getLisTextPdf', () => {
   })
 
   it('returns null for an empty PDFFile, a version with no PDF', async () => {
-    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), PDFFile: [] }))
+    fetchMock.mockResolvedValue(reply(byIdAnswer(1, [])))
     expect(await getLisTextPdf(1, 'k')).toBeNull()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -409,9 +421,37 @@ describe('getLisTextPdf', () => {
     expect(await getLisTextPdf(1, 'k')).toBe(blob(11))
   })
 
-  it('reads an answer whose one text sits in a LegislationTextList', async () => {
-    fetchMock.mockResolvedValue(reply({ LegislationTextList: [byIdAnswer(1, [11])], Success: true }))
+  it('reads the entry for the id asked for when TextsList has several', async () => {
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1, [11]), TextsList: [byIdEntry(2, [22]), byIdEntry(1, [11])] }))
     expect(await getLisTextPdf(1, 'k')).toBe(blob(11))
+  })
+
+  it('fails closed on a PDFFile with no TextsList around it, which is not the shape the API answers in', async () => {
+    fetchMock.mockResolvedValue(reply({ PDFFile: [{ FileURL: blob(11) }], DraftText: '<p>x</p>' }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/TextsList/)
+    fetchMock.mockResolvedValue(reply({ LegislationTextList: [byIdEntry(1, [11])], Success: true }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/TextsList/)
+  })
+
+  it('fails closed on an empty TextsList, or one that isn\'t a list', async () => {
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), TextsList: [] }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/text 1/)
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), TextsList: null }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/TextsList/)
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), TextsList: byIdEntry(1) }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/TextsList/)
+  })
+
+  it('fails closed when TextsList has no entry for the id asked for, and does not take another\'s PDF', async () => {
+    fetchMock.mockResolvedValue(reply(byIdAnswer(2, [22])))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/text 1/)
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(2), TextsList: [byIdEntry(2, [22]), byIdEntry(3, [33])] }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/text 1/)
+  })
+
+  it('fails closed when the API says it failed', async () => {
+    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), Success: false, FailureMessage: 'Not found' }))
+    await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/Not found/)
   })
 
   it('fails closed on an HTTP error', async () => {
@@ -424,19 +464,18 @@ describe('getLisTextPdf', () => {
   it('fails closed on an answer that isn\'t JSON, or lacks PDFFile', async () => {
     fetchMock.mockResolvedValue(reply('<html></html>'))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/LIS/)
-    const { PDFFile: _pdf, ...lacking } = byIdAnswer(1)
-    fetchMock.mockResolvedValue(reply(lacking))
+    fetchMock.mockResolvedValue(reply(byIdAnswer(1, undefined, { PDFFile: undefined })))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/PDFFile/)
-    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), PDFFile: null }))
+    fetchMock.mockResolvedValue(reply(byIdAnswer(1, undefined, { PDFFile: null })))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/PDFFile/)
     fetchMock.mockResolvedValue(reply(null))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/LIS/)
   })
 
   it('fails closed on a PDFFile entry with no usable link', async () => {
-    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), PDFFile: [{ FileName: 'x.PDF' }] }))
+    fetchMock.mockResolvedValue(reply(byIdAnswer(1, undefined, { PDFFile: [{ TextFormat: 'PDF', PageCount: 1 }] })))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/FileURL/)
-    fetchMock.mockResolvedValue(reply({ ...byIdAnswer(1), PDFFile: [{ FileURL: 12 }] }))
+    fetchMock.mockResolvedValue(reply(byIdAnswer(1, undefined, { PDFFile: [{ FileURL: 12 }] })))
     await expect(getLisTextPdf(1, 'k')).rejects.toThrow(/FileURL/)
   })
 })
@@ -786,7 +825,7 @@ describe('fetchMeasure', () => {
 
   it('leaves out a version whose answer has no PDF, and emits the others', async () => {
     const measure = await storedMeasure('HB1', threeVersions)
-    byId = id => reply(id === 20 ? { ...byIdAnswer(id), PDFFile: [] } : byIdAnswer(id))
+    byId = id => reply(id === 20 ? byIdAnswer(id, []) : byIdAnswer(id))
     const bill = (await lis.fetchMeasure(measure, makeCtx('k').ctx)) as any
     expect(bill.texts.map((t: any) => t.type)).toEqual(['Introduced', 'Enrolled'])
   })
@@ -799,7 +838,7 @@ describe('fetchMeasure', () => {
 
   it('fails when a by-id answer lacks PDFFile', async () => {
     const measure = await storedMeasure('HB1', threeVersions)
-    byId = id => { const { PDFFile: _p, ...rest } = byIdAnswer(id); return reply(rest) }
+    byId = id => reply(byIdAnswer(id, undefined, { PDFFile: undefined }))
     await expect(lis.fetchMeasure(measure, makeCtx('k').ctx)).rejects.toThrow(/PDFFile/)
   })
 

@@ -71,7 +71,12 @@ beforeEach(async () => {
       }
       if (url.includes('getlegislationtextbyidasync')) {
         const id = Number(new URL(url).searchParams.get('legislationTextID'))
-        return new Response(JSON.stringify({ LegislationTextID: id, DraftText: '<p>text</p>', PDFFile: noPdf.has(id) ? [] : [{ FileURL: blob(id + 1_000_000) }] }))
+        // The shape of a real answer, trimmed: the one text in TextsList, with its file lists.
+        const pdf = noPdf.has(id) ? [] : [{ PageCount: 1, LegislationTextID: id, TextFormatID: 1, TextFormat: 'PDF', FileURL: blob(id + 1_000_000), ReferenceNumber: null, SessionID: 59, Description: null }]
+        return new Response(JSON.stringify({
+          TextsList: [{ LegislationTextID: id, LegislationVersionID: 3, DocumentCode: 'HB1ER', SessionCode: '20261', PDFFile: pdf, HTMLFile: [], ImpactFile: [], LinkFile: null }],
+          Success: true, FailureMessage: '', CacheKeyName: null,
+        }))
       }
     }
     if (url.startsWith('https://lis.blob.core.windows.net/files/')) return new Response(PDF, { headers: { 'content-type': 'application/pdf' } })
