@@ -423,12 +423,14 @@ export function lisStatus(rec: LisRecord, sessionCode: string): number {
  * ("Referred to Committee on Finance"), a re-referral ("Rereferred to
  * Appropriations", written after a committee reports a bill on to another),
  * a recommittal after a floor motion ("Recommitted to Education and Health"),
- * and the plain "Referred to Rules". The lines that say where a bill came
+ * and the plain "Referred to Rules". Any of them may name the committee in
+ * full ("Rereferred to Committee for Courts of Justice"), which is dropped so
+ * the name matches the committee's. The lines that say where a bill came
  * from too ("Reported from Labor and Commerce and referred to Appropriations",
  * "Rereferred from X to Y") are each followed by a line of one of these, so
  * they aren't read as referrals of their own.
  */
-const REFERRAL = /^(?:Referred to Committee (?:on|for)|Rereferred to|Recommitted to|Referred to) (.+)$/i
+const REFERRAL = /^(?:Referred to|Rereferred to|Recommitted to) (?:Committee (?:on|for) )?(.+)$/i
 
 /**
  * A history line that takes the bill out of the committee it was in: the

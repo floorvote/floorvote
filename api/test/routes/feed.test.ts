@@ -93,6 +93,33 @@ describe('GET /feed', () => {
     expect(body.limit).toBe(1)
   })
 
+  it('orders and paginates across both stored UTC formats', async () => {
+    const db = getDb(env.DB)
+    // Interleave SQLite-style 'YYYY-MM-DD HH:MM:SS' rows with the ISO 'T...Z' rows
+    // from beforeEach. As raw strings ' ' sorts before 'T', so a plain created_at
+    // sort would put every space-format row after every ISO row of the same day.
+    for (const createdAt of ['2026-01-01 10:30:00', '2026-01-01 09:30:00']) {
+      await db.insert(feedEvents).values({
+        id: crypto.randomUUID(),
+        type: 'comment_added',
+        billId,
+        userId: memberId,
+        metadata: JSON.stringify({ preview: createdAt }),
+        createdAt,
+      })
+    }
+    const fetchPage = async (page: number) => {
+      const res = await SELF.fetch(`http://localhost/api/feed?page=${page}&limit=2`, {
+        headers: { Cookie: `session=${memberToken}` },
+      })
+      return await res.json() as { events: { createdAt: string }[]; total: number }
+    }
+    const [p1, p2] = [await fetchPage(1), await fetchPage(2)]
+    expect(p1.total).toBe(4)
+    expect(p1.events.map((e) => e.createdAt)).toEqual(['2026-01-01 10:30:00', '2026-01-01T10:00:00Z'])
+    expect(p2.events.map((e) => e.createdAt)).toEqual(['2026-01-01 09:30:00', '2026-01-01T09:00:00Z'])
+  })
+
   it('excludes suppressed events', async () => {
     const db = getDb(env.DB)
     await db.insert(feedEvents).values({

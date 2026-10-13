@@ -506,6 +506,54 @@ describe('Config — empty keyword list confirm copy', () => {
   })
 })
 
+describe('Config — match-all keyword confirm copy', () => {
+  async function confirmFor(keywordsValue: string, preview: { wouldAdd: number; wouldDemote: number; wouldProtect: number }) {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, keywords: ['zoning'] }
+      if (path === '/admin/custom-fields') return []
+      if (path === '/admin/keyword-resync-preview') return preview
+      return {}
+    })
+    render(<Config />)
+    const textarea = (await screen.findByLabelText('Keywords')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: keywordsValue } })
+    fireEvent.click(await screen.findByRole('button', { name: /save keywords and sync/i }))
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
+    const msg = confirmSpy.mock.calls[0][0] as string
+    confirmSpy.mockRestore()
+    return msg
+  }
+
+  it('states the approximate bill count when the list is exactly *', async () => {
+    const msg = await confirmFor('  *  \n\n', { wouldAdd: 1897, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('Every bill in your tracked sessions will be queued for AI analysis (~1,897 bills).')
+    expect(msg).not.toMatch(/additional bills will be fully analyzed/i)
+    expect(msg).not.toMatch(/quota|budget|instance/i)
+  })
+
+  it('treats ** as match-all', async () => {
+    const msg = await confirmFor('**', { wouldAdd: 12, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('(~12 bills).')
+  })
+
+  it('uses the singular for one bill', async () => {
+    const msg = await confirmFor('*', { wouldAdd: 1, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('(~1 bill).')
+  })
+
+  it('falls through to the existing text when nothing is left to queue', async () => {
+    const msg = await confirmFor('*', { wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toBe('Save keywords? No bills will be added or downgraded.')
+  })
+
+  it('leaves the confirmation unchanged for any other list', async () => {
+    const msg = await confirmFor('zoning\n*', { wouldAdd: 897, wouldDemote: 0, wouldProtect: 0 })
+    expect(msg).toContain('897 additional bills will be fully analyzed')
+    expect(msg).not.toMatch(/every bill in your tracked sessions/i)
+  })
+})
+
 describe('Config — org-noun-aware tag hint', () => {
   it('uses the default org noun ("team") in the tag personalization hint', async () => {
     render(<Config />)
@@ -1306,6 +1354,37 @@ describe('Config — custom fields drag-to-reorder', () => {
       await act(async () => { fireEvent.click(within(row('Bravo')).getByText('edit').closest('button')!) })
       expect(screen.queryByLabelText(/^Reorder Bravo/)).toBeNull()
       expect(reorderCalls()).toHaveLength(0)
+    })
+  })
+})
+
+describe('Config — live keyword match summary', () => {
+  function mockSummary(summary: { total: number; matched: number; newlyMatched: number; unmatched: number }) {
+    mockFetch.mockImplementation(async (path: string) => {
+      if (path === '/admin/config') return { ...BASE_CONFIG, keywords: ['election'] }
+      if (path === '/admin/custom-fields') return []
+      if (path === '/bills/drafts') return { drafts: [] }
+      if (path === '/admin/keyword-match-summary') return summary
+      throw new Error('unexpected path: ' + path)
+    })
+  }
+
+  it('shows the count under the keywords box without a second line until the box is edited', async () => {
+    mockSummary({ total: 60, matched: 22, newlyMatched: 3, unmatched: 0 })
+    render(<Config />)
+
+    expect(await screen.findByText('22 of 60 bills (37%)')).toBeInTheDocument()
+    expect(screen.queryByText(/Saving these keywords/)).toBeNull()
+
+    const textarea = (await screen.findByLabelText('Keywords')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'election\nhealth care' } })
+    expect(await screen.findByText(/Saving these keywords/)).toHaveTextContent('Saving these keywords would newly match 3 bills.')
+
+    // The count follows the typing after the debounce, not on each keystroke.
+    await waitFor(() => {
+      const summaryCalls = mockFetch.mock.calls.filter(([p]) => p === '/admin/keyword-match-summary')
+      expect(JSON.parse((summaryCalls[summaryCalls.length - 1][1] as RequestInit).body as string))
+        .toEqual({ keywords: ['election', 'health care'] })
     })
   })
 })

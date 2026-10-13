@@ -73,14 +73,9 @@ export function userDetailLine(event: FeedEvent): string {
   const { type, metadata, userName } = event
   switch (type) {
     case 'bill_added': return `Added by ${userName}`
-    case 'priority_set':
-      return metadata.isBulk
-        ? `${userName} set ${Number(metadata.count)} bills to ${String(metadata.priority ?? '')} priority`
-        : `Marked ${String(metadata.priority ?? '')} priority by ${userName}`
+    case 'priority_set': return `Marked ${String(metadata.priority ?? '')} priority by ${userName}`
     case 'position_set':
-      return metadata.isBulk
-        ? `${userName} set position to ${String(metadata.position ?? '')} for ${Number(metadata.count)} bills`
-        : `Position set to ${String(metadata.position ?? '')}${userName ? ` by ${userName}` : ''}`
+      return `Position set to ${String(metadata.position ?? '')}${userName ? ` by ${userName}` : ''}`
     case 'comment_added': {
       const stored = String(metadata.preview ?? '')
       // Events written before the write site ellipsized (engagementRoutes.ts) sit
@@ -150,4 +145,47 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
     title: billDisplayTitle({ title: group.billTitle, isDraft: group.billIsDraft }), summary: group.billSummary != null ? stripMarkdown(group.billSummary) : null,
     priority: group.billPriority as 'high' | 'medium' | 'low' | null, rows,
   }
+}
+
+export type ActivityRowModel = {
+  key: string; iconName: string; iconColor: string; iconFill: 0 | 1
+  text: string; createdAt: string; userId: string
+  /** Render a priority square instead of a glyph (priority_set events). */
+  square?: boolean
+  /** How many bills the event is about, or null when it doesn't say. */
+  billCount: number | null
+}
+
+/** Bills a bill-less event names, as it recorded them: the count if it stored one,
+ *  else the number of ids. Null for an event that is not about bills. */
+function affectedBillCount(metadata: Record<string, unknown>): number | null {
+  if (typeof metadata.count === 'number') return metadata.count
+  return Array.isArray(metadata.billIds) ? metadata.billIds.length : null
+}
+
+/** The single-row card for a bill-less event (a bulk edit). It is not part of a
+ *  bill's card: there is no bill to head one with. */
+export function buildActivityRowModel(event: FeedEvent): ActivityRowModel {
+  const { metadata, type } = event
+  const who = event.userName || 'An admin'
+  const count = affectedBillCount(metadata)
+  const onBills = count === null ? '' : ` on ${count} ${count === 1 ? 'bill' : 'bills'}`
+  const base = { key: event.id, createdAt: event.createdAt, userId: event.userId, billCount: count }
+  if (type === 'priority_set') {
+    const priority = String(metadata.priority ?? '')
+    return {
+      ...base, iconName: 'flag', iconFill: 1, square: true,
+      iconColor: PRIORITY_COLORS[priority]?.fill ?? USER_EVENT_ICONS.priority_set.color,
+      text: `${who} set priority to ${priority}${onBills}`,
+    }
+  }
+  if (type === 'position_set') {
+    const position = metadata.position == null ? null : String(metadata.position)
+    return {
+      ...base, iconName: 'thumbs_up_down', iconFill: 1,
+      iconColor: (position && POSITION_FEED_ICON[position]) || USER_EVENT_ICONS.position_set.color,
+      text: position === null ? `${who} cleared the position${onBills}` : `${who} set position to ${position}${onBills}`,
+    }
+  }
+  return { ...base, iconName: 'circle', iconFill: 0, iconColor: color.textMuted, text: 'Activity' }
 }
