@@ -4,12 +4,14 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Create an issue**: `gh issue create --title "..." --type <Bug|Feature|Research|Task> --body "..."`. Use a heredoc for multi-line bodies. Types are described in `triage-labels.md`.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **List issues**: `gh issue list --state open --json number,title,body,issueType,labels,comments --jq '[.[] | {number, title, body, type: .issueType.name, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--type`, `--label`, and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
+- **Set the type**: `gh issue edit <number> --type "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
+- **Closing keywords only work on `main`.** `Closes #N` in a PR body closes the issue only when that PR merges into `main`. A PR merged into a stack or integration branch closes nothing, and the later merge into `main` won't close it unless that PR's body lists it too. When a branch's work reaches `main` through another PR, list every issue it closes in that PR's body.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 

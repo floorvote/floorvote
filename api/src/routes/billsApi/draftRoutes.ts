@@ -48,6 +48,9 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       db.delete(memberVotes).where(eq(memberVotes.billId, id)),
       db.delete(notes).where(eq(notes.billId, id)),
       db.delete(billTexts).where(eq(billTexts.billId, id)),
+      // calendar_event_bills has no FK, so these rows would orphan on the dead draft id.
+      // The calendar events themselves stay, as does their link to any other bill.
+      db.delete(calendarEventBills).where(eq(calendarEventBills.billId, id)),
       db.delete(bills).where(eq(bills.id, id)),
     ])
     return new Response(null, { status: 204 })

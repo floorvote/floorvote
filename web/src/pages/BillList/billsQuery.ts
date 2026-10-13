@@ -6,7 +6,15 @@ export type BillsFilterValues = {
   tags: string[]; subjects: string[]; search: string; sortCol: SortColumn; sortDir: SortDir; cfFilters: Record<string, string[]>
 }
 
-export function billsApiParams(v: BillsFilterValues, page: number, pageSize: number): string {
+// The one place a custom-field key becomes the form the bills request (and so
+// the list cache key) uses: the field id when the defs know the field, else the
+// key as given. The URL carries slugs, the filter state carries ids, so the
+// loader's prefetch and the list's fetch must both pass through here or their
+// keys differ and the prefetched page is never reused.
+export function billsApiParams(
+  v: BillsFilterValues, page: number, pageSize: number,
+  customFieldDefs: ReadonlyArray<{ id: string; slug: string | null }> = [],
+): string {
   const params = new URLSearchParams()
   params.set('page', String(page))
   params.set('pageSize', String(pageSize))
@@ -30,7 +38,8 @@ export function billsApiParams(v: BillsFilterValues, page: number, pageSize: num
     params.set('dir', v.sortDir)
   }
   for (const [key, values] of Object.entries(v.cfFilters)) {
-    values.forEach(val => params.append(`cf_${key}`, val))
+    const id = customFieldDefs.find(d => d.slug === key || d.id === key)?.id ?? key
+    values.forEach(val => params.append(`cf_${id}`, val))
   }
   return params.toString()
 }

@@ -385,7 +385,7 @@ Default cadence ⇒ **10 masterlist calls per session per day**.
 For each masterlist entry:
 
 1. **Bills row maintenance.** If new: `INSERT … ON CONFLICT DO NOTHING` with new `change_hash` and masterlist metadata. If existing-and-changed: `UPDATE bills SET change_hash, title, status, …`. (These writes commit *before* any queue send — see "ordering" below.)
-2. **Keyword matching.** Build `haystack = title + description + number`, test against per-tenant keyword union, compute `newMatchType ∈ { 'keyword', 'manual', null }`. `'manual'` is never demoted by this loop. Upsert `bill_tenants` rows.
+2. **Keyword matching.** Build the match text with `billMatchText` (`shared/keywords.ts`: title + description + number, the same text every instance-side check uses, where `description` is the instance's `abstract`), test against per-tenant keyword union, compute `newMatchType ∈ { 'keyword', 'manual', null }`. `'manual'` is never demoted by this loop. Upsert `bill_tenants` rows.
 3. **Dispatch:**
    - **→ ingestor queue** (will trigger `getBill`): bill IDs that are `justMatched` (newMatchType ≠ prev and ≠ null) OR `alreadyMatchedAndChanged` (existing match + hash changed).
    - **→ ingestor queue, match or no match**: bills whose masterlist entry carries **no title** and whose hash changed (a brand-new row counts as changed). There is nothing to keyword-match against, and `getBill` is the only way to get a real title, description, sponsor, and history — so these go to the ingestor even when no tenant matches them. Self-limiting: the ingestor writes the fresh `change_hash`, so later passes see no delta and don't re-queue.

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
+import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
   billCustomFieldValues,
@@ -158,7 +159,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       // — and a visitor's comment landing the same second — collide, and rowid
       // (insert order) is the intended reading order. This endpoint has no web
       // caller today, but the two must not disagree about comment order.
-      .orderBy(comments.createdAt, sql`comments.rowid`)
+      .orderBy(comments.createdAt, rowidOf(comments))
       .all()
 
     const commentIds = commentRows.map((r) => r.c.id)
