@@ -196,3 +196,35 @@ export function matchesUnion(text: string, keywords: string[]): { matched: boole
 export function matchesKeywords(text: string, keywords: string[]): boolean {
   return matchesUnion(text, keywords).matched
 }
+
+/**
+ * The fields of a bill that keywords are matched against. Takes fields, not a
+ * database row, so central and the instance can each feed it from their own
+ * schema.
+ *
+ * `description` is the provider's bill description. Central stores it as
+ * `bills.description`; the instance stores the same text as `bills.abstract`
+ * (central's /bills route returns it as `abstract: bill.description`), so an
+ * instance caller passes its `abstract` here.
+ */
+export type BillMatchFields = {
+  title: string | null | undefined
+  description: string | null | undefined
+  billNumber: string
+}
+
+/**
+ * THE definition of a bill's keyword match text: title, description, and bill
+ * number, joined by single spaces. Every place that decides whether a bill
+ * matches a keyword list builds its text here — central's sync, seed, and
+ * resync paths, and the instance's save-time preview, resync, demote check,
+ * and queue processor — so an instance's prediction cannot differ from what
+ * central matches.
+ *
+ * The bill number is part of the text so an operator can track a specific bill
+ * ("hb 1019") or a prefix ("hb*"). A missing title or description contributes
+ * empty text; the spaces between fields stay, so a token cannot span two.
+ */
+export function billMatchText({ title, description, billNumber }: BillMatchFields): string {
+  return `${title ?? ''} ${description ?? ''} ${billNumber}`
+}

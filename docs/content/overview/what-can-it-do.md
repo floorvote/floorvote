@@ -17,7 +17,9 @@ Each team gets a private, isolated deployment with its own database, member rost
 
 Point FloorVote at the states you track—and Congress, if federal legislation matters to you—and you get access to every bill introduced there. Some legislatures also publish their own data, which adds details LegiScan doesn't carry. See [State coverage](/contributing/state-coverage) for what exists for each state.
 
-From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title or description matches one of your keywords, FloorVote pulls it out for a closer look—summarizing, tagging, and everything else below—so nobody on your team has to track the whole legislative session by hand.
+From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title, description, or bill number matches one of your keywords, FloorVote pulls it out for a closer look—summarizing, tagging, and everything else below—so nobody on your team has to track the whole legislative session by hand.
+
+As you type, the keywords box shows how many of the bills already in your deployment the set would match, and, once you change it, how many bills saving would newly match or unmatch. Nothing is saved, and no AI runs, until you save.
 
 ## Custom AI summaries, relevance scores, tags
 

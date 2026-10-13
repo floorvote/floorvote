@@ -4,7 +4,7 @@ import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../l
 import { centralFetch } from '../lib/centralFetch'
 import { hearingUid } from '../lib/hearingUid'
 import { billHtmlToText } from '../lib/billText'
-import { matchesKeywords } from '../lib/keywords'
+import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
 import { nowDb } from '../lib/dbTime'
@@ -510,7 +510,7 @@ export async function processCentralNotification(
   // match-everything here would stamp match_type='keyword' on a keyword-less tenant
   // during a forceAI re-queue, and empty keywords are now the documented default.
   const keywordMatch = keywords.length > 0
-    && matchesKeywords(`${centralBill.title} ${centralBill.abstract ?? ''}`, keywords)
+    && matchesKeywords(billMatchText({ title: centralBill.title, description: centralBill.abstract, billNumber: centralBill.number }), keywords)
   // If message carries an explicit matchType (from central), use it.
   // If not (e.g. forceAI re-queue from tenant), preserve whatever is already on the row.
   // Only derive from keyword matching for brand-new bills with no classification yet.
@@ -519,7 +519,7 @@ export async function processCentralNotification(
     : (existing?.matchType ?? (keywordMatch ? 'keyword' : null))
   // F5+B5: gate AI on canonical match_type rather than recomputed keywordMatch.
   // This fixes the case where a manually-promoted bill (match_type='manual')
-  // whose title+abstract doesn't satisfy the tenant's current keywords would
+  // whose match text (title, abstract, bill number) doesn't satisfy the tenant's current keywords would
   // never re-run AI on text changes, freezing its summary at promote-time.
   let shouldRunAi = msg.forceAI || derivedMatchType !== null
   if (shouldRunAi && !hasFullText) {
