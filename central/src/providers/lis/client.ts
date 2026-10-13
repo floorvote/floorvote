@@ -145,21 +145,25 @@ export async function getLisTextList(sessionCode: string, apiKey: string, onRequ
 }
 
 /**
- * The PDF link of one text version, from its by-id answer (`PDFFile[].FileURL`,
- * a public link in the blob store), or null when the version has no PDF. The
- * answer also carries the text as HTML, which isn't used.
+ * The PDF link of one text version, from its by-id answer, or null when the
+ * version has no PDF. The answer lists the text in `TextsList`, an entry with
+ * its file lists (`PDFFile[].FileURL` is a public link in the blob store) and
+ * the text as HTML, which isn't used. The entry read is the one whose
+ * `LegislationTextID` is the id asked for, never just the first.
  *
- * Fails closed on an HTTP error, a body that isn't JSON, an answer with no
- * `PDFFile` array, and a `PDFFile` entry with no `FileURL`.
+ * Fails closed on an HTTP error, a body that isn't JSON, `Success: false`, an
+ * answer with no `TextsList` array, a list with no entry for the id, an entry
+ * with no `PDFFile` array, and a `PDFFile` entry with no `FileURL`.
  */
 export async function getLisTextPdf(textId: number, apiKey: string, onRequest?: () => void): Promise<string | null> {
   const operation = 'getlegislationtextbyidasync'
-  let answer = asObject(await apiGet(operation, `legislationTextID=${encodeURIComponent(String(textId))}`, apiKey, onRequest), operation)
-  // The one text may come wrapped in a list, as the session's list does.
-  if (!('PDFFile' in answer) && Array.isArray(answer.LegislationTextList) && answer.LegislationTextList.length === 1) {
-    answer = asObject(answer.LegislationTextList[0], operation)
-  }
-  const files = answer.PDFFile
+  const answer = asObject(await apiGet(operation, `legislationTextID=${encodeURIComponent(String(textId))}`, apiKey, onRequest), operation)
+  if (answer.Success === false) throw new Error(`LIS ${operation}: ${String(answer.FailureMessage || 'the API reported a failure')}`)
+  const list = answer.TextsList
+  if (!Array.isArray(list)) throw new Error(`LIS ${operation}: the answer has no TextsList`)
+  const entry = list.find(t => typeof t === 'object' && t !== null && (t as { LegislationTextID?: unknown }).LegislationTextID === textId)
+  if (!entry) throw new Error(`LIS ${operation}: TextsList has no entry for text ${textId}`)
+  const files = (entry as { PDFFile?: unknown }).PDFFile
   if (!Array.isArray(files)) throw new Error(`LIS ${operation}: text ${textId} has no PDFFile`)
   const urls = files.map(f => (typeof f === 'object' && f !== null ? (f as { FileURL?: unknown }).FileURL : undefined))
   if (!urls.every(u => typeof u === 'string' && u !== '')) throw new Error(`LIS ${operation}: a PDFFile entry of text ${textId} has no FileURL`)
