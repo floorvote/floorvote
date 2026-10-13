@@ -1728,6 +1728,14 @@ describe('POST /admin/keyword-resync-preview — wildcard keyword', () => {
     expect((await preview(['*'])).wouldAdd).toBe(2)
   })
 
+  it('also counts keyword-matched bills whose analysis never ran, as keyword-resync would queue them, for ["*"]', async () => {
+    await seedBill({ externalId: 'legiscan:wc-5', title: 'Tobacco Amendments', billNumber: 'HB 5', matchType: null })
+    await seedBill({ externalId: 'legiscan:wc-6', title: 'Water Usage Modifications', billNumber: 'HB 6', matchType: 'keyword' })
+
+    expect((await preview(['*'])).wouldAdd).toBe(2)
+    expect((await preview(['water'])).wouldAdd).toBe(0)
+  })
+
   it('matches nothing for those same bills with an ordinary keyword list', async () => {
     await seedBill({ externalId: 'legiscan:wc-3', title: 'Tobacco Amendments', billNumber: 'HB 3', matchType: null })
 

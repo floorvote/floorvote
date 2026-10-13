@@ -44,9 +44,9 @@ describe('a cleared name falls back to the email', () => {
   it('in mention notifications (authorName)', async () => {
     const commentId = await seedComment(billId, clearedId, '<p>Hello</p>')
     await seedCommentMention(commentId, viewerId, { sourceType: 'user', sourceId: viewerId })
-    const body = await (await get('/notifications')).json() as { mentions: Array<{ authorName: string }> }
-    expect(body.mentions).toHaveLength(1)
-    expect(body.mentions[0].authorName).toBe(CLEARED_EMAIL)
+    const body = await (await get('/notifications')).json() as { notifications: Array<{ authorName: string }> }
+    expect(body.notifications).toHaveLength(1)
+    expect(body.notifications[0].authorName).toBe(CLEARED_EMAIL)
   })
 
   it('in comment authors on bill detail and the comments list', async () => {

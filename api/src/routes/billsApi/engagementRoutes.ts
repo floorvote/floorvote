@@ -2,11 +2,14 @@ import { Hono } from 'hono'
 import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
+import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
   billCustomFieldValues,
 } from '../../db/schema'
-import { extractAndNotifyMentions, stripHtml } from '../../lib/mentions'
+import { extractAndNotifyMentions } from '../../lib/mentions'
+import { notifyParticipantsOfReply } from '../../lib/replies'
+import { stripHtml } from '../../lib/stripHtml'
 import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../../shared/feedUtils'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
 import type { AppEnv } from '../../types'
@@ -157,7 +160,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       // — and a visitor's comment landing the same second — collide, and rowid
       // (insert order) is the intended reading order. This endpoint has no web
       // caller today, but the two must not disagree about comment order.
-      .orderBy(comments.createdAt, sql`comments.rowid`)
+      .orderBy(comments.createdAt, rowidOf(comments))
       .all()
 
     const commentIds = commentRows.map((r) => r.c.id)
@@ -235,6 +238,9 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     })
 
     const mentionedUserIds = await extractAndNotifyMentions(commentId, content, currentUser.id, currentUser.role, id, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
+    // Everyone else who has commented here hears about it too, except the people
+    // this comment mentions (they got the mention).
+    await notifyParticipantsOfReply({ id: commentId, html: content, createdAt: now }, currentUser.id, id, mentionedUserIds, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
 
     await db.insert(feedEvents).values({
       id: crypto.randomUUID(),
