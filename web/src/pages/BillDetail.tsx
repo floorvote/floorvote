@@ -46,7 +46,7 @@ import { CommentContent } from '../components/CommentContent'
 import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFieldsSection'
 import { useDemo } from '../context/DemoContext'
 import { useNotifications } from '../context/NotificationsContext'
-import { markMentionsRead } from '../lib/demoReadState'
+import { markNotificationsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
@@ -729,7 +729,7 @@ export function BillDetail() {
   }, [resetDraftNumberGate, resetDraftStateGate])
 
   const refreshSidebar = useSidebarRefresh()
-  const { refresh: refreshNotifications, mentions } = useNotifications()
+  const { refresh: refreshNotifications, notifications } = useNotifications()
   const billRef = useRef<BillDetailData | null>(null)
 
   const applyBillData = useCallback((data: BillDetailData) => {
@@ -830,21 +830,21 @@ export function BillDetail() {
   }, [location.hash, bill?.id])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
-  // of the response, NotificationsContext.tsx), so depending on `mentions` itself
+  // of the response, NotificationsContext.tsx), so depending on `notifications` itself
   // would make the effect below retrigger its own refresh in a loop — POST →
   // refresh() → new array identity → effect fires again → POST → ... forever,
   // for as long as the page stays open. Joining the ids means the effect only
-  // reruns when this bill's mention set actually changes. The effect below reads
-  // the ids back out of this string rather than re-deriving them from `mentions`,
-  // so `mentions` is not one of its dependencies at all — which is what keeps the
-  // dependency array exhaustive instead of needing a lint suppression. Mention ids
+  // reruns when this bill's notification set actually changes. The effect below reads
+  // the ids back out of this string rather than re-deriving them from `notifications`,
+  // so `notifications` is not one of its dependencies at all — which is what keeps the
+  // dependency array exhaustive instead of needing a lint suppression. Notification ids
   // are uuids (or the demo seed's `lm-m-*`), so none of them contains a comma.
-  const billMentionIds = useMemo(
-    () => mentions.filter(m => m.billId === bill?.id).map(m => m.id).sort().join(','),
-    [mentions, bill?.id],
+  const billNotificationIds = useMemo(
+    () => notifications.filter(n => n.billId === bill?.id).map(n => n.id).sort().join(','),
+    [notifications, bill?.id],
   )
 
-  // Mark all mention notifications for this bill as read when the page loads.
+  // Mark all of this bill's notifications as read when the page loads.
   // On a demo this is browser-local — the shared demo-user row and the reset cron
   // make the server's read_at useless there. See lib/demoReadState.ts.
   //
@@ -855,14 +855,14 @@ export function BillDetail() {
   useEffect(() => {
     if (!bill?.id || !demoSettled) return
     if (demoMode) {
-      markMentionsRead(billMentionIds ? billMentionIds.split(',') : [], demoResetAt)
+      markNotificationsRead(billNotificationIds ? billNotificationIds.split(',') : [], demoResetAt)
       void refreshNotifications()
       return
     }
     apiFetch(`/notifications/mark-read-by-bill/${bill.id}`, { method: 'POST' })
       .then(() => refreshNotifications())
       .catch(() => {})
-  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billMentionIds, demoResetAt])
+  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billNotificationIds, demoResetAt])
 
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/config/custom-fields')

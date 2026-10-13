@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { NotificationsSlideOver } from './NotificationsSlideOver'
 import { NotificationsProvider } from '../context/NotificationsContext'
-import { markMentionsRead } from '../lib/demoReadState'
+import { markNotificationsRead } from '../lib/demoReadState'
 import { MENTION_STYLE } from '../../../shared/mentionStyle'
 
 // Mutable flag so individual tests can opt into demoLocked without a
@@ -38,9 +38,10 @@ vi.mock('../lib/api', () => ({
       if (gate.hold && nth >= gate.holdFrom) await gate.hold
       return {
         unreadCount: 1,
-        mentions: [
+        notifications: [
           ...(gate.lateRow && nth >= 2 ? [gate.lateRow] : []),
           {
+            kind: 'mention',
             id: 'm1',
             commentId: 'c1',
             billId: 'b1',
@@ -61,6 +62,7 @@ vi.mock('../lib/api', () => ({
           // in its attribution line — the common case, and the reason the body
           // can't have a leading pill stripped out of it (see the describe below).
           {
+            kind: 'mention',
             id: 'm2',
             commentId: 'c2',
             billId: 'b2',
@@ -263,6 +265,7 @@ describe('NotificationsSlideOver instant open', () => {
   // between is marked read, and its badge cleared, having never shown its rail.
   it('pulls in a mention that arrived since the last poll before marking read', async () => {
     gate.lateRow = {
+      kind: 'mention',
       id: 'm3',
       commentId: 'c3',
       billId: 'b3',
@@ -292,6 +295,7 @@ describe('NotificationsSlideOver instant open', () => {
 
   it('marks read exactly once per open, despite reconciling back into the snapshot', async () => {
     gate.lateRow = {
+      kind: 'mention',
       id: 'm3',
       commentId: 'c3',
       billId: 'b3',
@@ -381,8 +385,8 @@ describe('NotificationsSlideOver demo read state', () => {
     await new Promise(r => setTimeout(r, 50))
 
     expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
-    const { readMentionIds } = await import('../lib/demoReadState')
-    expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set())
+    const { readNotificationIds } = await import('../lib/demoReadState')
+    expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set())
   })
 
   // Guards the trap this replaced: the previous version of this test set
@@ -404,8 +408,8 @@ describe('NotificationsSlideOver demo read state', () => {
     vi.mocked(apiFetch).mockClear()
     renderPanel()
     await screen.findByText('@Board')
-    const { readMentionIds } = await import('../lib/demoReadState')
-    await waitFor(() => expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
+    const { readNotificationIds } = await import('../lib/demoReadState')
+    await waitFor(() => expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
     expect(apiFetch).not.toHaveBeenCalledWith('/notifications/mark-read', expect.anything())
   })
 
@@ -414,7 +418,7 @@ describe('NotificationsSlideOver demo read state', () => {
   // a day for mentions this browser has already read.
   it('treats a locally-read mention as read even when the server says unread', async () => {
     demoState.demoMode = true
-    markMentionsRead(['m1'], demoState.demoResetAt)
+    markNotificationsRead(['m1'], demoState.demoResetAt)
     renderPanel()
     const row = (await screen.findByText('@Board')).closest('a') as HTMLElement
     expect(row.style.borderLeft).toContain('transparent')

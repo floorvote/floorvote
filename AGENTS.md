@@ -130,6 +130,8 @@ Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-le
 
 **Always add new migration files — never edit existing ones.**
 
+**Keep `;` out of SQL comments in `api/migrations/`.** The api test helper (`parseMigration` in `api/test/helpers.ts`) splits a file on `;` before it strips comments, so the words after the semicolon run as SQL. Every test that calls `applyMigrations()` then fails with a syntax error that points at the prose, not the cause. A period or an em dash does the same job.
+
 **Numbers and names a downstream fork owns.** Open-City-Advocates' fork applied its own migrations in production, and moving it onto upstream depends on these staying free (`docs/internal/fork-upgrade.md`):
 
 - Central 0022, 0023, and 0024 and tenant 0071, 0072, and 0074 are reserved forever. Skip them.
@@ -175,6 +177,23 @@ git config core.hooksPath .githooks
 
 It warns rather than adding the trailer, and that is deliberate. The sign-off is your own certification under the [DCO](DCO) that you have the right to submit the work under the project's license — a hook that supplies it for you turns a real attestation into something tooling stamps automatically. Sign with `git commit -s`, or `git commit --amend -s` after the fact.
 
+### Fast checks
+
+While iterating, run the narrow check for the package you're in. CI runs the full lint and test jobs (`.github/workflows/ci.yml`).
+
+```bash
+# Typecheck, one per package (the same commands CI runs)
+cd api && npx tsc --noEmit -p tsconfig.build.json
+cd central && npx tsc --noEmit -p tsconfig.build.json
+cd web && npx tsc --noEmit
+
+# One test file, from its package directory
+npx vitest run <file>
+
+# The scripts project, from the repo root (also `npm run test:scripts`)
+npx vitest run --project scripts
+```
+
 ### Styling
 
 Inline `style={{}}` backed by design tokens from `web/src/styles/tokens.ts` (`color`, `radius`, `fontSize`, `fontWeight`, `shadow`). ESLint blocks raw hex colors and raw `borderRadius`/`fontSize`/`fontWeight` values. Spacing (padding, margin, gap) is intentionally NOT tokenized — use raw numbers.
@@ -196,7 +215,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 1. Import colors/radii/font sizes from `web/src/styles/tokens.ts`. Spacing is raw numbers.
 2. Register Material Symbols icons in `icon_names=` in `web/index.html` before use.
 3. Never edit existing migration files — create new ones.
-4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`.
+4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`, which the guard in `scripts/verify-timestamp-writes.ts` honors (see `docs/internal/dates.md`).
 5. Relevance scores are 1–10, not 0–100.
 6. Tenants never call legislative APIs directly — all data flows through central.
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.

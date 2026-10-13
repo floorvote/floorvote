@@ -5,7 +5,7 @@ import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts,
-  billCustomFieldValues, calendarEventBills,
+  billCustomFieldValues, calendarEventBills, notifications,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -48,6 +48,9 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       db.delete(memberVotes).where(eq(memberVotes.billId, id)),
       db.delete(notes).where(eq(notes.billId, id)),
       db.delete(billTexts).where(eq(billTexts.billId, id)),
+      // calendar_event_bills has no FK, so these rows would orphan on the dead draft id.
+      // The calendar events themselves stay, as does their link to any other bill.
+      db.delete(calendarEventBills).where(eq(calendarEventBills.billId, id)),
       db.delete(bills).where(eq(bills.id, id)),
     ])
     return new Response(null, { status: 204 })
@@ -163,6 +166,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     // Heterogeneous update/delete queries collected for db.batch(); type as the element array.
     const ops: Parameters<typeof db.batch>[0][number][] = []
     ops.push(db.update(comments).set({ billId: filedBillId }).where(eq(comments.billId, draftId)))
+    // Notifications name their bill and cascade-delete with it, so they follow their comments.
+    ops.push(db.update(notifications).set({ billId: filedBillId }).where(eq(notifications.billId, draftId)))
     if (filedHasPosition) {
       ops.push(db.delete(officialPositions).where(eq(officialPositions.billId, draftId)))
     } else {

@@ -61,20 +61,20 @@ function accountEventLabel(e: AccountAuthEvent, selfId: string): string {
 
 export function Profile() {
   usePageTitle('Account')
-  const { user, setSubtitle, setName, setEmailDigestEnabled } = useAuth()
+  const { user, setSubtitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled } = useAuth()
   const { demoLocked } = useDemo()
   const { config } = useConfig()
   const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
   const adminOffNote = `Turned off by your ${orgNoun}.`
 
-  // Deep-link from the email footers: #setting-email-digest / #setting-week-ahead
-  // scrolls the matching toggle into view and amber-flashes it (~1.5s), the same
+  // Deep-link from the email footers: #setting-email-replies / #setting-email-digest /
+  // #setting-week-ahead scrolls the matching toggle into view and amber-flashes it (~1.5s), the same
   // pattern BillDetail uses for #section-* / #comment- anchors.
   const location = useLocation()
   const [flashedSetting, setFlashedSetting] = useState<string | null>(null)
   useEffect(() => {
     const id = location.hash.slice(1)
-    if (id !== 'setting-email-digest' && id !== 'setting-week-ahead') return
+    if (id !== 'setting-email-replies' && id !== 'setting-email-digest' && id !== 'setting-week-ahead') return
     const el = document.getElementById(id)
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -128,6 +128,16 @@ export function Profile() {
     setDigestEnabled(user?.emailDigestEnabled ?? true)
   }, [user?.emailDigestEnabled])
 
+  // Reply emails are a per-member switch only: the instance's "Conversation
+  // emails" switch lives on the admin page, and the in-app replies stay on
+  // whatever this says.
+  const [repliesEnabled, setRepliesEnabled] = useState<boolean>(() => user?.emailRepliesEnabled ?? true)
+  const [repliesSaving, setRepliesSaving] = useState(false)
+
+  useEffect(() => {
+    setRepliesEnabled(user?.emailRepliesEnabled ?? true)
+  }, [user?.emailRepliesEnabled])
+
   const [weekAheadEnabled, setWeekAheadEnabled] = useState<boolean>(() => user?.emailWeekAheadEnabled ?? true)
   const [weekAheadSaving, setWeekAheadSaving] = useState(false)
 
@@ -151,6 +161,24 @@ export function Profile() {
       setDigestEnabled(!next)
     } finally {
       setDigestSaving(false)
+    }
+  }
+
+  async function toggleReplies() {
+    if (demoLocked || repliesSaving) return
+    const next = !repliesEnabled
+    setRepliesEnabled(next)
+    setRepliesSaving(true)
+    try {
+      await apiFetch('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ emailRepliesEnabled: next }),
+      })
+      setEmailRepliesEnabled(next)
+    } catch {
+      setRepliesEnabled(!next)
+    } finally {
+      setRepliesSaving(false)
     }
   }
 
@@ -496,10 +524,75 @@ export function Profile() {
         </div>
       </div>
 
-      {/* Preferences card */}
+      {/* Email card: one section for every email a member can control, plus the always-sent line */}
       <div style={SECTION_CARD}>
-        <h2 style={CARD_TITLE}>Preferences</h2>
+        <h2 style={CARD_TITLE}>Your Email</h2>
+        <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
+          You'll always get an email when someone mentions you, your role, or @everyone.
+        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div
+            id="setting-email-replies"
+            style={{
+              padding: '12px 14px',
+              border: `1px solid ${color.borderDefault}`,
+              borderRadius: radius.lg,
+              background: color.white,
+              opacity: demoLocked ? 0.55 : 1,
+              boxShadow: flashedSetting === 'setting-email-replies' ? `0 0 0 3px ${color.borderAmber}` : undefined,
+              transition: 'box-shadow 0.6s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+                <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Replies on bills you've commented on</div>
+                <div>Email me when someone else comments on a bill I've commented on. Replies still appear in your notifications.</div>
+              </div>
+              <label
+                style={{
+                  position: 'relative',
+                  display: 'inline-block',
+                  width: 38,
+                  height: 22,
+                  flexShrink: 0,
+                  cursor: demoLocked ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Toggle Replies on bills you've commented on"
+                  checked={repliesEnabled}
+                  disabled={repliesSaving || demoLocked}
+                  onChange={toggleReplies}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: repliesEnabled ? color.accentBlue : color.borderStrong,
+                    borderRadius: radius.pill,
+                    transition: 'background 0.18s ease',
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 2,
+                    left: repliesEnabled ? 18 : 2,
+                    width: 18,
+                    height: 18,
+                    background: color.white,
+                    borderRadius: '50%',
+                    transition: 'left 0.18s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
           <div
             id="setting-email-digest"
             style={{
