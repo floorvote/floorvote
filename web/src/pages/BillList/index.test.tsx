@@ -928,7 +928,7 @@ describe('BillList active filter chips — custom fields', () => {
 describe('BillList bulk selection — custom-field filters', () => {
   async function renderWithSelection(initial: string) {
     customFieldsState.response = [
-      { id: 'cf-stage', name: 'Stage', slug: 'stage', type: 'dropdown', options: ['Early', 'Late'], displayOrder: 1 },
+      { id: 'cf-phase', name: 'Phase', slug: 'phase', type: 'dropdown', options: ['Early', 'Late'], displayOrder: 1 },
     ]
     render(
       <MemoryRouter initialEntries={[initial]}>
@@ -947,21 +947,21 @@ describe('BillList bulk selection — custom-field filters', () => {
 
   it('adding a cf_ filter clears the selection', async () => {
     await renderWithSelection('/bills')
-    fireEvent.click((await screen.findAllByRole('button', { name: /Stage/ }))[0])
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Early'))
     await selectionGone()
   })
 
   it('changing a cf_ filter clears the selection', async () => {
-    await renderWithSelection('/bills?cf_stage=Early')
-    fireEvent.click((await screen.findAllByRole('button', { name: /Stage/ }))[0])
+    await renderWithSelection('/bills?cf_phase=Early')
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Late'))
     await selectionGone()
   })
 
   it('removing a cf_ filter clears the selection', async () => {
-    await renderWithSelection('/bills?cf_stage=Early')
-    fireEvent.click((await screen.findAllByRole('button', { name: /Stage/ }))[0])
+    await renderWithSelection('/bills?cf_phase=Early')
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
     fireEvent.click(await screen.findByText('Early'))
     await selectionGone()
   })
