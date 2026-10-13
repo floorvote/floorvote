@@ -10,6 +10,7 @@ import { sendEmail, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
 import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
+import { renderReplyEmail } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
 
 export const SAMPLE_ASSOC_NAME = 'Rhode Island Association of Local Election Officials'
@@ -68,7 +69,7 @@ export const SAMPLE_INVITE_BOUNCES: BouncedAddress[] = [
   { email: 'casey.morgan@example.org', reason: '552 5.2.2 The email account that you tried to reach is over quota' },
 ]
 
-export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention' | 'invite-bounced'
+export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention' | 'reply' | 'invite-bounced'
 
 export function isSampleEmailType(t: string): t is SampleEmailType {
   return (ALL_SAMPLE_EMAIL_TYPES as string[]).includes(t)
@@ -122,6 +123,17 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
           via: 'user',
         }),
       }
+    case 'reply':
+      return {
+        subject: '[Sample] New comment',
+        html: renderReplyEmail({
+          appUrl,
+          instanceName: SAMPLE_ASSOC_NAME,
+          author: { name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston' },
+          bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
+          comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>I read the amended text. Section two still lets a clerk waive the ID check, so I don\'t think we need to oppose it after all.</p>' },
+        }),
+      }
     case 'invite-bounced': {
       const { subject, html } = renderInviteBounceEmail({ appUrl, instanceName: SAMPLE_ASSOC_NAME, bounces: SAMPLE_INVITE_BOUNCES })
       return { subject: `[Sample] ${subject}`, html }
@@ -137,4 +149,4 @@ export async function sendSampleEmail(env: Env, db: AppDb, to: string, type: Sam
 }
 
 /** Every sample email type — drives the conformance test's iteration. */
-export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention', 'invite-bounced']
+export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention', 'reply', 'invite-bounced']

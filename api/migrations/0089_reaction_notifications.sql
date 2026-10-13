@@ -1,0 +1,12 @@
+-- Reaction notifications (#356, part of #351). Reacting to someone else's
+-- comment notifies the comment's author with a notification of kind 'reaction'.
+-- It is in the app only and never emailed. data holds the emoji as {"emoji": ...}.
+--
+-- A reaction is unique per comment, reactor (actor_id), and emoji. Removing a
+-- reaction deletes the comment_reactions row but leaves the notification, so
+-- adding the same reaction back finds this index and writes nothing new.
+-- kind has no CHECK (0085), so no rebuild.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+CREATE UNIQUE INDEX idx_notifications_reaction_unique ON notifications(comment_id, actor_id, json_extract(data, '$.emoji')) WHERE kind = 'reaction';

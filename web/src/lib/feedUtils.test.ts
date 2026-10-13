@@ -10,15 +10,15 @@ const originalTz = process.env.TZ
 beforeAll(() => { process.env.TZ = 'America/New_York' })
 afterAll(() => { process.env.TZ = originalTz })
 
-function makeEvent(overrides: Partial<FeedEvent> & { billId: string; createdAt: string }): FeedEvent {
+function makeEvent(overrides: Partial<FeedEvent> & { billId: string | null; createdAt: string }): FeedEvent {
   return {
     id: overrides.id ?? `evt-${Math.random()}`,
     type: overrides.type ?? 'bill_added',
     billId: overrides.billId,
-    billNumber: overrides.billNumber ?? 'HB 1',
-    billSessionSlug: overrides.billSessionSlug ?? '2026',
-    billState: overrides.billState ?? 'RI',
-    billTitle: overrides.billTitle ?? 'Test Bill',
+    billNumber: overrides.billNumber ?? (overrides.billId === null ? '' : 'HB 1'),
+    billSessionSlug: overrides.billSessionSlug ?? (overrides.billId === null ? null : '2026'),
+    billState: overrides.billState ?? (overrides.billId === null ? null : 'RI'),
+    billTitle: overrides.billTitle ?? (overrides.billId === null ? '' : 'Test Bill'),
     billSummary: overrides.billSummary ?? null,
     billPriority: overrides.billPriority ?? null,
     billMatchType: overrides.billMatchType ?? null,
@@ -100,6 +100,41 @@ describe('groupEventsByBillAndDay', () => {
     const events = [makeEvent({ billId: 'b1', createdAt: '2026-06-08 00:30:00' })]
     const groups = groupEventsByBillAndDay(events)
     expect(groups[0].date).toBe('2026-06-07')
+  })
+})
+
+// A bill-less event (a bulk edit) belongs to no bill, so it can't share a group
+// with anything: each one is its own group, rendered as its own activity row.
+describe('groupEventsByBillAndDay with bill-less events', () => {
+  const billless = (id: string, createdAt: string) =>
+    makeEvent({ id, billId: null, type: 'priority_set', createdAt, metadata: { priority: 'high', count: 11, billIds: ['b1'] } })
+
+  it('gives each bill-less event its own group, never merging two on the same day', () => {
+    const groups = groupEventsByBillAndDay([
+      billless('e1', '2026-04-20T10:00:00Z'),
+      billless('e2', '2026-04-20T11:00:00Z'),
+    ])
+    expect(groups).toHaveLength(2)
+    expect(groups.every((g) => g.billId === null && g.events.length === 1)).toBe(true)
+    expect(new Set(groups.map((g) => g.key)).size).toBe(2)
+  })
+
+  it('orders them among per-bill groups by time, and keeps per-bill grouping intact', () => {
+    const groups = groupEventsByBillAndDay([
+      makeEvent({ id: 'a1', billId: 'b1', createdAt: '2026-04-20T09:00:00Z' }),
+      billless('bulk', '2026-04-20T10:00:00Z'),
+      makeEvent({ id: 'a2', billId: 'b1', createdAt: '2026-04-20T08:00:00Z' }),
+      makeEvent({ id: 'c1', billId: 'b2', createdAt: '2026-04-20T11:00:00Z' }),
+    ])
+    expect(groups.map((g) => g.events.map((e) => e.id))).toEqual([['c1'], ['bulk'], ['a1', 'a2']])
+  })
+
+  it('does not merge a bill-less event into a bill whose id it names', () => {
+    const groups = groupEventsByBillAndDay([
+      makeEvent({ id: 'a1', billId: 'b1', createdAt: '2026-04-20T09:00:00Z' }),
+      billless('bulk', '2026-04-20T10:00:00Z'),
+    ])
+    expect(groups.find((g) => g.billId === 'b1')!.events.map((e) => e.id)).toEqual(['a1'])
   })
 })
 
@@ -251,6 +286,21 @@ describe('filterFullyAnalyzed', () => {
 
   it('handles empty input', () => {
     expect(filterFullyAnalyzed([])).toHaveLength(0)
+  })
+})
+
+describe('filters with bill-less events', () => {
+  const group = (type: FeedEvent['type']) => groupEventsByBillAndDay([
+    makeEvent({ billId: null, type, createdAt: '2026-04-20T10:00:00Z' }),
+  ])
+
+  it('filterPriorityEvents keeps a bill-less engagement event and drops a bill-less passive one', () => {
+    expect(filterPriorityEvents(group('priority_set'))).toHaveLength(1)
+    expect(filterPriorityEvents(group('bill_matched'))).toHaveLength(0)
+  })
+
+  it('filterFullyAnalyzed keeps a bill-less event, which has no bill to be unanalyzed', () => {
+    expect(filterFullyAnalyzed(group('priority_set'))).toHaveLength(1)
   })
 })
 

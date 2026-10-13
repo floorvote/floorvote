@@ -3,7 +3,10 @@ import { dbTsToEpoch, dbTsToLocalDay } from './time'
 export type FeedEvent = {
   id: string
   type: 'bill_added' | 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' | 'bill_matched'
-  billId: string
+  // Null for an event about no single bill, such as a bulk edit. Then the bill*
+  // fields below are empty or null, and `metadata` says what the event is about
+  // (a bulk edit lists its bills as metadata.billIds).
+  billId: string | null
   billNumber: string
   billSessionSlug: string | null
   billState: string | null
@@ -23,8 +26,9 @@ export type FeedEvent = {
 }
 
 export type GroupedBillEvents = {
-  key: string          // `${billId}::${date}`
-  billId: string
+  key: string          // `${billId}::${date}`, or `event:${eventId}::${date}` for a bill-less event
+  // Null for a bill-less event, which is always a group of exactly that one event.
+  billId: string | null
   billNumber: string
   billTitle: string
   billSessionSlug: string | null
@@ -41,7 +45,8 @@ export function groupEventsByBillAndDay(events: FeedEvent[]): GroupedBillEvents[
   const map = new Map<string, GroupedBillEvents>()
   for (const e of events) {
     const date = dbTsToLocalDay(e.createdAt)
-    const key = `${e.billId}::${date}`
+    // A bill-less event has no bill to share a group with, so it is its own group.
+    const key = `${e.billId ?? `event:${e.id}`}::${date}`
     if (!map.has(key)) {
       map.set(key, {
         key, billId: e.billId, billNumber: e.billNumber,
@@ -97,8 +102,9 @@ export function filterPriorityEvents(groups: GroupedBillEvents[]): GroupedBillEv
   )
 }
 
+// A bill-less group has no bill whose analysis could be missing, so it stays.
 export function filterFullyAnalyzed(groups: GroupedBillEvents[]): GroupedBillEvents[] {
-  return groups.filter(group => group.billMatchType !== null)
+  return groups.filter(group => group.billId === null || group.billMatchType !== null)
 }
 
 export function formatBillUpdateDetail(record: ChangeRecord): string {

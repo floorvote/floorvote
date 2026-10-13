@@ -38,7 +38,7 @@ describe('GET /notifications — billIsDraft', () => {
       headers: { Cookie: `session=${recipientToken}` },
     })
     expect(res.status).toBe(200)
-    return (await res.json() as { mentions: Array<Record<string, unknown>> }).mentions
+    return (await res.json() as { notifications: Array<Record<string, unknown>> }).notifications
   }
 
   it('emits billIsDraft: true for a mention on a draft bill', async () => {
