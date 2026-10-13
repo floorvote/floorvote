@@ -173,6 +173,7 @@ export const requireOwner = createMiddleware<{
 export const DEMO_WRITE_ALLOWLIST: ReadonlySet<string> = new Set([
   'POST /api/auth/demo-login',              // the auto-login path itself
   'PUT /api/admin/config',                  // self-limits to modules-only (see adminApi.ts)
+  'POST /api/admin/keyword-match-summary',  // read-only count; a POST only so the keyword list fits in the body
 
   // Additive member actions — a visitor doing these is the demo working.
   'POST /api/bills/:id/comments',

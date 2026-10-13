@@ -2,8 +2,9 @@ import { Hono } from 'hono'
 import { and, eq, sql, isNull } from 'drizzle-orm'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
-import { comments, commentReactions, commentMentions, feedEvents } from '../db/schema'
-import { extractAndNotifyMentions } from '../lib/mentions'
+import { comments, commentReactions, feedEvents } from '../db/schema'
+import { syncMentionsOnEdit } from '../lib/mentions'
+import { notifyAuthorOfReaction } from '../lib/reactions'
 import { sanitizeCommentHtml } from '../lib/sanitizeHtml'
 import { nowDb } from '../lib/dbTime'
 import { isReactionEmoji } from '../../../shared/reactionEmojis'
@@ -50,8 +51,9 @@ commentsApiRouter.patch('/:id', async (c) => {
 
   await db.update(comments).set({ content }).where(eq(comments.id, id))
 
-  await db.delete(commentMentions).where(eq(commentMentions.commentId, id))
-  const mentionedUserIds = await extractAndNotifyMentions(id, content, currentUser.id, currentUser.role, comment.billId, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
+  // Diff against the existing mention records rather than rebuilding them, so a
+  // typo fix doesn't re-email everyone or reset their read state.
+  const mentionedUserIds = await syncMentionsOnEdit(id, comment.content, content, currentUser.id, currentUser.role, comment.billId, c.env, c.executionCtx.waitUntil.bind(c.executionCtx))
 
   // The feed renders a snapshot of the comment taken at creation (metadata.preview),
   // not a join back to `comments` — so without this the edit is invisible on the
@@ -116,7 +118,7 @@ commentsApiRouter.post('/:id/reactions', async (c) => {
     return c.json({ error: 'emoji must be one of the offered reactions' }, 400)
   }
 
-  const comment = await db.select({ id: comments.id }).from(comments).where(
+  const comment = await db.select({ id: comments.id, billId: comments.billId, userId: comments.userId }).from(comments).where(
     and(eq(comments.id, commentId), isNull(comments.deletedAt))
   ).get()
   if (!comment) return c.json({ error: 'not found' }, 404)
@@ -130,6 +132,10 @@ commentsApiRouter.post('/:id/reactions', async (c) => {
       createdAt: nowDb(),
     })
     .onConflictDoNothing()
+
+  // Always attempted: the notification outlives the reaction, so a re-add is
+  // already recorded and the unique index turns this into a no-op.
+  await notifyAuthorOfReaction(db, comment, currentUser.id, body.emoji)
 
   return c.json({ ok: true })
 })

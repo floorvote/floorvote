@@ -1,11 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch } from '../lib/api'
 import { useDemo } from './DemoContext'
-import { isUnreadForDemo, readMentionIds } from '../lib/demoReadState'
+import { isUnreadForDemo, readNotificationIds } from '../lib/demoReadState'
 
 // Lives here rather than in NotificationsSlideOver because the context now owns
 // the data. The panel imports it back; the reverse would be a cycle.
-export type Mention = {
+//
+// GET /notifications returns one row per notification, discriminated on `kind`
+// (api/src/lib/notifications.ts). Mentions, replies, and reactions so far. A new
+// kind adds a member to the NotificationItem union and a renderer in the panel.
+type NotificationBase = {
   id: string
   commentId: string
   billId: string
@@ -17,55 +21,82 @@ export type Mention = {
    *  "filed" — a silent solid badge — instead of failing to typecheck. */
   billIsDraft: boolean
   sessionSlug: string | null
-  authorName: string
-  authorSubtitle: string | null
   commentPreview: string
   commentHtml: string
-  sourceType: 'user' | 'role' | 'everyone'
-  sourceLabel: string | null
   createdAt: string
   isUnread: boolean
 }
 
+/** Mentions and replies are someone else's comment, so they name its author. */
+type AuthoredNotification = NotificationBase & {
+  authorName: string
+  authorSubtitle: string | null
+}
+
+export type MentionNotification = AuthoredNotification & {
+  kind: 'mention'
+  sourceType: 'user' | 'role' | 'everyone'
+  sourceLabel: string | null
+}
+
+/** Someone else commented on a bill the member has commented on. */
+export type ReplyNotification = AuthoredNotification & {
+  kind: 'reply'
+}
+
+/**
+ * Someone reacted to the member's own comment. The server collapses a comment's
+ * reactions into this one row, whose `id` stays the same as reactions arrive.
+ * `isUnread` is true if any is. The comment shown is the member's.
+ */
+export type ReactionNotification = NotificationBase & {
+  kind: 'reaction'
+  /** The newest reactors (up to two), each once. */
+  reactors: Array<{ id: string; name: string | null }>
+  reactorCount: number
+}
+
+export type NotificationItem = MentionNotification | ReplyNotification | ReactionNotification
+
 type NotificationsContextType = {
   unreadCount: number
-  mentions: Mention[]
-  /** False until the first fetch settles. Distinguishes "no mentions" from
+  notifications: NotificationItem[]
+  /** False until the first fetch settles. Distinguishes "no notifications" from
    *  "not asked yet", which is the only case the panel still shows a spinner for. */
   loaded: boolean
   /** Refetches, and hands back the rows it just stored. The return value exists
    *  for callers that must act on the fresh list in the same turn — reading
-   *  `mentions` after awaiting this would still see the pre-refresh render's
+   *  `notifications` after awaiting this would still see the pre-refresh render's
    *  array. Empty on a failed fetch, which every caller treats as "nothing new". */
-  refresh: () => Promise<Mention[]>
+  refresh: () => Promise<NotificationItem[]>
 }
 
 const NotificationsContext = createContext<NotificationsContextType>({
   unreadCount: 0,
-  mentions: [],
+  notifications: [],
   loaded: false,
   refresh: async () => [],
 })
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)
-  const [mentions, setMentions] = useState<Mention[]>([])
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [loaded, setLoaded] = useState(false)
 
   // GET /notifications returns the badge count and the rows together. Keeping both
   // is what lets the panel open without a request of its own — this poll is already
   // paid for, and the panel used to refetch exactly this payload on every open.
   const refresh = useCallback(async () => {
-    let fresh: Mention[] = []
+    let fresh: NotificationItem[] = []
     try {
-      const data = await apiFetch<{ unreadCount: number; mentions: Mention[] }>('/notifications')
+      const data = await apiFetch<{ unreadCount: number; notifications: NotificationItem[] }>('/notifications')
       setUnreadCount(data.unreadCount)
-      // The server always sends `mentions` alongside `unreadCount` (api/src/routes/
-      // notificationsApi.ts), but effectiveUnread below now calls .filter on this
-      // during the provider's own render — a malformed 200 with no `mentions` would
-      // otherwise white-screen the whole app rather than just degrade the badge.
-      fresh = data.mentions ?? []
-      setMentions(fresh)
+      // The server always sends `notifications` alongside `unreadCount` (api/src/lib/
+      // notifications.ts), but effectiveUnread below now calls .filter on this
+      // during the provider's own render — a malformed 200 with no `notifications`
+      // would otherwise white-screen the whole app rather than just degrade the badge.
+      fresh = data.notifications ?? []
+      setNotifications(fresh)
     } catch {}
     // Set even on failure, so a tenant with a flaky /notifications shows the empty
     // state rather than spinning forever.
@@ -100,17 +131,17 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     // predicate the panel paints its blue rails with, so the bell's number is
     // exactly the number of rails the panel would draw.
     //
-    // readMentionIds() is hoisted out of the filter callback: it round-trips
+    // readNotificationIds() is hoisted out of the filter callback: it round-trips
     // through localStorage.getItem + JSON.parse, so calling it once per render
-    // instead of once per mention matters once the list is not tiny.
-    const alreadyRead = readMentionIds(demoResetAt)
-    effectiveUnread = mentions.filter(m => isUnreadForDemo(m, alreadyRead)).length
+    // instead of once per notification matters once the list is not tiny.
+    const alreadyRead = readNotificationIds(demoResetAt)
+    effectiveUnread = notifications.filter(n => isUnreadForDemo(n, alreadyRead)).length
   } else if (demoSettled) {
     effectiveUnread = unreadCount
   }
 
   return (
-    <NotificationsContext value={{ unreadCount: effectiveUnread, mentions, loaded, refresh }}>
+    <NotificationsContext value={{ unreadCount: effectiveUnread, notifications, loaded, refresh }}>
       {children}
     </NotificationsContext>
   )

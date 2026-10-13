@@ -18,6 +18,7 @@ api/src/lib/mentions.ts       renderMentionEmail()
 api/src/lib/emailChangeEmail.ts
                               renderEmailChangeConfirmEmail() (to the new address) +
                               renderEmailChangeNoticeEmail() (account-security notices to the old address)
+api/src/lib/replies.ts        renderReplyEmail() (sets only In-Reply-To and References, never Message-ID)
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
 api/src/lib/email.ts          renderMagicLinkEmail() (login/invite) + sendEmail/sendMagicLink/sendFeedback

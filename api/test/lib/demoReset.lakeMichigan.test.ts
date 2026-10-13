@@ -48,7 +48,7 @@ describe('runDemoReset with the lake-michigan seed', () => {
     await runDemoReset(env.DB, seed)
     expect(await count('comments')).toBe(seed.comments.length)
     expect(await count('comment_reactions')).toBe(seed.reactions.length)
-    expect(await count('comment_mentions')).toBe(seed.mentions.length)
+    expect(await count('notifications')).toBe(seed.mentions.length)
     expect(await count('member_votes')).toBe(seed.votes.length)
     expect(await count('official_positions')).toBe(seed.positions.length)
     expect(await count('bill_custom_field_values')).toBe(seed.customFieldValues.length)
@@ -66,7 +66,7 @@ describe('runDemoReset with the lake-michigan seed', () => {
     const checks: Array<[table: string, expected: number]> = [
       ['comments', seed.comments.length],
       ['comment_reactions', seed.reactions.length],
-      ['comment_mentions', seed.mentions.length],
+      ['notifications', seed.mentions.length],
       ['member_votes', seed.votes.length],
       ['notes', seed.notes.length],
     ]
@@ -95,7 +95,7 @@ describe('runDemoReset with the lake-michigan seed', () => {
   it('resolves role mentions to real user rows', async () => {
     await runDemoReset(env.DB, seed)
     const { results } = await env.DB.prepare(
-      `SELECT cm.user_id FROM comment_mentions cm WHERE cm.source_type = 'role'`
+      `SELECT recipient_id AS user_id FROM notifications WHERE kind = 'mention' AND json_extract(data, '$.sourceType') = 'role'`
     ).all()
     expect(results.length).toBeGreaterThan(0)
     const ids = new Set(seed.users.map(u => u.id))
@@ -108,7 +108,7 @@ describe('runDemoReset with the lake-michigan seed', () => {
     expect(await count('users')).toBe(seed.users.length)
     expect(await count('comments')).toBe(seed.comments.length)
     expect(await count('comment_reactions')).toBe(seed.reactions.length)
-    expect(await count('comment_mentions')).toBe(seed.mentions.length)
+    expect(await count('notifications')).toBe(seed.mentions.length)
     expect(await count('member_votes')).toBe(seed.votes.length)
     expect(await count('feed_events')).toBe(seed.feedEvents.length)
     const row = await env.DB.prepare('SELECT count(*) AS n FROM bills WHERE priority IS NULL').first<{ n: number }>()

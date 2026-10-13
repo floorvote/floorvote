@@ -84,7 +84,7 @@ const notifState = vi.hoisted(() => ({
 vi.mock('../context/NotificationsContext', () => ({
   useNotifications: () => ({
     unreadCount: 0,
-    mentions: notifState.mentionIds.map(id => ({ id, billId: '42' })),
+    notifications: notifState.mentionIds.map(id => ({ kind: 'mention', id, billId: '42' })),
     refresh: notifState.refresh,
   }),
 }))
@@ -770,8 +770,8 @@ describe('BillDetail mark-read-by-bill effect', () => {
       render(<MemoryRouter><BillDetail /></MemoryRouter>)
       await screen.findByText('Test Bill')
 
-      const { readMentionIds } = await import('../lib/demoReadState')
-      await waitFor(() => expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
+      const { readNotificationIds } = await import('../lib/demoReadState')
+      await waitFor(() => expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
     })
 
@@ -789,8 +789,8 @@ describe('BillDetail mark-read-by-bill effect', () => {
       await new Promise(r => setTimeout(r, 50))
 
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
-      const { readMentionIds } = await import('../lib/demoReadState')
-      expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set())
+      const { readNotificationIds } = await import('../lib/demoReadState')
+      expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set())
     })
   })
 })

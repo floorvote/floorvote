@@ -368,6 +368,7 @@ authRoutes.get('/me', async (c) => {
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
+            emailRepliesEnabled: localUser!.emailRepliesEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
             ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
@@ -393,6 +394,7 @@ authRoutes.get('/me', async (c) => {
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
       emailWeekAheadEnabled: users.emailWeekAheadEnabled,
+      emailRepliesEnabled: users.emailRepliesEnabled,
       lastSeenFeed: users.lastSeenFeed,
       lastActive: users.lastActive,
     })
@@ -445,6 +447,7 @@ authRoutes.get('/me', async (c) => {
     canVote: !!sessionWithUser.canVote,
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
+    emailRepliesEnabled: sessionWithUser.emailRepliesEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
     ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),

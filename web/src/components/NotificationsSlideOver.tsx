@@ -4,9 +4,9 @@ import { Link } from 'react-router-dom'
 import type { Ref, RefObject } from 'react'
 import DOMPurify from 'dompurify'
 import { apiFetch } from '../lib/api'
-import { useNotifications, type Mention } from '../context/NotificationsContext'
+import { useNotifications, type NotificationItem, type ReactionNotification } from '../context/NotificationsContext'
 import { useDemo } from '../context/DemoContext'
-import { isUnreadForDemo, readMentionIds, markMentionsRead } from '../lib/demoReadState'
+import { isUnreadForDemo, readNotificationIds, markNotificationsRead } from '../lib/demoReadState'
 import { billUrl } from '../lib/sessionSlug'
 import { TOOLTIP_STYLE, tooltipPositionBelow } from '../lib/chipStyles'
 import { BillBadge } from './BillBadge'
@@ -96,9 +96,9 @@ interface Props {
 export function NotificationsSlideOver(
   { onClose, triggerRef, ref }: Props & { ref?: Ref<PopPanelHandle> },
 ) {
-  const { mentions: liveMentions, loaded, refresh } = useNotifications()
+  const { notifications: liveNotifications, loaded, refresh } = useNotifications()
   const { demoMode, demoResetAt, settled: demoSettled } = useDemo()
-  const [snapshot, setSnapshot] = useState<Mention[] | null>(null)
+  const [snapshot, setSnapshot] = useState<NotificationItem[] | null>(null)
   const [roles, setRoles] = useState<RoleData[]>([])
   const [roleTooltip, setRoleTooltip] = useState<RoleTooltip>(null)
   const loading = snapshot === null
@@ -141,13 +141,13 @@ export function NotificationsSlideOver(
       // Overlay the local set onto the server's isUnread before freezing: after a
       // reset the server calls every row unread again, and this browser's own
       // reading is the only record that survives it.
-      const alreadyRead = readMentionIds(demoResetAt)
-      setSnapshot(liveMentions.map(m => ({ ...m, isUnread: isUnreadForDemo(m, alreadyRead) })))
-      markMentionsRead(liveMentions.map(m => m.id), demoResetAt)
+      const alreadyRead = readNotificationIds(demoResetAt)
+      setSnapshot(liveNotifications.map(m => ({ ...m, isUnread: isUnreadForDemo(m, alreadyRead) })))
+      markNotificationsRead(liveNotifications.map(m => m.id), demoResetAt)
       return
     }
-    setSnapshot(liveMentions)
-  }, [loaded, demoSettled, liveMentions, snapshot, demoMode, demoResetAt])
+    setSnapshot(liveNotifications)
+  }, [loaded, demoSettled, liveNotifications, snapshot, demoMode, demoResetAt])
 
   // Mark read once per open, after the snapshot above has been taken — kept as
   // its own effect for readability. `markedRef` is what makes it once, not the
@@ -178,14 +178,17 @@ export function NotificationsSlideOver(
           if (prev === null) return prev
           const shown = new Set(prev.map(m => m.id))
           const missing = fresh.filter(m => !shown.has(m.id))
-          if (missing.length === 0) return prev
+          // A reaction row keeps its id as reactions arrive, so one already
+          // shown is swapped for its fresh version, new reactors and all.
+          const freshById = new Map(fresh.map(m => [m.id, m]))
+          const updated = prev.map(m => (m.kind === 'reaction' && freshById.get(m.id)) || m)
           // isUnread comes from this pre-POST fetch, so it is the server's
           // answer as of the moment we are about to clear it — accurate for a
           // row already read elsewhere (BillDetail's mark-read-by-bill) too.
           // Re-sorted rather than prepended: newest-first is the order
           // GET /notifications returns and the panel renders in, and a merged
           // row is not guaranteed to be newer than everything on screen.
-          return [...prev, ...missing].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          return [...updated, ...missing].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         })
         await apiFetch('/notifications/mark-read', { method: 'POST' })
         // Second refresh, to drop the badge the click just cleared. Both were
@@ -249,7 +252,7 @@ export function NotificationsSlideOver(
         ref={innerRef}
         onClose={onClose}
         triggerRef={triggerRef}
-        ariaLabel="Mentions"
+        ariaLabel="Notifications"
         transformOrigin="top left"
         enterOffsetY={-6}
         positionStyle={positionStyle}
@@ -294,7 +297,7 @@ export function NotificationsSlideOver(
           borderBottom: `1px solid ${color.borderDefault}`,
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, letterSpacing: '-0.01em' }}>Mentions</span>
+          <span style={{ fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.textPrimary, letterSpacing: '-0.01em' }}>Notifications</span>
           <button
             onClick={() => innerRef.current?.close()}
             aria-label="Close"
@@ -312,139 +315,42 @@ export function NotificationsSlideOver(
 
           {!loading && snapshot.length === 0 && (
             <div style={{ padding: '32px 20px', textAlign: 'center', fontSize: fontSize.sm, color: color.textMuted, lineHeight: 1.6 }}>
-              No mentions yet — when someone @-tags you in a comment, it'll appear here.
+              No notifications yet. You'll see mentions of you here, replies on bills you've commented on, and reactions to your comments.
             </div>
           )}
 
-          {!loading && snapshot.map(m => {
-            const url = billUrl({ state: m.billState, sessionSlug: m.sessionSlug, billNumber: m.billNumber }) + `#comment-${m.commentId}`
-            // Role members for the attribution chip tooltip
-            const attributionRole = m.sourceType === 'role' && m.sourceLabel
-              ? roles.find(r => r.name === m.sourceLabel)
-              : null
-
-            const mentionedVia = m.sourceType === 'everyone'
-              ? 'notified everyone'
-              : m.sourceType === 'role' && m.sourceLabel
-              ? (
-                <>
-                  mentioned{' '}
-                  <span
-                    // The member list is also shown in a hover-only tooltip
-                    // (onMouseEnter/onMouseLeave below) — that bubble is a
-                    // purely mouse-triggered affordance, so `title` carries
-                    // the same list as a native, non-hover-dependent fallback
-                    // for screen-reader and keyboard/touch users.
-                    title={attributionRole
-                      ? `${attributionRole.name}: ${attributionRole.members.map(mb => mb.name).join(', ')}`
-                      : undefined}
-                    // Geometry and weight are deliberately identical to the role
-                    // pill inside the comment body (the CSS block above), to the
-                    // shared ROLE_CHIP, and to the emails — all MENTION_STYLE.weight.
-                    // This chip used to be semibold with different padding, which
-                    // read as a bug whenever a role mention printed it twice in one
-                    // row. The two pills differ in size only because each inherits
-                    // its own line's font size.
-                    style={{
-                      display: 'inline-block',
-                      background: MENTION_STYLE.role.bg,
-                      color: MENTION_STYLE.role.text,
-                      borderRadius: radius.pill,
-                      padding: '1px 7px',
-                      fontWeight: MENTION_STYLE.weight,
-                      cursor: 'default',
-                    }}
-                    onMouseEnter={e => {
-                      if (!attributionRole) return
-                      setRoleTooltip({
-                        anchorRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
-                        members: attributionRole.members.map(mb => ({ name: mb.name, subtitle: mb.subtitle })),
-                      })
-                    }}
-                    onMouseLeave={() => setRoleTooltip(null)}
-                  >
-                    @{m.sourceLabel}
-                  </span>
-                </>
-              )
-              : 'mentioned you'
-
-            return (
-              <Link
-                key={m.id}
-                to={url}
-                onClick={() => onClose()}
-                style={{
-                  display: 'block',
-                  padding: '11px 16px 12px',
-                  borderBottom: `1px solid ${color.borderDefault}`,
-                  borderLeft: m.isUnread ? `3px solid ${color.accentBlue}` : '3px solid transparent',
-                  background: m.isUnread ? color.bgInfo : color.white,
-                  textDecoration: 'none',
-                }}
-              >
-                {/* One sentence, phrased exactly as the mention email phrases it
-                    ("{author} mentioned @{role}" — api/src/lib/mentions.ts), so the
-                    panel reads as the same message the recipient already has in
-                    their inbox. It replaces what used to be two separate lines: an
-                    author line and a standalone attribution line. The author's
-                    subtitle is deliberately dropped — in a 400px panel it cost a
-                    line's worth of attention for a detail the name usually carries. */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
-                  <div style={{ fontSize: fontSize.sm, color: color.textSecondary, minWidth: 0 }}>
-                    <span style={{ fontWeight: fontWeight.semibold, color: color.textPrimary }}>{m.authorName}</span>
-                    {' '}
-                    {mentionedVia}
-                  </div>
-                  <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 0 }}>{relativeTime(m.createdAt)}</span>
-                </div>
-
-                {/* The comment is the primary content — it's what you opened the
-                    panel to read — but it is promoted by *colour*, not size: every
-                    line in the row (this, the sentence above, the footer below) is
-                    fontSize.sm, because a mention pill inherits its line's size and
-                    two sizes of the same pill in one row read as an inconsistency
-                    rather than a hierarchy. Rendered verbatim: a mention can sit
-                    anywhere in a sentence, so a role pill can't be stripped from the
-                    front just because the line above names the same role. One size
-                    and one weight is what makes that repeat read as a quote. */}
-                <CommentBody
-                  html={m.commentHtml}
-                  onMouseOver={handleCommentMouseOver}
-                  onMouseOut={handleCommentMouseOut}
-                  onMouseLeave={handleCommentMouseLeave}
-                />
-
-                {/* Bill footer — one line, single-line-ellipsized. The bill stays
-                    identifiable without the two-line serif title block competing
-                    with the comment above it. */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, minWidth: 0 }}>
-                  {/* Room for the visible chip: this footer is a single flex
-                      line whose only flexible item is the title, which already
-                      ellipsizes by design — the chip shortens the title rather
-                      than wrapping or clipping anything. Mini, to match the
-                      mini badge it sits beside. */}
-                  <BillBadge
-                    billNumber={m.billNumber}
-                    state={m.billState ?? undefined}
-                    mini
-                    isDraft={m.billIsDraft}
+          {/* One renderer per notification kind. A kind this build does not
+              know yet (a newer server) is skipped rather than drawn wrong. */}
+          {!loading && snapshot.map(n => {
+            switch (n.kind) {
+              case 'reaction':
+                return (
+                  <ReactionRow
+                    key={n.id}
+                    m={n}
+                    onClose={onClose}
+                    onCommentMouseOver={handleCommentMouseOver}
+                    onCommentMouseOut={handleCommentMouseOut}
+                    onCommentMouseLeave={handleCommentMouseLeave}
                   />
-                  {m.billIsDraft && <DraftChip mini />}
-                  <span style={{
-                    fontFamily: '"Source Serif 4", "Source Serif", Georgia, serif',
-                    fontSize: fontSize.sm,
-                    color: color.textMuted,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    minWidth: 0,
-                  }}>
-                    {billDisplayTitle({ title: m.billTitle, isDraft: m.billIsDraft })}
-                  </span>
-                </div>
-              </Link>
-            )
+                )
+              case 'mention':
+              case 'reply':
+                return (
+                  <NotificationRow
+                    key={n.id}
+                    m={n}
+                    roles={roles}
+                    onClose={onClose}
+                    setRoleTooltip={setRoleTooltip}
+                    onCommentMouseOver={handleCommentMouseOver}
+                    onCommentMouseOut={handleCommentMouseOut}
+                    onCommentMouseLeave={handleCommentMouseLeave}
+                  />
+                )
+              default:
+                return null
+            }
           })}
         </div>
       </PopPanel>
@@ -474,3 +380,238 @@ export function NotificationsSlideOver(
     </>
   )
 }
+
+/**
+ * The panel row for a `mention` or `reply` notification. The two differ only in
+ * the sentence that names what the author did. Everything below it (the comment,
+ * the bill footer, the unread rail) is the same.
+ */
+function NotificationRow({
+  m,
+  roles,
+  onClose,
+  setRoleTooltip,
+  onCommentMouseOver,
+  onCommentMouseOut,
+  onCommentMouseLeave,
+}: {
+  m: Extract<NotificationItem, { kind: 'mention' | 'reply' }>
+  roles: RoleData[]
+  onClose: () => void
+  setRoleTooltip: (t: RoleTooltip) => void
+  onCommentMouseOver: (e: React.SyntheticEvent) => void
+  onCommentMouseOut: (e: React.SyntheticEvent) => void
+  onCommentMouseLeave: () => void
+}) {
+  // Role members for the attribution chip tooltip
+  const attributionRole = m.kind === 'mention' && m.sourceType === 'role' && m.sourceLabel
+    ? roles.find(r => r.name === m.sourceLabel)
+    : null
+
+  // Phrased as the matching email phrases it (api/src/lib/mentions.ts and
+  // replies.ts).
+  const action = m.kind === 'reply'
+    ? "commented on a bill you've commented on"
+    : m.sourceType === 'everyone'
+    ? 'notified everyone'
+    : m.sourceType === 'role' && m.sourceLabel
+    ? (
+      <>
+        mentioned{' '}
+        <span
+          // The member list is also shown in a hover-only tooltip
+          // (onMouseEnter/onMouseLeave below) — that bubble is a
+          // purely mouse-triggered affordance, so `title` carries
+          // the same list as a native, non-hover-dependent fallback
+          // for screen-reader and keyboard/touch users.
+          title={attributionRole
+            ? `${attributionRole.name}: ${attributionRole.members.map(mb => mb.name).join(', ')}`
+            : undefined}
+          // Geometry and weight are deliberately identical to the role
+          // pill inside the comment body (the CSS block above), to the
+          // shared ROLE_CHIP, and to the emails — all MENTION_STYLE.weight.
+          // This chip used to be semibold with different padding, which
+          // read as a bug whenever a role mention printed it twice in one
+          // row. The two pills differ in size only because each inherits
+          // its own line's font size.
+          style={{
+            display: 'inline-block',
+            background: MENTION_STYLE.role.bg,
+            color: MENTION_STYLE.role.text,
+            borderRadius: radius.pill,
+            padding: '1px 7px',
+            fontWeight: MENTION_STYLE.weight,
+            cursor: 'default',
+          }}
+          onMouseEnter={e => {
+            if (!attributionRole) return
+            setRoleTooltip({
+              anchorRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+              members: attributionRole.members.map(mb => ({ name: mb.name, subtitle: mb.subtitle })),
+            })
+          }}
+          onMouseLeave={() => setRoleTooltip(null)}
+        >
+          @{m.sourceLabel}
+        </span>
+      </>
+    )
+    : 'mentioned you'
+
+  return (
+    <RowFrame
+      m={m}
+      onClose={onClose}
+      headline={
+        <>
+          <span style={{ fontWeight: fontWeight.semibold, color: color.textPrimary }}>{m.authorName}</span>
+          {' '}
+          {action}
+        </>
+      }
+      onCommentMouseOver={onCommentMouseOver}
+      onCommentMouseOut={onCommentMouseOut}
+      onCommentMouseLeave={onCommentMouseLeave}
+    />
+  )
+}
+
+/**
+ * The shell every row shares: the link to the comment, the unread rail, a
+ * one-line headline with the time, the comment, and the bill footer.
+ */
+function RowFrame({
+  m,
+  headline,
+  onClose,
+  onCommentMouseOver,
+  onCommentMouseOut,
+  onCommentMouseLeave,
+}: {
+  m: NotificationItem
+  headline: React.ReactNode
+  onClose: () => void
+  onCommentMouseOver: (e: React.SyntheticEvent) => void
+  onCommentMouseOut: (e: React.SyntheticEvent) => void
+  onCommentMouseLeave: () => void
+}) {
+  const url = billUrl({ state: m.billState, sessionSlug: m.sessionSlug, billNumber: m.billNumber }) + `#comment-${m.commentId}`
+  return (
+    <Link
+      to={url}
+      onClick={() => onClose()}
+      style={{
+        display: 'block',
+        padding: '11px 16px 12px',
+        borderBottom: `1px solid ${color.borderDefault}`,
+        borderLeft: m.isUnread ? `3px solid ${color.accentBlue}` : '3px solid transparent',
+        background: m.isUnread ? color.bgInfo : color.white,
+        textDecoration: 'none',
+      }}
+    >
+      {/* One sentence, phrased exactly as the mention email phrases it
+          ("{author} mentioned @{role}" — api/src/lib/mentions.ts), so the
+          panel reads as the same message the recipient already has in
+          their inbox. It replaces what used to be two separate lines: an
+          author line and a standalone attribution line. The author's
+          subtitle is deliberately dropped — in a 400px panel it cost a
+          line's worth of attention for a detail the name usually carries. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+        <div style={{ fontSize: fontSize.sm, color: color.textSecondary, minWidth: 0 }}>
+          {headline}
+        </div>
+        <span style={{ fontSize: fontSize.sm, color: color.textMuted, flexShrink: 0 }}>{relativeTime(m.createdAt)}</span>
+      </div>
+
+      {/* The comment is the primary content — it's what you opened the
+          panel to read — but it is promoted by *colour*, not size: every
+          line in the row (this, the sentence above, the footer below) is
+          fontSize.sm, because a mention pill inherits its line's size and
+          two sizes of the same pill in one row read as an inconsistency
+          rather than a hierarchy. Rendered verbatim: a mention can sit
+          anywhere in a sentence, so a role pill can't be stripped from the
+          front just because the line above names the same role. One size
+          and one weight is what makes that repeat read as a quote. */}
+      <CommentBody
+        html={m.commentHtml}
+        onMouseOver={onCommentMouseOver}
+        onMouseOut={onCommentMouseOut}
+        onMouseLeave={onCommentMouseLeave}
+      />
+
+      {/* Bill footer — one line, single-line-ellipsized. The bill stays
+          identifiable without the two-line serif title block competing
+          with the comment above it. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, minWidth: 0 }}>
+        {/* Room for the visible chip: this footer is a single flex
+            line whose only flexible item is the title, which already
+            ellipsizes by design — the chip shortens the title rather
+            than wrapping or clipping anything. Mini, to match the
+            mini badge it sits beside. */}
+        <BillBadge
+          billNumber={m.billNumber}
+          state={m.billState ?? undefined}
+          mini
+          isDraft={m.billIsDraft}
+        />
+        {m.billIsDraft && <DraftChip mini />}
+        <span style={{
+          fontFamily: '"Source Serif 4", "Source Serif", Georgia, serif',
+          fontSize: fontSize.sm,
+          color: color.textMuted,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          minWidth: 0,
+        }}>
+          {billDisplayTitle({ title: m.billTitle, isDraft: m.billIsDraft })}
+        </span>
+      </div>
+    </Link>
+  )
+}
+
+/**
+ * The panel row for a `reaction` notification: one per comment, however many
+ * members reacted. It names the newest reactor and counts the rest, and shows
+ * the member's own comment.
+ */
+function ReactionRow({
+  m,
+  onClose,
+  onCommentMouseOver,
+  onCommentMouseOut,
+  onCommentMouseLeave,
+}: {
+  m: ReactionNotification
+  onClose: () => void
+  onCommentMouseOver: (e: React.SyntheticEvent) => void
+  onCommentMouseOut: (e: React.SyntheticEvent) => void
+  onCommentMouseLeave: () => void
+}) {
+  const first = m.reactors[0]?.name ?? 'Someone'
+  const others = m.reactorCount - 1
+  // Two reactors are both named. From three on, the rest are counted.
+  const who = others === 0
+    ? first
+    : others === 1
+    ? `${first} and ${m.reactors[1]?.name ?? 'someone'}`
+    : `${first} and ${others} others`
+  return (
+    <RowFrame
+      m={m}
+      onClose={onClose}
+      headline={
+        <>
+          <span style={{ fontWeight: fontWeight.semibold, color: color.textPrimary }}>{who}</span>
+          {' '}
+          reacted to your comment
+        </>
+      }
+      onCommentMouseOver={onCommentMouseOver}
+      onCommentMouseOut={onCommentMouseOut}
+      onCommentMouseLeave={onCommentMouseLeave}
+    />
+  )
+}
+

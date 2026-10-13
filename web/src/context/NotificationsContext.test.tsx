@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import { markMentionsRead } from '../lib/demoReadState'
+import { markNotificationsRead } from '../lib/demoReadState'
 import { NotificationsProvider, useNotifications } from './NotificationsContext'
 
 const demoState = vi.hoisted(() => ({ demoMode: false, demoLocked: false, settled: true, demoResetAt: 'epoch-1' }))
@@ -13,10 +13,10 @@ vi.mock('./DemoContext', () => ({
 // the answer the demo should show — that difference is the whole test.
 const payload = vi.hoisted(() => ({
   unreadCount: 2,
-  mentions: [
-    { id: 'm1', isUnread: true },
-    { id: 'm2', isUnread: true },
-    { id: 'm3', isUnread: false },
+  notifications: [
+    { kind: 'mention', id: 'm1', isUnread: true },
+    { kind: 'mention', id: 'm2', isUnread: true },
+    { kind: 'mention', id: 'm3', isUnread: false },
   ],
 }))
 
@@ -51,13 +51,13 @@ describe('NotificationsProvider badge count', () => {
   // beat later. Report nothing until we know which rule applies.
   it('reports nothing until the demo gate settles', async () => {
     demoState.settled = false
-    markMentionsRead(['m1', 'm2'], demoState.demoResetAt)
+    markNotificationsRead(['m1', 'm2'], demoState.demoResetAt)
     renderProvider()
     await waitFor(() => expect(screen.getByText('count:0')).toBeInTheDocument())
   })
 
   it('uses the server unreadCount verbatim on a non-demo tenant', async () => {
-    markMentionsRead(['m1'], demoState.demoResetAt)
+    markNotificationsRead(['m1'], demoState.demoResetAt)
     renderProvider()
     // The local set exists but must be ignored: on a real tenant read_at is
     // authoritative and per-user.
@@ -66,7 +66,7 @@ describe('NotificationsProvider badge count', () => {
 
   it('subtracts this browser’s locally-read mentions on a demo tenant', async () => {
     demoState.demoMode = true
-    markMentionsRead(['m1'], demoState.demoResetAt)
+    markNotificationsRead(['m1'], demoState.demoResetAt)
     renderProvider()
     // m1 read locally, m2 unread, m3 already read on the server.
     await waitFor(() => expect(screen.getByText('count:1')).toBeInTheDocument())

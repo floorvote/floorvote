@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, inArray, asc, desc } from 'drizzle-orm'
-import { matchesUnion } from '../lib/keywords'
+import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
@@ -264,7 +264,7 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
   const keywordMatchIds: number[] = []
   const nonKeywordIds: number[] = []
   for (const b of sessionBills) {
-    const haystack = `${b.title ?? ''} ${b.description ?? ''} ${b.billNumber ?? ''}`
+    const haystack = billMatchText(b)
     const matched = keywords.length > 0 ? matchesUnion(haystack, keywords).matched : false
     if (matched) keywordMatchIds.push(b.billId)
     else nonKeywordIds.push(b.billId)
