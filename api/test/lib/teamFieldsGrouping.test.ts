@@ -12,17 +12,20 @@ import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 // was already gone when the group formed.
 
 /**
- * The instance's D1, with the first read of official_positions held until
- * `release` resolves. `reached` resolves when that read starts. Batches go to
- * the real statements.
+ * The instance's D1, with the first read of bill_custom_field_values held
+ * until `release` resolves. `reached` resolves when that read is about to run.
+ * The recompute reads custom fields last, after it has already read the
+ * positions, so a position set while this read is held is one the recompute
+ * has missed: only the guard on its write can catch it. Batches go to the
+ * real statements.
  */
-function holdingPositionRead(release: Promise<void>, reached: () => void): D1Database {
+function holdingCustomFieldRead(release: Promise<void>, reached: () => void): D1Database {
   const real = env.DB
   let held = false
   type Stmt = D1PreparedStatement & { real: D1PreparedStatement }
   const wrap = (stmt: D1PreparedStatement, query: string): Stmt => {
     const run = <T>(f: () => Promise<T>) => async () => {
-      if (!held && /^\s*select/i.test(query) && query.includes('"official_positions"')) {
+      if (!held && /^\s*select/i.test(query) && query.includes('"bill_custom_field_values"')) {
         held = true
         reached()
         await release
@@ -66,10 +69,10 @@ describe('grouping replaces team field values inside the guarded recompute', () 
     let reached!: () => void
     const releasing = new Promise<void>(r => { release = r })
     const reaching = new Promise<void>(r => { reached = r })
-    const grouping = syncIdenticalCompanions(getDb(holdingPositionRead(releasing, reached)), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
+    const grouping = syncIdenticalCompanions(getDb(holdingCustomFieldRead(releasing, reached)), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
 
-    // Once the recompute has read the keys and is reading positions, an admin
-    // sets S1713's position. If it never reads positions, the set still lands.
+    // Once the recompute has read the keys and the positions, an admin sets
+    // S1713's position. If it never reads custom fields, the set still lands.
     await Promise.race([reaching, grouping])
     await getDb(env.DB).update(officialPositions)
       .set({ position: 'Amend', updatedAt: '2026-10-01 11:00:00' })

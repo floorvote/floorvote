@@ -127,6 +127,17 @@ describe('team fields across a companion group', () => {
       }
     })
 
+    it('breaks a same-second tie by the larger bill id, and counts a value with no time as the oldest', async () => {
+      await position('a190', 'Support', '2026-10-01 10:00:00')
+      await position('b1713', 'Oppose', '2026-10-01 10:00:00')
+      await priority('a190', 'high', '2026-10-01 09:00:00')
+      await db().update(bills).set({ priority: 'low', prioritySetAt: null }).where(eq(bills.id, 'b1713'))
+      await group()
+      for (const id of ['a190', 'b1713']) {
+        expect(await shown(id)).toMatchObject({ position: 'Oppose', priority: 'high' })
+      }
+    })
+
     it("shows a member's triage on the other's page", async () => {
       await db().update(bills).set({ triagedAt: '2026-10-01 10:00:00', triagedBy: user.ada }).where(eq(bills.id, 'a190'))
       await group()
