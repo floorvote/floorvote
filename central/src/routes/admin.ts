@@ -440,9 +440,11 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
   // Queue each newly-matched bill to the ingestor with forceAI:true.
   // The ingestor will call getBill() once per message (1 LegiScan API call per bill),
   // download text, then notify the tenant with forceAI so the tenant runs AI on full text.
+  // A keyword re-run's matches are bulk: bills the tenant already had, newly
+  // matched by a configuration change, stay out of its feed and digest.
   for (let i = 0; i < newlyMatched.length; i += 100) {
     const batch = newlyMatched.slice(i, i + 100).map(billId => ({
-      body: { billId, forceAI: true } as IngestorMessage,
+      body: { billId, forceAI: true, matchProvenance: { [tenantId]: 'bulk' } } as IngestorMessage,
     }))
     await c.env.INGESTOR_QUEUE.sendBatch(batch)
   }

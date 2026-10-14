@@ -81,6 +81,7 @@ import migrationSql87 from '../migrations/0087_feed_events_sort_index.sql?raw'
 import migrationSql88 from '../migrations/0088_reply_notifications.sql?raw'
 import migrationSql89 from '../migrations/0089_reaction_notifications.sql?raw'
 import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
+import migrationSql95 from '../migrations/0095_match_provenance.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -264,6 +265,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql88, '0088_reply_notifications'),
     parseMigration(migrationSql89, '0089_reaction_notifications'),
     parseMigration(migrationSql93, '0093_feed_events_billless'),
+    parseMigration(migrationSql95, '0095_match_provenance'),
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
@@ -372,6 +374,8 @@ export async function seedBill(overrides?: {
   isDraft?: boolean
   draftText?: string | null
   newMatchAt?: string | null
+  /** Where the keyword match came from; null (the default) counts as bulk. */
+  matchProvenance?: 'routine' | 'bulk' | null
   triagedAt?: string | null
   /** Raw `bills.subjects` column value — a JSON-encoded array string (or null),
    *  not a decoded array. Pass e.g. '["Elections"]' to mirror what LegiScan sync
@@ -415,6 +419,7 @@ export async function seedBill(overrides?: {
     isDraft: overrides?.isDraft ?? false,
     draftText: overrides?.draftText ?? null,
     newMatchAt: overrides?.newMatchAt ?? null,
+    matchProvenance: overrides?.matchProvenance ?? null,
     triagedAt: overrides?.triagedAt ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

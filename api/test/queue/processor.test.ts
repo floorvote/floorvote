@@ -260,6 +260,82 @@ describe('processCentralNotification', () => {
     expect(events).toHaveLength(1)
   })
 
+  // ── match provenance (#364): central declares a new keyword match routine or
+  // bulk, and the instance keeps the declaration with the match and on its
+  // bill_matched event. A match with none is bulk.
+
+  const matchedEvents = async (db: ReturnType<typeof getDb>) =>
+    db.select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()
+
+  it('stores a routine declaration with the match and on its bill_matched event', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', matchProvenance: 'routine' }, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.matchProvenance).toBe('routine')
+    const events = await matchedEvents(db)
+    expect(events).toHaveLength(1)
+    expect(JSON.parse(events[0].metadata!)).toEqual({ matchProvenance: 'routine' })
+  })
+
+  it('keeps a routine declaration that arrived before the bill could be analysed', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    // The routine sync's message arrives while central has no text yet: AI is skipped.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) return Promise.resolve({ ok: false, status: 404, json: async () => ({}) })
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, texts: [], textHash: null }) })
+    }))
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', matchProvenance: 'routine' }, testEnv as any, db)
+    expect(await matchedEvents(db)).toHaveLength(0)
+
+    // The text arrives with a later, undeclared update, and the bill is analysed then.
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, updatedAt: '2026-01-11T12:00:00Z' }) })
+    }))
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword' }, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.matchProvenance).toBe('routine')
+    const events = await matchedEvents(db)
+    expect(events).toHaveLength(1)
+    expect(JSON.parse(events[0].metadata!)).toEqual({ matchProvenance: 'routine' })
+  })
+
+  it('records an undeclared match with no provenance, which counts as bulk', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword' }, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.newMatchAt).not.toBeNull()
+    expect(row!.matchProvenance).toBeNull()
+    const events = await matchedEvents(db)
+    expect(JSON.parse(events[0].metadata!).matchProvenance).toBeUndefined()
+  })
+
+  it('stores a bulk declaration with the match and on its bill_matched event', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', forceMetadata: true, matchProvenance: 'bulk' }, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.matchProvenance).toBe('bulk')
+    expect(JSON.parse((await matchedEvents(db))[0].metadata!)).toEqual({ matchProvenance: 'bulk' })
+  })
+
+  it('does not change the provenance of a match already recorded', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', matchProvenance: 'bulk' }, testEnv as any, db)
+    await processCentralNotification({ tenantId: 'test-org', billId: BILL_ID, matchType: 'keyword', forceAI: true, matchProvenance: 'routine' }, testEnv as any, db)
+
+    const row = await db.select().from(bills).get()
+    expect(row!.matchProvenance).toBe('bulk')
+  })
+
   // ── AI must not run on a demo tenant, and must not re-run on metadata refresh ──
 
   it('never calls the model on a demo tenant', async () => {

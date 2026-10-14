@@ -213,7 +213,7 @@ describe('runDigest', () => {
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // priority event so BOTH the member (a@e.com from beforeEach) and admin get a base digest
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
-    await seedBill({ billNumber: 'NM 42', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 70, tenantSummary: 'New match summary' })
+    await seedBill({ billNumber: 'NM 42', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 70, tenantSummary: 'New match summary' })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     await runDigest(env as any, db)
@@ -229,7 +229,7 @@ describe('runDigest', () => {
   it('admins still get a digest when only new matches exist; members get nothing', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
-    await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 50 })
+    await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
@@ -243,7 +243,7 @@ describe('runDigest', () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     for (let i = 1; i <= 12; i++) {
-      await seedBill({ billNumber: `NM ${100 + i}`, state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 50 + i })
+      await seedBill({ billNumber: `NM ${100 + i}`, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 + i })
     }
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
@@ -264,8 +264,8 @@ describe('runDigest', () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // PRI 1 is prioritized, which latches triaged_at (setting a priority is an act of triage).
-    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
-    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
@@ -281,7 +281,7 @@ describe('runDigest', () => {
     const since = new Date(Date.now() - 3600_000).toISOString() // 1h ago
     await db.insert(associationConfig).values({ key: 'last_digest_at', value: since })
     const old = new Date(Date.now() - 7200_000).toISOString().slice(0, 19).replace('T', ' ') // 2h ago, before window
-    await seedBill({ billNumber: 'OLD 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: old, relevanceScore: 90 })
+    await seedBill({ billNumber: 'OLD 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: old, relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
@@ -293,7 +293,7 @@ describe('runDigest', () => {
     const db = getDb(env.DB); await enableModule(db)
     await db.insert(associationConfig).values({ key: 'new_match_min_relevance', value: '60' })
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
-    await seedBill({ billNumber: 'LOW 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 30 })
+    await seedBill({ billNumber: 'LOW 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 30 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)

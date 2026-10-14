@@ -126,7 +126,24 @@ export type BillMessage = {
    * which instances must hear of.
    */
   firstIngestFor?: string
+  /**
+   * The instances this message brings a new keyword match to, by tenant id,
+   * and where each match came from (MatchProvenance). Each instance's
+   * notification carries its own. An instance missing here gets none, which
+   * it treats as bulk.
+   */
+  matchProvenance?: Record<string, MatchProvenance>
 }
+
+/**
+ * Where a keyword match came from. Routine: the regular sync linked a bill
+ * central had just found, for an instance that already held bills of its
+ * session. Bulk: anything else that matches bills in bulk (a session seed, a
+ * keyword re-run, an instance's first pass over a session, an operator
+ * import). Only routine matches reach an instance's feed and digest, and a
+ * match with no declaration is bulk.
+ */
+export type MatchProvenance = 'routine' | 'bulk'
 
 /**
  * A bill's calendar, as instances receive it with a notification. `events` is
@@ -172,6 +189,8 @@ export type NotificationMessage = {
   stubOnly?: boolean // Update stub metadata only; skip full bill fetch and AI
   metadataOnly?: boolean // Refresh metadata from central; skip text fetch + AI.
   matchType?: 'keyword' | 'manual' | null
+  /** Set when this message brings the instance a new keyword match (BillMessage.matchProvenance). */
+  matchProvenance?: MatchProvenance
   changes?: {
     changeType: string
     oldValue: string | null

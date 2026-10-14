@@ -864,7 +864,8 @@ describe('a moved bill no instance tracks', () => {
     const { lims } = await import('../../src/providers/lims')
     await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
     const matched = queued(next.limsQueue).find(b => b.billId === B0001)
-    expect(matched).toEqual({ billId: B0001, queuedBy: 'lims' })
+    // A monitored bill that starts to match is a bulk match (#364).
+    expect(matched).toEqual({ billId: B0001, queuedBy: 'lims', matchProvenance: { oca: 'bulk' } })
 
     // The earlier first ingest runs, and clears carried_from.
     const ingest = async (body: unknown, r: Run) => {

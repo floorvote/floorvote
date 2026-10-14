@@ -24,6 +24,7 @@ import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
+import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
 
 beforeEach(async () => {
   await setupLsDb()
@@ -750,5 +751,51 @@ describe('forceTextRefetch', () => {
 
     expect(legiscan.getBillText, 'a stored document is not re-fetched by default')
       .not.toHaveBeenCalled()
+  })
+})
+
+// #364: the ingestor message's per-instance match provenance reaches each
+// instance on its notification, and only that instance's.
+describe('match provenance fan-out', () => {
+  async function linkTwoTenants(db: ReturnType<typeof drizzle>) {
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state: 'WI', stateId: 50,
+      yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    for (const tenantId of ['prov-a', 'prov-b']) {
+      await db.insert(schema.tenants).values({ tenantId, name: tenantId, stateCoverage: '["WI"]', active: true })
+      await db.insert(schema.billTenants).values({ billId: 9001, tenantId, matchType: 'keyword' })
+    }
+  }
+
+  function envWithTenantQueues() {
+    const a = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn() }
+    const b = { send: vi.fn().mockResolvedValue(undefined), sendBatch: vi.fn() }
+    return { e: { ...makeEnv(), [tenantQueueBindingName('prov-a')]: a, [tenantQueueBindingName('prov-b')]: b }, a, b }
+  }
+
+  it('sends each instance its own declaration on the skip-fetch path', async () => {
+    const db = drizzle(env.DB, { schema })
+    await linkTwoTenants(db)
+    const { e, a, b } = envWithTenantQueues()
+
+    await processIngestorQueue(makeBatch(9001, { skipFetch: true, matchProvenance: { 'prov-a': 'routine' } }), e, db)
+
+    expect(a.send.mock.calls[0][0].matchProvenance).toBe('routine')
+    expect(b.send.mock.calls[0][0].matchProvenance).toBeUndefined()
+  })
+
+  it('sends each instance its own declaration on the full ingest path', async () => {
+    const db = drizzle(env.DB, { schema })
+    await linkTwoTenants(db)
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill())
+    const { e, a, b } = envWithTenantQueues()
+
+    await processIngestorQueue(makeBatch(9001, { matchProvenance: { 'prov-a': 'bulk', 'prov-b': 'routine' } }), e, db)
+
+    expect(a.send.mock.calls[0][0].matchProvenance).toBe('bulk')
+    expect(b.send.mock.calls[0][0].matchProvenance).toBe('routine')
   })
 })

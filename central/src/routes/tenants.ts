@@ -5,7 +5,7 @@ import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { nowDb } from '../lib/dbTime'
-import type { Db, Env } from '../types'
+import type { BillMessage, Db, Env } from '../types'
 import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/billCalendar'
 import { bodyEventDetails, bodyEventOptions, calendarCoverage, type BodyEventDetail, type BodyEventOptions } from '../lib/bodyEvents'
 import { coverageCapabilities } from '../lib/capabilities'
@@ -356,12 +356,13 @@ tenantsRoutes.post('/seed-session/:tenantId', async (c) => {
   }
 
   // Keyword-matching bills → ingestor with skipFetch (downloads text to R2, then notifies tenant)
-  // Sequential sends to avoid queue rate limits
+  // Sequential sends to avoid queue rate limits. A seed's matches are bulk, so
+  // they stay out of the instance's feed and digest (MatchProvenance).
   try {
     for (let i = 0; i < keywordMatchIds.length; i += 100) {
       await c.env.INGESTOR_QUEUE.sendBatch(
         keywordMatchIds.slice(i, i + 100).map(billId => ({
-          body: { billId, skipFetch: true, forceMetadata: true },
+          body: { billId, skipFetch: true, forceMetadata: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
         }))
       )
     }

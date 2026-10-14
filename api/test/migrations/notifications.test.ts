@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedSession, seedBill, seedComment, seedRole } from '../helpers'
+import { resetDb, applyMigrations, seedSession, seedComment, seedRole } from '../helpers'
 
 type NotificationRow = {
   id: string
@@ -29,6 +29,14 @@ describe('migration 0085_notifications', () => {
   async function seedUser({ name, email }: { name: string; email: string }) {
     const id = crypto.randomUUID()
     await env.DB.prepare(`INSERT INTO users (id, email, name) VALUES (?, ?, ?)`).bind(id, email, name).run()
+    return id
+  }
+
+  // seedBill writes every bills column too, so the same goes for a bill.
+  async function seedBill({ billNumber, state, session }: { billNumber: string; state: string; session: string }) {
+    const id = crypto.randomUUID()
+    await env.DB.prepare(`INSERT INTO bills (id, bill_number, title, state, session) VALUES (?, ?, ?, ?, ?)`)
+      .bind(id, billNumber, 'Test Bill', state, session).run()
     return id
   }
 

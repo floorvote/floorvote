@@ -293,6 +293,7 @@ export async function processCentralNotification(
     priority: bills.priority,
     textR2Key: bills.textR2Key,
     newMatchAt: bills.newMatchAt,
+    matchProvenance: bills.matchProvenance,
   }).from(bills).where(eq(bills.externalId, msg.billId)).get()
 
   // Stub-only path: upsert metadata, mark as stub, skip text fetch + AI entirely
@@ -673,9 +674,18 @@ export async function processCentralNotification(
   // re-analysis / status changes / keyword-resync re-promotes won't re-surface it.
   const isFirstKeywordMatch = !!aiResult && derivedMatchType === 'keyword' && !existing?.newMatchAt
 
+  // Where the match came from, as central declared it. The declaration rides
+  // only on the message that brings the match, which may arrive before the
+  // bill has text to analyse, so it is kept on the bill until the match is
+  // recorded and goes on the bill_matched event from there. Once the match
+  // is recorded it never changes. With no declaration it stays NULL: bulk.
+  const declaredProvenance = !existing?.newMatchAt && msg.matchProvenance ? msg.matchProvenance : undefined
+  const matchProvenance = declaredProvenance ?? existing?.matchProvenance ?? null
+
   const upsertData = {
     ...billData,
     matchType: derivedMatchType,
+    ...(declaredProvenance ? { matchProvenance: declaredProvenance } : {}),
     ...(aiResult ? {
       aiProcessedAt: now,
       lastAiTextHash: centralBill.textHash ?? null,
@@ -804,7 +814,7 @@ export async function processCentralNotification(
         type:     'bill_matched',
         billId:   billInternalId,
         userId:   'system',
-        metadata: '{}',
+        metadata: JSON.stringify(matchProvenance ? { matchProvenance } : {}),
       })
     }
   }

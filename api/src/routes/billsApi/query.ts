@@ -8,20 +8,12 @@ import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { newMatchWhere } from '../../lib/newMatch'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 
-// "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
-// Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
-// can't drift. COALESCE(relevance,0) means with the default threshold 0 a match with
-// no relevance score still qualifies; a positive threshold excludes it until scored.
-export function newMatchWhere(minRelevance: number): SQL {
-  return and(
-    eq(bills.matchType, 'keyword'),
-    isNotNull(bills.newMatchAt),
-    isNull(bills.triagedAt),
-    sql`COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}`,
-  )!
-}
+// The "New matches" worklist predicate lives with the threshold in lib/newMatch.ts,
+// so the digest shares it too. Re-exported for the routes that import it from here.
+export { newMatchWhere }
 
 // Sentinel filter value: "has any value in this dimension" (position, custom-field
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
