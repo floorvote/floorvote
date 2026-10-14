@@ -13,6 +13,7 @@ export const users = sqliteTable('users', {
   deactivatedAt: text('deactivated_at'),
   canVote: integer('can_vote').notNull().default(1),
   emailDigestEnabled: integer('email_digest_enabled').notNull().default(1),
+  emailDigestMatchesEnabled: integer('email_digest_matches_enabled').notNull().default(1),
   emailWeekAheadEnabled: integer('email_week_ahead_enabled').notNull().default(1),
   emailRepliesEnabled: integer('email_replies_enabled').notNull().default(1),
   lastSeenFeed: text('last_seen_feed'),

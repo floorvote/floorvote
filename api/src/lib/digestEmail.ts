@@ -120,11 +120,13 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
 /** The digest lists this many new matches, most relevant first; the rest sit behind "…and N more". */
 const NEW_MATCH_LIMIT = 10
 
-// New keyword-match section (admin/owner digests only). Not priority-gated and
-// rendered from bills (not feed events), so it lists matches awaiting triage.
-// The heading counts every match; only the top NEW_MATCH_LIMIT by relevance are
-// listed (unscored last), with a link to the full list for the rest.
-function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): string {
+// New keyword-match section (admins always, members who haven't opted out). Not
+// priority-gated and rendered from bills (not feed events), so it lists matches
+// awaiting triage. The heading counts every match; only the top NEW_MATCH_LIMIT
+// by relevance are listed (unscored last), with a link to the full list for the
+// rest. A member can't triage, so their copy leaves off the line telling an
+// admin how.
+function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forMember: boolean): string {
   if (items.length === 0) return ''
   const top = [...items]
     .sort((a, b) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1))
@@ -153,7 +155,7 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): str
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;border:1px solid ${color.borderDefault};border-radius:${radius.lg}px;overflow:hidden;">
   <tbody>
     <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New matches (${items.length})</td></tr>
-    <tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>
+    ${forMember ? '' : `<tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>`}
     <tr><td style="padding:0 14px 8px 14px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}${moreRow}</tbody></table>
     </td></tr>
@@ -161,7 +163,7 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): str
 </table>`
 }
 
-export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[] }): string {
+export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {
   // Group events by billId, preserving first-seen order
   const billOrder: string[] = []
   const billGroups = new Map<string, DigestEvent[]>()
@@ -182,7 +184,7 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
   const signal = billCount > 0
     ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated ${describeWindow(periodStart, periodEnd)}`
     : `${newMatches.length} new keyword ${newMatches.length === 1 ? 'match' : 'matches'}`
-  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl)
+  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl, input.forMember ?? false)
   const cards = billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')
   const ctaHtml = billCount > 0
     ? emailButton(`${input.appUrl}/bills`, 'View bill updates')

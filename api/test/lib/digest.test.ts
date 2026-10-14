@@ -205,10 +205,11 @@ describe('runDigest', () => {
     expect(calls[0].html).toContain('was updated in the last week')
   })
 
-  // ── New keyword-match section (admin/owner only) ────────────────────────────
+  // ── New keyword-match section (admins always, members unless they opt out) ──
+  // Members' options are covered in digestMemberMatches.test.ts.
   const recentMatch = () => new Date(Date.now() - 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
-  it('admins get the New bills section; members get the unchanged digest', async () => {
+  it('admins and members (option on by default) get the new-match section', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // priority event so BOTH the member (a@e.com from beforeEach) and admin get a base digest
@@ -222,21 +223,20 @@ describe('runDigest', () => {
     const memberCall = calls.find(c => c.to[0] === 'a@e.com')
     expect(adminCall.html).toContain('New matches (1)')
     expect(adminCall.html).toContain('NM 42')
-    expect(memberCall.html).not.toContain('New matches')
-    expect(memberCall.html).not.toContain('NM 42')
+    expect(memberCall.html).toContain('New matches (1)')
+    expect(memberCall.html).toContain('NM 42')
   })
 
-  it('admins still get a digest when only new matches exist; members get nothing', async () => {
+  it('a window with only new matches sends a digest to the admin and to the member with the option on', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].to).toEqual(['admin@e.com'])
-    expect(calls[0].html).toContain('NM 7')
-    expect(result.sent).toBe(1)
+    expect(calls.map(c => c.to[0]).sort()).toEqual(['a@e.com', 'admin@e.com'])
+    for (const c of calls) expect(c.html).toContain('NM 7')
+    expect(result.sent).toBe(2)
   })
 
   it('caps the admin new-match section at the 10 most relevant, with the full count and an "and N more" link', async () => {
@@ -248,8 +248,8 @@ describe('runDigest', () => {
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     await runDigest(env as any, db)
-    expect(calls).toHaveLength(1)
-    const html: string = calls[0].html
+    const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
+    const html: string = adminCall.html
     expect(html).toContain('New matches (12)')
     expect(html).toContain('NM 112')                 // most relevant is listed
     expect(html).not.toContain('NM 101')             // the two least relevant are cut
@@ -257,7 +257,7 @@ describe('runDigest', () => {
     expect(html).toContain('NM 103')                 // the 10th most relevant is the last listed
     expect(html).toContain('…and 2 more')
     expect(html).toContain(`${env.APP_URL}/bills?newMatches=1`)
-    expect(calls[0].subject).toContain('12 new bills matching your keywords')
+    expect(adminCall.subject).toContain('12 new bills matching your keywords')
   })
 
   it('excludes prioritized and dismissed bills from the new-match section', async () => {

@@ -82,6 +82,7 @@ import migrationSql88 from '../migrations/0088_reply_notifications.sql?raw'
 import migrationSql89 from '../migrations/0089_reaction_notifications.sql?raw'
 import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
 import migrationSql95 from '../migrations/0095_match_provenance.sql?raw'
+import migrationSql96 from '../migrations/0096_digest_matches_option.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -266,6 +267,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql89, '0089_reaction_notifications'),
     parseMigration(migrationSql93, '0093_feed_events_billless'),
     parseMigration(migrationSql95, '0095_match_provenance'),
+    parseMigration(migrationSql96, '0096_digest_matches_option'),
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
@@ -278,6 +280,7 @@ export async function seedUser(overrides?: {
   subtitle?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
+  emailDigestMatchesEnabled?: boolean
   emailRepliesEnabled?: boolean
   deactivatedAt?: string | null
   invitedBy?: string | null
@@ -292,6 +295,7 @@ export async function seedUser(overrides?: {
     subtitle: overrides?.subtitle ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
+    emailDigestMatchesEnabled: overrides?.emailDigestMatchesEnabled === false ? 0 : 1,
     emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
     invitedBy: overrides?.invitedBy ?? null,

@@ -64,7 +64,8 @@ export async function runDigest(
     .where(and(isNotNull(bills.priority), inArray(feedEvents.type, DIGEST_CATEGORIES as any), sql`datetime(${feedEvents.createdAt}) > datetime(${since})`, eq(feedEvents.suppressed, false), activeUser))
     .all()
 
-  // New keyword matches awaiting triage — admin/owner section only. Bill-based
+  // New keyword matches awaiting triage — the section admins always get and
+  // members get unless they turned off "Include newly matched bills". Bill-based
   // (not feed events) and NOT priority-gated; scoped to the digest window. Only
   // routine matches, under the same new-match definition (and threshold) as the
   // triage list and chip: a seed's or keyword re-run's matches stay in the
@@ -85,7 +86,7 @@ export async function runDigest(
 
   if (events.length === 0 && newMatches.length === 0) { await stampLastDigest(db, now); return { ok: true, recipients: 0, sent: 0, failed: 0 } }
 
-  const recipients = await db.select({ email: users.email, role: users.role }).from(users)
+  const recipients = await db.select({ email: users.email, role: users.role, matchesEnabled: users.emailDigestMatchesEnabled }).from(users)
     .where(and(
       eq(users.emailDigestEnabled, 1),
       exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id))),
@@ -99,21 +100,27 @@ export async function runDigest(
   const headers = unsubscribeHeaders(env.APP_URL, 'setting-email-digest')
   const billCount = new Set(events.map(e => e.billId)).size
 
-  // Members get the unchanged priority-event digest. Admins/owners get that plus the
-  // new-match section. Members are skipped entirely when there are no priority events.
-  const memberHtml = events.length > 0
-    ? renderDigestEmail({ events, assocName, appUrl: env.APP_URL, periodStart: since, periodEnd: now })
-    : null
-  const memberSubject = `${assocName}: ${billCount} priority bill${billCount === 1 ? '' : 's'} updated`
-  const adminHtml = renderDigestEmail({ events, assocName, appUrl: env.APP_URL, periodStart: since, periodEnd: now, newMatches })
-  const adminSubject = billCount > 0
-    ? memberSubject
+  // Updates lead; the new-match section follows. A recipient who gets the section
+  // is every admin/owner and each member who hasn't turned off "Include newly
+  // matched bills". The rest get the priority-event digest alone, and none at all
+  // when there are no priority events.
+  const prioritySubject = `${assocName}: ${billCount} priority bill${billCount === 1 ? '' : 's'} updated`
+  const subjectWithMatches = billCount > 0
+    ? prioritySubject
     : `${assocName}: ${newMatches.length} new bill${newMatches.length === 1 ? '' : 's'} matching your keywords`
+  const render = (opts: { newMatches?: NewMatchDigestItem[]; forMember?: boolean }) =>
+    renderDigestEmail({ events, assocName, appUrl: env.APP_URL, periodStart: since, periodEnd: now, ...opts })
+  const adminHtml = render({ newMatches })
+  const memberWithMatchesHtml = render({ newMatches, forMember: true })
+  const updatesOnly = events.length > 0
+    ? { subject: prioritySubject, html: render({}) }
+    : null
 
   const messages = recipients.flatMap(r => {
     const isAdmin = r.role === 'admin' || r.role === 'owner'
-    if (isAdmin) return [{ to: [r.email], subject: adminSubject, html: adminHtml, headers }]
-    if (memberHtml) return [{ to: [r.email], subject: memberSubject, html: memberHtml, headers }]
+    if (isAdmin) return [{ to: [r.email], subject: subjectWithMatches, html: adminHtml, headers }]
+    if (r.matchesEnabled === 1) return [{ to: [r.email], subject: subjectWithMatches, html: memberWithMatchesHtml, headers }]
+    if (updatesOnly) return [{ to: [r.email], ...updatesOnly, headers }]
     return []
   })
   if (messages.length === 0) { await stampLastDigest(db, now); return { ok: true, recipients: 0, sent: 0, failed: 0 } }

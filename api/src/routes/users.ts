@@ -58,8 +58,8 @@ usersRouter.patch('/me', async (c) => {
   const currentUser = c.get('user')
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>))
   const raw = body && typeof body === 'object' ? body : {}
-  const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
-  const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
+  const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailDigestMatchesEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
+  const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailDigestMatchesEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 
   if ('name' in raw) {
     if (raw.name !== null && typeof raw.name !== 'string') {
@@ -84,6 +84,10 @@ usersRouter.patch('/me', async (c) => {
   if (typeof raw.emailDigestEnabled === 'boolean') {
     updates.emailDigestEnabled = raw.emailDigestEnabled ? 1 : 0
     echo.emailDigestEnabled = raw.emailDigestEnabled
+  }
+  if (typeof raw.emailDigestMatchesEnabled === 'boolean') {
+    updates.emailDigestMatchesEnabled = raw.emailDigestMatchesEnabled ? 1 : 0
+    echo.emailDigestMatchesEnabled = raw.emailDigestMatchesEnabled
   }
   if (typeof raw.emailWeekAheadEnabled === 'boolean') {
     updates.emailWeekAheadEnabled = raw.emailWeekAheadEnabled ? 1 : 0

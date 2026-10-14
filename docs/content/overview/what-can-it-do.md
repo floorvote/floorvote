@@ -55,7 +55,7 @@ Admins can also restrict voting on a per-member basis, for cases where someone s
 
 Members get notified whenever anyone @-mentions them (or a team role they have) in a comment, and they always get an email for it. Commenting on a bill also makes you a participant in its comments: when someone else comments on it, you get a notification in the app and an email right away. Replies to one bill group into a single conversation in your mail client. Voting on a bill, writing a note, or being mentioned doesn't make you a participant, and editing a comment never sends new notifications. When someone reacts to your comment, you get a notification in the app (never an email), and the panel groups everyone who reacted to that comment into one row. Reacting to your own comment doesn't notify you, and taking a reaction back doesn't remove the notification it already sent. Admins can turn conversation emails (mentions and replies) off for the whole instance on the Notifications settings page. In-app notifications aren't affected.
 
-Weekly or daily email digests round up what's changed on prioritized bills, and a week-ahead email flags upcoming hearings. Each member controls both, and whether to get reply emails, from the "Your Email" section of their profile.
+Weekly or daily email digests round up what's changed on prioritized bills, then list the most relevant newly matched bills with a count and a link to the rest. Admins always get that list. Members get it unless they turn off "Include newly matched bills" under their digest switch. A week-ahead email flags upcoming hearings. Each member controls both emails, and whether to get reply emails, from the "Your Email" section of their profile.
 
 ## Feed
 
