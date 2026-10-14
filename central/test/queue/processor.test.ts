@@ -381,6 +381,86 @@ async function md5Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+describe('the change log and identical companions', () => {
+  type Sast = { typeId: number; type: string; number: string; id: number }
+
+  // A bill already in central, with `before` as its stored relationships,
+  // re-ingested with `after`. Returns the companion rows of its change log.
+  async function reingest(state: string, before: Sast[], after: Sast[]) {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.sessions).values({
+      sessionId: 2154, state, stateId: 50, yearStart: 2025, yearEnd: 2026,
+      sessionName: '2025-2026 Regular', sessionTitle: '2025-2026 Regular', sessionTag: '',
+      prefile: 0, sineDie: 0, prior: 0, special: 0,
+    })
+    await db.insert(schema.bills).values({
+      billId: 9001, changeHash: 'hash-v0', sessionId: 2154, state, stateId: 50, billNumber: 'AB99', title: 'Test bill', status: 1,
+    })
+    for (const s of before) {
+      await db.insert(schema.billSasts).values({ id: crypto.randomUUID(), billId: 9001, typeId: s.typeId, type: s.type, sastBillNumber: s.number, sastBillId: s.id })
+    }
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({
+      change_hash: 'hash-v1', state,
+      sasts: after.map(s => ({ type_id: s.typeId, type: s.type, sast_bill_number: s.number, sast_bill_id: s.id })),
+    }))
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
+    const rows = await db.select().from(schema.billChangeLog).where(eq(schema.billChangeLog.billId, 9001)).all()
+    return rows.filter(r => r.changeType.startsWith('companion_'))
+  }
+
+  const sameAs: Sast = { typeId: 1, type: 'Same As', number: 'SB99', id: 9002 }
+  const other: Sast = { typeId: 1, type: 'Same As', number: 'SB100', id: 9003 }
+  const summary = (rows: { changeType: string; oldValue: string | null; newValue: string | null }[]) =>
+    rows.map(r => [r.changeType, r.oldValue ?? r.newValue])
+
+  it('records a bill gaining an identical companion', async () => {
+    const rows = await reingest('NJ', [], [sameAs])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ changeType: 'companion_added', oldValue: null, newValue: 'SB99', detail: 'Same As' })
+  })
+
+  it('records a bill losing an identical companion', async () => {
+    const rows = await reingest('NJ', [sameAs], [])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ changeType: 'companion_removed', oldValue: 'SB99', newValue: null, detail: 'Same As' })
+  })
+
+  it('records a swap as one loss and one gain', async () => {
+    const rows = await reingest('NJ', [sameAs], [other])
+    expect(summary(rows).sort()).toEqual([['companion_added', 'SB100'], ['companion_removed', 'SB99']])
+  })
+
+  it('reports only the companion that is new when another is unchanged', async () => {
+    const rows = await reingest('NJ', [sameAs], [sameAs, other])
+    expect(summary(rows)).toEqual([['companion_added', 'SB100']])
+  })
+
+  it('leaves out relationships that aren\'t identical', async () => {
+    const similar: Sast = { typeId: 2, type: 'Similar To', number: 'SB5', id: 9004 }
+    const rows = await reingest('TX', [], [similar, other])
+    expect(summary(rows)).toEqual([['companion_added', 'SB100']])
+  })
+
+  it('leaves out a loss that wasn\'t identical', async () => {
+    const similar: Sast = { typeId: 2, type: 'Similar To', number: 'SB5', id: 9004 }
+    const rows = await reingest('TX', [similar, sameAs], [])
+    expect(summary(rows)).toEqual([['companion_removed', 'SB99']])
+  })
+
+  it('leaves out Michigan\'s "Same As", which is a package, and keeps its identical cross-files', async () => {
+    const crossfiled: Sast = { typeId: 5, type: 'Crossfiled', number: 'SB0007', id: 9005 }
+    const rows = await reingest('MI', [], [sameAs, crossfiled])
+    expect(summary(rows)).toEqual([['companion_added', 'SB0007']])
+  })
+
+  it('records a relationship whose label moves to an identical one as a gain', async () => {
+    const similar: Sast = { typeId: 2, type: 'Similar To', number: 'SB99', id: 9002 }
+    const rows = await reingest('NJ', [similar], [sameAs])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ changeType: 'companion_added', newValue: 'SB99' })
+  })
+})
+
 describe('validateTextPayload', () => {
   it('rejects an HTML app shell served under a PDF mime', () => {
     // The exact Indiana failure.

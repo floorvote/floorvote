@@ -1,4 +1,5 @@
 import type { Provider, StatusStage } from '../providers'
+import type { RelationshipKind } from '../../../shared/relationshipKinds'
 
 /**
  * Reading a provider's vocabulary (`Provider.vocabulary`): what core sends for
@@ -54,4 +55,9 @@ export function vocabularyLabels(provider: Provider) {
       .map(([typeId, t]) => ({ typeId: Number(typeId), label: t.label, kind: t.kind, explainer: t.explainer ?? null })),
     calendarName: v.calendarName ?? null,
   }
+}
+
+/** STUB for the red run. */
+export function relationshipKind(_provider: Provider, _state: string, _label: string): RelationshipKind {
+  return undefined as unknown as RelationshipKind
 }
