@@ -28,7 +28,9 @@ export function PersonalNote({ billId, initialContent, notes }: PersonalNoteProp
   async function save(value: string | null) {
     await apiFetch(`/bills/${billId}/note`, {
       method: 'PUT',
-      body: JSON.stringify({ content: value }),
+      // The other bills' notes shown stacked here, which this save replaces.
+      // The API deletes only these, so it never removes a note this page didn't show.
+      body: JSON.stringify({ content: value, merges: (stacked ?? []).map(n => n.billId).filter(id => id !== billId) }),
     })
     setContent(value ?? '')
     setStacked(null)

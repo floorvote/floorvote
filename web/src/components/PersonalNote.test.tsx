@@ -41,8 +41,17 @@ describe('a personal note across a companion group', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Personal note' }))
     expect(screen.getByTestId('editor').textContent).toBe(MERGED)
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(put).toHaveBeenCalledWith('/bills/a190/note', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ content: MERGED }) })))
+    // It names the companion notes it showed, so the API merges away only those.
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/bills/a190/note', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ content: MERGED, merges: ['b1713'] }) })))
     // Once saved it is one note, so the per-bill headings go.
     await waitFor(() => expect(screen.queryByRole('heading', { name: 'S1713' })).toBeNull())
+  })
+
+  it('names no merged notes when it showed a single note', async () => {
+    const put = vi.spyOn(api, 'apiFetch').mockResolvedValue({ content: '<p>On A190</p>' } as never)
+    render(<PersonalNote billId="a190" initialContent="<p>On A190</p>" notes={[NOTES[0]]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Personal note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/bills/a190/note', expect.objectContaining({ body: JSON.stringify({ content: '<p>On A190</p>', merges: [] }) })))
   })
 })

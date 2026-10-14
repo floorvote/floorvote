@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
@@ -17,6 +17,7 @@ import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { displayName } from '../../lib/displayName'
+import { chunk } from '../../lib/chunk'
 import { inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 
 // Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
@@ -53,10 +54,14 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
 
     const now = nowDb()
     if (existing) {
-      await db
-        .update(memberVotes)
-        .set({ position, updatedAt: now })
-        .where(eq(memberVotes.id, existing.id))
+      // Rewritten rather than updated in place, so its rowid follows this
+      // write. A companion group resolves a member's vote to the latest on any
+      // of its bills, and times are stored to the second, so rowid breaks the
+      // tie between votes cast in the same second.
+      await db.batch([
+        db.delete(memberVotes).where(eq(memberVotes.id, existing.id)),
+        db.insert(memberVotes).values({ ...existing, position, updatedAt: now }),
+      ])
     } else {
       await db.insert(memberVotes).values({
         id: crypto.randomUUID(),
@@ -284,8 +289,11 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     const currentUser = c.get('user')
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Not found' }, 404)
-    const body = await c.req.json<{ content?: string }>().catch(() => ({} as { content?: string }))
+    const body = await c.req.json<{ content?: string; merges?: unknown }>().catch(() => ({} as { content?: string; merges?: unknown }))
     const content = body.content ?? ''
+    // The companion bills whose notes the page showed stacked with this one,
+    // and which this save therefore replaces.
+    const merges = Array.isArray(body.merges) ? body.merges.filter((m): m is string => typeof m === 'string' && m !== id) : []
     if (new TextEncoder().encode(content).length > 51_200) {
       return c.json({ error: 'Note too long (max 50 KB)' }, 400)
     }
@@ -304,14 +312,18 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         target: [notes.billId, notes.userId],
         set: { content, updatedAt: now },
       })
-    // One note per member per companion group: the edit was made on the
-    // stacked notes from every bill, so it replaces the member's others. Only
-    // this member's notes, never anyone else's.
-    await db.delete(notes).where(and(
-      eq(notes.userId, currentUser.id),
-      inGroupOf(notes.billId, id),
-      ne(notes.billId, id),
-    ))
+    // One note per member per companion group: the page showed the member's
+    // notes from other bills stacked with this one, and the edit replaces
+    // them. Only the ones it showed, so a page loaded before the bills were
+    // grouped never deletes a note its member didn't see. Only notes in this
+    // bill's group, and only this member's.
+    for (const part of chunk(merges, 50)) {
+      await db.delete(notes).where(and(
+        eq(notes.userId, currentUser.id),
+        inGroupOf(notes.billId, id),
+        inArray(notes.billId, part),
+      ))
+    }
 
     return c.json({ content })
   })

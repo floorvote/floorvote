@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
+import { app } from '../../src/index'
 import { and, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { comments, memberVotes, notes, notifications, users } from '../../src/db/schema'
+import { associationConfig, bills, calendarEvents, comments, memberVotes, notes, notifications, users } from '../../src/db/schema'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
@@ -172,6 +173,16 @@ describe('bill routes across a companion group', () => {
       expect(d.voteCounts.total).toBe(1)
     })
 
+    it('follow the last vote cast when votes on both bills land in the same second', async () => {
+      await group()
+      // Votes are stored to the second, so these three tie on time. The last
+      // one changes A190's existing vote, which predates S1713's.
+      for (const [billId, position] of [['a190', 'support'], ['b1713', 'oppose'], ['a190', 'neutral']]) {
+        expect((await as('ann', `/bills/${billId}/votes`, { method: 'POST', body: JSON.stringify({ position }) })).status).toBe(200)
+      }
+      expect((await detail('ann', 'b1713')).myVote).toBe('neutral')
+    })
+
     it('retract for the whole group, so an older vote on a companion does not come back', async () => {
       await vote('b1713', user.ann, 'oppose', '2026-10-01 09:00:00')
       await vote('a190', user.ann, 'support', '2026-10-02 09:00:00')
@@ -190,6 +201,39 @@ describe('bill routes across a companion group', () => {
       expect((await detail('ann', 'a190')).myVote).toBe('support')
       expect((await detail('ann', 'b1713')).myVote).toBe('oppose')
       expect((await detail('ann', 'b1713')).voteCounts).toEqual({ support: 0, oppose: 1, neutral: 0, total: 1 })
+    })
+  })
+
+  describe('the dashboard', () => {
+    type Sidebar = { unvotedPriorityCount: number; priorityBills: Array<{ id: string; myVote: string | null }> }
+    async function sidebar(): Promise<Sidebar> {
+      const res = await as('ann', '/stats/sidebar')
+      expect(res.status).toBe(200)
+      return await res.json() as Sidebar
+    }
+
+    it("counts a priority bill as voted on when the member voted on its companion", async () => {
+      await db().update(bills).set({ priority: 'high' }).where(eq(bills.id, 'b1713'))
+      await vote('a190', user.ann, 'support', '2026-10-02 09:00:00')
+      await group()
+      const s = await sidebar()
+      expect(s.unvotedPriorityCount).toBe(0)
+      expect(s.priorityBills.map(b => [b.id, b.myVote])).toEqual([['b1713', 'support']])
+    })
+
+    it("shows the member's group vote on a priority bill's upcoming hearing", async () => {
+      await db().update(bills).set({ priority: 'high' }).where(eq(bills.id, 'b1713'))
+      await db().insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'upcoming-hearings': { enabled: true } }) })
+      await db().insert(calendarEvents).values({
+        id: 'h1', uid: 'h1@test', billId: 'b1713', source: 'hearing', sequence: 0,
+        date: new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10), time: '10:00:00', location: 'Room 11', description: 'Committee hearing',
+        status: 'confirmed', eventHash: 'eh1',
+      })
+      await vote('a190', user.ann, 'oppose', '2026-10-02 09:00:00')
+      await group()
+      const res = await app.request('/api/stats/sidebar', { headers: { Cookie: cookie.ann } }, { ...env, DEMO_MODE: 'true' })
+      const body = await res.json() as { upcomingHearings: Array<{ bills: Array<{ billNumber: string; myVote: string | null }> }> }
+      expect(body.upcomingHearings[0].bills.map(b => [b.billNumber, b.myVote])).toEqual([['S1713', 'oppose']])
     })
   })
 
@@ -222,7 +266,8 @@ describe('bill routes across a companion group', () => {
 
     it("become one note, on the viewed bill, on the member's next edit", async () => {
       await group()
-      const res = await as('ann', '/bills/a190/note', { method: 'PUT', body: JSON.stringify({ content: '<p>merged</p>' }) })
+      // The page showed both notes stacked, so it names the companion's as merged.
+      const res = await as('ann', '/bills/a190/note', { method: 'PUT', body: JSON.stringify({ content: '<p>merged</p>', merges: ['b1713'] }) })
       expect(res.status).toBe(200)
       for (const billId of ['a190', 'b1713']) {
         const d = await detail('ann', billId)
@@ -231,6 +276,24 @@ describe('bill routes across a companion group', () => {
       }
       // Another member's note on the companion is untouched.
       expect((await detail('ben', 'a190')).myNotes?.map(n => n.content)).toEqual(['<p>Ben on S1713</p>'])
+    })
+
+    it('keep a companion note the page never showed, when a page from before the grouping saves', async () => {
+      await group()
+      // A tab opened before the bills were grouped saves with no merged notes.
+      const res = await as('ann', '/bills/a190/note', { method: 'PUT', body: JSON.stringify({ content: '<p>edited</p>' }) })
+      expect(res.status).toBe(200)
+      expect((await detail('ann', 'b1713')).myNotes?.map(n => [n.billNumber, n.content])).toEqual([
+        ['S1713', '<p>Ann on S1713</p>'], ['A190', '<p>edited</p>'],
+      ])
+    })
+
+    it('merge away only notes from the same group', async () => {
+      await seedBill({ id: 'z9', billNumber: 'Z9', state: 'NJ', externalId: 'legiscan:9' })
+      await note('z9', user.ann, '<p>Ann on Z9</p>')
+      await group()
+      await as('ann', '/bills/a190/note', { method: 'PUT', body: JSON.stringify({ content: '<p>merged</p>', merges: ['b1713', 'z9'] }) })
+      expect((await detail('ann', 'z9')).myNote).toBe('<p>Ann on Z9</p>')
     })
 
     it("stay per bill when the bill isn't grouped", async () => {

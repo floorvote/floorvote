@@ -16,6 +16,8 @@
 -- later other team-level changes. type has no CHECK so a new kind of event
 -- needs no table rebuild.
 --
+-- It also restores the bill_id indexes on comments and member_votes (below).
+--
 -- Existing bills start ungrouped. Each is grouped on its next delivery from
 -- central, and a metadata refresh groups them all at once.
 --
@@ -40,5 +42,12 @@ CREATE TABLE team_events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_team_events_bill ON team_events(bill_id, created_at);
+
+-- Migration 0025 rebuilt comments and member_votes without the bill_id indexes
+-- 0001 gave them, so every bill page has scanned both tables since. A group
+-- reads both through a list of bill ids, which needs them back. IF NOT EXISTS
+-- in case an instance or a fork re-created them by hand.
+CREATE INDEX IF NOT EXISTS idx_comments_bill_id ON comments(bill_id);
+CREATE INDEX IF NOT EXISTS idx_member_votes_bill_id ON member_votes(bill_id);
 
 ANALYZE;

@@ -136,6 +136,30 @@ describe('companion groups at ingest', () => {
     expect(await eventsOf('c1714')).toEqual([])
   })
 
+  it('writes one grouping event per bill when both companions are delivered at once', async () => {
+    // The tenant queue runs batches concurrently, and a metadata refresh
+    // delivers both bills of a pair together, each naming the other.
+    central.set('legiscan:190', { number: 'A190', relatedBills: [identical('S1713', 1713)] })
+    central.set('legiscan:1713', { number: 'S1713', relatedBills: [identical('A190', 190)] })
+    await Promise.all([deliver('legiscan:190'), deliver('legiscan:1713'), deliver('legiscan:190')])
+    expect([await groupKeyOf('a190'), await groupKeyOf('b1713')]).toEqual(['a190', 'a190'])
+    expect((await eventsOf('a190')).map(e => e.type)).toEqual(['grouped'])
+    expect((await eventsOf('b1713')).map(e => e.type)).toEqual(['grouped'])
+  })
+
+  it('settles a chain delivered all at once into one group with one event per bill', async () => {
+    central.set('legiscan:190', { number: 'A190', relatedBills: [identical('S1713', 1713)] })
+    central.set('legiscan:1713', { number: 'S1713', relatedBills: [identical('S1714', 1714)] })
+    central.set('legiscan:1714', { number: 'S1714', relatedBills: [] })
+    await Promise.all([deliver('legiscan:190'), deliver('legiscan:1713'), deliver('legiscan:1714')])
+    expect([await groupKeyOf('a190'), await groupKeyOf('b1713'), await groupKeyOf('c1714')]).toEqual(['a190', 'a190', 'a190'])
+    for (const id of ['a190', 'b1713', 'c1714']) {
+      // Each bill ends up grouped with exactly the other two, named once.
+      const named = (await eventsOf(id)).filter(e => e.type === 'grouped').flatMap(e => e.with.map((b: { billId: string }) => b.billId))
+      expect(named.sort()).toEqual(['a190', 'b1713', 'c1714'].filter(x => x !== id))
+    }
+  })
+
   it('writes no new event when a delivery leaves the group as it was', async () => {
     central.set('legiscan:1713', { number: 'S1713', relatedBills: [identical('A190', 190)] })
     await deliver('legiscan:1713')

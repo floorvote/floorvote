@@ -27,11 +27,12 @@ import type { AppDb } from '../types'
 
 /**
  * The ids of every bill in `billId`'s group, `billId` included, as a SQL
- * subquery. Just `billId` for an ungrouped bill, since a NULL key matches
+ * subquery. `billId` is an id, or the outer query's `bills.id` column for a
+ * correlated subquery, one group per row. Just `billId` for an ungrouped bill, since a NULL key matches
  * nothing. A subquery, not a list of ids, so no group size can reach D1's
  * parameter limit.
  */
-export function groupMemberIds(billId: string): SQL {
+export function groupMemberIds(billId: string | SQLiteColumn): SQL {
   return sql`(SELECT g.id FROM bills g WHERE g.id = ${billId} OR g.group_key = (SELECT k.group_key FROM bills k WHERE k.id = ${billId}))`
 }
 
@@ -65,6 +66,17 @@ export function groupVotes(db: AppDb, billId: string) {
   }).from(memberVotes).where(inGroupOf(memberVotes.billId, billId)).as('ranked_votes')
   return db.select({ userId: ranked.userId, position: ranked.position, updatedAt: ranked.updatedAt })
     .from(ranked).where(eq(ranked.rank, 1)).as('group_votes')
+}
+
+/**
+ * A member's vote on the group of the bill in `billId` (the outer query's
+ * `bills.id`), as a correlated scalar: their most recent vote on any bill in
+ * it, or null. For lists of bills. One bill's page uses `groupVotes`.
+ */
+export function myGroupVote(billId: SQLiteColumn, userId: string) {
+  return sql<'support' | 'oppose' | 'neutral' | null>`(SELECT mv.position FROM member_votes mv
+    WHERE mv.user_id = ${userId} AND mv.bill_id IN ${groupMemberIds(billId)}
+    ORDER BY mv.updated_at DESC, mv.rowid DESC LIMIT 1)`
 }
 
 /**
@@ -142,18 +154,38 @@ type Node = { id: string; billNumber: string; externalId: string | null; groupKe
 
 const nodeColumns = { id: bills.id, billNumber: bills.billNumber, externalId: bills.externalId, groupKey: bills.groupKey }
 
+// How many times a recompute that lost a race with another one re-reads and tries again.
+const RECOMPUTE_ATTEMPTS = 5
+
 /**
  * Recompute the groups of these bills and of every bill grouped with them
  * before, write the keys that changed, and record a grouping event on each
  * bill that joined or left companions: `grouped` naming the bills it joined,
  * `split` naming the ones it left. A null actor means FloorVote did it
  * automatically, from the provider's data.
+ *
+ * Safe to run concurrently, as the tenant queue does: the writes are one
+ * transaction that applies only if every key it read is unchanged, so of two
+ * recomputes racing over one group, one writes and the other re-reads and
+ * finds nothing left to do. That keeps grouping events from doubling.
  */
 export async function recomputeGroups(
   db: AppDb,
   billIds: readonly string[],
   opts: { actorUserId?: string | null } = {},
 ): Promise<void> {
+  for (let attempt = 1; attempt <= RECOMPUTE_ATTEMPTS; attempt++) {
+    if (await tryRecomputeGroups(db, billIds, opts)) return
+  }
+  throw new Error(`Companion groups of ${billIds.join(', ')} kept changing under ${RECOMPUTE_ATTEMPTS} recomputes`)
+}
+
+/** One recompute: false when another write changed a key it read, so nothing was written. */
+async function tryRecomputeGroups(
+  db: AppDb,
+  billIds: readonly string[],
+  opts: { actorUserId?: string | null },
+): Promise<boolean> {
   const nodes = new Map<string, Node>()
   const neighbors = new Map<string, Set<string>>()
   const oldGroups = new Map<string, Node[]>()
@@ -200,6 +232,7 @@ export async function recomputeGroups(
     }
   }
 
+
   const now = nowDb()
   const byNumber = (ids: Iterable<string>): GroupBill[] =>
     [...ids].map(id => ({ billId: id, billNumber: nodes.get(id)!.billNumber })).sort(compareBillNumbers)
@@ -224,10 +257,35 @@ export async function recomputeGroups(
     if (joined.length > 0) event('grouped', joined)
   }
 
-  for (const [key, ids] of rekey) {
-    for (const part of chunk(ids, 90)) await db.update(bills).set({ groupKey: key }).where(inArray(bills.id, part))
-  }
-  for (const part of chunk(events, 10)) await db.insert(teamEvents).values(part)
+  const rekeyed = [...rekey].flatMap(([key, ids]) => ids.map(id => [id, key]))
+  if (rekeyed.length === 0 && events.length === 0) return true
+
+  // Every key as this recompute read it. Each statement below applies only
+  // while all still hold, and the batch is one transaction, so the events and
+  // keys land together or not at all. JSON parameters keep any group size
+  // under D1's parameter limit.
+  const read = [...nodes.values()].map(n => [n.id, n.groupKey])
+  const unchanged = sql`(SELECT COUNT(*) FROM bills b, json_each(${JSON.stringify(read)}) r
+    WHERE b.id = json_extract(r.value, '$[0]') AND b.group_key IS json_extract(r.value, '$[1]')) = ${read.length}`
+  const [inserted, updated] = await db.batch([
+    // Events first: the key update below changes what the guard reads.
+    // Columns in team_events' order: id, bill_id, type, actor_user_id, metadata, created_at.
+    db.insert(teamEvents).select(sql`SELECT json_extract(e.value, '$.id'), json_extract(e.value, '$.billId'), json_extract(e.value, '$.type'),
+        json_extract(e.value, '$.actorUserId'), json_extract(e.value, '$.metadata'), json_extract(e.value, '$.createdAt')
+      FROM json_each(${JSON.stringify(events)}) e WHERE ${unchanged}`),
+    // bills.id spelled out: json_each has an id column of its own, which an
+    // unqualified id inside the subquery would name.
+    db.update(bills)
+      .set({ groupKey: sql`(SELECT json_extract(k.value, '$[1]') FROM json_each(${JSON.stringify(rekeyed)}) k WHERE json_extract(k.value, '$[0]') = bills.id)` })
+      .where(and(sql`${bills.id} IN (SELECT json_extract(k.value, '$[0]') FROM json_each(${JSON.stringify(rekeyed)}) k)`, unchanged)),
+  ])
+  // A membership change always moves at least one key, so an update that
+  // changed nothing means the guard failed.
+  return rekeyed.length > 0 ? changesOf(updated) === rekeyed.length : changesOf(inserted) === events.length
+}
+
+function changesOf(result: unknown): number {
+  return (result as { meta?: { changes?: number } }).meta?.changes ?? 0
 }
 
 /** The bills in this instance linked to `node` by an identical relationship, named by either bill. */

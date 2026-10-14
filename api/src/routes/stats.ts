@@ -10,6 +10,7 @@ import { filedSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
+import { myGroupVote } from '../lib/companionGroups'
 import { newMatchWhere } from './billsApi/query'
 import { getNewMatchMinRelevance } from '../lib/newMatch'
 import { hasLoggedInWhere } from '../lib/loginHistory'
@@ -76,12 +77,12 @@ statsRouter.get('/sidebar', async (c) => {
   ] = await Promise.all([
     // 1. Count priority bills
     db.select({ count: count() }).from(bills).where(isNotNull(bills.priority)).get(),
-    // 2. Priority bills user hasn't voted on (left join, vote is null)
+    // 2. Priority bills user hasn't voted on. A vote on a bill's companion
+    // counts, since a member has one vote on a companion group.
     db
       .select({ count: count() })
       .from(bills)
-      .leftJoin(memberVotes, and(eq(memberVotes.billId, bills.id), eq(memberVotes.userId, userId)))
-      .where(and(isNotNull(bills.priority), isNull(memberVotes.id)))
+      .where(and(isNotNull(bills.priority), sql`${myGroupVote(bills.id, userId)} IS NULL`))
       .get(),
     // 3. Priority bills with user's vote, ordered high→medium→low
     db
@@ -95,10 +96,9 @@ statsRouter.get('/sidebar', async (c) => {
         summary: bills.tenantSummary,
         priority: bills.priority,
         isDraft: bills.isDraft,
-        myVote: memberVotes.position,
+        myVote: myGroupVote(bills.id, userId),
       })
       .from(bills)
-      .leftJoin(memberVotes, and(eq(memberVotes.billId, bills.id), eq(memberVotes.userId, userId)))
       .where(isNotNull(bills.priority))
       .orderBy(sql`CASE WHEN ${bills.priority}='high' THEN 0 WHEN ${bills.priority}='medium' THEN 1 ELSE 2 END`)
       .all(),
@@ -261,21 +261,14 @@ async function fetchUpcomingHearings(
       session: bills.session,
       sessionSlug: bills.sessionSlug,
       isDraft: bills.isDraft,
+      // The member's vote on the bill's companion group.
+      myVote: myGroupVote(bills.id, userId),
     })
     .from(bills)
     .where(and(inArray(bills.externalId, billExternalIds), isNotNull(bills.priority)))
     .all()
 
   if (billRows.length === 0) return { hearings: [], lookaheadDays }
-
-  // Member votes for current user, restricted to this set of bills
-  const billInternalIds = billRows.map(b => b.id)
-  const voteRows = await db
-    .select({ billId: memberVotes.billId, position: memberVotes.position })
-    .from(memberVotes)
-    .where(and(eq(memberVotes.userId, userId), inArray(memberVotes.billId, billInternalIds)))
-    .all()
-  const myVoteByBillId = new Map(voteRows.map(r => [r.billId, r.position]))
 
   const billByExternal = new Map<string, HearingBill>()
   for (const row of billRows) {
@@ -288,7 +281,7 @@ async function fetchUpcomingHearings(
       priority: row.priority as HearingBill['priority'],
       state: row.state,
       sessionSlug: filedSlug(row),
-      myVote: myVoteByBillId.get(row.id) ?? null,
+      myVote: row.myVote ?? null,
       isDraft: row.isDraft,
     })
   }
