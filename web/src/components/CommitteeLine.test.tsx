@@ -62,6 +62,16 @@ describe('CommitteeLine', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('is plain text, with no link, when told the page has no Legislative History section', () => {
+    render(
+      <MemoryRouter initialEntries={['/bills/42']}>
+        <CommitteeLine committee={{ committeeId: '7001', name: 'Judiciary', chamber: 'S' }} referrals={[JUDICIARY_SENATE]} linkToHistory={false} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
   it('links to the Legislative History section of the bill page', () => {
     renderLine({ committeeId: '7001', name: 'Judiciary', chamber: 'S' }, [JUDICIARY_SENATE])
     expect(screen.getByRole('link', { name: /Judiciary/ })).toHaveAttribute('href', '/bills/42#section-actions')

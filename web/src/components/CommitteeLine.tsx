@@ -17,7 +17,13 @@ const withChamber = (name: string, chamber: string | null) => {
  * referrals it reads "Last referred to", which doesn't claim the bill is still there.
  * Links to the Legislative History section, where the full referral chain is listed.
  */
-export function CommitteeLine({ committee, referrals }: { committee: CommitteeRef | null; referrals: ReferralRef[] }) {
+export function CommitteeLine({ committee, referrals, linkToHistory = true }: {
+  committee: CommitteeRef | null
+  /** In the provider's order, so the last one is the latest. */
+  referrals: ReferralRef[]
+  /** False when the page has no Legislative History section to link to. */
+  linkToHistory?: boolean
+}) {
   const last = referrals[referrals.length - 1]
   if (!committee && !last) return null
 
@@ -25,11 +31,13 @@ export function CommitteeLine({ committee, referrals }: { committee: CommitteeRe
   const month = !committee && last?.date ? formatMonthYear(last.date) : ''
   const place = committee ? withChamber(committee.name, committee.chamber) : withChamber(last!.name, last!.chamber)
 
+  const text = month ? `${place}, ${month}` : place
+
   return (
     <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6 }}>
       <span style={{ color: color.textMuted }}>{label}</span>
       {' '}
-      <Link to={{ hash: '#section-actions' }} className="blue-link">{month ? `${place}, ${month}` : place}</Link>
+      {linkToHistory ? <Link to={{ hash: '#section-actions' }} className="blue-link">{text}</Link> : text}
     </div>
   )
 }

@@ -791,14 +791,17 @@ export function BillDetail() {
   useEffect(() => {
     const hash = location.hash
     if (!hash.startsWith('#section-') && !hash.startsWith('#text-')) return
-    if (handledSectionHashRef.current === hash) return
+    // Each navigation has its own location key, so a link to a hash the page is
+    // already on (the committee line's) is handled again, not skipped.
+    const handled = `${location.key}${hash}`
+    if (handledSectionHashRef.current === handled) return
 
     if (hash.startsWith('#text-')) {
       const docId = hash.slice('#text-'.length)
       if (docId) {
         setRequestedDocId(docId)
         setShowBillText(true)
-        handledSectionHashRef.current = hash
+        handledSectionHashRef.current = handled
       }
       return
     }
@@ -815,7 +818,7 @@ export function BillDetail() {
     const timerId = setTimeout(() => {
       const el = document.getElementById(sectionId)
       if (!el) return
-      handledSectionHashRef.current = hash
+      handledSectionHashRef.current = handled
       const rect = el.getBoundingClientRect()
       const container = getScrollContainer()
       const isInView = rect.top >= 64 && rect.bottom <= window.innerHeight
@@ -828,7 +831,7 @@ export function BillDetail() {
       }, 1500)
     }, 0)
     return () => clearTimeout(timerId)
-  }, [location.hash, bill?.id])
+  }, [location.hash, location.key, bill?.id])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
   // of the response, NotificationsContext.tsx), so depending on `notifications` itself
@@ -1692,8 +1695,7 @@ export function BillDetail() {
         )}
 
         {/* Meta row 2: where the bill is in committee */}
-        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} />
-
+        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} linkToHistory={!!bill.lastAction} />
 
         {/* Meta row 3: sponsors */}
         {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (
