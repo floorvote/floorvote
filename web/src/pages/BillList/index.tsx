@@ -145,6 +145,11 @@ export function BillList() {
     return initial
   })
 
+  // Which filters the applied facet reply was computed for. The bulk dismiss acts
+  // on the filters as they stand when clicked, so its count is only shown while
+  // this matches them (see filterNewMatchCount below).
+  const [facetCountsKey, setFacetCountsKey] = useState<string | null>(null)
+
   const [positionVocabulary, setPositionVocabulary] = useState<string[]>(['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'])
   const [tagTaxonomy, setTagTaxonomy] = useState<string[]>([])
   const [orgNoun, setOrgNoun] = useState<string>(DEFAULT_ORG_NOUN)
@@ -260,6 +265,7 @@ export function BillList() {
   }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
   const facetSeqRef = useRef(0)
+  const filtersKey = JSON.stringify(f.currentFilters)
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
     if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
@@ -290,10 +296,11 @@ export function BillList() {
       cachedFacetCounts = data
       updateKnownStates(data)
       setFacetCounts(data)
+      setFacetCountsKey(filtersKey)
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters, filtersKey])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -1238,7 +1245,10 @@ export function BillList() {
           positionVocabulary={positionVocabulary}
           customFieldDefs={customFieldDefs.filter((fld): fld is typeof fld & { type: 'binary' | 'dropdown' } => fld.type === 'binary' || fld.type === 'dropdown')}
           currentFilters={f.currentFilters}
-          filterNewMatchCount={filterCounts.newMatchesCount}
+          // 0 hides the dismiss button until the reply for the current filters lands
+          // (filter change in flight, or its request failed): never offer a count
+          // for filters other than the ones the dismiss request will carry.
+          filterNewMatchCount={facetCountsKey === filtersKey ? filterCounts.newMatchesCount : 0}
           selectedBills={selectedBills}
           onClearSelection={handleClearSelection}
           onApplied={handleBulkApplied}

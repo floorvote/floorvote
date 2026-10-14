@@ -1117,6 +1117,27 @@ describe('BillList new-match dismiss — counts and sidebar chip', () => {
     expect(screen.queryByRole('button', { name: /Dismiss new matches \(1\)/ })).toBeNull()
   })
 
+  it('offers no dismiss count for new filters until the facet reply for them lands', async () => {
+    let resolveSearchReply: ((v: unknown) => void) | null = null
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+      ? new Promise(res => { resolveSearchReply = res })
+      : { ...FACETS, newMatchesCount: 61 }
+
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'foo' } })
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+
+    // The reply for "foo" is still in flight, so 61 describes the old filters,
+    // but the dismiss request would carry q=foo.
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    expect(screen.queryByRole('button', { name: /Dismiss new matches/ })).toBeNull()
+
+    resolveSearchReply!({ ...FACETS, newMatchesCount: 3 })
+    expect(await screen.findByRole('button', { name: /Dismiss new matches \(3\)/ })).toBeInTheDocument()
+  })
+
   it('refreshes the sidebar chip after a select-all dismiss', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     facetsState.respond = () => ({ ...FACETS, newMatchesCount: 61 })
