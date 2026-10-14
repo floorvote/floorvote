@@ -259,6 +259,7 @@ export function BillList() {
     }
   }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
+  const facetSeqRef = useRef(0)
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
     if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
@@ -279,8 +280,13 @@ export function BillList() {
     for (const [key, values] of Object.entries(f.cfFilters)) {
       values.forEach(v => params.append(`cf_${key}`, v))
     }
+    // Only the newest request may write the counts. The dismiss button acts on
+    // the filters as they stand now, so a slower reply to an earlier request
+    // (a search cleared before its reply returned) must not overwrite them.
+    const seq = ++facetSeqRef.current
     try {
       const data = await apiFetch<FacetCounts>(`/bills/facets?${params}`)
+      if (seq !== facetSeqRef.current) return
       cachedFacetCounts = data
       updateKnownStates(data)
       setFacetCounts(data)
@@ -494,11 +500,12 @@ export function BillList() {
 
   // Triage dismiss already hit the API in NewMatchTriageControl. Mark the bill
   // dismissed locally so the row's triage control reverts to a plain priority
-  // select, and refresh facets so the "New matches" count drops.
+  // select, and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()
-  }, [fetchFacets])
+    refreshSidebar()
+  }, [fetchFacets, refreshSidebar])
 
   const selectedBills = useMemo(() => {
     if (selection.mode !== 'ids') return []
@@ -529,6 +536,7 @@ export function BillList() {
       billsListCache = null
       void fetchBills(1, false)
       void fetchFacets()
+      refreshSidebar()
       return
     }
     const idSet = new Set(updatedIds)

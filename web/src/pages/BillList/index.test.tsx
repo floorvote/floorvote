@@ -31,6 +31,14 @@ const voteReject = { value: false }
 // selection returning 400), so we can assert the toolbar/chip row survive it.
 const billsListError = vi.hoisted(() => ({ value: null as string | null }))
 
+// Lets a test answer `/bills/facets` itself (e.g. hold one reply open so a
+// later request can overtake it) and swap the bills the list returns. Both
+// default to null, which keeps the fixture behaviour every other test relies on.
+const facetsState = vi.hoisted(() => ({
+  respond: null as ((path: string) => unknown) | null,
+  bills: null as unknown[] | null,
+}))
+
 // Lets a test hold the `/views` fetch open (to simulate it resolving on a
 // later tick than the mount commit) and control what it eventually resolves
 // with. Defaults to an immediate empty list, matching every test that doesn't
@@ -147,7 +155,8 @@ vi.mock('../../lib/api', () => {
       }
       return viewsState.response as T
     }
-    if (path.startsWith('/bills/facets')) return FACETS as T
+    if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
+    if (path === '/bills/bulk-dismiss' || path.endsWith('/triage-dismiss')) return {} as T
     if (path.endsWith('/votes')) {
       // When a test wants the vote to fail, hold the rejection open (deferred) so
       // the optimistic count stays observable until the test triggers the failure
@@ -167,7 +176,8 @@ vi.mock('../../lib/api', () => {
       // Honor a status filter so the test can observe the list responding.
       const qs = new URLSearchParams(path.split('?')[1])
       const statuses = qs.getAll('status')
-      const filtered = statuses.length > 0 ? BILLS.filter(b => statuses.includes(b.status)) : BILLS
+      const source = (facetsState.bills ?? BILLS) as typeof BILLS
+      const filtered = statuses.length > 0 ? source.filter(b => statuses.includes(b.status)) : source
       return { bills: filtered, pagination: { page: 1, pageSize: 100, total: filtered.length, totalPages: 1 } } as T
     }
     return {} as T
@@ -192,7 +202,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 import { BillList } from './index'
 import { ApiError } from '../../lib/api'
 import { AuthProvider } from '../../context/AuthContext'
-import { SidebarRefreshProvider } from '../../context/SidebarRefreshContext'
+import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../../context/SidebarRefreshContext'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
@@ -222,6 +232,8 @@ beforeEach(() => {
   deferred.rejectVote = null
   voteReject.value = false
   billsListError.value = null
+  facetsState.respond = null
+  facetsState.bills = null
   demoState.demoLocked = false
   demoState.demoMode = false
   demoState.settled = true
@@ -1049,5 +1061,101 @@ describe('BillList active filter chips — relevance threshold alone', () => {
       </MemoryRouter>,
     )
     await screen.findByText('Relevance 5+')
+  })
+})
+
+// #331: the dismiss button's count comes from /bills/facets, and the button acts
+// on whatever the server matches under the filters at click time. A slow reply
+// to an older request must not overwrite the counts for the newest one, and every
+// dismiss path must refresh the sidebar's "N new" chip right away.
+describe('BillList new-match dismiss — counts and sidebar chip', () => {
+  const NEW_MATCH = makeBill({
+    id: 'bill-new', billNumber: 'HB 9', title: 'Fresh Match', matchType: 'keyword',
+    newMatchAt: '2026-02-02 09:00:00', triagedAt: null,
+  })
+
+  // Stands in for the Sidebar: registers the function the page calls to
+  // re-fetch the "N new" chip, and counts those calls.
+  function renderWithSidebarSpy() {
+    const refresh = vi.fn()
+    function SidebarProbe() {
+      useRegisterSidebarRefresh(refresh)
+      return null
+    }
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><SidebarProbe /><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    return refresh
+  }
+
+  it('keeps the newest request\'s count when a slower reply to an older request arrives last', async () => {
+    let resolveSearchReply: ((v: unknown) => void) | null = null
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+      ? new Promise(res => { resolveSearchReply = res })
+      : { ...FACETS, newMatchesCount: 61 }
+
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')
+    const search = screen.getByPlaceholderText('Search…')
+
+    fireEvent.change(search, { target: { value: 'foo' } })
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+    // The search is cleared while the reply for "foo" is still in flight.
+    const callsBeforeClear = apiCalls.length
+    fireEvent.change(search, { target: { value: '' } })
+    await waitFor(() => expect(apiCalls.slice(callsBeforeClear).some(c => c.startsWith('/bills/facets') && !c.includes('q='))).toBe(true))
+
+    // Now the slow reply for the old search lands: 1 new match under "foo".
+    resolveSearchReply!({ ...FACETS, newMatchesCount: 1 })
+
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    expect(await screen.findByRole('button', { name: /Dismiss new matches \(61\)/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Dismiss new matches \(1\)/ })).toBeNull()
+  })
+
+  it('refreshes the sidebar chip after a select-all dismiss', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.respond = () => ({ ...FACETS, newMatchesCount: 61 })
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Early Voting Centers')
+    refresh.mockClear()
+
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches \(61\)/ }))
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bulk-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('refreshes the sidebar chip after dismissing selected rows', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [NEW_MATCH]
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    refresh.mockClear()
+
+    const row = document.querySelector('.bill-row') as HTMLElement
+    fireEvent.mouseEnter(row)
+    fireEvent.click(await within(row).findByRole('checkbox'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches \(1\)/ }))
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bulk-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('refreshes the sidebar chip after dismissing a single row', async () => {
+    facetsState.bills = [NEW_MATCH]
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    refresh.mockClear()
+
+    fireEvent.click((await screen.findAllByTitle('Reviewed — no priority'))[0])
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bill-new/triage-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
   })
 })
