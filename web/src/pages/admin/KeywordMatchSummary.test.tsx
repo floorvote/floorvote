@@ -291,4 +291,139 @@ describe('KeywordMatchSummary', () => {
       expect(container.textContent).toBe('')
     })
   })
+
+  describe('showing that it is counting', () => {
+    const answer = (matched: number): Summary => ({ total: 100, matched, newlyMatched: 0, unmatched: 0 })
+
+    // A fetch the test answers or fails by hand, in the order the component asks.
+    function controllableFetch() {
+      const calls: { resolve: (s: Summary) => void; reject: (e: Error) => void }[] = []
+      mockFetch.mockImplementation(() => new Promise<Summary>((resolve, reject) => { calls.push({ resolve, reject }) }))
+      return calls
+    }
+
+    async function answerWith(call: { resolve: (s: Summary) => void }, summary: Summary) {
+      await act(async () => { call.resolve(summary) })
+    }
+
+    it('says it is counting once the first count has been pending past the delay, then shows the summary', async () => {
+      const calls = controllableFetch()
+      render(<KeywordMatchSummary keywords="election" savedKeywords="election" />)
+      await settle(299)
+      expect(screen.queryByText('Counting matching bills…')).toBeNull()
+
+      await settle(1)
+      expect(screen.getByRole('status').textContent).toBe('Counting matching bills…')
+
+      await answerWith(calls[0], answer(10))
+      expect(screen.queryByText('Counting matching bills…')).toBeNull()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+    })
+
+    it('never shows the indicator for a first count that answers before the delay', async () => {
+      const calls = controllableFetch()
+      render(<KeywordMatchSummary keywords="election" savedKeywords="election" />)
+      await settle(100)
+      await answerWith(calls[0], answer(10))
+      await settle(1000)
+      expect(screen.queryByText(/Counting/)).toBeNull()
+      expect(screen.queryByText(/Updating/)).toBeNull()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+    })
+
+    it('keeps the previous numbers and marks them as updating from the edit until the new count answers', async () => {
+      const calls = controllableFetch()
+      const { rerender } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(0)
+      await answerWith(calls[0], answer(10))
+      await settle(1000)
+      expect(screen.queryByText(/Updating/)).toBeNull()
+
+      rerender(<KeywordMatchSummary keywords="ab" savedKeywords="a" />)
+      await settle(299)
+      expect(screen.queryByText(/Updating/)).toBeNull()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+
+      // The mark covers the debounce wait, before the recount has even started.
+      await settle(1)
+      expect(calls).toHaveLength(1)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+
+      await settle(200)
+      expect(calls).toHaveLength(2)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+
+      await answerWith(calls[1], answer(40))
+      expect(screen.queryByText(/Updating/)).toBeNull()
+      expect(screen.queryByText('10 of 100 bills (10%)')).toBeNull()
+      expect(screen.getByText('40 of 100 bills (40%)')).toBeTruthy()
+    })
+
+    it('keeps the updating mark when typing again while a count is pending, and shows only the latest answer', async () => {
+      const calls = controllableFetch()
+      const { rerender } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(0)
+      await answerWith(calls[0], answer(10))
+
+      rerender(<KeywordMatchSummary keywords="ab" savedKeywords="a" />)
+      await settle(600)
+      expect(calls).toHaveLength(2)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+
+      rerender(<KeywordMatchSummary keywords="abc" savedKeywords="a" />)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+
+      // The count for "ab" is out of date by the time it answers.
+      await answerWith(calls[1], answer(20))
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+      expect(screen.getByText('10 of 100 bills (10%)')).toBeTruthy()
+
+      await settle(500)
+      expect(calls).toHaveLength(3)
+      await answerWith(calls[2], answer(30))
+      expect(screen.queryByText(/Updating/)).toBeNull()
+      expect(screen.getByText('30 of 100 bills (30%)')).toBeTruthy()
+    })
+
+    it('announces counting once, not on every keystroke', async () => {
+      controllableFetch()
+      const { rerender } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(300)
+      const status = screen.getByRole('status')
+      const counting = screen.getByText('Counting matching bills…')
+
+      rerender(<KeywordMatchSummary keywords="ab" savedKeywords="a" />)
+      await settle(100)
+      rerender(<KeywordMatchSummary keywords="abc" savedKeywords="a" />)
+      await settle(100)
+      expect(screen.getByRole('status')).toBe(status)
+      expect(screen.getByText('Counting matching bills…')).toBe(counting)
+    })
+
+    it('clears the summary and shows no indicator when a pending first count fails', async () => {
+      const calls = controllableFetch()
+      const { container } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(400)
+      expect(screen.getByText('Counting matching bills…')).toBeTruthy()
+
+      await act(async () => { calls[0].reject(new Error('503')) })
+      expect(container.textContent).toBe('')
+    })
+
+    it('clears the summary and the updating mark when a recount fails', async () => {
+      const calls = controllableFetch()
+      const { rerender, container } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(0)
+      await answerWith(calls[0], answer(10))
+
+      rerender(<KeywordMatchSummary keywords="ab" savedKeywords="a" />)
+      await settle(600)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
+
+      await act(async () => { calls[1].reject(new Error('503')) })
+      expect(container.textContent).toBe('')
+    })
+  })
 })
