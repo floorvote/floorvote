@@ -662,7 +662,7 @@ export function BulkActionBar({
               : `Apply to ${count.toLocaleString()} bill${count !== 1 ? 's' : ''}`}
           </button>
 
-          {promoteCount > 0 && (
+          {promoteCount > 0 && !overLimit && (
             <span style={{ fontSize: fontSize.xs, lineHeight: 1.3, color: color.textMuted }}>
               {promoteCount.toLocaleString()} will be queued for AI analysis
             </span>

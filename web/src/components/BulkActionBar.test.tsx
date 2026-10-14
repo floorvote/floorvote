@@ -575,6 +575,14 @@ describe('BulkActionBar — AI analysis count before Apply', () => {
     expect(await screen.findByText(/17 will be queued for AI analysis/i)).toBeInTheDocument()
   })
 
+  it('shows nothing beside the disabled Apply button when more than 1,000 bills are selected', () => {
+    const many = Array.from({ length: 1001 }, (_, i) => untracked(`b${i}`))
+    render(<Harness selectedBills={many} />)
+    stagePriority('High')
+    expect(screen.getByRole('button', { name: /Too many/ })).toBeDisabled()
+    expect(queuedText()).not.toBeInTheDocument()
+  })
+
   it('keeps the Apply label free of an ellipsis', () => {
     render(<Harness selectedBills={[untracked('a'), untracked('b')]} />)
     stagePriority('High')
