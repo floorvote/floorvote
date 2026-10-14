@@ -296,6 +296,18 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ).bind(n.id, n.externalId, n.content, daysAgoDb(n.daysAgo), n.externalId),
   ))
 
+  // Saved views: wipe and re-insert, so a view a visitor deleted, rewrote, or added
+  // comes back as seeded. Ids and slugs are fixed in the seed, which keeps a shared
+  // ?view=<slug> link working across resets. The view switcher renders nothing when
+  // an instance has no views, so without these the demo would never show saved views
+  // or the OR group operator. display_order is the seed's array index; created_by
+  // is the demo's admin persona.
+  await db.prepare('DELETE FROM saved_views').run()
+  await batch(seed.savedViews.map((v, i) =>
+    db.prepare(`INSERT INTO saved_views (id, name, query, slug, created_by, display_order) VALUES (?, ?, ?, ?, 'demo-user', ?)`)
+      .bind(v.id, v.name, v.query, v.slug, i),
+  ))
+
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
   // hearings widget always show fresh upcoming events; the demo reset re-derives them.
   await batch(seed.calendarEvents.map((e) =>

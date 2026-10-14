@@ -45,9 +45,11 @@ Leave `DEMO_SEED` out and the tenant gets `nj-county-clerks`, the New Jersey cou
 
 The seed writes `ai_context`, `relevance_question`, `tag_taxonomy`, and `keywords` itself on every reset, so a demo tenant's content comes entirely from its seed module — there's no separate configuration step.
 
+A seed also carries its saved views, two or three named bill-list filters written for that demo's audience. The view switcher shows nothing on an instance with no views, so without them a visitor would never see the feature. Every reset deletes all of a demo's saved views and writes the seed's back, so a view added, changed, or removed between resets does not survive. Each view stores the bill list's own query string, and at least one per seed joins subjects and tags with `match=any`, the OR group operator.
+
 ### Adding a second demo
 
-1. Add a seed module beside `njCountyClerks.ts` in `api/src/lib/demoSeeds/`, exporting a `DemoSeed`. Copy the existing one — the type is the contract, and its comments explain the conventions (day offsets, timestamp format, mention markup).
+1. Add a seed module beside `njCountyClerks.ts` in `api/src/lib/demoSeeds/`, exporting a `DemoSeed`. Copy the existing one — the type is the contract, and its comments explain the conventions (day offsets, timestamp format, mention markup, saved views).
 2. Register it in `DEMO_SEEDS` in `api/src/lib/demoSeeds/index.ts` under the key you want operators to type.
 3. Deploy the tenant with `DEMO_MODE = "true"` and `DEMO_SEED = "<your key>"` in its vars.
 

@@ -1,5 +1,6 @@
 import { NJ_COUNTY_CLERKS } from '../../config/associations/nj-county-clerks'
 import type { DemoSeed } from './types'
+import { viewQuery } from './viewQuery'
 
 // The elections demo at demo.floor.vote: an association of New Jersey county
 // clerks. Fictional personas and fictional county names, attached to real NJ
@@ -504,5 +505,23 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
     { id: 'demo-event-3', externalId: 'legiscan:2100182', source: 'custom', offsetDays: 11, time: '17:00:00', location: null,               description: 'Comment period closes — A1195 rules' },
     { id: 'demo-event-4', externalId: null,               source: 'custom', offsetDays: 20, time: '09:00:00', location: 'Trenton Marriott', description: 'NJ County Clerks Association — spring conference' },
     { id: 'demo-event-5', externalId: null,               source: 'custom', offsetDays: 25, time: '14:00:00', location: 'Zoom',             description: 'Legislative strategy working group' },
+  ],
+
+  // Written for a county clerk's day: the election work, what leadership has
+  // flagged, and what the association has not yet taken a position on. The first
+  // view is the OR case. LegiScan files NJ election bills under "State and Local
+  // Government" rather than "Elections" (docs/internal/legiscan-api.md), so a
+  // subject filter alone is a poor election filter and a tag filter alone misses
+  // bills the AI left untagged; either one is enough to be on the list.
+  savedViews: [
+    {
+      id: 'demo-view-elections', name: 'Election work', slug: 'election-work',
+      query: viewQuery([
+        ['match', 'any'], ['tag', 'Elections'], ['tag', 'Board of Elections'],
+        ['subject', 'NJ:State and Local Government'],
+      ]),
+    },
+    { id: 'demo-view-high', name: 'High priority', slug: 'high-priority', query: viewQuery([['priority', 'high']]) },
+    { id: 'demo-view-no-position', name: 'Needs a position', slug: 'needs-a-position', query: viewQuery([['position', 'none']]) },
   ],
 }
