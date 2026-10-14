@@ -39,6 +39,8 @@ function row(number: string, textId: number, versionId: number, code: string, dr
 let textList: unknown[]
 let listStatus: number
 let noPdf: Set<number>
+/** Blob links the stub fails to serve. */
+let brokenBlobs: Set<string>
 let served: Partial<Record<LisFile, { text: string; etag: string } | null>>
 let requests: { method: string; url: string; key: string | null }[]
 const apiCalls = () => requests.filter(r => r.url.startsWith(LIS_API_BASE))
@@ -55,6 +57,7 @@ beforeEach(async () => {
   textList = []
   listStatus = 200
   noPdf = new Set()
+  brokenBlobs = new Set()
   served = Object.fromEntries((Object.keys(LIS_FILES) as LisFile[]).map(file => {
     const text = s2026()[file]
     return [file, text ? { text, etag: `"20261-${file}-v1"` } : null]
@@ -79,6 +82,7 @@ beforeEach(async () => {
         }))
       }
     }
+    if (brokenBlobs.has(url)) return new Response('boom', { status: 500 })
     if (url.startsWith('https://lis.blob.core.windows.net/files/')) return new Response(PDF, { headers: { 'content-type': 'application/pdf' } })
     if (url.startsWith(`${LIS_FILES_BASE}/`)) {
       const [code, name] = url.slice(LIS_FILES_BASE.length + 1).split('/')
@@ -158,6 +162,43 @@ describe('Virginia bill text with a key', () => {
     const { run } = await keyed.syncAndIngest()
     expect(keyed.queuedIds(run)).toEqual([await keyed.billIdOf('HB1', '20261')])
     expect((await billJson(keyed, 'HB1')).texts.map((t: any) => t.note)).toEqual(['Introduced', 'Enrolled', 'Chaptered', 'Substitute'])
+  })
+
+  it('asks the API only for a new version\'s link, and serves every earlier text as before', async () => {
+    await claim(keyed)
+    await keyed.syncAndIngest()
+    const before = (await billJson(keyed, 'HB1')).texts
+    const hb1 = await keyed.billIdOf('HB1', '20261')
+    const rowsBefore = await drizzle(env.DB, { schema }).select().from(schema.billTexts).where(eq(schema.billTexts.billId, hb1)).all()
+    textList = [...textList, row('HB1', 104, 5, 'HB1S1', '2026-04-20T00:00:00')]
+    served = Object.fromEntries(Object.entries(served).map(([f, s]) => [f, s && { ...s, etag: `${s.etag}+` }]))
+    requests = []
+    await keyed.syncAndIngest()
+    expect(apiCalls().filter(r => r.url.includes('getlegislationtextbyidasync')).map(r => r.url)).toEqual([`${LIS_API_BASE}/getlegislationtextbyidasync?legislationTextID=104`])
+    expect((await billJson(keyed, 'HB1')).texts.slice(0, 3)).toEqual(before)
+    const rowsAfter = await drizzle(env.DB, { schema }).select().from(schema.billTexts).where(eq(schema.billTexts.billId, hb1)).all()
+    expect(rowsAfter).toHaveLength(4)
+    for (const r of rowsBefore) expect(rowsAfter.find(a => a.docId === r.docId)).toMatchObject({ stateLink: r.stateLink, textHash: r.textHash })
+  })
+
+  it('reuses the link of a stored text whose download failed, and tries the download again', async () => {
+    brokenBlobs.add(blob(1_000_101))
+    await claim(keyed)
+    await keyed.syncAndIngest().catch(() => undefined)
+    const hb1 = await keyed.billIdOf('HB1', '20261')
+    const failed = (await drizzle(env.DB, { schema }).select().from(schema.billTexts).where(eq(schema.billTexts.billId, hb1)).all()).find(t => t.stateLink === blob(1_000_101))
+    expect(failed).toMatchObject({ r2Key: null })
+
+    brokenBlobs.clear()
+    textList = [...textList, row('HB1', 104, 5, 'HB1S1', '2026-04-20T00:00:00')]
+    served = Object.fromEntries(Object.entries(served).map(([f, s]) => [f, s && { ...s, etag: `${s.etag}+` }]))
+    requests = []
+    await keyed.syncAndIngest()
+    expect(apiCalls().filter(r => r.url.includes('getlegislationtextbyidasync')).map(r => r.url)).toEqual([`${LIS_API_BASE}/getlegislationtextbyidasync?legislationTextID=104`])
+    expect(blobGets().map(r => r.url)).toContain(blob(1_000_101))
+    const after = (await drizzle(env.DB, { schema }).select().from(schema.billTexts).where(eq(schema.billTexts.docId, failed!.docId)).all())[0]
+    expect(after).toMatchObject({ stateLink: blob(1_000_101) })
+    expect(after.r2Key).toBeTruthy()
   })
 
   it('reads again, and queues the bills, when the key is added after a pass without it', async () => {

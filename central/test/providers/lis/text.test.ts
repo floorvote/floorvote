@@ -558,7 +558,9 @@ function makeCtx(key?: string) {
         return [k, minted.get(full)!] as const
       }))
     },
-    knownIds: async () => new Map<string, number>(),
+    // Only what an earlier call minted, as central's id table answers.
+    knownIds: async (kind: string, keys: readonly string[]) =>
+      new Map(keys.filter(k => minted.has(`${kind}/${k}`)).map(k => [k, minted.get(`${kind}/${k}`)!] as const)),
     people: async () => [],
   }
   return { ctx: ctx as any, logged, asked }
@@ -870,5 +872,60 @@ describe('fetchMeasure', () => {
     const { texts: _b, ...restWithout } = without
     expect(restWith).toEqual(restWithout)
     expect(withKey.supplements.length).toBeGreaterThan(0)
+  })
+})
+
+describe('fetchMeasure with the texts central already stores', () => {
+  /** What core hands `fetchMeasure` for a bill whose texts it stored from an earlier ingest: each one's doc id and link. */
+  const stored = (first: any, ...only: number[]) => ({
+    texts: first.texts.filter((_: unknown, i: number) => only.includes(i)).map((t: any) => ({ docId: t.doc_id, stateLink: t.state_link })),
+  })
+  const textKey = (bill: any) => bill.texts.map((t: any) => [t.doc_id, t.state_link, t.text_hash, t.type, t.date])
+
+  it('makes no by-id call when every version is stored, and emits the same texts', async () => {
+    const measure = await storedMeasure('HB1', threeVersions)
+    const first = (await lis.fetchMeasure(measure, makeCtx('k').ctx)) as any
+    requests = []
+    const { ctx, logged } = makeCtx('k')
+    const again = (await lis.fetchMeasure({ ...measure, ...stored(first, 0, 1, 2) }, ctx)) as any
+    expect(byIds()).toEqual([])
+    expect(logged).toEqual([])
+    expect(textKey(again)).toEqual(textKey(first))
+  })
+
+  it('makes one by-id call for the one version that is not stored', async () => {
+    const measure = await storedMeasure('HB1', threeVersions)
+    const first = (await lis.fetchMeasure(measure, makeCtx('k').ctx)) as any
+    requests = []
+    const again = (await lis.fetchMeasure({ ...measure, ...stored(first, 0, 1) }, makeCtx('k').ctx)) as any
+    expect(byIds().map(r => r.url)).toEqual([`${LIS_API_BASE}/getlegislationtextbyidasync?legislationTextID=30`])
+    expect(textKey(again)).toEqual(textKey(first))
+  })
+
+  it('looks up a version whose stored text has no link', async () => {
+    const measure = await storedMeasure('HB1', threeVersions)
+    const first = (await lis.fetchMeasure(measure, makeCtx('k').ctx)) as any
+    requests = []
+    const texts = first.texts.map((t: any) => ({ docId: t.doc_id, stateLink: t.doc_id === first.texts[1].doc_id ? null : t.state_link }))
+    const again = (await lis.fetchMeasure({ ...measure, texts }, makeCtx('k').ctx)) as any
+    expect(byIds().map(r => r.url)).toEqual([`${LIS_API_BASE}/getlegislationtextbyidasync?legislationTextID=20`])
+    expect(textKey(again)).toEqual(textKey(first))
+  })
+
+  it('ignores a stored text that is none of the record\'s versions', async () => {
+    const measure = await storedMeasure('HB1', threeVersions)
+    requests = []
+    const again = (await lis.fetchMeasure({ ...measure, texts: [{ docId: 42, stateLink: blob(9) }] }, makeCtx('k').ctx)) as any
+    expect(byIds()).toHaveLength(3)
+    expect(again.texts.map((t: any) => t.state_link)).toEqual([10, 20, 30].map(id => blob(1_000_000 + id)))
+  })
+
+  it('makes no call and emits no texts without a key, though texts are stored', async () => {
+    const measure = await storedMeasure('HB1', threeVersions)
+    const first = (await lis.fetchMeasure(measure, makeCtx('k').ctx)) as any
+    requests = []
+    const again = (await lis.fetchMeasure({ ...measure, ...stored(first, 0, 1, 2) }, makeCtx(undefined).ctx)) as any
+    expect(apiRequests()).toEqual([])
+    expect(again.texts).toEqual([])
   })
 })
