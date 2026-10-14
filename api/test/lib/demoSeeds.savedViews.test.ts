@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedBill, seedSession } from '../helpers'
-import { getDb } from '../../src/db/client'
-import { billSubjects } from '../../src/db/schema'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, type DemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
@@ -14,15 +12,16 @@ import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
  * the API the question a visitor's browser asks: which views exist, and what does
  * each one return?
  *
- * The fixtures below stand in for what ingest gives the demo's real bills. Tags
- * are AI-assigned and subjects are the legislature's, so neither lives in the
- * seed; each fixture states where its values came from.
+ * The fixtures stand in for what ingest gives the demo's real bills, which is only
+ * the bill's state and its AI-assigned tags. Subjects are deliberately NOT given
+ * here: the seed writes the subjects its views filter on (`billSubjects`), so the
+ * subject half of every OR view is exercised on what the reset itself installs,
+ * not on a value the test supplies.
  */
-type BillFixture = { externalId: string; state: string; tags: string[]; subjects: string[] }
+type BillFixture = { externalId: string; state: string; tags: string[] }
 
-// The eight NJ bills are all elections bills. LegiScan files NJ election bills
-// under "State and Local Government", not "Elections" (docs/internal/legiscan-api.md,
-// "NJ-Specific Findings"). Tags: A548 is about clerk filings, the rest about elections.
+// The eight NJ bills. Tags: A2670 is about county boards canvassing, A548 about
+// clerk filings, the rest about elections.
 const NJ_FIXTURES: BillFixture[] = [
   ['legiscan:2099974', 'Elections'],
   ['legiscan:2100182', 'Elections'],
@@ -32,16 +31,11 @@ const NJ_FIXTURES: BillFixture[] = [
   ['legiscan:2096183', 'Elections'],
   ['legiscan:2099056', 'Board of Elections'],
   ['legiscan:2096553', 'County Clerk Functions'],
-].map(([externalId, tag]) => ({
-  externalId, state: 'NJ', tags: [tag], subjects: ['State and Local Government'],
-}))
+].map(([externalId, tag]) => ({ externalId, state: 'NJ', tags: [tag] }))
 
-// Each Lake Michigan bill carries the one taxonomy theme the seed assigns it. The
-// seed records no subjects for these bills, so the fixtures give them none: a view
-// has to match on its seed-owned facts or on a tag, never on a subject the seed
-// cannot vouch for.
+// Each Lake Michigan bill carries the one taxonomy theme the seed assigns it.
 const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
-  externalId: b.externalId, state: b.jurisdiction, tags: [b.theme], subjects: [],
+  externalId: b.externalId, state: b.jurisdiction, tags: [b.theme],
 }))
 
 const CASES: Array<{ slug: string; fixtures: BillFixture[] }> = [
@@ -63,18 +57,31 @@ async function listViews(): Promise<ViewDto[]> {
   return ((await res.json()) as { views: ViewDto[] }).views
 }
 
+async function totalFor(query: string): Promise<number> {
+  const res = await app.request(`/api/bills?${query}`, { headers: { Cookie: await demoUserCookie() } }, env)
+  expect(res.status, query).toBe(200)
+  return ((await res.json()) as { pagination: { total: number } }).pagination.total
+}
+
+/** A view that joins subjects and tags with `match=any`, split into its two halves;
+ *  null for any other view. A one-dimension query needs no `match`. */
+function orHalves(query: string): { subjectOnly: string; tagOnly: string } | null {
+  const p = new URLSearchParams(query)
+  const subjects = p.getAll('subject')
+  const tags = p.getAll('tag')
+  if (p.get('match') !== 'any' || subjects.length === 0 || tags.length === 0) return null
+  return {
+    subjectOnly: new URLSearchParams(subjects.map((v): [string, string] => ['subject', v])).toString(),
+    tagOnly: new URLSearchParams(tags.map((v): [string, string] => ['tag', v])).toString(),
+  }
+}
+
 async function seedFixtures(seed: DemoSeed, fixtures: BillFixture[]) {
-  const db = getDb(env.DB)
   for (const [i, f] of fixtures.entries()) {
-    const id = await seedBill({
+    await seedBill({
       externalId: f.externalId, billNumber: `B${1000 + i}`, title: `Bill ${i}`,
       state: f.state, tags: f.tags,
     })
-    if (f.subjects.length > 0) {
-      await db.insert(billSubjects).values(
-        f.subjects.map(name => ({ billId: id, subjectName: name, state: f.state })),
-      ).run()
-    }
   }
   // Every bill the seed's own rows point at must exist, or the reset's guards
   // would no-op and the priority and position views would have nothing to match.
@@ -103,21 +110,51 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) 
 
   it('has a view that joins subjects and tags with the OR group operator', async () => {
     const views = await listViews()
-    const orViews = views.filter(v => {
-      const p = new URLSearchParams(v.query)
-      return p.get('match') === 'any' && p.getAll('subject').length > 0 && p.getAll('tag').length > 0
-    })
+    expect(views.filter(v => orHalves(v.query) !== null).length).toBeGreaterThanOrEqual(1)
+  })
+
+  // The OR operator hides which half carried a result, so each half is asked alone.
+  // A subject or tag that matches no bill passes the combined query silently, and
+  // the demo's OR view degrades to a one-sided view nobody notices.
+  it('returns bills from the subject half and the tag half of every OR view, each on its own', async () => {
+    const orViews = (await listViews()).filter(v => orHalves(v.query) !== null)
     expect(orViews.length).toBeGreaterThanOrEqual(1)
+    for (const v of orViews) {
+      const { subjectOnly, tagOnly } = orHalves(v.query)!
+      expect(await totalFor(subjectOnly), `${v.name}: subjects alone (${subjectOnly})`).toBeGreaterThanOrEqual(1)
+      expect(await totalFor(tagOnly), `${v.name}: tags alone (${tagOnly})`).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  // An OR view that returns every bill shows nothing about the operator.
+  it('has OR views that narrow the list', async () => {
+    const orViews = (await listViews()).filter(v => orHalves(v.query) !== null)
+    expect(orViews.length).toBeGreaterThanOrEqual(1)
+    for (const v of orViews) {
+      expect(await totalFor(v.query), v.name).toBeLessThan(fixtures.length)
+    }
+  })
+
+  // The bill page lists bills.subjects; the list filter and facets read bill_subjects.
+  it('writes each seeded subject to both subject stores', async () => {
+    expect(seed.billSubjects?.length ?? 0).toBeGreaterThan(0)
+    for (const { externalId, subject } of seed.billSubjects ?? []) {
+      const row = await env.DB.prepare(
+        `SELECT (SELECT count(*) FROM bill_subjects bs WHERE bs.bill_id = b.id AND bs.subject_name = ? AND bs.state = b.state) AS filterRows,
+                (SELECT count(*) FROM json_each(b.subjects) WHERE value = ?) AS listed
+         FROM bills b WHERE b.external_id = ?`,
+      ).bind(subject, subject, externalId).first<{ filterRows: number; listed: number }>()
+      expect(row, externalId).not.toBeNull()
+      expect(row!.filterRows, `${externalId} bill_subjects`).toBe(1)
+      expect(row!.listed, `${externalId} bills.subjects`).toBe(1)
+    }
   })
 
   it('returns at least one bill from every view', async () => {
     const views = await listViews()
     expect(views.length).toBeGreaterThan(0)
     for (const v of views) {
-      const res = await app.request(`/api/bills?${v.query}`, { headers: { Cookie: await demoUserCookie() } }, env)
-      expect(res.status, v.name).toBe(200)
-      const body = await res.json() as { pagination: { total: number } }
-      expect(body.pagination.total, `${v.name} (${v.query})`).toBeGreaterThanOrEqual(1)
+      expect(await totalFor(v.query), `${v.name} (${v.query})`).toBeGreaterThanOrEqual(1)
     }
   })
 
@@ -142,5 +179,10 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) 
     await runDemoReset(env.DB, seed)
     await runDemoReset(env.DB, seed)
     expect(await listViews()).toEqual(first)
+    // Writing the subjects twice must not duplicate them.
+    const dupes = await env.DB.prepare(
+      `SELECT count(*) AS n FROM (SELECT 1 FROM bills b, json_each(b.subjects) je GROUP BY b.id, je.value HAVING count(*) > 1)`,
+    ).first<{ n: number }>()
+    expect(dupes!.n).toBe(0)
   })
 })

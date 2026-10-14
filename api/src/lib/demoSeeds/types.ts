@@ -126,6 +126,17 @@ export type DemoSeedSavedView = {
   query: string
 }
 
+/**
+ * A subject term the reset adds to one of the demo's bills, in the bill's own
+ * state (the filter value is `<state>:<subject>`). A saved view's subject half has
+ * to match something, and which subject names a legislature files these bills
+ * under is not recorded anywhere in the repo and changes with the provider. So the
+ * seed installs the subjects its views name, the way it installs priorities and
+ * positions. The reset only adds (a bill's other subjects are left alone), and the
+ * next sync of a bill replaces its subjects, so the following reset puts these back.
+ */
+export type DemoSeedBillSubject = { externalId: string; subject: string }
+
 export type DemoSeed = {
   slug: string
   /** Rendered with the `Demo — ` prefix applied by the machinery. */
@@ -166,4 +177,6 @@ export type DemoSeed = {
    *  subjects and tags with the OR group operator (`match=any`), the case saved
    *  views were built for. */
   savedViews: DemoSeedSavedView[]
+  /** The subjects the saved views filter on. See DemoSeedBillSubject. */
+  billSubjects: DemoSeedBillSubject[]
 }

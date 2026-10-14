@@ -71,18 +71,23 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,
   calendarEvents: LM_CALENDAR_EVENTS,
   // Written for a basin-wide water team. The first view is the OR case: the
-  // alliance's drinking-water themes, plus anything Michigan files under its
-  // "Water" subject. The other two are cuts its teams reach for: what leadership
-  // marked high priority, and what Congress is doing.
+  // alliance's drinking-water and contaminant themes by tag, plus the Michigan
+  // beach and wastewater bills by subject (see billSubjects). The other two are
+  // cuts its teams reach for: what leadership marked high priority, and what
+  // Congress is doing.
   savedViews: [
     {
-      id: 'lm-view-drinking-water', name: 'Drinking water and contaminants', slug: 'drinking-water-and-contaminants',
+      id: 'lm-view-water-quality', name: 'Water quality', slug: 'water-quality',
       query: viewQuery([
         ['match', 'any'], ['tag', 'Drinking Water'], ['tag', 'Lead Service Lines'], ['tag', 'PFAS & Contaminants'],
-        ['subject', 'MI:Water'],
+        ['subject', 'MI:Water Quality'],
       ]),
     },
     { id: 'lm-view-high', name: 'High priority', slug: 'high-priority', query: viewQuery([['priority', 'high']]) },
     { id: 'lm-view-federal', name: 'Congress', slug: 'congress', query: viewQuery([['state', 'US']]) },
+  ],
+  billSubjects: [
+    { externalId: 'legiscan:2029026', subject: 'Water Quality' }, // MI HB4427 — beaches
+    { externalId: 'legiscan:2095619', subject: 'Water Quality' }, // MI SB0771 — septic and wastewater
   ],
 }

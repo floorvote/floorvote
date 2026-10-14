@@ -45,7 +45,7 @@ Leave `DEMO_SEED` out and the tenant gets `nj-county-clerks`, the New Jersey cou
 
 The seed writes `ai_context`, `relevance_question`, `tag_taxonomy`, and `keywords` itself on every reset, so a demo tenant's content comes entirely from its seed module — there's no separate configuration step.
 
-A seed also carries its saved views, two or three named bill-list filters written for that demo's audience. The view switcher shows nothing on an instance with no views, so without them a visitor would never see the feature. Every reset deletes all of a demo's saved views and writes the seed's back, so a view added, changed, or removed between resets does not survive. Each view stores the bill list's own query string, and at least one per seed joins subjects and tags with `match=any`, the OR group operator.
+A seed also carries its saved views, two or three named bill-list filters written for that demo's audience. The view switcher shows nothing on an instance with no views, so without them a visitor would never see the feature. Every reset deletes all of a demo's saved views and writes the seed's back, so a view added, changed, or removed between resets does not survive. Each view stores the bill list's own query string, and at least one per seed joins subjects and tags with `match=any`, the OR group operator. The subjects those views name are not left to chance: the seed's `billSubjects` lists them, and each reset adds them to the matching bills, alongside whatever subjects the provider filed.
 
 ### Adding a second demo
 

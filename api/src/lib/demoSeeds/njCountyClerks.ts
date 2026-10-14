@@ -507,21 +507,26 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
     { id: 'demo-event-5', externalId: null,               source: 'custom', offsetDays: 25, time: '14:00:00', location: 'Zoom',             description: 'Legislative strategy working group' },
   ],
 
-  // Written for a county clerk's day: the election work, what leadership has
-  // flagged, and what the association has not yet taken a position on. The first
-  // view is the OR case. LegiScan files NJ election bills under "State and Local
-  // Government" rather than "Elections" (docs/internal/legiscan-api.md), so a
-  // subject filter alone is a poor election filter and a tag filter alone misses
-  // bills the AI left untagged; either one is enough to be on the list.
+  // Written for a county clerk's day: registration and canvassing, what leadership
+  // has flagged, and what the association has not yet taken a position on. The first
+  // view is the OR case. LegiScan files every NJ election bill under the one broad
+  // subject "State and Local Government" (docs/internal/legiscan-api.md), which would
+  // make a subject half match everything, so the seed installs a narrower term on the
+  // registration bills (see billSubjects). The registration bills come in by subject,
+  // the county boards' canvassing bill by tag.
   savedViews: [
     {
-      id: 'demo-view-elections', name: 'Election work', slug: 'election-work',
+      id: 'demo-view-registration', name: 'Registration and canvassing', slug: 'registration-and-canvassing',
       query: viewQuery([
-        ['match', 'any'], ['tag', 'Elections'], ['tag', 'Board of Elections'],
-        ['subject', 'NJ:State and Local Government'],
+        ['match', 'any'], ['tag', 'Board of Elections'], ['subject', 'NJ:Voter Registration'],
       ]),
     },
     { id: 'demo-view-high', name: 'High priority', slug: 'high-priority', query: viewQuery([['priority', 'high']]) },
     { id: 'demo-view-no-position', name: 'Needs a position', slug: 'needs-a-position', query: viewQuery([['position', 'none']]) },
+  ],
+  billSubjects: [
+    { externalId: 'legiscan:2098535', subject: 'Voter Registration' }, // A1680 — voter reg 14 days
+    { externalId: 'legiscan:2098630', subject: 'Voter Registration' }, // A1698 — same-day reg
+    { externalId: 'legiscan:2098113', subject: 'Voter Registration' }, // A1715 — John R. Lewis Act
   ],
 }
