@@ -211,6 +211,24 @@ describe('GET /api/calendar/events, for date custom fields', () => {
   })
 })
 
+describe('a date-field event, for an admin', () => {
+  it('refuses edit, delete, and restore on its id', async () => {
+    const bill = await seedBill({ billNumber: 'HB 12', priority: 'high' })
+    await addField('f1', 'Comment deadline')
+    await setValue(bill, 'f1', isoDay(5))
+    const id = `cf-f1-${bill}`
+    const call = (method: string, path = '') => SELF.fetch(`http://localhost/api/calendar/events/${id}${path}`, {
+      method,
+      headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
+      body: method === 'PUT' ? JSON.stringify({ description: 'Moved', date: isoDay(9) }) : undefined,
+    })
+    expect((await call('PUT')).status).toBe(404)
+    expect((await call('DELETE')).status).toBe(404)
+    expect((await call('POST', '/restore')).status).toBe(404)
+    expect((await fieldEvents()).map(e => ({ id: e.id, date: e.date }))).toEqual([{ id, date: isoDay(5) }])
+  })
+})
+
 describe('the calendar feed, for date custom fields', () => {
   it('lists a date-only event titled as on the calendar, with a UID that is the same on every fetch', async () => {
     const bill = await seedBill({ billNumber: 'HB 12', state: 'DC', session: '2026', priority: 'high' })
@@ -330,6 +348,17 @@ describe('the week-ahead email, for date custom fields', () => {
     const html = await emailed()
     expect(html).toContain('Coalition letter due: HB 2')
     expect(html.split('focusEvent=').length - 1).toBe(1)
+  })
+
+  it('includes the window\'s last day (day 6) and leaves out the day after (day 7)', async () => {
+    const bill = await seedBill({ billNumber: 'HB 12', state: 'DC', priority: 'high' })
+    await addField('f6', 'Last day')
+    await addField('f7', 'Day after')
+    await setValue(bill, 'f6', isoDay(6))
+    await setValue(bill, 'f7', isoDay(7))
+    const html = await emailed()
+    expect(html).toContain('Last day: HB 12')
+    expect(html).not.toContain('Day after: HB 12')
   })
 
   it('puts a date-field event on its day, among the day\'s hearings', async () => {

@@ -116,8 +116,10 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     .all()
 
   // Date custom fields on prioritized bills (#342): all-day, and projected
-  // rather than stored, so they come from their own query. `endIso` is exclusive.
-  const fieldEvents = await loadDateFieldEvents(db, { from: todayIso, to: isoDate(6) })
+  // rather than stored, so they come from their own query, whose `to` is
+  // inclusive: the window's last day, the one before the exclusive `endIso`.
+  const lastIso = isoDate(6)
+  const fieldEvents = await loadDateFieldEvents(db, { from: todayIso, to: lastIso })
 
   if (rows.length === 0 && fieldEvents.length === 0) return  // no events this week — skip without stamping
 
