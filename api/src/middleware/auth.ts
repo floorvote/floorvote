@@ -183,6 +183,8 @@ export const DEMO_WRITE_ALLOWLIST: ReadonlySet<string> = new Set([
   'POST /api/comments/:id/reactions',
   'DELETE /api/comments/:id/reactions/:emoji',
   'PUT /api/bills/:id/note',                // personal note
+  'PUT /api/bills/:id/mute',                // muting a bill's comments for yourself
+  'DELETE /api/bills/:id/mute',
   'PATCH /api/bills/:id/priority',
   'PATCH /api/bills/:id/triage-dismiss',    // single-bill; bulk-dismiss stays denied
   'POST /api/bills/:id/position',

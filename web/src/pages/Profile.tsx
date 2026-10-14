@@ -401,7 +401,7 @@ export function Profile() {
       <div style={SECTION_CARD}>
         <h2 style={CARD_TITLE}>Your Email</h2>
         <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
-          You'll always get an email when someone mentions you, your role, or @everyone.
+          You'll always get an email when someone mentions you, your role, @admins, or @everyone.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div

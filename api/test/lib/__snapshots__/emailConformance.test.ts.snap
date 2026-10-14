@@ -410,7 +410,7 @@ exports[`email conformance — every sample type shares the shell contract > rep
             <div style="margin-top:18px;"><a href="https://sample.test/RI/2026/HB 1234#comment-sample-comment" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View comment</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            <a href="https://sample.test/profile#setting-email-replies" style="font-size:12px;color:#667386;text-decoration:underline;">Turn off reply emails</a> &nbsp;·&nbsp; <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+            <a href="https://sample.test/mute-bill?token=sample" style="font-size:12px;color:#667386;text-decoration:underline;">Mute this bill</a> &nbsp;·&nbsp; <a href="https://sample.test/profile#setting-email-replies" style="font-size:12px;color:#667386;text-decoration:underline;">Turn off reply emails</a> &nbsp;·&nbsp; <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
           </td></tr>
         </tbody>
       </table>

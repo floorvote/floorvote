@@ -3,7 +3,7 @@ import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
-  billTexts, roles, userRoles, billCustomFieldValues,
+  billTexts, roles, userRoles, billCustomFieldValues, billMutes,
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -71,12 +71,15 @@ export async function buildBillDetail(
     }
   }
 
-  const [myVoteRow, myNoteRow, positionRow, voteRows, commentRows, commentCountRow, textRows, priorityEventRow] = await Promise.all([
+  const [myVoteRow, myNoteRow, myMuteRow, positionRow, voteRows, commentRows, commentCountRow, textRows, priorityEventRow] = await Promise.all([
     db.select().from(memberVotes)
       .where(and(eq(memberVotes.billId, billId), eq(memberVotes.userId, currentUser.id)))
       .get(),
     db.select().from(notes)
       .where(and(eq(notes.billId, billId), eq(notes.userId, currentUser.id)))
+      .get(),
+    db.select({ userId: billMutes.userId }).from(billMutes)
+      .where(and(eq(billMutes.billId, billId), eq(billMutes.userId, currentUser.id)))
       .get(),
     db.select({ position: officialPositions.position, setBy: officialPositions.setBy, updatedAt: officialPositions.updatedAt })
       .from(officialPositions).where(eq(officialPositions.billId, billId)).get(),
@@ -269,6 +272,7 @@ export async function buildBillDetail(
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     myNote: myNoteRow?.content ?? null,
+    commentsMuted: !!myMuteRow,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,

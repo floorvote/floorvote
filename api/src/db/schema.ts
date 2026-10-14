@@ -434,3 +434,17 @@ export const notifications = sqliteTable('notifications', {
 })
 
 export type NotificationKind = typeof notifications.$inferSelect['kind']
+
+/**
+ * Bills whose comments a member muted (#355). A muted bill sends that member no
+ * reply notifications, in the app or by email. Mentions still reach them.
+ * Muting works whether or not the member has commented on the bill.
+ */
+export const billMutes = sqliteTable('bill_mutes', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.billId] }),
+  index('idx_bill_mutes_bill').on(t.billId),
+])

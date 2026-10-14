@@ -15,7 +15,8 @@ api/src/lib/emailBillCard.ts  renderBillCardOpen / renderCommentRow / BILL_CARD_
 api/src/lib/digestEmail.ts    renderDigestEmail()
 api/src/lib/weekAheadEmail.ts renderWeekAheadEmail()
 api/src/lib/mentions.ts       renderMentionEmail()
-api/src/lib/replies.ts        renderReplyEmail() (sets only In-Reply-To and References, never Message-ID)
+api/src/lib/replies.ts        renderReplyEmail() (sets In-Reply-To and References, never Message-ID, plus a one-click
+                              List-Unsubscribe that mutes the bill, only when APP_URL is https)
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
 api/src/lib/email.ts          renderMagicLinkEmail() (login/invite) + sendEmail/sendMagicLink/sendFeedback

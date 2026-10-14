@@ -49,3 +49,7 @@
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
 
 **Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention today; replies and reactions follow). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
+
+**Muted bill**: a bill whose comments a member has muted, from the bill page or a reply email. It sends them no reply notifications, in the app or by email, but mentions on it (direct, role, @admins, or @everyone) still reach them. A member can mute a bill before ever commenting on it, unmute it from the bill page, and stays muted when a draft they muted is linked to its filed bill. Avoid: "unsubscribed," "unfollowed."
+
+**Mute link**: the link in a reply email, signed for one member and one bill, that mutes that bill without signing in. It is both the email's one-click List-Unsubscribe and its "Mute this bill" footer link, which opens a page that asks before muting. It can mute nothing else and does not expire. Mention emails carry none.

@@ -64,6 +64,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare('DELETE FROM member_votes'),
     db.prepare('DELETE FROM official_positions'),
     db.prepare('DELETE FROM notes'),
+    db.prepare('DELETE FROM bill_mutes'),
     db.prepare('DELETE FROM feed_events'),
     db.prepare('DELETE FROM bill_custom_field_values'),
     // calendar_event_bills.event_id REFERENCES calendar_events(id) with NO

@@ -214,7 +214,8 @@ describe('replying to a bill notifies its other commenters', () => {
         expect(name).toMatch(/^(In-Reply-To|References|List-[A-Za-z-]+|X-[A-Za-z-]+)$/)
       }
     }
-    // Replies don't carry a List-Unsubscribe until per-bill mute exists (#355).
+    // This instance URL is http, where Cloudflare Email Service refuses a
+    // List-Unsubscribe. billMute.test.ts covers the https one-click mute.
     expect(first.headers!['List-Unsubscribe']).toBeUndefined()
   })
 

@@ -339,6 +339,21 @@ describe('muting comments on a bill', () => {
     expect(ben.html).toContain('http://localhost:5173/mute-bill?token=')
   })
 
+  it('carries a mute on a draft over to the filed bill it is linked to', async () => {
+    const draft = await seedBill({ billNumber: 'Draft 1', isDraft: true })
+    const filed = await seedBill({ billNumber: 'HB 9' })
+    await mute('ben', draft)
+    await mute('cara', draft)
+    await mute('cara', filed)
+
+    const res = await request(`/api/bills/${draft}/link`, 'POST', 'ann', { filedBillId: filed })
+    expect(res.status).toBe(200)
+
+    expect(await mutedOnPage('ben', filed)).toBe(true)
+    expect(await mutedOnPage('cara', filed)).toBe(true)
+    expect(await mutedOnPage('ann', filed)).toBe(false)
+  })
+
   it('puts no unsubscribe link on mention emails', async () => {
     await comment('cara', '<p>First</p>')
     send.mockClear()

@@ -274,6 +274,8 @@ const DENIED = new Set([
   'POST /api/calendar/import',
   'POST /api/calendar/regenerate-slug',
   'POST /api/feedback',
+  // A signed email link with no session. A demo sends no email, so it has no links.
+  'POST /api/mute-link',
   'POST /api/users/me/deactivate',
   'PUT /api/admin/custom-fields/:id',
   'PUT /api/admin/custom-fields/reorder',
@@ -324,9 +326,9 @@ describe('demo write categorisation', () => {
   })
 
   it('pins the size of each category so a silent shift is visible', () => {
-    expect(DEMO_WRITE_ALLOWLIST.size).toBe(19)
-    expect(DENIED.size).toBe(51)
-    expect(registered().length).toBe(76)
+    expect(DEMO_WRITE_ALLOWLIST.size).toBe(21)
+    expect(DENIED.size).toBe(52)
+    expect(registered().length).toBe(79)
   })
 
   it('refuses every denied route with the read-only message', async () => {

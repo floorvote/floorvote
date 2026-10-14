@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, type MockInstance } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -68,7 +68,7 @@ const CONFIG = {
   states: ['RI'], instanceDomains: {}, orgNoun: 'association',
 }
 
-let apiSpy: ReturnType<typeof vi.spyOn>
+let apiSpy: MockInstance<typeof api.apiFetch>
 
 beforeEach(() => {
   vi.restoreAllMocks()

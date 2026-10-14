@@ -14,6 +14,7 @@ import { notificationsRouter } from './routes/notificationsApi'
 import { configRouter } from './routes/configApi'
 import { calendarRouter } from './routes/calendarApi'
 import { savedViewsRouter } from './routes/savedViewsApi'
+import { muteLinkRouter } from './routes/muteLink'
 import { registerWithCentral } from './cron/sync'
 import { runDemoReset } from './lib/demoReset'
 import { resolveDemoSeed } from './lib/demoSeeds'
@@ -140,6 +141,8 @@ app.route('/api/stats', statsRouter)
 app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
+// No session: a reply email's signed mute link (routes/muteLink.ts).
+app.route('/api/mute-link', muteLinkRouter)
 
 app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
 
