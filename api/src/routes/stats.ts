@@ -10,8 +10,7 @@ import { filedSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
-import { newMatchWhere } from './billsApi/query'
-import { getNewMatchMinRelevance } from '../lib/newMatch'
+import { getNewMatchMinRelevance, newMatchWhere } from '../lib/newMatch'
 import { hasLoggedInWhere } from '../lib/loginHistory'
 
 const statsRouter = new Hono<AppEnv>()

@@ -390,6 +390,17 @@ describe('a cutover', () => {
     return { run, body }
   }
 
+  // #364: the new provider's first pass links its records the old one lacked.
+  // They are existing legislation, not newly filed bills, so a match is bulk.
+  it('declares the matches of the first pass after it bulk, for bills the old provider lacked', async () => {
+    await env.DB.prepare(`INSERT INTO keyword_registry (tenant_id, keyword) VALUES ('oca', 'soccer stadium')`).run()
+
+    const { run } = await cutOver()
+
+    const msg = queued(run.limsQueue).find(b => b.billId === limsBillId('B26-0769'))
+    expect(msg?.matchProvenance).toEqual({ oca: 'bulk' })
+  })
+
   it('keeps every matched bill\'s handle, flips ownership, and the first LIMS ingest sends no changes', async () => {
     const { run, body } = await cutOver()
     expect(body).toMatchObject({

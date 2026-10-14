@@ -214,6 +214,12 @@ export async function applyMasterList(
      * moved bills are ingested.
      */
     ingestMovedBills?: boolean
+    /**
+     * Declare every new keyword match this pass makes bulk, whatever the list
+     * holds. An operator import sets this: the bills it brings in are picks,
+     * not bills the regular sync found (BillMessage.matchProvenance).
+     */
+    bulk?: boolean
   } = {},
 ): Promise<number[]> {
   if (list.length === 0) {
@@ -264,6 +270,12 @@ export async function applyMasterList(
       seeded.add(r.tenantId)
     }
   }
+  // A pass over bills a cutover just moved here (still waiting for their
+  // first ingest from this provider, lib/cutover.ts) is the new provider's
+  // first pass. The bills it lists that the old provider lacked are existing
+  // legislation new only to central, so none of its matches is routine.
+  const cutoverPass = [...existing.values()].some(r => r.carriedFrom)
+  const declareBulk = !!opts.bulk || cutoverPass
 
   const now = nowDb()
   const billStmts: any[] = []
@@ -376,11 +388,12 @@ export async function applyMasterList(
       // is one a seed or an earlier pass passed over, and an instance with no
       // bills of the session is being seeded by this pass (a state it just
       // started covering, or a new session), so both are bulk. As is an
-      // existing link that starts to match. Missing is bulk too, so a case
-      // this misses stays quiet rather than flooding instances (#363).
+      // existing link that starts to match, a cutover's first pass, and an
+      // operator import (`bulk`). Missing is bulk too, so a case this misses
+      // stays quiet rather than flooding instances (#363).
       if (justMatched && newMatchType === 'keyword') {
         const newToCentral = !stored || stored.changeHash === ''
-        const routine = !linkExists && newToCentral && seeded.has(t.tenantId)
+        const routine = !declareBulk && !linkExists && newToCentral && seeded.has(t.tenantId)
         const byTenant = provenanceByBill.get(entry.bill_id) ?? {}
         byTenant[t.tenantId] = routine ? 'routine' : 'bulk'
         provenanceByBill.set(entry.bill_id, byTenant)

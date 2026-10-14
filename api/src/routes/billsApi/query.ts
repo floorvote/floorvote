@@ -11,10 +11,6 @@ import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../..
 import { newMatchWhere } from '../../lib/newMatch'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 
-// The "New matches" worklist predicate lives with the threshold in lib/newMatch.ts,
-// so the digest shares it too. Re-exported for the routes that import it from here.
-export { newMatchWhere }
-
 // Sentinel filter value: "has any value in this dimension" (position, custom-field
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
 export const FILTER_ANY = '__any__'

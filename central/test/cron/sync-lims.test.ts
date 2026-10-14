@@ -159,6 +159,26 @@ describe('match provenance from the DC sync', () => {
     expect(provenanceOf(limsQueue, limsBillId('B26-0990')!)).toEqual({ oca: 'routine' })
   })
 
+  it("declares an import's matches bulk even beside a bill the instance already holds", async () => {
+    const db = drizzle(env.DB, { schema })
+    await runLimsSync(makeEnv().env, db)
+    const filed = {
+      ...bulk['B26-0400'], legislationNumber: 'B26-0991',
+      legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B26-0991' })),
+    }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => c === 1 ? [bulk['B26-0400'], filed] : [])
+    const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    const { app } = await import('../../src/index-legiscan')
+
+    const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
+      method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'oca', numbers: ['B26-0400', 'B26-0991'] }),
+    }), e)
+
+    expect(res.status).toBe(200)
+    expect(provenanceOf(limsQueue, limsBillId('B26-0991')!)).toEqual({ oca: 'bulk' })
+  })
+
   it("declares an operator import's matches bulk", async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(schema.keywordRegistry).values({ tenantId: 'oca', keyword: 'accountability' })

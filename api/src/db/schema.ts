@@ -181,8 +181,8 @@ export const bills = sqliteTable('bills', {
   newMatchAt: text('new_match_at'),
   // Where the keyword match came from, as central declared it (MatchProvenance
   // in types.ts). NULL, for any match made before central declared one, counts
-  // as bulk. Kept from the first declaration until the match is recorded
-  // (new_match_at), then never changed.
+  // as bulk. Holds the latest declaration until the match is recorded
+  // (new_match_at), then never changes.
   matchProvenance: text('match_provenance', { enum: ['routine', 'bulk'] }),
   triagedAt: text('triaged_at'),
   triagedBy: text('triaged_by'),

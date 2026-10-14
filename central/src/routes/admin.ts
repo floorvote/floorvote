@@ -18,7 +18,7 @@ import { applyCutover, applyUndo, CutoverError, cutoverReport, planCutover, plan
 import { runAnomalyWatch } from '../lib/anomalyWatch'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
-import type { Env, IngestorMessage, NotificationMessage } from '../types'
+import type { BillMessage, Env, IngestorMessage, NotificationMessage } from '../types'
 import { getTenantQueue } from '../lib/tenantQueue'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { queuesRestEnabled } from '../lib/queuesRest'
@@ -444,7 +444,7 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
   // matched by a configuration change, stay out of its feed and digest.
   for (let i = 0; i < newlyMatched.length; i += 100) {
     const batch = newlyMatched.slice(i, i + 100).map(billId => ({
-      body: { billId, forceAI: true, matchProvenance: { [tenantId]: 'bulk' } } as IngestorMessage,
+      body: { billId, forceAI: true, matchProvenance: { [tenantId]: 'bulk' } } satisfies BillMessage,
     }))
     await c.env.INGESTOR_QUEUE.sendBatch(batch)
   }
