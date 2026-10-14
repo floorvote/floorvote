@@ -28,6 +28,7 @@ import type { Env, IngestorMessage } from './types'
 import { errorHandler } from './lib/errorHandler'
 import { checkEmailSuppression, checkEmailSuppressions } from './lib/emailSuppression'
 import { getEmailDeliveryStatus } from './lib/emailDelivery'
+import { tenantStatsSince, type TenantStatsDay } from './lib/tenantStatsExport'
 import { isTenantSurfaceAllowed } from './lib/tenantSurface'
 import { CALLER_TENANT_HEADER } from './lib/callerTenant'
 import { setSecurityHeaders } from '../../shared/securityHeaders'
@@ -177,5 +178,25 @@ export class TenantApi extends WorkerEntrypoint<Env, { tenantId?: string }> {
 
   async emailDeliveryStatus(messageIds: string[], since: string): Promise<Record<string, { status: string; isSpam: boolean; errorCause?: string; datetime?: string }>> {
     return getEmailDeliveryStatus(this.env, { messageIds, since })
+  }
+}
+
+/**
+ * Named entrypoint for a consumer Worker on the same Cloudflare account that
+ * reads engagement stats (a reporting dashboard, say). It binds with
+ * `entrypoint = "StatsApi"`; the binding is the authorization, as for
+ * TenantApi. It is deliberately separate from TenantApi: every tenant binds to
+ * TenantApi, and this returns EVERY tenant's stats, so it must never be
+ * reachable from a tenant's binding. It has no HTTP handler and no route on
+ * central's public app.
+ */
+export class StatsApi extends WorkerEntrypoint<Env> {
+  /**
+   * Every tenant's daily tenant_stats rows on or after `since` ("YYYY-MM-DD",
+   * UTC), ordered by tenant then day, with the staff-excluded values parsed
+   * into `excluded`. Values are current totals, as stored.
+   */
+  async tenantStatsSince(since: string): Promise<TenantStatsDay[]> {
+    return await tenantStatsSince(drizzle(this.env.DB, { schema }), since)
   }
 }
