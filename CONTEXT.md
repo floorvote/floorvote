@@ -50,7 +50,7 @@
 
 **Match provenance**: where a new match came from, declared by central when it links the bill to the instance and sent with the bill: routine or bulk. The instance keeps it with the match and on the matched event. A match with none (any match from before provenance existed) is bulk. Avoid: "source," which already means a calendar event's source and a bill's page on the legislature's site.
 
-**Routine match**: a new match the regular sync made by finding a bill new to central, for an instance that already follows the bill's state (it holds bills of this session or an earlier one), such as a bill filed mid-session or prefiled for a new session. The only new matches that reach the digest and the feed.
+**Routine match**: a new match the regular sync made by finding a bill new to central, for an instance that already follows the bill's state (it holds links to bills of the state), such as a bill filed mid-session or prefiled for a new session. The only new matches that reach the digest and the feed.
 
 **Bulk match**: a new match from anything that matches bills in bulk: a session seed, a keyword re-run, an operator import or backfill, an instance's first sync of a state it never followed, a provider cutover, or an existing monitored bill that starts to match. It stays in the triage list, where bulk dismiss handles it, and out of the digest and the feed. Avoid: "bulk event," which is a bulk edit's one feed event.
 

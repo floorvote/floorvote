@@ -97,6 +97,22 @@ describe('applyMasterList declares each new keyword match routine or bulk', () =
     expect(msgs.get(1)?.matchProvenance).toEqual({ 't-a': 'routine' })
   })
 
+  it("declares bulk when a follower's new-session pass also queues a carried bill, since the cutover guard wins", async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(sessions).values({
+      sessionId: 9000, state: 'DC', stateId: 0, yearStart: 2023, yearEnd: 2024, sessionTitle: 'Earlier', sessionName: 'Earlier',
+    })
+    // A tracked bill a cutover moved here (carried_from set), whose list entry
+    // changed, so this pass queues it for its first ingest.
+    await db.insert(bills).values({ ...storedBill(900, 'Voter Bridge Naming'), sessionId: 9000, carriedFrom: 'legiscan' })
+    await db.insert(billTenants).values({ billId: 900, tenantId: 't-a', matchType: 'keyword' })
+
+    const msgs = await pass([entry(1, 'Voter Rolls Act'), entry(900, 'Voter Bridge Naming', 'h900-new')], ['t-a'])
+
+    expect(msgs.has(900)).toBe(true)
+    expect(msgs.get(1)?.matchProvenance).toEqual({ 't-a': 'bulk' })
+  })
+
   it("declares bulk on a first pass over a state, even for an instance that follows another state", async () => {
     const db = drizzle(env.DB, { schema })
     await db.insert(bills).values({ ...storedBill(901, 'Voter Act'), state: 'MD' })
