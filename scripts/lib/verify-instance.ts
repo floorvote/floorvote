@@ -227,8 +227,17 @@ const pass = (detail: string): Outcome => ({ status: 'pass', detail })
 const skipped = (detail: string): Outcome => ({ status: 'skipped', detail })
 const fail = (detail: string, cause: string, stage: string): Outcome => ({ status: 'fail', detail, cause, stage })
 
-/** Failures every central-backed check can hit before its own logic: a rejected secret, or an unbound instance. */
+const CENTRAL_PREDATES = 'Central predates verify-instance (it has no verification routes): redeploy central, then re-run.'
+const INSTANCE_PREDATES = 'The instance predates verify-instance (it lacks the check this needs): redeploy it, then re-run.'
+
+/**
+ * Failures every central-backed check can hit before its own logic: a rejected
+ * secret, an unbound instance, or a central too old to have the routes. A route
+ * that exists answers in JSON, even for an error; one that doesn't gets Hono's
+ * plain-text 404, which is how an older central is told from "no such tenant".
+ */
 function commonCentralFailure(r: Reply): Outcome | null {
+  if (r.status === 404 && r.json === null) return fail('central answered 404 Not Found', CENTRAL_PREDATES, 'bind')
   if (r.status === 401 || r.status === 403) return fail(`central answered HTTP ${r.status}`, BAD_SECRET, 'verify')
   if (r.status === 501) return fail('central has no CentralApi binding for the instance', NOT_BOUND, 'bind')
   return null
@@ -273,11 +282,11 @@ async function checkHealth(cfg: VerifyConfig, deps: Deps): Promise<Outcome> {
 
 async function checkRegistration(cfg: VerifyConfig, deps: Deps): Promise<Outcome> {
   const r = await request(deps, 'GET', `${cfg.centralUrl}/api/tenants/${cfg.slug}/registration`, { secret: cfg.adminSecret })
+  const common = commonCentralFailure(r)
+  if (common) return common
   if (r.status === 404) {
     return fail('central has no registration for this instance', 'Central has not registered this instance: did force-register succeed? Re-run the registration step.', 'register')
   }
-  const common = commonCentralFailure(r)
-  if (common) return common
   if (r.status !== 200 || !r.json) return fail(`central answered HTTP ${r.status}: ${errorText(r)}`, 'Central returned an unexpected answer; check its logs.', 'register')
 
   const reg = r.json as { active: boolean; stateCoverage: string[]; keywordCount: number; bound: boolean; deliveryPath: string }
@@ -302,12 +311,16 @@ async function checkDelivery(cfg: VerifyConfig, deps: Deps): Promise<Outcome> {
   const base = `${cfg.centralUrl}/api/tenants/${cfg.slug}`
   const nonce = globalThis.crypto.randomUUID()
   const sent = await request(deps, 'POST', `${base}/verify-delivery`, { secret: cfg.adminSecret, body: { nonce } })
-  if (sent.status === 404) return skipped('central has no stored bill to send yet (it fills after the first sync); run this again afterward')
+  const common = commonCentralFailure(sent)
+  if (common) return common
+  if (sent.status === 404) {
+    if (/no stored bill/i.test(errorText(sent))) return skipped('central has no stored bill to send yet (it fills after the first sync); run this again afterward')
+    return fail(errorText(sent), 'Central does not know this instance: did force-register succeed? Re-run the registration step.', 'register')
+  }
+  if (sent.status === 409 && sent.json?.predates) return fail(errorText(sent), INSTANCE_PREDATES, 'deploy')
   if (sent.status === 409) {
     return fail(errorText(sent), 'Central has no queue to deliver to: no static binding and no queue id. Check TENANT_QUEUE_PREFIX matches RESOURCE_PREFIX, then re-register.', 'register')
   }
-  const common = commonCentralFailure(sent)
-  if (common) return common
   if (sent.status !== 200 || !sent.json?.ok) return fail(`central answered HTTP ${sent.status}: ${errorText(sent)}`, 'Central could not queue the check; see its logs.', 'register')
 
   const { billId, via } = sent.json as { billId: string; via: string }
@@ -341,15 +354,20 @@ function classifyAiError(message: string): string {
 async function checkAi(cfg: VerifyConfig, deps: Deps): Promise<Outcome> {
   if (!cfg.ai) return skipped('not requested (pass --ai; it costs one AI call)')
   const r = await request(deps, 'POST', `${cfg.centralUrl}/api/tenants/${cfg.slug}/verify-ai`, { secret: cfg.adminSecret, timeoutMs: AI_TIMEOUT_MS })
-  if (r.status === 404) return skipped('central has no stored bill to analyze yet; run this again after the first sync')
   const common = commonCentralFailure(r)
   if (common) return common
+  if (r.status === 404) {
+    if (/no stored bill/i.test(errorText(r))) return skipped('central has no stored bill to analyze yet; run this again after the first sync')
+    return fail(errorText(r), 'Central does not know this instance: did force-register succeed? Re-run the registration step.', 'register')
+  }
   if (r.status === 200 && r.json?.status === 'skipped') return skipped(String(r.json.reason ?? 'the instance has no AI configured'))
   if (r.status === 200 && r.json?.status === 'ok') {
     const j = r.json as { billNumber: string; tags: number; relevanceScore: number; usedFullText: boolean }
     return pass(`analyzed ${j.billNumber}: relevance ${j.relevanceScore}, ${j.tags} tag${j.tags === 1 ? '' : 's'}${j.usedFullText ? '' : ' (title and abstract only; central had no text)'}`)
   }
   const message = errorText(r)
+  // An instance without verifyAi throws the RPC runtime's own "no such method", which is not a credentials problem.
+  if (/does not implement the method|is not a function/i.test(message)) return fail(message, INSTANCE_PREDATES, 'deploy')
   return fail(message, classifyAiError(message), 'secrets')
 }
 
@@ -389,7 +407,7 @@ export async function runChecks(cfg: VerifyConfig, deps: Deps): Promise<CheckRes
     let outcome: Outcome
     try {
       outcome = unbound && NEEDS_BINDING.includes(check.id)
-        ? skipped('not attempted: central is not bound to the instance (see Registration)')
+        ? skipped('not attempted: central cannot reach the instance yet (see Registration)')
         : await check.run(cfg, deps)
     } catch (e) {
       outcome = fail(describeThrown(e), `Could not complete the call (${describeThrown(e)}). Is central reachable at ${cfg.centralUrl}?`, 'verify')

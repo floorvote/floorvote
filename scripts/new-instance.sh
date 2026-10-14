@@ -812,6 +812,7 @@ resume_cmd() {
   echo "$out"
 }
 
+VERIFY_FAILED=0
 if step verify "Verify the instance end to end"; then
   if ! ADMIN_SECRET="$ADMIN_SECRET" bash "$SCRIPT_DIR/verify-instance.sh" "$SLUG" --ai \
       --central-url "$CENTRAL_URL" --worker-url "$WORKER_URL" --app-url "$APP_URL" \
@@ -819,10 +820,13 @@ if step verify "Verify the instance end to end"; then
       --expect-build "${BUILD_SHA_DEPLOYED:-any}" \
       --resume-cmd "$(resume_cmd)" \
       --resume-steps "deploy=${STEP_NO_deploy},secrets=${STEP_NO_secrets},bind=${STEP_NO_bind},register=${STEP_NO_register},verify=${STEP_NO_verify}"; then
+    # The summary below still prints, since its manual steps apply either way;
+    # the run then exits non-zero.
+    VERIFY_FAILED=1
     log_warn "Instance '${SLUG}' is provisioned, but it did not pass verification. See the failures above."
-    exit 1
+  else
+    log_ok "Instance verified end to end"
   fi
-  log_ok "Instance verified end to end"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
@@ -835,7 +839,12 @@ log "  Target:  ${APP_URL}"
 log "  Admin:   ${ADMIN_EMAIL}"
 log "  Log:     ${LOG_FILE}"
 log ""
-log "Verified end to end by scripts/verify-instance.sh. Re-run it any time:"
+if [[ $VERIFY_FAILED -eq 1 ]]; then
+  log "NOT verified: fix the failures printed by step ${STEP_NO_verify}, resume with the"
+  log "command it printed, or re-run the check by hand:"
+else
+  log "Verified end to end by scripts/verify-instance.sh. Re-run it any time:"
+fi
 log "  ./scripts/verify-instance.sh ${SLUG}"
 log ""
 log "Remaining manual step:"
@@ -844,3 +853,4 @@ log "    client-owned domain, add the CNAME → ${WORKER_NAME}.${ACCOUNT_SUBDOMA
 log "    and update APP_URL in api/wrangler.toml to match."
 log "  • Log in at ${APP_URL} (magic link) and confirm Settings → Configuration."
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+[[ $VERIFY_FAILED -eq 0 ]] || exit 1

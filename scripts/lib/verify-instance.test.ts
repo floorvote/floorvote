@@ -297,7 +297,7 @@ describe('check 2: registration', () => {
     expect(by('registration').status).toBe('fail')
     for (const id of ['delivery', 'ai', 'email']) {
       expect(by(id).status).toBe('skipped')
-      expect(by(id).detail).toMatch(/not bound.*Registration/)
+      expect(by(id).detail).toMatch(/see Registration/)
     }
     expect(world.calls.some(c => c.url.endsWith('/verify-delivery') || c.url.endsWith('/verify-ai') || c.url.endsWith('/send-sample-email'))).toBe(false)
     expect(exitCode(results)).toBe(1)
@@ -470,6 +470,68 @@ describe('check 5: email', () => {
     const { by } = await run(makeWorld({ [key]: () => ({ status: 501, json: { error: 'tenant not bound' } }) }))
     expect(by('email').status).toBe('fail')
     expect(by('email').cause).toMatch(/binding/)
+  })
+})
+
+describe('a central or instance older than verify-instance', () => {
+  const missing = (): Route => () => ({ status: 404, text: '404 Not Found' })
+  const centralKeys = [
+    `GET ${CENTRAL}/api/tenants/ri/registration`,
+    `POST ${CENTRAL}/api/tenants/ri/verify-delivery`,
+    `GET ${CENTRAL}/api/tenants/ri/delivery-probe`,
+    `POST ${CENTRAL}/api/tenants/ri/verify-ai`,
+  ]
+  const PREDATES = /predates verify-instance.*redeploy/i
+
+  it('says central predates the check, once, instead of blaming the instance', async () => {
+    const { results, by } = await run(makeWorld(Object.fromEntries(centralKeys.map(k => [k, missing()]))))
+    expect(by('registration').status).toBe('fail')
+    expect(by('registration').cause).toMatch(PREDATES)
+    expect(by('registration').cause).toMatch(/central/i)
+    expect(by('registration').cause).not.toMatch(/force-register/)
+    // The rest would fail the same way, so they are not attempted rather than reported as skipped for lack of bills.
+    for (const id of ['delivery', 'ai', 'email']) expect(by(id).detail).toMatch(/see Registration/)
+    expect(exitCode(results)).toBe(1)
+  })
+
+  it('fails delivery and AI, not skips them, when only those routes are missing', async () => {
+    const { by } = await run(makeWorld({
+      [`POST ${CENTRAL}/api/tenants/ri/verify-delivery`]: missing(),
+      [`POST ${CENTRAL}/api/tenants/ri/verify-ai`]: missing(),
+    }))
+    expect(by('delivery').status).toBe('fail')
+    expect(by('delivery').cause).toMatch(PREDATES)
+    expect(by('ai').status).toBe('fail')
+    expect(by('ai').cause).toMatch(PREDATES)
+  })
+
+  it('still treats a JSON 404 naming no stored bill as a skip, and one naming no registration as a failure', async () => {
+    const no = (error: string): Route => () => ({ status: 404, json: { error } })
+    const a = await run(makeWorld({ [`POST ${CENTRAL}/api/tenants/ri/verify-delivery`]: no('central has no stored bill to send') }))
+    expect(a.by('delivery').status).toBe('skipped')
+    const b = await run(makeWorld({ [`POST ${CENTRAL}/api/tenants/ri/verify-delivery`]: no('tenant not registered') }))
+    expect(b.by('delivery').status).toBe('fail')
+    expect(b.by('delivery').stage).toBe('register')
+  })
+
+  it('fails delivery, naming the instance, when central refuses because the instance predates the probe', async () => {
+    const { by } = await run(makeWorld({
+      [`POST ${CENTRAL}/api/tenants/ri/verify-delivery`]: () => ({ status: 409, json: { error: 'the instance predates the delivery check', predates: true } }),
+    }))
+    expect(by('delivery').status).toBe('fail')
+    expect(by('delivery').cause).toMatch(PREDATES)
+    expect(by('delivery').cause).toMatch(/instance/i)
+    expect(by('delivery').stage).toBe('deploy')
+  })
+
+  it('fails AI, naming the instance, when it has no verifyAi method, rather than blaming the token', async () => {
+    const { by } = await run(makeWorld({
+      [`POST ${CENTRAL}/api/tenants/ri/verify-ai`]: () => ({ status: 502, json: { error: 'The RPC receiver does not implement the method "verifyAi".' } }),
+    }))
+    expect(by('ai').status).toBe('fail')
+    expect(by('ai').cause).toMatch(PREDATES)
+    expect(by('ai').cause).not.toMatch(/CF_AIG_TOKEN/)
+    expect(by('ai').stage).toBe('deploy')
   })
 })
 

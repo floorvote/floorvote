@@ -124,6 +124,10 @@ describe('new-instance.sh, last step', () => {
     expect(out).toMatch(/FAIL\s+Registration on central/)
     expect(out).toContain('Central has no binding for this instance: did central redeploy after the binding step?')
     expect(out).toMatch(/\.\/scripts\/new-instance\.sh --slug ri .* --from-step 7\b/)
+    // The closing summary still prints, with the manual steps the operator needs.
+    expect(out).toContain('Remaining manual step')
+    expect(out).toContain('did not pass verification')
+    expect(out).not.toContain('Instance verified end to end')
     expect(out).not.toContain('cli-secret')
     expect(out).not.toContain('--from-step 7 --from-step')
     expect(code).not.toBe(0)

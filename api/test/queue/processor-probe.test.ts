@@ -87,6 +87,22 @@ describe('delivery probe message', () => {
     expect(ack).toHaveBeenCalledTimes(1)
   })
 
+  // The freeze exists so a demo's bill set stays what its seed shipped. A probe
+  // sharing a batch with ordinary notifications must not open it for them.
+  it('does not unfreeze a demo instance for the ordinary notifications in its batch', async () => {
+    const db = getDb(env.DB)
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      billId: 'legiscan:7', sessionId: 's', state: 'RI', number: 'HB 7', title: 'Ordinary', abstract: null, status: 'introduced',
+      updatedAt: '2026-01-10T12:00:00Z', textHash: null, texts: [], actions: [], sponsors: [], votes: [], relatedBills: [],
+    }), { status: 200 }))
+    const ordinary = { body: { tenantId: 'test-org', billId: 'legiscan:7' }, attempts: 1, ack: vi.fn(), retry: vi.fn() }
+    const probing = { body: probe({ probe: 'mixed' }), attempts: 1, ack: vi.fn(), retry: vi.fn() }
+    await worker.queue({ messages: [ordinary, probing] } as any, demoEnv)
+    expect((await readDeliveryProbe(db))?.nonce).toBe('mixed')
+    expect(await db.select().from(bills).all()).toEqual([])
+  })
+
   it('is acknowledged by the queue consumer, not retried', async () => {
     const db = getDb(env.DB)
     const ack = vi.fn()

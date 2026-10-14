@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, isNotNull, inArray, asc, desc, count } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } from 'drizzle-orm'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
@@ -775,10 +775,14 @@ function parseCoverage(row: TenantRow): string[] {
 }
 
 /**
- * One stored bill to send or analyze: the newest with downloaded text in the
- * tenant's states, else any in its states, else any at all. Null only when
- * central stores no bills. Walks indexes from the newest row, so the cost is a
- * few reads when matches are common, not a scan.
+ * One stored bill to send or analyze: the newest bill with downloaded text in
+ * the tenant's states, else the newest in them, else the newest at all. Null
+ * only when central stores no bills.
+ *
+ * Read cost matters here (central's D1 rows-read budget). Joining bill_texts to
+ * bills across every state at once reads every in-state bill and text, then
+ * sorts. So the text search is one query per state, each walking that state's
+ * bills newest-first and stopping at the first one with a stored text.
  */
 async function pickVerificationBill(db: Db, coverage: string[]): Promise<number | null> {
   const anyState = coverage.length === 0 || coverage.includes('*')
@@ -787,14 +791,18 @@ async function pickVerificationBill(db: Db, coverage: string[]): Promise<number 
       .where(isNotNull(schema.billTexts.r2Key)).orderBy(desc(schema.billTexts.docId)).limit(1).get()
     if (withText) return withText.billId
   } else {
-    const withText = await db.select({ billId: schema.billTexts.billId })
-      .from(schema.billTexts)
-      .innerJoin(schema.bills, eq(schema.bills.billId, schema.billTexts.billId))
-      .where(and(isNotNull(schema.billTexts.r2Key), inArray(schema.bills.state, coverage)))
-      .orderBy(desc(schema.billTexts.docId))
-      .limit(1)
-      .get()
-    if (withText) return withText.billId
+    let newest: number | null = null
+    for (const state of coverage) {
+      const hit = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+        .where(and(
+          eq(schema.bills.state, state),
+          exists(db.select({ one: sql`1` }).from(schema.billTexts)
+            .where(and(eq(schema.billTexts.billId, schema.bills.billId), isNotNull(schema.billTexts.r2Key)))),
+        ))
+        .orderBy(desc(schema.bills.billId)).limit(1).get()
+      if (hit && (newest === null || hit.billId > newest)) newest = hit.billId
+    }
+    if (newest !== null) return newest
     const inStates = await db.select({ billId: schema.bills.billId }).from(schema.bills)
       .where(inArray(schema.bills.state, coverage)).orderBy(desc(schema.bills.billId)).limit(1).get()
     if (inStates) return inStates.billId
@@ -842,6 +850,20 @@ tenantsRoutes.post('/:tenantId/verify-delivery', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
   if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const rpc = resolveTenantRpc(c.env, tenantId)
+  if (!rpc) return c.json({ error: 'tenant not bound' }, 501)
+  // An instance from before the probe existed would treat it as an ordinary bill
+  // notification: track the bill, spend a model call, and post a feed event its
+  // members can see. Only an instance with deliveryProbe knows to record and
+  // stop, and the poll needs the binding anyway, so ask before sending anything.
+  try {
+    await rpc.deliveryProbe()
+  } catch (err) {
+    return c.json({
+      error: `the instance predates the delivery check (${err instanceof Error ? err.message : 'deliveryProbe failed'}); redeploy it first`,
+      predates: true,
+    }, 409)
+  }
   const billId = await pickVerificationBill(db, parseCoverage(row))
   if (billId === null) return c.json({ error: 'central has no stored bill to send' }, 404)
 

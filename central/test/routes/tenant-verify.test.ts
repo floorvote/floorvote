@@ -33,11 +33,14 @@ async function seedBills(db: ReturnType<typeof drizzle<typeof schema>>) {
   await db.insert(schema.billTexts).values({ docId: 9000, billId: 100, date: '2026-01-01', type: 'Introduced', r2Key: 'texts/100.html' })
 }
 
-function queueEnv() {
+// By default the instance is bound and understands the delivery probe; pass null
+// for one central has no binding for, or an object for a different RPC surface.
+function queueEnv(rpc: object | null = { deliveryProbe: async () => ({ probe: null }) }) {
   const sent: any[] = []
   const ingestor: any[] = []
   const env2: any = {
     ...BASE,
+    ...(rpc ? { TENANT_RI: rpc } : {}),
     INGESTOR_QUEUE: { send: async (m: any) => ingestor.push(m), sendBatch: async (ms: any[]) => ingestor.push(...ms) },
     TENANT_QUEUE_RI: { send: async (m: any) => sent.push(m), sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)) },
   }
@@ -82,7 +85,7 @@ describe('GET /tenants/:id/registration', () => {
 
   it('says so when central has no CentralApi binding for the instance', async () => {
     await seedTenant()
-    const res = await call('ri/registration', { headers: AUTH }, queueEnv().env2)
+    const res = await call('ri/registration', { headers: AUTH }, queueEnv(null).env2)
     expect((await res.json() as any).bound).toBe(false)
   })
 
@@ -145,8 +148,43 @@ describe('POST /tenants/:id/verify-delivery', () => {
   it('409s when central has no way to deliver to the instance', async () => {
     const db = await seedTenant()
     await seedBills(db)
-    const res = await call('ri/verify-delivery', { method: 'POST', headers: AUTH, body: JSON.stringify({ nonce: 'n' }) }, BASE)
+    const e: any = { ...BASE, TENANT_RI: { deliveryProbe: async () => ({ probe: null }) } }
+    const res = await call('ri/verify-delivery', { method: 'POST', headers: AUTH, body: JSON.stringify({ nonce: 'n' }) }, e)
     expect(res.status).toBe(409)
+    expect(((await res.json()) as any).predates).toBeUndefined()
+  })
+
+  // An instance from before the probe existed would treat it as an ordinary bill
+  // notification: track the bill, spend a model call, and post a feed event its
+  // members can see. Central must not send one to it.
+  it('refuses, and queues nothing, when the instance predates the probe', async () => {
+    const db = await seedTenant()
+    await seedBills(db)
+    const old = { deliveryProbe: async () => { throw new Error('The RPC receiver does not implement the method "deliveryProbe"') } }
+    const { env2, sent, ingestor } = queueEnv(old)
+    const res = await call('ri/verify-delivery', { method: 'POST', headers: AUTH, body: JSON.stringify({ nonce: 'n' }) }, env2)
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ predates: true })
+    expect(sent).toEqual([])
+    expect(ingestor).toEqual([])
+  })
+
+  it('501s, and queues nothing, when central is not bound to the instance', async () => {
+    const db = await seedTenant()
+    await seedBills(db)
+    const { env2, sent } = queueEnv(null)
+    const res = await call('ri/verify-delivery', { method: 'POST', headers: AUTH, body: JSON.stringify({ nonce: 'n' }) }, env2)
+    expect(res.status).toBe(501)
+    expect(sent).toEqual([])
+  })
+
+  it('picks the newest text-bearing bill across all the instance states, not the newest text', async () => {
+    const db = await seedTenant({ stateCoverage: '["NJ","RI"]' })
+    await seedBills(db)
+    // NJ's bill is newer but its text was stored earlier than RI's.
+    await db.insert(schema.billTexts).values({ docId: 8000, billId: 200, date: '2026-01-01', type: 'Introduced', r2Key: 'texts/200.html' })
+    const res = await call('ri/verify-delivery', { method: 'POST', headers: AUTH, body: JSON.stringify({ nonce: 'n' }) }, queueEnv().env2)
+    expect((await res.json() as any).billId).toBe('legiscan:200')
   })
 
   it('400s without a nonce, and 404s for an unregistered instance', async () => {
