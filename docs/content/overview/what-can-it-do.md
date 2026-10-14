@@ -89,6 +89,8 @@ Hearings on bills your team has prioritized are added to your team's calendar au
 
 Where a state's data includes the legislature's own calendar (DC's Council calendar, for one), its hearings, roundtables, and meetings appear too, with or without a bill on the agenda. Admins choose which ones under Settings, by committee, kind of event, topic keywords, or bills the team tracks. An event with a prioritized bill on its agenda always shows, and an event the choices leave out drops out of the calendar subscription too. Where a state's data includes deadlines, such as the end of the executive's time to sign or veto, a prioritized bill's deadlines go on the calendar alongside its hearings, and every bill's next deadline shows on its bill page.
 
+A date custom field you've filled in on a prioritized bill goes on the calendar too: a "Comment deadline" of March 12 on HB 12 shows as "Comment deadline: HB 12" on that day, in the calendar subscription and the week-ahead email as well. The date can be changed only on the bill page, and clearing it, deleting the field, or taking the bill off your priority list takes the event off the calendar.
+
 You can also import a full spreadsheet or .ics file of events at once.
 
 ## Try it

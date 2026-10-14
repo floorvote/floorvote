@@ -5,6 +5,7 @@ import { renderWeekAheadEmail, type WeekAheadEvent, type WeekAheadDay } from './
 import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { prioritizedBillEntry, billEntryGroupKey } from './calendarVisibility'
+import { loadDateFieldEvents } from './dateFieldEvents'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting } from '../../../shared/modules'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -114,7 +115,11 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
     .orderBy(calendarEvents.date, calendarEvents.time)
     .all()
 
-  if (rows.length === 0) return  // no events this week — skip without stamping
+  // Date custom fields on prioritized bills (#342): all-day, and projected
+  // rather than stored, so they come from their own query. `endIso` is exclusive.
+  const fieldEvents = await loadDateFieldEvents(db, { from: todayIso, to: isoDate(6) })
+
+  if (rows.length === 0 && fieldEvents.length === 0) return  // no events this week — skip without stamping
 
   // Group rows by event, then events by date. Bill entries for the same real
   // meeting on several bills are one event carrying every bill, as the
@@ -123,6 +128,13 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
   const eventDateMap = new Map<string, string>()  // eventId → date
   const meetingIds = new Map<string, string>()  // bill entry group key → eventId
   const dateOrder: string[] = []
+
+  // All-day, so first among their day's events, as an untimed hearing is.
+  for (const f of fieldEvents) {
+    eventMap.set(f.id, { id: f.id, source: 'field', fieldName: f.fieldName, description: f.title, status: 'confirmed', bills: [{ id: f.bill.id, billNumber: f.bill.billNumber, state: f.bill.state, priority: f.bill.priority, billTitle: f.bill.billTitle }] })
+    eventDateMap.set(f.id, f.date)
+    if (!dateOrder.includes(f.date)) dateOrder.push(f.date)
+  }
 
   for (const row of rows) {
     const meetingKey = row.source === 'hearing' ? billEntryGroupKey(row) : null
@@ -159,6 +171,8 @@ export async function runWeekAhead(env: Env, db: AppDb): Promise<void> {
       })
     }
   }
+
+  dateOrder.sort()  // date-field events joined the days the query ordered
 
   // Build days array
   const dayEventMap = new Map<string, WeekAheadEvent[]>()

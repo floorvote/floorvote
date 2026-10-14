@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
-import { bills, calendarEvents } from '../db/schema'
+import { bills, calendarEvents, customFieldDefinitions } from '../db/schema'
 
 /**
  * Which calendar rows the calendar page, the ICS feed, and the dashboard's
@@ -32,6 +32,19 @@ export const prioritizedBillEntry = and(
     // A cover whose event the instance doesn't have, or hides, shows the entry after all.
     sql`NOT EXISTS (SELECT 1 FROM calendar_events AS cover WHERE cover.uid = calendar_events.covered_by AND cover.source = 'body' AND cover.rule_match IS NOT 0)`,
   ),
+)!
+
+/**
+ * A date custom field's value that becomes a team calendar event: a `date`
+ * field (every one, with no per-field opt-in) on a bill with a priority, the
+ * same rule a bill's own entries follow. The one definition the calendar, the
+ * ICS feed, the dashboard count, and the week-ahead email share
+ * (lib/dateFieldEvents.ts). Needs custom_field_definitions joined on the
+ * value's field and `bills` on its bill.
+ */
+export const prioritizedDateFieldValue = and(
+  eq(customFieldDefinitions.type, 'date'),
+  isNotNull(bills.priority),
 )!
 
 export const visibleCalendarEvent = or(

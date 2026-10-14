@@ -5,19 +5,21 @@ import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
 import { buildVCalendar, tzidForState, type IcalEvent } from '../lib/ical'
 import { visibleCalendarEvent, billEntryGroupKey } from '../lib/calendarVisibility'
-import { hearingBody, customBody, customUrl } from '../lib/calendarIcsBody'
+import { hearingBody, customBody, customUrl, dateFieldBody } from '../lib/calendarIcsBody'
+import { loadDateFieldEvents, type DateFieldEvent } from '../lib/dateFieldEvents'
 import { billUrl } from '../../../shared/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
 import { nowDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { billDisplayTitle } from '../../../shared/billTitle'
 import { importUid, importEventHash, type ImportRow } from '../lib/calendarImport'
+import { canEditEventSource, type EventSource } from '../../../shared/eventSource'
 import type { AppEnv } from '../types'
 
 export const calendarRouter = new Hono<AppEnv>()
 
 /** Custom events, body events, and a fork's 'council' rows link their bills through calendar_event_bills, not bill_id. */
-const linksBills = (source: string) => source === 'custom' || source === 'body' || source === 'council'
+const linksBills = (source: EventSource) => source === 'custom' || source === 'body' || source === 'council'
 
 /** Event ids per IN list, under D1's 100 bound parameters a query. */
 const LINK_CHUNK = 80
@@ -88,6 +90,17 @@ async function setEventBills(db: ReturnType<typeof getDb>, eventId: string, bill
   return valid
 }
 
+function fieldEventResult(f: DateFieldEvent) {
+  return {
+    id: f.id, uid: f.id, source: 'field' as const, billId: f.bill.id, kind: null,
+    eventHash: null, eventHashes: [] as string[],
+    date: f.date, time: null, location: null,
+    description: f.title, details: null, url: null,
+    status: 'confirmed', fieldName: f.fieldName,
+    bills: [{ id: f.bill.id, billNumber: f.bill.billNumber, billTitle: f.bill.billTitle, state: f.bill.state, priority: f.bill.priority, isDraft: f.bill.isDraft }],
+  }
+}
+
 calendarRouter.get('/events', requireAuth, async (c) => {
   const db = getDb(c.env.DB)
   const rawFrom = c.req.query('from')
@@ -152,9 +165,11 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   // tenant bill, drafts included (see calendar_event_bills / setEventBills).
   type EventBill = { id: string; billNumber: string; billTitle: string; state: string | null; priority: string | null; isDraft: boolean }
   interface EventResult {
-    id: string; uid: string; source: string; billId: string | null
-    /** A bill calendar entry's kind, from central (null for custom events, or before central sent one). */
+    id: string; uid: string; source: EventSource; billId: string | null
+    /** A bill calendar entry's kind, from central (null for custom and date-field events, or before central sent one). */
     kind: string | null
+    /** A date-field event's field name; the popover says the date is set from it. */
+    fieldName?: string
     eventHash: string | null
     /** All event_hashes merged into this entry; the sidebar deep-link focus matches any of them. */
     eventHashes: string[]
@@ -220,6 +235,9 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     if (e.status === 'confirmed') g.status = 'confirmed'
   }
 
+  // Date custom fields on prioritized bills: projected here, never stored, and never merged with anything.
+  for (const f of await loadDateFieldEvents(db, { from, to })) result.push(fieldEventResult(f))
+
   return c.json(result)
 })
 
@@ -269,7 +287,7 @@ calendarRouter.put('/events/:id', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
-  if (!existing || existing.source !== 'custom') return c.json({ error: 'Not found' }, 404)
+  if (!existing || !canEditEventSource(existing.source)) return c.json({ error: 'Not found' }, 404)
 
   const body = await c.req.json().catch(() => ({})) as {
     description?: string; date?: string; time?: string | null; location?: string | null; billIds?: string[]
@@ -302,7 +320,7 @@ calendarRouter.delete('/events/:id', requireAuth, requireAdmin, async (c) => {
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
-  if (!existing || existing.source !== 'custom') return c.json({ error: 'Not found' }, 404)
+  if (!existing || !canEditEventSource(existing.source)) return c.json({ error: 'Not found' }, 404)
   await db.update(calendarEvents).set({
     status: 'cancelled', sequence: existing.sequence + 1,
     updatedAt: nowDb(),
@@ -314,7 +332,7 @@ calendarRouter.post('/events/:id/restore', requireAuth, requireAdmin, async (c) 
   const db = getDb(c.env.DB)
   const id = c.req.param('id')
   const existing = await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).get()
-  if (!existing || existing.source !== 'custom') return c.json({ error: 'Not found' }, 404)
+  if (!existing || !canEditEventSource(existing.source)) return c.json({ error: 'Not found' }, 404)
   await db.update(calendarEvents).set({
     status: 'confirmed', sequence: existing.sequence + 1,
     updatedAt: nowDb(),
@@ -504,6 +522,21 @@ calendarRouter.get('/feed/:slugIcs', async (c) => {
     }
   })
 
-  const ics = buildVCalendar(events, { calName, now: new Date().toISOString() }) // ts-write-ok: ICS DTSTAMP, display only, not a DB column
+  // Date custom fields on prioritized bills: all-day events, titled as on the
+  // calendar. Their UID is the same on every fetch, and their sequence rises
+  // with each edit, so a changed date moves the event in subscribers' calendars.
+  const fieldEvents: IcalEvent[] = (await loadDateFieldEvents(db, { from: confirmedCutoff, to: '9999-12-31' })).map(f => {
+    const billHref = encodeURI(`https://${host}${billUrl(f.bill)}`)
+    return {
+      uid: f.id, sequence: f.sequence, status: 'confirmed',
+      date: f.date, time: null, location: null,
+      summary: f.title,
+      description: dateFieldBody({ fieldName: f.fieldName, billNumber: f.bill.billNumber, billHref, assoc: assocName }),
+      url: billHref,
+      tzid: fallbackTz,
+    }
+  })
+
+  const ics = buildVCalendar([...events, ...fieldEvents], { calName, now: new Date().toISOString() }) // ts-write-ok: ICS DTSTAMP, display only, not a DB column
   return c.body(ics, 200, { 'content-type': 'text/calendar; charset=utf-8' })
 })
