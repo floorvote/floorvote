@@ -448,12 +448,6 @@ export function BulkActionBar({
         }),
     ].filter(Boolean).join('\n')
 
-    const promoteCount = promotableCount({
-      mode: selection.mode,
-      selectedBills,
-      nullMatchCount,
-      stagedPriority: staged.priority,
-    })
     const confirmed = window.confirm(bulkConfirmMessage({ count, lines, promotableCount: promoteCount }))
     if (!confirmed) return
 
@@ -530,6 +524,14 @@ export function BulkActionBar({
   }
 
   const applyable = hasPending && !applying && !overLimit && !demoLocked
+  // Shown beside Apply and recapped in the confirmation, so the click isn't the
+  // first time an admin learns the edit queues AI analysis.
+  const promoteCount = promotableCount({
+    mode: selection.mode,
+    selectedBills,
+    nullMatchCount,
+    stagedPriority: staged.priority,
+  })
 
   // Renders a filter-bar-style pill button with a dropdown for a single field
   function renderPill(params: {
@@ -659,6 +661,12 @@ export function BulkActionBar({
               : overLimit ? `Too many — narrow to ≤1,000`
               : `Apply to ${count.toLocaleString()} bill${count !== 1 ? 's' : ''}`}
           </button>
+
+          {promoteCount > 0 && (
+            <span style={{ fontSize: fontSize.xs, lineHeight: 1.3, color: color.textMuted }}>
+              {promoteCount.toLocaleString()} will be queued for AI analysis
+            </span>
+          )}
 
           {valuesStatus !== 'ready' && (
             <span style={{

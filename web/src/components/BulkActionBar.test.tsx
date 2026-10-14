@@ -499,3 +499,85 @@ describe('BulkActionBar — drafts filter', () => {
     expect(params.get('drafts')).toBeNull()
   })
 })
+
+// A staged priority promotes untracked bills (matchType null) to full tracking
+// and queues them for AI analysis. The confirmation has always said how many;
+// the bar says it too, before Apply is clicked, so the Apply label needs no
+// ellipsis (AGENTS.md, "Button labels").
+describe('BulkActionBar — AI analysis count before Apply', () => {
+  const untracked = (id: string) => ({ id, priority: null, position: null, matchType: null })
+  const tracked = (id: string) => ({ id, priority: null, position: null, matchType: 'manual' })
+  const queuedText = () => screen.queryByText(/will be queued for AI analysis/i)
+
+  function stagePriority(label: string) {
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText(label))
+  }
+
+  it('shows how many selected bills will be queued once a priority is staged', () => {
+    render(<Harness selectedBills={[untracked('a'), untracked('b'), tracked('c')]} />)
+    stagePriority('High')
+    expect(queuedText()).toHaveTextContent('2 will be queued for AI analysis')
+  })
+
+  it('shows the same count the confirmation uses', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Harness selectedBills={[untracked('a'), untracked('b'), tracked('c')]} />)
+    stagePriority('High')
+    fireEvent.click(screen.getByRole('button', { name: 'Apply to 3 bills' }))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('2 of these bills will be promoted'))
+    expect(queuedText()).toHaveTextContent('2 will be queued')
+  })
+
+  it('shows nothing before a priority is staged', () => {
+    render(<Harness selectedBills={[untracked('a')]} />)
+    expect(queuedText()).not.toBeInTheDocument()
+  })
+
+  it('shows nothing when every selected bill is already fully tracked', () => {
+    render(<Harness selectedBills={[tracked('a'), tracked('b')]} />)
+    stagePriority('High')
+    expect(queuedText()).not.toBeInTheDocument()
+  })
+
+  it('shows nothing when only a position is staged', () => {
+    render(<Harness selectedBills={[untracked('a')]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Position:/i }))
+    fireEvent.click(screen.getByText('Support'))
+    expect(queuedText()).not.toBeInTheDocument()
+  })
+
+  it('uses the filter count when selecting by filter', async () => {
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({
+          count: 40, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 17,
+        })
+      }
+      return Promise.resolve({})
+    })
+    render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={40}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[]}
+        currentFilters={noFilters}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />
+    )
+    await waitFor(() => expect(priorityPill()).toBeEnabled())
+    await screen.findByText(/Priority:\s*Not set/)
+    stagePriority('High')
+    expect(await screen.findByText(/17 will be queued for AI analysis/i)).toBeInTheDocument()
+  })
+
+  it('keeps the Apply label free of an ellipsis', () => {
+    render(<Harness selectedBills={[untracked('a'), untracked('b')]} />)
+    stagePriority('High')
+    expect(screen.getByRole('button', { name: 'Apply to 2 bills' })).toBeInTheDocument()
+  })
+})
