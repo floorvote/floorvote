@@ -13,6 +13,7 @@ import { FilterSheet } from '../../components/FilterSheet'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
+import { useConfig } from '../../context/ConfigContext'
 import { CARD } from '../../lib/cardStyle'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
@@ -43,6 +44,24 @@ let billsListCache: { params: string; page: BillsListPage } | null = null
 let cachedCustomFieldDefs: CustomFieldDef[] | null = null
 let cachedFacetCounts: FacetCounts | null = null
 export const knownStates: Set<string> = new Set()
+
+/**
+ * The Subject filter's hover text. The caveat about legislatures that assign
+ * no subjects only helps where one is covered, so it appears only when a
+ * covered state has no subject group: it never loaded subjects, or it is
+ * suppressed through subjects_suppressed_states (which keeps it out of the
+ * subject facet too).
+ */
+function subjectFilterTooltip(coveredStates: string[], subjectGroups: Array<{ state: string }>): string {
+  const base = 'Filter by legislature-assigned subject.'
+  const withSubjects = new Set(subjectGroups.map(g => g.state))
+  const without = coveredStates.filter(s => !withSubjects.has(s)).sort()
+  if (without.length === 0) return base
+  const names = without.length <= 2
+    ? without.join(' and ')
+    : `${without.slice(0, -1).join(', ')}, and ${without[without.length - 1]}`
+  return `${base} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for ${names}.)`
+}
 export const knownSessions: Set<string> = new Set()
 export const knownStatuses: Set<string> = new Set()
 export const knownTagsCache: Set<string> = new Set()
@@ -183,6 +202,7 @@ export function BillList() {
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
   const stageUseful = useStageFilterUseful()
+  const { config } = useConfig()
   const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, stageUseful, stageActive: f.filterStages.length > 0 }
 
   // Relevance slider: track the thumb locally so it moves instantly while
@@ -956,7 +976,7 @@ export function BillList() {
           {f.subjectGroups.length > 0 && (
             <HoverTooltip
               maxWidth={280}
-              text="Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)"
+              text={subjectFilterTooltip(config?.states ?? [], f.subjectGroups)}
             >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}

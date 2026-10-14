@@ -101,11 +101,16 @@ const FACETS = {
   state: { RI: 3 },
   position: {},
   tags: {},
-  subjects: { 'UT:Counties': 1 },
+  subjects: { 'UT:Counties': 1 } as Record<string, number>,
   customFields: {},
   myBillsCount: 0,
   newMatchesCount: 0,
 }
+
+// What the instance covers, as GET /config reports it, handed to BillList
+// through ConfigContext. Null = config not loaded, which is what every test
+// that doesn't care about covered states gets.
+const configState: { value: { states: string[] } | null } = { value: null }
 
 vi.mock('../../lib/api', () => {
   class ApiError extends Error {
@@ -193,14 +198,17 @@ import { BillList } from './index'
 import { ApiError } from '../../lib/api'
 import { AuthProvider } from '../../context/AuthContext'
 import { SidebarRefreshProvider } from '../../context/SidebarRefreshContext'
+import { ConfigContext } from '../../context/ConfigContext'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={['/bills']}>
-      <AuthProvider>
-        <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
-        <LocationProbe />
-      </AuthProvider>
+      <ConfigContext value={{ config: configState.value, multiState: (configState.value?.states.length ?? 0) > 1, loading: false }}>
+        <AuthProvider>
+          <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </ConfigContext>
     </MemoryRouter>
   )
 }
@@ -231,6 +239,8 @@ beforeEach(() => {
   customFieldsState.deferred = false
   customFieldsState.response = []
   resolveCustomFields = null
+  configState.value = null
+  FACETS.subjects = { 'UT:Counties': 1 }
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -302,19 +312,51 @@ describe('BillList page', () => {
     expect(screen.getByText(/Sorted by:/)).toBeInTheDocument()
   })
 
-  // The Subject filter's tooltip replaced the old under-the-filter-row
-  // "excludes states with no subjects" warning with a caveat baked into the
-  // tooltip copy itself.
-  it('shows the subject-assignment caveat in the Subject filter tooltip', async () => {
-    render(<BillList />, { wrapper: Wrapper })
-    await screen.findByText('Early Voting Centers')
+  // The Subject filter's tooltip carries a caveat about states that assign no
+  // subjects, but only where it applies: when some state the instance covers
+  // has no subject group. Everywhere else it is noise.
+  describe('Subject filter tooltip', () => {
+    const SHORT = 'Filter by legislature-assigned subject.'
 
-    const subjectButton = await screen.findByRole('button', { name: 'Subject' })
-    fireEvent.pointerEnter(subjectButton, { pointerType: 'mouse' })
+    async function hoverSubjectFilter() {
+      render(<BillList />, { wrapper: Wrapper })
+      await screen.findByText('Early Voting Centers')
+      const subjectButton = await screen.findByRole('button', { name: 'Subject' })
+      fireEvent.pointerEnter(subjectButton, { pointerType: 'mouse' })
+    }
 
-    expect(await screen.findByText(
-      'Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)',
-    )).toBeInTheDocument()
+    it('is just the short text on a single-state instance with subjects', async () => {
+      configState.value = { states: ['UT'] }
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('is just the short text when every covered state has subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1, 'NJ:Elections': 2 }
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat, naming the state, when a covered state has no subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      await hoverSubjectFilter()
+      expect(await screen.findByText(
+        `${SHORT} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for NJ.)`,
+      )).toBeInTheDocument()
+    })
+
+    it('names every covered state that has no subjects, with a serial comma', async () => {
+      configState.value = { states: ['AZ', 'NJ', 'OH', 'UT'] }
+      await hoverSubjectFilter()
+      expect(await screen.findByText(/No subjects for AZ, NJ, and OH\.\)$/)).toBeInTheDocument()
+    })
+
+    it('is just the short text while the config has not loaded', async () => {
+      configState.value = null
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
   })
 
   it('re-fetches and narrows the list when a status filter is applied', async () => {
