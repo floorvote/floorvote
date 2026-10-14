@@ -252,7 +252,12 @@ export async function applyMasterList(
   const billIds = list.map(b => b.bill_id)
   const existing = new Map<number, { changeHash: string; carriedFrom: string | null }>()
   const existingLinks = new Map<string, string | null>()
-  /** Covering instances that already held a link to a bill of this list. */
+  /**
+   * Covering instances that already follow the session's state: they held a
+   * link to a bill of this list, or to any other bill of the state (an earlier
+   * session's), before this pass. A new keyword match can be routine only for
+   * them. A state an instance never followed is seeded by its first pass.
+   */
   const seeded = new Set<string>()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
@@ -269,6 +274,19 @@ export async function applyMasterList(
       existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
       seeded.add(r.tenantId)
     }
+  }
+  // An instance with no link in this list may still follow the state through
+  // a link to any bill of the state made before this pass, which makes a new
+  // session's first (prefiling) pass routine for it. One indexed EXISTS per
+  // such instance, read before this pass writes any link. The in-list check
+  // above is a shortcut the EXISTS subsumes: it would find those links too.
+  for (const tenantId of tenantIds) {
+    if (seeded.has(tenantId)) continue
+    const held = await db.select({ billId: billTenants.billId }).from(billTenants)
+      .innerJoin(bills, eq(bills.billId, billTenants.billId))
+      .where(and(eq(billTenants.tenantId, tenantId), eq(bills.state, session.state)))
+      .limit(1).get()
+    if (held) seeded.add(tenantId)
   }
 
   const now = nowDb()
@@ -378,13 +396,14 @@ export async function applyMasterList(
       // A new keyword match is routine only when this pass links a bill
       // central is seeing for the first time (or has only from a raw pass,
       // which stores new bills with an empty change hash) to an instance
-      // that already holds bills of the session. A bill central already had
-      // is one a seed or an earlier pass passed over, and an instance with no
-      // bills of the session is being seeded by this pass (a state it just
-      // started covering, or a new session), so both are bulk. As is an
-      // existing link that starts to match, a cutover's first pass and an
-      // operator import (both below the loop). Missing is bulk too, so a case
-      // this misses stays quiet rather than flooding instances (#363).
+      // that already follows the state (`seeded`: a link to any bill of the
+      // state made before this pass), so a new session's prefiled bills
+      // count. A bill central already had is one a seed or an earlier pass
+      // passed over, and an instance that never followed the state is being
+      // seeded by this pass, so both are bulk. As is an existing link that
+      // starts to match, a cutover's first pass and an operator import (both
+      // below the loop). Missing is bulk too, so a case this misses stays
+      // quiet rather than flooding instances (#363).
       if (justMatched && newMatchType === 'keyword') {
         const newToCentral = !stored || stored.changeHash === ''
         const routine = !linkExists && newToCentral && seeded.has(t.tenantId)
