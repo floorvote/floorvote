@@ -41,7 +41,7 @@ type Participant = { id: string; email: string; emailReplies: boolean }
 
 /**
  * The members to notify about a new comment: everyone else with a live comment
- * on the bill, minus the author. Deactivated members and members without a
+ * on the bill or another bill in its companion group, minus the author. Deactivated members and members without a
  * login session are skipped, as role mentions skip them. The caller removes
  * anyone the comment mentions.
  */
