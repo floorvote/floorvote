@@ -75,11 +75,36 @@ describe('applyMasterList declares each new keyword match routine or bulk', () =
     expect(msgs.get(2)?.matchProvenance).toEqual({ 't-a': 'routine' })
   })
 
-  it("declares bulk on an instance's first pass over a session, which seeds it", async () => {
+  it("declares bulk on an instance's first pass over a state it never covered, which seeds it", async () => {
     const msgs = await pass([entry(1, 'Voter Rolls Act'), entry(2, 'Voter ID Act')], ['t-a'])
 
     expect(msgs.get(1)?.matchProvenance).toEqual({ 't-a': 'bulk' })
     expect(msgs.get(2)?.matchProvenance).toEqual({ 't-a': 'bulk' })
+  })
+
+  // Will's decision on PR #511: a new session's first pass (prefiling) is
+  // routine for an instance that already followed the state.
+  it("declares routine on a new session's first pass, for an instance that holds bills of the state from an earlier session", async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(sessions).values({
+      sessionId: 9000, state: 'DC', stateId: 0, yearStart: 2023, yearEnd: 2024, sessionTitle: 'Earlier', sessionName: 'Earlier',
+    })
+    await db.insert(bills).values({ ...storedBill(900, 'Bridge Naming'), sessionId: 9000 })
+    await db.insert(billTenants).values({ billId: 900, tenantId: 't-a', matchType: null })
+
+    const msgs = await pass([entry(1, 'Voter Rolls Act'), entry(2, 'Bridge Repair')], ['t-a'])
+
+    expect(msgs.get(1)?.matchProvenance).toEqual({ 't-a': 'routine' })
+  })
+
+  it("declares bulk on a first pass over a state, even for an instance that follows another state", async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(bills).values({ ...storedBill(901, 'Voter Act'), state: 'MD' })
+    await db.insert(billTenants).values({ billId: 901, tenantId: 't-a', matchType: 'keyword' })
+
+    const msgs = await pass([entry(1, 'Voter Rolls Act')], ['t-a'])
+
+    expect(msgs.get(1)?.matchProvenance).toEqual({ 't-a': 'bulk' })
   })
 
   it('declares bulk for a bill central already held that the instance had no link to', async () => {

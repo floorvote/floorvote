@@ -137,10 +137,10 @@ export type BillMessage = {
 
 /**
  * Where a keyword match came from. Routine: the regular sync linked a bill
- * central had just found, for an instance that already held bills of its
- * session. Bulk: anything else that matches bills in bulk (a session seed, a
- * keyword re-run, an instance's first pass over a session, an operator
- * import). Only routine matches reach an instance's feed and digest, and a
+ * central had just found, for an instance that already followed the bill's
+ * state (bills of this or an earlier session). Bulk: anything else that
+ * matches bills in bulk (a session seed, a keyword re-run, an instance's first
+ * pass over a state it never followed, a cutover's pass, an operator import). Only routine matches reach an instance's feed and digest, and a
  * match with no declaration is bulk.
  */
 export type MatchProvenance = 'routine' | 'bulk'
