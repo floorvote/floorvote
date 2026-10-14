@@ -66,7 +66,8 @@ export async function runDigest(
 
   // New keyword matches awaiting triage — admin/owner section only. Bill-based
   // (not feed events) and NOT priority-gated; scoped to the digest window, still
-  // untriaged, and above the configured relevance threshold.
+  // untriaged, and above the configured relevance threshold. All of them are passed
+  // on: renderDigestEmail counts the lot, then ranks and caps what it lists.
   const threshold = await getNewMatchMinRelevance(db)
   const newMatches: NewMatchDigestItem[] = await db.select({
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
@@ -81,7 +82,6 @@ export async function runDigest(
       sql`datetime(${bills.newMatchAt}) <= datetime(${now})`,
       sql`COALESCE(${bills.relevanceScore}, 0) >= ${threshold}`,
     ))
-    .orderBy(sql`${bills.relevanceScore} DESC NULLS LAST`)
     .all()
 
   if (events.length === 0 && newMatches.length === 0) { await stampLastDigest(db, now); return { ok: true, recipients: 0, sent: 0, failed: 0 } }

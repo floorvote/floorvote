@@ -117,11 +117,27 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
     ${dataRows}${BILL_CARD_CLOSE}`
 }
 
+/** The digest lists this many new matches, most relevant first; the rest sit behind "…and N more". */
+const NEW_MATCH_LIMIT = 10
+
 // New keyword-match section (admin/owner digests only). Not priority-gated and
 // rendered from bills (not feed events), so it lists matches awaiting triage.
+// The heading counts every match; only the top NEW_MATCH_LIMIT by relevance are
+// listed (unscored last), with a link to the full list for the rest.
 function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): string {
   if (items.length === 0) return ''
-  const rows = items.map(it => {
+  const top = [...items]
+    .sort((a, b) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1))
+    .slice(0, NEW_MATCH_LIMIT)
+  const hidden = items.length - top.length
+  const moreRow = hidden > 0
+    ? `<tr>
+      <td style="padding:8px 0;border-top:1px solid ${color.borderDefault};font-size:${fontSize.sm}px;">
+        <a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};text-decoration:none;">…and ${hidden} more</a>
+      </td>
+    </tr>`
+    : ''
+  const rows = top.map(it => {
     const href = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
     const badgeText = it.billState ? `${escHtml(it.billState)} ${escHtml(it.billNumber)}` : escHtml(it.billNumber)
     return `<tr>
@@ -136,10 +152,10 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): str
   return `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;border:1px solid ${color.borderDefault};border-radius:${radius.lg}px;overflow:hidden;">
   <tbody>
-    <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New bills matching your keywords</td></tr>
+    <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New matches (${items.length})</td></tr>
     <tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>
     <tr><td style="padding:0 14px 8px 14px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}</tbody></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}${moreRow}</tbody></table>
     </td></tr>
   </tbody>
 </table>`
@@ -177,7 +193,7 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
     appUrl: input.appUrl,
     signalHtml: escHtml(signal),
     dateLabel: range,
-    bodyHtml: `${newMatchSection}\n${cards}`,
+    bodyHtml: `${cards}\n${newMatchSection}`,
     ctaHtml,
     footerHtml: emailFooterLink(`${input.appUrl}/profile#setting-email-digest`, 'Manage email settings'),
   })

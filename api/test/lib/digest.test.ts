@@ -220,9 +220,9 @@ describe('runDigest', () => {
     expect(calls).toHaveLength(2)
     const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
     const memberCall = calls.find(c => c.to[0] === 'a@e.com')
-    expect(adminCall.html).toContain('New bills matching your keywords')
+    expect(adminCall.html).toContain('New matches (1)')
     expect(adminCall.html).toContain('NM 42')
-    expect(memberCall.html).not.toContain('New bills matching your keywords')
+    expect(memberCall.html).not.toContain('New matches')
     expect(memberCall.html).not.toContain('NM 42')
   })
 
@@ -237,6 +237,27 @@ describe('runDigest', () => {
     expect(calls[0].to).toEqual(['admin@e.com'])
     expect(calls[0].html).toContain('NM 7')
     expect(result.sent).toBe(1)
+  })
+
+  it('caps the admin new-match section at the 10 most relevant, with the full count and an "and N more" link', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    for (let i = 1; i <= 12; i++) {
+      await seedBill({ billNumber: `NM ${100 + i}`, state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 50 + i })
+    }
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    expect(calls).toHaveLength(1)
+    const html: string = calls[0].html
+    expect(html).toContain('New matches (12)')
+    expect(html).toContain('NM 112')                 // most relevant is listed
+    expect(html).not.toContain('NM 101')             // the two least relevant are cut
+    expect(html).not.toContain('NM 102')
+    expect(html).toContain('NM 103')                 // the 10th most relevant is the last listed
+    expect(html).toContain('…and 2 more')
+    expect(html).toContain(`${env.APP_URL}/bills?newMatches=1`)
+    expect(calls[0].subject).toContain('12 new bills matching your keywords')
   })
 
   it('excludes prioritized and dismissed bills from the new-match section', async () => {
