@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users } from '../../src/db/schema'
 
@@ -207,6 +207,20 @@ describe('muting comments on a bill', () => {
     expect(sentTo('ben')[0].subject).toMatch(/mentioned/)
   })
 
+  it('still delivers a role mention to a member of the role on a muted bill', async () => {
+    const team = await seedRole('Team')
+    await seedUserRole(ids.ben, team)
+    await comment('ben', '<p>First</p>')
+    await mute('ben')
+    send.mockClear()
+
+    const commentId = await comment('cara', `<p><span data-type="mention" data-id="role:${team}" data-label="Team">@Team</span> thoughts?</p>`)
+
+    expect(await inboxFor('ben', commentId)).toEqual(['mention'])
+    expect(sentTo('ben')).toHaveLength(1)
+    expect(sentTo('ben')[0].subject).toMatch(/mentioned/)
+  })
+
   it('still delivers @admins and @everyone on a muted bill', async () => {
     const dee = await member('Dee', 'admin')
     await comment('dee', '<p>First</p>')
@@ -271,8 +285,14 @@ describe('muting comments on a bill', () => {
     await comment('ben', '<p>First</p>')
     const { ben } = await replyEmails()
     const token = tokenOf(oneClickUrl(ben))
-    const last = token.slice(-1)
-    const tampered = token.slice(0, -1) + (last === 'A' ? 'B' : 'A')
+    const [payload, signature] = token.split('.')
+    // Flip one bit of the signature's first character. Its six bits all land in
+    // the first HMAC byte, so the decoded signature differs, not just padding.
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    const flipped = alphabet[alphabet.indexOf(signature[0]) ^ 1]
+    const tampered = `${payload}.${flipped}${signature.slice(1)}`
+    const decode = (s: string) => atob(s.replace(/-/g, '+').replace(/_/g, '/'))
+    expect(decode(tampered.split('.')[1]).charCodeAt(0)).not.toBe(decode(signature).charCodeAt(0))
 
     const res = await request(`/api/mute-link?token=${encodeURIComponent(tampered)}`, 'POST', null)
     expect(res.status).toBe(404)
@@ -305,6 +325,12 @@ describe('muting comments on a bill', () => {
   })
 
   it('answers a forged link and a garbled one the same way', async () => {
+    // Send a reply email first, so the instance has its signing key and the
+    // forged token is checked against it rather than refused for want of a key.
+    await comment('ben', '<p>First</p>')
+    const { ben } = await replyEmails()
+    expect(oneClickUrl(ben)).toBeTruthy()
+
     const forged = await request('/api/mute-link', 'POST', null, { token: `${btoa(JSON.stringify([ids.ben, billId]))}.${'A'.repeat(43)}` })
     const garbled = await request('/api/mute-link', 'POST', null, { token: 'not-a-token' })
     const missing = await request('/api/mute-link', 'POST', null, {})
@@ -318,6 +344,18 @@ describe('muting comments on a bill', () => {
     // A JSON error from the mute-link route, not a 404 for a route that isn't there.
     expect(forged.headers.get('content-type') ?? '').toContain('application/json')
     expect(Object.keys(JSON.parse(bodies[0]))).toEqual(['error'])
+  })
+
+  it('mutes nothing when the one-click URL is fetched with GET or HEAD', async () => {
+    await comment('ben', '<p>First</p>')
+    const { ben } = await replyEmails()
+    const path = pathOf(oneClickUrl(ben))
+
+    // RFC 8058: only the POST mutes. Mail scanners and previews follow links with GET.
+    await request(path, 'GET', null)
+    await request(path, 'HEAD', null)
+
+    expect(await mutedOnPage('ben')).toBe(false)
   })
 
   it('refuses the link of a member who has since been deactivated', async () => {

@@ -14,7 +14,7 @@ import { and, eq } from 'drizzle-orm'
 import type { getDb } from '../db/client'
 import { associationConfig, billMutes, bills, users } from '../db/schema'
 import { activeUser } from './accountDeletion'
-import { secretsMatch } from './crypto'
+import { generateToken, secretsMatch } from './crypto'
 import { billUrl } from '../../../shared/sessionSlug'
 
 type Db = ReturnType<typeof getDb>
@@ -51,7 +51,7 @@ async function readKey(db: Db): Promise<string | null> {
 async function getOrCreateKey(db: Db): Promise<string> {
   const existing = await readKey(db)
   if (existing) return existing
-  const fresh = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('')
+  const fresh = await generateToken()
   await db.insert(associationConfig).values({ key: KEY_NAME, value: fresh }).onConflictDoNothing()
   return (await readKey(db)) ?? fresh
 }
