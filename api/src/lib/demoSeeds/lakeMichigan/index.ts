@@ -70,22 +70,29 @@ export const LAKE_MICHIGAN_SEED: DemoSeed = {
   ],
   customFieldValues: LM_CUSTOM_FIELD_VALUES, notes: LM_NOTES,
   calendarEvents: LM_CALENDAR_EVENTS,
-  // Written for a basin-wide water team. The first view is the OR case: the
-  // alliance's drinking-water and contaminant themes by tag, plus the Michigan bills
-  // the legislature filed under "Environmental protection: water pollution" (the
-  // invasive species and septic bills, which no drinking-water tag reaches). The
-  // seed writes no subjects: that one is LegiScan's. The other two views are cuts
-  // its teams reach for: what leadership marked high priority, and what Congress
-  // is doing.
+  // Written for a basin-wide water team. Each view combines filters the way a team
+  // would, and they lean on what this seed writes (working group, position, priority)
+  // so they return bills whatever the AI tagged. None uses a subject, since a demo
+  // may hide them. The first is the one OR view, joining tags with a working group:
+  // the drinking-water themes, or anything the Contaminants group owns. Counts are
+  // for the 20 bills above.
   savedViews: [
     {
-      id: 'lm-view-water-quality', name: 'Water quality', slug: 'water-quality',
+      // 8 bills: 6 tagged Drinking Water or Lead Service Lines, plus WI AB131 and IL HB2516 (Contaminants).
+      id: 'lm-view-water-supply-or-contaminants', name: 'Drinking water or contaminants', slug: 'drinking-water-or-contaminants',
       query: viewQuery([
-        ['match', 'any'], ['tag', 'Drinking Water'], ['tag', 'Lead Service Lines'], ['tag', 'PFAS & Contaminants'],
-        ['subject', 'MI:Environmental protection: water pollution'],
+        ['match', 'any'], ['tag', 'Drinking Water'], ['tag', 'Lead Service Lines'], ['cf_working-group', 'Contaminants'],
       ]),
     },
-    { id: 'lm-view-high', name: 'High priority', slug: 'high-priority', query: viewQuery([['priority', 'high']]) },
-    { id: 'lm-view-federal', name: 'Congress', slug: 'congress', query: viewQuery([['state', 'US']]) },
+    {
+      // 3 bills: MI HB4768, MI HB5674, and IL HB5268, which the Infrastructure group owns and no one has taken a position on.
+      id: 'lm-view-infrastructure-open', name: 'Infrastructure bills with no position', slug: 'infrastructure-bills-with-no-position',
+      query: viewQuery([['cf_working-group', 'Infrastructure'], ['position', 'none']]),
+    },
+    {
+      // 5 bills: MI HB4427, HB5308, SB0771, and WI AB131, SB56.
+      id: 'lm-view-high-mi-wi', name: 'High priority in Michigan and Wisconsin', slug: 'high-priority-in-michigan-and-wisconsin',
+      query: viewQuery([['priority', 'high'], ['state', 'MI'], ['state', 'WI']]),
+    },
   ],
 }

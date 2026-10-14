@@ -507,21 +507,27 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
     { id: 'demo-event-5', externalId: null,               source: 'custom', offsetDays: 25, time: '14:00:00', location: 'Zoom',             description: 'Legislative strategy working group' },
   ],
 
-  // Written for a county clerk's day: the election work, what leadership has
-  // flagged, and what the association has not yet taken a position on. The first
-  // view is the OR case, and it is honestly broad. LegiScan files NJ election bills
-  // under the one subject "State and Local Government" (docs/internal/legiscan-api.md)
-  // and the demo's own tags cover the rest, so this view returns every bill the demo
-  // tracks. The subject is the legislature's real one: the seed writes no subjects.
+  // Written for a county clerk's week. Each view combines filters the way a team
+  // would, and they lean on what this seed writes (priority, position, fiscal impact)
+  // so they return bills whatever the AI tagged. None uses a subject: the live NJ
+  // demo hides subjects for the whole tenant. The first is the one OR view, joining
+  // a priority and a tag: what leadership flagged, or what is squarely a clerk's job.
+  // Counts below are for the eight bills above.
   savedViews: [
     {
-      id: 'demo-view-elections', name: 'Election work', slug: 'election-work',
-      query: viewQuery([
-        ['match', 'any'], ['tag', 'Elections'], ['tag', 'Board of Elections'],
-        ['subject', 'NJ:State and Local Government'],
-      ]),
+      // 5 bills: the four high-priority bills plus A548.
+      id: 'demo-view-flagged-or-clerk', name: 'High priority or clerk duties', slug: 'high-priority-or-clerk-duties',
+      query: viewQuery([['match', 'any'], ['priority', 'high'], ['tag', 'County Clerk Functions']]),
     },
-    { id: 'demo-view-high', name: 'High priority', slug: 'high-priority', query: viewQuery([['priority', 'high']]) },
-    { id: 'demo-view-no-position', name: 'Needs a position', slug: 'needs-a-position', query: viewQuery([['position', 'none']]) },
+    {
+      // 3 bills: A1195, A251, A1715, the costly ones the association backs.
+      id: 'demo-view-costly-support', name: 'Costly bills we support', slug: 'costly-bills-we-support',
+      query: viewQuery([['cf_fiscal-impact', 'Significant (>$100K)'], ['position', 'Support']]),
+    },
+    {
+      // 2 bills: A1680 (Amend) and A1698 (Monitor), not yet settled.
+      id: 'demo-view-in-play', name: 'Positions still in play', slug: 'positions-still-in-play',
+      query: viewQuery([['position', 'Amend'], ['position', 'Monitor'], ['priority', 'high'], ['priority', 'medium']]),
+    },
   ],
 }
