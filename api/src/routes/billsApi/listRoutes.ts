@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { eq, and, or, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import {
@@ -6,17 +7,17 @@ import {
   billSubjects,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billSlug } from '../../lib/sessionSlug'
-import { buildBillsWhere, buildCustomFieldConditions, buildOrderBy, multiFilter, statusFilterValues, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
+import { billsAs, buildBillsFilter, isCheapFilter, buildCustomFieldConditions, multiFilter, priorityCondition, positionCondition, tagCondition, statusFilterValues, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { activeUser } from '../../lib/accountDeletion'
-import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
+import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
+import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOptions } from './groupList'
 import { decodeSubjectFiltersChecked, encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState, MAX_SUBJECT_FILTERS } from '../../lib/billSubjects'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
-  // GET /bills — list with optional filters and server-side pagination
+  // GET /bills — the list, one row per companion group, with optional filters and server-side pagination
   router.get('/', async (c) => {
     const db = getDb(c.env.DB)
     const {
@@ -59,7 +60,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const newMatchMinRelevance = newMatchesActive ? await getNewMatchMinRelevance(db) : 0
     const draftsActive = draftsParam === '1' || draftsParam === 'true'
 
-    const finalWhere = await buildBillsWhere(db, {
+    // A group matches when any bill in it does, so the filter stays a condition
+    // on one bill, applied to whichever bill a query is testing (groupList.ts).
+    const filterParams = {
       statuses,
       stages,
       priorities,
@@ -79,16 +82,19 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       cfParamMap,
       userId: currentUser.id,
       matchAny,
-    })
-
-    // Sort
-    const orderByClauses = buildOrderBy(sort ?? 'default', sortDir, q)
+    }
+    const filter = await buildBillsFilter(db, filterParams)
+    const filtered = filter(billsAs('m'))
+    const hasFilter = filtered !== undefined
+    // A cheap filter is held twice in the full path's statement, so it must leave room under D1's 100 bound parameters.
+    const cheapFilter = hasFilter && isCheapFilter(filterParams) && new SQLiteSyncDialect().sqlToQuery(filtered).params.length * 2 <= 90
 
     // ── Default-list query cache ──────────────────────────────────────────
     // The count+ordered-page query is the expensive, SHARED part (full scan +
     // filesort, identical for all users). Cache only that `{ total, billRows }`
-    // pair. Per-user filters (myBills/unvoted) make the bill SET user-specific,
-    // so they bypass the cache entirely and always run fresh.
+    // pair, where billRows names the groups on the page. Per-user filters
+    // (myBills/unvoted) make the bill SET user-specific, so they bypass the
+    // cache entirely and always run fresh.
     // newMatches is org-shared but admin-only and low-volume; skip the shared page
     // cache rather than widen the cache key for it.
     const cacheable = !isPerUserListRequest({ myBills: myBillsParam, unvoted }) && !newMatchesActive
@@ -102,159 +108,61 @@ export function registerListRoutes(router: Hono<AppEnv>) {
         })
       : null
 
-    type BillRow = typeof bills.$inferSelect
     let total: number
-    let billRows: BillRow[]
+    let groupKeys: string[]
 
     const cached = cacheKey && ttl > 0 ? await getCachedPage(c.env, cacheKey) : null
     if (cached) {
       total = cached.total
-      billRows = cached.billRows as unknown as BillRow[]
+      groupKeys = cached.billRows.map(r => r.id as string)
     } else {
       const sortCol = sort ?? 'default'
-      // When a search is active, the bill-number boost (buildOrderBy) can float an
-      // UNTRACKED exact match to the top — but the optimize fast path scans only
-      // tracked bills, so it would silently drop that match and cause drop/duplicate
+      // When a search is active, the bill-number boost can float an UNTRACKED
+      // exact match to the top — but the optimize fast path scans only tracked
+      // bills, so it would silently drop that match and cause drop/duplicate
       // at the fast/normal pagination seam. Search is a leading-wildcard full scan
       // regardless, so the fast path buys little here; bypass it whenever q is set.
       const optimize = canOptimize(sortCol, sortDir) && !q
 
       // ── Pagination fast path via matchType ────────────────────────────────
-      // isNotNull(bills.matchType) is not a scope filter—it optimizes pagination.
-      // The list shows every bill, including untracked stubs, which sort last.
-      // total uses finalWhere alone with no matchType condition. trackedCount
-      // is: "how many tracked bills sort ahead of stubs." Misreading it as a
-      // scope filter produces wrong conclusions about the visible set.
-      // Phase 1: counts — always get total; get trackedCount when optimizing
-      const totalPromise = db.select({ total: sql<number>`count(*)` }).from(bills).where(finalWhere).all()
-      const trackedPromise = optimize
-        ? db.select({ total: sql<number>`count(*)` }).from(bills)
-            .where(finalWhere ? and(isNotNull(bills.matchType), finalWhere) : isNotNull(bills.matchType)).all()
-        : null
-      const [totalResult, trackedResult] = await Promise.all([totalPromise, trackedPromise])
-      total = totalResult[0].total
-      const trackedCount = trackedResult ? trackedResult[0].total : 0
+      // A group counts as tracked if any bill in it is. total counts every group
+      // that meets the filter, tracked or not. trackedCount is: "how many tracked
+      // bills sort ahead of the rest" (a count of bills, which groupList.ts says
+      // gates the fast path without being the number of tracked groups). Misreading
+      // it as a scope filter produces wrong conclusions about the visible set.
+      // Phase 1: counts — always get total; get the tracked count when optimizing
+      const [totalGroups, trackedCount] = await Promise.all([
+        countGroups(db, filtered),
+        optimize ? trackedBills(db, filtered) : 0,
+      ])
+      total = totalGroups
 
-      // Phase 2: data query — fast path or normal path
-      const useFastPath = optimize
-        && trackedCount > 0
-        && !(q && trackedCount < pageSize)
-        && (offset + pageSize <= trackedCount)
-
-      if (useFastPath) {
-        const trackedWhere = finalWhere
-          ? and(isNotNull(bills.matchType), finalWhere)
-          : isNotNull(bills.matchType)
-        billRows = await db.select().from(bills)
-          .where(trackedWhere)
-          .orderBy(...orderByClauses)
-          .limit(pageSize).offset(offset).all()
-      } else {
-        billRows = await db.select().from(bills)
-          .where(finalWhere)
-          .orderBy(...orderByClauses)
-          .limit(pageSize).offset(offset).all()
-      }
+      // Phase 2: the page of groups — fast path or normal path. The tracked-first
+      // page is only good when it fills: tracked groups that reach this far make a
+      // full page of the list's first groups, and a short page means they don't.
+      const sortArgs: Omit<PageOptions, 'tracked'> = { filter: hasFilter ? filter : undefined, cheapFilter, col: sortCol, dir: sortDir, q, limit: pageSize, offset }
+      const tryFastPath = optimize && trackedCount > 0 && offset + pageSize <= trackedCount
+      const fast = tryFastPath ? await pageOfGroups(db, { ...sortArgs, tracked: true }) : null
+      groupKeys = fast !== null && fast.length === pageSize ? fast : await pageOfGroups(db, { ...sortArgs, tracked: false })
 
       if (cacheKey && ttl > 0) {
-        const payload: CachedListPage = { total, billRows: billRows as unknown as Record<string, unknown>[] }
+        const payload: CachedListPage = { total, billRows: groupKeys.map(id => ({ id })) }
         await putCachedPage(c.env, cacheKey, payload, ttl)
       }
     }
 
-    if (billRows.length === 0) {
+    if (groupKeys.length === 0) {
       return c.json({ bills: [], pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } })
     }
 
-    const billIds = billRows.map(b => b.id)
-
-    // Scoped metadata queries — only for current page
-    const [[voteCountRows, positionRows, commentCountRows, myVoteRows, myNoteRows, myCommentRows], cfValueRows] = await Promise.all([
-      Promise.all([
-      db.select({
-        billId: memberVotes.billId,
-        support: sql<number>`COUNT(CASE WHEN ${memberVotes.position} = 'support' THEN 1 END)`,
-        oppose: sql<number>`COUNT(CASE WHEN ${memberVotes.position} = 'oppose' THEN 1 END)`,
-        neutral: sql<number>`COUNT(CASE WHEN ${memberVotes.position} = 'neutral' THEN 1 END)`,
-      }).from(memberVotes)
-        .innerJoin(users, eq(memberVotes.userId, users.id))
-        // D1 limits bound params to 100 per statement. canVote uses a SQL literal (not a bound param) to stay within budget.
-        .where(and(inArray(memberVotes.billId, billIds), sql`${users.canVote} = 1`, activeUser))
-        .groupBy(memberVotes.billId).all(),
-      db.select({ billId: officialPositions.billId, position: officialPositions.position })
-        .from(officialPositions).where(inArray(officialPositions.billId, billIds)).all(),
-      db.select({ billId: comments.billId, count: sql<number>`COUNT(*)` })
-        .from(comments)
-        .innerJoin(users, eq(comments.userId, users.id))
-        .where(and(inArray(comments.billId, billIds), isNull(comments.deletedAt), activeUser))
-        .groupBy(comments.billId).all(),
-      // Per-user queries: omit billIds filter (user data is small; extra rows are harmless since we only look up by current page's bill IDs)
-      db.select({ billId: memberVotes.billId, position: memberVotes.position })
-        .from(memberVotes).where(eq(memberVotes.userId, currentUser.id)).all(),
-      db.select({ billId: notes.billId })
-        .from(notes).where(and(eq(notes.userId, currentUser.id), ne(notes.content, ''))).all(),
-      db.select({ billId: comments.billId })
-        .from(comments).where(and(eq(comments.userId, currentUser.id), isNull(comments.deletedAt))).all(),
-      ]),
-      db.select({ billId: billCustomFieldValues.billId, fieldId: billCustomFieldValues.fieldId, value: billCustomFieldValues.value })
-        .from(billCustomFieldValues).where(inArray(billCustomFieldValues.billId, billIds)).all(),
-    ])
-
-    const cfByBill = new Map<string, Record<string, string>>()
-    for (const row of cfValueRows) {
-      if (!cfByBill.has(row.billId)) cfByBill.set(row.billId, {})
-      cfByBill.get(row.billId)![row.fieldId] = row.value
-    }
-
-    const votesByBill = new Map(voteCountRows.map(r => [r.billId, { support: r.support, oppose: r.oppose, neutral: r.neutral }]))
-    const positionByBill = new Map(positionRows.map(r => [r.billId, r.position]))
-    const commentCountByBill = new Map(commentCountRows.map(r => [r.billId, Number(r.count)]))
-    const myVoteByBill = new Map(myVoteRows.map(r => [r.billId, r.position]))
-    const myNoteBillIds = new Set(myNoteRows.map(r => r.billId))
-    const myCommentBillIds = new Set(myCommentRows.map(r => r.billId))
-
-    const tagSet = await loadTaxonomyTagNameSet(db)
-
-    const result = billRows.map(b => ({
-      id: b.id,
-      billNumber: b.billNumber,
-      title: b.title,
-      state: b.state,
-      status: b.status,
-      session: b.session,
-      sessionSlug: billSlug(b),
-      sessionId: b.sessionId,
-      yearStart: b.yearStart ?? null,
-      yearEnd:   b.yearEnd   ?? null,
-      abstract: b.abstract,
-      url: b.url,
-      stateUrl: b.stateUrl,
-      lastAction: b.lastAction,
-      lastActionDate: b.lastActionDate,
-      tenantSummary: b.tenantSummary,
-      tags: filterTagsToTaxonomy(JSON.parse(b.tags) as string[], tagSet),
-      priority: b.priority,
-      sponsor: b.sponsor,
-      sponsorParty: b.sponsorParty,
-      stateLink: b.stateLink,
-      matchType: b.matchType,
-      isDraft: b.isDraft,
-      addedBy: b.addedBy,
-      relevanceScore: b.relevanceScore,
-      aiProcessedAt: b.aiProcessedAt,
-      newMatchAt: b.newMatchAt,
-      triagedAt: b.triagedAt,
-      lastAiTextDocId: b.lastAiTextDocId,
-      createdAt: b.createdAt,
-      updatedAt: b.updatedAt,
-      position: positionByBill.get(b.id) ?? null,
-      voteCounts: votesByBill.get(b.id) ?? { support: 0, oppose: 0, neutral: 0 },
-      commentCount: commentCountByBill.get(b.id) ?? 0,
-      myVote: myVoteByBill.get(b.id) ?? null,
-      hasNote: myNoteBillIds.has(b.id),
-      hasComment: myCommentBillIds.has(b.id),
-      customFieldValues: cfByBill.get(b.id) ?? {},
-    }))
+    // Per-page reads: every bill in the groups on this page, and the team's
+    // values, votes, and comments across each group. Enrichment is always fresh
+    // per request, so a shared cache never leaks one user's state to another.
+    const result = await loadGroupRows(db, groupKeys, {
+      userId: currentUser.id,
+      filter: hasFilter ? filter : undefined,
+      tagTaxonomy: await loadTaxonomyTagNameSet(db),
+    })
 
     return c.json({
       bills: result,
@@ -312,17 +220,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // --- Dimensional filters (each omitted for its own facet counts) ---
     const statusFilter = multiFilter(bills.status, statusFilterValues(statuses))
     const stageFilter = multiFilter(bills.statusStage, stages)
-    let priorityFilter: SQL | undefined
-    if (priorities.length > 0) {
-      const hasAny = priorities.includes(FILTER_ANY)
-      const hasNone = priorities.includes('none')
-      const real = priorities.filter(v => v !== FILTER_ANY && v !== 'none') as ('high' | 'medium' | 'low')[]
-      const parts: SQL[] = []
-      if (real.length > 0) parts.push(real.length === 1 ? eq(bills.priority, real[0]) : inArray(bills.priority, real))
-      if (hasAny) parts.push(isNotNull(bills.priority))
-      if (hasNone) parts.push(isNull(bills.priority))
-      if (parts.length > 0) priorityFilter = parts.length === 1 ? parts[0] : or(...parts)!
-    }
+    // The team's own filters (priority, position, tags, custom fields) are built once, in query.ts, for the list
+    // and the facets alike, so the two test a companion group through its current value the same way.
+    const priorityFilter = priorityCondition(priorities)?.(bills)
     const sessionFilter = multiFilter(bills.session, sessions)
     const yearFilter = years.length > 0
       ? (years.length === 1
@@ -331,15 +231,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       : undefined
     const stateFilter = multiFilter(bills.state, states)
 
-    let tagFilter: SQL | undefined
-    {
-      const hasAnyTag = tagFilters.includes(FILTER_ANY)
-      const realTags = tagFilters.filter(t => t !== FILTER_ANY)
-      const parts: SQL[] = []
-      if (hasAnyTag) parts.push(sql`json_array_length(${bills.tags}) > 0`)
-      if (realTags.length > 0) parts.push(tagMembership(realTags))
-      if (parts.length > 0) tagFilter = parts.length === 1 ? parts[0] : or(...parts)!
-    }
+    const tagFilter = tagCondition(tagFilters)?.(bills)
 
     // Loaded unconditionally (not just when a `subject` param is present): the
     // subjects facet's own counts must omit suppressed states even with no
@@ -349,24 +241,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const allowedSubjectFilters = filterSuppressedSubjects(subjectFilters, suppressedSubjectStates)
     const subjectFilter: SQL | undefined = allowedSubjectFilters.length > 0 ? subjectMembership(allowedSubjectFilters) : undefined
 
-    let positionFilter: SQL | undefined
-    if (positionValues.length > 0) {
-      const hasNone = positionValues.includes('none')
-      const hasAny = positionValues.includes(FILTER_ANY)
-      const realPositions = positionValues.filter(p => p !== 'none' && p !== FILTER_ANY)
-      const parts: SQL[] = []
-      if (realPositions.length > 0) {
-        parts.push(inArray(bills.id,
-          db.select({ id: officialPositions.billId }).from(officialPositions)
-            .where(realPositions.length === 1
-              ? eq(officialPositions.position, realPositions[0])
-              : inArray(officialPositions.position, realPositions))
-        ))
-      }
-      if (hasAny) parts.push(sql`${bills.id} IN (SELECT bill_id FROM official_positions)`)
-      if (hasNone) parts.push(sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
-      if (parts.length > 0) positionFilter = parts.length === 1 ? parts[0] : or(...parts)!
-    }
+    const positionFilter = positionCondition(positionValues)?.(bills)
 
     // --- Base conditions (non-dimensional, apply to all facet queries) ---
     const baseConditions: SQL[] = []

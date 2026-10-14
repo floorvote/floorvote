@@ -1,15 +1,28 @@
-import { eq, and, or, like, desc, asc, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-orm'
+import { eq, and, or, like, inArray, sql, ne, isNull, isNotNull, SQL } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import { getDb } from '../../db/client'
 import {
-  bills, memberVotes, officialPositions, comments, notes,
-  customFieldDefinitions, billCustomFieldValues,
+  bills, memberVotes, comments, notes,
+  customFieldDefinitions,
 } from '../../db/schema'
 import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
-import { groupUntriaged } from '../../lib/teamFields'
+import {
+  groupUntriaged, groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
+  holdsGroupAnalysis, holdsGroupPriority, type BillsTable,
+} from '../../lib/teamFields'
+import { unvotedInGroup } from '../../lib/companionGroups'
+
+/** A second reference to `bills` in one query, with the table's own columns: `billsAs('m').status` renders `"m"."status"`. */
+export function billsAs(name: string): BillsTable {
+  return alias(bills, name) as unknown as BillsTable
+}
+
+/** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
+export type BillsFilter = (t: BillsTable) => SQL | undefined
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -17,12 +30,12 @@ import { groupUntriaged } from '../../lib/teamFields'
 // no relevance score still qualifies; a positive threshold excludes it until scored.
 // Triaging any bill in a companion group triages the group, so a bill whose
 // companion was triaged is no longer new.
-export function newMatchWhere(minRelevance: number): SQL {
+export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL {
   return and(
-    eq(bills.matchType, 'keyword'),
-    isNotNull(bills.newMatchAt),
-    groupUntriaged(),
-    sql`COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}`,
+    eq(t.matchType, 'keyword'),
+    isNotNull(t.newMatchAt),
+    groupUntriaged(t),
+    sql`COALESCE(${t.relevanceScore}, 0) >= ${minRelevance}`,
   )!
 }
 
@@ -37,9 +50,9 @@ export const FILTER_ANY = '__any__'
 // json_each also matches array elements exactly, avoiding accidental substring
 // hits. Shared by the list filter (buildBillsWhere) and the facets WHERE so the
 // two can't drift. Caller must pass a non-empty array.
-export function tagMembership(tagValues: string[]): SQL {
-  const list = sql.join(tagValues.map(t => sql`${t}`), sql`, `)
-  return sql`EXISTS (SELECT 1 FROM json_each(${bills.tags}) je WHERE je.value IN (${list}))`
+export function tagMembership(tagValues: string[], t: BillsTable = bills): SQL {
+  const list = sql.join(tagValues.map(v => sql`${v}`), sql`, `)
+  return sql`EXISTS (SELECT 1 FROM json_each(${t.tags}) je WHERE je.value IN (${list}))`
 }
 
 /**
@@ -67,14 +80,14 @@ export function filterSuppressedSubjects(
   return values.filter(v => !isSubjectsSuppressedForState(suppressed, v.state))
 }
 
-export function subjectMembership(values: Array<{ state: string; name: string }>): SQL {
+export function subjectMembership(values: Array<{ state: string; name: string }>, t: BillsTable = bills): SQL {
   const pairs = sql.join(
     values.map(v => sql`(${v.state}, ${v.name})`),
     sql`, `,
   )
   return sql`EXISTS (
     SELECT 1 FROM bill_subjects bs
-    WHERE bs.bill_id = ${bills.id} AND (bs.state, bs.subject_name) IN (${pairs})
+    WHERE bs.bill_id = ${t.id} AND (bs.state, bs.subject_name) IN (${pairs})
   )`
 }
 
@@ -113,27 +126,27 @@ export function despacedPattern(segment: string): string | null {
 // One token matched across all four searchable fields. Bill-number matches are
 // additionally floated to the top by buildBillNumberBoost (ORDER BY), so a numeric
 // token's summary/abstract hits land below the exact bill-number match.
-function matchAllFields(token: string): SQL {
+function matchAllFields(token: string, t: BillsTable): SQL {
   const pat = `%${token}%`
   return or(
-    like(bills.title, pat),
-    like(bills.tenantSummary, pat),
-    like(bills.billNumber, pat),
-    like(bills.abstract, pat),
+    like(t.title, pat),
+    like(t.tenantSummary, pat),
+    like(t.billNumber, pat),
+    like(t.abstract, pat),
   )!
 }
 
 // One segment → one condition. Every token matches the four fields; the segment
 // also gets an OR'd despaced bill-number match (see despacedPattern). `tokens` are
 // already truncated and budgeted by the caller (buildSearchCondition).
-function buildSegmentCondition(segment: string, tokens: string[]): SQL | undefined {
+function buildSegmentCondition(segment: string, tokens: string[], t: BillsTable): SQL | undefined {
   if (tokens.length === 0) return undefined
   const pat = despacedPattern(segment)
-  const despacedCond = pat ? sql`replace(${bills.billNumber}, ' ', '') LIKE ${pat}` : undefined
+  const despacedCond = pat ? sql`replace(${t.billNumber}, ' ', '') LIKE ${pat}` : undefined
   if (tokens.length === 1) {
-    return or(matchAllFields(tokens[0]), despacedCond)!
+    return or(matchAllFields(tokens[0], t), despacedCond)!
   }
-  return or(and(...tokens.map(matchAllFields))!, despacedCond)!
+  return or(and(...tokens.map(tok => matchAllFields(tok, t)))!, despacedCond)!
 }
 
 // The comma-separated segments actually honored under the shared token budget —
@@ -169,125 +182,38 @@ export function budgetedSegments(q: string): { segment: string; tokens: string[]
 // a segment are AND'd; quoted spans match as exact substrings. Returns
 // undefined when the query has no usable tokens (callers treat that as "no
 // search filter").
-export function buildSearchCondition(q: string): SQL | undefined {
+export function buildSearchCondition(q: string, t: BillsTable = bills): SQL | undefined {
   const conds: SQL[] = []
   for (const { segment, tokens } of budgetedSegments(q)) {
-    const cond = buildSegmentCondition(segment, tokens)
+    const cond = buildSegmentCondition(segment, tokens, t)
     if (cond) conds.push(cond)
   }
   if (conds.length === 0) return undefined
   return conds.length === 1 ? conds[0] : or(...conds)!
 }
 
-const posSubquery = sql`(SELECT position FROM official_positions WHERE bill_id = ${bills.id})`
-
-// ── Reusable sort expressions (module-level so Drizzle renders column refs correctly) ──
-// "Year" tier: active (non-sine-die) sessions clamp to the current year so they tie at the top;
-// past sessions keep their real year_end and fall below, most-recent-year first. year_end is an
-// immutable proxy for sine_die (LegiScan flips sine_die at the year boundary), and strftime keeps
-// the active/past split self-updating at the year rollover. No session_id grouping — within the
-// active bucket (and within any past year) the later tiers do the sorting.
-// Drafts are exempt from the clamp and sort on their true year_end. The clamp exists because a
-// FILED row's future year_end is incidental — it just names the far end of a biennium, so such a
-// row must not outrank current-session bills. A draft's future year_end is the opposite: it is
-// deliberate, because defaultDraftYear() pre-files into the NEXT session after sine die, and that
-// draft belongs above current-year work rather than tied with it.
-const S_ACTIVE_YEAR_DESC = sql`CASE WHEN ${bills.isDraft} THEN COALESCE(${bills.yearEnd}, 0) ELSE MIN(COALESCE(${bills.yearEnd}, 0), CAST(strftime('%Y','now') AS INTEGER)) END DESC`
-const S_YEAREND_ASC      = sql`${bills.yearEnd} ASC NULLS LAST`
-const S_PRIORITY_DESC = sql`CASE ${bills.priority} WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC`
-const S_PRIORITY_ASC  = sql`CASE ${bills.priority} WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END ASC`
-const S_POSITION_DESC = sql`CASE WHEN ${posSubquery} = 'Support' THEN 5 WHEN ${posSubquery} = 'Oppose' THEN 4 WHEN ${posSubquery} = 'Amend' THEN 3 WHEN ${posSubquery} = 'Monitor' THEN 2 WHEN ${posSubquery} = 'No Position' THEN 1 ELSE 0 END DESC`
-const S_POSITION_ASC  = sql`CASE WHEN ${posSubquery} = 'Support' THEN 5 WHEN ${posSubquery} = 'Oppose' THEN 4 WHEN ${posSubquery} = 'Amend' THEN 3 WHEN ${posSubquery} = 'Monitor' THEN 2 WHEN ${posSubquery} = 'No Position' THEN 1 ELSE 0 END ASC`
-const S_RELEVANCE_DESC  = sql`${bills.relevanceScore} DESC NULLS LAST`
-const S_RELEVANCE_ASC   = sql`${bills.relevanceScore} ASC NULLS FIRST`
-const S_LASTACTION_DESC = sql`${bills.lastActionDate} DESC NULLS LAST`
-const S_LASTACTION_ASC  = sql`${bills.lastActionDate} ASC NULLS LAST`
-
-// Status: the rank central sends from each provider's vocabulary (stage
-// position times 100 plus the provider's order), so statuses from different
-// providers sort together. 0 (no known status) sorts lowest.
-const S_STATUS_DESC = sql`${bills.statusRank} DESC`
-const S_STATUS_ASC  = sql`${bills.statusRank} ASC`
-// Natural bill-number sort: split bill_number into alphabetic prefix and numeric tail
-// so "HB 9" sorts before "HB 10". Sorts by state first, then prefix, then numeric value —
-// in a single-state instance state is constant so this collapses to bill-number-only order.
-const FIRST_DIGIT_POS = sql`min(
-  CASE WHEN instr(${bills.billNumber}, '0') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '0') END,
-  CASE WHEN instr(${bills.billNumber}, '1') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '1') END,
-  CASE WHEN instr(${bills.billNumber}, '2') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '2') END,
-  CASE WHEN instr(${bills.billNumber}, '3') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '3') END,
-  CASE WHEN instr(${bills.billNumber}, '4') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '4') END,
-  CASE WHEN instr(${bills.billNumber}, '5') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '5') END,
-  CASE WHEN instr(${bills.billNumber}, '6') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '6') END,
-  CASE WHEN instr(${bills.billNumber}, '7') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '7') END,
-  CASE WHEN instr(${bills.billNumber}, '8') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '8') END,
-  CASE WHEN instr(${bills.billNumber}, '9') = 0 THEN 99999 ELSE instr(${bills.billNumber}, '9') END
-)`
-const BILL_PREFIX = sql`substr(${bills.billNumber}, 1, ${FIRST_DIGIT_POS} - 1)`
-const BILL_NUM    = sql`CAST(substr(${bills.billNumber}, ${FIRST_DIGIT_POS}) AS INTEGER)`
-const S_BILL_ASC  = [asc(bills.state), sql`${BILL_PREFIX} ASC`, sql`${BILL_NUM} ASC`]
-const S_BILL_DESC = [desc(bills.state), sql`${BILL_PREFIX} DESC`, sql`${BILL_NUM} DESC`]
-
-// Default hierarchy: 5 logical slots (year/session are coupled as one slot)
-// Each slot: cols it represents, its secondary SQL (always desc/best-first), and its primary builder
-const SORT_HIERARCHY: Array<{
-  cols: string[]
-  secondary: SQL[]
-  primary: (d: 'asc' | 'desc') => SQL[]
-}> = [
-  {
-    cols: ['year', 'session'],
-    secondary: [S_ACTIVE_YEAR_DESC],
-    primary: (d) => [d === 'desc' ? S_ACTIVE_YEAR_DESC : S_YEAREND_ASC],
-  },
-  {
-    cols: ['priority'],
-    secondary: [S_PRIORITY_DESC],
-    primary: (d) => [d === 'desc' ? S_PRIORITY_DESC : S_PRIORITY_ASC],
-  },
-  {
-    cols: ['position'],
-    secondary: [S_POSITION_DESC],
-    primary: (d) => [d === 'desc' ? S_POSITION_DESC : S_POSITION_ASC],
-  },
-  {
-    cols: ['relevance'],
-    secondary: [S_RELEVANCE_DESC],
-    primary: (d) => [d === 'desc' ? S_RELEVANCE_DESC : S_RELEVANCE_ASC],
-  },
-  {
-    cols: ['lastAction'],
-    secondary: [S_LASTACTION_DESC],
-    primary: (d) => [d === 'desc' ? S_LASTACTION_DESC : S_LASTACTION_ASC],
-  },
-]
-
-// Primary sort tier: float rows whose despaced bill_number matches any segment's
-// despaced query pattern ahead of everything else. Reuses despacedPattern, so it
-// fires under exactly the same conditions as the WHERE despaced clause. For a
-// topic query ("election") the CASE evaluates to 1 for every row — self-inert, no
-// reordering. Returns undefined only when no segment yields a usable pattern.
-// Derives its segments from budgetedSegments — the exact set the WHERE clause
-// searches — so it can never boost a segment the search dropped, and its param
-// count is bounded to <= MAX_SEARCH_TOKENS.
-export function buildBillNumberBoost(q: string | undefined): SQL | undefined {
+// Primary sort tier: float groups with a bill whose despaced bill_number matches
+// any segment's despaced query pattern ahead of everything else. Reuses
+// despacedPattern, so it fires under exactly the same conditions as the WHERE
+// despaced clause. For a topic query ("election") the CASE evaluates to 1 for
+// every row, so it is self-inert and reorders nothing. Returns undefined only
+// when no segment yields a usable pattern. Derives its segments from
+// budgetedSegments, the exact set the WHERE clause searches, so it can never
+// boost a segment the search dropped, and its param count is bounded to
+// <= MAX_SEARCH_TOKENS.
+//
+// `of` is the bill that stands for its group in the list: the boost looks at
+// every bill in that bill's group, so a search for S1713 floats the row
+// A190 and S1713 share.
+export function buildBillNumberBoost(q: string | undefined, of: BillsTable = bills): SQL | undefined {
   if (!q) return undefined
   const pats = budgetedSegments(q)
     .map(s => despacedPattern(s.segment))
     .filter((p): p is string => p !== null)
   if (pats.length === 0) return undefined
-  const matches = pats.map(p => sql`replace(${bills.billNumber}, ' ', '') LIKE ${p}`)
+  const matches = pats.map(p => sql`replace(g.bill_number, ' ', '') LIKE ${p}`)
   const anyMatch = matches.length === 1 ? matches[0] : or(...matches)!
-  return sql`CASE WHEN ${anyMatch} THEN 0 ELSE 1 END`
-}
-
-export function buildOrderBy(col: string, d: 'asc' | 'desc', q?: string): SQL[] {
-  // When searching, float exact bill-number matches to the very top, above the
-  // active sort (which still orders within each group and governs the rest).
-  const boost = buildBillNumberBoost(q)
-  // Append bills.id so the total order is fully deterministic — without a unique final key,
-  // rows tied on every tier can shuffle across paginated requests (drop/repeat on scroll).
-  return [...(boost ? [boost] : []), ...orderByTiers(col, d), asc(bills.id)]
+  return sql`CASE WHEN EXISTS (SELECT 1 FROM bills g WHERE (g.id = ${of.id} OR g.group_key = ${of.groupKey}) AND ${anyMatch}) THEN 0 ELSE 1 END`
 }
 
 export function canOptimize(sort: string, dir: 'asc' | 'desc'): boolean {
@@ -295,28 +221,6 @@ export function canOptimize(sort: string, dir: 'asc' | 'desc'): boolean {
   if (sort === 'priority' && dir === 'desc') return true
   if (sort === 'relevance' && dir === 'desc') return true
   return false
-}
-
-function orderByTiers(col: string, d: 'asc' | 'desc'): SQL[] {
-  if (col === 'default') return SORT_HIERARCHY.flatMap(h => h.secondary)
-
-  const slotIdx = SORT_HIERARCHY.findIndex(h => h.cols.includes(col))
-
-  if (slotIdx >= 0) {
-    // Column is in hierarchy — move to front, keep rest in order
-    const primary = SORT_HIERARCHY[slotIdx].primary(d)
-    const rest    = SORT_HIERARCHY.filter((_, i) => i !== slotIdx).flatMap(h => h.secondary)
-    return [...primary, ...rest]
-  }
-
-  // Column is outside the hierarchy — prepend before full default hierarchy
-  const full = SORT_HIERARCHY.flatMap(h => h.secondary)
-  switch (col) {
-    case 'status': return [d === 'desc' ? S_STATUS_DESC : S_STATUS_ASC, ...full]
-    case 'state':  return [d === 'desc' ? asc(bills.state) : desc(bills.state), ...full]
-    case 'bill':   return [...(d === 'asc' ? S_BILL_ASC : S_BILL_DESC), ...full]
-    default:       return full
-  }
 }
 
 export type BillFilterParams = {
@@ -341,12 +245,72 @@ export type BillFilterParams = {
   matchAny: boolean
 }
 
+/** A condition on one reference to `bills`: the table itself, or an alias of it. */
+export type BillsCondition = (t: BillsTable) => SQL
+
+/**
+ * Priority filter values (a level, "any" for has a priority, "none" for no
+ * priority) as a condition on one bill. A priority belongs to the bill's
+ * companion group, so a bill meets it through the group's current priority and
+ * never through one a newer priority on a companion replaced (see
+ * lib/teamFields.ts). Shared by the list filter and the facets so the two can't drift.
+ */
+export function priorityCondition(priorities: string[]): BillsCondition | undefined {
+  if (priorities.length === 0) return undefined
+  const hasAny = priorities.includes(FILTER_ANY)
+  const hasNone = priorities.includes('none')
+  const real = priorities.filter(v => v !== FILTER_ANY && v !== 'none') as ('high' | 'medium' | 'low')[]
+  return t => {
+    const parts: SQL[] = []
+    if (real.length > 0) parts.push(and(real.length === 1 ? eq(t.priority, real[0]) : inArray(t.priority, real), holdsGroupPriority(t))!)
+    if (hasAny) parts.push(holdsGroupPriority(t))
+    if (hasNone) parts.push(groupHasNoPriority(t))
+    return parts.length === 1 ? parts[0] : or(...parts)!
+  }
+}
+
+/**
+ * Position filter values (a position, "any", or "none") as a condition on one
+ * bill, tested through the group's current position as `priorityCondition` is.
+ */
+export function positionCondition(positionValues: string[]): BillsCondition | undefined {
+  if (positionValues.length === 0) return undefined
+  const hasNone = positionValues.includes('none')
+  const hasAny = positionValues.includes(FILTER_ANY)
+  const real = positionValues.filter(pos => pos !== 'none' && pos !== FILTER_ANY)
+  return t => {
+    const parts: SQL[] = []
+    if (real.length > 0) parts.push(sql`${t.id} IN ${heldPositionOf(real)}`)
+    if (hasAny) parts.push(sql`${t.id} IN ${heldPositionOf([])}`)
+    if (hasNone) parts.push(groupHasNoPosition(t))
+    return parts.length === 1 ? parts[0] : or(...parts)!
+  }
+}
+
+/**
+ * Tag filter values ("any", or tags) as a condition on one bill. Tags come from
+ * the AI analysis, which a companion group shares: a bill meets the filter
+ * through the group's current analysis, never an older one.
+ */
+export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
+  if (tagFilters.length === 0) return undefined
+  const hasAny = tagFilters.includes(FILTER_ANY)
+  const realTags = tagFilters.filter(t => t !== FILTER_ANY)
+  return t => {
+    const parts: SQL[] = []
+    if (hasAny) parts.push(sql`json_array_length(${t.tags}) > 0`) // "Any" = has any tag
+    if (realTags.length > 0) parts.push(tagMembership(realTags, t))
+    return and(parts.length === 1 ? parts[0] : or(...parts)!, holdsGroupAnalysis(t))!
+  }
+}
+
 /**
  * One condition per custom field named by `cf_` params, keyed by the field's id.
- * Shared by the list filter (buildBillsWhere) and the /bills/facets WHERE so the
+ * Shared by the list filter (buildBillsFilter) and the /bills/facets WHERE so the
  * two match stored values the same way and can't drift: a multi-select field
  * stores a JSON array and matches on its elements, every other field matches the
- * stored value exactly.
+ * stored value exactly. A bill meets one through its group's current value, never
+ * one a newer value on a companion replaced (see lib/teamFields.ts).
  *
  * `cf_` keys arrive as either the field's id or its slug: the URL (and every
  * stored view's query, since views persist the URL's own search string) always
@@ -358,10 +322,10 @@ export type BillFilterParams = {
  * entirely and silently return every bill instead of the zero bills that filter
  * should produce.
  */
-export async function buildCustomFieldConditions(
+export async function buildCustomFieldFilters(
   db: ReturnType<typeof getDb>,
   cfParamMap: Record<string, string[]>,
-): Promise<Record<string, SQL>> {
+): Promise<Record<string, BillsCondition>> {
   const cfKeys = Object.keys(cfParamMap)
   if (cfKeys.length === 0) return {}
 
@@ -379,133 +343,104 @@ export async function buildCustomFieldConditions(
   }
 
   const multipleById = new Map(fieldDefs.map(f => [f.id, f.multiple]))
-  const conditions: Record<string, SQL> = {}
+  const conditions: Record<string, BillsCondition> = {}
 
   for (const [fieldId, values] of Object.entries(resolvedParamMap)) {
     const realValues = values.filter(v => v !== FILTER_ANY)
-    const parts: SQL[] = []
-    // "Any" = the bill has any value for this field.
-    if (values.includes(FILTER_ANY)) {
-      parts.push(sql`${bills.id} IN (SELECT bill_id FROM bill_custom_field_values WHERE field_id = ${fieldId})`)
+    const anyValue = values.includes(FILTER_ANY)
+    const picked = sql.join(realValues.map(v => sql`${v}`), sql`, `)
+    const valueCondition = realValues.length === 0 ? undefined
+      : multipleById.get(fieldId)
+        // multi-select: stored value is JSON array. Match if any picked value is in the array.
+        ? sql`json_valid(p.value) = 1 AND EXISTS (SELECT 1 FROM json_each(p.value) je WHERE je.value IN (${picked}))`
+        : sql`p.value IN (${picked})`
+    if (!anyValue && !valueCondition) continue
+    conditions[fieldId] = t => {
+      // "Any" = the group has any value for this field.
+      const parts: SQL[] = []
+      if (anyValue) parts.push(sql`${t.id} IN ${heldCustomFieldOf(fieldId)}`)
+      if (valueCondition) parts.push(sql`${t.id} IN ${heldCustomFieldOf(fieldId, valueCondition)}`)
+      return parts.length === 1 ? parts[0] : or(...parts)!
     }
-    if (realValues.length > 0) {
-      if (multipleById.get(fieldId)) {
-        // multi-select: stored value is JSON array; match if any picked value is in the array
-        parts.push(sql`${bills.id} IN (
-          SELECT cfv.bill_id FROM bill_custom_field_values cfv
-          INNER JOIN json_each(cfv.value) je
-          WHERE cfv.field_id = ${fieldId}
-            AND json_valid(cfv.value) = 1
-            AND je.value IN (${sql.join(realValues.map(v => sql`${v}`), sql`, `)})
-        )`)
-      } else {
-        parts.push(inArray(bills.id,
-          db.select({ billId: billCustomFieldValues.billId }).from(billCustomFieldValues)
-            .where(and(eq(billCustomFieldValues.fieldId, fieldId),
-              realValues.length === 1 ? eq(billCustomFieldValues.value, realValues[0]) : inArray(billCustomFieldValues.value, realValues)
-            ))
-        ))
-      }
-    }
-    if (parts.length > 0) conditions[fieldId] = parts.length === 1 ? parts[0] : or(...parts)!
   }
   return conditions
 }
 
-export async function buildBillsWhere(
+/** Each custom field's condition on the `bills` table, for the facets, which test the one table. */
+export async function buildCustomFieldConditions(
+  db: ReturnType<typeof getDb>,
+  cfParamMap: Record<string, string[]>,
+): Promise<Record<string, SQL>> {
+  const filters = await buildCustomFieldFilters(db, cfParamMap)
+  return Object.fromEntries(Object.entries(filters).map(([fieldId, condition]) => [fieldId, condition(bills)]))
+}
+
+/**
+ * The list's filters as a function of the bill they test. Filter predicates
+ * stay per bill: the bill list asks of each bill in a companion group whether
+ * it meets the filter and shows the group if any does (see groupList.ts), and
+ * the team's own fields are read through the group's current value (above).
+ * Built once, applied to as many references to `bills` as a query needs.
+ */
+export async function buildBillsFilter(
   db: ReturnType<typeof getDb>,
   p: BillFilterParams,
-): Promise<SQL | undefined> {
+): Promise<BillsFilter> {
   // Bill facts render as chip-row groups and are joined by the group operator.
   // Scope conditions (the viewer-relative predicates and search) always
   // AND on top: `(fact1 OP fact2 OP … ) AND search AND myBills AND unvoted …`.
   // See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
-  const billFacts: SQL[] = []
-  const scopes: SQL[] = []
+  const billFacts: BillsCondition[] = []
+  const scopes: BillsCondition[] = []
 
-  const statusFilter = multiFilter(bills.status, statusFilterValues(p.statuses))
-  if (statusFilter) billFacts.push(statusFilter)
-
-  const stageFilter = multiFilter(bills.statusStage, p.stages)
-  if (stageFilter) billFacts.push(stageFilter)
+  const statusValues = statusFilterValues(p.statuses)
+  if (statusValues.length > 0) billFacts.push(t => multiFilter(t.status, statusValues)!)
+  if (p.stages.length > 0) billFacts.push(t => multiFilter(t.statusStage, p.stages)!)
 
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
-  if (p.priorities.length > 0) {
-    const hasAny = p.priorities.includes(FILTER_ANY)
-    const hasNone = p.priorities.includes('none')
-    const real = p.priorities.filter(v => v !== FILTER_ANY && v !== 'none') as ('high' | 'medium' | 'low')[]
-    const parts: SQL[] = []
-    if (real.length > 0) parts.push(real.length === 1 ? eq(bills.priority, real[0]) : inArray(bills.priority, real))
-    if (hasAny) parts.push(isNotNull(bills.priority))
-    if (hasNone) parts.push(isNull(bills.priority))
-    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
+  const priority = priorityCondition(p.priorities)
+  if (priority) billFacts.push(priority)
+
+  if (p.sessions.length > 0) billFacts.push(t => multiFilter(t.session, p.sessions)!)
+
+  if (p.years.length > 0) {
+    billFacts.push(t => p.years.length === 1
+      ? eq(t.yearStart, Number(p.years[0]))
+      : inArray(t.yearStart, p.years.map(Number)))
   }
 
-  const sessionFilter = multiFilter(bills.session, p.sessions)
-  if (sessionFilter) billFacts.push(sessionFilter)
+  if (p.states.length > 0) billFacts.push(t => multiFilter(t.state, p.states)!)
 
-  const yearFilter = p.years.length > 0
-    ? (p.years.length === 1
-        ? eq(bills.yearStart, Number(p.years[0]))
-        : inArray(bills.yearStart, p.years.map(Number)))
-    : undefined
-  if (yearFilter) billFacts.push(yearFilter)
-
-  const stateFilter = multiFilter(bills.state, p.states)
-  if (stateFilter) billFacts.push(stateFilter)
-
-  if (p.q) {
-    const searchCond = buildSearchCondition(p.q)
-    if (searchCond) scopes.push(searchCond)
+  if (p.q && buildSearchCondition(p.q)) scopes.push(t => buildSearchCondition(p.q!, t)!)
+  if (p.minRelevance) {
+    const min = parseInt(p.minRelevance, 10)
+    billFacts.push(t => sql`${t.relevanceScore} >= ${min}`)
   }
-  if (p.minRelevance) billFacts.push(sql`${bills.relevanceScore} >= ${parseInt(p.minRelevance, 10)}`)
 
   // One condition per custom field; each is a bill fact, so each joins the group operator.
-  billFacts.push(...Object.values(await buildCustomFieldConditions(db, p.cfParamMap)))
+  billFacts.push(...Object.values(await buildCustomFieldFilters(db, p.cfParamMap)))
 
-  if (p.tagFilters.length > 0) {
-    const hasAny = p.tagFilters.includes(FILTER_ANY)
-    const realTags = p.tagFilters.filter(t => t !== FILTER_ANY)
-    const parts: SQL[] = []
-    if (hasAny) parts.push(sql`json_array_length(${bills.tags}) > 0`) // "Any" = has any tag
-    if (realTags.length > 0) parts.push(tagMembership(realTags))
-    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
-  }
+  const tag = tagCondition(p.tagFilters)
+  if (tag) billFacts.push(tag)
 
   if (p.subjectFilters.length > 0) {
     const suppressed = await loadSuppressedSubjectStates(db)
     const allowed = filterSuppressedSubjects(p.subjectFilters, suppressed)
-    if (allowed.length > 0) billFacts.push(subjectMembership(allowed))
+    if (allowed.length > 0) billFacts.push(t => subjectMembership(allowed, t))
   }
 
-  if (p.positionValues.length > 0) {
-    const hasNone = p.positionValues.includes('none')
-    const hasAny = p.positionValues.includes(FILTER_ANY)
-    const realPositions = p.positionValues.filter(pos => pos !== 'none' && pos !== FILTER_ANY)
-    const parts: SQL[] = []
-    if (realPositions.length > 0) {
-      parts.push(inArray(bills.id,
-        db.select({ id: officialPositions.billId }).from(officialPositions)
-          .where(realPositions.length === 1
-            ? eq(officialPositions.position, realPositions[0])
-            : inArray(officialPositions.position, realPositions))
-      ))
-    }
-    if (hasAny) parts.push(sql`${bills.id} IN (SELECT bill_id FROM official_positions)`)
-    if (hasNone) parts.push(sql`${bills.id} NOT IN (SELECT bill_id FROM official_positions)`)
-    if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
-  }
+  const position = positionCondition(p.positionValues)
+  if (position) billFacts.push(position)
 
-  if (p.unvoted === '1') {
-    scopes.push(sql`${bills.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${p.userId})`)
-  }
+  // A member's votes are the group's: unvoted means no vote on any bill in it.
+  if (p.unvoted === '1') scopes.push(t => unvotedInGroup(t, p.userId))
 
   if (p.newMatches === '1' || p.newMatches === 'true') {
-    scopes.push(newMatchWhere(p.newMatchMinRelevance))
+    scopes.push(t => newMatchWhere(p.newMatchMinRelevance, t))
   }
 
   if (p.drafts === '1' || p.drafts === 'true') {
-    scopes.push(eq(bills.isDraft, true))
+    scopes.push(t => eq(t.isDraft, true))
   }
 
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
@@ -517,17 +452,44 @@ export async function buildBillsWhere(
     const myIds = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
     // Scope, not a bill fact: an empty set means no rows regardless of the group
     // operator, so this stays an unconditional early return.
-    if (myIds.length === 0) return sql`1 = 0`
-    scopes.push(inArray(bills.id, myIds))
+    if (myIds.length === 0) return () => sql`1 = 0`
+    // One JSON parameter, so a member with many bills stays under D1's parameter limit.
+    const mine = JSON.stringify(myIds)
+    scopes.push(t => sql`${t.id} IN (SELECT value FROM json_each(${mine}))`)
   }
 
-  const factCond = billFacts.length === 0
-    ? undefined
-    : billFacts.length === 1
-      ? billFacts[0]
-      : (p.matchAny ? or(...billFacts)! : and(...billFacts)!)
+  return t => {
+    const facts = billFacts.map(f => f(t))
+    const factCond = facts.length === 0
+      ? undefined
+      : facts.length === 1
+        ? facts[0]
+        : (p.matchAny ? or(...facts)! : and(...facts)!)
 
-  const all = [...(factCond ? [factCond] : []), ...scopes]
-  if (all.length === 0) return undefined
-  return all.length === 1 ? all[0] : and(...all)!
+    const all = [...(factCond ? [factCond] : []), ...scopes.map(f => f(t))]
+    if (all.length === 0) return undefined
+    return all.length === 1 ? all[0] : and(...all)!
+  }
+}
+
+/**
+ * Whether the filter is cheap to test on a bill: it reads only the bill's own
+ * columns that an index carries (status, stage, state, session, year, and
+ * relevance) or its id (unvoted), and never a scope or one of the team's values,
+ * which are read from other rows. The list tests such a filter on both parts of
+ * the full path (groupList.ts, `pageOfGroups`), where a dearer one is tested once.
+ */
+export function isCheapFilter(p: BillFilterParams): boolean {
+  const on = (v: string | undefined) => v === '1' || v === 'true'
+  return p.priorities.length === 0 && p.positionValues.length === 0 && p.tagFilters.length === 0 && p.subjectFilters.length === 0
+    && !p.q && Object.keys(p.cfParamMap).length === 0
+    && !on(p.myBillsParam) && !on(p.newMatches) && !on(p.drafts)
+}
+
+/** The list's filters as one condition on the `bills` table. */
+export async function buildBillsWhere(
+  db: ReturnType<typeof getDb>,
+  p: BillFilterParams,
+): Promise<SQL | undefined> {
+  return (await buildBillsFilter(db, p))(bills)
 }

@@ -6,7 +6,7 @@ import { nowDb } from './dbTime'
 import { chunk } from './chunk'
 import { isHandle, parseHandle, toHandle } from '../../../shared/billHandle'
 import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
-import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged } from './teamFields'
+import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged, type BillsTable } from './teamFields'
 import type { AppDb } from '../types'
 
 /**
@@ -89,6 +89,19 @@ export function myGroupVote(billId: SQLiteColumn, userId: string) {
   return sql<'support' | 'oppose' | 'neutral' | null>`(SELECT mv.position FROM member_votes mv
     WHERE mv.user_id = ${userId} AND mv.bill_id IN ${groupMemberIds(billId)}
     ORDER BY mv.updated_at DESC, mv.rowid DESC LIMIT 1)`
+}
+
+/**
+ * The member has voted on no bill in the group of `of` (the bills table or an
+ * alias of it): the bill list's Unvoted filter, as a condition on one bill.
+ * Reads the member's own votes as two sets (the bills they voted on, and every
+ * bill in those bills' groups), so a bill costs no probe of its group and the
+ * condition reads only the bill's id.
+ */
+export function unvotedInGroup(of: BillsTable, userId: string): SQL {
+  return sql`(${of.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${userId})
+    AND ${of.id} NOT IN (SELECT g.id FROM bills g WHERE g.group_key IN
+      (SELECT b.group_key FROM member_votes v JOIN bills b ON b.id = v.bill_id WHERE v.user_id = ${userId} AND b.group_key IS NOT NULL)))`
 }
 
 /**

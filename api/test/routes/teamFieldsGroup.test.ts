@@ -56,7 +56,8 @@ describe('team fields across a companion group', () => {
   async function newMatchIds(): Promise<string[]> {
     const res = await as('ada', '/bills?newMatches=1')
     expect(res.status).toBe(200)
-    return ((await res.json()) as { bills: Array<{ id: string }> }).bills.map(b => b.id).sort()
+    // One row per group, which names its bills.
+    return ((await res.json()) as { bills: Array<{ id: string; group?: Array<{ id: string }> }> }).bills.flatMap(b => b.group?.map(g => g.id) ?? [b.id]).sort()
   }
   async function fieldEvents(billId: string) {
     const rows = await db().select().from(teamEvents)

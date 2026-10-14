@@ -156,8 +156,76 @@ export async function loadGroupTeamValues(db: AppDb, billId: string): Promise<Gr
  * query's `bills` row. A bill in no group has a NULL key, which matches no
  * companion.
  */
-export function groupUntriaged(): SQL {
-  return sql`(${bills.triagedAt} IS NULL AND NOT EXISTS (SELECT 1 FROM bills t WHERE t.group_key = ${bills.groupKey} AND t.triaged_at IS NOT NULL))`
+export function groupUntriaged(of: BillsTable = bills): SQL {
+  return sql`(${of.triagedAt} IS NULL AND NOT EXISTS (SELECT 1 FROM bills t WHERE t.group_key = ${of.groupKey} AND t.triaged_at IS NOT NULL))`
+}
+
+// ── Filtering by a group's current value ────────────────────────────────────
+//
+// A filter on a team field matches a group through the member holding the
+// group's current value, never through a value a newer one replaced, so these
+// predicates mirror `mostRecent` and `resolveTeamValues` above: the later
+// timestamp wins, no timestamp is the oldest, and a tie goes to the larger bill
+// id. Each takes the bills table the predicate tests, the real one or an alias
+// of it, since the bill list tests every member of a group in turn.
+
+/** A bills table or an alias of it. */
+export type BillsTable = typeof bills
+
+/** Position (or custom field) rows from `official_positions p` and `bill_custom_field_values p` hold the group's current value: none for the same field was set more recently by another member. */
+function holdsGroupValue(table: 'official_positions' | 'bill_custom_field_values', fieldId?: string): SQL {
+  const sameField = table === 'bill_custom_field_values' ? sql` AND q.field_id = ${fieldId}` : sql``
+  return sql`NOT EXISTS (SELECT 1 FROM ${sql.raw(table)} q JOIN bills g ON g.id = q.bill_id
+      WHERE g.group_key = me.group_key${sameField}
+        AND (q.updated_at > p.updated_at OR (q.updated_at = p.updated_at AND q.bill_id > p.bill_id)))`
+}
+
+/**
+ * The bills holding the group's current position, among those whose position is
+ * one of `values` (any position when `values` is empty). A subquery of bill
+ * ids, for `bills.id IN`, so a selective filter can start from the positions.
+ */
+export function heldPositionOf(values: readonly string[]): SQL {
+  const among = values.length > 0 ? sql` AND p.position IN (${sql.join(values.map(v => sql`${v}`), sql`, `)})` : sql``
+  return sql`(SELECT p.bill_id FROM official_positions p JOIN bills me ON me.id = p.bill_id
+    WHERE ${holdsGroupValue('official_positions')}${among})`
+}
+
+/** Bills whose group has no position at all, as a condition on `of`. */
+export function groupHasNoPosition(of: BillsTable): SQL {
+  return sql`(${of.id} NOT IN (SELECT bill_id FROM official_positions)
+    AND (${of.groupKey} IS NULL OR ${of.groupKey} NOT IN (SELECT me.group_key FROM official_positions p JOIN bills me ON me.id = p.bill_id WHERE me.group_key IS NOT NULL)))`
+}
+
+/**
+ * The bills holding the group's current value of one custom field, among those
+ * whose stored value meets `valueCondition` over `p.value` (any value when
+ * undefined). A subquery of bill ids, for `bills.id IN`.
+ */
+export function heldCustomFieldOf(fieldId: string, valueCondition?: SQL): SQL {
+  return sql`(SELECT p.bill_id FROM bill_custom_field_values p JOIN bills me ON me.id = p.bill_id
+    WHERE p.field_id = ${fieldId}${valueCondition ? sql` AND ${valueCondition}` : sql``}
+      AND ${holdsGroupValue('bill_custom_field_values', fieldId)})`
+}
+
+/** `of` has a priority and it is its group's current one: no other member has one set more recently. */
+export function holdsGroupPriority(of: BillsTable): SQL {
+  return sql`(${of.priority} IS NOT NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL
+    AND (COALESCE(g.priority_set_at, '') > COALESCE(${of.prioritySetAt}, '')
+      OR (COALESCE(g.priority_set_at, '') = COALESCE(${of.prioritySetAt}, '') AND g.id > ${of.id})))))`
+}
+
+/** No bill in `of`'s group has a priority. */
+export function groupHasNoPriority(of: BillsTable): SQL {
+  return sql`(${of.priority} IS NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
+}
+
+/** `of` holds its group's analysis, the team summary and tags: no other member was analyzed more recently. */
+export function holdsGroupAnalysis(of: BillsTable): SQL {
+  return sql`(${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey}
+    AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
+    AND (COALESCE(g.ai_processed_at, '') > COALESCE(${of.aiProcessedAt}, '')
+      OR (COALESCE(g.ai_processed_at, '') = COALESCE(${of.aiProcessedAt}, '') AND g.id > ${of.id}))))`
 }
 
 // ── Recording changes ───────────────────────────────────────────────────────
