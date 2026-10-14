@@ -13,3 +13,23 @@ Almost everything per-tenant is scriptable with `wrangler`: creating the D1 data
 | `SUPERADMIN_JWT_PUBLIC_KEY` | n/a (committed var) | The ES256 public JWK, identical on every env — copy from any existing `[env.*]` block. |
 
 So the per-tenant "secret setting" work is small: only `CF_AIG_TOKEN` is strictly required, and you paste the same value you used for the last tenant.
+
+## Verifying an instance after provisioning
+
+`scripts/verify-instance.sh <slug>` (run last by `new-instance.sh`, and by hand any time) smoke-tests an instance. Its logic is `scripts/lib/verify-instance.ts` with fetch, time, and the filesystem injected, which is what `verify-instance.test.ts` exercises; `scripts/lib/new-instance.verify.test.ts` runs the real `new-instance.sh` against a faked wrangler and a local fake central.
+
+Past the health check, which hits the instance directly, every check goes through central's admin-secret operator routes in `central/src/routes/tenants.ts`, because a tenant holds no secret of its own:
+
+| Route | Used by | What it does |
+|---|---|---|
+| `GET /api/tenants/:id/registration` | Registration | Registered, active, states, keyword count, whether central is bound (`CentralApi`), and how it would deliver (`binding`, `queue`, or `none`). |
+| `POST /api/tenants/:id/verify-delivery` `{ nonce }` | Queue delivery | Picks one stored bill and sends the instance `{ tenantId, billId, probe: nonce }` down its real delivery path. |
+| `GET /api/tenants/:id/delivery-probe` | Queue delivery | Asks the instance (`CentralApi.deliveryProbe`) which probe it last received. |
+| `POST /api/tenants/:id/verify-ai` | AI analysis | Asks the instance (`CentralApi.verifyAi`) to analyze one stored bill; returns the result and writes nothing. |
+| `POST /api/tenants/:id/send-sample-email` | Email | Existing route; the check sends the `digest` sample to the operator only. |
+
+None is on `TenantApi`'s allowlist, so no tenant can call them, and none calls LegiScan: the bill is always one central already stores (`pickVerificationBill`: newest with text in the tenant's states, else any in its states, else any).
+
+A `probe` message is handled before any bill logic (`api/src/lib/deliveryProbe.ts`): the consumer reads the bill back from central to prove the `CENTRAL` binding, records `{ nonce, billId, receivedAt, readStatus }` under the `delivery_probe` key in `association_config`, and acknowledges. It writes no bill row and no feed event, so verifying never changes which bills the instance tracks. The AI check shares its prompt inputs with the queue consumer (`api/src/lib/analysisInputs.ts`) so it exercises what the pipeline would.
+
+Failures carry a `stage` (`deploy`, `secrets`, `bind`, `register`, or `verify`). `new-instance.sh` passes the step number of each (`step <key> "..."` records `STEP_NO_<key>`) so the resume line names the earliest step that needs re-running, and passes the commit step 4 deployed as the expected build, because the commits after the deploy move HEAD.

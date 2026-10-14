@@ -38,6 +38,13 @@
 #   --seed-dir/--session-id trigger optional historical seeding (Step 9); omit to
 #     let current-session bills flow in on the next central full-sync pass.
 #
+# The last step runs scripts/verify-instance.sh, a smoke test of the new instance:
+# health and build, registration on central, queue delivery, one AI analysis (one
+# AI call), and a sample email to ALERT_EMAILS. If a check fails it names the
+# likely cause and prints the --from-step command to resume from, and the script
+# exits non-zero. Run it any time on an existing instance:
+#   ./scripts/verify-instance.sh <slug> [--ai] [--to <email>]
+#
 # After the script completes, the only manual step is verifying the custom domain
 # (printed at the end). Bills begin flowing on the next central full-sync pass
 # (5/13/23 ET) unless you seeded historical data.
@@ -86,8 +93,14 @@ usage() {
 STEP_NUM=0
 FROM_STEP=1
 
+# step <key> <description>. The key records this step's number in STEP_NO_<key>
+# (even when it is skipped), so the verification step can tell the operator which
+# --from-step to resume from without hard-coding numbers that shift when a step is
+# added.
 step() {
+  local key="$1"; shift
   STEP_NUM=$((STEP_NUM + 1))
+  printf -v "STEP_NO_${key}" '%s' "$STEP_NUM"
   if [[ $STEP_NUM -lt $FROM_STEP ]]; then
     log "↷ Skipping step $STEP_NUM: $*"
     return 1
@@ -105,6 +118,7 @@ if [[ -f "$CENTRAL_DEV_VARS" ]]; then
 fi
 
 # ── Parse args ────────────────────────────────────────────────────────────────
+ORIG_ARGS=("$@")
 SLUG=""
 STATES_CSV=""
 ASSOC_NAME=""
@@ -459,7 +473,7 @@ read -rp "Proceed? [y/N] " _confirm
 [[ "$_confirm" =~ ^[Yy]$ ]] || { log "Aborted."; exit 0; }
 
 # ── Step 1: Create D1 database ────────────────────────────────────────────────
-if step "Create D1 database"; then
+if step db "Create D1 database"; then
   cd "$API_DIR"
   D1_OUTPUT=$(npx wrangler d1 create "$DB_NAME" 2>&1)
   echo "$D1_OUTPUT"
@@ -469,7 +483,7 @@ if step "Create D1 database"; then
 fi
 
 # ── Step 2: Create Queue ───────────────────────────────────────────────────────
-if step "Create Queue"; then
+if step queue "Create Queue"; then
   cd "$API_DIR"
   npx wrangler queues create "$QUEUE_NAME"
   log_ok "Queue created: $QUEUE_NAME"
@@ -481,7 +495,7 @@ fi
 # history, which is exactly how a wrong-prefix run got recorded before anything
 # reported an error. An uncommitted working-tree change is trivial to inspect or
 # discard; a commit is not.
-if step "Add env block to api/wrangler.toml"; then
+if step envblock "Add env block to api/wrangler.toml"; then
   [[ -n "${DB_ID:-}" ]] || die "DB_ID unset (resume from step 1, or pass it through)"
   # Idempotent so a failed step 4 can be retried with --from-step 3 without
   # appending a duplicate block (whose later keys would quietly win).
@@ -575,8 +589,11 @@ fi
 # ── Step 4: Deploy the tenant worker (builds web + migrations + deploy) ────────
 # deploy.sh builds web/, applies pending D1 migrations, then deploys. This also
 # creates the Worker (so Step 5 secrets can attach) and provisions the custom domain.
-if step "Deploy tenant worker"; then
+if step deploy "Deploy tenant worker"; then
   cd "$API_DIR"
+  # deploy.sh stamps the build with this commit. The commits below move HEAD, so
+  # record it now for the verification step to expect.
+  BUILD_SHA_DEPLOYED="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
   npm run deploy:tenant -- "$SLUG"
   log_ok "Worker deployed: $WORKER_URL"
 
@@ -598,7 +615,7 @@ fi
 # key: central is the sole issuer and holds SUPERADMIN_JWT_PRIVATE_KEY, while a tenant
 # only ever verifies, using the public JWK in its vars. Both directions are
 # binding-authenticated (TenantApi outbound, CentralApi inbound).
-if step "Set secrets"; then
+if step secrets "Set secrets"; then
   cd "$API_DIR"
   echo "$CF_AIG_TOKEN" | npx wrangler secret put CF_AIG_TOKEN --env "$SLUG"
   log_ok "CF_AIG_TOKEN set"
@@ -617,7 +634,7 @@ if step "Set secrets"; then
 fi
 
 # ── Step 5b: Seed state_coverage for multi-state instances ────────────────────
-if step "Seed state_coverage in D1 (multi-state)"; then
+if step coverage "Seed state_coverage in D1 (multi-state)"; then
   if $IS_MULTI_STATE; then
     STATES_JSON=$(export _CSV="$STATES_CSV"; python3 -c "import json,os; print(json.dumps(os.environ['_CSV'].split(',')))")
     cd "$API_DIR"
@@ -632,7 +649,7 @@ fi
 # ── Step 6: Bind the tenant on central via CentralApi + redeploy central ───────
 # central->tenant + operator->tenant calls run over this RPC binding (no shared
 # secret). The tenant worker must already exist (Step 4) for central to bind to it.
-if step "Bind CentralApi on central + deploy central"; then
+if step bind "Bind CentralApi on central + deploy central"; then
   if grep -q "binding = \"${CENTRALAPI_BINDING}\"" "$CENTRAL_DIR/wrangler.toml"; then
     log "CentralApi binding ${CENTRALAPI_BINDING} already present — skipping append"
   else
@@ -665,7 +682,7 @@ fi
 # calls ensureAssociationName (seeds association_name from ASSOCIATION_NAME, only
 # over the migration placeholder) and registers the tenant's keywords — empty on
 # a new instance — and state coverage with central.
-if step "Register tenant with central"; then
+if step register "Register tenant with central"; then
   log "Waiting 10s for the central deploy to settle..."
   sleep 10
   REGISTER_RESP=$(curl -s -X POST "${CENTRAL_URL}/api/tenants/${SLUG}/force-register" \
@@ -686,7 +703,7 @@ fi
 #   • brand-new state central has never seen → use --seed-dir to bulk-load central
 #     from the LegiScan zip first, THEN seed-session.
 # Without either, the tenant still fills on the next full pass (deliver-on-creation).
-if step "Seed active session(s) for whole-session monitoring"; then
+if step seed "Seed active session(s) for whole-session monitoring"; then
   if [[ -n "$SEED_DIR" && -n "$SESSION_ID" ]]; then
     [[ -d "$SEED_DIR" ]] || die "--seed-dir not found: $SEED_DIR"
     $IS_MULTI_STATE && die "Multi-state seeding: run scripts/seed-legiscan.ts per state/session manually"
@@ -760,7 +777,7 @@ fi
 # ── Step 9: Create the founding owner user ─────────────────────────────────────
 # The first user MUST be 'owner', not 'admin': only an owner can grant the owner
 # role (see api/src/routes/adminApi.ts), so a tenant with no owner can never get one.
-if step "Create founding owner user"; then
+if step owner "Create founding owner user"; then
   ADMIN_ID=$(uuidgen 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null) \
     || die "Could not generate a UUID (install uuidgen or python3)"
   cd "$API_DIR"
@@ -768,6 +785,44 @@ if step "Create founding owner user"; then
   npx wrangler d1 execute "$DB_NAME" --remote --env "$SLUG" \
     --command "INSERT OR IGNORE INTO users (id, email, name, role) VALUES ('${ADMIN_ID}', '${ADMIN_EMAIL}', '${SAFE_NAME}', 'owner')"
   log_ok "Founding owner created: $ADMIN_EMAIL"
+fi
+
+# ── Step 11: Verify the instance end to end ────────────────────────────────────
+# Several of the steps above can fail without saying so: the site loads, but bills
+# never arrive or email never sends. verify-instance.sh proves health, registration,
+# queue delivery, AI, and email, and on a failure names the check, its likely cause,
+# and the --from-step to resume from. It runs the AI check here (one AI call); run it
+# by hand without --ai to skip that.
+#
+# Everything is passed explicitly rather than re-read, so the check sees exactly the
+# values this run provisioned with. --expect-build is the commit step 4 deployed, or
+# "any" when resuming past it (this run cannot know what an earlier one deployed).
+resume_cmd() {
+  # The command that resumes this run. --from-step is dropped so the verifier's
+  # replaces it, and the admin secret is never echoed: it is read from
+  # central/.dev.vars, the environment, or a prompt on the next run.
+  local out="./scripts/new-instance.sh" skip=0 a
+  for a in "${ORIG_ARGS[@]}"; do
+    if [[ $skip -eq 1 ]]; then skip=0; continue; fi
+    case "$a" in
+      --from-step|--admin-secret) skip=1; continue ;;
+    esac
+    out+=" $(printf '%q' "$a")"
+  done
+  echo "$out"
+}
+
+if step verify "Verify the instance end to end"; then
+  if ! ADMIN_SECRET="$ADMIN_SECRET" bash "$SCRIPT_DIR/verify-instance.sh" "$SLUG" --ai \
+      --central-url "$CENTRAL_URL" --worker-url "$WORKER_URL" --app-url "$APP_URL" \
+      --prefix "$RESOURCE_PREFIX" --states "$STATES_CSV" \
+      --expect-build "${BUILD_SHA_DEPLOYED:-any}" \
+      --resume-cmd "$(resume_cmd)" \
+      --resume-steps "deploy=${STEP_NO_deploy},secrets=${STEP_NO_secrets},bind=${STEP_NO_bind},register=${STEP_NO_register},verify=${STEP_NO_verify}"; then
+    log_warn "Instance '${SLUG}' is provisioned, but it did not pass verification. See the failures above."
+    exit 1
+  fi
+  log_ok "Instance verified end to end"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
@@ -780,7 +835,8 @@ log "  Target:  ${APP_URL}"
 log "  Admin:   ${ADMIN_EMAIL}"
 log "  Log:     ${LOG_FILE}"
 log ""
-log "Verify:  curl ${WORKER_URL}/api/health   → {\"ok\":true}"
+log "Verified end to end by scripts/verify-instance.sh. Re-run it any time:"
+log "  ./scripts/verify-instance.sh ${SLUG}"
 log ""
 log "Remaining manual step:"
 log "  • Custom domain: deploy provisioned it from the routes= block. If using a"

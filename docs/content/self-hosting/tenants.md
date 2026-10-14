@@ -9,7 +9,7 @@ A tenant is one team's instance: a single Cloudflare Worker + D1 database + queu
 Throughout, replace `[slug]` with a lowercase identifier for the team (e.g. `org-nj`) and `[STATE]` with its two-letter abbreviation.
 
 > [!TIP]
-> **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database and queue, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user. Use `--from-step N` to resume after a failure. The manual steps below are the reference, and worth reading once before your first run.
+> **Shortcut:** `scripts/new-instance.sh` automates every step below — it creates the database and queue, appends the config block, deploys, sets the secret, binds the tenant on central, registers it, optionally seeds history, and creates the first user, then [verifies the instance end to end](#verify-the-instance-end-to-end). Use `--from-step N` to resume after a failure. The manual steps below are the reference, and worth reading once before your first run.
 
 > [!NOTE]
 > **Renamed resources?** The commands below name every Cloudflare resource `floorvote-…` — the worker, the D1 database, the queues, and the shared `floorvote-dlq`. If your deployment uses a different resource prefix (anything other than the default `floorvote`), substitute it consistently everywhere you see `floorvote-` below — **and** make sure it matches the `TENANT_QUEUE_PREFIX` set on your central service. Otherwise central looks for a queue that doesn't exist, silently creates a phantom with no consumer, and the tenant receives no bills.
@@ -465,6 +465,29 @@ curl -X POST "$CENTRAL/api/tenants/seed-session/[slug]?sessionId=[sessionId]" \
 ```
 
 For more than 500 bills, page through it the same way as Path A (advance `&offset=` until `"done": true`).
+
+## Verify the instance end to end
+
+Several of the steps above can fail without saying so: the site loads, but bills never arrive or email never sends. `scripts/verify-instance.sh` proves the instance works from end to end. `new-instance.sh` runs it as its last step; run it by hand against any instance too, for example after a deploy:
+
+```bash
+./scripts/verify-instance.sh [slug]          # the four checks that cost nothing
+./scripts/verify-instance.sh [slug] --ai     # also analyze one bill (costs one AI call)
+```
+
+It runs five checks, each cheap and none visible to the team's members, and prints `pass`, `FAIL`, or `skipped` for each:
+
+| Check | What it proves |
+|---|---|
+| **Health and build** | The instance answers `/api/health` with the build you deployed. It tries the custom domain first and falls back to the `workers.dev` URL, so it works before the domain is verified. |
+| **Registration** | Central knows the instance, with its states and keywords, is bound to it, and has a queue to deliver bills to. |
+| **Queue delivery** | Central sends the instance one bill it already stores, through the real queue, and the instance receives it and can read it back from central. The instance records the arrival and stops, so it tracks no bill it didn't already. |
+| **AI analysis** | The instance analyzes one stored bill end to end through your AI Gateway. Off by default when run by hand, since it costs one model call (`new-instance.sh` turns it on). Reported as `skipped` when the instance has no AI configured. Nothing is saved, so no bill is left tracked. |
+| **Email** | A sample digest goes to the operator: the first address in the instance's `ALERT_EMAILS`, or `--to <email>`. It never sends a sign-in link, and never goes to the instance's owner or members. Works with either email provider, and is `skipped` if there is no address to send to. |
+
+None of it calls LegiScan. A failure names the check and its likely cause, for example *Central has no binding for this instance: did central redeploy after the binding step?* When `new-instance.sh` runs it, a failure also prints the `--from-step` command to resume from, and the script exits non-zero. Run by hand, it exits non-zero on any failure.
+
+The script reads the same configuration `new-instance.sh` does (`scripts/.env.ops`, `central/.dev.vars`), so a deployment with its own `RESOURCE_PREFIX`, domain, and central needs no flags. Pass `--central-url`, `--admin-secret`, `--app-url`, `--worker-url`, or `--prefix` to override any of it, and run `./scripts/verify-instance.sh --help` for the rest. By default it expects the build to be this checkout's commit; if the instance was deployed from another, pass `--expect-build <sha>` (or `--expect-build any`).
 
 ## When do bills start flowing in?
 

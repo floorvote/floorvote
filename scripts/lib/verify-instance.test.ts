@@ -191,7 +191,7 @@ describe('runChecks — all green', () => {
     const world = makeWorld()
     await run(world)
     for (const c of world.calls) {
-      expect(c.url).not.toMatch(/legiscan/i)
+      expect(c.url).not.toMatch(/legiscan\.com/i)
       expect(c.url).not.toMatch(/\/api\/auth\//)
     }
     const mail = world.calls.filter(c => c.url.endsWith('/send-sample-email'))
@@ -289,6 +289,18 @@ describe('check 2: registration', () => {
     expect(by('registration').status).toBe('fail')
     expect(by('registration').cause).toBe('Central has no binding for this instance: did central redeploy after the binding step?')
     expect(by('registration').stage).toBe('bind')
+  })
+
+  it('does not repeat the missing-binding failure on every check that needs the binding', async () => {
+    const world = makeWorld({ [key]: reg({ bound: false }) })
+    const { results, by } = await run(world)
+    expect(by('registration').status).toBe('fail')
+    for (const id of ['delivery', 'ai', 'email']) {
+      expect(by(id).status).toBe('skipped')
+      expect(by(id).detail).toMatch(/not bound.*Registration/)
+    }
+    expect(world.calls.some(c => c.url.endsWith('/verify-delivery') || c.url.endsWith('/verify-ai') || c.url.endsWith('/send-sample-email'))).toBe(false)
+    expect(exitCode(results)).toBe(1)
   })
 
   it('fails when central has no way to deliver bills', async () => {
