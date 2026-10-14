@@ -5,7 +5,8 @@ import { rowidOf } from '../db/rowid'
 import { nowDb } from './dbTime'
 import { chunk } from './chunk'
 import { isHandle, parseHandle, toHandle } from '../../../shared/billHandle'
-import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
+import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged } from './teamFields'
 import type { AppDb } from '../types'
 
 /**
@@ -39,6 +40,17 @@ export function groupMemberIds(billId: string | SQLiteColumn): SQL {
 /** `column IN (every bill in billId's group)`, for any table's bill id column. */
 export function inGroupOf(column: SQLiteColumn, billId: string): SQL {
   return sql`${column} IN ${groupMemberIds(billId)}`
+}
+
+/**
+ * `column IN (every bill in the groups of any of these bills)`, for a bulk
+ * edit. One JSON parameter, so any number of bills stays under D1's
+ * parameter limit.
+ */
+export function inGroupsOf(column: SQLiteColumn, billIds: readonly string[]): SQL {
+  const ids = JSON.stringify(billIds)
+  return sql`${column} IN (SELECT g.id FROM bills g WHERE g.id IN (SELECT value FROM json_each(${ids}))
+    OR g.group_key IN (SELECT k.group_key FROM bills k WHERE k.id IN (SELECT value FROM json_each(${ids})) AND k.group_key IS NOT NULL))`
 }
 
 /**
@@ -162,12 +174,15 @@ const RECOMPUTE_ATTEMPTS = 5
  * before, write the keys that changed, and record a grouping event on each
  * bill that joined or left companions: `grouped` naming the bills it joined,
  * `split` naming the ones it left. A null actor means FloorVote did it
- * automatically, from the provider's data.
+ * automatically, from the provider's data. A `grouped` event also lists the
+ * team field values the grouping replaced (lib/teamFields.ts).
  *
  * Safe to run concurrently, as the tenant queue does: the writes are one
  * transaction that applies only if every key it read is unchanged, so of two
  * recomputes racing over one group, one writes and the other re-reads and
- * finds nothing left to do. That keeps grouping events from doubling.
+ * finds nothing left to do. That keeps grouping events from doubling. The
+ * guard covers the links and team field values it read too, so a recompute
+ * that raced with a link change or a value being set re-reads instead.
  */
 export async function recomputeGroups(
   db: AppDb,
@@ -244,22 +259,47 @@ async function tryRecomputeGroups(
   const events: Array<typeof teamEvents.$inferInsert> = []
   const rekey = new Map<string | null, string[]>()
 
-  for (const node of nodes.values()) {
+  // What each bill joined and left.
+  const moves = [...nodes.values()].map(node => {
     const members = componentOf.get(node.id)!
-    const newKey = members.length > 1 ? members.reduce((min, id) => (id < min ? id : min)) : null
     const nowWith = new Set(members.filter(id => id !== node.id))
     const before = new Set(node.groupKey === null ? [] : oldGroups.get(node.groupKey)!.map(n => n.id).filter(id => id !== node.id))
+    return { node, members, joined: [...nowWith].filter(id => !before.has(id)), left: [...before].filter(id => !nowWith.has(id)) }
+  })
+
+  // The team field values each group that gained bills replaced (see
+  // lib/teamFields.ts). Read here, inside the attempt, so the guard below
+  // also covers them: a value set while this runs makes it read again rather
+  // than record a replacement that no longer holds.
+  const growing = [...new Set(moves.filter(m => m.joined.length > 0).map(m => m.members))]
+  const valueBillIds = growing.flat()
+  const valueRows = valueBillIds.length > 0 ? await readTeamValueRows(db, valueBillIds) : null
+  const replacedIn = new Map<string[], ReplacedTeamValue[]>()
+  if (valueRows) {
+    const defs = await loadFieldDefs(db)
+    for (const members of growing) {
+      // The old groups, and the bills that were in none, the new group formed from.
+      const parts = new Map<string, string[]>()
+      for (const id of members) {
+        const key = nodes.get(id)!.groupKey
+        const part = key === null ? `bill ${id}` : `group ${key}`
+        parts.set(part, [...(parts.get(part) ?? []), id])
+      }
+      replacedIn.set(members, replacedTeamValues(valueRows, [...parts.values()], defs, id => nodes.get(id)!.billNumber))
+    }
+  }
+
+  for (const { node, members, joined, left } of moves) {
+    const newKey = members.length > 1 ? members.reduce((min, id) => (id < min ? id : min)) : null
     if (newKey !== node.groupKey) rekey.set(newKey, [...(rekey.get(newKey) ?? []), node.id])
 
     const groupBillIds = [...members].sort()
-    const event = (type: GroupingEventType, withIds: string[]) => {
-      const metadata: GroupingEventMetadata = { with: byNumber(withIds), groupBillIds, replaced: [] }
+    const event = (type: GroupingEventType, withIds: string[], replaced: ReplacedTeamValue[]) => {
+      const metadata: GroupingEventMetadata = { with: byNumber(withIds), groupBillIds, replaced }
       events.push({ id: crypto.randomUUID(), billId: node.id, type, actorUserId: opts.actorUserId ?? null, metadata: JSON.stringify(metadata), createdAt: now })
     }
-    const joined = [...nowWith].filter(id => !before.has(id))
-    const left = [...before].filter(id => !nowWith.has(id))
-    if (left.length > 0) event('split', left)
-    if (joined.length > 0) event('grouped', joined)
+    if (left.length > 0) event('split', left, [])
+    if (joined.length > 0) event('grouped', joined, replacedIn.get(members) ?? [])
   }
 
   const rekeyed = [...rekey].flatMap(([key, ids]) => ids.map(id => [id, key]))
@@ -284,7 +324,8 @@ async function tryRecomputeGroups(
         OR l.companion_external_id IN (SELECT value FROM json_each(${JSON.stringify(handles)}))) = ${links.length}
     AND (SELECT COUNT(*) FROM bill_identical_links l, json_each(${JSON.stringify(links)}) r
       WHERE l.external_id = json_extract(r.value, '$[0]') AND l.companion_external_id = json_extract(r.value, '$[1]')) = ${links.length}
-    AND (SELECT COUNT(*) FROM bills b WHERE b.external_id IN (SELECT value FROM json_each(${JSON.stringify(linkedHandles)}))) = ${linkedBills}`
+    AND (SELECT COUNT(*) FROM bills b WHERE b.external_id IN (SELECT value FROM json_each(${JSON.stringify(linkedHandles)}))) = ${linkedBills}
+    AND ${valueRows ? teamValuesUnchanged(valueBillIds, valueRows) : sql`1`}`
   const [inserted, updated] = await db.batch([
     // Events first: the key update below changes what the guard reads.
     // Columns in team_events' order: id, bill_id, type, actor_user_id, metadata, created_at.

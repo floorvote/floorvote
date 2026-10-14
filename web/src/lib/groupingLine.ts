@@ -13,9 +13,13 @@ export function groupingLineText(event: GroupingEvent): string {
   const one = event.with.length === 1
   if (event.type === 'grouped') {
     const together = `Earlier comments from ${one ? 'both' : 'all of them'} now appear together.`
+    // The team field values the grouping replaced, so an admin can put back
+    // one that shouldn't have lost.
+    const replaced = (event.replaced ?? []).map(r =>
+      ` ${r.billNumber}'s ${r.label}, ${r.value}, was replaced by ${r.replacedBy.billNumber}'s, ${r.replacedBy.value}.`).join('')
     return event.actorName
-      ? `${event.actorName} grouped this bill with ${bills} on ${date}. ${together}`
-      : `Grouped with ${bills} as identical bills on ${date}. ${together}`
+      ? `${event.actorName} grouped this bill with ${bills} on ${date}. ${together}${replaced}`
+      : `Grouped with ${bills} as identical bills on ${date}. ${together}${replaced}`
   }
   const apart = `Comments posted on ${one ? bills : 'them'} no longer appear here.`
   return event.actorName

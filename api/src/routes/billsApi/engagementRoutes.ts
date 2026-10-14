@@ -5,7 +5,7 @@ import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
-  billCustomFieldValues,
+  billCustomFieldValues, customFieldDefinitions,
 } from '../../db/schema'
 import { extractAndNotifyMentions } from '../../lib/mentions'
 import { notifyParticipantsOfReply } from '../../lib/replies'
@@ -18,6 +18,7 @@ import { activeUser } from '../../lib/accountDeletion'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { displayName } from '../../lib/displayName'
 import { inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
+import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
 
 // Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
 // per-IP limiter in demoReadOnly bounds the *rate* an anonymous visitor can
@@ -109,6 +110,9 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       return c.json({ error: 'Invalid position' }, 400)
     }
 
+    // Stored on this bill, and the most recent in its companion group, so the
+    // whole group reads it.
+    const old = (await loadGroupTeamValues(db, id)).position?.position ?? null
     const now = nowDb()
     const existing = await db.select().from(officialPositions).where(eq(officialPositions.billId, id)).get()
     if (existing) {
@@ -133,6 +137,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       userId: currentUser.id,
       metadata: JSON.stringify({ position: body.position }),
     })
+    await recordFieldChanges(db, [{ billId: id, field: 'position', label: 'position', old, new: body.position }], currentUser.id)
 
     return c.json({ position: body.position })
   })
@@ -143,10 +148,14 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     const { id } = c.req.param()
     const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
     if (!bill) return c.json({ error: 'Not found' }, 404)
-    await db.delete(officialPositions).where(eq(officialPositions.billId, id))
+    // Cleared on every bill in the companion group: an older position left on
+    // a companion would otherwise become the group's.
+    const old = (await loadGroupTeamValues(db, id)).position?.position ?? null
+    await db.delete(officialPositions).where(inGroupOf(officialPositions.billId, id))
     await db.update(feedEvents)
       .set({ suppressed: true })
-      .where(and(eq(feedEvents.billId, id), eq(feedEvents.type, 'position_set')))
+      .where(and(inGroupOf(feedEvents.billId, id), eq(feedEvents.type, 'position_set')))
+    await recordFieldChanges(db, [{ billId: id, field: 'position', label: 'position', old, new: null }], c.get('user').id)
     return new Response(null, { status: 204 })
   })
 
@@ -352,12 +361,18 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     const resolved = await resolveCustomFieldValues(db, body)
     if (!resolved.ok) return c.json(resolved.error, 400)
 
+    // A value is stored on this bill and is the most recent in its companion
+    // group, so the group reads it. Clearing clears it on every member.
+    const before = (await loadGroupTeamValues(db, billId)).customFields
+    const fieldIds = resolved.values.map(v => v.fieldId)
+    const labelOf = new Map(fieldIds.length === 0 ? [] : (await db.select({ id: customFieldDefinitions.id, name: customFieldDefinitions.name })
+      .from(customFieldDefinitions).where(inArray(customFieldDefinitions.id, fieldIds)).all()).map(d => [d.id, d.name]))
     const now = nowDb()
     for (const { fieldId, value: storeValue } of resolved.values) {
       if (storeValue === null) {
         await db.delete(billCustomFieldValues)
           .where(and(
-            eq(billCustomFieldValues.billId, billId),
+            inGroupOf(billCustomFieldValues.billId, billId),
             eq(billCustomFieldValues.fieldId, fieldId),
           ))
       } else {
@@ -369,6 +384,9 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
           })
       }
     }
+    await recordFieldChanges(db, resolved.values.map(({ fieldId, value }) => ({
+      billId, field: 'customField' as const, fieldId, label: labelOf.get(fieldId) ?? fieldId, old: before.get(fieldId)?.value ?? null, new: value,
+    })), currentUser.id)
 
     return c.json({ ok: true })
   })

@@ -9,16 +9,19 @@ import {
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
+import { groupUntriaged } from '../../lib/teamFields'
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
 // can't drift. COALESCE(relevance,0) means with the default threshold 0 a match with
 // no relevance score still qualifies; a positive threshold excludes it until scored.
+// Triaging any bill in a companion group triages the group, so a bill whose
+// companion was triaged is no longer new.
 export function newMatchWhere(minRelevance: number): SQL {
   return and(
     eq(bills.matchType, 'keyword'),
     isNotNull(bills.newMatchAt),
-    isNull(bills.triagedAt),
+    groupUntriaged(),
     sql`COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}`,
   )!
 }

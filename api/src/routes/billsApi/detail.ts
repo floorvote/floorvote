@@ -2,8 +2,8 @@ import { eq, and, or, inArray, sql, desc, isNull } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
-  bills, officialPositions, comments, users, commentReactions, feedEvents,
-  billTexts, roles, userRoles, billCustomFieldValues, teamEvents,
+  bills, comments, users, commentReactions, feedEvents,
+  billTexts, roles, userRoles, teamEvents,
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -16,7 +16,8 @@ import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
-import { groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
+import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
+import { loadGroupTeamValues } from '../../lib/teamFields'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
@@ -78,12 +79,13 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, positionRow, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
-    db.select({ position: officialPositions.position, setBy: officialPositions.setBy, updatedAt: officialPositions.updatedAt })
-      .from(officialPositions).where(eq(officialPositions.billId, billId)).get(),
+    // The team fields (position, priority, custom fields, analysis, triage),
+    // each the one set most recently on any member (lib/teamFields.ts).
+    loadGroupTeamValues(db, billId),
     db.select({ position: votes.position })
       .from(votes)
       .innerJoin(users, eq(votes.userId, users.id))
@@ -114,13 +116,14 @@ export async function buildBillDetail(
     db.select({ setByName: userDisplayNameSql, createdAt: feedEvents.createdAt })
       .from(feedEvents)
       .innerJoin(users, eq(feedEvents.userId, users.id))
-      // A bulk priority edit is a bill-less event that lists its bills in metadata.billIds.
+      // A bulk priority edit is a bill-less event that lists its bills in
+      // metadata.billIds. The group's priority may have been set on any member.
       .where(and(
         or(
-          eq(feedEvents.billId, billId),
+          inGroupOf(feedEvents.billId, billId),
           and(
             isNull(feedEvents.billId),
-            sql`EXISTS (SELECT 1 FROM json_each(${feedEvents.metadata}, '$.billIds') WHERE value = ${billId})`,
+            sql`EXISTS (SELECT 1 FROM json_each(${feedEvents.metadata}, '$.billIds') WHERE value IN ${groupMemberIds(billId)})`,
           ),
         ),
         eq(feedEvents.type, 'priority_set'),
@@ -146,6 +149,7 @@ export async function buildBillDetail(
     // Null when FloorVote grouped the bills itself.
     actorName: e.actorName ?? null,
     with: (JSON.parse(e.metadata) as GroupingEventMetadata).with,
+    replaced: (JSON.parse(e.metadata) as GroupingEventMetadata).replaced ?? [],
   }))
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }
@@ -189,6 +193,7 @@ export async function buildBillDetail(
     ),
   }))
 
+  const positionRow = teamValues.position
   let positionWithName: { position: string; setByName: string; updatedAt: string } | null = null
   if (positionRow) {
     const setter = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, positionRow.setBy)).get()
@@ -257,10 +262,11 @@ export async function buildBillDetail(
     // Central's committee name when it has one. Only demo seeds fill bills.committee.
     committee: centralRich?.committee?.name ?? bill.committee,
     referrals: centralRich?.referrals ?? [],
-    tenantSummary: bill.tenantSummary,
-    tags: filterTagsToTaxonomy(JSON.parse(bill.tags) as string[], tagSet),
+    // The analysis of whichever member was analyzed most recently.
+    tenantSummary: teamValues.analysis ? teamValues.analysis.tenantSummary : bill.tenantSummary,
+    tags: filterTagsToTaxonomy(teamValues.analysis ? teamValues.analysis.tags : JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,
-    priority: bill.priority,
+    priority: teamValues.priority?.priority ?? null,
     priorityMeta: priorityEventRow ? { setByName: priorityEventRow.setByName, updatedAt: priorityEventRow.createdAt } : null,
     sponsor: bill.sponsor,
     sponsorParty: bill.sponsorParty,
@@ -284,7 +290,8 @@ export async function buildBillDetail(
     companionBillIds: bill.companionBillIds ? JSON.parse(bill.companionBillIds) : [],
     matchType: bill.matchType,
     newMatchAt: bill.newMatchAt ?? null,
-    triagedAt: bill.triagedAt ?? null,
+    // Triaging any member triages the group.
+    triagedAt: teamValues.triaged?.triagedAt ?? null,
     isDraft: bill.isDraft,
     draftText: bill.draftText,
     textR2Key: bill.textR2Key,
@@ -367,22 +374,15 @@ export async function buildBillDetail(
     }))
   }
 
-  // Custom field values
-  const cfRows = await db
-    .select({
-      fieldId: billCustomFieldValues.fieldId,
-      value: billCustomFieldValues.value,
-      setBy: userDisplayNameSql,
-      updatedAt: billCustomFieldValues.updatedAt,
-    })
-    .from(billCustomFieldValues)
-    .innerJoin(users, eq(billCustomFieldValues.setBy, users.id))
-    .where(eq(billCustomFieldValues.billId, billId))
-    .all()
-
-  response.customFieldValues = Object.fromEntries(
-    cfRows.map((r) => [r.fieldId, { value: r.value, setBy: r.setBy, updatedAt: r.updatedAt }])
-  )
+  // Custom field values, each the group's, named by who set it. A value whose
+  // setter no longer exists is left out, as it always was.
+  const cfValues = [...teamValues.customFields.values()]
+  const setterIds = [...new Set(cfValues.map(v => v.setBy))]
+  const setterName = new Map(setterIds.length === 0 ? [] : (await db.select({ id: users.id, name: userDisplayNameSql })
+    .from(users).where(inArray(users.id, setterIds)).all()).map(u => [u.id, u.name]))
+  response.customFieldValues = Object.fromEntries(cfValues.flatMap(v => (setterName.has(v.setBy)
+    ? [[v.fieldId, { value: v.value, setBy: setterName.get(v.setBy) ?? null, updatedAt: v.updatedAt }]]
+    : [])))
 
   return response
 }

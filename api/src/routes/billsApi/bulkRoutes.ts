@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { bills, officialPositions, feedEvents, billCustomFieldValues, customFieldDefinitions } from '../../db/schema'
@@ -12,6 +12,8 @@ import { buildBillsWhere, newMatchWhere } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { decodeSubjectFilters } from '../../lib/billSubjects'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
+import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
+import { groupUntriaged, loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -130,13 +132,25 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     // event names them all instead (metadata.billIds), so it belongs to no single bill.
     const isBulk = count > 10
 
+    // Team fields (lib/teamFields.ts): each value is set on the selected bill,
+    // the most recent in its companion group, so the whole group reads it. A
+    // clear clears every member, so an older value on a companion doesn't come
+    // back. `before` is what each selected bill's group read until now, for
+    // the team events this edit records and for multi-select additions.
+    const before = await loadTeamValuesOf(db, billIds)
+    const changes: FieldChange[] = []
+
     // Apply priority
     if (hasPriority) {
       const priority = (body.priority ?? null) as 'high' | 'medium' | 'low' | null
       for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+        const part = billIds.slice(i, i + BULK_CHUNK)
         await db.update(bills)
-          .set({ priority, updatedAt: now })
-          .where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)))
+          .set({ priority, prioritySetAt: now, updatedAt: now })
+          .where(priority ? inArray(bills.id, part) : inGroupsOf(bills.id, part))
+      }
+      for (const billId of billIds) {
+        changes.push({ billId, field: 'priority', label: 'priority', old: before.get(billId)?.priority?.priority ?? null, new: priority })
       }
       if (priority) {
         // Latch each newly-prioritized match as triaged (idempotent — first actor wins).
@@ -200,9 +214,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     // Apply position
     if (hasPosition) {
+      for (const billId of billIds) {
+        changes.push({ billId, field: 'position', label: 'position', old: before.get(billId)?.position?.position ?? null, new: body.position ?? null })
+      }
       if (body.position === null) {
         for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-          await db.delete(officialPositions).where(inArray(officialPositions.billId, billIds.slice(i, i + BULK_CHUNK)))
+          await db.delete(officialPositions).where(inGroupsOf(officialPositions.billId, billIds.slice(i, i + BULK_CHUNK)))
         }
       } else {
         const position = body.position!
@@ -242,30 +259,26 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     // Apply custom fields
     if (hasCf) {
+      const labelOf = new Map((await db.select({ id: customFieldDefinitions.id, name: customFieldDefinitions.name })
+        .from(customFieldDefinitions).all()).map(d => [d.id, d.name]))
       for (const entry of body.customFields!) {
         const fieldId = entry.fieldId
         const isMultiOp = 'additions' in entry || 'removals' in entry
+        const oldOf = (billId: string) => before.get(billId)?.customFields.get(fieldId)?.value ?? null
+        const change = (billId: string, value: string | null) =>
+          changes.push({ billId, field: 'customField', fieldId, label: labelOf.get(fieldId) ?? fieldId, old: oldOf(billId), new: value })
 
         if (isMultiOp) {
           const additions = ('additions' in entry ? entry.additions : undefined) ?? []
           const removals = ('removals' in entry ? entry.removals : undefined) ?? []
           if (additions.length === 0 && removals.length === 0) continue
 
-          // Read existing values for all affected bills. Chunked — billIds can be up to
-          // 1000, well over D1's 100-bound-param cap (plus the fieldId eq param).
-          const existingRows: { billId: string; value: string }[] = []
-          for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-            const rows = await db
-              .select({ billId: billCustomFieldValues.billId, value: billCustomFieldValues.value })
-              .from(billCustomFieldValues)
-              .where(and(
-                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
-                eq(billCustomFieldValues.fieldId, fieldId),
-              ))
-              .all()
-            existingRows.push(...rows)
-          }
-          const existingByBill = new Map(existingRows.map(r => [r.billId, r.value]))
+          // Each bill's current value is its group's, so an addition keeps the
+          // options a companion's value holds.
+          const existingByBill = new Map(billIds.flatMap(billId => {
+            const value = oldOf(billId)
+            return value === null ? [] : [[billId, value] as const]
+          }))
 
           const additionsSet = new Set(additions)
           const removalsSet = new Set(removals)
@@ -293,12 +306,14 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
               for (const v of additions) if (!ordered.includes(v) && next.includes(v)) ordered.push(v)
 
               if (ordered.length === 0) {
+                change(billId, null)
                 ops.push(db.delete(billCustomFieldValues).where(and(
-                  eq(billCustomFieldValues.billId, billId),
+                  inGroupOf(billCustomFieldValues.billId, billId),
                   eq(billCustomFieldValues.fieldId, fieldId),
                 )))
               } else {
                 const stored = JSON.stringify(ordered)
+                change(billId, stored)
                 ops.push(db.insert(billCustomFieldValues)
                   .values({ billId, fieldId, value: stored, setBy: currentUser.id, updatedAt: now })
                   .onConflictDoUpdate({
@@ -315,11 +330,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         }
 
         const value = 'value' in entry ? entry.value : null
+        for (const billId of billIds) change(billId, value)
         if (value === null) {
           for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
             await db.delete(billCustomFieldValues).where(
               and(
-                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
+                inGroupsOf(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
                 eq(billCustomFieldValues.fieldId, fieldId),
               )
             )
@@ -340,6 +356,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         }
       }
     }
+
+    // Only bills that exist: a selection by id may name one deleted since.
+    await recordFieldChanges(db, changes.filter(ch => before.has(ch.billId)), currentUser.id)
 
     return c.json({ updated: count })
   })
@@ -505,7 +524,11 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       const chunk = billIds.slice(i, i + BULK_CHUNK)
 
       const billRows = await db
-        .select({ id: bills.id, priority: bills.priority, externalId: bills.externalId, matchType: bills.matchType, newMatchAt: bills.newMatchAt, triagedAt: bills.triagedAt, relevanceScore: bills.relevanceScore })
+        .select({
+          id: bills.id, priority: bills.priority, externalId: bills.externalId, matchType: bills.matchType, newMatchAt: bills.newMatchAt, relevanceScore: bills.relevanceScore,
+          // Triaging any bill in a companion group triages the group.
+          untriaged: sql<number>`CASE WHEN ${groupUntriaged()} THEN 1 ELSE 0 END`,
+        })
         .from(bills)
         .where(inArray(bills.id, chunk))
         .all()
@@ -514,7 +537,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         const key = row.priority ?? 'null'
         priorityCounts[key] = (priorityCounts[key] ?? 0) + 1
         if (row.matchType === null && isHandle(row.externalId)) nullMatchCount++
-        if (row.matchType === 'keyword' && row.newMatchAt && !row.triagedAt && (row.relevanceScore ?? 0) >= newMatchMin) newMatchCount++
+        if (row.matchType === 'keyword' && row.newMatchAt && row.untriaged === 1 && (row.relevanceScore ?? 0) >= newMatchMin) newMatchCount++
       }
 
       const posRows = await db

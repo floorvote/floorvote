@@ -153,6 +153,9 @@ export const bills = sqliteTable('bills', {
   // migrations/0066_affected_citations.sql for why these are not normalised.
   affectedCitations: text('affected_citations').notNull().default('[]'),
   priority: text('priority', { enum: ['high', 'medium', 'low'] }),
+  // When the priority was last set (migration 0101). A companion group reads
+  // its priority from the member where it was set most recently.
+  prioritySetAt: text('priority_set_at'),
   sponsor: text('sponsor'),
   sponsorParty: text('sponsor_party'),
   sponsorUrl: text('sponsor_url'),

@@ -11,13 +11,18 @@ export type GroupBill = { billId: string; billNumber: string }
 export type GroupingEventType = 'grouped' | 'split'
 
 /**
- * A team value one bill held that grouping replaced with another bill's. A
- * group resolves each team value to the most recently set, so when the group
- * forms the others give way. Filled in by #377. Empty until team values are
- * shared across a group.
+ * A team field value one bill held that grouping replaced with another bill's
+ * (see **Team field** in CONTEXT.md). A group reads each team field from the
+ * member where it was set most recently, so when bills with different values
+ * group, the older ones give way. Values are as the page shows them ("High",
+ * "Energy, Labor"), and `label` names the field ("position", "priority", or a
+ * custom field's name).
  */
 export type ReplacedTeamValue = {
-  field: string
+  field: 'position' | 'priority' | 'customField'
+  /** The custom field's id, for a custom field. */
+  fieldId?: string
+  label: string
   billId: string
   billNumber: string
   value: string
@@ -43,6 +48,8 @@ export type GroupingEvent = {
   createdAt: string
   actorName: string | null
   with: GroupBill[]
+  /** The team field values the grouping replaced. Always empty for a split. */
+  replaced: ReplacedTeamValue[]
 }
 
 /** One of a member's private notes in a group, as the bill page and note route serve them. */

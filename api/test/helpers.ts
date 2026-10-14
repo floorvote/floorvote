@@ -85,6 +85,7 @@ import migrationSql89 from '../migrations/0089_reaction_notifications.sql?raw'
 import migrationSql90 from '../migrations/0090_email_change_reports.sql?raw'
 import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
 import migrationSql100 from '../migrations/0100_companion_groups.sql?raw'
+import migrationSql101 from '../migrations/0101_team_fields_group.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -272,6 +273,7 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql90, '0090_email_change_reports'),
     parseMigration(migrationSql93, '0093_feed_events_billless'),
     parseMigration(migrationSql100, '0100_companion_groups'),
+    parseMigration(migrationSql101, '0101_team_fields_group'),
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)

@@ -8,6 +8,7 @@ import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
+import { loadGroupTeamValues, recordFieldChanges } from '../lib/teamFields'
 import { nowDb } from '../lib/dbTime'
 import { readConfigString } from '../lib/configValue'
 import {
@@ -750,7 +751,14 @@ async function applyCentralBill(
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
 
+  // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
+  // group's tags before this one, for the team event recording a change.
+  const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
+  if (aiResult) {
+    // This analysis is now the group's most recent, so the group reads its tags.
+    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: aiResult.tags }], null)
+  }
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 
   // bill_texts: upsert from normalized versions
