@@ -44,27 +44,28 @@ let billsListCache: { params: string; page: BillsListPage } | null = null
 let cachedCustomFieldDefs: CustomFieldDef[] | null = null
 let cachedFacetCounts: FacetCounts | null = null
 export const knownStates: Set<string> = new Set()
+export const knownSessions: Set<string> = new Set()
+export const knownStatuses: Set<string> = new Set()
+export const knownTagsCache: Set<string> = new Set()
 
 /**
  * The Subject filter's hover text. The caveat about legislatures that assign
  * no subjects only helps where one is covered, so it appears only when a
- * covered state has no subject group: it never loaded subjects, or it is
- * suppressed through subjects_suppressed_states (which keeps it out of the
- * subject facet too).
+ * covered state has no subjects. That comes from `subjectStates` (every state
+ * with subjects, suppressed ones excluded, independent of the active filters),
+ * not from the subject facet, which a state or search filter can empty of a
+ * state that does have subjects. Not known yet means no caveat.
  */
-function subjectFilterTooltip(coveredStates: string[], subjectGroups: Array<{ state: string }>): string {
+function subjectFilterTooltip(coveredStates: string[], subjectStates: string[] | undefined): string {
   const base = 'Filter by legislature-assigned subject.'
-  const withSubjects = new Set(subjectGroups.map(g => g.state))
-  const without = coveredStates.filter(s => !withSubjects.has(s)).sort()
+  if (!subjectStates) return base
+  const without = coveredStates.filter(s => !subjectStates.includes(s)).sort()
   if (without.length === 0) return base
   const names = without.length <= 2
     ? without.join(' and ')
     : `${without.slice(0, -1).join(', ')}, and ${without[without.length - 1]}`
   return `${base} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for ${names}.)`
 }
-export const knownSessions: Set<string> = new Set()
-export const knownStatuses: Set<string> = new Set()
-export const knownTagsCache: Set<string> = new Set()
 
 /**
  * Read-only peek at the warmed first-page cache. The cache stays module-private
@@ -976,7 +977,7 @@ export function BillList() {
           {f.subjectGroups.length > 0 && (
             <HoverTooltip
               maxWidth={280}
-              text={subjectFilterTooltip(config?.states ?? [], f.subjectGroups)}
+              text={subjectFilterTooltip(config?.states ?? [], facetCounts.subjectStates)}
             >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}

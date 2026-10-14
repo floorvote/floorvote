@@ -33,6 +33,7 @@ type ListBody = {
 
 type FacetsBody = {
   subjects: Record<string, number>
+  subjectStates: string[]
 }
 
 describe('GET /bills — subject filtering', () => {
@@ -139,6 +140,22 @@ describe('GET /bills — subject filtering', () => {
     expect(body.subjects['NJ:Education']).toBe(1)
   })
 
+  // subjectStates answers "which states have subjects at all", so the web app
+  // can tell a state with none from one a filter merely hid. `subjects` above
+  // is scoped by every other active filter; this is not.
+  it('lists the states that have subjects, whatever filters are active', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 's18', state: 'UT' }, ['Election Law'])
+    await seedBillWithSubjects(db, { id: 's19', state: 'NJ' }, ['Education'])
+    await seedBillWithSubjects(db, { id: 's20', state: 'OH' }, [])
+
+    const res = await app.request('/api/bills/facets?state=UT', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.subjects['NJ:Education']).toBeUndefined()
+    expect(body.subjectStates).toEqual(['NJ', 'UT'])
+  })
+
   // IMPORTANT 1 regression: subjectMembership binds 2 params per value with no cap,
   // and a shared/bookmarked URL can carry far more than D1's 100-bound-param limit.
   // Without a cap, this would 500 instead of returning a response. It no longer
@@ -179,6 +196,20 @@ describe('GET /bills — subject suppression', () => {
 
     expect(body.subjects['NJ:State and Local Government']).toBeUndefined()
     expect(body.subjects['UT:Election Administration']).toBe(1)
+  })
+
+  it('subjectStates leaves out a suppressed state', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 'sup4', state: 'NJ' }, ['State and Local Government'])
+    await seedBillWithSubjects(db, { id: 'sup5', state: 'UT' }, ['Election Administration'])
+    await db.insert(associationConfig).values({
+      key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(['NJ']),
+    }).run()
+
+    const res = await app.request('/api/bills/facets', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.subjectStates).toEqual(['UT'])
   })
 
   it('a subject filter naming a suppressed state is ignored, not treated as matching nothing', async () => {

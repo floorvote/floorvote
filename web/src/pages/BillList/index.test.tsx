@@ -102,6 +102,8 @@ const FACETS = {
   position: {},
   tags: {},
   subjects: { 'UT:Counties': 1 } as Record<string, number>,
+  // Unfiltered, unlike `subjects`: every state that has subjects at all.
+  subjectStates: ['UT'] as string[],
   customFields: {},
   myBillsCount: 0,
   newMatchesCount: 0,
@@ -241,6 +243,7 @@ beforeEach(() => {
   resolveCustomFields = null
   configState.value = null
   FACETS.subjects = { 'UT:Counties': 1 }
+  FACETS.subjectStates = ['UT']
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -334,12 +337,25 @@ describe('BillList page', () => {
     it('is just the short text when every covered state has subjects', async () => {
       configState.value = { states: ['NJ', 'UT'] }
       FACETS.subjects = { 'UT:Counties': 1, 'NJ:Elections': 2 }
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    // The subjects facet is scoped by the active filters, so a State=UT filter
+    // (or a search that only hits UT bills) leaves NJ out of it even though NJ
+    // has subjects. The tooltip must go by subjectStates, not by the facet.
+    it('is just the short text when a filter hides a state that does have subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subjectStates = ['NJ', 'UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
     })
 
     it('adds the caveat, naming the state, when a covered state has no subjects', async () => {
       configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(
         `${SHORT} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for NJ.)`,
@@ -348,6 +364,7 @@ describe('BillList page', () => {
 
     it('names every covered state that has no subjects, with a serial comma', async () => {
       configState.value = { states: ['AZ', 'NJ', 'OH', 'UT'] }
+      FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
       expect(await screen.findByText(/No subjects for AZ, NJ, and OH\.\)$/)).toBeInTheDocument()
     })
