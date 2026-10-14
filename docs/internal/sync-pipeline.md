@@ -25,7 +25,7 @@ LegiScan is the default **provider** (`central/src/providers/legiscan/`). Core (
 | `listMeasures` | `getMasterList?id=` (logged as `getMasterListBySession`) | Cron full pass; `backfill-stub-actions` |
 | `listChangeHashes` (optional) | `getMasterListRaw` | Cron raw pass. A provider without it skips raw-pass hours. |
 | `fetchMeasure` | `getBill` | Ingestor |
-| `fetchDocument` (optional) | `getBillText` | Ingestor, on both the normal and `skipFetch` paths, only when a text's `state_link` fails or selects its version with a URL fragment the server never sees |
+| `fetchDocument` (optional) | `getBillText` | Ingestor, on both the normal and `skipFetch` paths, only when a text's `state_link` fails, selects its version with a URL fragment the server never sees, or returns a placeholder page instead of the document (Illinois's "too large to display" page) |
 | `listVoteDatasets` (optional) | `getDatasetList` | Cron, once a day at 3 ET, for states with a session due its weekly vote check ([legiscan-member-votes.md](legiscan-member-votes.md)) |
 | `fetchVoteDataset` (optional) | `getDatasetRaw` | Ingestor, for a `vote-dataset` message, when a session's dataset hash changed |
 

@@ -707,8 +707,25 @@ export function validateTextPayload(
     return `body far smaller than declared size (${bytes.byteLength} vs ${declaredSize} bytes)`
   }
 
+  // Illinois serves a ~64KB page in place of any bill above a size threshold,
+  // a plausible size for a bill that the ratio above cannot catch. HTML only,
+  // and only for bodies small enough to be that page, so a multi-megabyte bill
+  // is never decoded just to look for the phrase.
+  if (!mime.includes('pdf') && bytes.byteLength <= INTERSTITIAL_SCAN_LIMIT_BYTES) {
+    const text = new TextDecoder('latin1').decode(bytes)
+    if (ILLINOIS_TOO_LARGE_MARKER.test(text)) {
+      return `a "too large to display" interstitial page instead of the document (${bytes.byteLength} bytes)`
+    }
+  }
+
   return null
 }
+
+/** ILGA's wording, specific enough that a bill discussing "too large" cannot match. */
+const ILLINOIS_TOO_LARGE_MARKER = /full text of the file you requested is too large for display/i
+
+/** The Illinois interstitial is ~64KB; anything past this is a real document. */
+const INTERSTITIAL_SCAN_LIMIT_BYTES = 256 * 1024
 
 /**
  * Can this URL name a specific document version?
