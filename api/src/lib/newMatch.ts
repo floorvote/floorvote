@@ -4,11 +4,12 @@ import type { AppDb } from '../types'
 
 /**
  * Minimum relevance score for a keyword match to surface as a new match: in the
- * "New matches" worklist, the "N new" chip, and the digest's new-match section.
- * Stored in association_config as `new_match_min_relevance`. Default 0 — every
- * keyword match surfaces. Invalid or negative values are treated as 0. The feed
- * `bill_matched` event is NOT gated by this threshold (the analyzed-scope feed is
- * the comprehensive match record).
+ * "New matches" worklist, the "N new" chip, the digest's new-match section, and
+ * the feed's new-matches row. Stored in association_config as
+ * `new_match_min_relevance`. Default 0 — every keyword match surfaces. Invalid or
+ * negative values are treated as 0. The per-bill feed `bill_matched` event is NOT
+ * gated by this threshold (the analyzed-scope feed is the comprehensive match
+ * record).
  */
 export async function getNewMatchMinRelevance(db: AppDb): Promise<number> {
   const row = await db.select().from(associationConfig)
@@ -46,4 +47,34 @@ export function newMatchWhere(minRelevance: number): SQL {
  */
 export function routineNewMatchWhere(minRelevance: number): SQL {
   return and(newMatchWhere(minRelevance), eq(bills.matchProvenance, 'routine'))!
+}
+
+/**
+ * Adds a new match to the feed's summary row for the day: one bill-less
+ * `new_matches` event, whose metadata.billIds names the bills it counts. Called
+ * once, when a bill's match is recorded. Opt-in: only a routine match above the
+ * instance's minimum, judged by routineNewMatchWhere, ever joins the row, so a
+ * bulk match, one with no provenance, and one already triaged or prioritized
+ * never do. The row is brought forward to now, so it lights the feed dot again.
+ *
+ * The write is one upsert on the day's unique index (migration 0099), so
+ * matches processed at the same moment share the row instead of racing to
+ * create two or overwriting each other's bill ids. A bill already on the row
+ * changes nothing.
+ */
+export async function addToNewMatchesRow(db: AppDb, billId: string): Promise<void> {
+  const qualifies = await db.select({ id: bills.id }).from(bills)
+    .where(and(eq(bills.id, billId), routineNewMatchWhere(await getNewMatchMinRelevance(db))))
+    .get()
+  if (!qualifies) return
+
+  const named = sql`EXISTS (SELECT 1 FROM json_each(feed_events.metadata, '$.billIds') WHERE value = ${billId})`
+  await db.run(sql`
+    INSERT INTO feed_events (id, type, bill_id, user_id, metadata)
+    VALUES (${crypto.randomUUID()}, 'new_matches', NULL, 'system', json_object('billIds', json_array(${billId})))
+    ON CONFLICT (date(created_at)) WHERE type = 'new_matches' DO UPDATE SET
+      metadata = CASE WHEN ${named} THEN feed_events.metadata
+                      ELSE json_set(feed_events.metadata, '$.billIds[#]', ${billId}) END,
+      created_at = CASE WHEN ${named} THEN feed_events.created_at ELSE datetime('now') END
+  `)
 }

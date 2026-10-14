@@ -287,7 +287,7 @@ export function FilterSheet({
 
   if (!isOpen) return null
 
-  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts, stageUseful, stageActive: stages.length > 0 }
+  const filterDimensionCtx: FilterDimensionContext = { uniqueStates, isAdmin, isMultiState, hasDrafts: hasDrafts ?? false, draftsActive: drafts, newMatchesActive: newMatches, stageUseful, stageActive: stages.length > 0 }
   const stageVisible = isFilterDimensionVisible('stage', filterDimensionCtx)
   const stateVisible = isFilterDimensionVisible('state', filterDimensionCtx)
   const newMatchesVisible = isFilterDimensionVisible('newMatches', filterDimensionCtx)
@@ -445,7 +445,7 @@ export function FilterSheet({
                 />
               </div>
 
-              {/* Admin-only, same gate as desktop's "New matches" toggle
+              {/* Admin-only unless its filter is on, same gate as desktop's "New matches" toggle
                   (see lib/filterDimensions.ts) — a toggle, not a list of
                   options, so it stays a direct control here too rather than
                   becoming a drill-down target. */}
@@ -455,7 +455,7 @@ export function FilterSheet({
                   <SheetChip
                     label={filterDimensionLabel('newMatches')}
                     active={newMatches}
-                    count={newMatchesCount ?? 0}
+                    count={isAdmin ? (newMatchesCount ?? 0) : undefined}
                     onClick={() => onNewMatchesChange(!newMatches)}
                   />
                 </div>

@@ -2,7 +2,7 @@ import { dbTsToEpoch, dbTsToLocalDay } from './time'
 
 export type FeedEvent = {
   id: string
-  type: 'bill_added' | 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' | 'bill_matched'
+  type: 'bill_added' | 'priority_set' | 'position_set' | 'comment_added' | 'vote_milestone' | 'bill_updated' | 'hearing_added' | 'hearing_changed' | 'hearing_cancelled' | 'bill_matched' | 'new_matches'
   // Null for an event about no single bill, such as a bulk edit. Then the bill*
   // fields below are empty or null, and `metadata` says what the event is about
   // (a bulk edit lists its bills as metadata.billIds).

@@ -256,7 +256,7 @@ export const notes = sqliteTable('notes', {
 export const feedEvents = sqliteTable('feed_events', {
   id: text('id').primaryKey(),
   type: text('type', {
-    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched'],
+    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched', 'new_matches'],
   }).notNull(),
   // Null for an event about no single bill (a bulk edit, and later instance-level
   // events). Such an event keeps what it is about in `metadata`, and survives the

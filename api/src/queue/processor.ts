@@ -9,6 +9,7 @@ import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from 
 import { syncBillSubjects } from '../lib/billSubjects'
 import { nowDb } from '../lib/dbTime'
 import { readConfigString } from '../lib/configValue'
+import { addToNewMatchesRow } from '../lib/newMatch'
 import {
   ASSOCIATION_NAME_PLACEHOLDER,
   buildDefaultAiContext,
@@ -816,6 +817,9 @@ export async function processCentralNotification(
         userId:   'system',
         metadata: JSON.stringify(matchProvenance ? { matchProvenance } : {}),
       })
+      // The feed's one row for the day's routine new matches. Judged by the same
+      // definition as the digest and the triage list, on the match just recorded.
+      await addToNewMatchesRow(db, billInternalId)
     }
   }
 

@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification, processQueue, shedRetryDelay } from '../../src/queue/processor'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
 import { parseSubjects } from '../../src/lib/billSubjects'
 import type { TenantQueueMessage } from '../../src/types'
@@ -334,6 +334,109 @@ describe('processCentralNotification', () => {
 
     const row = await db.select().from(bills).get()
     expect(row!.matchProvenance).toBe('bulk')
+  })
+
+  // ── the new-matches feed row (#367): a routine new match above the instance's
+  // minimum joins one bill-less summary row for the day. Bulk matches, matches
+  // with no declaration, and matches under the minimum never do.
+
+  const BILL_B = 'ocd-bill/test-uuid-00000000-0002'
+  const BILL_C = 'ocd-bill/test-uuid-00000000-0003'
+  const stubBills = () => vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+    if (url.includes('/text')) return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+    const number = url.includes(BILL_C) ? 'HB 300' : url.includes(BILL_B) ? 'HB 200' : fakeCentralBill.number
+    const billId = url.includes(BILL_C) ? BILL_C : url.includes(BILL_B) ? BILL_B : BILL_ID
+    return Promise.resolve({ ok: true, json: async () => ({ ...fakeCentralBill, billId, number }) })
+  }))
+  const match = (db: ReturnType<typeof getDb>, billId: string, matchProvenance?: 'routine' | 'bulk', more: Partial<TenantQueueMessage> = {}) =>
+    processCentralNotification({ tenantId: 'test-org', billId, matchType: 'keyword', ...(matchProvenance ? { matchProvenance } : {}), ...more }, testEnv as any, db)
+  const newMatchRows = (db: ReturnType<typeof getDb>) =>
+    db.select().from(feedEvents).where(eq(feedEvents.type, 'new_matches')).all()
+  const internalId = async (db: ReturnType<typeof getDb>, externalId: string) =>
+    (await db.select().from(bills).where(eq(bills.externalId, externalId)).get())!.id
+
+  it('writes one bill-less new_matches row for a routine match, naming its bill', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await match(db, BILL_ID, 'routine')
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].billId).toBeNull()
+    expect(rows[0].userId).toBe('system')
+    expect(JSON.parse(rows[0].metadata).billIds).toEqual([await internalId(db, BILL_ID)])
+  })
+
+  it('puts a second routine match the same day on the same row and brings it forward', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    stubBills()
+    await match(db, BILL_ID, 'routine')
+    // The first match was earlier in the day. Only a bumped row can light the dot again.
+    await db.update(feedEvents).set({ createdAt: sql`datetime('now', 'start of day')` }).where(eq(feedEvents.type, 'new_matches'))
+    const before = (await newMatchRows(db))[0].createdAt
+    await match(db, BILL_B, 'routine')
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].metadata).billIds).toEqual([await internalId(db, BILL_ID), await internalId(db, BILL_B)])
+    expect(rows[0].createdAt > before).toBe(true)
+  })
+
+  it('leaves bulk matches and matches with no declaration out of the row', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    stubBills()
+    await match(db, BILL_ID, 'bulk')
+    await match(db, BILL_B)
+    await match(db, BILL_C, 'routine')
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].metadata).billIds).toEqual([await internalId(db, BILL_C)])
+  })
+
+  it('leaves a match under the instance minimum out of the row', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values([
+      { key: 'keywords', value: JSON.stringify(['election']) },
+      { key: 'new_match_min_relevance', value: '9' },
+    ])
+    stubBills()
+    await match(db, BILL_ID, 'routine') // relevance 8, under 9
+    await db.update(associationConfig).set({ value: '8' }).where(eq(associationConfig.key, 'new_match_min_relevance'))
+    await match(db, BILL_B, 'routine') // relevance 8, at the minimum
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].metadata).billIds).toEqual([await internalId(db, BILL_B)])
+  })
+
+  it('leaves a match on a bill that already has a priority out of the row', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    stubBills()
+    await db.insert(bills).values({
+      id: crypto.randomUUID(), externalId: BILL_ID, billNumber: 'HB 100', title: 'T', state: 'RI',
+      priority: 'high', triagedAt: '2026-01-01 00:00:00',
+    })
+    await match(db, BILL_ID, 'routine')
+    await match(db, BILL_B, 'routine')
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].metadata).billIds).toEqual([await internalId(db, BILL_B)])
+  })
+
+  it('does not add a bill to the row a second time when it is re-analysed', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    await match(db, BILL_ID, 'routine')
+    await match(db, BILL_ID, undefined, { forceAI: true })
+
+    const rows = await newMatchRows(db)
+    expect(rows).toHaveLength(1)
+    expect(JSON.parse(rows[0].metadata).billIds).toHaveLength(1)
   })
 
   // ── AI must not run on a demo tenant, and must not re-run on metadata refresh ──

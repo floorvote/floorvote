@@ -83,6 +83,8 @@ Admins can select bills and edit them together—set a priority, record the team
 
 When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Admins get a New matches filter that shows which bills are still waiting on that decision.
 
+Everyone else sees them too. Bills that newly match as the legislature files them (not ones brought in by seeding a session or re-running keywords) appear in everyone's feed as one row a day, such as "5 new bills matched your keywords," that opens to the bills. The admin's minimum relevance for new matches applies, and a bill that already has a priority keeps its usual card.
+
 ## Shared calendar
 
 Hearings on bills your team has prioritized are added to your team's calendar automatically as they're scheduled. You can add custom events of your own (like coalition calls) alongside them. Everyone on the team can subscribe to the calendar from their own calendar app.

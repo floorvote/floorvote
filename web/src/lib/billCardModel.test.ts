@@ -121,6 +121,15 @@ describe('buildActivityRowModel', () => {
   it('says "1 bill" for one', () => {
     expect(buildActivityRowModel(event({ metadata: { priority: 'high', count: 1, billIds: ['a'] } })).text).toBe('Ada Admin set priority to high on 1 bill')
   })
+  it('reads the new-matches row as a count of bills, with no author', () => {
+    const m = buildActivityRowModel(event({ type: 'new_matches', userId: 'system', userName: '', metadata: { billIds: ['a', 'b', 'c', 'd', 'e'] } }))
+    expect(m.text).toBe('5 new bills matched your keywords')
+    expect(m.iconName).toBe('new_releases')
+    expect(m.billCount).toBe(5)
+  })
+  it('says "1 new bill matched" for one', () => {
+    expect(buildActivityRowModel(event({ type: 'new_matches', metadata: { billIds: ['a'] } })).text).toBe('1 new bill matched your keywords')
+  })
   it('renders a bill-less event of a type it has no wording for as plain activity', () => {
     const m = buildActivityRowModel(event({ type: 'bill_matched', metadata: {} }))
     expect(m.text).toBe('Activity')

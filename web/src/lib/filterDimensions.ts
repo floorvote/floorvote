@@ -85,6 +85,10 @@ export interface FilterDimensionContext {
    *  active, even if that filter combined with others now matches zero
    *  drafts — otherwise a user has no way to turn it back off except Reset. */
   draftsActive: boolean
+  /** Whether the New matches filter is currently ON. The filter is otherwise
+   *  admin-only, but a member lands on it from the digest and from the feed's
+   *  new-matches row, and must keep a chip that names it and clears it. */
+  newMatchesActive: boolean
   /** Whether some covered state's provider fills in the in-committee statuses
    *  (`useStageFilterUseful`). Absent counts as true. */
   stageUseful?: boolean
@@ -115,7 +119,9 @@ export interface FilterDimensionDef {
 export const FILTER_DIMENSIONS: readonly FilterDimensionDef[] = [
   { key: 'state',      label: 'State',         kind: 'options', scope: 'bill',   isVisible: ctx => ctx.isMultiState },
   { key: 'myBills',    label: 'My bills',      kind: 'toggle',  scope: 'workflow', isVisible: () => true },
-  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin },
+  // Admin-only worklist, but visible to anyone while its own filter is on, so a member
+  // who followed a link to it can see what is narrowing the list and turn it off.
+  { key: 'newMatches', label: 'New matches',   kind: 'toggle',  scope: 'workflow', isVisible: ctx => ctx.isAdmin || ctx.newMatchesActive },
   { key: 'unvoted',    label: 'Not yet voted', kind: 'toggle',  scope: 'workflow', isVisible: () => true },
   // Hidden only when the tenant has no drafts at all (hasDrafts). Never
   // hidden because the active filters happen to exclude drafts — draftsActive
