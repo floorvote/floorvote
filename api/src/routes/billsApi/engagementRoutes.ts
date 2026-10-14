@@ -17,7 +17,6 @@ import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { displayName } from '../../lib/displayName'
-import { chunk } from '../../lib/chunk'
 import { inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 
 // Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
@@ -27,6 +26,9 @@ import { inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../.
 // can see: the busiest seeded bill carries 8 comments, and the bill-detail
 // payload returns only the first 20.
 export const DEMO_BILL_COMMENT_CAP = 60
+
+// The most companion notes one note save may merge away.
+const MAX_NOTE_MERGES = 50
 
 export function registerEngagementRoutes(router: Hono<AppEnv>) {
   // POST /bills/:id/votes
@@ -291,15 +293,17 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     if (!bill) return c.json({ error: 'Not found' }, 404)
     const body = await c.req.json<{ content?: string; merges?: unknown }>().catch(() => ({} as { content?: string; merges?: unknown }))
     const content = body.content ?? ''
-    // The companion bills whose notes the page showed stacked with this one,
-    // and which this save therefore replaces.
-    const merges = Array.isArray(body.merges) ? body.merges.filter((m): m is string => typeof m === 'string' && m !== id) : []
+    // The companion bills whose notes the page showed with this one, and
+    // which this save therefore replaces. A group is a handful of bills, so
+    // more than MAX_NOTE_MERGES is not a page's request.
+    const merges = [...new Set(Array.isArray(body.merges) ? body.merges.filter((m): m is string => typeof m === 'string' && m !== id) : [])]
+    if (merges.length > MAX_NOTE_MERGES) return c.json({ error: `merges may name at most ${MAX_NOTE_MERGES} bills` }, 400)
     if (new TextEncoder().encode(content).length > 51_200) {
       return c.json({ error: 'Note too long (max 50 KB)' }, 400)
     }
     const now = nowDb()
 
-    await db.insert(notes)
+    const upsert = db.insert(notes)
       .values({
         id: crypto.randomUUID(),
         billId: id,
@@ -313,16 +317,19 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         set: { content, updatedAt: now },
       })
     // One note per member per companion group: the page showed the member's
-    // notes from other bills stacked with this one, and the edit replaces
-    // them. Only the ones it showed, so a page loaded before the bills were
-    // grouped never deletes a note its member didn't see. Only notes in this
-    // bill's group, and only this member's.
-    for (const part of chunk(merges, 50)) {
-      await db.delete(notes).where(and(
+    // notes from other bills with this one, and the edit replaces them. Only
+    // the ones it showed, so a page loaded before the bills were grouped never
+    // deletes a note its member didn't see. Only notes in this bill's group,
+    // and only this member's. One batch, so two pages saving at once leave
+    // the later save's note rather than neither.
+    if (merges.length === 0) {
+      await upsert
+    } else {
+      await db.batch([upsert, db.delete(notes).where(and(
         eq(notes.userId, currentUser.id),
         inGroupOf(notes.billId, id),
-        inArray(notes.billId, part),
-      ))
+        inArray(notes.billId, merges),
+      ))])
     }
 
     return c.json({ content })

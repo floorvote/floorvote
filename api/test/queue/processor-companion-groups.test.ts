@@ -47,6 +47,36 @@ async function deliver(handle: string, opts: { metadataOnly?: boolean } = { meta
   await processCentralNotification({ tenantId: 'test-org', billId: handle, ...opts }, testEnv as never, getDb(env.DB))
 }
 
+/**
+ * The instance's D1, with the `n`th read of bill_identical_links held until
+ * `release` resolves, so a test can run another delivery in the middle of a
+ * recompute's walk over the links. Batches go to the real statements.
+ */
+function holdingLinkRead(n: number, release: Promise<void>): D1Database {
+  const real = env.DB
+  let reads = 0
+  type Stmt = D1PreparedStatement & { real: D1PreparedStatement }
+  const wrap = (stmt: D1PreparedStatement, query: string): Stmt => {
+    const run = <T>(f: () => Promise<T>) => async () => {
+      if (/^\s*select/i.test(query) && query.includes('bill_identical_links') && ++reads === n) await release
+      return f()
+    }
+    return {
+      real: stmt,
+      bind: (...values: unknown[]) => wrap(stmt.bind(...values), query),
+      all: run(() => stmt.all()),
+      raw: run(() => stmt.raw()),
+      first: run(() => stmt.first()),
+      run: run(() => stmt.run()),
+    } as unknown as Stmt
+  }
+  return {
+    prepare: (query: string) => wrap(real.prepare(query), query),
+    batch: (stmts: Stmt[]) => real.batch(stmts.map(s => s.real ?? s)),
+    exec: (query: string) => real.exec(query),
+  } as unknown as D1Database
+}
+
 async function groupKeyOf(id: string) {
   return (await getDb(env.DB).select({ k: bills.groupKey }).from(bills).where(eq(bills.id, id)).get())?.k ?? null
 }
@@ -158,6 +188,32 @@ describe('companion groups at ingest', () => {
       const named = (await eventsOf(id)).filter(e => e.type === 'grouped').flatMap(e => e.with.map((b: { billId: string }) => b.billId))
       expect(named.sort()).toEqual(['a190', 'b1713', 'c1714'].filter(x => x !== id))
     }
+  })
+
+  it('keeps a pair grouped when one delivery drops its link while the other adds the reverse one', async () => {
+    // Grouped through A190 naming S1713.
+    central.set('legiscan:190', { number: 'A190', relatedBills: [identical('S1713', 1713)] })
+    central.set('legiscan:1713', { number: 'S1713', relatedBills: [] })
+    await deliver('legiscan:190')
+    expect(await groupKeyOf('b1713')).toBe('a190')
+
+    // Now A190 drops its link and S1713 names A190 instead: still one pair.
+    central.set('legiscan:190', { number: 'A190', relatedBills: [] })
+    central.set('legiscan:1713', { number: 'S1713', relatedBills: [identical('A190', 190)] })
+    // A190's delivery reads its current links, then A190's neighbors (none
+    // once its link is gone), then S1713's. Hold that third read until
+    // S1713's whole delivery, which adds the reverse link, has finished.
+    let release!: () => void
+    const held = new Promise<void>(r => { release = r })
+    const first = processCentralNotification({ tenantId: 'test-org', billId: 'legiscan:190', metadataOnly: true }, testEnv as never, getDb(holdingLinkRead(3, held)))
+    await new Promise(r => setTimeout(r, 50))
+    await deliver('legiscan:1713')
+    release()
+    await first
+
+    expect([await groupKeyOf('a190'), await groupKeyOf('b1713')]).toEqual(['a190', 'a190'])
+    expect((await eventsOf('a190')).map(e => e.type)).toEqual(['grouped'])
+    expect((await eventsOf('b1713')).map(e => e.type)).toEqual(['grouped'])
   })
 
   it('writes no new event when a delivery leaves the group as it was', async () => {

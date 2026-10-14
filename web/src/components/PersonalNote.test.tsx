@@ -54,4 +54,12 @@ describe('a personal note across a companion group', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(put).toHaveBeenCalledWith('/bills/a190/note', expect.objectContaining({ body: JSON.stringify({ content: '<p>On A190</p>', merges: [] }) })))
   })
+
+  it("merges a lone note from a companion, which it shows as this bill's note", async () => {
+    const put = vi.spyOn(api, 'apiFetch').mockResolvedValue({ content: '<p>On S1713</p>' } as never)
+    render(<PersonalNote billId="a190" initialContent="<p>On S1713</p>" notes={[NOTES[1]]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Personal note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(put).toHaveBeenCalledWith('/bills/a190/note', expect.objectContaining({ body: JSON.stringify({ content: '<p>On S1713</p>', merges: ['b1713'] }) })))
+  })
 })

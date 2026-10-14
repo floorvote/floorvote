@@ -189,6 +189,8 @@ async function tryRecomputeGroups(
   const nodes = new Map<string, Node>()
   const neighbors = new Map<string, Set<string>>()
   const oldGroups = new Map<string, Node[]>()
+  // Every link row the walk read, by `externalId companionExternalId`.
+  const linksRead = new Map<string, [string, string]>()
 
   for (const part of chunk([...billIds], 90)) {
     for (const n of await db.select(nodeColumns).from(bills).where(inArray(bills.id, part)).all()) nodes.set(n.id, n)
@@ -200,7 +202,8 @@ async function tryRecomputeGroups(
   while (queue.length > 0) {
     const node = nodes.get(queue.shift()!)!
     if (neighbors.has(node.id)) continue
-    const linked = await identicalNeighbors(db, node)
+    const { linked, links } = await identicalNeighbors(db, node)
+    for (const l of links) linksRead.set(l.join(' '), l)
     neighbors.set(node.id, new Set(linked.map(n => n.id)))
     let before: Node[] = []
     if (node.groupKey !== null) {
@@ -215,8 +218,11 @@ async function tryRecomputeGroups(
     }
   }
 
-  // Connected components. The links are read in both directions, so the
-  // neighbor sets are already symmetric.
+  // A link named by either bill is one edge. Each bill's links were read at a
+  // different moment, so make the neighbor sets symmetric before walking them.
+  for (const [id, set] of neighbors) for (const other of set) neighbors.get(other)?.add(id)
+
+  // Connected components.
   const componentOf = new Map<string, string[]>()
   for (const id of nodes.keys()) {
     if (componentOf.has(id)) continue
@@ -231,7 +237,6 @@ async function tryRecomputeGroups(
       }
     }
   }
-
 
   const now = nowDb()
   const byNumber = (ids: Iterable<string>): GroupBill[] =>
@@ -260,13 +265,26 @@ async function tryRecomputeGroups(
   const rekeyed = [...rekey].flatMap(([key, ids]) => ids.map(id => [id, key]))
   if (rekeyed.length === 0 && events.length === 0) return true
 
-  // Every key as this recompute read it. Each statement below applies only
-  // while all still hold, and the batch is one transaction, so the events and
-  // keys land together or not at all. JSON parameters keep any group size
-  // under D1's parameter limit.
+  // Everything this recompute read: each bill's key, every link touching the
+  // bills it walked, and which of the linked handles are bills here. Each
+  // statement below applies only while all of it still holds, and the batch
+  // is one transaction, so the events and keys land together or not at all,
+  // and a recompute that raced with a change to keys, links, or bills retries
+  // instead of writing a grouping computed from a mix of before and after.
+  // JSON parameters keep any group size under D1's parameter limit.
   const read = [...nodes.values()].map(n => [n.id, n.groupKey])
+  const handles = [...nodes.values()].flatMap(n => (n.externalId ? [n.externalId] : []))
+  const links = [...linksRead.values()]
+  const linkedHandles = [...new Set(links.flat())]
+  const linkedBills = [...nodes.values()].filter(n => n.externalId !== null && linkedHandles.includes(n.externalId)).length
   const unchanged = sql`(SELECT COUNT(*) FROM bills b, json_each(${JSON.stringify(read)}) r
-    WHERE b.id = json_extract(r.value, '$[0]') AND b.group_key IS json_extract(r.value, '$[1]')) = ${read.length}`
+      WHERE b.id = json_extract(r.value, '$[0]') AND b.group_key IS json_extract(r.value, '$[1]')) = ${read.length}
+    AND (SELECT COUNT(*) FROM bill_identical_links l
+      WHERE l.external_id IN (SELECT value FROM json_each(${JSON.stringify(handles)}))
+        OR l.companion_external_id IN (SELECT value FROM json_each(${JSON.stringify(handles)}))) = ${links.length}
+    AND (SELECT COUNT(*) FROM bill_identical_links l, json_each(${JSON.stringify(links)}) r
+      WHERE l.external_id = json_extract(r.value, '$[0]') AND l.companion_external_id = json_extract(r.value, '$[1]')) = ${links.length}
+    AND (SELECT COUNT(*) FROM bills b WHERE b.external_id IN (SELECT value FROM json_each(${JSON.stringify(linkedHandles)}))) = ${linkedBills}`
   const [inserted, updated] = await db.batch([
     // Events first: the key update below changes what the guard reads.
     // Columns in team_events' order: id, bill_id, type, actor_user_id, metadata, created_at.
@@ -288,16 +306,22 @@ function changesOf(result: unknown): number {
   return (result as { meta?: { changes?: number } }).meta?.changes ?? 0
 }
 
-/** The bills in this instance linked to `node` by an identical relationship, named by either bill. */
-async function identicalNeighbors(db: AppDb, node: Node): Promise<Node[]> {
-  if (!node.externalId) return []
-  return db.select(nodeColumns).from(bills).where(and(
-    ne(bills.id, node.id),
-    or(
-      inArray(bills.externalId, db.select({ h: billIdenticalLinks.companionExternalId }).from(billIdenticalLinks).where(eq(billIdenticalLinks.externalId, node.externalId))),
-      inArray(bills.externalId, db.select({ h: billIdenticalLinks.externalId }).from(billIdenticalLinks).where(eq(billIdenticalLinks.companionExternalId, node.externalId))),
-    ),
-  )).orderBy(asc(bills.id)).all()
+/**
+ * The identical links naming `node` or named by it, and the bills in this
+ * instance at their other ends.
+ */
+async function identicalNeighbors(db: AppDb, node: Node): Promise<{ linked: Node[]; links: Array<[string, string]> }> {
+  if (!node.externalId) return { linked: [], links: [] }
+  const rows = await db.select({ a: billIdenticalLinks.externalId, b: billIdenticalLinks.companionExternalId })
+    .from(billIdenticalLinks)
+    .where(or(eq(billIdenticalLinks.externalId, node.externalId), eq(billIdenticalLinks.companionExternalId, node.externalId)))
+    .all()
+  const others = [...new Set(rows.map(r => (r.a === node.externalId ? r.b : r.a)))]
+  const linked: Node[] = []
+  for (const part of chunk(others, 90)) {
+    linked.push(...await db.select(nodeColumns).from(bills).where(and(ne(bills.id, node.id), inArray(bills.externalId, part))).all())
+  }
+  return { linked: linked.sort((x, y) => (x.id < y.id ? -1 : 1)), links: rows.map(r => [r.a, r.b]) }
 }
 
 function compareBillNumbers(a: { billNumber: string }, b: { billNumber: string }): number {

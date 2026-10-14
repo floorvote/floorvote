@@ -24,16 +24,19 @@ export function PersonalNote({ billId, initialContent, notes }: PersonalNoteProp
   // The next save stores them as one note on this bill, and the API removes
   // the member's others.
   const [stacked, setStacked] = useState<GroupNote[] | null>(notes && notes.length > 1 ? notes : null)
+  // The other bills' notes this page shows, stacked or, for a lone one, as
+  // this bill's note. The next save replaces them, and the API deletes only
+  // these, so it never removes a note this page didn't show.
+  const [shownElsewhere, setShownElsewhere] = useState<string[]>(() => (notes ?? []).map(n => n.billId).filter(id => id !== billId))
 
   async function save(value: string | null) {
     await apiFetch(`/bills/${billId}/note`, {
       method: 'PUT',
-      // The other bills' notes shown stacked here, which this save replaces.
-      // The API deletes only these, so it never removes a note this page didn't show.
-      body: JSON.stringify({ content: value, merges: (stacked ?? []).map(n => n.billId).filter(id => id !== billId) }),
+      body: JSON.stringify({ content: value, merges: shownElsewhere }),
     })
     setContent(value ?? '')
     setStacked(null)
+    setShownElsewhere([])
     setIsEditing(false)
   }
 

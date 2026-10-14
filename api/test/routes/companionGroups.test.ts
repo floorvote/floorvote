@@ -278,6 +278,14 @@ describe('bill routes across a companion group', () => {
       expect((await detail('ben', 'a190')).myNotes?.map(n => n.content)).toEqual(['<p>Ben on S1713</p>'])
     })
 
+    it('merge a lone companion note the page showed into the edit', async () => {
+      await db().delete(notes).where(and(eq(notes.billId, 'a190'), eq(notes.userId, user.ann)))
+      await group()
+      expect((await detail('ann', 'a190')).myNotes?.map(n => n.billId)).toEqual(['b1713'])
+      await as('ann', '/bills/a190/note', { method: 'PUT', body: JSON.stringify({ content: '<p>edited</p>', merges: ['b1713'] }) })
+      expect((await detail('ann', 'b1713')).myNotes?.map(n => [n.billId, n.content])).toEqual([['a190', '<p>edited</p>']])
+    })
+
     it('keep a companion note the page never showed, when a page from before the grouping saves', async () => {
       await group()
       // A tab opened before the bills were grouped saves with no merged notes.
