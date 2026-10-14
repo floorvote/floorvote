@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin } from '../middleware/auth'
 import { getDb } from '../db/client'
 import { calendarEvents, calendarEventBills, bills, associationConfig } from '../db/schema'
 import { buildVCalendar, tzidForState, type IcalEvent } from '../lib/ical'
-import { visibleCalendarEvent } from '../lib/calendarVisibility'
+import { visibleCalendarEvent, billEntryGroupKey } from '../lib/calendarVisibility'
 import { hearingBody, customBody, customUrl } from '../lib/calendarIcsBody'
 import { billUrl } from '../../../shared/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
@@ -203,10 +203,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const hearingGroups = new Map<string, EventResult>()
   for (const e of entries) {
     if (e.source !== 'hearing') { result.push(e); continue }
-    // A deadline never merges into a meeting. Other kinds aren't told apart:
-    // an entry central hasn't resent since kinds arrived has none, and must
-    // still merge with the same meeting on another bill.
-    const key = `${e.kind === 'deadline' ? 'deadline' : 'event'}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+    const key = billEntryGroupKey(e)
     const g = hearingGroups.get(key)
     if (!g) {
       hearingGroups.set(key, e)
