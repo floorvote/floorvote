@@ -289,6 +289,17 @@ expect(inventoryProblems(inventory, fixtures, vocabulary)).toEqual([])
 
 The check fails on any fixture field the inventory doesn't list, and on an inventory entry naming an extra the vocabulary lacks. `unfedExtras(vocabulary, ...inventories)` from the same helper lists the declared extras no inventory entry names, across all of a provider's inventories. An ignored object or array covers everything inside it, while a mapped one doesn't, so a field the feed starts sending fails the test until someone decides what to do with it. The test-only example provider (`central/test/providers/example/`) shows the whole path: its vocabulary declares extras, its inventory lists its fixture's fields, its mapping test runs the check, and `central/test/cron/provider-extras.test.ts` follows the extras from the feed to the bill API at the main seam. LIMS keeps two, for its BulkData record and its LegislationDetails response (`central/src/providers/lims/inventory.ts`), Maryland one, for a record of its session file (`central/src/providers/mga/inventory.ts`), and Virginia one, for every column of its data files (`central/src/providers/lis/inventory.ts`). LegiScan doesn't keep one, since central's shapes are LegiScan's own.
 
+### Relationship kinds
+
+A bill's relationships to other bills (`bill_sasts`, LegiScan's "SAST") are stored as the provider published them: a numeric type id, and a label such as "Same As" or "Cross-filed". Providers don't agree on either. LegiScan labels identical companions "Same As" in New Jersey, Texas, and Congress and "Crossfiled" in Washington and Wisconsin, Maryland's own feed says "Cross-filed," and Michigan uses LegiScan's "Same As" for tie-barred packages of different bills. Type ids collide across providers (LegiScan's 1 is "Same As," and Maryland's mapping writes 1 for "Cross-filed").
+
+So each provider's vocabulary maps its labels to one of three **kinds** (`shared/relationshipKinds.ts`) in a `relationships` section: a provider `default`, and per-state `states` overrides. `identical` is the same bill filed twice, `package` is different bills the legislature moves together, and `related` is everything else, including any label the vocabulary doesn't list.
+
+- **Matched by name.** Never by type id. The match ignores case, spacing, and hyphens (`relationshipKind` in `central/src/lib/vocabulary.ts`), so "Crossfiled" and "Cross-filed" read the same. A state's override wins for the labels it lists, and the rest fall through to the default.
+- **Nothing is stored.** Central keeps the raw rows and `GET /bills/:id` attaches `kind` to each of `relatedBills`, next to `relationType` (the raw label's slug, as it has always been sent). Changing a mapping takes effect on the next read, with no re-ingest. A provider with no `relationships` section serves every relationship as `related`.
+- **Instances** pass `kind` through in the bill detail's `relatedBillIds`, as `related` when central sent none, and the bill page shows a line for each kind: "Identical to," "Part of a package," and "Related."
+- **The change log** records a bill gaining or losing an identical companion: `companion_added` (the companion's number in `new_value`) and `companion_removed` (in `old_value`), with the raw label in `detail`. Companions are compared by the other bill's id, and the stored rows are read with today's vocabulary, so changing a mapping records nothing. These entries are not sent to instances: they stay out of `detectChanges` and the `changes` on tenant messages, and don't touch `updated_at`.
+
 ### Bill calendar entries
 
 A bill's hearings, mark-ups, meetings, and deadlines live in central's `bill_calendar`, one row per entry, and instances mirror them into `calendar_events`. The rules are the same for every provider (`central/src/lib/billCalendar.ts`, from #295):
@@ -432,7 +443,7 @@ Used by the bulk-seed script and the `redownload-texts` admin route. Skips `getB
 It hands the result to `ingestMeasure`, which unconditionally:
 
 1. Reads existing `bills` row (if any) and snapshots its child rows.
-2. Runs `detectChanges` to compute a list of `ChangeRecord`s.
+2. Runs `detectChanges` to compute a list of `ChangeRecord`s, and `detectCompanionChanges` for identical companions gained or lost (see "Relationship kinds").
 3. Writes `bill_change_log` rows (one per detected change).
 4. Upserts the `bills` row (status, title, last_action, etc.).
 5. **Delete + reinsert** these child tables: `bill_history`, `bill_sponsors`, `bill_sasts`, `bill_subjects`, `bill_referrals`, `bill_extras`. Just before the referrals, it upserts the `committees` they name. `bill_calendar` is updated in place instead, and never deleted from (see "Bill calendar entries").

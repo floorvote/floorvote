@@ -5,7 +5,7 @@ import {
   billSasts, billSubjects, billReferrals, billTenants,
   billChangeLog, rollCalls, people, tenants, sessions, providerRecords,
 } from '../db/schema'
-import { detectChanges, type BillSnapshot, type ChangeRecord } from '../lib/detect-changes'
+import { detectChanges, detectCompanionChanges, type BillSnapshot, type ChangeRecord, type CompanionChange } from '../lib/detect-changes'
 import {
   calendarBlockEvents, carryCalendar, logCalendarChanges, planCalendarPull, planCalendarRecheck, readCalendarRows, writeCalendarRows,
   type CalendarChange, type CalendarPlan, type CalendarRow,
@@ -236,12 +236,14 @@ export async function ingestMeasure(
   }
 
   let detectedChanges: ChangeRecord[] = []
+  // Logged, but not sent to instances (lib/detect-changes.ts).
+  let companionChanges: CompanionChange[] = []
   let calendarChanges: CalendarChange[] = []
   let priorCalendar: CalendarRow[] = []
 
   if (existingBillRow && !carriedFrom) {
     // Read before-snapshot from child tables
-    const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows] = await Promise.all([
+    const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows, priorSasts] = await Promise.all([
       db.select({ seq: billHistory.seq }).from(billHistory).where(eq(billHistory.billId, bill.bill_id)).all(),
       db.select({ docId: billTexts.docId }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
       db.select({ supplementId: billSupplements.supplementId }).from(billSupplements).where(eq(billSupplements.billId, bill.bill_id)).all(),
@@ -256,6 +258,8 @@ export async function ingestMeasure(
         .where(eq(billSponsors.billId, bill.bill_id))
         .all(),
       readCalendarRows(db, bill.bill_id),
+      db.select({ sastBillId: billSasts.sastBillId, sastBillNumber: billSasts.sastBillNumber, type: billSasts.type })
+        .from(billSasts).where(eq(billSasts.billId, bill.bill_id)).all(),
     ])
     priorCalendar = priorCalRows
 
@@ -283,6 +287,7 @@ export async function ingestMeasure(
     }
 
     detectedChanges = detectChanges(snapshot, bill, provider)
+    companionChanges = detectCompanionChanges(priorSasts, bill, provider)
   }
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
@@ -367,7 +372,7 @@ export async function ingestMeasure(
     return
   }
 
-  for (const change of detectedChanges) {
+  for (const change of [...detectedChanges, ...companionChanges]) {
     await db.insert(billChangeLog).values({
       id:         crypto.randomUUID(),
       billId:     bill.bill_id,

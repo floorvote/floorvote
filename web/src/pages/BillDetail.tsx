@@ -62,6 +62,7 @@ import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
+import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
@@ -392,7 +393,8 @@ type Comment = {
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
 type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string }[] }
-type RelatedBill = { billId: number; billNumber: string; type: string; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
+// `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
+type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
 type BillDetailData = {
   id: string
@@ -1580,11 +1582,11 @@ export function BillDetail() {
             : bill.billType
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
-          const grouped = new Map<string, RelatedBill[]>()
-          for (const r of bill.relatedBillIds) {
-            const key = r.type || 'related'
-            if (!grouped.has(key)) grouped.set(key, [])
-            grouped.get(key)!.push(r)
+          // One line for each kind, identical companions first, whatever labels the legislature used.
+          const grouped = new Map<RelationshipKind, RelatedBill[]>()
+          for (const kind of RELATIONSHIP_KINDS) {
+            const ofKind = bill.relatedBillIds.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
+            if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
           const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
@@ -1612,10 +1614,10 @@ export function BillDetail() {
             )
           }
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
-          grouped.forEach((related, type) => {
-            const label = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          grouped.forEach((related, kind) => {
+            const label = RELATIONSHIP_KIND_LABELS[kind]
             metaItems.push(
-              <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <span style={{ color: color.textMuted }}>{label}:</span>
                 {related.map((r, i) => {
                   const isLast = i === related.length - 1

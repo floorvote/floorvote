@@ -8,7 +8,7 @@ import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
-import { statusFields, vocabularyLabels } from '../lib/vocabulary'
+import { relationshipKind, statusFields, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
 import { calendarKind } from '../lib/billCalendar'
 import { calendarCoverage } from '../lib/bodyEvents'
@@ -335,7 +335,10 @@ billsRoutes.get('/:id', async (c) => {
       identifier: s.sastBillNumber,
       sastBillId: s.sastBillId,
       session: String(bill.sessionId),
+      // The raw label's slug, as it has always been sent.
       relationType: s.type.toLowerCase().replace(/\s+/g, '-'),
+      // What the provider's vocabulary makes of the label: identical, package, or related.
+      kind: relationshipKind(provider, bill.state, s.type),
     })),
     calendar: calendarEntries.map(e => ({
       eventHash: e.eventHash ?? '',

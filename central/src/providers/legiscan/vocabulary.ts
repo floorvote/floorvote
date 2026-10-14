@@ -97,4 +97,18 @@ export const vocabulary: ProviderVocabulary = {
     2: { label: 'Executive Session', kind: 'markup', explainer: 'A committee meeting where members discuss and vote on bills. The public can usually watch but not testify.' },
     3: { label: 'Markup Session', kind: 'markup', explainer: 'A committee meeting where members amend the bill and vote on whether to report it.' },
   },
+
+  // LegiScan's SAST types (see docs/internal/legiscan-api.md). Only the two
+  // that name the same bill filed twice are identical. Similar To, Replaces,
+  // Replaced By, Enabling For, Enabled By, Related, and Carry Over stay related.
+  relationships: {
+    default: {
+      'Same As': 'identical',
+      'Crossfiled': 'identical',
+    },
+    states: {
+      // Michigan files tie-barred packages of different bills as "Same As."
+      MI: { 'Same As': 'package' },
+    },
+  },
 }

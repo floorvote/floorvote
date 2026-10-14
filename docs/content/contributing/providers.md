@@ -89,7 +89,7 @@ The template compiles and passes lint behind the import boundary, and it is deli
 | `client.ts` | The feed's URLs and response shapes, with checks that fail closed. It knows nothing about central. |
 | `map.ts` | Pure mapping from the feed's records into central's shapes. No requests and no env. |
 | `inventory.ts` | The field inventory. |
-| `vocabulary.ts` | What your codes mean: statuses, bill types, event types, and extras. |
+| `vocabulary.ts` | What your codes mean: statuses, bill types, event types, extras, and relationships. |
 | `index.ts` | The `Provider` object that ties them together, including its `attribution` (below). |
 
 ### The data credit
@@ -109,6 +109,7 @@ Central sends the credit to each instance along with the states you own for it, 
 - **Statuses.** Every code the mapping writes to `bills.status` needs a label, a stage from the shared status stages (or none, for a notice outside the legislative path), a rank, a terminal flag, and an explainer. Labels and ranks are unique within your provider.
 - **Bill types** and **calendar event types**, each with a label. An event type also names its kind: hearing, markup, meeting, or deadline.
 - **Extras**, each with a label, an optional explainer, and a display type: text, date, link, or identifier.
+- **Relationships**, if your feed links bills to each other. Map each relationship label your mapping writes (the `type` of a `sasts` entry) to one of three kinds: `identical` (the same bill filed twice, usually one in each chamber), `package` (different bills the legislature moves together), or `related`. A label you leave out is `related`, so a feed that publishes nothing worth grouping needs no section. Map a label `identical` only where it names the same bill twice, since identical companions are the ones that can share a discussion. Write the label as the feed publishes it. The match is by name, never by type id, and ignores case, spacing, and hyphens. Where a label means something else in one state, give that state its own entry under `states`, as LegiScan does for Michigan's "Same As," which tie-bars different bills. Central keeps the raw relationships and attaches the kind when it serves a bill, so changing a mapping needs no re-ingest.
 
 Explainers appear next to real bills, so keep them factual and cite the legislature's own guide to its process. Changing a status's stage or rank after launch changes how bills already in instances sort and filter, so it ships with a one-time metadata resend. [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md) explains how.
 

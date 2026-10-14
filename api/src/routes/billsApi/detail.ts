@@ -8,6 +8,7 @@ import {
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { isHandle, toHandle } from '../../../../shared/billHandle'
+import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
@@ -23,7 +24,7 @@ type CentralBillRich = {
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
   votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string }> }>
-  relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string }>
+  relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string; kind?: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; kind?: string | null; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
   amendments?: Array<{
@@ -176,7 +177,8 @@ export async function buildBillDetail(
   }
 
   // Resolve related bills using central SAST data when available; fall back to stored JSON
-  type ResolvedRelated = { billId: number; billNumber: string; type: string; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
+  // `type` is the legislature's own label as a slug, and `kind` is what central's vocabulary makes of it.
+  type ResolvedRelated = { billId: number; billNumber: string; type: string; kind: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
   let resolvedRelated: ResolvedRelated[] = []
   if (centralRich?.relatedBills?.length) {
     const externalIds = centralRich.relatedBills
@@ -192,6 +194,8 @@ export async function buildBillDetail(
       billId: r.sastBillId ?? 0,
       billNumber: r.identifier,
       type: r.relationType,
+      // A central that predates kinds sends none, and a bill is then only related.
+      kind: isRelationshipKind(r.kind) ? r.kind : 'related',
       route: r.sastBillId != null ? (routeByExternal.get(toHandle(r.sastBillId)) ?? null) : null,
     }))
   } else {
@@ -202,6 +206,7 @@ export async function buildBillDetail(
         billId: 0,
         billNumber: String(identifier),
         type: 'related',
+        kind: 'related',
         route: null,
       }))
     }
