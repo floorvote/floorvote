@@ -7,7 +7,7 @@ import { billSubjects, officialPositions, associationConfig } from '../../src/db
 
 // The six selectable, operator-participating dimensions. myBills/newMatches/unvoted
 // are viewer-scope filters that ALWAYS narrow (they AND on top unconditionally — see
-// buildBillsWhere in query.ts) and are deliberately excluded: asserting the OR/AND
+// buildBillsFilter in query.ts) and are deliberately excluded: asserting the OR/AND
 // laws for them would assert something that is intentionally false. minRelevance is
 // a bill fact and does participate in the operator, but it's a threshold rather than
 // a discrete value set, which doesn't fit the pairwise union/intersection sweep below

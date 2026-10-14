@@ -173,11 +173,24 @@ export function groupUntriaged(of: BillsTable = bills): SQL {
 export type BillsTable = typeof bills
 
 /** Position (or custom field) rows from `official_positions p` and `bill_custom_field_values p` hold the group's current value: none for the same field was set more recently by another member. */
-function holdsGroupValue(table: 'official_positions' | 'bill_custom_field_values', fieldId?: string): SQL {
-  const sameField = table === 'bill_custom_field_values' ? sql` AND q.field_id = ${fieldId}` : sql``
+function holdsGroupValue(table: 'official_positions' | 'bill_custom_field_values'): SQL {
+  // The field is correlated with the row's own, not bound again, so a custom field filter binds its id once.
+  const sameField = table === 'bill_custom_field_values' ? sql` AND q.field_id = p.field_id` : sql``
   return sql`NOT EXISTS (SELECT 1 FROM ${sql.raw(table)} q JOIN bills g ON g.id = q.bill_id
       WHERE g.group_key = me.group_key${sameField}
         AND (q.updated_at > p.updated_at OR (q.updated_at = p.updated_at AND q.bill_id > p.bill_id)))`
+}
+
+/**
+ * `of` is a bill in a group whose current value is held by one of `held`, a
+ * subquery of bill ids: the holder itself, or any bill sharing its group. A
+ * team value is the whole group's, so every bill in the group meets a filter
+ * on it, which is what lets "Passed and high priority" find a group whose
+ * Passed bill isn't the one the priority was set on. Both halves start from
+ * `held` through an index, so a rare value still starts from its own rows.
+ */
+export function inGroupOfHeld(of: BillsTable, held: SQL): SQL {
+  return sql`(${of.id} IN ${held} OR ${of.groupKey} IN (SELECT hb.group_key FROM bills hb WHERE hb.group_key IS NOT NULL AND hb.id IN ${held}))`
 }
 
 /**
@@ -205,7 +218,7 @@ export function groupHasNoPosition(of: BillsTable): SQL {
 export function heldCustomFieldOf(fieldId: string, valueCondition?: SQL): SQL {
   return sql`(SELECT p.bill_id FROM bill_custom_field_values p JOIN bills me ON me.id = p.bill_id
     WHERE p.field_id = ${fieldId}${valueCondition ? sql` AND ${valueCondition}` : sql``}
-      AND ${holdsGroupValue('bill_custom_field_values', fieldId)})`
+      AND ${holdsGroupValue('bill_custom_field_values')})`
 }
 
 /** `of` has a priority and it is its group's current one: no other member has one set more recently. */

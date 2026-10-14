@@ -86,8 +86,10 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const filter = await buildBillsFilter(db, filterParams)
     const filtered = filter(billsAs('m'))
     const hasFilter = filtered !== undefined
-    // A cheap filter is held twice in the full path's statement, so it must leave room under D1's 100 bound parameters.
-    const cheapFilter = hasFilter && isCheapFilter(filterParams) && new SQLiteSyncDialect().sqlToQuery(filtered).params.length * 2 <= 90
+    // A filter is held twice in a statement when that leaves room under D1's 100 bound parameters, which lets the
+    // tracked-first path test a bill with no companions directly. A cheap filter that fits twice also gets the full path's two-part form.
+    const twice = hasFilter && new SQLiteSyncDialect().sqlToQuery(filtered).params.length * 2 <= 90
+    const cheapFilter = twice && isCheapFilter(filterParams)
 
     // ── Default-list query cache ──────────────────────────────────────────
     // The count+ordered-page query is the expensive, SHARED part (full scan +
@@ -132,7 +134,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // it as a scope filter produces wrong conclusions about the visible set.
       // Phase 1: counts — always get total; get the tracked count when optimizing
       const [totalGroups, trackedCount] = await Promise.all([
-        countGroups(db, filtered),
+        countGroups(db, filtered, newMatchesActive || draftsActive || filterParams.myBillsParam === '1'),
         optimize ? trackedBills(db, filtered) : 0,
       ])
       total = totalGroups
@@ -140,7 +142,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // Phase 2: the page of groups — fast path or normal path. The tracked-first
       // page is only good when it fills: tracked groups that reach this far make a
       // full page of the list's first groups, and a short page means they don't.
-      const sortArgs: Omit<PageOptions, 'tracked'> = { filter: hasFilter ? filter : undefined, cheapFilter, col: sortCol, dir: sortDir, q, limit: pageSize, offset }
+      const sortArgs: Omit<PageOptions, 'tracked'> = { filter: hasFilter ? filter : undefined, twice, cheapFilter, col: sortCol, dir: sortDir, q, limit: pageSize, offset }
       const tryFastPath = optimize && trackedCount > 0 && offset + pageSize <= trackedCount
       const fast = tryFastPath ? await pageOfGroups(db, { ...sortArgs, tracked: true }) : null
       groupKeys = fast !== null && fast.length === pageSize ? fast : await pageOfGroups(db, { ...sortArgs, tracked: false })
@@ -308,7 +310,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // Bill-fact dimensions (dimFilters, cfParts, minRelevanceFilter) combine via the
     // group operator (OR under match=any, AND otherwise); baseConditions (search,
     // myBills, unvoted, newMatches — viewer scope) always AND on top, mirroring
-    // buildBillsWhere in query.ts so facet counts never disagree with the list.
+    // buildBillsFilter in query.ts so facet counts never disagree with the list.
     function buildWhere(excludeCfFieldId?: string | string[], ...dimFilters: (SQL | undefined)[]): SQL | undefined {
       const excludeSet = excludeCfFieldId === undefined
         ? undefined

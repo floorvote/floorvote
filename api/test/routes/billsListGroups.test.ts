@@ -208,7 +208,8 @@ describe('bill list: one row per companion group', () => {
       const high = await list('priority=high')
       expect(high.pagination.total).toBe(1)
       expect(high.bills[0].priority).toBe('high')
-      expect(high.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+      // The value is the group's, so every bill in it meets the filter.
+      expect(high.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', true]])
     })
 
     it("priority: a companion with no priority doesn't make the group match 'none'", async () => {
@@ -243,7 +244,7 @@ describe('bill list: one row per companion group', () => {
       expect((await list('cf_committee=Energy')).pagination.total).toBe(0)
       const labor = await list('cf_committee=Labor')
       expect(labor.pagination.total).toBe(1)
-      expect(labor.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+      expect(labor.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', true]])
       expect((await list('cf_committee=__any__')).pagination.total).toBe(1)
     })
 
@@ -264,13 +265,74 @@ describe('bill list: one row per companion group', () => {
       expect(row).toMatchObject({ billNumber: 'S1713', priority: 'high', position: 'Support', tags: ['Energy'], tenantSummary: 'A190 summary', customFieldValues: { cf1: 'Energy' } })
     })
 
-    it('a value set on one bill matches the group through that bill only', async () => {
+    it("a value set on one bill is the whole group's, so the group's other bill meets the filter too", async () => {
       await companions()
       await position('a190', 'Support', '2026-10-01 09:00:00')
       const body = await list('position=Support')
       expect(body.pagination.total).toBe(1)
       expect(body.bills[0].position).toBe('Support')
-      expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', false], ['A190', true]])
+      expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', true]])
+    })
+
+    // The team's value is one thing for the whole group, the provider's facts are each bill's own, and filters
+    // are ANDed on one bill. So a group meets "Passed and high priority" through S1713 even when A190 is the
+    // bill that holds the priority.
+    describe('combined with a provider filter on a different bill', () => {
+      it('priority: finds the group, and marks only the bill that is Passed', async () => {
+        await companions() // A190 Introduced, S1713 Passed
+        await priority('a190', 'high', '2026-10-01 10:00:00')
+        const body = await list('status=Passed&priority=high')
+        expect(body.pagination.total).toBe(1)
+        expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+        expect((await list('status=Passed&priority=low')).pagination.total).toBe(0)
+        expect((await list('status=Passed&priority=__any__')).pagination.total).toBe(1)
+      })
+
+      it("priority: a group whose bill replaced the other's value is found by the current one only", async () => {
+        await companions()
+        await priority('a190', 'low', '2026-10-01 09:00:00')
+        await priority('b1713', 'high', '2026-10-01 10:00:00')
+        expect((await list('status=Introduced&priority=high')).pagination.total).toBe(1)
+        expect((await list('status=Introduced&priority=low')).pagination.total).toBe(0)
+      })
+
+      it('position: finds the group', async () => {
+        await companions()
+        await position('a190', 'Support', '2026-10-01 10:00:00')
+        const body = await list('status=Passed&position=Support')
+        expect(body.pagination.total).toBe(1)
+        expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+        expect((await list('status=Passed&position=Oppose')).pagination.total).toBe(0)
+        expect((await list('status=Passed&position=none')).pagination.total).toBe(0)
+      })
+
+      it('a custom field: finds the group', async () => {
+        await companions()
+        await db().insert(billCustomFieldValues).values({ billId: 'a190', fieldId: 'cf1', value: 'Energy', setBy: ada, updatedAt: '2026-10-01 10:00:00' })
+        const body = await list('status=Passed&cf_committee=Energy')
+        expect(body.pagination.total).toBe(1)
+        expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+        expect((await list('status=Passed&cf_committee=Labor')).pagination.total).toBe(0)
+      })
+
+      it('tags: finds the group', async () => {
+        await companions()
+        await db().update(bills).set({ tags: JSON.stringify(['Energy']), tenantSummary: 'A190 summary', aiProcessedAt: '2026-10-01 10:00:00' }).where(eq(bills.id, 'a190'))
+        const body = await list('status=Passed&tag=Energy')
+        expect(body.pagination.total).toBe(1)
+        expect(body.bills[0].group?.map(g => [g.billNumber, g.matched])).toEqual([['S1713', true], ['A190', false]])
+        expect((await list('status=Passed&tag=Labor')).pagination.total).toBe(0)
+      })
+
+      it('bulk edits find the group the same way', async () => {
+        await companions()
+        await priority('a190', 'high', '2026-10-01 10:00:00')
+        const res = await SELF.fetch('https://x/api/bills/bulk', {
+          method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filter: { status: ['Passed'], priority: ['high'] }, position: 'Support' }),
+        })
+        expect(await res.json()).toEqual({ updated: 1 })
+      })
     })
 
     it('ungrouped bills filter on their own values, as before', async () => {

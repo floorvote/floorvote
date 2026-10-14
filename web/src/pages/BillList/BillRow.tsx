@@ -180,8 +180,11 @@ export const BillRow = memo(function BillRow({
   // the filter is emphasized, and only where another bill in the group didn't:
   // when every bill matched, an outline on each says nothing.
   const group = bill.group
-  const shown = group ? group.slice(0, GROUP_SHOWN) : []
-  const hidden = group ? group.slice(GROUP_SHOWN) : []
+  // The first bill and one other: the first one that met the filter if the first didn't, so the match isn't hidden in "+N".
+  const [lead, ...rest] = group ?? []
+  const other = lead?.matched ? rest[0] : (rest.find(m => m.matched) ?? rest[0])
+  const shown = group ? [lead, ...(other ? [other] : [])].slice(0, GROUP_SHOWN) : []
+  const hidden = group ? rest.filter(m => m !== other) : []
   const emphasize = !!group && group.some(m => m.matched === true) && group.some(m => m.matched === false)
   const shownStatuses = [...new Set(shown.map(m => m.status))] // identical statuses collapse to one
   const renderNumbers = () => !group

@@ -430,7 +430,6 @@ export function BillList() {
       const { billId, newVote, prevVote } = (e as CustomEvent).detail
       setAllBills(prev => prev.map(b => {
         // A vote on any bill in a companion group is the group's, so the row shows it.
-        // A vote on any bill in a companion group is the group's, so the row shows it.
         if (b.id !== billId && !b.group?.some(g => g.id === billId)) return b
         const vc = { ...b.voteCounts }
         if (prevVote) vc[prevVote as keyof typeof vc] = Math.max(0, vc[prevVote as keyof typeof vc] - 1)

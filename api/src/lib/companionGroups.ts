@@ -6,7 +6,7 @@ import { nowDb } from './dbTime'
 import { chunk } from './chunk'
 import { isHandle, parseHandle, toHandle } from '../../../shared/billHandle'
 import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
-import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged, type BillsTable } from './teamFields'
+import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged } from './teamFields'
 import type { AppDb } from '../types'
 
 /**
@@ -92,16 +92,16 @@ export function myGroupVote(billId: SQLiteColumn, userId: string) {
 }
 
 /**
- * The member has voted on no bill in the group of `of` (the bills table or an
- * alias of it): the bill list's Unvoted filter, as a condition on one bill.
- * Reads the member's own votes as two sets (the bills they voted on, and every
- * bill in those bills' groups), so a bill costs no probe of its group and the
- * condition reads only the bill's id.
+ * The bills a member has voted on, and every bill in their groups: the bills the
+ * bill list's Unvoted filter leaves out, since a member's vote on a group is on
+ * all of it. Read once for the request, so the filter is one `NOT IN` over this
+ * list on a bill's id, with no probe of the bill's group.
  */
-export function unvotedInGroup(of: BillsTable, userId: string): SQL {
-  return sql`(${of.id} NOT IN (SELECT bill_id FROM member_votes WHERE user_id = ${userId})
-    AND ${of.id} NOT IN (SELECT g.id FROM bills g WHERE g.group_key IN
-      (SELECT b.group_key FROM member_votes v JOIN bills b ON b.id = v.bill_id WHERE v.user_id = ${userId} AND b.group_key IS NOT NULL)))`
+export async function loadVotedInGroups(db: AppDb, userId: string): Promise<string[]> {
+  const rows = await db.all(sql`SELECT bill_id AS id FROM member_votes WHERE user_id = ${userId}
+    UNION SELECT g.id FROM bills g WHERE g.group_key IN
+      (SELECT b.group_key FROM member_votes v JOIN bills b ON b.id = v.bill_id WHERE v.user_id = ${userId} AND b.group_key IS NOT NULL)`) as { id: string }[]
+  return rows.map(r => r.id)
 }
 
 /**

@@ -142,6 +142,28 @@ describe('bulk actions on companion groups', () => {
       expect((await list('newMatches=1')).pagination.total).toBe(0)
     })
 
+    it('dismisses through a broad filter without sending the matching groups in one parameter', async () => {
+      // 600 new-match pairs under one broad filter: a list of their keys would be about 25 KB, and on the
+      // default list of a large instance several MB, over D1's 2 MB limit for one string.
+      await env.DB.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1200)
+        INSERT INTO bills (id, bill_number, title, state, status, status_rank, session, tags, match_type, new_match_at, group_key)
+        SELECT 'bill' || printf('%05d', i), 'HB ' || i, 't', 'NJ', 'Introduced', 100, 's', '[]', 'keyword', '2026-10-01 10:00:00',
+          'bill' || printf('%05d', ((i - 1) / 2) * 2 + 1) FROM n`).run()
+      const sizes: number[] = []
+      const realPrepare = env.DB.prepare.bind(env.DB)
+      const spy = vi.spyOn(env.DB, 'prepare').mockImplementation((sql: string) => {
+        const stmt = realPrepare(sql)
+        const realBind = stmt.bind.bind(stmt)
+        stmt.bind = ((...args: unknown[]) => { sizes.push(...args.map(a => (typeof a === 'string' ? a.length : 0))); return realBind(...args) }) as typeof stmt.bind
+        return stmt
+      })
+      const res = await dismissFilter({ state: ['NJ'] })
+      spy.mockRestore()
+      expect(res.dismissed).toBe(600)
+      expect((await list('newMatches=1')).pagination.total).toBe(0)
+      expect(Math.max(...sizes)).toBeLessThan(2000)
+    })
+
     it("dismisses a group that meets the filter through one bill and is a new match through another", async () => {
       await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', status: 'Introduced', matchType: null })
       await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed', matchType: 'keyword', newMatchAt: '2026-10-01 10:00:00' })

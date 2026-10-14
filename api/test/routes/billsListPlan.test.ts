@@ -127,6 +127,14 @@ describe('GET /bills query plans', () => {
     expect(page.plan, page.plan).toContain('MATERIALIZE k')
   })
 
+  it("reads a page's bills and everything on them in two statements, since each costs D1 a round trip", async () => {
+    // The bills (wide) and one read of positions, custom fields, votes, comments, and notes: the only statements
+    // that name the page's group keys. Before, the second was seven.
+    const stmts = await statementsFor('pageSize=20')
+    const onPage = stmts.filter(s => /json_each\(\?\)/.test(s.sql))
+    expect(onPage.length, onPage.map(s => s.sql.slice(0, 80)).join('\n')).toBe(2)
+  })
+
   it('reads the bills of the groups on a page through the primary key and the group key, never a scan', async () => {
     const stmts = await statementsFor('pageSize=20')
     const members = stmts.find(s => /^select .* from "bills" where/i.test(s.sql) && /json_each/.test(s.sql))!

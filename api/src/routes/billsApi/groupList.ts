@@ -1,5 +1,4 @@
-import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm'
-import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
+import { sql, type SQL } from 'drizzle-orm'
 import { bills, billCustomFieldValues, comments, memberVotes, notes, officialPositions, users } from '../../db/schema'
 import { activeUser } from '../../lib/accountDeletion'
 import { rowidOf } from '../../db/rowid'
@@ -42,13 +41,20 @@ const andFilter = (filter: SQL | undefined) => (filter ? sql` AND ${filter}` : s
  * columns the common filters read (status, stage, state, session, year, and
  * relevance), so those filters count the grouped bills from that one small
  * index without reading the table. Each statement holds the filter once, so
- * none exceeds D1's 100-parameter limit any sooner than before groups did.
+ * binds a filter's values once. The exception is a team field's filter
+ * (priority, position, custom field), which binds its values twice, once for
+ * the bill holding the group's value and once for the rest of the group.
+ *
+ * `selective` says the filter picks few bills from an index of its own (new
+ * matches, my bills, drafts), so the grouped ones are found from that index
+ * rather than by reading every grouped bill: the unary plus keeps the planner
+ * off the group key index for them.
  */
-export async function countGroups(db: AppDb, filter: SQL | undefined): Promise<number> {
+export async function countGroups(db: AppDb, filter: SQL | undefined, selective = false): Promise<number> {
   const [all, grouped] = await Promise.all([
     db.all(sql`SELECT COUNT(*) AS n FROM bills m ${filter ? sql`WHERE ${filter}` : sql``}`) as Promise<{ n: number }[]>,
     db.all(sql`SELECT COUNT(*) AS groups, COALESCE(SUM(n), 0) AS bills FROM
-      (SELECT COUNT(*) AS n FROM bills m WHERE m.group_key IS NOT NULL${andFilter(filter)} GROUP BY m.group_key)`) as Promise<{ groups: number; bills: number }[]>,
+      (SELECT COUNT(*) AS n FROM bills m WHERE ${selective ? sql`+m.group_key` : sql`m.group_key`} IS NOT NULL${andFilter(filter)} GROUP BY m.group_key)`) as Promise<{ groups: number; bills: number }[]>,
   ])
   return Number(all[0].n) - Number(grouped[0].bills) + Number(grouped[0].groups)
 }
@@ -83,6 +89,18 @@ export async function newMatchGroupsAmong(db: AppDb, billIds: readonly string[],
   const rows = await db.all(sql`SELECT DISTINCT COALESCE(c.group_key, c.id) AS gk FROM bills c
     WHERE c.id IN (SELECT value FROM json_each(${JSON.stringify(billIds)}))
       AND EXISTS (SELECT 1 FROM bills m WHERE (m.id = c.id OR m.group_key = c.group_key) AND ${newMatchWhere(minRelevance, m)})`) as { gk: string }[]
+  return rows.map(r => r.gk)
+}
+
+/**
+ * The keys of the groups with a bill meeting the filter that are on the new
+ * matches worklist (see `newMatchWhere`), in one statement. It starts from the
+ * worklist, a small set read through the tracked index, and tests the filter
+ * on each group's bills, so a broad filter never lists every group it names.
+ */
+export async function newMatchGroupKeys(db: AppDb, filter: SQL | undefined, minRelevance: number): Promise<string[]> {
+  const rows = await db.all(sql`SELECT DISTINCT COALESCE(c.group_key, c.id) AS gk FROM bills c
+    WHERE ${newMatchWhere(minRelevance, c)}${filter ? sql` AND EXISTS (SELECT 1 FROM bills m WHERE (m.id = c.id OR m.group_key = c.group_key) AND ${filter})` : sql``}`) as { gk: string }[]
   return rows.map(r => r.gk)
 }
 
@@ -221,10 +239,16 @@ export type PageOptions = {
   /** The filter, or undefined for every bill. */
   filter: BillsFilter | undefined
   /**
-   * The filter is cheap to test on a bill (`isCheapFilter` in query.ts), and
-   * small enough to appear twice in one statement under D1's parameter limit.
-   * The full path then reads the filter's bills in one pass and the grouped
-   * ones through the group key index, instead of collecting every group they name.
+   * The filter is small enough to appear twice in one statement under D1's
+   * parameter limit. The tracked-first path then tests it on a bill with no
+   * companions directly, instead of through a lookup of the bill itself.
+   */
+  twice?: boolean
+  /**
+   * The filter is also cheap to test on a bill (`isCheapFilter` in query.ts),
+   * and `twice`. The full path then reads the filter's bills in one pass and the
+   * grouped ones through the group key index, instead of collecting every group
+   * they name.
    */
   cheapFilter?: boolean
   /** Take only groups with a tracked bill, from the tracked bills, as the tracked-first fast path does. */
@@ -243,8 +267,8 @@ export type PageOptions = {
  * tested through the group key index. A group counts as tracked if any bill
  * in it is.
  *
- * `filter` is the filter on a bill of the group (`m`), held once. A cheap
- * filter also comes as `filterOnC`, on the standing bill itself, which a bill
+ * `filter` is the filter on a bill of the group (`m`), held once. A filter that
+ * fits twice also comes as `filterOnC`, on the standing bill itself, which a bill
  * with no companions then tests directly instead of through a lookup of itself.
  */
 function trackedStanding(filter: SQL | undefined, filterOnC?: SQL): SQL {
@@ -273,7 +297,7 @@ export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]>
   let inner: SQL
   if (o.tracked) {
     // The tracked bills, read through their index (see `trackedStanding`).
-    inner = sql`SELECT ${select} FROM bills c WHERE ${trackedStanding(o.filter?.(m), o.cheapFilter ? o.filter?.(c) : undefined)}`
+    inner = sql`SELECT ${select} FROM bills c WHERE ${trackedStanding(o.filter?.(m), o.twice ? o.filter?.(c) : undefined)}`
   } else if (!o.filter) {
     // Every group, through its key bill (a bill with no companions is its own).
     inner = sql`SELECT ${select} FROM bills c WHERE (${c.groupKey} IS NULL OR ${c.groupKey} = ${c.id})`
@@ -334,6 +358,9 @@ function naturalParts(number: string): { prefix: string; num: number } {
   return { prefix: number.slice(0, digit.index), num: Number.parseInt(number.slice(digit.index), 10) || 0 }
 }
 
+/** A row of the page's one read of everything the team and the viewer have on its bills: its kind, then up to six values. */
+type Extra = { kind: string; a: string; b: unknown; c: unknown; d: unknown; e: unknown; f: unknown }
+
 type ViewerContext = {
   userId: string
   /** The list's filter, to mark which bills of a group meet it. Undefined when nothing is filtered. */
@@ -352,39 +379,46 @@ type ViewerContext = {
 export async function loadGroupRows(db: AppDb, groupKeys: readonly string[], ctx: ViewerContext) {
   if (groupKeys.length === 0) return []
   // Every bill of the groups on the page, named by the page's group keys, so no read waits for another to learn the
-  // bills' ids. A subquery of the group keys as one JSON parameter, found through the primary key and the group key index.
+  // bills' ids. The keys are one JSON parameter, and the bills are found through the primary key and the group key index.
   const keys = JSON.stringify(groupKeys)
-  const pageBills = sql`(SELECT g.id FROM bills g WHERE g.id IN (SELECT value FROM json_each(${keys})) OR g.group_key IN (SELECT value FROM json_each(${keys})))`
-  const onPage = (column: SQLiteColumn) => sql`${column} IN ${pageBills}`
+  const pageBills = sql`(SELECT value FROM json_each(${keys}) UNION ALL SELECT g.id FROM bills g WHERE g.group_key IN (SELECT value FROM json_each(${keys})))`
 
-  const [memberRows, positions, customFields, voteRows, myVoteRows, commentRows, myNoteRows, myCommentRows, matchedRows] = await Promise.all([
-    db.select(memberColumns).from(bills).where(onPage(bills.id)).all(),
-    db.select({ billId: officialPositions.billId, position: officialPositions.position, setBy: officialPositions.setBy, updatedAt: officialPositions.updatedAt })
-      .from(officialPositions).where(onPage(officialPositions.billId)).all(),
-    db.select({ billId: billCustomFieldValues.billId, fieldId: billCustomFieldValues.fieldId, value: billCustomFieldValues.value, setBy: billCustomFieldValues.setBy, updatedAt: billCustomFieldValues.updatedAt })
-      .from(billCustomFieldValues).where(onPage(billCustomFieldValues.billId)).all(),
-    // A member's vote on a group is their latest on any of its bills, so these are every vote and the latest per member is picked below.
-    db.select({ billId: memberVotes.billId, userId: memberVotes.userId, position: memberVotes.position, updatedAt: memberVotes.updatedAt, rowid: sql<number>`${rowidOf(memberVotes)}` })
-      .from(memberVotes).innerJoin(users, eq(memberVotes.userId, users.id))
-      // canVote is a SQL literal, not a bound param, to stay within the parameter budget.
-      .where(and(onPage(memberVotes.billId), sql`${users.canVote} = 1`, activeUser)).all(),
-    db.select({ billId: memberVotes.billId, position: memberVotes.position, updatedAt: memberVotes.updatedAt, rowid: sql<number>`${rowidOf(memberVotes)}` })
-      .from(memberVotes).where(and(eq(memberVotes.userId, ctx.userId), onPage(memberVotes.billId))).all(),
-    db.select({ billId: comments.billId, count: sql<number>`COUNT(*)` })
-      .from(comments).innerJoin(users, eq(comments.userId, users.id))
-      .where(and(onPage(comments.billId), isNull(comments.deletedAt), activeUser))
-      .groupBy(comments.billId).all(),
-    db.select({ billId: notes.billId }).from(notes)
-      .where(and(eq(notes.userId, ctx.userId), ne(notes.content, ''), onPage(notes.billId))).all(),
-    db.select({ billId: comments.billId }).from(comments)
-      .where(and(eq(comments.userId, ctx.userId), isNull(comments.deletedAt), onPage(comments.billId))).all(),
-    ctx.filter
-      ? db.all(sql`SELECT m.id AS id FROM bills m WHERE m.id IN ${pageBills} AND ${ctx.filter(m)!}`) as Promise<{ id: string }[]>
-      : Promise.resolve(null),
+  // The bills themselves, and everything the team and the viewer have on them, in two statements: the bills are wide,
+  // and the rest are small reads of other tables, put together as one result with a kind in its first column since a
+  // statement costs a round trip to D1 however little it reads. D1 allows five terms in a compound SELECT, which
+  // is why votes and comments each carry the viewer's own in a column. Whether each bill met the filter is one
+  // more column of the first.
+  const [memberRows, extras] = await Promise.all([
+    db.select({ ...memberColumns, met: ctx.filter ? sql<number>`CASE WHEN ${ctx.filter(bills)!} THEN 1 ELSE 0 END` : sql<number>`0` })
+      .from(bills).where(sql`${bills.id} IN ${pageBills}`).all(),
+    db.all(sql`WITH pb AS MATERIALIZED (SELECT value AS id FROM json_each(${keys}) UNION SELECT g.id FROM bills g WHERE g.group_key IN (SELECT value FROM json_each(${keys})))
+      SELECT 'position' AS kind, ${officialPositions.billId} AS a, ${officialPositions.position} AS b, ${officialPositions.setBy} AS c, ${officialPositions.updatedAt} AS d, NULL AS e, NULL AS f
+        FROM official_positions WHERE ${officialPositions.billId} IN (SELECT id FROM pb)
+      UNION ALL SELECT 'field', ${billCustomFieldValues.billId}, ${billCustomFieldValues.fieldId}, ${billCustomFieldValues.value}, ${billCustomFieldValues.setBy}, ${billCustomFieldValues.updatedAt}, NULL
+        FROM bill_custom_field_values WHERE ${billCustomFieldValues.billId} IN (SELECT id FROM pb)
+      UNION ALL SELECT 'vote', ${memberVotes.billId}, ${memberVotes.userId}, ${memberVotes.position}, ${memberVotes.updatedAt}, ${rowidOf(memberVotes)},
+          CASE WHEN users.can_vote = 1 AND ${activeUser} THEN 1 ELSE 0 END
+        FROM member_votes JOIN users ON users.id = ${memberVotes.userId}
+        WHERE ${memberVotes.billId} IN (SELECT id FROM pb) AND ((users.can_vote = 1 AND ${activeUser}) OR ${memberVotes.userId} = ${ctx.userId})
+      UNION ALL SELECT 'comments', ${comments.billId}, COUNT(*), SUM(CASE WHEN ${comments.userId} = ${ctx.userId} THEN 1 ELSE 0 END), NULL, NULL, NULL
+        FROM comments JOIN users ON users.id = ${comments.userId}
+        WHERE ${comments.billId} IN (SELECT id FROM pb) AND ${comments.deletedAt} IS NULL AND ${activeUser} GROUP BY ${comments.billId}
+      UNION ALL SELECT 'note', ${notes.billId}, NULL, NULL, NULL, NULL, NULL
+        FROM notes WHERE ${notes.userId} = ${ctx.userId} AND ${notes.content} <> '' AND ${notes.billId} IN (SELECT id FROM pb)`) as Promise<Extra[]>,
   ])
+  const ofKind = (kind: string) => extras.filter(r => r.kind === kind)
+  const positions = ofKind('position').map(r => ({ billId: r.a, position: r.b as string, setBy: r.c as string, updatedAt: r.d as string }))
+  const customFields = ofKind('field').map(r => ({ billId: r.a, fieldId: r.b as string, value: r.c as string, setBy: r.d as string, updatedAt: r.e as string }))
+  // A member's vote on a group is their latest on any of its bills, so these are every vote and the latest per member is picked below.
+  const allVotes = ofKind('vote').map(r => ({ billId: r.a, userId: r.b as string, position: r.c as 'support' | 'oppose' | 'neutral', updatedAt: r.d as string, rowid: Number(r.e), counts: Number(r.f) === 1 }))
+  const voteRows = allVotes.filter(v => v.counts)
+  const myVoteRows = allVotes.filter(v => v.userId === ctx.userId)
+  const commentRows = ofKind('comments').map(r => ({ billId: r.a, count: Number(r.b) }))
+  const myCommentRows = ofKind('comments').filter(r => Number(r.c) > 0).map(r => ({ billId: r.a }))
+  const myNoteRows = ofKind('note').map(r => ({ billId: r.a }))
   const membersOf = new Map<string, BillRow[]>()
   for (const row of memberRows) membersOf.set(row.groupKey ?? row.id, [...(membersOf.get(row.groupKey ?? row.id) ?? []), row])
-  const matched = matchedRows ? new Set(matchedRows.map(r => r.id)) : null
+  const matched = ctx.filter ? new Set(memberRows.filter(r => Number(r.met) === 1).map(r => r.id)) : null
   const teamRows = {
     bills: memberRows.map(r => ({ id: r.id, priority: r.priority, prioritySetAt: r.prioritySetAt, tenantSummary: r.tenantSummary, tags: r.tags, aiProcessedAt: r.aiProcessedAt, triagedAt: r.triagedAt, triagedBy: r.triagedBy })),
     positions,

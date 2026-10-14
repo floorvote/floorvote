@@ -136,6 +136,15 @@ describe('a grouped BillRow', () => {
     expect(within(statusCell(container)).getAllByText(/Passed|Introduced/).map(c => c.textContent)).toEqual(['Passed', 'Introduced'])
   })
 
+  it('shows the bill that matched the filter as the other one when the first bill did not', () => {
+    const group = [{ ...S1713, matched: false }, { ...A190, matched: false }, { ...member('c1', 'S1715', 'Introduced'), matched: true }, { ...member('c2', 'A192', 'Introduced'), matched: false }]
+    const { container } = renderRow({ group })
+    const numbers = within(billCell(container)).getAllByRole('link').map(a => a.textContent)
+    expect(numbers).toEqual(['S1713', 'S1715'])
+    expect(within(billCell(container)).getByText('+2')).toBeInTheDocument()
+    expect(container.querySelector('[data-matched]')?.textContent).toBe('S1715')
+  })
+
   it('shows no +N for a group of two', () => {
     const { container } = renderRow({ group: [S1713, A190] })
     expect(within(billCell(container)).queryByText(/^\+\d/)).toBeNull()

@@ -15,7 +15,7 @@
 -- group's bills still uses it. It is dropped and made again here because an
 -- index can't take columns after it is made. 0100 isn't edited.
 --
--- ANALYZE gives the planner the new index's statistics.
+-- ANALYZE bills gives the planner the new index's statistics.
 --
 -- No semicolons in these comments. api/test/helpers.ts splits migration files
 -- on the statement terminator before it strips comment lines.
@@ -23,4 +23,4 @@ DROP INDEX idx_bills_group_key;
 CREATE INDEX idx_bills_group_key ON bills(group_key, status, status_stage, state, session, year_start, relevance_score)
   WHERE group_key IS NOT NULL;
 
-ANALYZE;
+ANALYZE bills;

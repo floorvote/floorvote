@@ -9,7 +9,7 @@ import { backfillCalendar } from '../../lib/calendarBackfill'
 import { isHandle, parseHandle } from '../../../../shared/billHandle'
 import { nowDb } from '../../lib/dbTime'
 import { billsAs, buildBillsFilter } from './query'
-import { countGroups, matchingGroupKeys, newMatchGroupsAmong } from './groupList'
+import { countGroups, matchingGroupKeys, newMatchGroupKeys, newMatchGroupsAmong } from './groupList'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { decodeSubjectFilters } from '../../lib/billSubjects'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
@@ -393,14 +393,15 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const hasFilter = body.filter != null
     if (hasIds === hasFilter) return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
 
-    // Computed up front — the groups the filter names are then restricted to the new-match
-    // queue (newMatchGroupsAmong), even when the "New matches" chip (f.newMatches) is off
-    // but the dismiss action is still available.
+    // Computed up front — the groups to dismiss are only those on the new-match queue,
+    // even when the "New matches" chip (f.newMatches) is off but the dismiss action is
+    // still available.
     const min = await getNewMatchMinRelevance(db)
 
-    let billIds: string[]
+    let toDismiss: string[]
     if (hasIds) {
-      billIds = body.ids!
+      // The groups of the bills named that are on the new-match queue.
+      toDismiss = await newMatchGroupsAmong(db, body.ids!, min)
     } else {
       const f = body.filter!
       const filter = await buildBillsFilter(db, {
@@ -421,17 +422,14 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         // route above, so the three surfaces cannot drift on what the param means.
         matchAny: f.match === 'any',
       })
-      // One bill per group, named by its key bill: a group is dismissed as one.
-      billIds = await matchingGroupKeys(db, filter(billsAs('m')))
+      // One bill per group, named by its key bill: a group is dismissed as one. One statement, so the
+      // groups the filter names (every group on a broad filter) never travel as a parameter.
+      toDismiss = await newMatchGroupKeys(db, filter(billsAs('m')), min)
     }
 
-    if (billIds.length === 0) return c.json({ dismissed: 0 })
+    if (toDismiss.length === 0) return c.json({ dismissed: 0 })
 
     const now = nowDb()
-
-    // Restrict to the groups on the new-matches worklist within the selection (the
-    // worklist's own predicate, which a group meets through any bill in it).
-    const toDismiss = await newMatchGroupsAmong(db, billIds, min)
     // Triaging any bill in a group triages the group (lib/teamFields.ts), so the
     // key bill is stamped. The UPDATE adds a few params on top of the inArray
     // list (triagedAt + triagedBy), which is why it's chunked at the shared

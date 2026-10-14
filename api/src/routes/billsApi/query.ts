@@ -12,9 +12,9 @@ import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../..
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
   groupUntriaged, groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
-  holdsGroupAnalysis, holdsGroupPriority, type BillsTable,
+  holdsGroupAnalysis, holdsGroupPriority, inGroupOfHeld, type BillsTable,
 } from '../../lib/teamFields'
-import { unvotedInGroup } from '../../lib/companionGroups'
+import { loadVotedInGroups } from '../../lib/companionGroups'
 
 /** A second reference to `bills` in one query, with the table's own columns: `billsAs('m').status` renders `"m"."status"`. */
 export function billsAs(name: string): BillsTable {
@@ -48,11 +48,11 @@ export const FILTER_ANY = '__any__'
 // at 50 bytes — a tag name ≥47 chars pushed the old pattern over that limit and
 // 500'd the whole query ("LIKE or GLOB pattern too complex: SQLITE_ERROR").
 // json_each also matches array elements exactly, avoiding accidental substring
-// hits. Shared by the list filter (buildBillsWhere) and the facets WHERE so the
+// hits. Shared by the list filter (buildBillsFilter) and the facets WHERE so the
 // two can't drift. Caller must pass a non-empty array.
 export function tagMembership(tagValues: string[], t: BillsTable = bills): SQL {
-  const list = sql.join(tagValues.map(v => sql`${v}`), sql`, `)
-  return sql`EXISTS (SELECT 1 FROM json_each(${t.tags}) je WHERE je.value IN (${list}))`
+  // One JSON parameter, however many tags are picked.
+  return sql`EXISTS (SELECT 1 FROM json_each(${t.tags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
 }
 
 /**
@@ -68,7 +68,7 @@ export function tagMembership(tagValues: string[], t: BillsTable = bills): SQL {
  * confusing and avoidable claim), it is simply ignored, same as a malformed
  * value from decodeSubjectFilters. If every requested value is suppressed the
  * remaining list is empty and the caller adds no subject condition at all —
- * equivalent to the param never having been sent. Shared by buildBillsWhere
+ * equivalent to the param never having been sent. Shared by buildBillsFilter
  * and the /bills/facets route so the list, filter, and facet-count paths
  * can't drift on this decision.
  */
@@ -251,19 +251,26 @@ export type BillsCondition = (t: BillsTable) => SQL
 /**
  * Priority filter values (a level, "any" for has a priority, "none" for no
  * priority) as a condition on one bill. A priority belongs to the bill's
- * companion group, so a bill meets it through the group's current priority and
- * never through one a newer priority on a companion replaced (see
- * lib/teamFields.ts). Shared by the list filter and the facets so the two can't drift.
+ * companion group, so every bill in a group meets the filter when the group's
+ * current priority does, and none does through one a newer priority on a
+ * companion replaced (see lib/teamFields.ts). Shared by the list filter and
+ * the facets so the two can't drift.
  */
 export function priorityCondition(priorities: string[]): BillsCondition | undefined {
   if (priorities.length === 0) return undefined
   const hasAny = priorities.includes(FILTER_ANY)
   const hasNone = priorities.includes('none')
   const real = priorities.filter(v => v !== FILTER_ANY && v !== 'none') as ('high' | 'medium' | 'low')[]
+  const h = billsAs('h')
+  // The holder meets it itself. Every other bill in its group meets it through the group key.
+  const held = (t: BillsTable, levels: boolean) => or(
+    and(levels ? (real.length === 1 ? eq(t.priority, real[0]) : inArray(t.priority, real)) : undefined, holdsGroupPriority(t))!,
+    sql`${t.groupKey} IN (SELECT h.group_key FROM bills h WHERE h.group_key IS NOT NULL${levels ? sql` AND ${real.length === 1 ? eq(h.priority, real[0]) : inArray(h.priority, real)}` : sql``} AND ${holdsGroupPriority(h)})`,
+  )!
   return t => {
     const parts: SQL[] = []
-    if (real.length > 0) parts.push(and(real.length === 1 ? eq(t.priority, real[0]) : inArray(t.priority, real), holdsGroupPriority(t))!)
-    if (hasAny) parts.push(holdsGroupPriority(t))
+    if (real.length > 0) parts.push(held(t, true))
+    if (hasAny) parts.push(held(t, false))
     if (hasNone) parts.push(groupHasNoPriority(t))
     return parts.length === 1 ? parts[0] : or(...parts)!
   }
@@ -271,7 +278,8 @@ export function priorityCondition(priorities: string[]): BillsCondition | undefi
 
 /**
  * Position filter values (a position, "any", or "none") as a condition on one
- * bill, tested through the group's current position as `priorityCondition` is.
+ * bill, met by every bill in a group whose current position does, as
+ * `priorityCondition` is.
  */
 export function positionCondition(positionValues: string[]): BillsCondition | undefined {
   if (positionValues.length === 0) return undefined
@@ -280,8 +288,8 @@ export function positionCondition(positionValues: string[]): BillsCondition | un
   const real = positionValues.filter(pos => pos !== 'none' && pos !== FILTER_ANY)
   return t => {
     const parts: SQL[] = []
-    if (real.length > 0) parts.push(sql`${t.id} IN ${heldPositionOf(real)}`)
-    if (hasAny) parts.push(sql`${t.id} IN ${heldPositionOf([])}`)
+    if (real.length > 0) parts.push(inGroupOfHeld(t, heldPositionOf(real)))
+    if (hasAny) parts.push(inGroupOfHeld(t, heldPositionOf([])))
     if (hasNone) parts.push(groupHasNoPosition(t))
     return parts.length === 1 ? parts[0] : or(...parts)!
   }
@@ -289,19 +297,26 @@ export function positionCondition(positionValues: string[]): BillsCondition | un
 
 /**
  * Tag filter values ("any", or tags) as a condition on one bill. Tags come from
- * the AI analysis, which a companion group shares: a bill meets the filter
- * through the group's current analysis, never an older one.
+ * the AI analysis, which a companion group shares: every bill in a group meets
+ * the filter when the group's current analysis does, and none through an
+ * older one.
  */
 export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
   if (tagFilters.length === 0) return undefined
   const hasAny = tagFilters.includes(FILTER_ANY)
   const realTags = tagFilters.filter(t => t !== FILTER_ANY)
-  return t => {
+  // The bill holds the group's analysis and its tags meet the filter.
+  const holds = (t: BillsTable): SQL => {
     const parts: SQL[] = []
     if (hasAny) parts.push(sql`json_array_length(${t.tags}) > 0`) // "Any" = has any tag
     if (realTags.length > 0) parts.push(tagMembership(realTags, t))
     return and(parts.length === 1 ? parts[0] : or(...parts)!, holdsGroupAnalysis(t))!
   }
+  const h = billsAs('h')
+  return t => or(
+    holds(t),
+    sql`(${t.groupKey} IS NOT NULL AND EXISTS (SELECT 1 FROM bills h WHERE h.group_key = ${t.groupKey} AND ${holds(h)}))`,
+  )!
 }
 
 /**
@@ -358,8 +373,8 @@ export async function buildCustomFieldFilters(
     conditions[fieldId] = t => {
       // "Any" = the group has any value for this field.
       const parts: SQL[] = []
-      if (anyValue) parts.push(sql`${t.id} IN ${heldCustomFieldOf(fieldId)}`)
-      if (valueCondition) parts.push(sql`${t.id} IN ${heldCustomFieldOf(fieldId, valueCondition)}`)
+      if (anyValue) parts.push(inGroupOfHeld(t, heldCustomFieldOf(fieldId)))
+      if (valueCondition) parts.push(inGroupOfHeld(t, heldCustomFieldOf(fieldId, valueCondition)))
       return parts.length === 1 ? parts[0] : or(...parts)!
     }
   }
@@ -432,8 +447,11 @@ export async function buildBillsFilter(
   const position = positionCondition(p.positionValues)
   if (position) billFacts.push(position)
 
-  // A member's votes are the group's: unvoted means no vote on any bill in it.
-  if (p.unvoted === '1') scopes.push(t => unvotedInGroup(t, p.userId))
+  // A member's votes are the group's: unvoted means no vote on any bill in it. One JSON parameter of the bills to leave out.
+  if (p.unvoted === '1') {
+    const voted = JSON.stringify(await loadVotedInGroups(db, p.userId))
+    scopes.push(t => sql`${t.id} NOT IN (SELECT value FROM json_each(${voted}))`)
+  }
 
   if (p.newMatches === '1' || p.newMatches === 'true') {
     scopes.push(t => newMatchWhere(p.newMatchMinRelevance, t))
@@ -484,12 +502,4 @@ export function isCheapFilter(p: BillFilterParams): boolean {
   return p.priorities.length === 0 && p.positionValues.length === 0 && p.tagFilters.length === 0 && p.subjectFilters.length === 0
     && !p.q && Object.keys(p.cfParamMap).length === 0
     && !on(p.myBillsParam) && !on(p.newMatches) && !on(p.drafts)
-}
-
-/** The list's filters as one condition on the `bills` table. */
-export async function buildBillsWhere(
-  db: ReturnType<typeof getDb>,
-  p: BillFilterParams,
-): Promise<SQL | undefined> {
-  return (await buildBillsFilter(db, p))(bills)
 }
