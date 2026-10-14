@@ -6,8 +6,9 @@ import type { Env } from '../types'
 // H2). What remains is checking whether an email is on central's superadmin
 // list, and, for an address that is, fetching that one person's profile at
 // emailed-link sign-in (superadminProfile.ts). The check recognizes a
-// superadmin's account, for example to auto-provision it as a local admin at
-// magic-link request or to keep its centrally managed profile read-only. Neither
+// superadmin's account: to auto-provision it as a local admin at magic-link
+// request, to exempt operator staff from the Terms gate (requireAuth, /auth/me,
+// accept-terms), and to keep its centrally managed profile read-only. Neither
 // grants authority, which comes only from the token (superadminRequest.ts).
 //
 // Finding D3: that check previously hit central once PER request. A flood of
@@ -40,6 +41,15 @@ async function sha256Hex(s: string): Promise<string> {
  * (returns false) if the allowlist can't be fetched and nothing is cached.
  */
 export async function isSuperadminEmailViaCentral(env: Env, email: string): Promise<boolean> {
+  return (await superadminEmailStatus(env, email)) === 'yes'
+}
+
+/**
+ * The same check, saying `unknown` when the allowlist can't be fetched and
+ * nothing is cached. For callers that use the answer to refuse something, where
+ * "not a superadmin" by default would let it through.
+ */
+export async function superadminEmailStatus(env: Env, email: string): Promise<'yes' | 'no' | 'unknown'> {
   const now = Date.now()
   // Throttle refresh ATTEMPTS to once per TTL window — on success AND failure —
   // so a central outage with a stale/empty cache can't cause a per-request
@@ -53,9 +63,9 @@ export async function isSuperadminEmailViaCentral(env: Env, email: string): Prom
         cachedHashes = new Set(data.hashes ?? [])
       }
     } catch {
-      // Keep any stale cache; if none, fail closed below.
+      // Keep any stale cache; if none, the answer is unknown.
     }
   }
-  if (!cachedHashes) return false
-  return cachedHashes.has(await sha256Hex(email.toLowerCase().trim()))
+  if (!cachedHashes) return 'unknown'
+  return cachedHashes.has(await sha256Hex(email.toLowerCase().trim())) ? 'yes' : 'no'
 }

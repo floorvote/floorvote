@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
-import { matchesUnion } from '../lib/keywords'
+import { matchesUnion, billMatchText } from '../lib/keywords'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
@@ -351,7 +351,7 @@ adminRoutes.post('/backfill-match-types', async (c) => {
 
     const matchedIds: number[] = []
     for (const r of unlinkedRows) {
-      const haystack = `${r.title ?? ''} ${r.description ?? ''} ${r.billNumber ?? ''}`
+      const haystack = billMatchText(r)
       if (matchesUnion(haystack, keywords).matched) {
         matchedIds.push(r.billId)
       }
@@ -431,7 +431,7 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
   // Evaluate keyword match. Stop once we hit the cap.
   const newlyMatched: number[] = []
   for (const row of candidates) {
-    const hay = `${row.title ?? ''} ${row.description ?? ''} ${row.billNumber ?? ''}`
+    const hay = billMatchText(row)
     if (matchesUnion(hay, keywords).matched) {
       newlyMatched.push(row.billId)
       if (newlyMatched.length >= SYNC_KEYWORDS_CAP) break

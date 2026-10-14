@@ -338,6 +338,77 @@ export type BillFilterParams = {
   matchAny: boolean
 }
 
+/**
+ * One condition per custom field named by `cf_` params, keyed by the field's id.
+ * Shared by the list filter (buildBillsWhere) and the /bills/facets WHERE so the
+ * two match stored values the same way and can't drift: a multi-select field
+ * stores a JSON array and matches on its elements, every other field matches the
+ * stored value exactly.
+ *
+ * `cf_` keys arrive as either the field's id or its slug: the URL (and every
+ * stored view's query, since views persist the URL's own search string) always
+ * uses the slug for readability, but bill_custom_field_values is keyed by id
+ * only. Resolve against both columns here so a slug-form key still reaches the
+ * right field. A key that matches no definition (a deleted field, or a
+ * garbled/stale key) is kept under a sentinel id that can never equal a real
+ * field_id, rather than being dropped: dropping it would remove the constraint
+ * entirely and silently return every bill instead of the zero bills that filter
+ * should produce.
+ */
+export async function buildCustomFieldConditions(
+  db: ReturnType<typeof getDb>,
+  cfParamMap: Record<string, string[]>,
+): Promise<Record<string, SQL>> {
+  const cfKeys = Object.keys(cfParamMap)
+  if (cfKeys.length === 0) return {}
+
+  const fieldDefs = await db
+    .select({ id: customFieldDefinitions.id, slug: customFieldDefinitions.slug, multiple: customFieldDefinitions.multiple })
+    .from(customFieldDefinitions)
+    .where(or(inArray(customFieldDefinitions.id, cfKeys), inArray(customFieldDefinitions.slug, cfKeys)))
+    .all()
+
+  const resolvedParamMap: Record<string, string[]> = {}
+  for (const [key, values] of Object.entries(cfParamMap)) {
+    const def = fieldDefs.find(f => f.id === key || f.slug === key)
+    const realId = def?.id ?? `__unresolved_cf__:${key}`
+    ;(resolvedParamMap[realId] ??= []).push(...values)
+  }
+
+  const multipleById = new Map(fieldDefs.map(f => [f.id, f.multiple]))
+  const conditions: Record<string, SQL> = {}
+
+  for (const [fieldId, values] of Object.entries(resolvedParamMap)) {
+    const realValues = values.filter(v => v !== FILTER_ANY)
+    const parts: SQL[] = []
+    // "Any" = the bill has any value for this field.
+    if (values.includes(FILTER_ANY)) {
+      parts.push(sql`${bills.id} IN (SELECT bill_id FROM bill_custom_field_values WHERE field_id = ${fieldId})`)
+    }
+    if (realValues.length > 0) {
+      if (multipleById.get(fieldId)) {
+        // multi-select: stored value is JSON array; match if any picked value is in the array
+        parts.push(sql`${bills.id} IN (
+          SELECT cfv.bill_id FROM bill_custom_field_values cfv
+          INNER JOIN json_each(cfv.value) je
+          WHERE cfv.field_id = ${fieldId}
+            AND json_valid(cfv.value) = 1
+            AND je.value IN (${sql.join(realValues.map(v => sql`${v}`), sql`, `)})
+        )`)
+      } else {
+        parts.push(inArray(bills.id,
+          db.select({ billId: billCustomFieldValues.billId }).from(billCustomFieldValues)
+            .where(and(eq(billCustomFieldValues.fieldId, fieldId),
+              realValues.length === 1 ? eq(billCustomFieldValues.value, realValues[0]) : inArray(billCustomFieldValues.value, realValues)
+            ))
+        ))
+      }
+    }
+    if (parts.length > 0) conditions[fieldId] = parts.length === 1 ? parts[0] : or(...parts)!
+  }
+  return conditions
+}
+
 export async function buildBillsWhere(
   db: ReturnType<typeof getDb>,
   p: BillFilterParams,
@@ -386,62 +457,8 @@ export async function buildBillsWhere(
   }
   if (p.minRelevance) billFacts.push(sql`${bills.relevanceScore} >= ${parseInt(p.minRelevance, 10)}`)
 
-  if (Object.keys(p.cfParamMap).length > 0) {
-    const cfKeys = Object.keys(p.cfParamMap)
-    // `cf_` keys arrive as either the field's id or its slug: the URL (and every
-    // stored view's query, since views persist the URL's own search string) always
-    // uses the slug for readability, but bill_custom_field_values is keyed by id
-    // only. Resolve against both columns here — the one place every /bills-shaped
-    // request funnels through — so a slug-form key still reaches the right field.
-    const fieldDefs = await db
-      .select({ id: customFieldDefinitions.id, slug: customFieldDefinitions.slug, multiple: customFieldDefinitions.multiple })
-      .from(customFieldDefinitions)
-      .where(or(inArray(customFieldDefinitions.id, cfKeys), inArray(customFieldDefinitions.slug, cfKeys)))
-      .all()
-
-    // Re-key cfParamMap by the real field id. A key that matches no def (a
-    // deleted field, or a garbled/stale key) is kept under a sentinel id that
-    // can never equal a real field_id, rather than being dropped — dropping it
-    // would remove the constraint entirely and silently return every bill
-    // instead of the zero bills that filter should produce.
-    const resolvedParamMap: Record<string, string[]> = {}
-    for (const [key, values] of Object.entries(p.cfParamMap)) {
-      const def = fieldDefs.find(f => f.id === key || f.slug === key)
-      const realId = def?.id ?? `__unresolved_cf__:${key}`
-      ;(resolvedParamMap[realId] ??= []).push(...values)
-    }
-
-    const multipleById = new Map(fieldDefs.map(f => [f.id, f.multiple]))
-
-    for (const [fieldId, values] of Object.entries(resolvedParamMap)) {
-      const realValues = values.filter(v => v !== FILTER_ANY)
-      const parts: SQL[] = []
-      // "Any" = the bill has any value for this field.
-      if (values.includes(FILTER_ANY)) {
-        parts.push(sql`${bills.id} IN (SELECT bill_id FROM bill_custom_field_values WHERE field_id = ${fieldId})`)
-      }
-      if (realValues.length > 0) {
-        if (multipleById.get(fieldId)) {
-          // multi-select: stored value is JSON array; match if any picked value is in the array
-          parts.push(sql`${bills.id} IN (
-            SELECT cfv.bill_id FROM bill_custom_field_values cfv
-            INNER JOIN json_each(cfv.value) je
-            WHERE cfv.field_id = ${fieldId}
-              AND json_valid(cfv.value) = 1
-              AND je.value IN (${sql.join(realValues.map(v => sql`${v}`), sql`, `)})
-          )`)
-        } else {
-          parts.push(inArray(bills.id,
-            db.select({ billId: billCustomFieldValues.billId }).from(billCustomFieldValues)
-              .where(and(eq(billCustomFieldValues.fieldId, fieldId),
-                realValues.length === 1 ? eq(billCustomFieldValues.value, realValues[0]) : inArray(billCustomFieldValues.value, realValues)
-              ))
-          ))
-        }
-      }
-      if (parts.length > 0) billFacts.push(parts.length === 1 ? parts[0] : or(...parts)!)
-    }
-  }
+  // One condition per custom field; each is a bill fact, so each joins the group operator.
+  billFacts.push(...Object.values(await buildCustomFieldConditions(db, p.cfParamMap)))
 
   if (p.tagFilters.length > 0) {
     const hasAny = p.tagFilters.includes(FILTER_ANY)

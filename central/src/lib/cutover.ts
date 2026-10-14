@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { bills, billCalendar, billTenants, cutoverBills, cutoverPeople, cutovers, keywordRegistry, people, providerIds, sessions } from '../db/schema'
-import { matchesUnion } from './keywords'
+import { matchesUnion, billMatchText } from './keywords'
 import {
   DEFAULT_PROVIDER_ID, findProvider,
   type CentralMeasure, type Provider, type ProviderContext, type ProviderPerson, type ProviderRecord, type StoredSession, type SyncSession,
@@ -343,7 +343,7 @@ export async function planCutover(
       const m = trackedMoved.get(l.billId)!
       const entry = await to.toEntry(m.next.record, { description: m.old.description }, ctx)
       const kws = keywords.get(l.tenantId) ?? []
-      const haystack = `${entry.title ?? ''} ${entry.description ?? ''} ${entry.number}`
+      const haystack = billMatchText({ title: entry.title, description: entry.description, billNumber: entry.number })
       if (kws.length === 0 || !matchesUnion(haystack, kws).matched) losingMatch.push({ billId: m.old.billId, number: m.old.number, tenantId: l.tenantId })
     }
   }

@@ -19,7 +19,7 @@ import { orgRolesLabel } from '../../lib/orgNoun'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import { inlineEditCancelStyle, inlineEditSaveStyle } from '../../lib/inlineEditStyles'
 import { ChangeEmailDialog } from '../../components/ChangeEmailDialog'
-import { emailChangedLabel, type EmailChangedFields } from '../../lib/emailChangedLabel'
+import { emailChangedLabel, memberEmailChangeLabel, type EmailChangeStepFields } from '../../lib/emailChangedLabel'
 
 type Role = { id: string; name: string }
 
@@ -50,7 +50,7 @@ function isPendingInvite(m: Pick<Member, 'invitedBy' | 'hasLoggedIn' | 'deactiva
   return m.invitedBy !== null && !m.hasLoggedIn && !m.deactivatedAt
 }
 
-interface AuthEvent extends EmailChangedFields {
+interface AuthEvent extends EmailChangeStepFields {
   id: string
   event: string
   linkType: string | null
@@ -75,7 +75,9 @@ interface AuthEventsResponse {
 
 type UnknownAttempt = { id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }
 
-function authEventLabel(event: AuthEvent): string {
+function authEventLabel(event: AuthEvent, memberId: string): string {
+  const step = memberEmailChangeLabel(event, memberId)
+  if (step) return step
   switch (event.event) {
     case 'link_requested':
       return event.linkType === 'invite' ? 'Invite sent' : 'Login link requested'
@@ -542,8 +544,15 @@ export function Members() {
     }
   }
 
-  function handleEmailChanged(member: Member, email: string) {
+  function handleEmailChanged(member: Member, email: string, pending: boolean) {
     setChangeEmailMember(null)
+    if (pending) {
+      // An active member's address changes only when they confirm it from the new one.
+      setToast(`Confirmation sent to ${email}. The change takes effect once it is confirmed.`)
+      setTimeout(() => setToast(null), 4000)
+      actionsTriggerRefs.current[member.id]?.focus()
+      return
+    }
     // The new invite is now the latest email, with no outcome yet, so the
     // row is a plain pending invite again (as the next members fetch says).
     setMembers(prev => prev.map(m => (m.id === member.id ? { ...m, email, emailBounce: null } : m)))
@@ -609,6 +618,13 @@ export function Members() {
       if (canManageThisMember) {
         items.push({ kind: 'action', label: 'Change email…', disabled: demoLocked, onClick: () => { close(); setChangeEmailMember(member) } })
       }
+    }
+
+    // An active member's change is asked for, and confirmed from the new
+    // address. Owners may ask for anyone and admins for Standard members (the
+    // server refuses the rest, and every superadmin account).
+    if (!isSelf && !isDeactivated && !isPendingInvite(member) && (currentUserIsOwner || member.role === 'member')) {
+      items.push({ kind: 'action', label: 'Change email…', disabled: demoLocked, onClick: () => { close(); setChangeEmailMember(member) } })
     }
 
     if (!isSelf && member.hasLoggedIn && !isDeactivated) {
@@ -1492,7 +1508,7 @@ export function Members() {
                             borderBottom: index === activityData.events.length - 1 ? 'none' : `1px solid ${color.surfaceMuted}`,
                           }}>
                             <div style={{ fontSize: fontSize.sm, color: color.textSlate, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0 }}>
-                              {authEventLabel(event)}
+                              {authEventLabel(event, activityMember.id)}
                               {deliveryEntry && <DeliveryPill entry={deliveryEntry} />}
                             </div>
                             <div
@@ -1558,8 +1574,9 @@ export function Members() {
       {changeEmailMember && (
         <ChangeEmailDialog
           member={changeEmailMember}
+          pendingInvite={isPendingInvite(changeEmailMember)}
           onClose={() => { const id = changeEmailMember.id; setChangeEmailMember(null); actionsTriggerRefs.current[id]?.focus() }}
-          onChanged={(email) => handleEmailChanged(changeEmailMember, email)}
+          onChanged={(email, pending) => handleEmailChanged(changeEmailMember, email, pending)}
         />
       )}
       {/* Toast notification */}

@@ -78,3 +78,99 @@ export const KEYWORD_MATCH_CASES: KeywordMatchCase[] = [
   // Degenerate entries
   { text: 'Election Law Amendments', keywords: ['', '  '], expected: false },
 ]
+
+/**
+ * A bill as the keyword matcher sees it: the three fields that make up its
+ * match text (see `billMatchText` in shared/keywords.ts).
+ *
+ * `description` is central's `bills.description`. The instance stores the same
+ * text under the name `abstract` (central's /bills route returns it as
+ * `abstract: bill.description`), so instance-side callers pass their `abstract`
+ * column as `description`.
+ */
+export type KeywordMatchBill = {
+  title: string
+  description: string | null
+  billNumber: string
+}
+
+export type BillKeywordMatchCase = {
+  /** What the case proves, for the test name. */
+  name: string
+  bill: KeywordMatchBill
+  keywords: string[]
+  expected: boolean
+}
+
+/**
+ * Whole-bill rows: keywords against title + description + bill number. Every
+ * suite runs each row through central's or the instance's real match path, so
+ * a keyword that central matches but the instance predicts differently (or the
+ * reverse) fails a test.
+ *
+ * Bill numbers are spelled the way providers return them ("HB 1019").
+ */
+export const BILL_KEYWORD_MATCH_CASES: BillKeywordMatchCase[] = [
+  {
+    name: 'a keyword in the title only',
+    bill: { title: 'Ballot Access Act', description: 'Concerns polling places.', billNumber: 'HB 1019' },
+    keywords: ['ballot'],
+    expected: true,
+  },
+  {
+    name: 'a keyword in the description only',
+    bill: { title: 'Gaming matters.', description: 'Concerns absentee voting procedures.', billNumber: 'HB 1038' },
+    keywords: ['absentee'],
+    expected: true,
+  },
+  {
+    // The whole bug: the instance used to read title + abstract only.
+    name: 'a keyword in the bill number only',
+    bill: { title: 'Bridge naming.', description: 'Names a bridge in the county.', billNumber: 'HB 1019' },
+    keywords: ['hb 1019'],
+    expected: true,
+  },
+  {
+    name: 'a bill-number glob matches across the prefix',
+    bill: { title: 'Bridge naming.', description: null, billNumber: 'HB 1019' },
+    keywords: ['hb*'],
+    expected: true,
+  },
+  {
+    name: 'a bill number is a whole token, so HB 101 does not match HB 1019',
+    bill: { title: 'Bridge naming.', description: null, billNumber: 'HB 1019' },
+    keywords: ['hb 101'],
+    expected: false,
+  },
+  {
+    name: 'a missing description leaves title and number intact',
+    bill: { title: 'Ballot Access Act', description: null, billNumber: 'SB 7' },
+    keywords: ['sb 7'],
+    expected: true,
+  },
+  {
+    name: 'a keyword in none of the three fields',
+    bill: { title: 'Bridge naming.', description: 'Names a bridge.', billNumber: 'HB 1019' },
+    keywords: ['ballot'],
+    expected: false,
+  },
+  {
+    // Fields are joined by a space, so a token cannot straddle two of them.
+    name: 'a keyword cannot match across the title and bill number boundary',
+    bill: { title: 'Relating to HB', description: null, billNumber: '1019' },
+    keywords: ['hb1019'],
+    expected: false,
+  },
+  {
+    name: 'the match-all keyword matches a bill with no other text',
+    bill: { title: '', description: null, billNumber: 'HB 1' },
+    keywords: ['*'],
+    expected: true,
+  },
+  {
+    name: 'an empty list matches nothing',
+    bill: { title: 'Ballot Access Act', description: null, billNumber: 'HB 1' },
+    keywords: [],
+    expected: false,
+  },
+]

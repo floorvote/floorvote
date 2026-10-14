@@ -10,7 +10,7 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 
 **Per-org isolation:** Every org is a separate wrangler environment with its own D1, Queue, and Worker. No shared multi-tenant database.
 
-**Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret.
+**Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret. A consumer Worker on the same account that reads engagement stats (every tenant's daily `tenant_stats` rows) binds to central's separate `StatsApi` entrypoint and calls `tenantStatsSince("YYYY-MM-DD")`; it has no HTTP route, and tenants never bind to it.
 
 **Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`, and its `vocabulary.ts` gives every status it writes a label, common stage, rank, terminal flag, and explainer. Fields only one provider publishes are declared there as extras and shown in one generic panel on the bill page, never sorted, filtered, notified on, or sent to AI, and every provider keeps a field inventory its mapping test checks fixtures against (see "Provider extras" in `docs/internal/sync-pipeline.md`). A provider that publishes the legislature's own calendar implements `listBodyEvents` (body events: hearings, roundtables, and meetings, with or without bills, shown on instances' calendars as each instance's event rules choose, as "Body events" in `docs/internal/sync-pipeline.md` describes), and instances gate features on each state's capabilities, never its name. Central's `state_providers` table records which provider each state syncs from, and a state with no row is LegiScan's. A cutover (`central/src/lib/cutover.ts`) moves a state instances already track to another provider, keeping every bill's handle and never writing to an instance's database. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off until an admin claim gives them a state, and synced as snapshots by `cron/sync-snapshots.ts` (see `docs/internal/sync-pipeline.md`, whose "DC Council (LIMS)" section covers DC's mapping, its fail-closed rules, and the re-ingest a LIMS mapping change needs, and whose "Maryland (MGA)" and "Virginia (LIS)" sections cover those states).
 
@@ -130,6 +130,8 @@ Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-le
 
 **Always add new migration files — never edit existing ones.**
 
+**Keep `;` out of SQL comments in `api/migrations/`.** The api test helper (`parseMigration` in `api/test/helpers.ts`) splits a file on `;` before it strips comments, so the words after the semicolon run as SQL. Every test that calls `applyMigrations()` then fails with a syntax error that points at the prose, not the cause. A period or an em dash does the same job.
+
 **Numbers and names a downstream fork owns.** Open-City-Advocates' fork applied its own migrations in production, and moving it onto upstream depends on these staying free (`docs/internal/fork-upgrade.md`):
 
 - Central 0022, 0023, and 0024 and tenant 0071, 0072, and 0074 are reserved forever. Skip them.
@@ -175,6 +177,23 @@ git config core.hooksPath .githooks
 
 It warns rather than adding the trailer, and that is deliberate. The sign-off is your own certification under the [DCO](DCO) that you have the right to submit the work under the project's license — a hook that supplies it for you turns a real attestation into something tooling stamps automatically. Sign with `git commit -s`, or `git commit --amend -s` after the fact.
 
+### Fast checks
+
+While iterating, run the narrow check for the package you're in. CI runs the full lint and test jobs (`.github/workflows/ci.yml`).
+
+```bash
+# Typecheck, one per package (the same commands CI runs)
+cd api && npx tsc --noEmit -p tsconfig.build.json
+cd central && npx tsc --noEmit -p tsconfig.build.json
+cd web && npx tsc --noEmit
+
+# One test file, from its package directory
+npx vitest run <file>
+
+# The scripts project, from the repo root (also `npm run test:scripts`)
+npx vitest run --project scripts
+```
+
 ### Styling
 
 Inline `style={{}}` backed by design tokens from `web/src/styles/tokens.ts` (`color`, `radius`, `fontSize`, `fontWeight`, `shadow`). ESLint blocks raw hex colors and raw `borderRadius`/`fontSize`/`fontWeight` values. Spacing (padding, margin, gap) is intentionally NOT tokenized — use raw numbers.
@@ -196,7 +215,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 1. Import colors/radii/font sizes from `web/src/styles/tokens.ts`. Spacing is raw numbers.
 2. Register Material Symbols icons in `icon_names=` in `web/index.html` before use.
 3. Never edit existing migration files — create new ones.
-4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`.
+4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`, which the guard in `scripts/verify-timestamp-writes.ts` honors (see `docs/internal/dates.md`).
 5. Relevance scores are 1–10, not 0–100.
 6. Tenants never call legislative APIs directly — all data flows through central.
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.

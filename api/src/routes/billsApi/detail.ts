@@ -1,5 +1,6 @@
-import { eq, and, inArray, sql, desc, isNull } from 'drizzle-orm'
+import { eq, and, or, inArray, sql, desc, isNull } from 'drizzle-orm'
 import { getDb } from '../../db/client'
+import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
   billTexts, roles, userRoles, billCustomFieldValues,
@@ -97,7 +98,7 @@ export async function buildBillDetail(
       // and a visitor's new comment landing the same second — collide on
       // created_at. rowid follows insert order, which is the intended reading
       // order for the seed's question/answer pairs.
-      .orderBy(comments.createdAt, sql`comments.rowid`)
+      .orderBy(comments.createdAt, rowidOf(comments))
       .limit(20)
       .all(),
     db.select({ count: sql<number>`count(*)` })
@@ -109,7 +110,18 @@ export async function buildBillDetail(
     db.select({ setByName: userDisplayNameSql, createdAt: feedEvents.createdAt })
       .from(feedEvents)
       .innerJoin(users, eq(feedEvents.userId, users.id))
-      .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'priority_set'), activeUser))
+      // A bulk priority edit is a bill-less event that lists its bills in metadata.billIds.
+      .where(and(
+        or(
+          eq(feedEvents.billId, billId),
+          and(
+            isNull(feedEvents.billId),
+            sql`EXISTS (SELECT 1 FROM json_each(${feedEvents.metadata}, '$.billIds') WHERE value = ${billId})`,
+          ),
+        ),
+        eq(feedEvents.type, 'priority_set'),
+        activeUser,
+      ))
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),

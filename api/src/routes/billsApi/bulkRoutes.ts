@@ -126,6 +126,8 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     const now = nowDb()
     const count = billIds.length
+    // Past this many bills, one event per bill would flood the feed. One bill-less
+    // event names them all instead (metadata.billIds), so it belongs to no single bill.
     const isBulk = count > 10
 
     // Apply priority
@@ -157,9 +159,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
           await db.insert(feedEvents).values({
             id: crypto.randomUUID(),
             type: 'priority_set' as const,
-            billId: billIds[0],
+            billId: null,
             userId: currentUser.id,
-            metadata: JSON.stringify({ priority, isBulk: true, count }),
+            metadata: JSON.stringify({ priority, count, billIds }),
           })
         }
         // Fetch externalId + matchType once for both calendar backfill and promotion.
@@ -231,9 +233,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         await db.insert(feedEvents).values({
           id: crypto.randomUUID(),
           type: 'position_set' as const,
-          billId: billIds[0],
+          billId: null,
           userId: currentUser.id,
-          metadata: JSON.stringify({ position: body.position, isBulk: true, count }),
+          metadata: JSON.stringify({ position: body.position, count, billIds }),
         })
       }
     }

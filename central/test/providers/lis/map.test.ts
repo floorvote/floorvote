@@ -310,6 +310,8 @@ describe('buildLisBill', () => {
       ['2026-02-27', 'S Referred to Rules', ''],
       ['2026-02-28', 'S Rereferred from Rules to Education and Health (Voice Vote)', ''],
       ['2026-02-28', 'S Rereferred to Education and Health', ''],
+      // A re-referral can name the committee in full too (SB71 in the 2026 HISTORY.CSV).
+      ['2026-03-02', 'S Rereferred to Committee for Courts of Justice', ''],
     ])
     const b = await buildLisBill(rec, '20261', 1, 'h', SESSION, ids())
     // One referral for each line that sends the bill to a committee, and none for the lines that say where it came from.
@@ -318,9 +320,10 @@ describe('buildLisBill', () => {
       ['2026-02-23', 'S', 'Finance and Appropriations'],
       ['2026-02-27', 'S', 'Rules'],
       ['2026-02-28', 'S', 'Education and Health'],
+      ['2026-03-02', 'S', 'Courts of Justice'],
     ])
     expect(lisCommitteeKeys(rec)).toEqual(
-      ['S/commerce and labor', 'S/finance and appropriations', 'S/rules', 'S/education and health'])
+      ['S/commerce and labor', 'S/finance and appropriations', 'S/rules', 'S/education and health', 'S/courts of justice'])
     expect(vocabulary.statuses[lisStatus(record('SB9', {}, [['2026-01-14', 'H Referred to Rules', '']]), '20261')].label).toBe('In committee')
   })
 

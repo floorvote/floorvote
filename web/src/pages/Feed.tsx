@@ -6,6 +6,7 @@ import { createProgressBox, type ProgressBox } from '../lib/retryFetch'
 import { LoadingState } from '../components/LoadingState'
 import type { FeedEvent } from '../lib/feedUtils'
 import { GroupedBillCard } from '../components/GroupedBillCard'
+import { FeedActivityRow } from '../components/FeedActivityRow'
 import { groupEventsByBillAndDay, filterPriorityEvents, filterFullyAnalyzed } from '../lib/feedUtils'
 import type { GroupedBillEvents } from '../lib/feedUtils'
 import { eventDateLabel } from '../lib/calendarDate'
@@ -440,7 +441,9 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
         {sortedDays.map((day) => (
           <div key={day}>
             <DateDivider {...eventDateLabel(day)} stickyTop={headerHeight} />
-            {groupsByDay.get(day)!.map(group => (
+            {groupsByDay.get(day)!.map(group => group.billId === null ? (
+              <FeedActivityRow key={group.key} event={group.events[0]} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
+            ) : (
               <GroupedBillCard key={group.key} group={group} seenAt={seenAtRef.current} currentUserId={user?.id ?? null} />
             ))}
           </div>
