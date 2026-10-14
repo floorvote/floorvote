@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBillCardModel } from './billCardModel'
+import { buildBillCardModel, buildActivityRowModel } from './billCardModel'
 import { PRIORITY_COLORS } from './chipStyles'
 import { color } from '../styles/tokens'
 import type { GroupedBillEvents, FeedEvent } from './feedUtils'
@@ -87,5 +87,43 @@ describe('feed icon mapping', () => {
   it('uses gavel for hearing_added events', () => {
     const m = buildBillCardModel(group([{ type: 'hearing_added', metadata: { date: 'Jun 16', time: '10:00', location: 'Room 313' } }]))
     expect(m.rows[0].iconName).toBe('gavel')
+  })
+})
+
+describe('buildActivityRowModel', () => {
+  const event = (over: Partial<FeedEvent>): FeedEvent => ({
+    id: 'e1', type: 'priority_set', billId: null, billNumber: '', billSessionSlug: null, billState: null,
+    billTitle: '', billSummary: null, billPriority: null, billMatchType: null,
+    userId: 'user-1', userName: 'Ada Admin', userSubtitle: null,
+    metadata: { priority: 'high', count: 34, billIds: ['b1'] }, createdAt: '2026-06-03T10:00:00Z', ...over,
+  })
+
+  it('reads a bulk priority edit as one sentence with the priority square', () => {
+    const m = buildActivityRowModel(event({}))
+    expect(m.text).toBe('Ada Admin set priority to high on 34 bills')
+    expect(m.square).toBe(true)
+    expect(m.iconColor).toBe(PRIORITY_COLORS.high.fill)
+    expect(m.billCount).toBe(34)
+    expect(m.userId).toBe('user-1')
+  })
+  it('reads a bulk position edit, and a cleared position', () => {
+    const set = buildActivityRowModel(event({ type: 'position_set', metadata: { position: 'Support', count: 12, billIds: [] } }))
+    expect(set.text).toBe('Ada Admin set position to Support on 12 bills')
+    expect(set.iconName).toBe('thumbs_up_down')
+    const cleared = buildActivityRowModel(event({ type: 'position_set', metadata: { position: null, count: 12, billIds: [] } }))
+    expect(cleared.text).toBe('Ada Admin cleared the position on 12 bills')
+  })
+  it('falls back to "An admin" when the author has no name, and counts the ids when count is missing', () => {
+    const m = buildActivityRowModel(event({ userName: '', metadata: { priority: 'low', billIds: ['a', 'b', 'c'] } }))
+    expect(m.text).toBe('An admin set priority to low on 3 bills')
+    expect(m.billCount).toBe(3)
+  })
+  it('says "1 bill" for one', () => {
+    expect(buildActivityRowModel(event({ metadata: { priority: 'high', count: 1, billIds: ['a'] } })).text).toBe('Ada Admin set priority to high on 1 bill')
+  })
+  it('renders a bill-less event of a type it has no wording for as plain activity', () => {
+    const m = buildActivityRowModel(event({ type: 'bill_matched', metadata: {} }))
+    expect(m.text).toBe('Activity')
+    expect(m.billCount).toBeNull()
   })
 })

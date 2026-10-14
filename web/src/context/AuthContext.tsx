@@ -12,6 +12,7 @@ type User = {
   canVote: boolean
   emailDigestEnabled: boolean
   emailWeekAheadEnabled: boolean
+  emailRepliesEnabled: boolean
   lastSeenFeed: string | null
   isLastOwner: boolean
   /** Operator staff signed in through central: their name and title are managed in the admin dashboard. */
@@ -31,6 +32,7 @@ type AuthState = {
   setSubtitle: (subtitle: string | null) => void
   setName: (name: string) => void
   setEmailDigestEnabled: (enabled: boolean) => void
+  setEmailRepliesEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
   setTermsAccepted: () => void
   clearUser: () => void
@@ -38,7 +40,7 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
-  setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+  setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
   setTermsAccepted: () => {}, clearUser: () => {},
 })
 
@@ -112,6 +114,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, emailDigestEnabled: enabled } : prev)
   }
 
+  function setEmailRepliesEnabled(enabled: boolean) {
+    setUser((prev) => prev ? { ...prev, emailRepliesEnabled: enabled } : prev)
+  }
+
   // Keep the in-memory lastSeenFeed in sync after marking the feed seen.
   // /auth/me is fetched once at app load; FeedUnreadProvider seeds its baseline
   // from user.lastSeenFeed when it first mounts (e.g. a fresh window/tab or reload).
@@ -139,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
+  return <AuthContext value={{ user, loading, authError, authProgress, setSubtitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {

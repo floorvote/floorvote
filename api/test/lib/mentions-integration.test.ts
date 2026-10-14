@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
-import { getDb } from '../../src/db/client'
-import { commentMentions } from '../../src/db/schema'
-import { env } from 'cloudflare:test'
+import { SELF, env } from 'cloudflare:test'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole, mentionRecords } from '../helpers'
 
 describe('comment mention extraction (integration)', () => {
   let adminId: string
@@ -31,8 +28,7 @@ describe('comment mention extraction (integration)', () => {
     expect(res.status).toBe(201)
     const { id: commentId } = await res.json() as { id: string }
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(1)
     expect(mentions[0].commentId).toBe(commentId)
     expect(mentions[0].userId).toBe(mentionedUserId)
@@ -55,8 +51,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(2)
     expect(mentions.every(m => m.sourceType === 'role')).toBe(true)
     expect(mentions.every(m => m.sourceId === roleId)).toBe(true)
@@ -73,8 +68,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(0)
   })
 
@@ -90,8 +84,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(1)
     expect(mentions[0].userId).toBe(mentionedUserId)
   })
@@ -110,13 +103,32 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     // adminId is the author and is excluded; mentionedUserId, u2, u3 remain.
     expect(mentions).toHaveLength(3)
     expect(mentions.every(m => m.sourceType === 'everyone')).toBe(true)
     expect(mentions.every(m => m.sourceId === 'all')).toBe(true)
     expect(mentions.map(m => m.userId).sort()).toEqual([mentionedUserId, u2, u3].sort())
+  })
+
+  it('admin @everyone reaches every member on an instance of 30', async () => {
+    const others: string[] = []
+    for (let i = 0; i < 29; i++) {
+      const id = await seedUser({ name: `Member ${i}`, email: `member${i}@example.com` })
+      await seedSession(id)
+      others.push(id)
+    }
+
+    const content = `<p><span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span> heads up</p>`
+    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+    expect(res.status).toBe(201)
+
+    const mentions = await mentionRecords()
+    expect(mentions.map(m => m.userId).sort()).toEqual([mentionedUserId, ...others].sort())
   })
 
   it('ignores @everyone from a non-admin author', async () => {
@@ -132,8 +144,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(0)
   })
 
@@ -149,8 +160,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     expect(mentions).toHaveLength(1)
     expect(mentions[0].userId).toBe(mentionedUserId)
     expect(mentions[0].sourceType).toBe('user')
@@ -170,14 +180,13 @@ describe('comment mention extraction (integration)', () => {
       body: JSON.stringify({ content: everyoneContent }),
     })
     expect(r1.status).toBe(201)
-    const db = getDb(env.DB)
-    const everyoneMentions = await db.select().from(commentMentions).all()
+    const everyoneMentions = await mentionRecords()
     // Only mentionedUserId (has session); admin is author; pending has no session
     expect(everyoneMentions).toHaveLength(1)
     expect(everyoneMentions[0].userId).toBe(mentionedUserId)
 
     // @role should not notify pending user
-    await db.delete(commentMentions)
+    await env.DB.prepare('DELETE FROM notifications').run()
     const roleContent = `<p><span data-type="mention" data-id="role:${roleId}" data-label="All">@All</span></p>`
     const r2 = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
@@ -185,7 +194,7 @@ describe('comment mention extraction (integration)', () => {
       body: JSON.stringify({ content: roleContent }),
     })
     expect(r2.status).toBe(201)
-    const roleMentions = await db.select().from(commentMentions).all()
+    const roleMentions = await mentionRecords()
     expect(roleMentions).toHaveLength(0)
   })
 
@@ -201,8 +210,7 @@ describe('comment mention extraction (integration)', () => {
     })
     expect(res.status).toBe(201)
 
-    const db = getDb(env.DB)
-    const mentions = await db.select().from(commentMentions).all()
+    const mentions = await mentionRecords()
     // Jane appears once as 'user'; Bob appears once as 'everyone'. Author (admin) excluded.
     const jane = mentions.filter(m => m.userId === mentionedUserId)
     expect(jane).toHaveLength(1)

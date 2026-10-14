@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { extractMentions, stripHtml, mentionEmailsEnabled } from '../../src/lib/mentions'
+import { extractMentions, mentionEmailsEnabled } from '../../src/lib/mentions'
+import { stripHtml } from '../../src/lib/stripHtml'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'

@@ -22,9 +22,9 @@ describe('deactivated member mentions drop out of notifications', () => {
     const res = await SELF.fetch('http://localhost/api/notifications', {
       headers: { Cookie: `session=${token}` },
     })
-    const body = await res.json() as { unreadCount: number; mentions: unknown[] }
+    const body = await res.json() as { unreadCount: number; notifications: unknown[] }
     expect(body.unreadCount).toBe(1)
-    expect(body.mentions).toHaveLength(1)
+    expect(body.notifications).toHaveLength(1)
   })
 
   it('mention drops out and unread count decrements once the author is deactivated', async () => {
@@ -33,9 +33,9 @@ describe('deactivated member mentions drop out of notifications', () => {
     const res = await SELF.fetch('http://localhost/api/notifications', {
       headers: { Cookie: `session=${token}` },
     })
-    const body = await res.json() as { unreadCount: number; mentions: unknown[] }
+    const body = await res.json() as { unreadCount: number; notifications: unknown[] }
     expect(body.unreadCount).toBe(0)
-    expect(body.mentions).toHaveLength(0)
+    expect(body.notifications).toHaveLength(0)
   })
 
   it('mention returns once the author is reactivated', async () => {
@@ -46,8 +46,8 @@ describe('deactivated member mentions drop out of notifications', () => {
     const res = await SELF.fetch('http://localhost/api/notifications', {
       headers: { Cookie: `session=${token}` },
     })
-    const body = await res.json() as { unreadCount: number; mentions: unknown[] }
+    const body = await res.json() as { unreadCount: number; notifications: unknown[] }
     expect(body.unreadCount).toBe(1)
-    expect(body.mentions).toHaveLength(1)
+    expect(body.notifications).toHaveLength(1)
   })
 })

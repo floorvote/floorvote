@@ -17,7 +17,9 @@ Each team gets a private, isolated deployment with its own database, member rost
 
 Point FloorVote at the states you track—and Congress, if federal legislation matters to you—and you get access to every bill introduced there. Some legislatures also publish their own data, which adds details LegiScan doesn't carry. See [State coverage](/contributing/state-coverage) for what exists for each state.
 
-From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title or description matches one of your keywords, FloorVote pulls it out for a closer look—summarizing, tagging, and everything else below—so nobody on your team has to track the whole legislative session by hand.
+From that full pool, you set keywords for the issues your team actually cares about. Whenever a bill's title, description, or bill number matches one of your keywords, FloorVote pulls it out for a closer look—summarizing, tagging, and everything else below—so nobody on your team has to track the whole legislative session by hand.
+
+As you type, the keywords box shows how many of the bills already in your deployment the set would match, and, once you change it, how many bills saving would newly match or unmatch. Nothing is saved, and no AI runs, until you save.
 
 ## Custom AI summaries, relevance scores, tags
 
@@ -51,9 +53,9 @@ Admins can also restrict voting on a per-member basis, for cases where someone s
 
 ## Notifications
 
-Members get notified whenever anyone @-mentions them (or a team role they have) in a comment.
+Members get notified whenever anyone @-mentions them (or a team role they have) in a comment, and they always get an email for it. Commenting on a bill also makes you a participant in its comments: when someone else comments on it, you get a notification in the app and an email right away. Replies to one bill group into a single conversation in your mail client. Voting on a bill, writing a note, or being mentioned doesn't make you a participant, and editing a comment never sends new notifications. When someone reacts to your comment, you get a notification in the app (never an email), and the panel groups everyone who reacted to that comment into one row. Reacting to your own comment doesn't notify you, and taking a reaction back doesn't remove the notification it already sent. Admins can turn conversation emails (mentions and replies) off for the whole instance on the Notifications settings page. In-app notifications aren't affected.
 
-Weekly or daily email digests round up what's changed on prioritized bills, and a week-ahead email flags upcoming hearings.
+Weekly or daily email digests round up what's changed on prioritized bills, and a week-ahead email flags upcoming hearings. Each member controls both, and whether to get reply emails, from the "Your Email" section of their profile.
 
 ## Feed
 

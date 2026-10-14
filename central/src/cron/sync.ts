@@ -1,7 +1,7 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { DEFAULT_PROVIDER_ID, getProvider, type Provider, type SessionRef, type SyncEntry } from '../providers'
 import { sessions, bills, billTenants, tenants, keywordRegistry, sessionSyncLog } from '../db/schema'
-import { matchesUnion } from '../lib/keywords'
+import { matchesUnion, billMatchText } from '../lib/keywords'
 import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
@@ -329,7 +329,7 @@ export async function applyMasterList(
       toQueue.add(entry.bill_id)
     }
 
-    const haystack = `${entry.title ?? ''} ${entry.description ?? ''} ${entry.number}`
+    const haystack = billMatchText({ title: entry.title, description: entry.description, billNumber: entry.number })
     for (const t of coveringTenants) {
       const kws = keywordsByTenant.get(t.tenantId) ?? []
       const matched = kws.length > 0 ? matchesUnion(haystack, kws).matched : false

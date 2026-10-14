@@ -488,10 +488,10 @@ describe('custom-field facets with another CF field left unfiltered', () => {
   })
 
   it('an unresolvable cf_ key no longer blanks every field', async () => {
-    // Real field id is 'cf-stage'; 'stage' alone resolves to no def and lands
+    // Real field id is 'cf-stage' and its slug is 'stage'. 'deleted_field' matches neither, and lands
     // under query.ts's sentinel id, making cfFieldIds non-empty but matching
     // no real bill_custom_field_values row.
-    const f = await getFacets({ cf_stage: 'Introduced' })
+    const f = await getFacets({ cf_deleted_field: 'Introduced' })
     expect(f.customFields[stageFieldId]).toBeDefined()
     expect(f.customFields[trackFieldId]).toBeDefined()
     expect(f.customFields[stageFieldId]['Introduced']).toBe(2)
@@ -502,9 +502,8 @@ describe('custom-field facets with another CF field left unfiltered', () => {
 
   it('a real CF filter and an unresolvable cf_ key active together still produce correct disjunctive counts', async () => {
     // Combination the reported bug did not cover: stage=Introduced is a real,
-    // active filter (cfFieldIds includes stage's real id) AND `cf_stage` (the
-    // slug, not the id — resolves to no def here since this route matches on
-    // raw field id, not slug) is simultaneously present as a second, bogus
+    // active filter (cfFieldIds includes stage's real id) AND `cf_deleted_field` (a
+    // key naming neither an id nor a slug — resolves to no def, as the list query does) is simultaneously present as a second, bogus
     // `cf_` key. This is the shape a saved view naming a since-deleted custom
     // field produces when combined with a still-valid filter. Both stage's own
     // disjunctive counts and track's (the other, unfiltered field) counts must
@@ -512,7 +511,7 @@ describe('custom-field facets with another CF field left unfiltered', () => {
     // different (unfiltered) custom field...' and 'the filtered field keeps
     // its own disjunctive counts unchanged' above) — the bogus key must not
     // zero out either.
-    const f = await getFacets({ [`cf_${stageFieldId}`]: 'Introduced', cf_stage: 'Bogus' })
+    const f = await getFacets({ [`cf_${stageFieldId}`]: 'Introduced', cf_deleted_field: 'Bogus' })
     expect(f.customFields[stageFieldId]['Introduced']).toBe(2)
     expect(f.customFields[stageFieldId]['Passed']).toBe(1)
     expect(f.customFields[trackFieldId]['A']).toBe(1)

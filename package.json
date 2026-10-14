@@ -22,17 +22,17 @@
     "web"
   ],
   "devDependencies": {
-    "@material-symbols/svg-400": "^0.47.6",
+    "@material-symbols/svg-400": "^0.48.0",
     "@resvg/resvg-js": "^2.6.2",
-    "concurrently": "^10.0.5",
+    "concurrently": "^10.0.6",
     "fflate": "^0.8.3",
     "mermaid": "^11.17.2",
-    "playwright": "^1.63.0",
+    "playwright": "^1.64.0",
     "tsx": "^4.23.15",
-    "vite": "^8.3.2",
+    "vite": "^8.3.4",
     "vitepress": "^1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.149.0"
   },
   "overrides": {
     "undici": "^7.30.0",

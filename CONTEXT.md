@@ -45,3 +45,5 @@
 **Body event**: an event on a legislature's own calendar (a hearing, roundtable, mark-up, or meeting, with or without bills on its agenda), from a provider that publishes one, such as DC's Council calendar. Central keeps it under the provider's own event id, and a bill's calendar entry it covers is shown as the body event, so a hearing appears once. Avoid: "council event," which names one legislature's; "hearing without a bill" as the name, since a body event can have bills and can be a meeting.
 
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
+
+**Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention today; replies and reactions follow). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
