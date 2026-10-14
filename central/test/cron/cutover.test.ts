@@ -944,6 +944,28 @@ describe('a moved bill no instance tracks', () => {
 
     expect(queued(next.ingestor).find(b => b.billId === FILED)?.matchProvenance).toEqual({ oca: 'routine' })
   })
+
+  // A pass that ingests a moved bill for the first time, because the bill
+  // starts to match in that very pass, is still a cutover's pass.
+  it('declares bulk in the pass where an untracked moved bill starts to match', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    expect((await undo(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    vi.mocked(getCurrentEtHour).mockReturnValue(13)
+    const first = makeEnv()
+    await runSync(first.env, drizzle(env.DB, { schema }))
+    await drain(first.ingestor, first)
+
+    await env.DB.prepare(`INSERT INTO keyword_registry (tenant_id, keyword) VALUES ('oca', 'something else')`).run()
+    const FILED = 1900778
+    filedLater = [{ billId: FILED, number: 'B26-0778', title: 'Child Neglect Prevention Act of 2026' }]
+    const next = makeEnv()
+    await runSync(next.env, drizzle(env.DB, { schema }))
+
+    expect(queued(next.ingestor).map(b => b.billId)).toContain(B0001)
+    expect(queued(next.ingestor).find(b => b.billId === FILED)?.matchProvenance).toEqual({ oca: 'bulk' })
+  })
 })
 
 describe('undoing a cutover', () => {

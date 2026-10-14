@@ -254,8 +254,6 @@ export async function applyMasterList(
   const existingLinks = new Map<string, string | null>()
   /** Covering instances that already held a link to a bill of this list. */
   const seeded = new Set<string>()
-  /** Bills of this list with a keyword or manual link to an instance. */
-  const tracked = new Set<number>()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
     const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
@@ -270,17 +268,8 @@ export async function applyMasterList(
     for (const r of links) {
       existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
       seeded.add(r.tenantId)
-      if (r.matchType) tracked.add(r.billId)
     }
   }
-  // A pass that queues a bill a cutover moved here for its first ingest from
-  // this provider (lib/cutover.ts, and carriedAndTracked below) is the new
-  // provider's first pass. The bills it lists that the old provider lacked
-  // are existing legislation new only to central, so none of its matches is
-  // routine. An untracked moved bill that this pass doesn't queue (LegiScan's,
-  // after an undo) keeps carried_from for good, so it doesn't count.
-  const cutoverPass = [...existing].some(([billId, r]) => r.carriedFrom && (opts.ingestMovedBills || tracked.has(billId)))
-  const declareBulk = !!opts.bulk || cutoverPass
 
   const now = nowDb()
   const billStmts: any[] = []
@@ -393,12 +382,12 @@ export async function applyMasterList(
       // is one a seed or an earlier pass passed over, and an instance with no
       // bills of the session is being seeded by this pass (a state it just
       // started covering, or a new session), so both are bulk. As is an
-      // existing link that starts to match, a cutover's first pass, and an
-      // operator import (`bulk`). Missing is bulk too, so a case this misses
-      // stays quiet rather than flooding instances (#363).
+      // existing link that starts to match, a cutover's first pass and an
+      // operator import (both below the loop). Missing is bulk too, so a case
+      // this misses stays quiet rather than flooding instances (#363).
       if (justMatched && newMatchType === 'keyword') {
         const newToCentral = !stored || stored.changeHash === ''
-        const routine = !declareBulk && !linkExists && newToCentral && seeded.has(t.tenantId)
+        const routine = !linkExists && newToCentral && seeded.has(t.tenantId)
         const byTenant = provenanceByBill.get(entry.bill_id) ?? {}
         byTenant[t.tenantId] = routine ? 'routine' : 'bulk'
         provenanceByBill.set(entry.bill_id, byTenant)
@@ -445,6 +434,19 @@ export async function applyMasterList(
       }).where(eq(bills.billId, entry.bill_id)))
     } else if (changedUpdate) {
       billStmts.push(changedUpdate)
+    }
+  }
+
+  // A pass that queues a bill a cutover moved here for its first ingest from
+  // this provider (lib/cutover.ts) is a cutover's pass: the new provider's
+  // first, or the one where a moved bill starts to match. The bills it lists
+  // that the old provider lacked are existing legislation new only to
+  // central, so none of its matches is routine. An untracked moved bill this
+  // pass doesn't queue (LegiScan's, after an undo) keeps carried_from for
+  // good, so it doesn't count. An operator import (`bulk`) is bulk throughout.
+  if (opts.bulk || [...carried].some(billId => toQueue.has(billId))) {
+    for (const byTenant of provenanceByBill.values()) {
+      for (const tenantId of Object.keys(byTenant)) byTenant[tenantId] = 'bulk'
     }
   }
 
