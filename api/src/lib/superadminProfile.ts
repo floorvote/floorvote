@@ -67,7 +67,7 @@ export async function refreshProfileFromRequestToken<E extends { Bindings: Env }
   return applyTokenProfile(db, user, payload)
 }
 
-/** How long an emailed-link sign-in waits on central for a superadmin's profile. */
+/** How long the background refresh waits on central for a superadmin's profile. */
 const CENTRAL_PROFILE_TIMEOUT_MS = 2000
 
 /**
@@ -75,8 +75,8 @@ const CENTRAL_PROFILE_TIMEOUT_MS = 2000
  * for their profile and refresh the instance's copy. Members not on the cached
  * superadmin list are never looked up. Central answers `{ profile: null }` when it
  * has nothing to give, and that, anything unexpected, an error, or no answer
- * within the timeout leaves the existing name and title. Never throws, so it
- * can't block a sign-in.
+ * within the timeout leaves the existing name and title. Never throws. The
+ * caller runs it in waitUntil, so no sign-in waits on central.
  */
 export async function refreshProfileFromCentral(
   env: Env,

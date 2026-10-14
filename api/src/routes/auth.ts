@@ -284,7 +284,19 @@ authRoutes.post('/verify', async (c) => {
 
   // A superadmin's name and title are kept in central. Refresh this instance's copy
   // on an emailed-link sign-in too; an unreachable central keeps the existing copy.
-  if (verifiedUser) await refreshProfileFromCentral(c.env, db, verifiedUser)
+  // The superadmin check and the refresh both call central, so they run in
+  // waitUntil, off the response path: no member's sign-in ever waits on central.
+  // The cost is that a superadmin's new name and title show on their next page
+  // load, not in this response. Without an execution context (some tests), run
+  // it inline; it never throws.
+  if (verifiedUser) {
+    const refresh = refreshProfileFromCentral(c.env, db, verifiedUser)
+    try {
+      c.executionCtx.waitUntil(refresh)
+    } catch {
+      await refresh
+    }
+  }
 
   // Tenants no longer mint the cross-tenant superadmin SSO cookie. Central is the
   // SOLE issuer: it sets the `.<parent-domain>`-scoped `superadmin_jwt` cookie on
