@@ -2,8 +2,8 @@ import { eq, and, or, inArray, sql, desc, isNull } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
-  bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
-  billTexts, roles, userRoles, billCustomFieldValues,
+  bills, officialPositions, comments, users, commentReactions, feedEvents,
+  billTexts, roles, userRoles, billCustomFieldValues, teamEvents,
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -16,6 +16,8 @@ import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
+import { groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
+import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
   billType?: string | null
@@ -72,19 +74,20 @@ export async function buildBillDetail(
     }
   }
 
-  const [myVoteRow, myNoteRow, positionRow, voteRows, commentRows, commentCountRow, textRows, priorityEventRow] = await Promise.all([
-    db.select().from(memberVotes)
-      .where(and(eq(memberVotes.billId, billId), eq(memberVotes.userId, currentUser.id)))
-      .get(),
-    db.select().from(notes)
-      .where(and(eq(notes.billId, billId), eq(notes.userId, currentUser.id)))
-      .get(),
+  // A bill's companion group shares its conversation, votes, and notes, and
+  // each read below resolves across the group (lib/companionGroups.ts). For an
+  // ungrouped bill the group is the bill alone.
+  const votes = groupVotes(db, billId)
+  const [groupBills, myVoteRow, myNotes, positionRow, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+    loadGroupBills(db, billId),
+    db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
+    loadGroupNotes(db, billId, currentUser.id),
     db.select({ position: officialPositions.position, setBy: officialPositions.setBy, updatedAt: officialPositions.updatedAt })
       .from(officialPositions).where(eq(officialPositions.billId, billId)).get(),
-    db.select({ position: memberVotes.position })
-      .from(memberVotes)
-      .innerJoin(users, eq(memberVotes.userId, users.id))
-      .where(and(eq(memberVotes.billId, billId), eq(users.canVote, 1), activeUser))
+    db.select({ position: votes.position })
+      .from(votes)
+      .innerJoin(users, eq(votes.userId, users.id))
+      .where(and(eq(users.canVote, 1), activeUser))
       .all(),
     db.select({
         c: comments,
@@ -94,7 +97,7 @@ export async function buildBillDetail(
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
-      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
+      .where(and(inGroupOf(comments.billId, billId), isNull(comments.deletedAt), activeUser))
       // daysAgoDb truncates to seconds, so seeded comments sharing a daysAgo —
       // and a visitor's new comment landing the same second — collide on
       // created_at. rowid follows insert order, which is the intended reading
@@ -105,7 +108,7 @@ export async function buildBillDetail(
     db.select({ count: sql<number>`count(*)` })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
-      .where(and(eq(comments.billId, billId), isNull(comments.deletedAt), activeUser))
+      .where(and(inGroupOf(comments.billId, billId), isNull(comments.deletedAt), activeUser))
       .get(),
     db.select().from(billTexts).where(eq(billTexts.billId, billId)).orderBy(desc(billTexts.date)).all(),
     db.select({ setByName: userDisplayNameSql, createdAt: feedEvents.createdAt })
@@ -126,7 +129,24 @@ export async function buildBillDetail(
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),
+    // This bill's own grouping events, for the lines its comment thread shows
+    // where its group formed or split. A companion's are about the companion.
+    db.select({ id: teamEvents.id, type: teamEvents.type, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
+      .from(teamEvents)
+      .leftJoin(users, eq(teamEvents.actorUserId, users.id))
+      .where(and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])))
+      .orderBy(teamEvents.createdAt, rowidOf(teamEvents))
+      .all(),
   ])
+  const billNumberOf = new Map(groupBills.map(b => [b.billId, b.billNumber]))
+  const groupingEvents: GroupingEvent[] = groupingRows.map(e => ({
+    id: e.id,
+    type: e.type as GroupingEventType,
+    createdAt: e.createdAt,
+    // Null when FloorVote grouped the bills itself.
+    actorName: e.actorName ?? null,
+    with: (JSON.parse(e.metadata) as GroupingEventMetadata).with,
+  }))
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }
   for (const v of voteRows) {
@@ -156,6 +176,9 @@ export async function buildBillDetail(
 
   const formattedComments = commentRows.map(({ c: comment, userName, userEmail, userSubtitle }) => ({
     id: comment.id,
+    // The bill the comment was posted on, which in a group may be a companion.
+    billId: comment.billId,
+    billNumber: billNumberOf.get(comment.billId) ?? bill.billNumber,
     userId: comment.userId,
     userName: userName || userEmail,
     userSubtitle: userSubtitle,
@@ -273,11 +296,15 @@ export async function buildBillDetail(
     lastAiTextDocId: bill.lastAiTextDocId,
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
-    myNote: myNoteRow?.content ?? null,
+    // The member's notes across the group, and the one note they edit, which
+    // holds them all under their bill numbers until the next save merges them.
+    myNote: mergeGroupNotes(myNotes),
+    myNotes,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,
     commentsTotal: commentCountRow?.count ?? 0,
+    groupingEvents,
     texts: textRows.map(t => ({
       docId: t.docId,
       type: t.type,
@@ -311,10 +338,9 @@ export async function buildBillDetail(
 
   if (currentUser.role === 'admin' || currentUser.role === 'owner') {
     const memberVoteRows = await db
-      .select({ userId: memberVotes.userId, userName: users.name, userEmail: users.email, position: memberVotes.position, votedAt: memberVotes.updatedAt })
-      .from(memberVotes)
-      .innerJoin(users, eq(memberVotes.userId, users.id))
-      .where(eq(memberVotes.billId, billId))
+      .select({ userId: votes.userId, userName: users.name, userEmail: users.email, position: votes.position, votedAt: votes.updatedAt })
+      .from(votes)
+      .innerJoin(users, eq(votes.userId, users.id))
       .all()
 
     const voterIds = memberVoteRows.map((v) => v.userId)

@@ -218,7 +218,40 @@ export const bills = sqliteTable('bills', {
   draftText: text('draft_text'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+  // The bill's companion group: the smallest id among the bills linked to it by
+  // identical relationships, or null for a bill with none in this instance
+  // (migration 0100). Written only by lib/companionGroups.ts.
+  groupKey: text('group_key'),
 })
+
+// Identical relationships, as central's vocabulary reads them, by bill handle
+// on both sides (migration 0100). One row per bill naming a companion, so a
+// companion the instance doesn't hold yet is still remembered. Companion groups
+// are computed from these in either direction. Written only by
+// lib/companionGroups.ts.
+export const billIdenticalLinks = sqliteTable('bill_identical_links', {
+  externalId: text('external_id').notNull(),
+  companionExternalId: text('companion_external_id').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.externalId, t.companionExternalId] }),
+  index('idx_bill_identical_links_companion').on(t.companionExternalId),
+])
+
+// Structured events about a bill's team-level state, one row per bill (migration
+// 0100): a companion group forming or splitting so far. `type` has no CHECK
+// constraint, so a new kind of event needs no table rebuild. A null actor
+// means FloorVote did it automatically. Metadata is per type: see
+// shared/companionGroups.ts for grouping events.
+export const teamEvents = sqliteTable('team_events', {
+  id: text('id').primaryKey(),
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  actorUserId: text('actor_user_id'),
+  metadata: text('metadata').notNull().default('{}'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  index('idx_team_events_bill').on(t.billId, t.createdAt),
+])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),

@@ -1,0 +1,49 @@
+/**
+ * Companion groups: bills linked by `identical` relationships in either
+ * direction (see **Companion group** in CONTEXT.md). The shapes the instance
+ * API stores and serves for them, shared with the web app.
+ */
+
+/** A bill in a group, as an event or a comment names it. */
+export type GroupBill = { billId: string; billNumber: string }
+
+/** The `team_events.type` of a group forming around a bill, or splitting from it. */
+export type GroupingEventType = 'grouped' | 'split'
+
+/**
+ * A team value one bill held that grouping replaced with another bill's. A
+ * group resolves each team value to the most recently set, so when the group
+ * forms the others give way. Filled in by #377. Empty until team values are
+ * shared across a group.
+ */
+export type ReplacedTeamValue = {
+  field: string
+  billId: string
+  billNumber: string
+  value: string
+  replacedBy: { billId: string; billNumber: string; value: string }
+}
+
+/** `team_events.metadata` for a grouping event, one row per bill. */
+export type GroupingEventMetadata = {
+  /** The bills this bill joined (grouped) or left (split), by bill number. */
+  with: GroupBill[]
+  /** Every bill in the bill's group once the event took effect, sorted. Just the bill itself after a split leaves it alone. */
+  groupBillIds: string[]
+  replaced: ReplacedTeamValue[]
+}
+
+/**
+ * A grouping event as the bill page reads it. `actorName` is null when
+ * FloorVote grouped or split the bills automatically, from the provider's data.
+ */
+export type GroupingEvent = {
+  id: string
+  type: GroupingEventType
+  createdAt: string
+  actorName: string | null
+  with: GroupBill[]
+}
+
+/** One of a member's private notes in a group, as the bill page and note route serve them. */
+export type GroupNote = { billId: string; billNumber: string; content: string; updatedAt: string }

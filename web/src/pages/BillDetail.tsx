@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
@@ -36,7 +36,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
-import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
+import { COMPANION_TAG, COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
@@ -63,6 +63,9 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
+import type { GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import { placeGroupingLines } from '../lib/groupingLine'
+import { GroupingLine } from '../components/GroupingLine'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
@@ -383,6 +386,9 @@ function ItemDateText({ item }: { item: { date: string | null; dateResolved?: st
 
 type Comment = {
   id: string
+  /** The bill the comment was posted on: in a companion group, maybe a companion. Absent on one just posted here. */
+  billId?: string
+  billNumber?: string | null
   userId: string
   userName: string
   userSubtitle: string | null
@@ -500,6 +506,10 @@ type BillDetailData = {
   textStatus: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   myVote: 'support' | 'oppose' | 'neutral' | null
   myNote: string | null
+  /** The member's private notes across the bill's companion group, this bill's first. */
+  myNotes?: GroupNote[]
+  /** Where the bill's companion group formed or split, for the lines in its comment thread. */
+  groupingEvents?: GroupingEvent[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -637,6 +647,8 @@ export function BillDetail() {
   const [positionMeta, setPositionMeta] = useState<{ setByName: string; updatedAt: string } | null>(prefetchedBill?.position ? { setByName: prefetchedBill.position.setByName, updatedAt: prefetchedBill.position.updatedAt } : null)
   const [voteCounts, setVoteCounts] = useState(prefetchedBill?.voteCounts ?? { support: 0, oppose: 0, neutral: 0, total: 0 })
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
+  // Lines where the bill's companion group formed or split, placed among the comments by time.
+  const groupingLines = useMemo(() => placeGroupingLines(comments, bill?.groupingEvents ?? []), [comments, bill?.groupingEvents])
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
@@ -2753,7 +2765,9 @@ export function BillDetail() {
               Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
             </div>
             {comments.map((comment, idx) => (
-              <div key={comment.id} id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
+              <Fragment key={comment.id}>
+              {groupingLines.before.get(comment.id)?.map(e => <GroupingLine key={e.id} event={e} />)}
+              <div id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / subtitle / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
@@ -2765,6 +2779,10 @@ export function BillDetail() {
                     {comment.userName}
                     {comment.userSubtitle && (
                       <span style={{ fontSize: COMMENT_STYLE.subtitleSize, fontWeight: COMMENT_STYLE.subtitleWeight, color: COMMENT_STYLE.subtitleColor, marginLeft: 4 }}>{comment.userSubtitle}</span>
+                    )}
+                    {/* A comment posted on a companion in this bill's group. */}
+                    {comment.billId && comment.billId !== bill.id && comment.billNumber && (
+                      <span title={`Posted on ${comment.billNumber}`} style={{ ...COMPANION_TAG, marginLeft: 6 }}>{comment.billNumber}</span>
                     )}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
@@ -2908,7 +2926,9 @@ export function BillDetail() {
                   )}
                 </div>
               </div>
+              </Fragment>
             ))}
+            {groupingLines.after.map(e => <GroupingLine key={e.id} event={e} />)}
             <div style={{ marginTop: 12 }}>
               {/* Key on the bill so navigating to another bill remounts a fresh,
                   empty composer. Without this, the unkeyed editor keeps the prior
@@ -2996,7 +3016,7 @@ export function BillDetail() {
           <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} />
 
           <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
-            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} />
+            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} notes={bill.myNotes} />
           </div>
         </div>
       </div>

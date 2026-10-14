@@ -17,6 +17,7 @@ import { mentionEmailsEnabled, tiptapToEmailHtml } from './mentions'
 import { sendBatch, resolveAssocName, type EmailMessage } from './email'
 import { activeUser } from './accountDeletion'
 import { displayName } from './displayName'
+import { inGroupOf } from './companionGroups'
 import { billUrl } from '../../../shared/sessionSlug'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { buildBillCardModel } from '../../../shared/billCardModel'
@@ -50,7 +51,9 @@ async function replyRecipients(db: Db, billId: string, authorUserId: string): Pr
     .from(comments)
     .innerJoin(users, eq(comments.userId, users.id))
     .where(and(
-      eq(comments.billId, billId),
+      // A companion group is one conversation, so its participants are everyone
+      // who commented on any of its bills.
+      inGroupOf(comments.billId, billId),
       isNull(comments.deletedAt),
       ne(users.id, authorUserId),
       activeUser,

@@ -7,6 +7,7 @@ import { billHtmlToText } from '../lib/billText'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
+import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { nowDb } from '../lib/dbTime'
 import { readConfigString } from '../lib/configValue'
 import {
@@ -230,7 +231,8 @@ type CentralBill = {
   actions: Array<{ description: string; date: string; chamber: string | null; classification: string[]; order: number; videoUrl?: string | null }>
   sponsors: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
   votes: Array<unknown>
-  relatedBills: Array<{ identifier: string; session: string; relationType: string }>
+  /** `sastBillId` is central's id for the other bill, and `kind` what the provider's vocabulary makes of the relationship. Both absent from an older central. */
+  relatedBills: Array<{ identifier: string; session: string; relationType: string; sastBillId?: number | null; kind?: string }>
   subjects?: string[]
 }
 
@@ -281,6 +283,21 @@ export async function processCentralNotification(
 
   const centralBill = await res.json() as CentralBill
 
+  await applyCentralBill(msg, env, db, centralBill, fetchedAt)
+  // After every path above, including the ones that skip an unchanged bill:
+  // a bill's identical companions can change without its provider data
+  // changing (a vocabulary edit), and this is cheap when nothing did.
+  await syncIdenticalCompanions(db, msg.billId, centralBill.relatedBills)
+}
+
+/** Store what central sent for the bill, and analyze it when it should be. */
+async function applyCentralBill(
+  msg: TenantQueueMessage,
+  env: Env,
+  db: AppDb,
+  centralBill: CentralBill,
+  fetchedAt: string,
+): Promise<void> {
   const existing = await db.select({
     id: bills.id,
     providerUpdatedAt: bills.providerUpdatedAt,
