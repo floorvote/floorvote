@@ -324,6 +324,7 @@ describe('KeywordMatchSummary', () => {
       const calls = controllableFetch()
       render(<KeywordMatchSummary keywords="election" savedKeywords="election" />)
       await settle(100)
+      expect(screen.queryByText(/Counting/)).toBeNull()
       await answerWith(calls[0], answer(10))
       await settle(1000)
       expect(screen.queryByText(/Counting/)).toBeNull()
@@ -385,6 +386,20 @@ describe('KeywordMatchSummary', () => {
       await answerWith(calls[2], answer(30))
       expect(screen.queryByText(/Updating/)).toBeNull()
       expect(screen.getByText('30 of 100 bills (30%)')).toBeTruthy()
+    })
+
+    it('starts the delay afresh for a recount after a count that showed the indicator', async () => {
+      const calls = controllableFetch()
+      const { rerender } = render(<KeywordMatchSummary keywords="a" savedKeywords="a" />)
+      await settle(400)
+      expect(screen.getByText('Counting matching bills…')).toBeTruthy()
+      await answerWith(calls[0], answer(10))
+
+      rerender(<KeywordMatchSummary keywords="ab" savedKeywords="a" />)
+      await settle(299)
+      expect(screen.queryByText(/Updating/)).toBeNull()
+      await settle(1)
+      expect(screen.getByText(/Updating…/)).toBeTruthy()
     })
 
     it('announces counting once, not on every keystroke', async () => {
