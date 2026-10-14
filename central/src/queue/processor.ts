@@ -133,7 +133,8 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
 
 /**
  * Fetch one bill's full record from its provider. A snapshot provider gets the
- * record core stored for the bill, and the bill's session. When the provider
+ * record core stored for the bill, the bill's session, and the texts core
+ * already stores for it. When the provider
  * also fetched a details response, store it beside the record, and when, for
  * its details refresh.
  */
@@ -144,6 +145,8 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
       .where(and(eq(providerRecords.billId, billId), eq(providerRecords.provider, provider.id))).get()
     if (!row) throw new Error(`bill ${billId} has no stored ${provider.id} record; the ${provider.id} sync has not seen it`)
     const s = await db.select().from(sessions).where(eq(sessions.sessionId, row.sessionId)).get()
+    const texts = await db.select({ docId: billTexts.docId, stateLink: billTexts.stateLink })
+      .from(billTexts).where(eq(billTexts.billId, billId)).all()
     ref = {
       billId,
       sessionId: row.sessionId,
@@ -153,6 +156,7 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
         sessionId: s.sessionId, state: s.state, sessionTag: s.sessionTag,
         yearStart: s.yearStart, yearEnd: s.yearEnd, sessionName: s.sessionName, prior: s.prior,
       } : undefined,
+      texts,
     }
   } else {
     ref = { billId, sessionId }

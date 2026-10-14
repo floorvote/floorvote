@@ -134,7 +134,7 @@ export const lis: Provider<'LIS_API_KEY'> = {
     return toLisMasterListEntry(record.raw as LisRecord, code, record.billId, record.hash)
   },
 
-  async fetchMeasure({ billId, sessionId, nativeKey, record, session }, ctx) {
+  async fetchMeasure({ billId, sessionId, nativeKey, record, session, texts: stored }, ctx) {
     if (!record || !nativeKey || sessionId === null) throw new Error(`bill ${billId} has no stored LIS record; the LIS sync has not seen it`)
     const rec = record.raw as LisRecord
     const code = nativeKey.split('/')[0]
@@ -148,12 +148,18 @@ export const lis: Provider<'LIS_API_KEY'> = {
     const persons = await ctx.ids('person', memberIds)
     const rollKey = (refid: string) => lisRollCallKey(code, rec.bill.Bill_id, refid)
     const rollCalls = await ctx.ids('rollcall', counted.map(([refid]) => rollKey(refid)))
-    // Each text version's PDF link, from the API. Without a key there are none, so no texts, and no call.
+    // Each text version's PDF link. Without a key there are none, so no texts,
+    // and no call. A version central already stores keeps its link, which never
+    // changes for a text id, so the API is asked only for the rest.
     const apiKey = ctx.env.LIS_API_KEY || undefined
     const pdfs = new Map<number, string>()
     const versions = apiKey ? rec.texts ?? [] : []
+    const storedLinks = new Map((stored ?? []).flatMap(t => t.stateLink ? [[t.docId, t.stateLink] as const] : []))
+    const docIds = storedLinks.size > 0 ? await ctx.knownIds('doc', versions.map(([textId]) => lisTextDocKey(textId))) : new Map<string, number>()
     for (const [textId] of versions) {
-      const link = await getLisTextPdf(textId, apiKey!, () => ctx.logCall('lis:getlegislationtextbyidasync', { legislationTextID: textId }))
+      const docId = docIds.get(lisTextDocKey(textId))
+      const link = (docId === undefined ? undefined : storedLinks.get(docId))
+        ?? await getLisTextPdf(textId, apiKey!, () => ctx.logCall('lis:getlegislationtextbyidasync', { legislationTextID: textId }))
       if (link) pdfs.set(textId, link)
     }
     const docs = await ctx.ids('doc', [...rec.fiscal.map(f => f[1]), ...[...pdfs.keys()].map(lisTextDocKey)])

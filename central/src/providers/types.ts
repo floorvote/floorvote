@@ -427,6 +427,15 @@ export interface MeasureRef {
   record?: { raw: unknown; hash: string }
   /** The measure's session row, when central has one. */
   session?: StoredSession
+  /**
+   * The text documents central already stores for the measure, from an earlier
+   * ingest, as a snapshot provider's `fetchMeasure` sees them. A provider that
+   * has to look up each text's link can reuse a stored one (a text's link
+   * doesn't change for its `doc_id`) and look up only the rest. A text whose
+   * download failed is listed too, so its link is reused and core retries the
+   * download as before.
+   */
+  texts?: { docId: number; stateLink: string | null }[]
 }
 
 /** `fetchMeasure`'s result for a provider that also fetched a per-measure details response. */
