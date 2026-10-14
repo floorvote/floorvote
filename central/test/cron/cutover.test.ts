@@ -135,6 +135,9 @@ function recordedFeed(): Record<string, () => Response> {
   return routes
 }
 
+/** Bills filed since, which LegiScan's masterlist adds after its recorded three. */
+let filedLater: { billId: number; number: string; title: string }[] = []
+
 /** What LegiScan serves for DC once the state is back on it. */
 function legiscan(op: string, id: string | null): unknown {
   const entry = (billId: number, number: string, hash: string, title: string) =>
@@ -146,6 +149,7 @@ function legiscan(op: string, id: string | null): unknown {
       1: entry(B0001, 'B26-0001', 'ls-v2', 'Something else'),
       // Unchanged, since nothing moved it.
       2: entry(B9999, 'B26-9999', 'ls-v1', 'Youth rehabilitation study'),
+      ...Object.fromEntries(filedLater.map((b, i) => [3 + i, entry(b.billId, b.number, 'ls-v1', b.title)])),
     } }
   }
   if (op === 'getBill' && id === String(B0400)) {
@@ -294,6 +298,7 @@ beforeEach(async () => {
   vi.mocked(getCurrentEtHour).mockReturnValue(5)
   feed = recordedFeed()
   calls = []
+  filedLater = []
   fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input)
     calls.push(url)
@@ -917,6 +922,27 @@ describe('a moved bill no instance tracks', () => {
     expect(legiscanCalls('getBill').filter(u => !u.includes(`id=${B0400}`))).toEqual([])
     expect(sentToTenant(again)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), stubOnly: true }))
     expect(await getJson(`/bills/${toHandle(B0001)}`)).toMatchObject({ status: 'Introduced' })
+  })
+
+  // #364: the untracked moved bill keeps carried_from for good, since LegiScan
+  // never ingests it. That must not make the session's new matches bulk.
+  it('leaves a bill filed after the undo a routine match', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    expect((await undo(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    vi.mocked(getCurrentEtHour).mockReturnValue(13)
+    const first = makeEnv()
+    await runSync(first.env, drizzle(env.DB, { schema }))
+    await drain(first.ingestor, first)
+    expect((await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).carried_from).not.toBeNull()
+
+    const FILED = 1900777
+    filedLater = [{ billId: FILED, number: 'B26-0777', title: 'Child Neglect Prevention Act of 2026' }]
+    const next = makeEnv()
+    await runSync(next.env, drizzle(env.DB, { schema }))
+
+    expect(queued(next.ingestor).find(b => b.billId === FILED)?.matchProvenance).toEqual({ oca: 'routine' })
   })
 })
 

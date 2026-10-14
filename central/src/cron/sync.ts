@@ -254,6 +254,8 @@ export async function applyMasterList(
   const existingLinks = new Map<string, string | null>()
   /** Covering instances that already held a link to a bill of this list. */
   const seeded = new Set<string>()
+  /** Bills of this list with a keyword or manual link to an instance. */
+  const tracked = new Set<number>()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
     const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
@@ -268,13 +270,16 @@ export async function applyMasterList(
     for (const r of links) {
       existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
       seeded.add(r.tenantId)
+      if (r.matchType) tracked.add(r.billId)
     }
   }
-  // A pass over bills a cutover just moved here (still waiting for their
-  // first ingest from this provider, lib/cutover.ts) is the new provider's
-  // first pass. The bills it lists that the old provider lacked are existing
-  // legislation new only to central, so none of its matches is routine.
-  const cutoverPass = [...existing.values()].some(r => r.carriedFrom)
+  // A pass that queues a bill a cutover moved here for its first ingest from
+  // this provider (lib/cutover.ts, and carriedAndTracked below) is the new
+  // provider's first pass. The bills it lists that the old provider lacked
+  // are existing legislation new only to central, so none of its matches is
+  // routine. An untracked moved bill that this pass doesn't queue (LegiScan's,
+  // after an undo) keeps carried_from for good, so it doesn't count.
+  const cutoverPass = [...existing].some(([billId, r]) => r.carriedFrom && (opts.ingestMovedBills || tracked.has(billId)))
   const declareBulk = !!opts.bulk || cutoverPass
 
   const now = nowDb()
