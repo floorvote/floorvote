@@ -45,6 +45,22 @@ function fmtDay(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
+const DAY_MS = 86_400_000
+
+/**
+ * "in the last day" / "in the last week" / "in the last N days": names the window
+ * the digest really covers (last digest → now), so a daily digest says day, a weekly
+ * one says week, and a digest that skipped runs says how long it actually spans.
+ * Stored timestamps are space-format UTC ("2026-06-02 11:00:00"); read them as UTC.
+ */
+function describeWindow(startIso: string, endIso: string): string {
+  const utc = (s: string) => new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(s) ? `${s.replace(' ', 'T')}Z` : s).getTime()
+  const days = (utc(endIso) - utc(startIso)) / DAY_MS
+  if (days <= 1.5) return 'in the last day'
+  if (days >= 5.5 && days <= 8.5) return 'in the last week'
+  return `in the last ${Math.round(days)} days`
+}
+
 function toGroup(events: DigestEvent[]): GroupedBillEvents {
   const f = events[0]
   return {
@@ -143,12 +159,12 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
 
   const billCount = billOrder.length
   // Date range the digest covers: last digest → now (falls back to a 24h window if not supplied).
-  const start = fmtDay(input.periodStart ?? new Date(Date.now() - 86400_000).toISOString())
-  const end = fmtDay(input.periodEnd ?? new Date().toISOString()) // ts-write-ok: formatted for email display, not a DB column
-  const range = formatDateRange(start, end)
+  const periodStart = input.periodStart ?? new Date(Date.now() - DAY_MS).toISOString()
+  const periodEnd = input.periodEnd ?? new Date().toISOString() // ts-write-ok: formatted for email display, not a DB column
+  const range = formatDateRange(fmtDay(periodStart), fmtDay(periodEnd))
   const newMatches = input.newMatches ?? []
   const signal = billCount > 0
-    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated in the last week`
+    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated ${describeWindow(periodStart, periodEnd)}`
     : `${newMatches.length} new keyword ${newMatches.length === 1 ? 'match' : 'matches'}`
   const newMatchSection = renderNewMatchSection(newMatches, input.appUrl)
   const cards = billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')

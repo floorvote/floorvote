@@ -16,7 +16,7 @@ exports[`renderDigestEmail > renders the sample digest unchanged (extraction reg
   </div>
 
             <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
-            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">2 priority bills were updated in the last week</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">2 priority bills were updated in the last day</p>
             <p class="email-date" style="margin:2px 0 0;font-size:12px;color:#667386;">Jun 22 – Jun 23</p>
           </td></tr>
           <tr><td style="padding:6px 20px 28px;">

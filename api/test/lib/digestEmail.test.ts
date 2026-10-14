@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderDigestEmail } from '../../src/lib/digestEmail'
+import { renderSampleEmail } from '../../src/lib/sampleEmails'
 import { PRIORITY_COLORS } from '../../../web/src/lib/chipStyles'
 import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
 import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
@@ -163,6 +164,41 @@ describe('renderDigestEmail', () => {
     // falls back to Date.now() and the snapshot drifts daily).
     const html = renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl: 'https://x.test', newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-22T00:00:00Z', periodEnd: '2026-06-23T00:00:00Z' })
     expect(html).toMatchSnapshot()
+  })
+})
+
+describe('renderDigestEmail — summary line follows the window the digest covers', () => {
+  const signal = (periodStart?: string, periodEnd?: string) => {
+    const html = renderDigestEmail({ events: [ev()], assocName: 'X', appUrl: 'https://x', periodStart, periodEnd })
+    return html.match(/line-height:1\.35;">([^<]*)</)![1]
+  }
+
+  it('daily cadence: a one-day window says "in the last day"', () => {
+    expect(signal('2026-06-09T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last day')
+  })
+  it('weekly cadence: a seven-day window says "in the last week"', () => {
+    expect(signal('2026-06-03T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last week')
+  })
+  it('a daily digest that skipped runs describes the real window', () => {
+    expect(signal('2026-06-07T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last 3 days')
+  })
+  it('a weekly digest that skipped a run describes the real window', () => {
+    expect(signal('2026-05-27T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last 14 days')
+  })
+  it('reads the database timestamp format the digest job passes, as UTC', () => {
+    expect(signal('2026-06-09 11:00:00', '2026-06-10 11:00:00')).toBe('1 priority bill was updated in the last day')
+  })
+  it('with no window supplied, covers the default 24 hours: "in the last day"', () => {
+    expect(signal()).toBe('1 priority bill was updated in the last day')
+  })
+})
+
+describe('sample digest emails render the wording for their cadence', () => {
+  it('the daily sample says "in the last day"', () => {
+    expect(renderSampleEmail('digest', 'https://x').html).toContain('priority bills were updated in the last day')
+  })
+  it('the weekly sample says "in the last week"', () => {
+    expect(renderSampleEmail('digest-weekly' as any, 'https://x').html).toContain('priority bills were updated in the last week')
   })
 })
 

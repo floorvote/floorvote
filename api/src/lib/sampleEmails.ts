@@ -69,7 +69,7 @@ export const SAMPLE_INVITE_BOUNCES: BouncedAddress[] = [
   { email: 'casey.morgan@example.org', reason: '552 5.2.2 The email account that you tried to reach is over quota' },
 ]
 
-export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention' | 'reply' | 'invite-bounced'
+export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-weekly' | 'digest-new-only' | 'mention' | 'reply' | 'invite-bounced'
 
 export function isSampleEmailType(t: string): t is SampleEmailType {
   return (ALL_SAMPLE_EMAIL_TYPES as string[]).includes(t)
@@ -100,10 +100,16 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
         }),
       }
     case 'digest':
-      // Fixed period so the date range is deterministic (committed sample + snapshot).
+      // Daily cadence (the default). Fixed period so the date range is deterministic (committed sample + snapshot).
       return {
         subject: '[Sample] Priority bill updates',
-        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-10', periodEnd: '2026-06-11' }),
+      }
+    case 'digest-weekly':
+      // Weekly cadence: the same digest over a seven-day window.
+      return {
+        subject: '[Sample] Priority bill updates (weekly)',
+        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-04', periodEnd: '2026-06-11' }),
       }
     case 'digest-new-only':
       // Admin digest when there are NO priority-bill updates — only new keyword matches.
@@ -149,4 +155,4 @@ export async function sendSampleEmail(env: Env, db: AppDb, to: string, type: Sam
 }
 
 /** Every sample email type — drives the conformance test's iteration. */
-export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention', 'reply', 'invite-bounced']
+export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-weekly', 'digest-new-only', 'mention', 'reply', 'invite-bounced']

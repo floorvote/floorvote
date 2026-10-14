@@ -182,6 +182,29 @@ describe('runDigest', () => {
     expect(result.sent).toBe(1)
   })
 
+  it('daily: the summary line says the last day', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-06-02 11:00:00' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    expect(calls[0].html).toContain('was updated in the last day')
+  })
+
+  it('weekly: the summary line says the last week', async () => {
+    const db = getDb(env.DB)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))  // Wednesday
+    await enableWeekly(db, '3')
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-05-27 11:00:00' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    expect(calls[0].html).toContain('was updated in the last week')
+  })
+
   // ── New keyword-match section (admin/owner only) ────────────────────────────
   const recentMatch = () => new Date(Date.now() - 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
