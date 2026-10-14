@@ -369,10 +369,12 @@ export default {
     // In demo mode, freeze the bill set — except allow explicit reseeds
     // (forceMetadata), metadata-only refreshes (metadataOnly), and admin-triggered
     // AI re-runs (forceAI). Invite jobs carry none of these, so a pure invite batch
-    // is dropped (auto-acked) here — demo never emails.
+    // is dropped (auto-acked) here — demo never emails. A delivery probe
+    // (scripts/verify-instance.sh) also passes: it writes no bill, only records
+    // that it arrived, and is dropped here it would read as a missing consumer.
     if (env.DEMO_MODE === 'true' && !batch.messages.some(m => {
-      const b = m.body as { forceMetadata?: boolean; metadataOnly?: boolean; forceAI?: boolean }
-      return b.forceMetadata || b.metadataOnly || b.forceAI
+      const b = m.body as { forceMetadata?: boolean; metadataOnly?: boolean; forceAI?: boolean; probe?: string }
+      return b.forceMetadata || b.metadataOnly || b.forceAI || b.probe !== undefined
     })) return
 
     const db = getDb(env.DB)

@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification, processQueue } from '../../src/queue/processor'
+import worker from '../../src/index'
 import { readDeliveryProbe } from '../../src/lib/deliveryProbe'
 import { bills, feedEvents, associationConfig } from '../../src/db/schema'
 import type { TenantQueueMessage } from '../../src/types'
@@ -73,6 +74,17 @@ describe('delivery probe message', () => {
     await processCentralNotification(probe({ probe: 'first' }), testEnv, db)
     await processCentralNotification(probe({ probe: 'second' }), testEnv, db)
     expect((await readDeliveryProbe(db))?.nonce).toBe('second')
+  })
+
+  // A demo instance drops every bill message that does not force a refresh, so a
+  // probe would vanish and the check would report a missing consumer.
+  it('is recorded on a demo instance, which otherwise drops bill messages', async () => {
+    const db = getDb(env.DB)
+    const demoEnv = { ...testEnv, DEMO_MODE: 'true' }
+    const ack = vi.fn()
+    await worker.queue({ messages: [{ body: probe({ probe: 'demo-n' }), attempts: 1, ack, retry: vi.fn() }] } as any, demoEnv)
+    expect((await readDeliveryProbe(db))?.nonce).toBe('demo-n')
+    expect(ack).toHaveBeenCalledTimes(1)
   })
 
   it('is acknowledged by the queue consumer, not retried', async () => {

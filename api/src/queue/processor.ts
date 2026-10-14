@@ -1,20 +1,14 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
 import { processBill } from '../lib/llm'
-import { DEFAULT_TAXONOMY, parseTaxonomyItems, filterTagsToTaxonomy } from '../lib/taxonomy'
+import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
+import { recordDeliveryProbe } from '../lib/deliveryProbe'
+import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
 import { hearingUid } from '../lib/hearingUid'
-import { billHtmlToText } from '../lib/billText'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
 import { nowDb } from '../lib/dbTime'
-import { readConfigString } from '../lib/configValue'
-import {
-  ASSOCIATION_NAME_PLACEHOLDER,
-  buildDefaultAiContext,
-  buildDefaultRelevanceQuestion,
-  isAiConfigDefault,
-} from '../../../shared/aiDefaults'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
@@ -273,6 +267,10 @@ export async function processCentralNotification(
   db: AppDb,
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
+
+  // A delivery check (scripts/verify-instance.sh): record that it arrived and
+  // stop. It must reach no bill write, no feed event, and no analysis.
+  if (msg.probe !== undefined) return recordDeliveryProbe(msg, env, db)
 
   // When this copy of the bill was read: texts stored later come from a newer one.
   const fetchedAt = nowDb()
@@ -567,43 +565,8 @@ export async function processCentralNotification(
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
   let aiError: string | null = null
   if (shouldRunAi && !aiDedup) {
-    const [aiContextRow, taxonomyRow, relevanceQuestionRow, nameRow] = await Promise.all([
-      db.select().from(associationConfig).where(eq(associationConfig.key, 'ai_context')).get(),
-      db.select().from(associationConfig).where(eq(associationConfig.key, 'tag_taxonomy')).get(),
-      db.select().from(associationConfig).where(eq(associationConfig.key, 'relevance_question')).get(),
-      db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
-    ])
-    // Resolve here rather than relying on downstream `??` fallbacks: the fields are
-    // empty by default, and the defaults interpolate the association name so a
-    // rename is reflected on the next prompt with no stored state to migrate.
-    const associationName = readConfigString(nameRow) ?? ASSOCIATION_NAME_PLACEHOLDER
-    const storedAiContext = readConfigString(aiContextRow)
-    const storedRelevanceQuestion = readConfigString(relevanceQuestionRow)
-    const aiContext = isAiConfigDefault(storedAiContext)
-      ? buildDefaultAiContext(associationName)
-      : storedAiContext
-    const relevanceQuestion = isAiConfigDefault(storedRelevanceQuestion)
-      ? buildDefaultRelevanceQuestion(associationName)
-      : storedRelevanceQuestion
-    const dbTaxonomy = taxonomyRow ? parseTaxonomyItems(JSON.parse(taxonomyRow.value)) : []
-    const taxonomy = dbTaxonomy.length > 0 ? dbTaxonomy : DEFAULT_TAXONOMY
-
-    let billText = `${centralBill.title}. ${centralBill.abstract ?? ''}`
-    let billPdfBase64: string | undefined
-    let hasFullText = false
-    try {
-      const textRes = await centralFetch(env, `/bills/${msg.billId}/text`)
-      if (textRes.ok) {
-        const textData = await textRes.json() as { type: 'html' | 'pdf'; content: string }
-        if (textData.type === 'pdf') billPdfBase64 = textData.content
-        else billText = billHtmlToText(textData.content)
-        hasFullText = true
-      } else if (textRes.status !== 404) {
-        console.error(`[processor] central text returned ${textRes.status} for ${centralBill.number}`)
-      }
-    } catch (err) {
-      console.error(`[processor] failed to fetch text for ${centralBill.number}:`, err)
-    }
+    const { aiContext, relevanceQuestion, taxonomy } = await loadAnalysisInputs(db)
+    const { billText, billPdfBase64, hasFullText } = await loadBillTextForAi(env, msg.billId, centralBill)
     if (!hasFullText) console.log(`[processor] No full text for ${centralBill.number}, AI ran on title+abstract only`)
 
     const tier: 'flex' | 'priority' = msg.interactive ? 'priority' : 'flex'

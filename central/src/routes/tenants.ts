@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, inArray, asc, desc } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, asc, desc, count } from 'drizzle-orm'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
@@ -14,7 +14,7 @@ import { listStateOwnership } from '../lib/stateProviders'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
-import { deliverBatchToTenant } from '../lib/tenantDelivery'
+import { deliverBatchToTenant, deliverToTenant } from '../lib/tenantDelivery'
 import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRest'
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
@@ -754,6 +754,122 @@ tenantsRoutes.post('/:tenantId/send-sample-email', async (c) => {
   try {
     const r = await rpc.sendSampleEmail(body.to, body.type)
     return c.json(r, r.ok ? 200 : 502)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'tenant call failed' }, 502)
+  }
+})
+
+// ── Post-provisioning verification (scripts/verify-instance.sh) ─────────────────
+// Operator-only reads and probes that answer "does this instance work end to
+// end?". None calls LegiScan, changes which bills a tenant tracks, or feeds the
+// ingestor: every bill they use is one central already stores, and the sample
+// email route above covers the email check.
+
+type TenantRow = typeof schema.tenants.$inferSelect
+
+function parseCoverage(row: TenantRow): string[] {
+  try {
+    const parsed: unknown = JSON.parse(row.stateCoverage)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : []
+  } catch { return [] }
+}
+
+/**
+ * One stored bill to send or analyze: the newest with downloaded text in the
+ * tenant's states, else any in its states, else any at all. Null only when
+ * central stores no bills. Walks indexes from the newest row, so the cost is a
+ * few reads when matches are common, not a scan.
+ */
+async function pickVerificationBill(db: Db, coverage: string[]): Promise<number | null> {
+  const anyState = coverage.length === 0 || coverage.includes('*')
+  if (anyState) {
+    const withText = await db.select({ billId: schema.billTexts.billId }).from(schema.billTexts)
+      .where(isNotNull(schema.billTexts.r2Key)).orderBy(desc(schema.billTexts.docId)).limit(1).get()
+    if (withText) return withText.billId
+  } else {
+    const withText = await db.select({ billId: schema.billTexts.billId })
+      .from(schema.billTexts)
+      .innerJoin(schema.bills, eq(schema.bills.billId, schema.billTexts.billId))
+      .where(and(isNotNull(schema.billTexts.r2Key), inArray(schema.bills.state, coverage)))
+      .orderBy(desc(schema.billTexts.docId))
+      .limit(1)
+      .get()
+    if (withText) return withText.billId
+    const inStates = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+      .where(inArray(schema.bills.state, coverage)).orderBy(desc(schema.bills.billId)).limit(1).get()
+    if (inStates) return inStates.billId
+  }
+  const any = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+    .orderBy(desc(schema.bills.billId)).limit(1).get()
+  return any?.billId ?? null
+}
+
+// What central holds about one instance: whether it is registered, which states
+// and how many keywords it has, whether central is bound to it (CentralApi), and
+// whether central has any way to deliver its bills.
+tenantsRoutes.get('/:tenantId/registration', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const kw = await db.select({ n: count() }).from(schema.keywordRegistry)
+    .where(eq(schema.keywordRegistry.tenantId, tenantId)).get()
+  const deliveryPath = getTenantQueue(c.env, tenantId) ? 'binding'
+    : row.queueId && queuesRestEnabled(c.env) ? 'queue'
+    : 'none'
+  return c.json({
+    tenantId: row.tenantId,
+    name: row.name,
+    active: row.active,
+    apiUrl: row.apiUrl,
+    stateCoverage: parseCoverage(row),
+    keywordCount: kw?.n ?? 0,
+    lastSeenAt: row.lastSeenAt,
+    bound: resolveTenantRpc(c.env, tenantId) !== null,
+    deliveryPath,
+  })
+})
+
+// Send the instance one probe naming a stored bill, down its real delivery path.
+// The instance's consumer records the nonce and stops (api lib/deliveryProbe.ts):
+// no bill_tenants row here, no ingestor message, no bill row there.
+tenantsRoutes.post('/:tenantId/verify-delivery', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ nonce?: unknown }>().catch(() => ({} as { nonce?: unknown }))
+  const nonce = typeof body.nonce === 'string' ? body.nonce : ''
+  if (nonce.length === 0 || nonce.length > 64) return c.json({ error: 'nonce (1-64 characters) required' }, 400)
+
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const billId = await pickVerificationBill(db, parseCoverage(row))
+  if (billId === null) return c.json({ error: 'central has no stored bill to send' }, 404)
+
+  const handle = toHandle(billId)
+  const via = await deliverToTenant(c.env, tenantId, row.queueId ?? null, { tenantId, billId: handle, probe: nonce })
+  if (via === 'dropped') {
+    return c.json({ error: `no delivery path for tenant ${tenantId} (no queue binding or queue_id)` }, 409)
+  }
+  return c.json({ ok: true, nonce, billId: handle, via })
+})
+
+// What the instance recorded for the latest probe (see verify-delivery).
+tenantsRoutes.get('/:tenantId/delivery-probe', (c) =>
+  tenantRpcCall(c, (rpc) => rpc.deliveryProbe()))
+
+// Have the instance analyze one stored bill and report what came back. Costs
+// one model call; the instance writes nothing (api lib/verifyAi.ts).
+tenantsRoutes.post('/:tenantId/verify-ai', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const rpc = resolveTenantRpc(c.env, tenantId)
+  if (!rpc) return c.json({ error: 'tenant not bound' }, 501)
+  const billId = await pickVerificationBill(db, parseCoverage(row))
+  if (billId === null) return c.json({ error: 'central has no stored bill to analyze' }, 404)
+  try {
+    return c.json(await rpc.verifyAi(toHandle(billId)))
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'tenant call failed' }, 502)
   }
