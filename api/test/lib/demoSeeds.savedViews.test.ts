@@ -41,7 +41,7 @@ const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
 const CASES: Array<{ slug: string; fixtures: BillFixture[]; expectedTotals: Record<string, number> }> = [
   {
     slug: 'nj-county-clerks', fixtures: NJ_FIXTURES,
-    expectedTotals: { 'high-priority-or-clerk-duties': 5, 'costly-bills-we-support': 3, 'positions-still-in-play': 2 },
+    expectedTotals: { 'high-priority-or-clerk-duties': 5, 'costly-high-priority-bills': 2, 'legislative-affairs-backed-or-amended': 2 },
   },
   {
     slug: 'lake-michigan', fixtures: LM_FIXTURES,
@@ -82,8 +82,7 @@ function orDimensions(query: string): Array<{ key: string; query: string }> | nu
   const byKey = new Map<string, string[]>()
   for (const [k, v] of p) {
     if (k === 'match') continue
-    const d = k
-    byKey.set(d, [...(byKey.get(d) ?? []), v])
+    byKey.set(k, [...(byKey.get(k) ?? []), v])
   }
   if (byKey.size < 2) return null
   return [...byKey].map(([key, values]) => ({
@@ -168,6 +167,19 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
     }
   })
 
+  // A filter that every bill already passes is decoration: the view would read as
+  // combined but be one filter. Dropping any one dimension must widen the result.
+  it('has no decorative filter in a combined view', async () => {
+    for (const v of (await listViews()).filter(v => orDimensions(v.query) === null)) {
+      const p = new URLSearchParams(v.query)
+      const total = await totalFor(v.query)
+      for (const key of new Set(p.keys())) {
+        const without = new URLSearchParams([...p].filter(([k]) => k !== key)).toString()
+        expect(await totalFor(without), `${v.name}: dropping ${key} changes nothing`).toBeGreaterThan(total)
+      }
+    }
+  })
+
   // The counts the seed's comments promise, so a changed priority, position, or
   // custom-field value that quietly empties or floods a view fails here by name.
   it('returns the number of bills the seed says each view does', async () => {
@@ -179,7 +191,7 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
 
   it('restores the views on the next reset, whatever happened to them in between', async () => {
     const before = await listViews()
-    expect(before.length).toBeGreaterThanOrEqual(2)
+    expect(before).toHaveLength(3)
 
     // A view deleted, a view rewritten, and a view added by a visitor with admin rights.
     await env.DB.prepare('DELETE FROM saved_views WHERE id = ?').bind(before[0].id).run()
@@ -194,7 +206,7 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
 
   it('gives views stable ids and slugs across resets, so a bookmark survives', async () => {
     const first = await listViews()
-    expect(first.length).toBeGreaterThanOrEqual(2)
+    expect(first).toHaveLength(3)
     await runDemoReset(env.DB, seed)
     await runDemoReset(env.DB, seed)
     expect(await listViews()).toEqual(first)

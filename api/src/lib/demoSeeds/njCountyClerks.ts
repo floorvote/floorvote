@@ -520,14 +520,16 @@ export const NJ_COUNTY_CLERKS_SEED: DemoSeed = {
       query: viewQuery([['match', 'any'], ['priority', 'high'], ['tag', 'County Clerk Functions']]),
     },
     {
-      // 3 bills: A1195, A251, A1715, the costly ones the association backs.
-      id: 'demo-view-costly-support', name: 'Costly bills we support', slug: 'costly-bills-we-support',
-      query: viewQuery([['cf_fiscal-impact', 'Significant (>$100K)'], ['position', 'Support']]),
+      // 2 bills: A1195 and A1715, of the three with Significant fiscal impact (the
+      // third, A251, is medium priority).
+      id: 'demo-view-costly-high', name: 'Costly, high-priority bills', slug: 'costly-high-priority-bills',
+      query: viewQuery([['cf_fiscal-impact', 'Significant (>$100K)'], ['priority', 'high']]),
     },
     {
-      // 2 bills: A1680 (Amend) and A1698 (Monitor), not yet settled.
-      id: 'demo-view-in-play', name: 'Positions still in play', slug: 'positions-still-in-play',
-      query: viewQuery([['position', 'Amend'], ['position', 'Monitor'], ['priority', 'high'], ['priority', 'medium']]),
+      // 2 bills: A1680 (Amend) and A1715 (Support), of the three assigned to Legislative
+      // Affairs (the third, A2670, has no position yet).
+      id: 'demo-view-leg-affairs', name: 'Legislative Affairs, backed or amended', slug: 'legislative-affairs-backed-or-amended',
+      query: viewQuery([['cf_committee', 'Legislative Affairs'], ['position', 'Support'], ['position', 'Amend']]),
     },
   ],
 }
