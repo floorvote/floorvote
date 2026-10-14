@@ -13,7 +13,7 @@ import { parseAppDomains } from '../lib/appDomains'
 import { rememberInstance, forgetInstance } from '../lib/instanceHint'
 import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
-import { applyTokenProfile, isSuperadminUser, refreshProfileFromRequestToken } from '../lib/superadminProfile'
+import { applyTokenProfile, isSuperadminUser, refreshProfileFromCentral, refreshProfileFromRequestToken } from '../lib/superadminProfile'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
@@ -273,11 +273,15 @@ authRoutes.post('/verify', async (c) => {
   })
 
   const verifiedUser = await db
-    .select({ email: users.email, name: users.name })
+    .select({ id: users.id, email: users.email, name: users.name, subtitle: users.subtitle })
     .from(users)
     .where(eq(users.id, userId))
     .get()
   rememberInstance(c, verifiedUser?.email)
+
+  // A superadmin's name and title are kept in central. Refresh this instance's copy
+  // on an emailed-link sign-in too; an unreachable central keeps the existing copy.
+  if (verifiedUser) await refreshProfileFromCentral(c.env, db, verifiedUser)
 
   // Tenants no longer mint the cross-tenant superadmin SSO cookie. Central is the
   // SOLE issuer: it sets the `.<parent-domain>`-scoped `superadmin_jwt` cookie on
