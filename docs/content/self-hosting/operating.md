@@ -8,9 +8,12 @@ Once your central service and at least one tenant are running, this page covers 
 
 ## Optional: superadmin dashboard
 
-The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA). The dashboard emails its sign-in links through Cloudflare Email Service, using the example's `[[env.legiscan.send_email]]` binding and `EMAIL_PROVIDER = "cloudflare"`, so also set `ADMIN_APP_URL` (the dashboard's base URL, used in those links) and `EMAIL_FROM` (the sender address) in `[env.legiscan.vars]`. Then set these secrets on central (run from inside `central/`):
+The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA). Also set `ADMIN_APP_URL` (the dashboard's base URL, used in its sign-in links) in `[env.legiscan.vars]`, then set these secrets on central (run from inside `central/`):
 
 ```bash
+# Magic-link email for the dashboard
+wrangler secret put RESEND_API_KEY --env legiscan
+
 # ES256 private JWK (JSON string); central is the sole issuer
 wrangler secret put SUPERADMIN_JWT_PRIVATE_KEY --env legiscan
 
@@ -20,7 +23,8 @@ wrangler secret put SUPERADMIN_EMAILS --env legiscan
 
 Generate the keypair with `node scripts/gen-superadmin-keys.mjs` from the repository root, which prints both halves as JWK JSON. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
 
-If you use Resend for email instead (`EMAIL_PROVIDER = "resend"`), also set `RESEND_API_KEY` on central. It is otherwise only a fallback.
+> [!WARNING]
+> The dashboard login needs both `RESEND_API_KEY` and `ADMIN_APP_URL`. If either is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning), so it looks like the link never arrives.
 
 ## Optional: observability panels
 
