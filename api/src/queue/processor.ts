@@ -162,10 +162,10 @@ function classifyAiError(err: unknown): AiSkipReason | null {
 function pickLatestTextDocId(centralBill: { texts?: Array<{ docId: string; date: string }> }): string | null {
   const texts = centralBill.texts
   if (!texts || texts.length === 0) return null
-  const sorted = [...texts].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1
-    return a.docId < b.docId ? 1 : -1
-  })
+  // Doc ids are numeric strings and rise in issue order, so a same-day tie goes
+  // to the higher one: compared as numbers, since "9" sorts above "10" as text.
+  const sorted = [...texts].sort((a, b) =>
+    b.date.localeCompare(a.date) || Number(b.docId) - Number(a.docId) || b.docId.localeCompare(a.docId))
   return sorted[0]?.docId ?? null
 }
 
