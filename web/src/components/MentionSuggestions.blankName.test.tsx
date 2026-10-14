@@ -34,3 +34,15 @@ describe('MentionSuggestions, person with no name', () => {
     expect(buttons[0].textContent?.trim()).not.toBe('')
   })
 })
+
+describe('MentionSuggestions, @admins', () => {
+  it('lists @admins with how many admins it reaches and inserts the admins token when clicked', async () => {
+    const command = vi.fn()
+    const admins = { id: 'all' as const, memberCount: 2, type: 'admins' as const }
+    render(<MentionSuggestions items={[admins, named]} command={command} />)
+    const option = screen.getByRole('button', { name: /admins/ })
+    expect(option).toHaveTextContent('2 members')
+    await userEvent.setup().click(option)
+    expect(command).toHaveBeenCalledWith({ id: 'admins:all', label: 'admins' })
+  })
+})
