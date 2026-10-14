@@ -41,9 +41,10 @@ const andFilter = (filter: SQL | undefined) => (filter ? sql` AND ${filter}` : s
  * columns the common filters read (status, stage, state, session, year, and
  * relevance), so those filters count the grouped bills from that one small
  * index without reading the table. Each statement holds the filter once, so
- * binds a filter's values once. The exception is a team field's filter
- * (priority, position, custom field), which binds its values twice, once for
- * the bill holding the group's value and once for the rest of the group.
+ * binds a filter's values once. The exception is a priority or position filter,
+ * which binds its values twice, once for the bill holding the group's value and
+ * once for the rest of the group (tags and custom field values are one JSON
+ * parameter each).
  *
  * `selective` says the filter picks few bills from an index of its own (new
  * matches, my bills, drafts), so the grouped ones are found from that index
@@ -310,7 +311,7 @@ export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]>
   } else {
     // The groups of the bills meeting the filter, the filter held once: a filter that reads the table is
     // already costly, and tests each bill the way it did before groups.
-    inner = sql`SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT COALESCE(m.group_key, m.id) FROM bills m WHERE ${o.filter(m)})`
+    inner = sql`SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT COALESCE(m.group_key, m.id) FROM bills m WHERE ${o.filter(m, true)})`
   }
   // The natural bill number reads the lead bill's number several times, so its value is computed once per group
   // first. The two parts of the cheap filter's full path are one set to sort, so they are wrapped the same way.

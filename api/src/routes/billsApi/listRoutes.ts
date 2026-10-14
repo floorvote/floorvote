@@ -85,6 +85,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     }
     const filter = await buildBillsFilter(db, filterParams)
     const filtered = filter(billsAs('m'))
+    // The same filter for the statements that test most bills.
+    const filteredMany = filter(billsAs('m'), true)
     const hasFilter = filtered !== undefined
     // A filter is held twice in a statement when that leaves room under D1's 100 bound parameters, which lets the
     // tracked-first path test a bill with no companions directly. A cheap filter that fits twice also gets the full path's two-part form.
@@ -134,7 +136,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // it as a scope filter produces wrong conclusions about the visible set.
       // Phase 1: counts — always get total; get the tracked count when optimizing
       const [totalGroups, trackedCount] = await Promise.all([
-        countGroups(db, filtered, newMatchesActive || draftsActive || filterParams.myBillsParam === '1'),
+        countGroups(db, filteredMany, newMatchesActive || draftsActive || filterParams.myBillsParam === '1'),
         optimize ? trackedBills(db, filtered) : 0,
       ])
       total = totalGroups
@@ -233,7 +235,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       : undefined
     const stateFilter = multiFilter(bills.state, states)
 
-    const tagFilter = tagCondition(tagFilters)?.(bills)
+    const tagFilter = tagCondition(tagFilters)?.(bills, true)
 
     // Loaded unconditionally (not just when a `subject` param is present): the
     // subjects facet's own counts must omit suppressed states even with no

@@ -2,8 +2,8 @@
 -- companion group, and its total counts groups. The bills that meet a filter are
 -- counted from the filter's own index, as before groups. Correcting that for
 -- groups needs each grouped bill's group key together with the columns the
--- common filters read. So the group key index (0100) now carries them: status,
--- stage, state, session, year, and relevance. A filtered total reads this one
+-- common filters read, and its id. So the group key index (0100) now carries them: status,
+-- stage, state, session, year, relevance, and id. A filtered total reads this one
 -- small index and no table rows, where without them every grouped bill's row
 -- is read.
 --
@@ -20,7 +20,7 @@
 -- No semicolons in these comments. api/test/helpers.ts splits migration files
 -- on the statement terminator before it strips comment lines.
 DROP INDEX idx_bills_group_key;
-CREATE INDEX idx_bills_group_key ON bills(group_key, status, status_stage, state, session, year_start, relevance_score)
+CREATE INDEX idx_bills_group_key ON bills(group_key, status, status_stage, state, session, year_start, relevance_score, id)
   WHERE group_key IS NOT NULL;
 
 ANALYZE bills;

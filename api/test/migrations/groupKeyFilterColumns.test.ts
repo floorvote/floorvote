@@ -27,9 +27,9 @@ describe('migration 0102: the group key index carries the filter columns', () =>
     expect(results[0].sql).toMatch(/WHERE group_key IS NOT NULL/)
   })
 
-  it('carries the status, stage, state, session, year, and relevance columns', async () => {
+  it('carries the status, stage, state, session, year, relevance, and id columns', async () => {
     const { results } = await env.DB.prepare("SELECT name FROM pragma_index_info('idx_bills_group_key') ORDER BY seqno").all<{ name: string }>()
-    expect(results.map(r => r.name)).toEqual(['group_key', 'status', 'status_stage', 'state', 'session', 'year_start', 'relevance_score'])
+    expect(results.map(r => r.name)).toEqual(['group_key', 'status', 'status_stage', 'state', 'session', 'year_start', 'relevance_score', 'id'])
   })
 
   it('indexes the bills already grouped when it runs', async () => {

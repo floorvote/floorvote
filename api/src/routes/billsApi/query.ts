@@ -21,8 +21,12 @@ export function billsAs(name: string): BillsTable {
   return alias(bills, name) as unknown as BillsTable
 }
 
-/** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
-export type BillsFilter = (t: BillsTable) => SQL | undefined
+/**
+ * Any filter, applied to one reference to `bills` (the table, or an alias of it).
+ * `many` says the statement tests the filter on most bills (a scan), not a few
+ * (a page's bills, a lookup of one group's), which the tag filter reads: see `tagCondition`.
+ */
+export type BillsFilter = (t: BillsTable, many?: boolean) => SQL | undefined
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -246,7 +250,7 @@ export type BillFilterParams = {
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
-export type BillsCondition = (t: BillsTable) => SQL
+export type BillsCondition = (t: BillsTable, many?: boolean) => SQL
 
 /**
  * Priority filter values (a level, "any" for has a priority, "none" for no
@@ -305,18 +309,24 @@ export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
   if (tagFilters.length === 0) return undefined
   const hasAny = tagFilters.includes(FILTER_ANY)
   const realTags = tagFilters.filter(t => t !== FILTER_ANY)
-  // The bill holds the group's analysis and its tags meet the filter.
-  const holds = (t: BillsTable): SQL => {
+  const tagTest = (t: BillsTable): SQL => {
     const parts: SQL[] = []
     if (hasAny) parts.push(sql`json_array_length(${t.tags}) > 0`) // "Any" = has any tag
     if (realTags.length > 0) parts.push(tagMembership(realTags, t))
-    return and(parts.length === 1 ? parts[0] : or(...parts)!, holdsGroupAnalysis(t))!
+    return parts.length === 1 ? parts[0] : or(...parts)!
   }
   const h = billsAs('h')
-  return t => or(
-    holds(t),
-    sql`(${t.groupKey} IS NOT NULL AND EXISTS (SELECT 1 FROM bills h WHERE h.group_key = ${t.groupKey} AND ${holds(h)}))`,
-  )!
+  return (t, many) => many
+    // Over most bills: a bill with no companions holds its own analysis, so its tags decide. A grouped bill meets
+    // the filter when its group is in a list built once (the groups whose current analysis has the tags), not by a
+    // probe of its group for each bill.
+    ? sql`CASE WHEN ${t.groupKey} IS NULL THEN ${tagTest(t)}
+        ELSE ${t.groupKey} IN (SELECT h.group_key FROM bills h WHERE h.group_key IS NOT NULL AND ${tagTest(h)} AND ${holdsGroupAnalysis(h)}) END`
+    // Over a few bills, a probe of the bill's group is cheaper than building that list.
+    : or(
+      and(tagTest(t), holdsGroupAnalysis(t))!,
+      sql`(${t.groupKey} IS NOT NULL AND EXISTS (SELECT 1 FROM bills h WHERE h.group_key = ${t.groupKey} AND ${tagTest(h)} AND ${holdsGroupAnalysis(h)}))`,
+    )!
 }
 
 /**
@@ -363,12 +373,13 @@ export async function buildCustomFieldFilters(
   for (const [fieldId, values] of Object.entries(resolvedParamMap)) {
     const realValues = values.filter(v => v !== FILTER_ANY)
     const anyValue = values.includes(FILTER_ANY)
-    const picked = sql.join(realValues.map(v => sql`${v}`), sql`, `)
+    // One JSON parameter, however many options are picked.
+    const picked = sql`(SELECT value FROM json_each(${JSON.stringify(realValues)}))`
     const valueCondition = realValues.length === 0 ? undefined
       : multipleById.get(fieldId)
         // multi-select: stored value is JSON array. Match if any picked value is in the array.
-        ? sql`json_valid(p.value) = 1 AND EXISTS (SELECT 1 FROM json_each(p.value) je WHERE je.value IN (${picked}))`
-        : sql`p.value IN (${picked})`
+        ? sql`json_valid(p.value) = 1 AND EXISTS (SELECT 1 FROM json_each(p.value) je WHERE je.value IN ${picked})`
+        : sql`p.value IN ${picked}`
     if (!anyValue && !valueCondition) continue
     conditions[fieldId] = t => {
       // "Any" = the group has any value for this field.
@@ -476,15 +487,15 @@ export async function buildBillsFilter(
     scopes.push(t => sql`${t.id} IN (SELECT value FROM json_each(${mine}))`)
   }
 
-  return t => {
-    const facts = billFacts.map(f => f(t))
+  return (t, many) => {
+    const facts = billFacts.map(f => f(t, many))
     const factCond = facts.length === 0
       ? undefined
       : facts.length === 1
         ? facts[0]
         : (p.matchAny ? or(...facts)! : and(...facts)!)
 
-    const all = [...(factCond ? [factCond] : []), ...scopes.map(f => f(t))]
+    const all = [...(factCond ? [factCond] : []), ...scopes.map(f => f(t, many))]
     if (all.length === 0) return undefined
     return all.length === 1 ? all[0] : and(...all)!
   }
