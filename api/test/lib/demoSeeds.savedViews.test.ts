@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedBill, seedSession } from '../helpers'
+import { getDb } from '../../src/db/client'
+import { billSubjects } from '../../src/db/schema'
 import { runDemoReset } from '../../src/lib/demoReset'
 import { DEMO_SEEDS, type DemoSeed } from '../../src/lib/demoSeeds'
 import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
@@ -12,35 +14,56 @@ import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
  * the API the question a visitor's browser asks: which views exist, and what does
  * each one return?
  *
- * The fixtures stand in for what ingest gives the demo's real bills, which is only
- * the bill's state and its AI-assigned tags. Subjects are deliberately NOT given
- * here: the seed writes the subjects its views filter on (`billSubjects`), so the
- * subject half of every OR view is exercised on what the reset itself installs,
- * not on a value the test supplies.
+ * The fixtures stand in for what ingest gives the demo's real bills: the state,
+ * the AI-assigned tags, and the subjects the legislature filed. The subjects are
+ * the real ones, read from production central on 2026-10-14. The seed writes no
+ * subjects of its own (a bill page labels them "assigned by the legislature"), so
+ * the subject half of every OR view has to match what the provider really files.
  */
-type BillFixture = { externalId: string; state: string; tags: string[] }
+type BillFixture = { externalId: string; state: string; tags: string[]; subjects: string[] }
 
-// The eight NJ bills. Tags: A2670 is about county boards canvassing, A548 about
-// clerk filings, the rest about elections.
+const NJ_SUBJECT = 'State and Local Government'
+
+// The eight NJ bills. LegiScan files seven under the one broad NJ subject and the
+// governor-signed A1715 under another. Tags: A2670 is about county boards
+// canvassing, A548 about clerk filings, the rest about elections.
 const NJ_FIXTURES: BillFixture[] = [
-  ['legiscan:2099974', 'Elections'],
-  ['legiscan:2100182', 'Elections'],
-  ['legiscan:2098535', 'Elections'],
-  ['legiscan:2098113', 'Elections'],
-  ['legiscan:2098630', 'Elections'],
-  ['legiscan:2096183', 'Elections'],
-  ['legiscan:2099056', 'Board of Elections'],
-  ['legiscan:2096553', 'County Clerk Functions'],
-].map(([externalId, tag]) => ({ externalId, state: 'NJ', tags: [tag] }))
+  ['legiscan:2099974', 'Elections', NJ_SUBJECT],
+  ['legiscan:2100182', 'Elections', NJ_SUBJECT],
+  ['legiscan:2098535', 'Elections', NJ_SUBJECT],
+  ['legiscan:2098113', 'Elections', 'Bills and Joint Resolutions Signed by the Governor'],
+  ['legiscan:2098630', 'Elections', NJ_SUBJECT],
+  ['legiscan:2096183', 'Elections', NJ_SUBJECT],
+  ['legiscan:2099056', 'Board of Elections', NJ_SUBJECT],
+  ['legiscan:2096553', 'County Clerk Functions', NJ_SUBJECT],
+].map(([externalId, tag, subject]) => ({ externalId, state: 'NJ', tags: [tag], subjects: [subject] }))
 
-// Each Lake Michigan bill carries the one taxonomy theme the seed assigns it.
+// Each Lake Michigan bill carries the one taxonomy theme the seed assigns it. The
+// subjects are LegiScan's for the bills that have any; most Wisconsin, Illinois,
+// Indiana, and federal bills have none.
+const LM_SUBJECTS: Record<string, string[]> = {
+  'legiscan:2029026': ['Counties: employees and officers', 'Water supply: other'],
+  'legiscan:2041788': [
+    'Water supply: quality and standards', 'Environmental protection: pollution prevention',
+    'State agencies (existing): environment, Great Lakes, and energy',
+  ],
+  'legiscan:2055958': ['Watercraft: registration', 'Environmental protection: water pollution'],
+  'legiscan:2095619': [
+    'Environmental protection: sewage', 'Environmental protection: water pollution', 'Health: local health departments',
+  ],
+  'legiscan:2129983': ['Water supply: quality and standards'],
+  'legiscan:1910159': ['Environmental protection'],
+}
 const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
-  externalId: b.externalId, state: b.jurisdiction, tags: [b.theme],
+  externalId: b.externalId, state: b.jurisdiction, tags: [b.theme], subjects: LM_SUBJECTS[b.externalId] ?? [],
 }))
 
-const CASES: Array<{ slug: string; fixtures: BillFixture[] }> = [
-  { slug: 'nj-county-clerks', fixtures: NJ_FIXTURES },
-  { slug: 'lake-michigan', fixtures: LM_FIXTURES },
+// `narrows`: whether the OR view can return fewer bills than the demo has. NJ cannot:
+// LegiScan's only subject on seven of its eight bills is the broad one, and the
+// tag half covers the eighth, so the NJ OR view is honestly "all of them".
+const CASES: Array<{ slug: string; fixtures: BillFixture[]; narrows: boolean }> = [
+  { slug: 'nj-county-clerks', fixtures: NJ_FIXTURES, narrows: false },
+  { slug: 'lake-michigan', fixtures: LM_FIXTURES, narrows: true },
 ]
 
 type ViewDto = { id: string; name: string; query: string; slug: string }
@@ -78,17 +101,23 @@ function orHalves(query: string): { subjectOnly: string; tagOnly: string } | nul
 
 async function seedFixtures(seed: DemoSeed, fixtures: BillFixture[]) {
   for (const [i, f] of fixtures.entries()) {
-    await seedBill({
+    const id = await seedBill({
       externalId: f.externalId, billNumber: `B${1000 + i}`, title: `Bill ${i}`,
       state: f.state, tags: f.tags,
+      subjects: f.subjects.length > 0 ? JSON.stringify(f.subjects) : null,
     })
+    if (f.subjects.length > 0) {
+      await getDb(env.DB).insert(billSubjects).values(
+        f.subjects.map(name => ({ billId: id, subjectName: name, state: f.state })),
+      ).run()
+    }
   }
   // Every bill the seed's own rows point at must exist, or the reset's guards
   // would no-op and the priority and position views would have nothing to match.
   expect(new Set(fixtures.map(f => f.externalId))).toEqual(new Set(seed.priorities.map(p => p.externalId)))
 }
 
-describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) => {
+describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, narrows }) => {
   const seed = DEMO_SEEDS[slug]
 
   beforeEach(async () => {
@@ -126,8 +155,9 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) 
     }
   })
 
-  // An OR view that returns every bill shows nothing about the operator.
-  it('has OR views that narrow the list', async () => {
+  // An OR view that returns every bill shows nothing about the operator, so where
+  // the provider's subjects allow it, the view must narrow the list.
+  it.runIf(narrows)('has OR views that narrow the list', async () => {
     const orViews = (await listViews()).filter(v => orHalves(v.query) !== null)
     expect(orViews.length).toBeGreaterThanOrEqual(1)
     for (const v of orViews) {
@@ -135,19 +165,16 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) 
     }
   })
 
-  // The bill page lists bills.subjects; the list filter and facets read bill_subjects.
-  it('writes each seeded subject to both subject stores', async () => {
-    expect(seed.billSubjects?.length ?? 0).toBeGreaterThan(0)
-    for (const { externalId, subject } of seed.billSubjects ?? []) {
-      const row = await env.DB.prepare(
-        `SELECT (SELECT count(*) FROM bill_subjects bs WHERE bs.bill_id = b.id AND bs.subject_name = ? AND bs.state = b.state) AS filterRows,
-                (SELECT count(*) FROM json_each(b.subjects) WHERE value = ?) AS listed
-         FROM bills b WHERE b.external_id = ?`,
-      ).bind(subject, subject, externalId).first<{ filterRows: number; listed: number }>()
-      expect(row, externalId).not.toBeNull()
-      expect(row!.filterRows, `${externalId} bill_subjects`).toBe(1)
-      expect(row!.listed, `${externalId} bills.subjects`).toBe(1)
-    }
+  // A bill page labels subjects as assigned by the legislature, so the reset must
+  // leave exactly what the provider filed.
+  it('adds no subject the provider did not file', async () => {
+    const filed = fixtures.reduce((n, f) => n + f.subjects.length, 0)
+    const stored = await env.DB.prepare('SELECT count(*) AS n FROM bill_subjects').first<{ n: number }>()
+    expect(stored!.n).toBe(filed)
+    const listed = await env.DB.prepare(
+      `SELECT count(*) AS n FROM bills b, json_each(b.subjects)`,
+    ).first<{ n: number }>()
+    expect(listed!.n).toBe(filed)
   })
 
   it('returns at least one bill from every view', async () => {
@@ -179,10 +206,5 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures }) 
     await runDemoReset(env.DB, seed)
     await runDemoReset(env.DB, seed)
     expect(await listViews()).toEqual(first)
-    // Writing the subjects twice must not duplicate them.
-    const dupes = await env.DB.prepare(
-      `SELECT count(*) AS n FROM (SELECT 1 FROM bills b, json_each(b.subjects) je GROUP BY b.id, je.value HAVING count(*) > 1)`,
-    ).first<{ n: number }>()
-    expect(dupes!.n).toBe(0)
   })
 })

@@ -312,23 +312,6 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ),
   ])
 
-  // The subjects those views name, added to the bill's two subject stores: bill_subjects
-  // (what the list filter and facets read) and the bills.subjects JSON (what the bill
-  // page lists). Additive and idempotent. A bill that is not ingested yet no-ops.
-  await batch(seed.billSubjects.flatMap((s) => [
-    db.prepare(
-      `INSERT OR IGNORE INTO bill_subjects (bill_id, subject_name, state)
-       SELECT id, ?, state FROM bills WHERE external_id = ?`
-    ).bind(s.subject, s.externalId),
-    db.prepare(
-      `UPDATE bills SET subjects = CASE
-         WHEN subjects IS NULL OR json_valid(subjects) = 0 THEN json_array(?)
-         WHEN EXISTS (SELECT 1 FROM json_each(subjects) WHERE value = ?) THEN subjects
-         ELSE json_insert(subjects, '$[#]', ?)
-       END WHERE external_id = ?`
-    ).bind(s.subject, s.subject, s.subject, s.externalId),
-  ]))
-
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
   // hearings widget always show fresh upcoming events; the demo reset re-derives them.
   await batch(seed.calendarEvents.map((e) =>
