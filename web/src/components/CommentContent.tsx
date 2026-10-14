@@ -173,6 +173,7 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
            user = gray) so posted comments, the composer (RichTextEditor.tsx),
            the notifications panel, and the emails can't drift. */
         .comment-html span[data-type="mention"][data-id^="role:"],
+        .comment-html span[data-type="mention"][data-id^="admins:"],
         .comment-html span[data-type="mention"][data-id^="everyone:"] {
           background: ${MENTION_STYLE.role.bg};
           color: ${MENTION_STYLE.role.text};

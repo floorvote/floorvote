@@ -400,7 +400,7 @@ export const calendarEventBills = sqliteTable('calendar_event_bills', {
 
 /** A mention notification's kind-specific data: how the mention reached the recipient. */
 export type MentionNotificationData = {
-  sourceType: 'user' | 'role' | 'everyone'
+  sourceType: 'user' | 'role' | 'admins' | 'everyone'
   /** The user, the role, or 'all' for @everyone. */
   sourceId: string
 }

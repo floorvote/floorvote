@@ -117,7 +117,7 @@ describe('@admins mention', () => {
 
     const html = (send.mock.calls[0][0] as { html: string }).html
     expect(html).toContain('@admins')
-    expect(html).toContain('because you&#39;re an admin')
+    expect(html).toContain("because you're an admin")
   })
 
   it('an edit that adds @admins notifies the admins, and removing it clears them', async () => {

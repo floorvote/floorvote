@@ -18,13 +18,19 @@ interface RoleItem {
   type: 'role'
 }
 
-interface EveryoneItem {
+/** A built-in group mention: @everyone (admins and owners only) or @admins (any member). */
+interface GroupItem {
   id: 'all'
   memberCount: number
-  type: 'everyone'
+  type: 'everyone' | 'admins'
 }
 
-type SuggestionItem = UserItem | RoleItem | EveryoneItem
+type SuggestionItem = UserItem | RoleItem | GroupItem
+
+const GROUP_MENTIONS = {
+  everyone: { label: 'everyone', hint: 'Notify all members' },
+  admins: { label: 'admins', hint: 'Notify all admins' },
+} as const
 
 export interface MentionSuggestionsRef {
   onKeyDown: (props: { event: KeyboardEvent }) => boolean
@@ -33,6 +39,10 @@ export interface MentionSuggestionsRef {
 interface Props {
   items: SuggestionItem[]
   command: (item: { id: string; label: string }) => void
+}
+
+function isGroup(item: SuggestionItem): item is GroupItem {
+  return item.type === 'everyone' || item.type === 'admins'
 }
 
 function isMoreIndicator(item: SuggestionItem) {
@@ -88,8 +98,8 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
     function handleSelect(selectableIdx: number) {
       const item = selectableItems[selectableIdx]
       if (!item) return
-      if (item.type === 'everyone') {
-        command({ id: 'everyone:all', label: 'everyone' })
+      if (isGroup(item)) {
+        command({ id: `${item.type}:all`, label: GROUP_MENTIONS[item.type].label })
         return
       }
       const prefix = item.type === 'role' ? 'role' : 'user'
@@ -99,7 +109,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
 
     if (items.length === 0) return null
 
-    const everyone = items.find((i): i is EveryoneItem => i.type === 'everyone')
+    const groups = items.filter(isGroup)
     const people = items.filter((i): i is UserItem => i.type === 'user')
     const roles = items.filter((i): i is RoleItem => i.type === 'role')
 
@@ -124,7 +134,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
         overflowY: 'auto',
         minWidth: 220,
       }}>
-        {everyone && (() => {
+        {groups.map(group => {
           globalIndex++
           const gi = globalIndex
           const si = globalToSelectable.get(gi)!
@@ -133,7 +143,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
               ref={el => {
                 setRef(gi, el);
               }}
-              key="everyone"
+              key={group.type}
               onClick={() => handleSelect(si)}
               style={{
                 display: 'flex',
@@ -150,14 +160,14 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
                 borderBottom: `1px solid ${color.borderDefault}`,
               }}
             >
-              <span style={{ fontWeight: fontWeight.medium }}>everyone</span>
-              <span style={{ color: color.textMuted, marginLeft: 6 }}>Notify all members</span>
+              <span style={{ fontWeight: fontWeight.medium }}>{GROUP_MENTIONS[group.type].label}</span>
+              <span style={{ color: color.textMuted, marginLeft: 6 }}>{GROUP_MENTIONS[group.type].hint}</span>
               <span style={{ ...COUNT_BADGE, marginLeft: 'auto' }}>
-                {everyone.memberCount} {everyone.memberCount === 1 ? 'member' : 'members'}
+                {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
               </span>
             </button>
           );
-        })()}
+        })}
         {people.length > 0 && (
           <>
             <div style={{ padding: '6px 12px', fontSize: fontSize.sm, color: color.textMuted, fontWeight: fontWeight.semibold, textTransform: 'uppercase' }}>

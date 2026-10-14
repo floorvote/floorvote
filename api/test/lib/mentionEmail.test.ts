@@ -45,7 +45,7 @@ describe('renderMentionEmail', () => {
     expect(renderMentionEmail({ ...base, via: 'everyone' })).toContain('notified everyone')
     const admins = renderMentionEmail({ ...base, via: 'admins' })
     expect(admins).toContain('@admins')
-    expect(admins).toContain('because you&#39;re an admin')
+    expect(admins).toContain("because you're an admin")
   })
   it('wraps in the gray shell (full document)', () => {
     expect(renderMentionEmail(base)).toContain('<!DOCTYPE html>')

@@ -274,6 +274,7 @@ export function NotificationsSlideOver(
              gray) — in lockstep with ROLE_CHIP, CommentContent.tsx,
              RichTextEditor.tsx, and the emails; padding stays compact here. */
           .notif-comment span[data-type="mention"][data-id^="role:"],
+          .notif-comment span[data-type="mention"][data-id^="admins:"],
           .notif-comment span[data-type="mention"][data-id^="everyone:"] {
             background: ${MENTION_STYLE.role.bg};
             color: ${MENTION_STYLE.role.text};
@@ -414,6 +415,27 @@ function NotificationRow({
     ? "commented on a bill you've commented on"
     : m.sourceType === 'everyone'
     ? 'notified everyone'
+    : m.sourceType === 'admins'
+    ? (
+      <>
+        mentioned{' '}
+        <span
+          // The same indigo pill as a role mention, so @admins reads as a group.
+          style={{
+            display: 'inline-block',
+            background: MENTION_STYLE.role.bg,
+            color: MENTION_STYLE.role.text,
+            borderRadius: radius.pill,
+            padding: '1px 7px',
+            fontWeight: MENTION_STYLE.weight,
+            cursor: 'default',
+          }}
+        >
+          @admins
+        </span>
+        {" (you're an admin)"}
+      </>
+    )
     : m.sourceType === 'role' && m.sourceLabel
     ? (
       <>

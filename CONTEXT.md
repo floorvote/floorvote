@@ -18,6 +18,8 @@
 
 **Role**: a named group of members that an admin defines, which can be @-mentioned together. Avoid: "group"; "team" when meaning a subset of members.
 
+**@admins**: a built-in mention, open to every member, that notifies everyone who is an Admin or Owner when the comment is posted, in the app and by email, skipping the author and deactivated members. A person also mentioned directly or through a role is notified once, attributed to the direct mention, then the role, then @admins. Unlike a role, nobody creates or maintains it. Avoid: "admin role" (a role is a named group).
+
 **Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.
 
 **Pending invite**: a member who was invited and hasn't signed in yet.

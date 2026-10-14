@@ -68,7 +68,7 @@ export async function writeNotifications(db: Db, rows: NewNotification[]): Promi
 export function mentionData(data: string): MentionNotificationData | null {
   try {
     const d = JSON.parse(data) as Partial<MentionNotificationData> | null
-    if (d && (d.sourceType === 'user' || d.sourceType === 'role' || d.sourceType === 'everyone') && typeof d.sourceId === 'string') {
+    if (d && (d.sourceType === 'user' || d.sourceType === 'role' || d.sourceType === 'admins' || d.sourceType === 'everyone') && typeof d.sourceId === 'string') {
       return { sourceType: d.sourceType, sourceId: d.sourceId }
     }
   } catch {}
