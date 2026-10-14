@@ -100,6 +100,8 @@ export const chamberLabel = (c?: string) =>
   isUpper(c) ? 'Senate'
   : c === 'H' || c === 'lower' ? 'House'
   : c === 'A' ? 'Assembly'
+  : c === 'C' ? 'Council'
+  : c === 'J' ? 'Joint'
   : c ?? ''
 
 export const chamberStyle = (c?: string): React.CSSProperties => ({

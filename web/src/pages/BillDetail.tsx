@@ -22,6 +22,7 @@ import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
 import { LegislativeHistory, syntheticLatestAction } from '../components/LegislativeHistory'
+import { CommitteeLine, type CommitteeRef, type ReferralRef } from '../components/CommitteeLine'
 import { TabularRow } from '../components/TabularRow'
 import { BillTextPanel } from '../components/BillTextPanel'
 import { BillTextChip } from '../components/BillTextChip'
@@ -418,8 +419,8 @@ type BillDetailData = {
   stateUrl?: string | null
   url?: string | null
   legiscanUrl?: string | null
-  committee: string | null
-  referrals?: { date: string | null; committeeId: string | null; chamber: string | null; name: string }[]
+  committee: CommitteeRef | null
+  referrals?: ReferralRef[]
   tenantSummary: string | null
   tags: string[]
   relevanceScore: number | null
@@ -1690,28 +1691,9 @@ export function BillDetail() {
           />
         )}
 
-        {/* Meta row 2: committee / referrals */}
-        {(bill.committee || (bill.referrals?.length ?? 0) > 0) && (
-          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6 }}>
-            {bill.committee ? (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Committee:</span>
-                {bill.committee}
-              </>
-            ) : (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Referrals:</span>
-                {(bill.referrals ?? []).map((r, i) => (
-                  <span key={i}>
-                    {i > 0 && <span style={{ color: color.borderStrong, margin: '0 6px' }}>·</span>}
-                    {r.name}
-                    {r.date && <span style={{ color: color.textMuted, marginLeft: 4 }}>{r.date.slice(0, 7)}</span>}
-                  </span>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+        {/* Meta row 2: where the bill is in committee */}
+        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} />
+
 
         {/* Meta row 3: sponsors */}
         {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (

@@ -2526,10 +2526,26 @@ describe('GET /bills/:id committees', () => {
     const detail = async (id: string) => {
       const res = await app.request(`/api/bills/${id}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
       expect(res.status).toBe(200)
-      return await res.json() as { committee: string | null; referrals: unknown[] }
+      return await res.json() as { committee: unknown; referrals: unknown[] }
     }
 
-    expect(await detail(referred)).toMatchObject({ committee: 'Campaigns and Elections', referrals })
-    expect(await detail(older)).toMatchObject({ committee: 'Stored committee', referrals: [] })
+    // The page needs the pending committee's id and chamber as well as its name.
+    expect(await detail(referred)).toMatchObject({
+      committee: { committeeId: '7001', name: 'Campaigns and Elections', chamber: 'A' },
+      referrals,
+    })
+    // A stored name has no id or chamber to send.
+    expect(await detail(older)).toMatchObject({
+      committee: { committeeId: null, name: 'Stored committee', chamber: null },
+      referrals: [],
+    })
+  })
+
+  it('sends no committee when central names none and none is stored', async () => {
+    const token = await seedSession(await seedUser({ role: 'member' }))
+    const bill = await seedBill({ billNumber: 'AB 3', externalId: 'legiscan:303' })
+    const central = { fetch: vi.fn(async () => Response.json({})) }
+    const res = await app.request(`/api/bills/${bill}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+    expect((await res.json() as { committee: unknown }).committee).toBeNull()
   })
 })
