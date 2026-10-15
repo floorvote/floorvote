@@ -34,3 +34,17 @@ function listClauses(clauses: readonly string[]): string {
   if (clauses.length <= 2) return clauses.join(', and ')
   return `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}`
 }
+
+/**
+ * The confirmation before "Group with…" when grouping would undo splits, from
+ * `GET /bills/:id/group-preview`'s `undoneSplits` (each split pair by bill
+ * number). Grouping a bill again with one it was split from undoes that split,
+ * and takes back every other split between the two groups as well, so the
+ * text names them all and says why there can be more than the one.
+ */
+export function undoSplitsConfirmText(billNumber: string, withNumber: string, splits: readonly (readonly { billNumber: string }[])[]): string {
+  const named = splits.map(([a, b]) => `${a.billNumber} and ${b.billNumber}`)
+  const ask = `Group ${billNumber} with ${withNumber}?`
+  if (splits.length === 1) return `${ask} This undoes the split of ${named[0]}.`
+  return `${ask} This undoes ${splits.length} splits: ${listClauses(named)}. Grouping takes back every split between the two bills' groups, not only the one between ${billNumber} and ${withNumber}.`
+}

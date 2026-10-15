@@ -162,6 +162,50 @@ describe('grouping by hand while other writes land', () => {
     expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', null, 'a190'])
   })
 
+  it('splits a bill from one that joined its group while the split was being written', async () => {
+    await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
+    expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', null])
+
+    // The split is about to write its pairs, each with a bill in the group, when S1714 joins the group
+    // by an identical link to S1713. The pairs name the bills the group holds when they are written, so
+    // S1714 is split from S1713 too, and doesn't stay grouped with a bill that was split from its group.
+    const g = gate()
+    const writesPairs = (q: string) => /insert into "bill_group_overrides"/i.test(q)
+    const splitting = splitFromGroup(
+      getDb(holding({ holdQuery: q => writesPairs(q), holdBatch: qs => qs.some(writesPairs) }, g.released, g.reached)),
+      'b1713', admin,
+    )
+    await Promise.race([g.atHold, splitting])
+    await syncIdenticalCompanions(db(), 'legiscan:1714', [{ sastBillId: 1713, kind: 'identical' }])
+    expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', 'a190'])
+    g.release()
+    expect(await splitting).toBe(true)
+    expect(g.held).toBe(true)
+
+    expect(await keys('a190', 'b1713', 'c1714')).toEqual([null, null, null])
+    const pairs = await db().select().from(billGroupOverrides).orderBy(billGroupOverrides.billId, billGroupOverrides.otherBillId).all()
+    expect(pairs.map(p => [p.billId, p.otherBillId, p.kind])).toEqual([['a190', 'b1713', 'split'], ['b1713', 'c1714', 'split']])
+  })
+
+  it('writes every pair of a split in one statement, so no read of the group comes between', async () => {
+    // A190 names both, so A190 and S1714 stay linked without S1713.
+    await syncIdenticalCompanions(db(), 'legiscan:190', [{ sastBillId: 1713, kind: 'identical' }, { sastBillId: 1714, kind: 'identical' }])
+    const writes: string[] = []
+    const counting = {
+      prepare: (query: string) => { if (/insert into "bill_group_overrides"/i.test(query)) writes.push(query); return env.DB.prepare(query) },
+      batch: (stmts: Stmt[]) => env.DB.batch(stmts.map(s => s.real ?? s)),
+      exec: (query: string) => env.DB.exec(query),
+    } as unknown as D1Database
+    expect(await splitFromGroup(getDb(counting), 'b1713', admin)).toBe(true)
+    expect(writes).toHaveLength(1)
+    expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', null, 'a190'])
+  })
+
+  it('writes nothing for a bill in no group', async () => {
+    expect(await splitFromGroup(db(), 'a190', admin)).toBe(false)
+    expect(await db().select().from(billGroupOverrides).all()).toEqual([])
+  })
+
   it('agrees with both admins when one groups and the other splits at once', async () => {
     await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
 

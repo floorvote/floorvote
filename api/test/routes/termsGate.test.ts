@@ -1,13 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { termsAcceptances } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { TERMS_EXEMPT } from '../../src/middleware/auth'
 import { signSuperadminJwt } from '../../../shared/superadminJwt'
 import { _resetSuperadminAllowlistCache } from '../../src/lib/superadminCentral'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 // The documents' current material version. Any YYYY-MM-DD works for the tests;
 // what matters is the ordering between them.

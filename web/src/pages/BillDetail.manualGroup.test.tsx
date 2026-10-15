@@ -261,6 +261,93 @@ describe('grouping and splitting from the overflow menu', () => {
     await waitFor(() => expect(reads()).toBeGreaterThan(readsBefore))
   })
 
+  it('leaves the bill in its group when the split confirmation is declined', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const apiFetch = renderBillDetail(GROUPED)
+    await openMenu(user)
+    const reads = () => apiFetch.mock.calls.filter(([p]) => p === '/bills/42').length
+    const readsBefore = reads()
+    await user.click(screen.getByRole('menuitem', { name: /Split from group/ }))
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+    expect(apiFetch.mock.calls.some(([p]) => p === '/bills/42/split')).toBe(false)
+    // Nothing was written, so the page isn't read again.
+    expect(reads()).toBe(readsBefore)
+  })
+
+  describe('grouping again what was split', () => {
+    const PAIR = (a: string, b: string) => [{ billId: a.toLowerCase(), billNumber: a }, { billId: b.toLowerCase(), billNumber: b }]
+    const PREVIEW_PATH = '/bills/42/group-preview?withBillId=c1714'
+
+    async function pickAndGroup(undoneSplits: unknown) {
+      const user = userEvent.setup()
+      const apiFetch = renderBillDetail(GROUPED)
+      const answer = apiFetch.getMockImplementation()!
+      apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path === PREVIEW_PATH) return { undoneSplits } as never
+        return answer(path, init)
+      })
+      await openMenu(user)
+      await user.click(screen.getByRole('menuitem', { name: /Group with…/ }))
+      const dialog = await screen.findByRole('dialog', { name: 'Group A190 with another bill' })
+      await user.type(within(dialog).getByPlaceholderText('Search bills…'), 'S1714')
+      await user.click(within(dialog).getByRole('button', { name: /S1714/ }))
+      await user.click(within(dialog).getByRole('button', { name: 'Group bills' }))
+      return { apiFetch, dialog, user }
+    }
+    const posted = (apiFetch: ReturnType<typeof renderBillDetail>) => apiFetch.mock.calls.some(([p]) => p === '/bills/42/group')
+
+    it('asks first, naming how many splits it undoes, and groups once confirmed', async () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { apiFetch } = await pickAndGroup([PAIR('A190', 'S1714'), PAIR('S1713', 'S1714')])
+      await waitFor(() => expect(confirm).toHaveBeenCalledWith(
+        expect.stringContaining('This undoes 2 splits: A190 and S1714, and S1713 and S1714.')))
+      await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/42/group', { method: 'POST', body: JSON.stringify({ withBillId: 'c1714' }) }))
+    })
+
+    it('writes nothing when the confirmation is declined, and leaves the dialog open to change the pick', async () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const { apiFetch, dialog } = await pickAndGroup([PAIR('A190', 'S1714')])
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1))
+      expect(posted(apiFetch)).toBe(false)
+      expect(screen.getByRole('dialog', { name: 'Group A190 with another bill' })).toBe(dialog)
+      // The button is usable again, so the admin can pick another bill or cancel.
+      await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Group bills' })).not.toBeDisabled())
+    })
+
+    it('asks nothing when grouping undoes no split', async () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const { apiFetch } = await pickAndGroup([])
+      await waitFor(() => expect(posted(apiFetch)).toBe(true))
+      expect(confirm).not.toHaveBeenCalled()
+    })
+
+    it('groups without asking when the server sends no list of splits, as an older one would', async () => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      const { apiFetch } = await pickAndGroup(undefined)
+      await waitFor(() => expect(posted(apiFetch)).toBe(true))
+      expect(confirm).not.toHaveBeenCalled()
+    })
+
+    it('shows why the server refused the check, and groups nothing', async () => {
+      const user = userEvent.setup()
+      const apiFetch = renderBillDetail(GROUPED)
+      const answer = apiFetch.getMockImplementation()!
+      apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+        if (path === PREVIEW_PATH) throw new api.ApiError(409, 'S1714 and S1713 were split apart.')
+        return answer(path, init)
+      })
+      await openMenu(user)
+      await user.click(screen.getByRole('menuitem', { name: /Group with…/ }))
+      const dialog = await screen.findByRole('dialog', { name: 'Group A190 with another bill' })
+      await user.type(within(dialog).getByPlaceholderText('Search bills…'), 'S1714')
+      await user.click(within(dialog).getByRole('button', { name: /S1714/ }))
+      await user.click(within(dialog).getByRole('button', { name: 'Group bills' }))
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('S1714 and S1713 were split apart.')
+      expect(posted(apiFetch)).toBe(false)
+    })
+  })
+
   it("shows why the server refused a grouping, such as two bills split apart", async () => {
     const user = userEvent.setup()
     const apiFetch = renderBillDetail(GROUPED)

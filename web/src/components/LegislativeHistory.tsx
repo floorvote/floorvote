@@ -3,6 +3,7 @@ import { CHROME_TEXT } from '../lib/textStyles'
 import { TabularRow } from './TabularRow'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { httpUrl } from '../../../shared/httpUrl'
+import { isBillDetailStale, stripDatePrefix, syntheticLatestAction } from '../lib/staleBillDetail'
 
 interface HistoryEntry {
   date: string
@@ -73,26 +74,7 @@ function MeetingVideo({ url, action }: { url?: string; action: string }) {
   )
 }
 
-// Strip leading "MM/DD/YYYY " date prefix that some states embed in action descriptions
-const stripDatePrefix = (s: string) => /^\d{2}\/\d{2}\/\d{4} /.test(s) ? s.slice(11) : s
-
-// Monitoring-only (stub) bills get fresh `lastAction` from the masterlist sync but their
-// `history` is only refreshed by getBill, which never runs for stubs — so the timeline can
-// lag the headline action. When the last action isn't represented in history, return a
-// synthetic entry to prepend so the unfolded timeline never omits the action shown elsewhere.
-export function syntheticLatestAction(
-  entries: HistoryEntry[],
-  lastAction: string | null,
-  lastActionDate: string | null,
-): { date: string; action: string } | null {
-  if (!lastAction || !lastActionDate) return null
-  const action = stripDatePrefix(lastAction)
-  const represented = entries.some(e => e.date === lastActionDate && stripDatePrefix(e.action) === action)
-  if (represented) return null
-  const newestEntryDate = entries.reduce((max, e) => (e.date > max ? e.date : max), '')
-  if (lastActionDate < newestEntryDate) return null
-  return { date: lastActionDate, action }
-}
+export { syntheticLatestAction }
 
 const isUpper = (c?: string) => c === 'S' || c === 'upper'
 
@@ -100,6 +82,8 @@ export const chamberLabel = (c?: string) =>
   isUpper(c) ? 'Senate'
   : c === 'H' || c === 'lower' ? 'House'
   : c === 'A' ? 'Assembly'
+  : c === 'C' ? 'Council'
+  : c === 'J' ? 'Joint'
   : c ?? ''
 
 export const chamberStyle = (c?: string): React.CSSProperties => ({
@@ -127,8 +111,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
 
   const synthetic = syntheticLatestAction(entries, lastAction, lastActionDate)
   if (synthetic) timeline.unshift({ kind: 'action', date: synthetic.date, action: synthetic.action })
-  // Only flag a gap when there are real history entries to gap against
-  const showGapNotice = !!synthetic && entries.length > 0
+  const showGapNotice = isBillDetailStale(entries, lastAction, lastActionDate)
 
   const hasTimeline = timeline.length > 1
 

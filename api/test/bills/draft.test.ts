@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, feedEvents, memberVotes, officialPositions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -10,6 +10,7 @@ describe('POST /api/bills/draft', () => {
   let memberToken: string
 
   beforeEach(async () => {
+    stubFetch() // central lookups and background backfills are answered, never real
     await resetDb()
     await applyMigrations()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
@@ -19,7 +20,7 @@ describe('POST /api/bills/draft', () => {
   })
 
   it('creates a draft bill with is_draft=1, match_type=manual, external_id=null', async () => {
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billNumber: 'LCO 100', title: 'Pre-filed elections bill', summary: 'Summary', sponsor: 'Rep. Doe', text: 'AN ACT CONCERNING…', state: 'UT' }),
@@ -41,7 +42,7 @@ describe('POST /api/bills/draft', () => {
   })
 
   it('rejects a non-admin with 403', async () => {
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Nope' }),
@@ -51,7 +52,7 @@ describe('POST /api/bills/draft', () => {
 
   it('accepts vote, position on a draft', async () => {
     // Create draft as admin
-    const createRes = await SELF.fetch('https://x/api/bills/draft', {
+    const createRes = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Draft for engagement', state: 'UT' }),
@@ -60,7 +61,7 @@ describe('POST /api/bills/draft', () => {
     const { id } = await createRes.json<{ id: string }>()
 
     // Vote as member
-    const voteRes = await SELF.fetch(`https://x/api/bills/${id}/votes`, {
+    const voteRes = await appFetch(`https://x/api/bills/${id}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
@@ -68,7 +69,7 @@ describe('POST /api/bills/draft', () => {
     expect(voteRes.status).toBe(200)
 
     // Official position as admin
-    const posRes = await SELF.fetch(`https://x/api/bills/${id}/position`, {
+    const posRes = await appFetch(`https://x/api/bills/${id}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Support' }),
@@ -84,14 +85,14 @@ describe('POST /api/bills/draft', () => {
 
   it('returns isDraft on GET /bills list', async () => {
     // Create draft
-    const createRes = await SELF.fetch('https://x/api/bills/draft', {
+    const createRes = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Listed draft', state: 'UT' }),
     })
     expect(createRes.status).toBe(201)
 
-    const listRes = await SELF.fetch('https://x/api/bills', {
+    const listRes = await appFetch('https://x/api/bills', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(listRes.status).toBe(200)
@@ -102,7 +103,7 @@ describe('POST /api/bills/draft', () => {
   })
 
   it('auto-assigns D1 and the default year when neither is supplied', async () => {
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Pre-filed', state: 'UT' }),
@@ -117,7 +118,7 @@ describe('POST /api/bills/draft', () => {
   })
 
   it('honours a supplied number and year', async () => {
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Pre-filed', billNumber: 'LRB-1234', year: 2027, state: 'UT' }),
@@ -135,7 +136,7 @@ describe('POST /api/bills/draft', () => {
     await db.insert(bills).values({
       id: 'filed-d3', billNumber: 'D3', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Pre-filed', state: 'UT' }),
@@ -154,7 +155,7 @@ describe('POST /api/bills/draft', () => {
     await db.insert(bills).values({
       id: 'filed', billNumber: 'HB0209', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Clash', billNumber: 'HB0209', year: 2026, state: 'UT' }),
@@ -176,7 +177,7 @@ describe('POST /api/bills/draft', () => {
       id: 'filed-biennium', billNumber: 'HB0209', title: 'Filed', state: 'UT',
       session: '2026 Regular Session', yearStart: 2025, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Clash', billNumber: 'HB0209', year: 2026, state: 'UT' }),
@@ -194,7 +195,7 @@ describe('POST /api/bills/draft', () => {
       id: 'filed-other', billNumber: 'HB0210', title: 'Filed', state: 'UT',
       session: '2026-2027 Regular Session', yearStart: 2027, yearEnd: 2027,
     })
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Fine', billNumber: 'HB0210', year: 2026, state: 'UT' }),
@@ -208,7 +209,7 @@ describe('POST /api/bills/draft', () => {
     // the production bug (bpc-elections drafts with state = '') that made
     // billUrl() impossible to resolve — the route must refuse it outright
     // rather than silently writing a stateless draft.
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'No state given' }),
@@ -220,7 +221,7 @@ describe('POST /api/bills/draft', () => {
   })
 
   it('accepts an explicit state and creates the draft', async () => {
-    const res = await SELF.fetch('https://x/api/bills/draft', {
+    const res = await appFetch('https://x/api/bills/draft', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Explicit state', state: 'ut' }),
@@ -242,7 +243,7 @@ describe('POST /api/bills/draft', () => {
     // visible to the handler via c.env.
     ;(env as unknown as { STATE?: string }).STATE = 'WY'
     try {
-      const res = await SELF.fetch('https://x/api/bills/draft', {
+      const res = await appFetch('https://x/api/bills/draft', {
         method: 'POST',
         headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Single-state tenant draft' }),

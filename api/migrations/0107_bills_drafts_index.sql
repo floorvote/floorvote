@@ -26,7 +26,4 @@
 -- probe must stay the literal = 1.
 -- api/test/routes/billsFacetsPlan.test.ts pins the SQL and the plan of the
 -- real request.
---
--- No semicolons in these comments. api/test/helpers.ts splits migration files
--- on the statement terminator before it strips comment lines.
 CREATE INDEX idx_bills_drafts ON bills (id) WHERE is_draft = 1;

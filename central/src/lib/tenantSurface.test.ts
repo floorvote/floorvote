@@ -141,6 +141,7 @@ describe('tenantSurface allowlist matcher', () => {
       ['GET',  '/api/tenants/ri/body-event-options',            'lib/eventRules.ts (event rules settings)'],
       ['GET',  '/api/tenants/current-session/RI',              'billsApi/draftRoutes.ts (draft default year)'],
       ['GET',  '/api/admin/superadmin/emails',                 'lib/superadminCentral.ts'],
+      ['POST', '/api/admin/superadmin/profile',                'lib/superadminProfile.ts (emailed-link sign-in)'],
       ['POST', '/api/tenants/register',                        'index.ts, cron/sync.ts'],
       ['POST', '/api/tenants/reprocess/ri',                    'lib/demoResetAndSeed.ts, lib/calendarBackfill.ts'],
       ['POST', '/api/tenants/promote-bill/ri/legiscan:123',    'routes/adminApi.ts, billsApi/draftRoutes.ts'],

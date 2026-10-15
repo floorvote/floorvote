@@ -36,6 +36,12 @@ export type GroupingEventMetadata = {
   /** Every bill in the bill's group once the event took effect, sorted. Just the bill itself after a split leaves it alone. */
   groupBillIds: string[]
   replaced: ReplacedTeamValue[]
+  /**
+   * The splits an admin's grouping by hand undid, each a pair of bills by bill number, when it did. Grouping a
+   * bill again with one it was split from undoes that split and every other split between the two groups. Absent
+   * from an event that undid none, and from one written before this was recorded.
+   */
+  undoneSplits?: Array<[GroupBill, GroupBill]>
 }
 
 /**
@@ -50,6 +56,8 @@ export type GroupingEvent = {
   with: GroupBill[]
   /** The team field values the grouping replaced. Always empty for a split. */
   replaced: ReplacedTeamValue[]
+  /** The splits the grouping undid (see `GroupingEventMetadata`). Absent when it undid none. */
+  undoneSplits?: Array<[GroupBill, GroupBill]>
 }
 
 /** One of a member's private notes in a group, as the bill page and note route serve them. */

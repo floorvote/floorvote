@@ -1,186 +1,20 @@
-import { env, applyD1Migrations, reset } from 'cloudflare:test'
+/// <reference types="vite/client" />
+import { env, applyD1Migrations, reset, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { and, eq } from 'drizzle-orm'
+import { vi } from 'vitest'
+import { app } from '../src/index'
 import { getDb } from '../src/db/client'
+import { splitStatements } from '../../shared/sqlStatements'
 import { generateToken, hashToken } from '../src/lib/crypto'
 import { users, sessions, magicLinks, bills, billTexts, roles, userRoles, comments, notifications, calendarEvents, authEvents } from '../src/db/schema'
-import migrationSql1 from '../migrations/0001_initial.sql?raw'
-import migrationSql2 from '../migrations/0002_bill_ingestion.sql?raw'
-import migrationSql3 from '../migrations/0003_member_ui.sql?raw'
-import migrationSql4 from '../migrations/0004_admin.sql?raw'
-import migrationSql5 from '../migrations/0005_legiscan_expansion.sql?raw'
-import migrationSql6 from '../migrations/0006_sponsor_url.sql?raw'
-import migrationSql7 from '../migrations/0007_session_year.sql?raw'
-import migrationSql8 from '../migrations/0008_full_legiscan_capture.sql?raw'
-import migrationSql9 from '../migrations/0009_bill_calendar_composite_unique.sql?raw'
-import migrationSql10 from '../migrations/0010_central_columns.sql?raw'
-import migrationSql11 from '../migrations/0011_rename_summary_columns.sql?raw'
-import migrationSql12 from '../migrations/0012_drop_generic_summary.sql?raw'
-import migrationSql13 from '../migrations/0013_central_synced_at.sql?raw'
-import migrationSql14 from '../migrations/0014_ai_processed_at.sql?raw'
-import migrationSql15 from '../migrations/0015_last_ai_text_hash.sql?raw'
-import migrationSql16 from '../migrations/0016_feed_events_bill_updated.sql?raw'
-import migrationSql17 from '../migrations/0017_roles.sql?raw'
-import migrationSql18 from '../migrations/0018_can_vote.sql?raw'
-import migrationSql19 from '../migrations/0019_owner_role_and_soft_delete.sql?raw'
-import migrationSql20 from '../migrations/0020_owner_role_check.sql?raw'
-import migrationSql21 from '../migrations/0021_custom_fields.sql?raw'
-import migrationSql22 from '../migrations/0022_custom_field_slugs.sql?raw'
-import migrationSql23 from '../migrations/0023_comment_mentions.sql?raw'
-import migrationSql24 from '../migrations/0024_comment_mention_indexes.sql?raw'
-import migrationSql25 from '../migrations/0025_openstates_tenant.sql?raw'
-import migrationSql26 from '../migrations/0026_comment_reactions_unique.sql?raw'
-import migrationSql27 from '../migrations/0027_bills_list_indexes.sql?raw'
-import migrationSql28 from '../migrations/0028_bills_external_id_unique.sql?raw'
-import migrationSql29 from '../migrations/0029_bills_is_stub.sql?raw'
-import migrationSql30 from '../migrations/0030_last_ai_text_doc_id.sql?raw'
-import migrationSql31 from '../migrations/0031_bill_match_type.sql?raw'
-import migrationSql32 from '../migrations/0032_text_status.sql?raw'
-import migrationSql33 from '../migrations/0033_year_columns.sql?raw'
-import migrationSql34 from '../migrations/0034_comment_mention_read_at.sql?raw'
-import migrationSql35 from '../migrations/0035_role_soft_delete.sql?raw'
-import migrationSql36 from '../migrations/0036_partial_role_name_index.sql?raw'
-import migrationSql37 from '../migrations/0037_pinned_custom_field.sql?raw'
-import migrationSql38 from '../migrations/0038_drop_is_stub.sql?raw'
-import migrationSql39 from '../migrations/0039_ai_skip_reason.sql?raw'
-import migrationSql40 from '../migrations/0040_custom_field_multiple.sql?raw'
-import migrationSql41 from '../migrations/0041_comment_mentions_everyone.sql?raw'
-import migrationSql42 from '../migrations/0042_calendar_events.sql?raw'
-import migrationSql43 from '../migrations/0043_feed_events_hearing_types.sql?raw'
-import migrationSql44 from '../migrations/0044_email_digest_enabled.sql?raw'
-import migrationSql45 from '../migrations/0045_calendar_event_bills.sql?raw'
-import migrationSql46 from '../migrations/0046_add_last_seen_feed.sql?raw'
-import migrationSql47 from '../migrations/0047_draft_bills.sql?raw'
-import migrationSql48 from '../migrations/0048_calendar_event_timezone.sql?raw'
-import migrationSql50 from '../migrations/0050_calendar_event_details_url.sql?raw'
-import migrationSql51 from '../migrations/0051_email_week_ahead.sql?raw'
-import migrationSql52 from '../migrations/0052_new_match_columns.sql?raw'
-import migrationSql53 from '../migrations/0053_feed_events_bill_matched.sql?raw'
-import migrationSql55 from '../migrations/0055_auth_events.sql?raw'
-import migrationSql56 from '../migrations/0056_auth_events_unknown_email.sql?raw'
-import migrationSql58 from '../migrations/0058_triaged_at_rename.sql?raw'
-import migrationSql59 from '../migrations/0059_ai_attempt_tracking.sql?raw'
-import migrationSql61 from '../migrations/0061_drop_instance_preset.sql?raw'
-import migrationSql62 from '../migrations/0062_restore_feed_events_indexes.sql?raw'
-import migrationSql64 from '../migrations/0064_saved_views.sql?raw'
-import migrationSql65 from '../migrations/0065_saved_view_slugs.sql?raw'
-import migrationSql66 from '../migrations/0066_affected_citations.sql?raw'
-import migrationSql67 from '../migrations/0067_ai_heal_attempts.sql?raw'
-import migrationSql68 from '../migrations/0068_bills_ai_stalled_index.sql?raw'
-import migrationSql69 from '../migrations/0069_terms_acceptances.sql?raw'
-import migrationSql70 from '../migrations/0070_draft_numbers_and_years.sql?raw'
-import migrationSql73 from '../migrations/0073_email_health.sql?raw'
-import migrationSql75 from '../migrations/0075_auth_events_email_changed.sql?raw'
-import migrationSql76 from '../migrations/0076_bill_status_stage.sql?raw'
-import migrationSql77 from '../migrations/0077_bill_session_slug.sql?raw'
-import migrationSql78 from '../migrations/0078_expired_status_enacted.sql?raw'
-import migrationSql79 from '../migrations/0079_calendar_event_kind.sql?raw'
-import migrationSql82 from '../migrations/0082_calendar_event_covered_by.sql?raw'
-import migrationSql83 from '../migrations/0083_calendar_event_rules.sql?raw'
-import migrationSql84 from '../migrations/0084_auth_events_actor_index.sql?raw'
-import migrationSql85 from '../migrations/0085_notifications.sql?raw'
-import migrationSql86 from '../migrations/0086_email_changes.sql?raw'
-import migrationSql87 from '../migrations/0087_feed_events_sort_index.sql?raw'
-import migrationSql88 from '../migrations/0088_reply_notifications.sql?raw'
-import migrationSql89 from '../migrations/0089_reaction_notifications.sql?raw'
-import migrationSql90 from '../migrations/0090_email_change_reports.sql?raw'
-import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
-import migrationSql100 from '../migrations/0100_companion_groups.sql?raw'
-import migrationSql101 from '../migrations/0101_team_fields_group.sql?raw'
-import migrationSql102 from '../migrations/0102_group_key_filter_columns.sql?raw'
-import migrationSql103 from '../migrations/0103_group_tags.sql?raw'
-import migrationSql104 from '../migrations/0104_group_overrides.sql?raw'
-import migrationSql107 from '../migrations/0107_bills_drafts_index.sql?raw'
+
+// Every file in api/migrations/, so a new migration is applied by the tests the
+// moment it lands, with no list to update. test/migrations/allApplied.test.ts
+// fails if any file is left out.
+const migrationFiles = import.meta.glob<string>('../migrations/*.sql', { query: '?raw', import: 'default', eager: true })
 
 export function parseMigration(sql: string, name: string) {
-  const queries = sql
-    .split(';')
-    .map((s) =>
-      s
-        .split('\n')
-        .filter((line) => !line.trimStart().startsWith('--'))
-        .join('\n')
-        .trim(),
-    )
-    .filter((s) => s.length > 0)
-    .map((s) => s + ';')
-  return { name, queries }
-}
-
-// Split a migration into statements where wrangler does, dropping `--` and
-// `/* */` comments and ignoring semicolons inside quotes, so a `;` in a comment
-// can't break it the way it breaks parseMigration. This is wrangler's D1
-// splitter (wrangler-dist/cli.js, `findCompleteStatementEnd`, in 4.149), a
-// port of SQLite's sqlite3_complete: a `;` ends a statement, except inside a
-// CREATE [TEMP] TRIGGER, which ends at the first `;`, whitespace, END (any
-// case), whitespace, `;`. Nothing else, a CASE included, is special. Central's
-// tests have an older splitter with no trigger rule
-// (central/test/helpers/migrations.ts).
-type SplitToken = 'semi' | 'ws' | 'other' | 'explain' | 'create' | 'temp' | 'trigger' | 'end'
-type SplitState = 'invalid' | 'start' | 'normal' | 'explain' | 'create' | 'trigger' | 'semi' | 'end'
-const SPLIT_TOKENS: SplitToken[] = ['semi', 'ws', 'other', 'explain', 'create', 'temp', 'trigger', 'end']
-// The next state for each token, in SPLIT_TOKENS' order: wrangler's transition table.
-const SPLIT_NEXT: Record<SplitState, SplitState[]> = {
-  invalid: ['start', 'invalid', 'normal', 'explain', 'create', 'normal', 'normal', 'normal'],
-  start: ['start', 'start', 'normal', 'explain', 'create', 'normal', 'normal', 'normal'],
-  normal: ['start', 'normal', 'normal', 'normal', 'normal', 'normal', 'normal', 'normal'],
-  explain: ['start', 'explain', 'explain', 'normal', 'create', 'normal', 'normal', 'normal'],
-  create: ['start', 'create', 'normal', 'normal', 'normal', 'create', 'trigger', 'normal'],
-  trigger: ['semi', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger'],
-  semi: ['semi', 'semi', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger', 'end'],
-  end: ['start', 'end', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger', 'trigger'],
-}
-const KEYWORD_TOKENS: Record<string, SplitToken> = {
-  explain: 'explain', create: 'create', temp: 'temp', temporary: 'temp', trigger: 'trigger', end: 'end',
-}
-const NAME_CHAR = /[A-Za-z0-9_$\u0080-￿]/
-
-export function splitStatements(sql: string): string[] {
-  const statements: string[] = []
-  let current = ''
-  let state: SplitState = 'invalid'
-  for (let i = 0; i < sql.length; i++) {
-    const c = sql[i]
-    let token: SplitToken = 'other'
-    let text = c
-    if (c === ';') {
-      token = 'semi'
-    } else if (/[ \r\t\n\f]/.test(c)) {
-      token = 'ws'
-    } else if (c === '/' && sql[i + 1] === '*') {
-      const end = sql.indexOf('*/', i + 2)
-      i = end === -1 ? sql.length : end + 1
-      token = 'ws'
-      text = ''
-    } else if (c === '-' && sql[i + 1] === '-') {
-      // Up to the line's end, which is read next as whitespace.
-      const eol = sql.indexOf('\n', i)
-      i = eol === -1 ? sql.length : eol - 1
-      token = 'ws'
-      text = ''
-    } else if (c === "'" || c === '"' || c === '`' || c === '[') {
-      const close = sql.indexOf(c === '[' ? ']' : c, i + 1)
-      const end = close === -1 ? sql.length - 1 : close
-      text = sql.slice(i, end + 1)
-      i = end
-    } else if (NAME_CHAR.test(c)) {
-      let end = i
-      while (end + 1 < sql.length && NAME_CHAR.test(sql[end + 1])) end++
-      text = sql.slice(i, end + 1)
-      i = end
-      token = KEYWORD_TOKENS[text.toLowerCase()] ?? 'other'
-    }
-    state = SPLIT_NEXT[state][SPLIT_TOKENS.indexOf(token)]
-    if (state === 'start' && token === 'semi') {
-      const s = current.trim()
-      if (s.length > 0) statements.push(s + ';')
-      current = ''
-    } else {
-      current += text
-    }
-  }
-  const rest = current.trim()
-  if (rest.length > 0) statements.push(rest + ';')
-  return statements
+  return { name, queries: splitStatements(sql) }
 }
 
 /**
@@ -197,6 +31,33 @@ export function migrationsFromFiles(files: Record<string, string>): { name: stri
     .map(({ name, sql }) => ({ name, queries: splitStatements(sql) }))
 }
 
+// Send a request to the app and wait for the background work it starts
+// (`ctx.waitUntil`, such as a magic-link email or a central backfill) before
+// returning. SELF.fetch cannot do this: workerd runs that work after the
+// response, so it can outlive the test, reach `fetch` once the stub is gone, or
+// race the next test's resetDb(). A rejected background task would only be
+// logged to stderr, so draining it here is what makes it a test failure.
+// Accepts a path or a full URL, and an optional bindings override, like
+// app.request.
+export async function appFetch(input: string, init?: RequestInit, bindings: object = env): Promise<Response> {
+  const ctx = createExecutionContext()
+  const res = await app.request(input, init, bindings, ctx)
+  await waitOnExecutionContext(ctx)
+  return res
+}
+
+// Stub `fetch` (the global guard in test/setup.ts otherwise fails any request)
+// with a handler that answers every request, defaulting to `200 {}`. Returns
+// the spy so a test can assert on the calls.
+export function stubFetch(
+  handler: (url: string, init?: RequestInit) => Response | Promise<Response> = () => new Response('{}', { status: 200 }),
+) {
+  const spy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    handler(input instanceof Request ? input.url : String(input), init))
+  vi.stubGlobal('fetch', spy)
+  return spy
+}
+
 export async function resetDb(): Promise<void> {
   await reset()
 }
@@ -207,122 +68,7 @@ export async function resetDb(): Promise<void> {
  * call applyMigrations() again to run the rest over them.
  */
 export async function applyMigrations(opts: { before?: string } = {}): Promise<void> {
-  const migrations = [
-    parseMigration(migrationSql1, '0001_initial'),
-    parseMigration(migrationSql2, '0002_bill_ingestion'),
-    parseMigration(migrationSql3, '0003_member_ui'),
-    parseMigration(migrationSql4, '0004_admin'),
-    parseMigration(migrationSql5, '0005_legiscan_expansion'),
-    parseMigration(migrationSql6, '0006_sponsor_url'),
-    parseMigration(migrationSql7, '0007_session_year'),
-    parseMigration(migrationSql8, '0008_full_legiscan_capture'),
-    parseMigration(migrationSql9, '0009_bill_calendar_composite_unique'),
-    parseMigration(migrationSql10, '0010_central_columns'),
-    parseMigration(migrationSql11, '0011_rename_summary_columns'),
-    parseMigration(migrationSql12, '0012_drop_generic_summary'),
-    parseMigration(migrationSql13, '0013_central_synced_at'),
-    parseMigration(migrationSql14, '0014_ai_processed_at'),
-    parseMigration(migrationSql15, '0015_last_ai_text_hash'),
-    parseMigration(migrationSql16, '0016_feed_events_bill_updated'),
-    parseMigration(migrationSql17, '0017_roles'),
-    parseMigration(migrationSql18, '0018_can_vote'),
-    parseMigration(migrationSql19, '0019_owner_role_and_soft_delete'),
-    parseMigration(migrationSql20, '0020_owner_role_check'),
-    parseMigration(migrationSql21, '0021_custom_fields'),
-    parseMigration(migrationSql22, '0022_custom_field_slugs'),
-    parseMigration(migrationSql23, '0023_comment_mentions'),
-    parseMigration(migrationSql24, '0024_comment_mention_indexes'),
-    parseMigration(migrationSql25, '0025_openstates_tenant'),
-    parseMigration(migrationSql26, '0026_comment_reactions_unique'),
-    parseMigration(migrationSql27, '0027_bills_list_indexes'),
-    parseMigration(migrationSql28, '0028_bills_external_id_unique'),
-    parseMigration(migrationSql29, '0029_bills_is_stub'),
-    parseMigration(migrationSql30, '0030_last_ai_text_doc_id'),
-    parseMigration(migrationSql31, '0031_bill_match_type'),
-    parseMigration(migrationSql32, '0032_text_status'),
-    parseMigration(migrationSql33, '0033_year_columns'),
-    parseMigration(migrationSql34, '0034_comment_mention_read_at'),
-    parseMigration(migrationSql35, '0035_role_soft_delete'),
-    parseMigration(migrationSql36, '0036_partial_role_name_index'),
-    parseMigration(migrationSql37, '0037_pinned_custom_field'),
-    parseMigration(migrationSql38, '0038_drop_is_stub'),
-    parseMigration(migrationSql39, '0039_ai_skip_reason'),
-    parseMigration(migrationSql40, '0040_custom_field_multiple'),
-    parseMigration(migrationSql41, '0041_comment_mentions_everyone'),
-    parseMigration(migrationSql42, '0042_calendar_events'),
-    parseMigration(migrationSql43, '0043_feed_events_hearing_types'),
-    parseMigration(migrationSql44, '0044_email_digest_enabled'),
-    parseMigration(migrationSql45, '0045_calendar_event_bills'),
-    parseMigration(migrationSql46, '0046_add_last_seen_feed'),
-    parseMigration(migrationSql47, '0047_draft_bills'),
-    parseMigration(migrationSql48, '0048_calendar_event_timezone'),
-    // 0049 is a data-cleanup DELETE; the raw import can't be parsed by parseMigration due to a
-    // semicolon inside a comment line. Provide it inline — the test DB starts empty so the DELETE
-    // is a safe no-op, and the table structure is identical either way.
-    { name: '0049_remove_dead_config_keys', queries: ["DELETE FROM association_config WHERE key IN ('allowed_domains', 'reaction_emojis');"] },
-    parseMigration(migrationSql50, '0050_calendar_event_details_url'),
-    parseMigration(migrationSql51, '0051_email_week_ahead'),
-    parseMigration(migrationSql52, '0052_new_match_columns'),
-    parseMigration(migrationSql53, '0053_feed_events_bill_matched'),
-    // 0054 uses UPDATE with a comment containing semicolon-like prose; provide inline to avoid
-    // parseMigration splitting issues. The test DB starts empty so the UPDATE is a safe no-op.
-    { name: '0054_floorvote_ical_uids', queries: ["UPDATE calendar_events SET uid = replace(uid, '@example.org', '@example.com') WHERE uid LIKE '%@example.org';"] },
-    parseMigration(migrationSql55, '0055_auth_events'),
-    parseMigration(migrationSql56, '0056_auth_events_unknown_email'),
-    // 0057 has a semicolon inside a comment ("efficiently; the covering"), which breaks
-    // parseMigration's naive split. Provide the three statements inline.
-    { name: '0057_match_type_index', queries: [
-      "CREATE INDEX IF NOT EXISTS idx_bills_match_type ON bills(match_type);",
-      "CREATE INDEX IF NOT EXISTS idx_bills_tracked_cover ON bills(status, priority, state, year_start, session, relevance_score, last_action_date) WHERE match_type IS NOT NULL;",
-      "ANALYZE;",
-    ] },
-    parseMigration(migrationSql58, '0058_triaged_at_rename'),
-    parseMigration(migrationSql59, '0059_ai_attempt_tracking'),
-    parseMigration(migrationSql61, '0061_drop_instance_preset'),
-    parseMigration(migrationSql62, '0062_restore_feed_events_indexes'),
-    // 0063 has a semicolon inside a comment ("per refresh; the tenant"), which breaks
-    // parseMigration's naive split. Provide the three statements inline.
-    { name: '0063_bill_subjects', queries: [
-      'ALTER TABLE bills ADD COLUMN subjects TEXT;',
-      `CREATE TABLE IF NOT EXISTS bill_subjects (
-        bill_id      TEXT NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
-        subject_name TEXT NOT NULL,
-        state        TEXT NOT NULL,
-        PRIMARY KEY (bill_id, subject_name)
-      );`,
-      'CREATE INDEX IF NOT EXISTS idx_bill_subjects_name ON bill_subjects(state, subject_name);',
-    ] },
-    parseMigration(migrationSql64, '0064_saved_views'),
-    parseMigration(migrationSql65, '0065_saved_view_slugs'),
-    parseMigration(migrationSql66, '0066_affected_citations'),
-    parseMigration(migrationSql67, '0067_ai_heal_attempts'),
-    parseMigration(migrationSql68, '0068_bills_ai_stalled_index'),
-    parseMigration(migrationSql69, '0069_terms_acceptances'),
-    parseMigration(migrationSql70, '0070_draft_numbers_and_years'),
-    parseMigration(migrationSql73, '0073_email_health'),
-    parseMigration(migrationSql75, '0075_auth_events_email_changed'),
-    parseMigration(migrationSql76, '0076_bill_status_stage'),
-    parseMigration(migrationSql77, '0077_bill_session_slug'),
-    parseMigration(migrationSql78, '0078_expired_status_enacted'),
-    parseMigration(migrationSql79, '0079_calendar_event_kind'),
-    parseMigration(migrationSql82, '0082_calendar_event_covered_by'),
-    parseMigration(migrationSql83, '0083_calendar_event_rules'),
-    parseMigration(migrationSql84, '0084_auth_events_actor_index'),
-    parseMigration(migrationSql85, '0085_notifications'),
-    parseMigration(migrationSql86, '0086_email_changes'),
-    parseMigration(migrationSql87, '0087_feed_events_sort_index'),
-    parseMigration(migrationSql88, '0088_reply_notifications'),
-    parseMigration(migrationSql89, '0089_reaction_notifications'),
-    parseMigration(migrationSql90, '0090_email_change_reports'),
-    parseMigration(migrationSql93, '0093_feed_events_billless'),
-    parseMigration(migrationSql100, '0100_companion_groups'),
-    parseMigration(migrationSql101, '0101_team_fields_group'),
-    parseMigration(migrationSql102, '0102_group_key_filter_columns'),
-    // Split with the splitter that keeps a trigger's body whole, as wrangler's does.
-    { name: '0103_group_tags', queries: splitStatements(migrationSql103) },
-    parseMigration(migrationSql104, '0104_group_overrides'),
-    parseMigration(migrationSql107, '0107_bills_drafts_index'),
-  ]
+  const migrations = migrationsFromFiles(migrationFiles)
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
 }

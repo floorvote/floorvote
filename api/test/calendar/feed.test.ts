@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, calendarEvents, calendarEventBills } from '../../src/db/schema'
 
@@ -163,7 +163,8 @@ describe('PATCH /api/bills/:id/priority', () => {
     const adminId = await seedUser({ email: 'admin@patch.com', role: 'admin' })
     const adminToken = await seedSession(adminId)
     const billId = await seedBill({ billNumber: 'H 100', state: 'RI', session: '2026', externalId: 'legiscan:100' })
-    const r = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const central = stubFetch(() => new Response('boom', { status: 500 }))
+    const r = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -171,6 +172,8 @@ describe('PATCH /api/bills/:id/priority', () => {
     expect(r.status).toBe(200)
     const b = await r.json() as { priority: string }
     expect(b.priority).toBe('high')
+    // The backfill ran (appFetch waited for it) and its failure did not reach the caller.
+    expect(central.mock.calls.map(c => c[0])).toEqual(['https://central.test/api/tenants/reprocess/bpc-test'])
   })
 })
 
@@ -189,15 +192,17 @@ describe('calendar backfill', () => {
     const adminId = await seedUser({ email: 'admin@b.com', role: 'admin' })
     const adminToken = await seedSession(adminId)
     await seedBill({ billNumber: 'H1', state: 'RI', session: '2026', externalId: 'legiscan:501', priority: 'high' })
-    const r = await SELF.fetch('http://localhost/api/calendar/backfill', { method: 'POST', headers: { Cookie: `session=${adminToken}` } })
+    const central = stubFetch()
+    const r = await appFetch('http://localhost/api/calendar/backfill', { method: 'POST', headers: { Cookie: `session=${adminToken}` } })
     expect(r.status).toBe(202)
     const b = await r.json() as { ok: boolean; queued: number }
     expect(b.ok).toBe(true)
     expect(b.queued).toBe(1)
+    expect(central.mock.calls.map(c => c[0])).toEqual(['https://central.test/api/tenants/reprocess/bpc-test'])
 
     const memberId = await seedUser({ email: 'member@b.com', role: 'member' })
     const memberToken = await seedSession(memberId)
-    const r2 = await SELF.fetch('http://localhost/api/calendar/backfill', { method: 'POST', headers: { Cookie: `session=${memberToken}` } })
+    const r2 = await appFetch('http://localhost/api/calendar/backfill', { method: 'POST', headers: { Cookie: `session=${memberToken}` } })
     expect(r2.status).toBe(403)
   })
 })

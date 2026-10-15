@@ -3,10 +3,9 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills } from '../../src/db/schema'
-import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
+import { previewSplit, splitFromGroup, syncIdenticalCompanions } from '../../src/lib/companionGroups'
 
-// A split pair is a cannot-link (#382, Will's decision on the review's M1):
-// two bills an admin split apart are never in one group, however the
+// A split pair is a cannot-link (#382): two bills an admin split apart are never in one group, however the
 // provider's links connect them, and the groups are a function of the stored
 // links and overrides alone, so the order bills are delivered in never
 // changes them. Random small instances, each delivered in two orders.
@@ -80,4 +79,40 @@ describe('split pairs as cannot-links', () => {
       }
     }
   }, 120_000)
+})
+
+describe('the split preview on random instances', () => {
+  // The confirmation before a split names what the rest of the group will fall into. On each random
+  // instance, for the bill in the largest group and for the last grouped bill, what previewSplit says
+  // must be what a real split leaves.
+  it('names the groups the rest fall into, as the real split leaves them', async () => {
+    const order = [...Array(BILLS).keys()]
+    for (let seed = 1; seed <= 10; seed++) {
+      const inst = instance(seed)
+      const grouped = (await settle(inst, order)).flatMap((k, i) => (k === null ? [] : [i]))
+      if (grouped.length === 0) continue
+      const sizes = new Map<number, number>()
+      const keysNow = await settle(inst, order)
+      for (const i of grouped) sizes.set(i, keysNow.filter(k => k === keysNow[i]).length)
+      const biggest = [...grouped].sort((a, b) => sizes.get(b)! - sizes.get(a)! || a - b)[0]
+      for (const target of new Set([biggest, grouped[grouped.length - 1]])) {
+        const before = await settle(inst, order)
+        const db = getDb(env.DB)
+        const rest = [...Array(BILLS).keys()].filter(i => i !== target && before[i] !== null && before[i] === before[target])
+        const preview = await previewSplit(db, id(target))
+        expect(preview, `seed ${seed}, split B${target}`).not.toBeNull()
+        const admin = (await db.select({ id: billGroupOverrides.actorUserId }).from(billGroupOverrides).get())?.id ?? (await seedUser({ role: 'admin', email: `a${seed}${target}@example.com`, name: 'ada' }))
+        expect(await splitFromGroup(db, id(target), admin), `seed ${seed}, split B${target}`).toBe(true)
+        const rows = await db.select({ id: bills.id, k: bills.groupKey }).from(bills).all()
+        const key = (i: number) => rows.find(r => r.id === id(i))!.k ?? `alone:${i}`
+        // Each group a bill of the rest fell into, with every bill now in it: the split can free a bill that
+        // another split had kept out of the group, and the preview says so.
+        const left = new Map<string, string[]>()
+        for (const i of rest) left.set(key(i), [...Array(BILLS).keys()].filter(j => j !== target && key(j) === key(i)).map(j => `B${j}`))
+        const byNumber = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true })
+        const actual = [...left.values()].map(p => p.sort(byNumber)).sort((a, b) => byNumber(a[0], b[0]))
+        expect(preview!.map(p => p.map(b => b.billNumber)), `seed ${seed}, split B${target}`).toEqual(actual)
+      }
+    }
+  }, 240_000)
 })
