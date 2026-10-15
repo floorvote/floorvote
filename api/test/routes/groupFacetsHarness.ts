@@ -69,7 +69,7 @@ const OR_ANCHORS = [
  * stale values, ties, and a value on one bill that the group's others never had. It is built once for the
  * tests, which only read.
  */
-export function randomFixtureSuite(seed: number) {
+export function randomFixtureSuite(seed: number, modes: Array<'AND' | 'OR'> = ['AND', 'OR']) {
   describe(`every count matches the list on a random fixture (seed ${seed})`, () => {
     beforeAll(async () => {
       await reset()
@@ -140,10 +140,10 @@ export function randomFixtureSuite(seed: number) {
       checks.forEach(([label, , promised], i) => expect(actual[i], label).toBe(promised))
     }
 
-    for (const [qs, skip] of AND_ANCHORS) {
+    for (const [qs, skip] of modes.includes('AND') ? AND_ANCHORS : []) {
       it(`AND: ${qs || 'no filter'}`, async () => { await expectCountsMatch(qs, skip) })
     }
-    for (const qs of OR_ANCHORS) {
+    for (const qs of modes.includes('OR') ? OR_ANCHORS : []) {
       it(`OR: ${qs}`, async () => { await expectCountsMatch(`${qs}&match=any`, []) })
     }
   })

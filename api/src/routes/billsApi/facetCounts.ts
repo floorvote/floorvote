@@ -50,19 +50,26 @@ export type Fresh = { cte?: SQL; test: (t: BillsTable) => SQL }
 export type CountRow = { values: unknown[]; n: number }
 
 /**
+ * The most values the current filter may bind for a statement to hold it twice (`freshOf`). The per-bill form
+ * binds 2V + S values for a filter of V, where the scopes S are part of V (so S < V), and the custom field id
+ * lists a statement adds come on top, so 25 keeps it under D1's 100. A test sets it to 0 to run the list form.
+ */
+export const freshForm = { perBillMax: 25 }
+
+/**
  * True for a bill in no group meeting the current result, and for a bill of a
  * group none of whose bills meets it. A bill with no companions is tested by
  * the current filter itself, and a grouped bill by a list of the groups in the
  * result, built once for the statement. That holds the filter's values twice in
- * a statement, which D1's 100 bound values allow a filter of 30 or fewer. A
- * larger filter (a broad OR selection) is read once into a list of every bill
- * in the result instead, named by its id or its group key, which costs a list of
- * every such bill per statement and so is only used where the first would fail.
+ * a statement, which D1's 100 bound values allow a small filter. A larger one
+ * (a broad OR selection) is read once into a list of every bill in the result
+ * instead, named by its id or its group key, which costs a list of every such
+ * bill per statement and so is only used where the first would fail.
  */
 export function freshOf(current: BillsFilter): Fresh {
   const cm = billsAs('cm')
   const values = new SQLiteSyncDialect().sqlToQuery(current(billsAs('probe'), true)!).params.length
-  if (values > 30) {
+  if (values > freshForm.perBillMax) {
     return {
       cte: sql`cur AS MATERIALIZED (SELECT ${cm.id} AS id, ${cm.groupKey} AS gk FROM bills cm WHERE ${current(cm, true)})`,
       test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN ${t.id} NOT IN (SELECT id FROM cur)
