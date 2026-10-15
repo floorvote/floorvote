@@ -103,7 +103,8 @@ async function buildForkInstance() {
   insert(`INSERT INTO crm_contacts (id, person_key, contact_date, kind, summary, bill_id) VALUES ('cc-1', 'cm:Zachary Parker', '2026-09-20', 'meeting', 'Talked through the stadium bill.', ?)`, B0769)
   insert(`INSERT INTO crm_followups (id, person_key, due_date, text) VALUES ('cf-1', 'staff:staffer@example.org', '2026-10-01', 'Send our testimony.')`)
   // What the team itself holds, which upstream's code must leave alone.
-  insert(`INSERT INTO users (id, email, name, role) VALUES ('u-1', 'member@example.org', 'A Member', 'admin'), ('u-2', 'other@example.org', 'Another Member', 'member')`)
+  // The fork's members carry the line under their name as `subtitle` until 0105 renames it to `title`.
+  insert(`INSERT INTO users (id, email, name, role, subtitle) VALUES ('u-1', 'member@example.org', 'A Member', 'admin', 'Policy Lead'), ('u-2', 'other@example.org', 'Another Member', 'member', NULL)`)
   insert(`INSERT INTO member_votes (id, user_id, bill_id, position) VALUES ('mv-1', 'u-1', ?, 'support'), ('mv-2', 'u-2', ?, 'oppose')`, B0769, B0769)
   insert(`INSERT INTO official_positions (id, bill_id, position, notes, set_by) VALUES ('op-1', ?, 'Support', 'Testified in favor.', 'u-1')`, B0769)
   insert(`INSERT INTO comments (id, bill_id, user_id, content) VALUES ('c-1', ?, 'u-2', 'The hearing moved.')`, B0400)
@@ -166,6 +167,8 @@ describe('a fork\'s instance, moved onto upstream', () => {
       { id: 'cm-1', recipient_id: 'u-1', kind: 'mention', comment_id: 'c-1', actor_id: 'u-2' },
     ])
     expect(await teamState()).toEqual(team)
+    // The rename (0105) keeps each member's title.
+    expect(await rows(`SELECT id, title FROM users ORDER BY id`)).toEqual([{ id: 'u-1', title: 'Policy Lead' }, { id: 'u-2', title: null }])
 
     const applied = (await rows('SELECT name FROM d1_migrations ORDER BY id')).map(r => r.name)
     expect(applied.slice(0, forkManifest.files.length)).toEqual(forkManifest.files.map(f => f.replace(/\.sql$/, '')))

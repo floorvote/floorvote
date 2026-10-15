@@ -148,7 +148,7 @@ describe('renderDigestEmail', () => {
         billNumber: event.billNumber, billSessionSlug: null, billState: event.billState,
         billTitle: event.billTitle, billSummary: null,
         billPriority: event.priority as GroupedBillEvents['billPriority'], billMatchType: null,
-        userName: event.userName ?? '', userSubtitle: null,
+        userName: event.userName ?? '', userTitle: null,
         metadata: JSON.parse(event.metadata), createdAt: event.createdAt,
       }] as FeedEvent[],
     }

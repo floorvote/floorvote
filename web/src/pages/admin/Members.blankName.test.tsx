@@ -9,7 +9,7 @@ import * as api from '../../lib/api'
 // the admin Members table: in the name cell, in search, and in row labels.
 
 const base = {
-  subtitle: null,
+  title: null,
   createdAt: '2024-01-01T00:00:00Z',
   lastActive: '2024-01-01T00:00:00Z',
   deactivatedAt: null,

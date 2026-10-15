@@ -31,7 +31,7 @@ vi.mock('../lib/scrollUtils', () => ({ getScrollContainer: () => ({ scrollTo: vi
 vi.mock('../components/RichTextEditor', () => ({ RichTextEditor: () => null }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authMock.role, subtitle: null, canVote: true },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authMock.role, title: null, canVote: true },
     loading: false,
   }),
 }))

@@ -25,7 +25,7 @@ describe('GET /bills/:id/comments', () => {
   beforeEach(async () => {
     await resetDb()
     await applyMigrations()
-    memberId = await seedUser({ name: 'Alice', subtitle: 'Clerk' })
+    memberId = await seedUser({ name: 'Alice', title: 'Clerk' })
     memberToken = await seedSession(memberId)
     billId = await seedBill()
     const db = getDb(env.DB)
@@ -56,7 +56,7 @@ describe('GET /bills/:id/comments', () => {
     const c = body[0] as Record<string, unknown>
     expect(c.content).toBe('Great bill.')
     expect(c.userName).toBe('Alice')
-    expect(c.userSubtitle).toBe('Clerk')
+    expect(c.userTitle).toBe('Clerk')
     expect((c.reactions as unknown[])).toHaveLength(1)
     expect((c.reactions as Record<string, unknown>[])[0].emoji).toBe('👍')
     expect((c.reactions as Record<string, unknown>[])[0].userReacted).toBe(true)

@@ -309,7 +309,7 @@ describe('runDemoReset with the nj-county-clerks seed', () => {
       ...seed,
       users: [...seed.users, {
         id: 'other-user', email: 'other@demo.example', name: 'Other Persona',
-        role: 'member', subtitle: 'Clerk · Elsewhere', createdDaysAgo: 5,
+        role: 'member', title: 'Clerk · Elsewhere', createdDaysAgo: 5,
         canVote: true, lastActiveDaysAgo: 1,
       }],
       roles: [{ id: 'other-role', name: 'Other Role' }],

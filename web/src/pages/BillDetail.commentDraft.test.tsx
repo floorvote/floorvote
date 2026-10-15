@@ -37,7 +37,7 @@ vi.mock('../components/RichTextEditor', () => ({
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', subtitle: null },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: 'member', title: null },
     loading: false,
   }),
 }))

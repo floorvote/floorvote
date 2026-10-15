@@ -112,7 +112,7 @@ describe('Export API', () => {
     const keys = Object.keys(body.rows[0])
     expect(keys).toEqual(expect.arrayContaining(['id', 'email', 'name', 'role', 'createdAt']))
     // Should not have any unexpected columns beyond the safe set
-    const safeKeys = ['id', 'email', 'name', 'role', 'subtitle', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote']
+    const safeKeys = ['id', 'email', 'name', 'role', 'title', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote']
     for (const key of keys) {
       expect(safeKeys).toContain(key)
     }

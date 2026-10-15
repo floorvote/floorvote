@@ -11,7 +11,7 @@ import * as api from '../../lib/api'
 // for someone else staples your own row to the results.
 
 const base = {
-  subtitle: null,
+  title: null,
   createdAt: '2024-01-01T00:00:00Z',
   lastActive: '2024-01-01T00:00:00Z',
   deactivatedAt: null,
