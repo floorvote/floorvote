@@ -36,13 +36,22 @@ describe('GET /api/tenants/:id/body-events dashboard address', () => {
     expect(body.dashboardUrl).toBe('https://admin.example.com')
   })
 
-  it('names nothing when central has no dashboard address', async () => {
+  // An explicit null, not a missing key: it tells the instance to forget the
+  // address, where a missing key (an older central) leaves it alone.
+  it('says it has none, with an explicit null, when the address is unset', async () => {
     const body = await bodyEvents({ ...TEST_ENV, ADMIN_APP_URL: undefined })
-    expect(body).not.toHaveProperty('dashboardUrl')
+    expect(body).toHaveProperty('dashboardUrl', null)
   })
 
-  it('names nothing when the address is not an http(s) URL', async () => {
-    const body = await bodyEvents({ ...TEST_ENV, ADMIN_APP_URL: 'javascript:alert(1)' })
-    expect(body).not.toHaveProperty('dashboardUrl')
+  it('says it has none when the address is empty', async () => {
+    const body = await bodyEvents({ ...TEST_ENV, ADMIN_APP_URL: '' })
+    expect(body).toHaveProperty('dashboardUrl', null)
+  })
+
+  it('says it has none when the address is not an http(s) URL', async () => {
+    for (const bad of ['javascript:alert(1)', 'ftp://admin.example.com', '/relative', 'not a url']) {
+      const body = await bodyEvents({ ...TEST_ENV, ADMIN_APP_URL: bad })
+      expect(body, bad).toHaveProperty('dashboardUrl', null)
+    }
   })
 })
