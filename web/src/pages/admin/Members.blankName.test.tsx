@@ -22,6 +22,7 @@ const base = {
 
 const SELF = { ...base, id: 'admin-1', email: 'self@example.com', name: 'Self Admin', role: 'admin' as const }
 const NAMED = { ...base, id: 'm-1', email: 'named@example.com', name: 'Named Member', role: 'member' as const }
+const BLANKED = { ...base, id: 'm-3', email: 'blanked@example.com', name: '   ', role: 'member' as const }
 const CLEARED = { ...base, id: 'm-2', email: 'cleared@example.com', name: '', role: 'member' as const }
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -37,9 +38,10 @@ vi.mock('../../context/DemoContext', () => ({
 
 function renderMembers() {
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
-    if (path === '/admin/members') return [SELF, NAMED, CLEARED] as never
+    if (path === '/admin/members') return [SELF, NAMED, CLEARED, BLANKED] as never
     if (path === '/admin/roles') return [] as never
     if (path === '/admin/config') return {} as never
+    if (path.endsWith('/auth-events')) return { events: [], suppression: { suppressed: false }, delivery: {} } as never
     return {} as never
   })
   return render(
@@ -80,5 +82,35 @@ describe('Members table, member with no name', () => {
     await user.type(screen.getByPlaceholderText(/search by name, email, role, or permission level/i), 'cleared')
     expect(screen.getByRole('link', { name: 'cleared@example.com' })).toBeInTheDocument()
     expect(screen.queryByText('Named Member')).not.toBeInTheDocument()
+  })
+
+  // Login activity's header pairs the member's name with their email; a
+  // nameless member's name is their email, so it must not be printed twice (#513).
+  async function openLoginActivity(email: string) {
+    const user = userEvent.setup()
+    await user.click(within(rowFor(email)).getByRole('button', { name: '···' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Login activity' }))
+    return (await screen.findByText('Login activity')).parentElement as HTMLElement
+  }
+
+  it('shows a nameless member\'s email once in the Login activity header', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('cleared@example.com')
+    expect(header.textContent).toBe('Login activitycleared@example.com')
+  })
+
+  it('shows the email once in the Login activity header when a legacy name is only whitespace', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('blanked@example.com')
+    expect(header.textContent).toBe('Login activityblanked@example.com')
+  })
+
+  it('still shows "Name · email" in the Login activity header for a named member', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('named@example.com')
+    expect(header.textContent).toBe('Login activityNamed Member · named@example.com')
   })
 })

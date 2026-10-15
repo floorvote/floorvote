@@ -967,7 +967,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
               onClick={() => setShowFeedback(true)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: fontSize.sm, color: color.textSecondary, padding: 0 }}
             >
-              Feedback
+              Feedback…
             </button>
           )}
           <button
