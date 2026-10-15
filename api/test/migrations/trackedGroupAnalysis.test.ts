@@ -154,6 +154,29 @@ describe('migration 0106: a group\'s tags follow its tracked bill', () => {
       expect([tags.a190, tags.b1713, tags.c9]).toEqual([['Labor'], ['Energy'], ['Energy']])
     })
 
+    it('doesn\'t write group tags when a bill in no group changes match type', async () => {
+      await insert({ id: 'solo', tags: ['Water'], summary: 'x', at: '2026-09-01 00:00:00', match: 'keyword', key: null })
+      // A marker the trigger would overwrite with the bill's own tags if it ran. Writing group_tags alone fires none.
+      await run("UPDATE bills SET group_tags = '[\"marker\"]' WHERE id = 'solo'")
+      await run("UPDATE bills SET match_type = NULL WHERE id = 'solo'")
+      expect((await groupTags()).solo).toEqual(['marker'])
+      await run("UPDATE bills SET match_type = 'manual' WHERE id = 'solo'")
+      expect((await groupTags()).solo).toEqual(['marker'])
+    })
+
+    it('still recomputes a bill in no group when its own tags change', async () => {
+      await insert({ id: 'solo', tags: ['Water'], summary: 'x', at: '2026-09-01 00:00:00', match: 'keyword', key: null })
+      await run("UPDATE bills SET group_tags = '[\"marker\"]' WHERE id = 'solo'")
+      await run("UPDATE bills SET tags = '[\"Housing\"]', match_type = NULL WHERE id = 'solo'")
+      expect((await groupTags()).solo).toEqual(['Housing'])
+    })
+
+    it('recomputes the old group when a bill leaves it and changes match type in one write', async () => {
+      await run("UPDATE bills SET group_key = NULL, match_type = NULL WHERE id = 'a190'")
+      const tags = await groupTags()
+      expect([tags.a190, tags.b1713]).toEqual([['Labor'], ['Energy']])
+    })
+
     it('takes a newly tracked bill\'s newer analysis when it joins', async () => {
       await insert({ id: 'c9', tags: ['Housing'], summary: 'x', at: '2026-09-03 00:00:00', match: 'keyword', key: 'a190' })
       const tags = await groupTags()

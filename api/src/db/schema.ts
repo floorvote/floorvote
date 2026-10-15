@@ -227,7 +227,7 @@ export const bills = sqliteTable('bills', {
   groupKey: text('group_key'),
   // The tags of the bill's companion group's current analysis, or its own tags
   // when it's in no group, as a JSON array (migration 0103). A tag filter tests
-  // these. Written only by the triggers 0103 creates, never by the app.
+  // these. Written only by the triggers 0106 recreates, never by the app.
   groupTags: text('group_tags').notNull().default('[]'),
 })
 

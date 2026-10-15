@@ -13,7 +13,9 @@
 --
 -- This recreates 0103's three triggers with that rule, and the update trigger
 -- also fires on match_type, so a bill that starts or stops matching on its own
--- moves its group's tags. The recompute still writes only group_tags, so it
+-- moves its group's tags. A match type change on a bill that is in no group,
+-- before or after, recomputes nothing, since such a bill has its own tags
+-- whatever it matches. The recompute still writes only group_tags, so it
 -- fires no trigger again. The backfill applies the rule to every group an
 -- instance already has. idx_bills_group_tags is unchanged.
 --
@@ -43,7 +45,7 @@ END;
 CREATE TRIGGER bills_group_tags_update AFTER UPDATE OF tags, ai_processed_at, tenant_summary, group_key, match_type ON bills
 WHEN NEW.tags IS NOT OLD.tags OR NEW.ai_processed_at IS NOT OLD.ai_processed_at
   OR NEW.tenant_summary IS NOT OLD.tenant_summary OR NEW.group_key IS NOT OLD.group_key
-  OR NEW.match_type IS NOT OLD.match_type
+  OR (NEW.match_type IS NOT OLD.match_type AND (NEW.group_key IS NOT NULL OR OLD.group_key IS NOT NULL))
 BEGIN
   UPDATE bills SET group_tags = CASE WHEN group_key IS NULL THEN tags
     ELSE COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
