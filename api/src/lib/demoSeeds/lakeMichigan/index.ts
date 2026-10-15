@@ -18,8 +18,7 @@ import { LM_COMMENTS, LM_MENTIONS, LM_NOTES, LM_REACTIONS, LM_VOTES } from './di
 
 /**
  * One comment_added event per comment, with the preview derived rather than
- * duplicated. The NJ seed hand-writes these, which is why its feed showed a
- * single comment per card and why a preview could drift from its comment.
+ * duplicated, so a preview cannot drift from its comment.
  */
 const commentEvents: DemoSeedFeedEvent[] = LM_COMMENTS.map((c) => {
   const mentioned = LM_MENTIONS.filter(m => m.commentId === c.id).map(m => m.userId)

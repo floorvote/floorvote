@@ -15,23 +15,10 @@ import { LM_BILLS } from '../../src/lib/demoSeeds/lakeMichigan/bills'
  * The fixtures stand in for what ingest gives the demo's real bills: the state and
  * the AI-assigned tags. Everything else a view filters on (priority, position,
  * custom fields) is written by the reset itself, so those halves are exercised on
- * the seed's own data. No view uses a subject: the live NJ demo hides subjects
- * for the whole tenant, and the seed writes none of its own.
+ * the seed's own data. No view uses a subject: an operator can hide subjects
+ * for a whole demo tenant, and the seed writes none of its own.
  */
 type BillFixture = { externalId: string; state: string; tags: string[] }
-
-// The eight NJ bills. Tags: A2670 is about county boards canvassing, A548 about
-// clerk filings, the rest about elections.
-const NJ_FIXTURES: BillFixture[] = [
-  ['legiscan:2099974', 'Elections'],
-  ['legiscan:2100182', 'Elections'],
-  ['legiscan:2098535', 'Elections'],
-  ['legiscan:2098113', 'Elections'],
-  ['legiscan:2098630', 'Elections'],
-  ['legiscan:2096183', 'Elections'],
-  ['legiscan:2099056', 'Board of Elections'],
-  ['legiscan:2096553', 'County Clerk Functions'],
-].map(([externalId, tag]) => ({ externalId, state: 'NJ', tags: [tag] }))
 
 // Each Lake Michigan bill carries the one taxonomy theme the seed assigns it.
 const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
@@ -39,10 +26,6 @@ const LM_FIXTURES: BillFixture[] = LM_BILLS.map(b => ({
 }))
 
 const CASES: Array<{ slug: string; fixtures: BillFixture[]; expectedTotals: Record<string, number> }> = [
-  {
-    slug: 'nj-county-clerks', fixtures: NJ_FIXTURES,
-    expectedTotals: { 'high-priority-or-clerk-duties': 5, 'costly-high-priority-bills': 2, 'legislative-affairs-backed-or-amended': 2 },
-  },
   {
     slug: 'lake-michigan', fixtures: LM_FIXTURES,
     expectedTotals: {
@@ -133,7 +116,7 @@ describe.each(CASES)('saved views in the $slug demo seed', ({ slug, fixtures, ex
     }
   })
 
-  // The live demo hides subjects (NJ for the whole tenant), and the seed writes none,
+  // An operator can hide subjects for a whole tenant, and the seed writes none,
   // so a subject filter would match nothing a visitor can see.
   it('uses no subject filter in any view', async () => {
     for (const v of await listViews()) {
