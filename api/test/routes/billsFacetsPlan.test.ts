@@ -139,6 +139,13 @@ describe('GET /bills/facets query plans', () => {
     return probes[0]
   }
 
+  it('writes the 1 in the probe\'s SQL rather than binding it, so the partial index applies whatever the engine', async () => {
+    // A statement with `is_draft = ?` can use the partial index only where the engine re-plans with the
+    // bound value. The SQLite of the tests does and the plain one scans, so the SQL carries the literal.
+    const probe = await draftsProbe()
+    expect(probe.sql).toMatch(/"is_draft" = 1\b/)
+  })
+
   it('probes for a draft through the partial drafts index, not a scan of the bills', async () => {
     // The tenant of this fixture has one draft in 30,000 bills, after ANALYZE.
     const probe = await draftsProbe()

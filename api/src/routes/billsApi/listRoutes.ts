@@ -240,10 +240,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // the chip-visibility signal (draftCount below stays filtered, for the
     // badge). Computed up front so the myBills early-return below — which
     // otherwise skips straight to an empty facets object — still reports it
-    // correctly instead of hard-coding false.
+    // correctly instead of hard-coding false. The 1 is written in the SQL, not bound: SQLite serves the
+    // probe from the partial index of drafts (0107) only when it sees is_draft = 1 in the statement, and
+    // without it the planner scans the table (#551). billsFacetsPlan.test.ts pins the plan.
     const [hasDraftRow] = await db.select({ id: bills.id })
       .from(bills)
-      .where(eq(bills.isDraft, true))
+      .where(sql`${bills.isDraft} = 1`)
       .limit(1)
       .all()
     const hasDrafts = hasDraftRow !== undefined

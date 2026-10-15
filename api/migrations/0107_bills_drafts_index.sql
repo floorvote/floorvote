@@ -1,0 +1,30 @@
+-- A partial index of the draft bills, for the filter counts' drafts probe (#551).
+--
+-- GET /bills/facets reports hasDrafts: does this tenant have any draft at all.
+-- It asks SELECT id FROM bills WHERE is_draft = 1 LIMIT 1. Nearly no tenant has
+-- many drafts, so idx_bills_is_draft (0047) has one distinct value in its
+-- statistics, every bill's 0, and the planner reads the whole table before it
+-- would read that index. On a copy of 93,000 bills with no draft that probe cost
+-- about 8 ms locally and about 9 times that on D1, the largest single statement
+-- of a facets request.
+--
+-- This index holds only the drafts, so the probe reads at most one entry of it
+-- and none of the table, with or without statistics, with no draft or with
+-- many. A tenant's drafts are a small fraction of its bills, and a bill that
+-- is not a draft is never written to the index, so ingest pays nothing for it.
+-- It is keyed on id so the probe is answered from the index alone.
+--
+-- idx_bills_is_draft stays, because the keyword corpus check counts the
+-- non-draft bills from it (api/src/lib/keywordMatchSummary.ts).
+--
+-- COUPLING: SQLite uses a partial index only when the query's WHERE clause
+-- implies the index's. A bound parameter implies is_draft = 1 only where the
+-- engine re-plans with the bound value, which not every SQLite build does, so
+-- the probe writes the 1 in its SQL, as listRoutes.ts does. Binding it, as
+-- eq(bills.isDraft, true) does, can bring the table scan back with no error.
+-- api/test/routes/billsFacetsPlan.test.ts pins the SQL and the plan of the
+-- real request.
+--
+-- No semicolons in these comments. api/test/helpers.ts splits migration files
+-- on the statement terminator before it strips comment lines.
+CREATE INDEX idx_bills_drafts ON bills (id) WHERE is_draft = 1;
