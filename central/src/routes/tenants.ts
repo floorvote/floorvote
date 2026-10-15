@@ -508,6 +508,39 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
   return c.json({ ok: true, tenantId, promoted: billIds.length })
 })
 
+// POST /tenants/fetch-bills/:tenantId — fetch bills from their provider and send them on to
+// the tenant, with no change to what the tenant has matched. Body: { billIds: number[] }.
+// For a bill the tenant wants the text of without tracking it, such as a companion that
+// didn't match its keywords (promote-bills would track it). Queues the ingestor with no
+// forceAI, so every tenant linked to a bill gets the usual notification and none is told
+// to run AI. Only bills the tenant is linked to are queued. One getBill() per bill against
+// the shared monthly quota, so the count is capped at REPROCESS_LIMIT, as promote-bills is.
+tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
+  const requested = [...new Set((body.billIds ?? []).filter(n => Number.isInteger(n) && n > 0))]
+  if (requested.length > REPROCESS_LIMIT) {
+    return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
+  }
+
+  const linked: number[] = []
+  for (let i = 0; i < requested.length; i += 90) {
+    const rows = await db.select({ billId: schema.billTenants.billId })
+      .from(schema.billTenants)
+      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, requested.slice(i, i + 90))))
+      .all()
+    linked.push(...rows.map(r => r.billId))
+  }
+  linked.sort((a, b) => a - b)
+
+  for (let i = 0; i < linked.length; i += 100) {
+    await c.env.INGESTOR_QUEUE.sendBatch(linked.slice(i, i + 100).map(billId => ({ body: { billId } })))
+  }
+
+  return c.json({ ok: true, tenantId, queued: linked.length })
+})
+
 tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const daysRaw = Number(c.req.query('days') ?? '30')

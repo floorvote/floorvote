@@ -8,6 +8,7 @@ import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
 import { syncBillSubjects } from '../lib/billSubjects'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
+import { pullCompanions } from '../lib/companionAnalysis'
 import { loadGroupTeamValues, recordFieldChanges } from '../lib/teamFields'
 import { nowDb } from '../lib/dbTime'
 import { readConfigString } from '../lib/configValue'
@@ -289,6 +290,7 @@ export async function processCentralNotification(
   // a bill's identical companions can change without its provider data
   // changing (a vocabulary edit), and this is cheap when nothing did.
   await syncIdenticalCompanions(db, msg.billId, centralBill.relatedBills)
+  await pullCompanions(env, db, msg)
 }
 
 /** Store what central sent for the bill, and analyze it when it should be. */
@@ -308,6 +310,7 @@ async function applyCentralBill(
     aiProcessedAt: bills.aiProcessedAt,
     aiSkipReason: bills.aiSkipReason,
     matchType: bills.matchType,
+    groupKey: bills.groupKey,
     priority: bills.priority,
     textR2Key: bills.textR2Key,
     newMatchAt: bills.newMatchAt,
@@ -320,7 +323,14 @@ async function applyCentralBill(
     //   - a stub message arriving after a promote (race) that would otherwise
     //     hide a fully-tracked bill from members
     //   - a manually-added bill being downgraded to a stub
-    if (existing?.aiProcessedAt || existing?.matchType === 'manual') {
+    //
+    // A bill that didn't match, in a companion group, and was analyzed through
+    // it (lib/companionAnalysis.ts) is not that: it holds its analysis without
+    // being tracked, and takes stub updates like any bill that didn't match.
+    // Skipping them would freeze its status and history at the day it was
+    // analyzed.
+    const analyzedThroughGroup = existing?.matchType === null && existing.groupKey !== null
+    if ((existing?.aiProcessedAt && !analyzedThroughGroup) || existing?.matchType === 'manual') {
       console.log(`[processor] skipping stub upsert for ${msg.billId}: already tracked or manual`)
       // Recording subjects is not a downgrade — only the stub metadata upsert
       // (and its matchType write) is what the guard above exists to prevent.
@@ -532,14 +542,18 @@ async function applyCentralBill(
   // If message carries an explicit matchType (from central), use it.
   // If not (e.g. forceAI re-queue from tenant), preserve whatever is already on the row.
   // Only derive from keyword matching for brand-new bills with no classification yet.
+  // A group analysis (lib/companionAnalysis.ts) is for a bill that didn't
+  // match, pulled in by its companion group: its keywords never decide its
+  // match type, so it stays what it was.
   const derivedMatchType: 'keyword' | 'manual' | null =
     msg.matchType !== undefined ? msg.matchType
+    : msg.groupAnalysis ? (existing?.matchType ?? null)
     : (existing?.matchType ?? (keywordMatch ? 'keyword' : null))
   // F5+B5: gate AI on canonical match_type rather than recomputed keywordMatch.
   // This fixes the case where a manually-promoted bill (match_type='manual')
   // whose match text (title, abstract, bill number) doesn't satisfy the tenant's current keywords would
   // never re-run AI on text changes, freezing its summary at promote-time.
-  let shouldRunAi = msg.forceAI || derivedMatchType !== null
+  let shouldRunAi = msg.forceAI || msg.groupAnalysis || derivedMatchType !== null
   if (shouldRunAi && !hasFullText) {
     const textCount = centralBill.texts?.length ?? 0
     const why = textCount === 0

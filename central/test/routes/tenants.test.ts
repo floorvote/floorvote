@@ -356,6 +356,81 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
   })
 })
 
+describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking them', () => {
+  // An instance asks for a bill's text when it analyzes a companion that didn't match its keywords.
+  // The bill is fetched and sent on like any ingest, and stays as untracked as it was.
+  async function seedLinked() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      { billId: 601, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H601', title: 'A', changeHash: 'h1', status: 1 },
+      { billId: 602, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H602', title: 'B', changeHash: 'h2', status: 1 },
+      { billId: 603, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H603', title: 'C', changeHash: 'h3', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 601, tenantId: 'ri', matchType: null },
+      { billId: 602, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 603, tenantId: 'nj', matchType: null },
+    ])
+  }
+  function ingestorEnv() {
+    const sent: any[] = []
+    const env2: any = {
+      ...TEST_ENV,
+      INGESTOR_QUEUE: {
+        send: async (m: any) => sent.push(m),
+        sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)),
+      },
+    }
+    return { env2, sent }
+  }
+  const post = (env2: any, billIds: number[], tenant = 'ri') => app.fetch(
+    new Request(`http://central/api/tenants/fetch-bills/${tenant}`, { method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }) }),
+    env2,
+  )
+
+  it('queues the ingestor for each bill the tenant is linked to, with no AI forced', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [601, 602])
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).queued).toBe(2)
+    expect(sent).toEqual([{ billId: 601 }, { billId: 602 }])
+  })
+
+  it('leaves every match type as it was', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    expect((await post(env2, [601, 602])).status).toBe(200)
+    expect(sent).toHaveLength(2)
+    const db = drizzle(env.DB, { schema })
+    const rows = await db.select().from(schema.billTenants).all()
+    expect(rows.map(r => [r.billId, r.tenantId, r.matchType]).sort()).toEqual([[601, 'ri', null], [602, 'ri', 'keyword'], [603, 'nj', null]])
+  })
+
+  it('ignores a bill the tenant isn\'t linked to', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [603, 999])
+    expect((await res.json() as any).queued).toBe(0)
+    expect(sent).toEqual([])
+  })
+
+  it('queues nothing for an empty list', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [])
+    expect(res.status).toBe(200)
+    expect(sent).toEqual([])
+  })
+
+  it('rejects more bills than one request may ingest, since each costs a provider call', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, Array.from({ length: 1001 }, (_, i) => i + 1))
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toMatch(/too many billIds/i)
+    expect(sent).toEqual([])
+  })
+})
+
 describe('state_coverage maintenance (register merges, seed-session adds state)', () => {
   it('register merges new coverage with existing instead of overwriting', async () => {
     const env2: any = { ...TEST_ENV }
