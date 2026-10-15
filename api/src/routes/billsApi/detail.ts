@@ -150,6 +150,7 @@ export async function buildBillDetail(
     actorName: e.actorName ?? null,
     with: (JSON.parse(e.metadata) as GroupingEventMetadata).with,
     replaced: (JSON.parse(e.metadata) as GroupingEventMetadata).replaced ?? [],
+    ...((JSON.parse(e.metadata) as GroupingEventMetadata).undoneSplits?.length ? { undoneSplits: (JSON.parse(e.metadata) as GroupingEventMetadata).undoneSplits } : {}),
   }))
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }

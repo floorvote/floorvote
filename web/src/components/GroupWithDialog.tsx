@@ -5,6 +5,7 @@ import { FORM_LABEL } from '../lib/textStyles'
 import { Dialog } from './ui/Dialog'
 import { BillPicker, type BillOption } from './BillPicker'
 import { MissingRequiredReason, useRequiredSubmit } from './RequiredField'
+import { undoSplitsConfirmText } from '../lib/splitConfirm'
 
 /**
  * "Group with…" from the bill page's overflow menu (admins): pick another bill
@@ -41,6 +42,14 @@ export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, o
     setSaving(true)
     setError(null)
     try {
+      // Grouping a bill again with one it was split from undoes that split and the others between the two
+      // groups. Say which first, as the split confirmation does, and write nothing if declined.
+      const { undoneSplits = [] } = await apiFetch<{ undoneSplits?: Array<[{ billNumber: string }, { billNumber: string }]> }>(
+        `/bills/${billId}/group-preview?withBillId=${encodeURIComponent(target)}`)
+      if (undoneSplits.length > 0) {
+        const withNumber = options.find(o => o.id === target)?.billNumber ?? 'the bill picked'
+        if (!window.confirm(undoSplitsConfirmText(billNumber, withNumber, undoneSplits))) { setSaving(false); return }
+      }
       await apiFetch(`/bills/${billId}/group`, { method: 'POST', body: JSON.stringify({ withBillId: target }) })
       onGrouped()
     } catch (err) {

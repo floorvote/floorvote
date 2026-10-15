@@ -17,9 +17,12 @@ export function groupingLineText(event: GroupingEvent): string {
     // one that shouldn't have lost.
     const replaced = (event.replaced ?? []).map(r =>
       ` ${r.billNumber}'s ${r.label}, ${r.value}, was replaced by ${r.replacedBy.billNumber}'s, ${r.replacedBy.value}.`).join('')
+    // The splits grouping by hand undid, so the thread keeps what the admin was told.
+    const undone = event.undoneSplits ?? []
+    const undid = undone.length === 0 ? '' : ` It undid the split${undone.length === 1 ? '' : 's'} of ${listClauses(undone.map(([a, b]) => `${a.billNumber} and ${b.billNumber}`))}.`
     return event.actorName
-      ? `${event.actorName} grouped this bill with ${bills} on ${date}. ${together}${replaced}`
-      : `Grouped with ${bills} as identical bills on ${date}. ${together}${replaced}`
+      ? `${event.actorName} grouped this bill with ${bills} on ${date}. ${together}${undid}${replaced}`
+      : `Grouped with ${bills} as identical bills on ${date}. ${together}${undid}${replaced}`
   }
   const apart = `Comments posted on ${one ? bills : 'them'} no longer appear here.`
   return event.actorName
@@ -50,4 +53,10 @@ export function placeGroupingLines(
 function listBillNumbers(numbers: readonly string[]): string {
   if (numbers.length <= 2) return numbers.join(' and ')
   return `${numbers.slice(0, -1).join(', ')}, and ${numbers[numbers.length - 1]}`
+}
+
+// Clauses joined like a list of bills: "X", "X, and Y", "X, Y, and Z".
+function listClauses(clauses: readonly string[]): string {
+  if (clauses.length <= 2) return clauses.join(', and ')
+  return `${clauses.slice(0, -1).join(', ')}, and ${clauses[clauses.length - 1]}`
 }

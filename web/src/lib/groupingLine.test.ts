@@ -23,6 +23,19 @@ describe('groupingLineText', () => {
       .toBe('Ada grouped this bill with S1713 on October 11. Earlier comments from both now appear together.')
   })
 
+  it('says which splits a grouping by hand undid, so the page keeps what the admin was told', () => {
+    const pair = (a: string, b: string) => [bill(a), bill(b)] as [ReturnType<typeof bill>, ReturnType<typeof bill>]
+    expect(groupingLineText({ id: 'e', type: 'grouped', createdAt: at, actorName: 'Ada', with: [bill('A190')], replaced: [], undoneSplits: [pair('A190', 'H3000')] }))
+      .toBe('Ada grouped this bill with A190 on October 11. Earlier comments from both now appear together. It undid the split of A190 and H3000.')
+    expect(groupingLineText({ id: 'e', type: 'grouped', createdAt: at, actorName: 'Ada', with: [bill('A190')], replaced: [], undoneSplits: [pair('A190', 'H3000'), pair('H3000', 'S1713')] }))
+      .toBe('Ada grouped this bill with A190 on October 11. Earlier comments from both now appear together. It undid the splits of A190 and H3000, and H3000 and S1713.')
+  })
+
+  it('says nothing of splits for a grouping that undid none, or an older event with no record of them', () => {
+    expect(groupingLineText({ id: 'e', type: 'grouped', createdAt: at, actorName: 'Ada', with: [bill('A190')], replaced: [], undoneSplits: [] }))
+      .toBe('Ada grouped this bill with A190 on October 11. Earlier comments from both now appear together.')
+  })
+
   it('describes a split', () => {
     expect(groupingLineText({ id: 'e', type: 'split', createdAt: '2026-10-12 12:00:00', actorName: null, with: [bill('S1713')], replaced: [] }))
       .toBe('Separated from S1713 on October 12. Comments posted on S1713 no longer appear here.')
