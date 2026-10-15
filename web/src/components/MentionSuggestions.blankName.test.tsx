@@ -46,3 +46,24 @@ describe('MentionSuggestions, @admins', () => {
     expect(command).toHaveBeenCalledWith({ id: 'admins:all', label: 'admins' })
   })
 })
+
+describe('MentionSuggestions, matched by email', () => {
+  const byEmail = { id: 'u3', name: 'Jordan Lee', email: 'jdoe@example.org', subtitle: null, type: 'user' as const, matchedByEmail: true }
+
+  it('shows the address on a person who matched by email', () => {
+    render(<MentionSuggestions items={[byEmail]} command={() => {}} />)
+    expect(screen.getByRole('button', { name: /Jordan Lee/ })).toHaveTextContent('Jordan Leejdoe@example.org')
+  })
+
+  it('keeps the address hidden on a person who matched by name', () => {
+    render(<MentionSuggestions items={[named]} command={() => {}} />)
+    expect(screen.getByRole('button', { name: /Named Person/ })).not.toHaveTextContent('named@example.com')
+  })
+
+  it('still inserts the name as the mention label', async () => {
+    const command = vi.fn()
+    render(<MentionSuggestions items={[byEmail]} command={command} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: /Jordan Lee/ }))
+    expect(command).toHaveBeenCalledWith({ id: 'user:u3', label: 'Jordan Lee' })
+  })
+})
