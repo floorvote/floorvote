@@ -3,7 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { bills, officialPositions } from '../../src/db/schema'
+import { bills, memberVotes, notes, officialPositions } from '../../src/db/schema'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 // "Select all matching" and bulk edits treat a companion group as one item
@@ -106,6 +106,72 @@ describe('bulk actions on companion groups', () => {
     expect(res.status).toBe(200)
     expect(res.body.updated).toBe(0)
     expect((await db().select().from(officialPositions).all())).toHaveLength(0)
+  })
+
+  describe('under my bills, which is group-wide (#552)', () => {
+    // A190 (Introduced) and S1713 (Passed) are a group; HB 1 and HB 2 are in none.
+    async function seed() {
+      await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', status: 'Introduced' })
+      await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed' })
+      await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'TX', status: 'Passed' })
+      await seedBill({ id: 'other', billNumber: 'HB 2', state: 'TX', status: 'Passed' })
+      await group('a190', 'b1713')
+    }
+    const vote = (billId: string) => db().insert(memberVotes).values({ id: crypto.randomUUID(), billId, userId: ada, position: 'support' })
+    const priorities = async (qs = '') => Object.fromEntries((await list(qs)).bills.map(r => [r.billNumber, r.priority]))
+    async function values(qs: string) {
+      const res = await api(`/bills/bulk-values?${qs}`)
+      return await res.json() as { count: number }
+    }
+
+    it('selects the same groups the list shows, a group through the bill that is not mine', async () => {
+      await seed()
+      await vote('a190')
+      const shown = await list('myBills=1&status=Passed')
+      expect(shown.pagination.total).toBe(1)
+      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'high' })
+      expect(res.status).toBe(200)
+      expect(res.body.updated).toBe(1)
+      const rows = (await list()).bills
+      expect(rows.filter(r => r.priority === 'high').map(r => r.group?.length ?? 1)).toEqual([2])
+      expect(rows.filter(r => r.priority === null).map(r => r.billNumber).sort()).toEqual(['HB 1', 'HB 2'])
+    })
+
+    it('leaves out a group with none of my bills and counts a bill in no group on its own', async () => {
+      await seed()
+      await vote('solo')
+      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'low' })
+      expect(res.body.updated).toBe(1)
+      expect(await priorities('myBills=1')).toEqual({ 'HB 1': 'low' })
+      expect((await list()).bills.filter(r => r.priority === null)).toHaveLength(2)
+    })
+
+    it('selects as many groups as the list totals, with my bills and unvoted together', async () => {
+      await seed()
+      await db().insert(notes).values({ id: 'n1', billId: 'a190', userId: ada, content: '<p>mine</p>' })
+      await vote('solo')
+      // The group is mine (a note) and unvoted; HB 1 is mine and voted.
+      for (const [qs, filter, groups] of [
+        ['myBills=1&unvoted=1&status=Passed', { myBills: '1', unvoted: '1', status: ['Passed'] }, 1],
+        ['myBills=1&unvoted=1', { myBills: '1', unvoted: '1' }, 1],
+        ['myBills=1', { myBills: '1' }, 2],
+      ] as const) {
+        expect([qs, 'list', (await list(qs)).pagination.total]).toEqual([qs, 'list', groups])
+        expect([qs, 'form', (await values(qs)).count]).toEqual([qs, 'form', groups])
+        // The edit is applied once to each of the groups the list shows, and writes nothing else.
+        expect([qs, 'edit', (await bulk({ filter, priority: 'medium' })).body.updated]).toEqual([qs, 'edit', groups])
+      }
+    })
+
+    it('selects the bills of a split group one by one', async () => {
+      await seed()
+      await vote('a190')
+      await db().update(bills).set({ groupKey: null }).where(inArray(bills.id, ['a190', 'b1713']))
+      const res = await bulk({ filter: { myBills: '1', status: ['Passed'] }, priority: 'high' })
+      expect(res.body.updated).toBe(0)
+      expect((await bulk({ filter: { myBills: '1' }, priority: 'high' })).body.updated).toBe(1)
+      expect(await priorities()).toEqual({ A190: 'high', 'S1713': null, 'HB 1': null, 'HB 2': null })
+    })
   })
 
   describe('bulk values for the form', () => {

@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, bills, comments, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
+import { splitFromGroup } from '../../src/lib/companionGroups'
 
 // The bill list shows a companion group as one row (#379). The list's
 // filter predicates stay per bill and a group matches through any member, but
@@ -558,6 +559,115 @@ describe('bill list: one row per companion group', () => {
       const body = await list('myBills=1')
       expect(body.pagination.total).toBe(1)
       expect(body.bills[0].group).toHaveLength(2)
+    })
+
+    describe('my bills is group-wide, as unvoted is (#552)', () => {
+      // A190 (Introduced) and S1713 (Passed) are the group {A, B}. A filter below is met by one of them alone.
+      const vote = (billId: string, userId = ada) => db().insert(memberVotes).values({ id: crypto.randomUUID(), userId, billId, position: 'support' })
+      const groupRow = (body: ListBody) => body.bills.map(b => b.group?.map(g => g.billNumber).sort().join('+') ?? b.billNumber)
+
+      it('lists the group when only A is mine and a filter only B meets is set', async () => {
+        await companions()
+        await vote('a190')
+        const body = await list('myBills=1&status=Passed')
+        expect(body.pagination.total).toBe(1)
+        expect(groupRow(body)).toEqual(['A190+S1713'])
+      })
+
+      it('lists the group when only B is mine and a filter only A meets is set', async () => {
+        await companions()
+        await vote('b1713')
+        expect(groupRow(await list('myBills=1&status=Introduced'))).toEqual(['A190+S1713'])
+      })
+
+      it.each([
+        ['a vote', (id: string) => vote(id)],
+        ['a note', (id: string) => db().insert(notes).values({ id: 'n1', billId: id, userId: ada, content: '<p>mine</p>' })],
+        ['a comment', (id: string) => db().insert(comments).values({ id: 'c1', billId: id, userId: ada, content: 'x' })],
+      ])('counts %s on one bill as engagement with the group', async (_kind, engage) => {
+        await companions()
+        await engage('a190')
+        expect((await list('myBills=1&status=Passed')).pagination.total).toBe(1)
+      })
+
+      it('leaves out a group when no bill in it is mine, whatever the other filters meet', async () => {
+        await companions()
+        await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ', status: 'Passed' })
+        await vote('solo')
+        // Another member's engagement with the group is not mine.
+        await vote('a190', ben)
+        expect(groupRow(await list('myBills=1'))).toEqual(['HB 1'])
+        expect(groupRow(await list('myBills=1&status=Passed'))).toEqual(['HB 1'])
+        expect(groupRow(await list('myBills=1&state=NJ'))).toEqual(['HB 1'])
+      })
+
+      it('does not count an empty note or a deleted comment as engagement', async () => {
+        await companions()
+        await db().insert(notes).values({ id: 'n1', billId: 'a190', userId: ada, content: '' })
+        await db().insert(comments).values({ id: 'c1', billId: 'a190', userId: ada, content: 'x', deletedAt: '2026-10-01 00:00:00' })
+        expect((await list('myBills=1')).pagination.total).toBe(0)
+        expect((await list('myBills=1&status=Passed')).pagination.total).toBe(0)
+      })
+
+      it('leaves a bill in no group as it was: its own engagement, tested on it alone', async () => {
+        await companions()
+        await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ', status: 'Introduced' })
+        await seedBill({ id: 'other', billNumber: 'HB 2', state: 'NJ', status: 'Passed' })
+        await vote('solo')
+        expect(groupRow(await list('myBills=1'))).toEqual(['HB 1'])
+        expect(groupRow(await list('myBills=1&status=Introduced'))).toEqual(['HB 1'])
+        expect(groupRow(await list('myBills=1&status=Passed'))).toEqual([])
+      })
+
+      it('lists the group under my bills combined with unvoted when I have a note but no vote on it', async () => {
+        await companions()
+        await db().insert(notes).values({ id: 'n1', billId: 'a190', userId: ada, content: '<p>mine</p>' })
+        expect(groupRow(await list('myBills=1&unvoted=1&status=Passed'))).toEqual(['A190+S1713'])
+        expect(groupRow(await list('myBills=1&unvoted=1'))).toEqual(['A190+S1713'])
+      })
+
+      it('leaves the group out of my bills combined with unvoted once I vote on any of its bills', async () => {
+        await companions()
+        await vote('a190')
+        expect((await list('myBills=1&status=Passed')).pagination.total).toBe(1)
+        expect((await list('unvoted=1&status=Passed')).pagination.total).toBe(0)
+        expect((await list('myBills=1&unvoted=1&status=Passed')).pagination.total).toBe(0)
+        expect((await list('myBills=1&unvoted=1')).pagination.total).toBe(0)
+      })
+
+      it('combines with a search, a team field filter, and the match-any operator', async () => {
+        await companions()
+        await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ', status: 'Introduced' })
+        await vote('a190')
+        await priority('b1713', 'high', '2026-10-01 10:00:00')
+        expect(groupRow(await list('myBills=1&q=S1713'))).toEqual(['A190+S1713'])
+        expect(groupRow(await list('myBills=1&q=HB'))).toEqual([])
+        expect(groupRow(await list('myBills=1&priority=high'))).toEqual(['A190+S1713'])
+        expect(groupRow(await list('myBills=1&priority=low'))).toEqual([])
+        // The scope narrows whatever the operator joins: only the group is mine.
+        expect(groupRow(await list('myBills=1&match=any&status=Passed&state=TX'))).toEqual(['A190+S1713'])
+        expect(groupRow(await list('myBills=1&match=any&status=Introduced&state=NJ'))).toEqual(['A190+S1713'])
+      })
+
+      it('totals and pages the group once however many of its bills are mine', async () => {
+        await companions()
+        await vote('a190')
+        await vote('b1713')
+        const body = await list('myBills=1&pageSize=1')
+        expect(body.pagination.total).toBe(1)
+        expect(body.bills).toHaveLength(1)
+      })
+
+      it('returns each bill to per-bill behavior when the group splits', async () => {
+        await companions()
+        await vote('a190')
+        expect((await list('myBills=1&status=Passed')).pagination.total).toBe(1)
+        expect(await splitFromGroup(db(), 'a190', ada)).toBe(true)
+        // S1713 is no longer in the group of the bill I voted on, so it leaves My bills.
+        expect(groupRow(await list('myBills=1&status=Passed'))).toEqual([])
+        expect(groupRow(await list('myBills=1'))).toEqual(['A190'])
+        expect(groupRow(await list('myBills=1&status=Introduced'))).toEqual(['A190'])
+      })
     })
 
     it('lists a group once among the new matches when either bill is one, and drops it once triaged', async () => {

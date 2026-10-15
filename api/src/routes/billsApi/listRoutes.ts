@@ -4,7 +4,7 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillIds, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -380,7 +380,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const tagSet = await loadTaxonomyTagNameSet(db)
     // "Any tag" = a valid (in-taxonomy) tag.
     const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.groupTags}) > 0`
-    const mine = await loadMyBillIds(db, currentUser.id)
+    const mine = await loadMyBillsInGroups(db, currentUser.id)
     const voted = await loadVotedInGroups(db, currentUser.id)
     const m = billsAs('m')
     const me = billsAs('me')
