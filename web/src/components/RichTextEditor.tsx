@@ -149,6 +149,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
         suggestion: {
           // Let the typed text include an "@" so a full email address can be
           // matched. The space-prefix rule still holds: "a@b.org" mid-word opens nothing.
+          // Note: tiptap turns off allowSpaces whenever this is on (we don't set allowSpaces).
           allowToIncludeChar: true,
           items: ({ query }: { query: string }) =>
             mentionSuggestionItems({ query, users: usersRef.current, roles: rolesRef.current, viewer: viewerRef.current }),
