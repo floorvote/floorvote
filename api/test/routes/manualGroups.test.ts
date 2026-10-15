@@ -306,6 +306,23 @@ describe('grouping and splitting bills by hand', () => {
     })
   })
 
+  describe('a chain from a split bill into an intact group', () => {
+    it('keeps the group whole, and only the bills of the chain drop out', async () => {
+      // A190, S1714, and H2000 stay grouped after S1713 is split from them.
+      await sync('legiscan:190', [1713, 1714, 2000])
+      await sync('legiscan:1714', [2000])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'c1714', 'd2000')).toEqual(['a190', null, 'a190', 'a190'])
+      // H3000 is identical to H2000, and H4000 to H3000 and S1713: a chain
+      // back to S1713 with no bill identical to both sides.
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await seedBill({ id: 'f4000', billNumber: 'H4000', state: 'RI', externalId: 'legiscan:4000' })
+      await sync('legiscan:3000', [2000])
+      await sync('legiscan:4000', [3000, 1713])
+      expect(await keys('a190', 'b1713', 'c1714', 'd2000', 'e3000', 'f4000')).toEqual(['a190', null, 'a190', 'a190', null, null])
+    })
+  })
+
   describe('team events', () => {
     it('records both actions with the admin as actor, and the grouping line names them', async () => {
       expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
