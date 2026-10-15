@@ -170,9 +170,15 @@ export async function syncIdenticalCompanions(
   }
 
   // Regroup even when the links are unchanged: a bill delivered for the first
-  // time joins companions that already name it.
-  const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.externalId, externalId)).get()
-  if (bill) await recomputeGroups(db, [bill.id], opts)
+  // time joins companions that already name it. The bills at the far end of a
+  // dropped link regroup too: a split is a cannot-link, so a link can keep
+  // bills apart that are in no group with this one (settleGroups), and once it
+  // goes they may group again.
+  const ids: string[] = []
+  for (const part of chunk([externalId, ...gone], 90)) {
+    ids.push(...(await db.select({ id: bills.id }).from(bills).where(inArray(bills.externalId, part)).all()).map(r => r.id))
+  }
+  if (ids.length > 0) await recomputeGroups(db, ids, opts)
 }
 
 type Node = { id: string; billNumber: string; externalId: string | null; groupKey: string | null }
@@ -212,18 +218,28 @@ export async function recomputeGroups(
   throw new Error(`Companion groups of ${billIds.join(', ')} kept changing under ${RECOMPUTE_ATTEMPTS} recomputes`)
 }
 
-/** One recompute: false when another write changed a key it read, so nothing was written. */
-async function tryRecomputeGroups(
-  db: AppDb,
-  billIds: readonly string[],
-  opts: { actorUserId?: string | null },
-): Promise<boolean> {
+/** What a recompute reads: every bill its walk reached, their old groups, and the links and overrides it saw. */
+type Walk = {
+  nodes: Map<string, Node>
+  oldGroups: Map<string, Node[]>
+  /** Every identical link row the walk read, by `externalId companionExternalId`. */
+  linksRead: Map<string, [string, string]>
+  /** Every override row the walk read, by pair. */
+  overridesRead: Map<string, Override>
+}
+
+/**
+ * Walk every bill connected to the seeds now, by an identical link or an
+ * admin's link, and every bill grouped with any of them before, so a group
+ * that loses a link is rekeyed in full. It reaches every bill a link or an
+ * admin's link connects to the seeds, so settleGroups decides their groups
+ * from all of it.
+ */
+async function walkComponent(db: AppDb, billIds: readonly string[]): Promise<Walk> {
   const nodes = new Map<string, Node>()
   const walked = new Set<string>()
   const oldGroups = new Map<string, Node[]>()
-  // Every identical link row the walk read, by `externalId companionExternalId`.
   const linksRead = new Map<string, [string, string]>()
-  // Every override row the walk read, by pair.
   const overridesRead = new Map<string, Override>()
 
   // Whether the instance has any group overrides at all, read with the seeds.
@@ -240,9 +256,6 @@ async function tryRecomputeGroups(
     }
   }
 
-  // Walk every bill connected to the seeds now, by an identical link or an
-  // admin's link, and every bill grouped with any of them before, so a group
-  // that loses a link is rekeyed in full.
   const queue = [...nodes.keys()]
   while (queue.length > 0) {
     const node = nodes.get(queue.shift()!)!
@@ -264,13 +277,22 @@ async function tryRecomputeGroups(
     }
   }
 
-  // The edges, from everything the walk read rather than from each bill's own
-  // reads: each bill's rows were read at a different moment, and a row either
-  // bill's read saw is one edge, or one split. The guard below makes the
-  // batch apply only while those rows are exactly what's stored.
-  const neighbors = groupEdges([...nodes.values()], [...linksRead.values()], [...overridesRead.values()])
+  return { nodes, oldGroups, linksRead, overridesRead }
+}
 
-  const componentOf = connectedComponents(nodes.keys(), neighbors)
+/** One recompute: false when another write changed a key it read, so nothing was written. */
+async function tryRecomputeGroups(
+  db: AppDb,
+  billIds: readonly string[],
+  opts: { actorUserId?: string | null },
+): Promise<boolean> {
+  const { nodes, oldGroups, linksRead, overridesRead } = await walkComponent(db, billIds)
+
+  // The groups, from everything the walk read rather than from each bill's
+  // own reads: each bill's rows were read at a different moment, and a row
+  // either bill's read saw is one edge, or one split. The guard below makes
+  // the batch apply only while those rows are exactly what's stored.
+  const componentOf = settleGroups([...nodes.values()], [...linksRead.values()], [...overridesRead.values()])
 
   const now = nowDb()
   const byNumber = (ids: Iterable<string>): GroupBill[] =>
@@ -424,24 +446,80 @@ async function readOverrides(db: AppDb, billIds: readonly string[]): Promise<Ove
 }
 
 /**
- * Each bill's neighbors in its companion group: the bills an identical link
- * joins it to, by handle in either direction, and the bills an admin linked it
- * with, less any pair an admin split. An override takes precedence over the
- * provider's links this way on every recompute, so on every sync.
+ * The companion groups of these bills, each bill's group shared by its
+ * members: the bills an identical link joins, by handle in either direction,
+ * and the bills an admin linked, less any pair an admin split. An override
+ * takes precedence over the provider's links this way on every recompute, so
+ * on every sync.
+ *
+ * A split pair is a cannot-link (see **Group override** in CONTEXT.md): its
+ * two bills never share a group, even where other bills' links connect them.
+ * While some split pair is still connected, the bills on its shortest
+ * connections (other than the pair) lose their provider links, and keep only
+ * an admin's: a bill identical to both of two split bills groups with
+ * neither. Every split pair at the shortest distance is handled at once, and
+ * the bills are walked in id order, so the result depends only on the links
+ * and overrides, never on which bill was delivered first. Admin links that
+ * alone still connect a split pair (only a race lets one be stored) drop
+ * last, the same way.
  */
-function groupEdges(nodes: readonly Node[], links: ReadonlyArray<readonly [string, string]>, overrides: readonly Override[]): Map<string, Set<string>> {
+function settleGroups(nodes: readonly Node[], links: ReadonlyArray<readonly [string, string]>, overrides: readonly Override[]): Map<string, string[]> {
+  const ids = nodes.map(n => n.id).sort()
   const idOf = new Map(nodes.flatMap(n => (n.externalId ? [[n.externalId, n.id] as const] : [])))
-  const known = new Set(nodes.map(n => n.id))
-  const split = new Set(overrides.filter(o => o.kind === 'split').map(o => pairKey(o.billId, o.otherBillId)))
-  const neighbors = new Map(nodes.map(n => [n.id, new Set<string>()]))
-  const join = (a: string | undefined, b: string | undefined) => {
+  const known = new Set(ids)
+  const splits = overrides.filter(o => o.kind === 'split' && known.has(o.billId) && known.has(o.otherBillId))
+    .map(o => pair(o.billId, o.otherBillId)).sort((x, y) => pairKey(...x).localeCompare(pairKey(...y)))
+  const split = new Set(splits.map(([a, b]) => pairKey(a, b)))
+  const provider = new Map(ids.map(id => [id, new Set<string>()]))
+  const manual = new Map(ids.map(id => [id, new Set<string>()]))
+  const join = (edges: Map<string, Set<string>>, a: string | undefined, b: string | undefined) => {
     if (!a || !b || a === b || !known.has(a) || !known.has(b) || split.has(pairKey(a, b))) return
-    neighbors.get(a)!.add(b)
-    neighbors.get(b)!.add(a)
+    edges.get(a)!.add(b)
+    edges.get(b)!.add(a)
   }
-  for (const [a, b] of links) join(idOf.get(a), idOf.get(b))
-  for (const o of overrides) if (o.kind === 'link') join(o.billId, o.otherBillId)
-  return neighbors
+  for (const [a, b] of links) join(provider, idOf.get(a), idOf.get(b))
+  for (const o of overrides) if (o.kind === 'link') join(manual, o.billId, o.otherBillId)
+
+  // Bills that have lost their provider links, and bills that have lost every link.
+  const noProvider = new Set<string>()
+  const alone = new Set<string>()
+  for (;;) {
+    const neighbors = new Map(ids.map(id => [id, new Set<string>(alone.has(id) ? [] : [
+      ...[...manual.get(id)!].filter(o => !alone.has(o)),
+      ...(noProvider.has(id) ? [] : [...provider.get(id)!].filter(o => !alone.has(o) && !noProvider.has(o))),
+    ])]))
+    // The bills on the shortest connections of the closest split pairs.
+    let shortest = Infinity
+    const between = new Set<string>()
+    for (const [u, v] of splits) {
+      const fromU = distances(u, neighbors)
+      const d = fromU.get(v)
+      if (d === undefined || d > shortest) continue
+      if (d < shortest) { shortest = d; between.clear() }
+      const fromV = distances(v, neighbors)
+      for (const id of ids) {
+        if (id !== u && id !== v && (fromU.get(id) ?? Infinity) + (fromV.get(id) ?? Infinity) === d) between.add(id)
+      }
+    }
+    // No bill between means a split pair joined directly, which the edges
+    // above leave out, so it can't happen. Stop rather than loop.
+    if (shortest === Infinity || between.size === 0) return connectedComponents(ids, neighbors)
+    const withProvider = [...between].filter(id => !noProvider.has(id) && provider.get(id)!.size > 0)
+    for (const id of withProvider.length > 0 ? withProvider : between) (withProvider.length > 0 ? noProvider : alone).add(id)
+  }
+}
+
+/** Each bill's distance in links from `from`, over `neighbors`, for the bills it reaches. */
+function distances(from: string, neighbors: ReadonlyMap<string, ReadonlySet<string>>): Map<string, number> {
+  const out = new Map([[from, 0]])
+  const queue = [from]
+  while (queue.length > 0) {
+    const at = queue.shift()!
+    for (const next of neighbors.get(at) ?? []) {
+      if (!out.has(next)) { out.set(next, out.get(at)! + 1); queue.push(next) }
+    }
+  }
+  return out
 }
 
 /** The two bills of a pair in the order an override stores them, smaller id first. */
@@ -463,16 +541,47 @@ function escapeHtml(s: string): string {
 
 // ── Grouping by hand ────────────────────────────────────────────────────────
 
+/** Two bills an admin split apart that a grouping by hand would put back in one group. */
+export type SplitConflict = { split: [GroupBill, GroupBill] }
+
 /**
  * An admin groups two bills by hand (see **Group override** in CONTEXT.md):
  * a `link` override joins them as an identical link would, so their groups
  * become one, and it holds on every later sync whatever the provider says.
- * It replaces a split of the same two bills, which makes grouping by hand
- * the way to undo a split. The grouping events name the admin.
+ * The grouping events name the admin.
+ *
+ * Their groups may not hold two bills an admin split apart, since a split is
+ * a cannot-link: that's a conflict, returned and not written. Except when the
+ * two bills are such a pair: grouping a bill again with one it was split from
+ * undoes the split, so the pair's split becomes the link, and any other split
+ * between the two groups (left by the same split, from the rest of that group)
+ * is removed.
  */
-export async function groupByHand(db: AppDb, billId: string, withBillId: string, actorUserId: string): Promise<void> {
-  await upsertOverride(db, billId, withBillId, 'link', actorUserId)
+export async function groupByHand(db: AppDb, billId: string, withBillId: string, actorUserId: string): Promise<SplitConflict | null> {
+  const [mine, theirs] = await Promise.all([loadGroupBills(db, billId), loadGroupBills(db, withBillId)])
+  const numberOf = new Map([...mine, ...theirs].map(b => [b.billId, b.billNumber]))
+  const mineIds = JSON.stringify(mine.map(b => b.billId))
+  const theirIds = JSON.stringify(theirs.map(b => b.billId))
+  const between = await db.select({ billId: billGroupOverrides.billId, otherBillId: billGroupOverrides.otherBillId })
+    .from(billGroupOverrides)
+    .where(and(eq(billGroupOverrides.kind, 'split'), sql`(
+      (${billGroupOverrides.billId} IN (SELECT value FROM json_each(${mineIds})) AND ${billGroupOverrides.otherBillId} IN (SELECT value FROM json_each(${theirIds})))
+      OR (${billGroupOverrides.billId} IN (SELECT value FROM json_each(${theirIds})) AND ${billGroupOverrides.otherBillId} IN (SELECT value FROM json_each(${mineIds}))))`))
+    .all()
+  const undoing = between.some(o => pairKey(o.billId, o.otherBillId) === pairKey(billId, withBillId))
+  if (between.length > 0 && !undoing) {
+    const first = between.map(o => [o.billId, o.otherBillId].map(id => ({ billId: id, billNumber: numberOf.get(id)! })).sort(compareBillNumbers))
+      .sort((a, b) => compareBillNumbers(a[0], b[0]) || compareBillNumbers(a[1], b[1]))[0]
+    return { split: [first[0], first[1]] }
+  }
+  const others = between.filter(o => pairKey(o.billId, o.otherBillId) !== pairKey(billId, withBillId))
+  await db.batch([
+    upsertOverride(db, billId, withBillId, 'link', actorUserId),
+    ...others.map(o => db.delete(billGroupOverrides).where(and(
+      eq(billGroupOverrides.billId, o.billId), eq(billGroupOverrides.otherBillId, o.otherBillId), eq(billGroupOverrides.kind, 'split')))),
+  ])
   await recomputeGroups(db, [billId, withBillId], { actorUserId })
+  return null
 }
 
 /**
@@ -509,12 +618,16 @@ export async function previewSplit(db: AppDb, billId: string): Promise<GroupBill
   const members = await db.select(nodeColumns).from(bills).where(inGroupOf(bills.id, billId)).all()
   const rest = members.filter(m => m.id !== billId)
   if (rest.length === 0) return null
-  // Edges to this bill fall out, since groupEdges keeps only edges between the bills it's given.
-  const links = await readLinks(db, rest.flatMap(n => (n.externalId ? [n.externalId] : [])))
-  const edges = groupEdges(rest, links, await readOverrides(db, rest.map(n => n.id)))
-  const numberOf = new Map(rest.map(n => [n.id, n.billNumber]))
-  return [...new Set(connectedComponents(rest.map(n => n.id), edges).values())]
-    .map(part => part.map(id => ({ billId: id, billNumber: numberOf.get(id)! })).sort(compareBillNumbers))
+  // The recompute's own walk and rule, with the split pairs the split would write.
+  const { nodes, linksRead, overridesRead } = await walkComponent(db, [billId])
+  for (const n of rest) {
+    const [a, b] = pair(billId, n.id)
+    overridesRead.set(`${a} ${b}`, { billId: a, otherBillId: b, kind: 'split' })
+  }
+  const componentOf = settleGroups([...nodes.values()], [...linksRead.values()], [...overridesRead.values()])
+  const restIds = new Set(rest.map(n => n.id))
+  return [...new Set([...restIds].map(id => componentOf.get(id)!))]
+    .map(part => part.map(id => ({ billId: id, billNumber: nodes.get(id)!.billNumber })).sort(compareBillNumbers))
     .sort((a, b) => compareBillNumbers(a[0], b[0]))
 }
 

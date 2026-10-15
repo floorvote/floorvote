@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { ApiError, apiFetch } from '../lib/api'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { FORM_LABEL } from '../lib/textStyles'
 import { Dialog } from './ui/Dialog'
@@ -43,8 +43,9 @@ export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, o
     try {
       await apiFetch(`/bills/${billId}/group`, { method: 'POST', body: JSON.stringify({ withBillId: target }) })
       onGrouped()
-    } catch {
-      setError("Couldn't group the bills. Try again.")
+    } catch (err) {
+      // A refusal says why (already one group, or two bills split apart, and how to undo the split).
+      setError(err instanceof ApiError && err.status === 409 ? err.message : "Couldn't group the bills. Try again.")
       setSaving(false)
     }
   }

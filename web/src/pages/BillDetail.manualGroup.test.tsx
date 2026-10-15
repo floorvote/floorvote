@@ -261,6 +261,24 @@ describe('grouping and splitting from the overflow menu', () => {
     await waitFor(() => expect(reads()).toBeGreaterThan(readsBefore))
   })
 
+  it("shows why the server refused a grouping, such as two bills split apart", async () => {
+    const user = userEvent.setup()
+    const apiFetch = renderBillDetail(GROUPED)
+    const answer = apiFetch.getMockImplementation()!
+    const refusal = 'S1714 and S1713 were split apart, and grouping A190 with S1714 would group them again. To undo that split, group S1713 with S1714.'
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/bills/42/group') throw new api.ApiError(409, refusal)
+      return answer(path, init)
+    })
+    await openMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: /Group with…/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Group A190 with another bill' })
+    await user.type(within(dialog).getByPlaceholderText('Search bills…'), 'S1714')
+    await user.click(within(dialog).getByRole('button', { name: /S1714/ }))
+    await user.click(within(dialog).getByRole('button', { name: 'Group bills' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(refusal)
+  })
+
   it('says so when the split fails', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(true)

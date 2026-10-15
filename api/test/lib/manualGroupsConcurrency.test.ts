@@ -90,7 +90,8 @@ describe('grouping by hand while other writes land', () => {
     let walks = 0
     const counting = {
       prepare: (query: string) => {
-        if (readsOverrides(query)) walks++
+        // The walk's read of a bill's overrides, which also names their kind.
+        if (readsOverrides(query) && query.includes('"kind" from')) walks++
         return env.DB.prepare(query)
       },
       batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts),

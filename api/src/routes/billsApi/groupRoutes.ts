@@ -24,7 +24,7 @@ export function registerGroupRoutes(router: Hono<AppEnv>) {
     if (typeof withBillId !== 'string' || withBillId === '') return c.json({ error: 'withBillId is required' }, 400)
     if (withBillId === billId) return c.json({ error: 'A bill cannot be grouped with itself' }, 400)
 
-    const found = await db.select({ id: bills.id, isDraft: bills.isDraft, externalId: bills.externalId, matchType: bills.matchType, groupKey: bills.groupKey })
+    const found = await db.select({ id: bills.id, billNumber: bills.billNumber, isDraft: bills.isDraft, externalId: bills.externalId, matchType: bills.matchType, groupKey: bills.groupKey })
       .from(bills).where(inArray(bills.id, [billId, withBillId])).all()
     if (found.length < 2) return c.json({ error: 'Not found' }, 404)
     // A draft has no legislative record to share a group with. Linking it to
@@ -36,7 +36,15 @@ export function registerGroupRoutes(router: Hono<AppEnv>) {
       return c.json({ error: 'These bills are already in one group' }, 409)
     }
 
-    await groupByHand(db, billId, withBillId, c.get('user').id)
+    const conflict = await groupByHand(db, billId, withBillId, c.get('user').id)
+    if (conflict) {
+      // A split is a cannot-link: name the pair, and the way to undo its split.
+      const [a, b] = conflict.split
+      const number = (id: string) => found.find(f => f.id === id)!.billNumber
+      return c.json({
+        error: `${a.billNumber} and ${b.billNumber} were split apart, and grouping ${number(billId)} with ${number(withBillId)} would group them again. To undo that split, group ${a.billNumber} with ${b.billNumber}.`,
+      }, 409)
+    }
 
     // A bill that didn't match, now grouped with a tracked one, is analyzed as
     // a delivery of the tracked bill would have it (lib/companionAnalysis.ts).

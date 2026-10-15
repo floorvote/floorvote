@@ -216,6 +216,94 @@ describe('grouping and splitting bills by hand', () => {
       await sync('legiscan:1713', [190])
       expect(await keys('a190', 'b1713')).toEqual(['a190', 'a190'])
     })
+
+    it('undo a split from a group of three when the bill is grouped again with one of them', async () => {
+      // Grouping again with a bill it was split from takes back its splits
+      // from the rest of that bill's group too.
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await sync('legiscan:3000', [1713, 190])
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'e3000')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'e3000')).toEqual(['a190', 'a190', null])
+      expect((await groupWith('ada', 'e3000', 'a190')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'e3000')).toEqual(['a190', 'a190', 'a190'])
+      expect(await db().select().from(billGroupOverrides).where(eq(billGroupOverrides.kind, 'split')).all()).toEqual([])
+    })
+  })
+
+  describe('bills split apart, and a bill linked to both', () => {
+    // A190 and S1713 were identical, and an admin split them.
+    beforeEach(async () => {
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+    })
+
+    it('keeps a new bill identical to both out of both groups', async () => {
+      await sync('legiscan:2000', [190, 1713])
+      expect(await keys('a190', 'b1713', 'd2000')).toEqual([null, null, null])
+    })
+
+    it('keeps it out of both whichever bill names the links, and in whatever order they arrive', async () => {
+      await sync('legiscan:190', [2000])
+      await sync('legiscan:1713', [2000])
+      await sync('legiscan:2000', [])
+      expect(await keys('a190', 'b1713', 'd2000')).toEqual([null, null, null])
+    })
+
+    it('lets an admin group that bill with one of them, and the other stays out', async () => {
+      await sync('legiscan:2000', [190, 1713])
+      expect((await groupWith('ada', 'd2000', 'a190')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'd2000')).toEqual(['a190', null, 'a190'])
+      // And the provider's next word on any of them changes nothing.
+      await sync('legiscan:2000', [190, 1713])
+      expect(await keys('a190', 'b1713', 'd2000')).toEqual(['a190', null, 'a190'])
+    })
+
+    it('refuses to group a bill with one of them while its group holds the other, naming the two', async () => {
+      // S1714 is identical to S1713, so it's in S1713's group.
+      await sync('legiscan:1714', [1713])
+      expect(await keys('b1713', 'c1714')).toEqual(['b1713', 'b1713'])
+      const res = await groupWith('ada', 'c1714', 'a190')
+      expect(res.status).toBe(409)
+      expect(((await res.json()) as { error: string }).error).toBe(
+        'A190 and S1713 were split apart, and grouping S1714 with A190 would group them again. To undo that split, group A190 with S1713.')
+      expect(await keys('a190', 'b1713', 'c1714')).toEqual([null, 'b1713', 'b1713'])
+    })
+
+    it('keeps the rest of a group whole when a new bill is identical to all of it and to the bill split off', async () => {
+      // S1714 and H2000 join A190, which is then split from them and grouped with S1713 again.
+      await sync('legiscan:1714', [190])
+      await sync('legiscan:2000', [190, 1714])
+      expect((await splitOff('ada', 'a190')).status).toBe(200)
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'c1714', 'd2000')).toEqual(['a190', 'a190', 'c1714', 'c1714'])
+      // A new bill names all four.
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await sync('legiscan:3000', [190, 1713, 1714, 2000])
+      expect(await keys('a190', 'b1713', 'c1714', 'd2000', 'e3000')).toEqual(['a190', 'a190', 'c1714', 'c1714', null])
+    })
+
+    it('keeps both bills of a chain between them out, since each is as much to blame', async () => {
+      // H2000 is identical to A190, and H3000 to H2000 and S1713.
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await sync('legiscan:2000', [190])
+      expect(await keys('a190', 'd2000')).toEqual(['a190', 'a190'])
+      await sync('legiscan:3000', [2000, 1713])
+      expect(await keys('a190', 'b1713', 'd2000', 'e3000')).toEqual([null, null, null, null])
+    })
+
+    it('regroups the bills a dropped link had kept apart, though neither was delivered', async () => {
+      // The provider no longer names A190 and S1713 identical, so only the chain connects them.
+      await sync('legiscan:1713', [])
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await sync('legiscan:2000', [190])
+      await sync('legiscan:3000', [2000, 1713])
+      expect(await keys('a190', 'b1713', 'd2000', 'e3000')).toEqual([null, null, null, null])
+      // The provider stops naming H2000 as H3000's companion, so nothing
+      // connects A190 and S1713 any more, and H2000 rejoins A190.
+      await sync('legiscan:3000', [1713])
+      expect(await keys('a190', 'b1713', 'd2000', 'e3000')).toEqual(['a190', 'b1713', 'a190', 'b1713'])
+    })
   })
 
   describe('team events', () => {
