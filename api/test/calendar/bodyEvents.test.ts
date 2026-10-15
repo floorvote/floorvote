@@ -44,7 +44,7 @@ const stadiumHearing = (o: Partial<CentralBodyEvent> = {}) => bodyEvent({
 })
 
 /** What central answers next. */
-let central: { status?: number; capabilities?: Record<string, unknown>; attribution?: unknown; events?: CentralBodyEvent[] }
+let central: { status?: number; capabilities?: Record<string, unknown>; attribution?: unknown; dashboardUrl?: unknown; events?: CentralBodyEvent[] }
 const fetchMock = vi.fn()
 
 let token: string
@@ -64,7 +64,7 @@ beforeEach(async () => {
   fetchMock.mockImplementation(async (url: string) => {
     expect(String(url)).toMatch(/^https:\/\/central\.test\/api\/tenants\/bpc-test\/body-events\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/)
     if (central.status) return new Response('down', { status: central.status })
-    return new Response(JSON.stringify({ capabilities: central.capabilities, attribution: central.attribution, events: central.events }), { headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ capabilities: central.capabilities, attribution: central.attribution, dashboardUrl: central.dashboardUrl, events: central.events }), { headers: { 'content-type': 'application/json' } })
   })
   vi.stubGlobal('fetch', fetchMock)
 })
@@ -332,5 +332,33 @@ describe('data attribution', () => {
     const body = await res.json() as any
     expect(body.attribution).toEqual(DC_ATTRIBUTION)
     expect(body.dataSources).toBeUndefined()
+  })
+})
+
+describe('central dashboard address', () => {
+  const configDashboardUrl = async () => (await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any).centralDashboardUrl
+
+  it('is unknown on GET /config until central has told the instance', async () => {
+    expect(await configDashboardUrl()).toBeUndefined()
+  })
+
+  it('reaches GET /config from the body-event sync', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('keeps what it has when central sends none, as an older central does', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = undefined
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('ignores an address that is not an http(s) URL, since the page renders it as a link', async () => {
+    central.dashboardUrl = 'javascript:alert(1)'
+    await sync()
+    expect(await configDashboardUrl()).toBeUndefined()
   })
 })
