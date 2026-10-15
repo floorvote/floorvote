@@ -10,6 +10,7 @@ import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/bill
 import { bodyEventDetails, bodyEventOptions, calendarCoverage, type BodyEventDetail, type BodyEventOptions } from '../lib/bodyEvents'
 import { coverageCapabilities } from '../lib/capabilities'
 import { coverageAttribution } from '../lib/attribution'
+import { httpUrl } from '../../../shared/httpUrl'
 import { listStateOwnership } from '../lib/stateProviders'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
@@ -572,7 +573,9 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
 // covers. Also the capabilities of the states the tenant covers (a state left
 // out has none), so the instance can gate features on them, and the
 // attribution of the providers those states come from (lib/attribution.ts),
-// so its footer credits them. Each state's events come from the provider that
+// so its footer credits them, and where central's admin dashboard lives
+// (ADMIN_APP_URL, already set for the dashboard's sign-in emails), so a
+// superadmin's Profile page can link there. Each state's events come from the provider that
 // owns it. Cancelled events come too, marked, so the instance cancels its copy.
 tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
@@ -594,7 +597,8 @@ tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) 
     const provider = findProvider(owners.get(state))
     if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to))
   }
-  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), events })
+  const dashboardUrl = httpUrl(c.env.ADMIN_APP_URL)?.replace(/\/+$/, '')
+  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), ...(dashboardUrl ? { dashboardUrl } : {}), events })
 })
 
 // What the instance's event rules can choose from (#298), for each state it

@@ -32,6 +32,8 @@ export interface AppConfig {
    * declares. The footer credits every one. Absent = LegiScan's.
    */
   attribution?: Attribution
+  /** Where central's admin dashboard lives, once central has said. Absent = unknown, so don't link to it. */
+  centralDashboardUrl?: string
   accountDeletionEnabled?: boolean
   /**
    * What each covered state's data can do, by state, from the provider central
