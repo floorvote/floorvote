@@ -8,6 +8,7 @@ import {
 import type { AppEnv } from '../../types'
 import { billSlug } from '../../lib/sessionSlug'
 import { buildBillsWhere, buildCustomFieldConditions, buildOrderBy, multiFilter, statusFilterValues, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
+import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -357,9 +358,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       .map(r => r.state)
       .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
       .sort()
-    // Every state the instance has bills in, also unfiltered: what `*` coverage
-    // means to the web app's subject-filter tooltip.
-    const billStates = (await db.selectDistinct({ state: bills.state }).from(bills).all()).map(r => r.state).sort()
+    // Every state the instance has bills in, for `*` coverage; absent on an
+    // explicit list, and cached per tenant (lib/billStates.ts).
+    const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
 
     let positionFilter: SQL | undefined
     if (positionValues.length > 0) {
