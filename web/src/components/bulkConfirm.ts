@@ -11,10 +11,33 @@ export function promotableCount(args: {
   return 0
 }
 
-export function bulkConfirmMessage(args: { count: number; lines: string; promotableCount: number }): string {
-  const { count, lines, promotableCount } = args
-  const base = `Apply changes to ${count.toLocaleString()} bill${count !== 1 ? 's' : ''}?\n\n${lines}`
-  if (promotableCount <= 0) return base
+/** "A", "A and B", "A, B, and C". */
+function joinWords(items: string[]): string {
+  if (items.length <= 2) return items.join(' and ')
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`
+}
+
+/** "add A and B, remove C": what a multi-select bulk edit does to each selected bill. */
+export function describeMultiDelta(d: { additions: string[]; removals: string[] }): string {
+  const parts: string[] = []
+  if (d.additions.length > 0) parts.push(`add ${joinWords(d.additions)}`)
+  if (d.removals.length > 0) parts.push(`remove ${joinWords(d.removals)}`)
+  return parts.join(', ')
+}
+
+export const MULTI_UNCHANGED_NOTE = 'Other values on each bill stay as they are.'
+
+export function bulkConfirmMessage(args: {
+  count: number
+  lines: string
+  promotableCount: number
+  /** A multi-select field change is staged; adds the "other values stay" note under the list. */
+  hasMultiChange?: boolean
+}): string {
+  const { count, lines, promotableCount, hasMultiChange } = args
+  let msg = `Apply changes to ${count.toLocaleString()} bill${count !== 1 ? 's' : ''}?\n\n${lines}`
+  if (hasMultiChange) msg += `\n\n${MULTI_UNCHANGED_NOTE}`
+  if (promotableCount <= 0) return msg
   const n = promotableCount.toLocaleString()
-  return `${base}\n\n${n} of these bill${promotableCount !== 1 ? 's' : ''} will be promoted to full tracking and queued for AI analysis.`
+  return `${msg}\n\n${n} of these bill${promotableCount !== 1 ? 's' : ''} will be promoted to full tracking and queued for AI analysis.`
 }
