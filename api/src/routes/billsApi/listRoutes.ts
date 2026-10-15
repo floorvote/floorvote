@@ -8,6 +8,7 @@ import {
 import type { AppEnv } from '../../types'
 import { billSlug } from '../../lib/sessionSlug'
 import { buildBillsWhere, buildCustomFieldConditions, buildOrderBy, multiFilter, statusFilterValues, buildSearchCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, subjectMembership, filterSuppressedSubjects } from './query'
+import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -349,6 +350,18 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const allowedSubjectFilters = filterSuppressedSubjects(subjectFilters, suppressedSubjectStates)
     const subjectFilter: SQL | undefined = allowedSubjectFilters.length > 0 ? subjectMembership(allowedSubjectFilters) : undefined
 
+    // Which states have subjects at all, with no filter applied (a state-leading
+    // index makes this a cheap skip-scan). The `subjects` facet below is scoped
+    // by the other active filters, so it can't tell the web app "this state has
+    // none" from "a filter hid it". Suppressed states count as having none.
+    const subjectStates = (await db.selectDistinct({ state: billSubjects.state }).from(billSubjects).all())
+      .map(r => r.state)
+      .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
+      .sort()
+    // Every state the instance has bills in, for `*` coverage; absent on an
+    // explicit list, and cached per tenant (lib/billStates.ts).
+    const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
+
     let positionFilter: SQL | undefined
     if (positionValues.length > 0) {
       const hasNone = positionValues.includes('none')
@@ -407,7 +420,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
+      else return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
     }
 
     // Shared by the `unvoted` scope filter above and unvotedCount below, so
@@ -783,6 +796,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       position: positionCountsOut,
       tags: tagCountsOut,
       subjects: subjectCounts,
+      subjectStates,
+      billStates,
       customFields,
       myBillsCount,
       newMatchesCount,

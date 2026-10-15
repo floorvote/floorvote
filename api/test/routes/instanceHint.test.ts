@@ -1,8 +1,12 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, stubFetch } from '../helpers'
 import { parseInstanceHints, serializeInstanceHints } from '../../../shared/instanceHint'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 const hosted = { ...env, APP_URL: 'https://wi.floor.vote', APP_DOMAINS: 'floor.vote', ASSOCIATION_NAME: 'Wisconsin Clerks' }
 

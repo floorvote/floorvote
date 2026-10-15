@@ -54,7 +54,7 @@ const requests = (spy: ReturnType<typeof mockApi>) =>
   spy.mock.calls.filter(c => c[0] === '/users/me/email-change').map(c => JSON.parse(String(c[1]?.body)))
 
 async function openForm() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Change email' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Change email…' }))
   return screen.findByLabelText('New email')
 }
 
@@ -117,7 +117,7 @@ describe('Profile: change your email', () => {
     demo.demoLocked = true
     mockApi()
     renderProfile()
-    expect(await screen.findByRole('button', { name: 'Change email' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Change email…' })).toBeDisabled()
   })
 
   it('shows the steps of a change in account history, in plain words', async () => {
