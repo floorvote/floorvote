@@ -140,11 +140,19 @@ describe('grouping and splitting bills by hand', () => {
       expect([b.comments.map(c => c.id), b.position?.position]).toEqual([['c2'], 'Oppose'])
     })
 
-    it('keeps the rest of the group together when the bill was what linked them', async () => {
+    it('lets the rest follow their own links, so a chain joined only through the bill comes apart', async () => {
       // A190 and S1714 each name S1713, and not each other.
       await sync('legiscan:190', [1713])
       await sync('legiscan:1714', [1713])
       expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', 'a190'])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect(await keys('a190', 'b1713', 'c1714')).toEqual([null, null, null])
+      expect(await db().select().from(billGroupOverrides).where(eq(billGroupOverrides.kind, 'link')).all()).toEqual([])
+    })
+
+    it('keeps the rest grouped where their own links join them', async () => {
+      // A190 names both, so A190 and S1714 are linked without S1713.
+      await sync('legiscan:190', [1713, 1714])
       expect((await splitOff('ada', 'b1713')).status).toBe(200)
       expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', null, 'a190'])
     })
@@ -152,6 +160,34 @@ describe('grouping and splitting bills by hand', () => {
     it('refuses a bill in no group', async () => {
       expect((await splitOff('ada', 'a190')).status).toBe(409)
       expect((await splitOff('ada', 'nope')).status).toBe(404)
+    })
+  })
+
+  describe('split preview', () => {
+    type Preview = { billNumber: string; parts: Array<Array<{ billId: string; billNumber: string }>> }
+    const preview = (name: string, billId: string) => as(name, `/bills/${billId}/split-preview`)
+    const numbers = async (res: Response) => ((await res.json()) as Preview).parts.map(p => p.map(b => b.billNumber))
+
+    it('names the groups the rest would fall into, and writes nothing', async () => {
+      await sync('legiscan:190', [1713])
+      await sync('legiscan:1714', [1713])
+      const res = await preview('ada', 'b1713')
+      expect(res.status).toBe(200)
+      expect(await numbers(res)).toEqual([['A190'], ['S1714']])
+      expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', 'a190'])
+      expect(await db().select().from(billGroupOverrides).all()).toEqual([])
+    })
+
+    it('names one part when the rest stay together', async () => {
+      await sync('legiscan:190', [1713, 1714])
+      expect(await numbers(await preview('ada', 'b1713'))).toEqual([['A190', 'S1714']])
+    })
+
+    it('refuses a standard member, a bill in no group, and an unknown bill', async () => {
+      await sync('legiscan:1713', [190])
+      expect((await preview('ann', 'b1713')).status).toBe(403)
+      expect((await preview('ada', 'c1714')).status).toBe(409)
+      expect((await preview('ada', 'nope')).status).toBe(404)
     })
   })
 

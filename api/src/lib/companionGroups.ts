@@ -478,10 +478,10 @@ export async function groupByHand(db: AppDb, billId: string, withBillId: string,
 /**
  * An admin splits a bill from its companion group: a `split` override with
  * each other bill in it removes any identical link or admin's link between
- * them, on every later sync too. The rest of the group stays together: where
- * this bill was what joined them (A190 and S1714 each identical to S1713, and
- * not to each other), `link` overrides join what's left. False, writing
- * nothing, for a bill in no group.
+ * them, on every later sync too. The rest of the group then follows its own
+ * links: bills that this one alone joined (A190 and S1714 each identical to
+ * S1713, and not to each other) come apart, and an admin can group them by
+ * hand. False, writing nothing, for a bill in no group.
  *
  * The overrides land in one batch, and the guarded recompute then reads them.
  * A sync or another admin changing the group at the same moment can't leave a
@@ -492,20 +492,30 @@ export async function splitFromGroup(db: AppDb, billId: string, actorUserId: str
   const members = await db.select(nodeColumns).from(bills).where(inGroupOf(bills.id, billId)).all()
   const rest = members.filter(m => m.id !== billId)
   if (rest.length === 0) return false
-
-  // Whether the rest still hold together without this bill. Edges to it fall
-  // out, since groupEdges keeps only edges between the bills it's given.
-  const links = await readLinks(db, rest.flatMap(n => (n.externalId ? [n.externalId] : [])))
-  const parts = [...new Set(connectedComponents(rest.map(n => n.id), groupEdges(rest, links, await readOverrides(db, rest.map(n => n.id)))).values())]
-  const firsts = parts.map(p => p.reduce((min, id) => (id < min ? id : min))).sort()
-
-  const writes = [
-    ...rest.map(n => upsertOverride(db, billId, n.id, 'split', actorUserId)),
-    ...firsts.slice(1).map(id => upsertOverride(db, firsts[0], id, 'link', actorUserId)),
-  ]
+  const writes = rest.map(n => upsertOverride(db, billId, n.id, 'split', actorUserId))
   await db.batch(writes as [typeof writes[number], ...typeof writes])
   await recomputeGroups(db, members.map(m => m.id), { actorUserId })
   return true
+}
+
+/**
+ * What splitting the bill from its group would leave, without writing it: the
+ * groups the rest of its group would fall into, each by bill number, from
+ * their own links and overrides as they stand. One part when they stay
+ * together. Null for a bill in no group. The confirmation names these, so an
+ * admin sees bills that would come apart before splitting.
+ */
+export async function previewSplit(db: AppDb, billId: string): Promise<GroupBill[][] | null> {
+  const members = await db.select(nodeColumns).from(bills).where(inGroupOf(bills.id, billId)).all()
+  const rest = members.filter(m => m.id !== billId)
+  if (rest.length === 0) return null
+  // Edges to this bill fall out, since groupEdges keeps only edges between the bills it's given.
+  const links = await readLinks(db, rest.flatMap(n => (n.externalId ? [n.externalId] : [])))
+  const edges = groupEdges(rest, links, await readOverrides(db, rest.map(n => n.id)))
+  const numberOf = new Map(rest.map(n => [n.id, n.billNumber]))
+  return [...new Set(connectedComponents(rest.map(n => n.id), edges).values())]
+    .map(part => part.map(id => ({ billId: id, billNumber: numberOf.get(id)! })).sort(compareBillNumbers))
+    .sort((a, b) => compareBillNumbers(a[0], b[0]))
 }
 
 /**

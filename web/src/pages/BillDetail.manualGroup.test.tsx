@@ -161,6 +161,9 @@ const BILL_OPTIONS = [
   { id: 'd1715', billNumber: 'S1715', title: 'Yet another', state: 'RI', isDraft: false },
 ]
 
+// What splitting A190 would leave: S1713 and S1714, which only A190 linked.
+const SPLIT_PREVIEW = { billNumber: 'A190', parts: [[{ billId: 'b1713', billNumber: 'S1713' }], [{ billId: 'c1714', billNumber: 'S1714' }]] }
+
 const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190' }, { billId: 'b1713', billNumber: 'S1713' }] }
 
 function renderBillDetail(overrides: Record<string, unknown> = {}) {
@@ -172,6 +175,7 @@ function renderBillDetail(overrides: Record<string, unknown> = {}) {
     if (path === '/config/custom-fields') return [] as never
     if (path === '/roles' || path === '/users') return [] as never
     if (path === '/calendar/bill-options') return BILL_OPTIONS as never
+    if (path === '/bills/42/split-preview') return SPLIT_PREVIEW as never
     return {} as never
   })
   render(<MemoryRouter><BillDetail /></MemoryRouter>)
@@ -250,7 +254,9 @@ describe('grouping and splitting from the overflow menu', () => {
     const reads = () => apiFetch.mock.calls.filter(([p]) => p === '/bills/42').length
     const readsBefore = reads()
     await user.click(screen.getByRole('menuitem', { name: /Split from group/ }))
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('S1713'))
+    // The confirmation names what the split leaves, from the server's preview.
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(expect.stringContaining(
+      'S1713 and S1714 will no longer be grouped with each other either, since nothing else links them.')))
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/42/split', { method: 'POST' }))
     await waitFor(() => expect(reads()).toBeGreaterThan(readsBefore))
   })

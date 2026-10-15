@@ -29,4 +29,4 @@ registerLookupRoutes(billsApiRouter)      // GET /:id, GET /resolve/*, GET /draf
 registerEngagementRoutes(billsApiRouter)  // votes, position, comments, note, custom-fields
 registerDraftRoutes(billsApiRouter)       // DELETE /:id, POST /draft, POST /:id/link, PATCH /:id/{draft,priority}
 registerTextRoutes(billsApiRouter)        // GET /:id/text/:docId
-registerGroupRoutes(billsApiRouter)       // POST /:id/group, POST /:id/split (admins)
+registerGroupRoutes(billsApiRouter)       // POST /:id/group, POST /:id/split, GET /:id/split-preview (admins)

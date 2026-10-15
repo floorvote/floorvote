@@ -3,14 +3,14 @@ import { eq, inArray } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { bills } from '../../db/schema'
-import { groupByHand, loadGroupBills, splitFromGroup } from '../../lib/companionGroups'
+import { groupByHand, loadGroupBills, previewSplit, splitFromGroup } from '../../lib/companionGroups'
 import { pullCompanions } from '../../lib/companionAnalysis'
 import { isHandle } from '../../../../shared/billHandle'
 import type { AppEnv } from '../../types'
 
 /**
  * Grouping and splitting bills by hand, from the bill page's overflow menu
- * (see **Group override** in CONTEXT.md). Admins only. Both answer with the
+ * (see **Group override** in CONTEXT.md). Admins only. The two writes answer with the
  * bill's group as it now stands, the bill first.
  */
 export function registerGroupRoutes(router: Hono<AppEnv>) {
@@ -46,7 +46,20 @@ export function registerGroupRoutes(router: Hono<AppEnv>) {
     return c.json({ groupBills: await loadGroupBills(db, billId) })
   })
 
-  // POST /bills/:id/split — take this bill out of its group. The rest stay grouped.
+  // GET /bills/:id/split-preview — what a split would leave, written nowhere:
+  // { billNumber, parts }, the groups the rest of the group would fall into.
+  // The page's confirmation names them.
+  router.get('/:id/split-preview', requireAdmin, async (c) => {
+    const db = getDb(c.env.DB)
+    const billId = c.req.param('id')
+    const bill = await db.select({ billNumber: bills.billNumber }).from(bills).where(eq(bills.id, billId)).get()
+    if (!bill) return c.json({ error: 'Not found' }, 404)
+    const parts = await previewSplit(db, billId)
+    if (!parts) return c.json({ error: 'This bill is in no group' }, 409)
+    return c.json({ billNumber: bill.billNumber, parts })
+  })
+
+  // POST /bills/:id/split — take this bill out of its group. The rest follow their own links.
   router.post('/:id/split', requireAdmin, async (c) => {
     const db = getDb(c.env.DB)
     const billId = c.req.param('id')

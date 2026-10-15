@@ -65,6 +65,7 @@ import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
 import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
 import { GroupWithDialog } from '../components/GroupWithDialog'
+import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
 import { GroupingLine } from '../components/GroupingLine'
 import { useMultiState } from '../context/ConfigContext'
@@ -1446,7 +1447,6 @@ export function BillDetail() {
                 })
               }
               if (isAdmin && groupBills.length > 1) {
-                const others = groupBills.filter(b => b.billId !== bill.id).map(b => b.billNumber)
                 menuRows.push({
                   key: 'split',
                   label: 'Split from group',
@@ -1454,9 +1454,12 @@ export function BillDetail() {
                   disabled: splitting || demoLocked,
                   onSelect: async () => {
                     if (splitting || demoLocked) return
-                    if (!window.confirm(`Split ${bill.billNumber} from its group with ${others.join(', ')}? Each bill gets back its own comments, votes, notes, and team values. Grouping the bills again undoes it.`)) return
                     setSplitting(true)
                     try {
+                      // The server says what the split would leave, so the
+                      // confirmation can name bills that would come apart.
+                      const preview = await apiFetch<{ billNumber: string; parts: GroupBill[][] }>(`/bills/${bill.id}/split-preview`)
+                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber))))) return
                       await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
                       await refetchBill()
                     } catch {

@@ -64,8 +64,8 @@ export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, o
       </div>
       <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: '0 0 14px', lineHeight: 1.5 }}>
         Grouped bills share one discussion, one vote per member, and the team's position, priority, and fields.
-        Each keeps its own page. The grouping holds through later updates from the legislature, and splitting
-        the bill from its group undoes it.
+        Each keeps its own page. The grouping holds through later updates from the legislature. Splitting a
+        bill from its group later takes it out of the whole group, not only away from the bill picked here.
       </p>
       <label htmlFor="group-with-target" style={{ ...FORM_LABEL, marginBottom: 0 }}>Bill</label>
       <BillPicker
