@@ -1631,6 +1631,50 @@ describe('GET /bills/facets', () => {
       expect(body.draftCount).toBe(0)
       expect(body.hasDrafts).toBe(true)
     })
+
+    // The probe reads an index that holds only the drafts (#551), so its answer must follow every way a bill
+    // becomes or stops being one.
+    const facetsBody = async (qs = '') => {
+      const res = await SELF.fetch(`http://localhost/api/bills/facets${qs}`, { headers: { Cookie: `session=${token}` } })
+      expect(res.status).toBe(200)
+      return await res.json() as { hasDrafts: boolean; draftCount: number; status: Record<string, number>; state: Record<string, number> }
+    }
+
+    it('is true with many drafts, and reports the same filed-bill counts as with none', async () => {
+      const before = await facetsBody()
+      expect(before.hasDrafts).toBe(false)
+      for (let i = 1; i <= 25; i++) await seedBill({ billNumber: `DRAFT ${i}`, isDraft: true, status: 'Drafting' })
+      const after = await facetsBody()
+      expect(after.hasDrafts).toBe(true)
+      expect(after.draftCount).toBe(25)
+      // The filed bills' own counts are the ones a tenant without drafts reports.
+      expect(after.status['In Committee']).toBe(before.status['In Committee'])
+      expect(after.status['Passed House']).toBe(before.status['Passed House'])
+    })
+
+    it('turns false when the only draft is deleted', async () => {
+      const draftId = await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      expect((await facetsBody()).hasDrafts).toBe(true)
+      await env.DB.prepare('DELETE FROM bills WHERE id = ?').bind(draftId).run()
+      expect((await facetsBody()).hasDrafts).toBe(false)
+    })
+
+    it('turns false when the only draft is filed, and true again when another is made', async () => {
+      const draftId = await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      expect((await facetsBody()).hasDrafts).toBe(true)
+      await env.DB.prepare('UPDATE bills SET is_draft = 0 WHERE id = ?').bind(draftId).run()
+      expect((await facetsBody()).hasDrafts).toBe(false)
+      await seedBill({ billNumber: 'DRAFT 2', isDraft: true })
+      expect((await facetsBody()).hasDrafts).toBe(true)
+    })
+
+    it('is true for a tenant whose only drafts are far from the first bills in the table', async () => {
+      // The probe's old scan found an early draft fast and a late one slowly; the answer is the same either way.
+      for (let i = 1; i <= 50; i++) await seedBill({ billNumber: `HB ${100 + i}` })
+      await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
+      expect((await facetsBody('?drafts=1')).hasDrafts).toBe(true)
+      expect((await facetsBody('?state=ZZ')).hasDrafts).toBe(true)
+    })
   })
 })
 
