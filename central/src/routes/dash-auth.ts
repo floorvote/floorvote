@@ -12,10 +12,9 @@ import {
   deleteAdminSession,
   type DashEnv,
 } from '../lib/adminAuth'
-import { verifySuperadminJwt, SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
+import { verifySuperadminJwt } from '../lib/superadminJwt'
 import { isSuperadminJtiRevoked } from '../lib/superadminRevocation'
-import { mintSuperadminToken } from '../lib/superadminIssuer'
-import { getSuperadminCookieDomain } from '../lib/superadminCookie'
+import { setSuperadminCookie } from '../lib/superadminIssuer'
 import { sendAdminMagicLink } from '../lib/adminEmail'
 import { nowDb } from '../lib/dbTime'
 import { checkRateLimit } from '../../../shared/rateLimit'
@@ -49,7 +48,7 @@ dashAuthRoutes.get('/me', async (c) => {
   if (sessionToken) {
     const session = await lookupAdminSession(db, sessionToken)
     if (session) {
-      return c.json({ data: { email: session.email, name: session.name }, meta: { generatedAt: new Date().toISOString() } })
+      return c.json({ data: { email: session.email }, meta: { generatedAt: new Date().toISOString() } })
     }
   }
 
@@ -68,7 +67,7 @@ dashAuthRoutes.get('/me', async (c) => {
     return c.json({ error: { code: 'forbidden', message: 'Not authorized' } }, 403)
   }
 
-  const { rawToken, expiresAt } = await createAdminSession(db, payload.email, payload.name)
+  const { rawToken, expiresAt } = await createAdminSession(db, payload.email)
   setCookie(c, 'admin_session', rawToken, {
     httpOnly: true,
     secure: true,
@@ -76,7 +75,7 @@ dashAuthRoutes.get('/me', async (c) => {
     path: '/',
     expires: new Date(expiresAt),
   })
-  return c.json({ data: { email: payload.email, name: payload.name }, meta: { generatedAt: new Date().toISOString() } })
+  return c.json({ data: { email: payload.email }, meta: { generatedAt: new Date().toISOString() } })
 })
 
 // POST /admin/dash/auth/login — request magic link
@@ -210,22 +209,9 @@ dashAuthRoutes.post('/callback', async (c) => {
   // logged into every tenant". Tenants no longer mint this token (closes H2).
   // Gated on the allowlist (the verify above already re-checked it) and on a
   // private key being present — fail safe (no cookie) otherwise.
-  const ssoToken = await mintSuperadminToken(c.env, link.email, '')
-  if (ssoToken) {
-    const cookieDomain = getSuperadminCookieDomain(c.env.ADMIN_APP_URL)
-    // Expire the cookie when the JWT itself does (short TTL, finding M3) — not at
-    // the 30-day local admin_session expiry — so the browser stops presenting a
-    // dead token. The local admin_session and per-tenant sessions it bootstraps
-    // persist independently.
-    setCookie(c, 'superadmin_jwt', ssoToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'Lax',
-      path: '/',
-      expires: new Date(Date.now() + SUPERADMIN_TOKEN_TTL_SEC * 1000),
-      ...(cookieDomain ? { domain: cookieDomain } : {}),
-    })
-  }
+  // Carries the superadmin's saved profile (name and title) for instances to apply. Expires
+  // with the JWT itself (short TTL, finding M3), not at the 30-day admin_session expiry.
+  await setSuperadminCookie(c, db, link.email)
 
   return c.json({ data: { ok: true }, meta: { generatedAt: new Date().toISOString() } })
 })
