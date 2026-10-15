@@ -8,9 +8,11 @@ import { users, sessions, magicLinks, associationConfig, bills, comments, commen
 import { generateToken, hashToken } from '../lib/crypto'
 import { sendMagicLink } from '../lib/email'
 import { registerWithCentral } from '../cron/sync'
-import { matchesKeywords } from '../lib/keywords'
+import { matchesKeywords, billMatchText } from '../lib/keywords'
+import { summarizeKeywordMatches } from '../lib/keywordMatchSummary'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle } from '../../../shared/billHandle'
+import { isWildcardKeyword } from '../../../shared/keywords'
 import { ensureAssociationName } from '../lib/associationName'
 import { parseTaxonomyItems } from '../lib/taxonomy'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
@@ -27,6 +29,8 @@ import type { AppDb, AppEnv } from '../types'
 import { checkMemberAddresses, normalizeMemberAddress } from '../lib/memberAddress'
 import { isPendingInvite, pendingInviteWhere } from '../lib/pendingInvite'
 import { isPreviouslyBounced, previouslyBouncedAddresses } from '../lib/bouncedAddresses'
+import { adminSendChecks, claimSend, releaseSend } from '../lib/adminSendLimits'
+import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/emailChange'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 
 export const adminApiRouter = new Hono<AppEnv>()
@@ -230,14 +234,29 @@ adminApiRouter.post('/members/bulk-invite', async (c) => {
   return c.json({ summary, results })
 })
 
-// A new seven-day invite link for a pending invite, sent the way every
-// admin-initiated invite is: link_requested first, then the email in the
-// background so the response doesn't wait on the mail provider.
-async function sendInvite(c: Context<AppEnv>, db: AppDb, target: { id: string; email: string }): Promise<void> {
-  const INVITE_DURATION_MS = 7 * 24 * 60 * 60 * 1000
+// Admin-sent links. An admin's email is allowed by claiming a send first
+// (lib/adminSendLimits.ts): the claim is the send's link_requested event and is
+// written only if the admin, the member, and the address are all under their
+// limits, in one statement so parallel requests can't slip past. Refused, the
+// caller answers 429 and nothing has been created.
+async function claimAdminSend(c: Context<AppEnv>, target: { id: string; email: string }, linkType: 'invite' | 'login') {
+  const adminId = c.get('user').id
+  return claimSend(
+    c.env.DB,
+    { event: 'link_requested', userId: target.id, email: target.email, linkType, actorId: adminId, ...authReqContext(c) },
+    adminSendChecks(adminId, target.id, target.email),
+  )
+}
+
+// A new link for a send already claimed, mailed in the background so the
+// response doesn't wait on the mail provider. An invite lasts seven days. A
+// login link matches the public login link's TTL (a wider window for slow mail
+// gateways), since it is a login link, not an invitation.
+async function deliverLink(c: Context<AppEnv>, db: AppDb, target: { id: string; email: string }, linkType: 'invite' | 'login'): Promise<void> {
+  const DURATION_MS = linkType === 'invite' ? 7 * 24 * 60 * 60 * 1000 : 60 * 60 * 1000
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
-  const expiresAt = new Date(Date.now() + INVITE_DURATION_MS).toISOString()
+  const expiresAt = new Date(Date.now() + DURATION_MS).toISOString()
 
   await db.insert(magicLinks).values({
     id: crypto.randomUUID(),
@@ -247,11 +266,10 @@ async function sendInvite(c: Context<AppEnv>, db: AppDb, target: { id: string; e
   })
 
   const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
-  await recordAuthEvent(db, { event: 'link_requested', email: target.email, userId: target.id, linkType: 'invite', ...authReqContext(c) })
   try {
-    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, 'invite', db, target.id).catch(console.error))
+    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error))
   } catch {
-    sendMagicLink(target.email, url, c.env, 'invite', db, target.id).catch(console.error)
+    sendMagicLink(target.email, url, c.env, linkType, db, target.id).catch(console.error)
   }
 }
 
@@ -269,7 +287,10 @@ adminApiRouter.post('/members/:id/resend-invite', async (c) => {
   if (!target) return c.json({ error: 'User not found' }, 404)
   if (target.deactivatedAt) return c.json({ error: 'Cannot resend invite to a deactivated user' }, 400)
 
-  await sendInvite(c, db, target)
+  const claim = await claimAdminSend(c, target, 'invite')
+  if (!claim.ok) return c.json({ error: claim.message }, 429)
+
+  await deliverLink(c, db, target, 'invite')
   return c.json({ ok: true })
 })
 
@@ -279,12 +300,17 @@ const CHANGE_EMAIL_ERRORS = {
   bounced: 'This address has bounced before. Check it for a typo.',
   invalid: 'Invalid email address',
   pendingOnly: "Only a pending invite's address can be changed",
+  adminsByOwners: "Only owners can change an admin's address",
 } as const
 
 // POST /admin/members/:id/change-email  { email }
-// Fixes a pending invite's address and sends a new invite in one step. Only a
-// pending invite: once a member has signed in, moving their login to another
-// inbox needs account-takeover safeguards this route doesn't have.
+// A pending invite: fixes the address and sends a new invite in one step.
+// An active member (#416): asks for the change the way the member would from
+// Profile (lib/emailChange.ts), so it takes effect only when confirmed from the
+// new address, with both notices to the old one, and ends all of the member's
+// sessions then. Admins may ask for Standard members, owners for anyone, and a
+// superadmin account is refused. Answers { ok, email, pending: true }, because
+// nothing has changed yet.
 adminApiRouter.post('/members/:id/change-email', async (c) => {
   const targetId = c.req.param('id')
   const currentUser = c.get('user')
@@ -306,9 +332,29 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     return c.json({ error: "Only owners can change an owner's address" }, 403)
   }
   if (target.deactivatedAt) return c.json({ error: 'Cannot change the address of a deactivated member' }, 400)
-  if (!isPendingInvite(target)) return c.json({ error: CHANGE_EMAIL_ERRORS.pendingOnly }, 400)
+
+  // Nobody changes a superadmin account here, a pending invite included: a
+  // superadmin who only ever signs in through the dashboard never uses a
+  // sign-in link, so their row can still look like a pending invite.
+  const superadmin = await refuseSuperadmin(c.env, target.email, true)
+  if (superadmin) return c.json({ error: superadmin.error }, superadmin.status)
 
   const body = await c.req.json<{ email?: unknown }>().catch(() => ({} as { email?: unknown }))
+
+  if (!isPendingInvite(target)) {
+    if (!mayChangeEmail(currentUser, target)) return c.json({ error: CHANGE_EMAIL_ERRORS.adminsByOwners }, 403)
+    // No session is kept: the member's own devices all end at commit.
+    const result = await requestEmailChange(c.env, db, {
+      member: { id: target.id, email: target.email },
+      requesterId: currentUser.id,
+      sessionId: null,
+      rawNewEmail: body.email,
+      ctx: authReqContext(c),
+    })
+    if (!result.ok) return c.json({ error: result.error }, result.status)
+    return c.json({ ok: true, email: result.email, pending: true })
+  }
+
   const raw = typeof body.email === 'string' ? body.email : ''
   const [check] = await checkMemberAddresses(db, [raw])
   if (check.status === 'invalid') return c.json({ error: CHANGE_EMAIL_ERRORS.invalid }, 400)
@@ -323,6 +369,12 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
   if (await isPreviouslyBounced(c.env, db, email)) {
     return c.json({ error: CHANGE_EMAIL_ERRORS.bounced }, 400)
   }
+
+  // Last, so a request refused above uses none of the allowance, and before
+  // the update so a refused change leaves the address as it was. The send is
+  // to the new address, so that is the address it counts against.
+  const claim = await claimAdminSend(c, { id: target.id, email }, 'invite')
+  if (!claim.ok) return c.json({ error: claim.message }, 429)
 
   // One batch, so it lands whole or not at all. The update re-checks that the
   // member is still a pending invite: a sign-in or deactivation can land
@@ -347,17 +399,22 @@ adminApiRouter.post('/members/:id/change-email', async (c) => {
     ])
     changed = updated.length > 0
   } catch (e) {
+    // No email is going out for a change that did not happen.
+    await releaseSend(c.env.DB, claim.id)
     if (/UNIQUE constraint failed/i.test(`${e} ${(e as { cause?: unknown })?.cause ?? ''}`)) {
       return c.json({ error: CHANGE_EMAIL_ERRORS.inUse }, 409)
     }
     throw e
   }
-  if (!changed) return c.json({ error: CHANGE_EMAIL_ERRORS.pendingOnly }, 409)
+  if (!changed) {
+    await releaseSend(c.env.DB, claim.id)
+    return c.json({ error: CHANGE_EMAIL_ERRORS.pendingOnly }, 409)
+  }
 
   await recordAuthEvent(db, {
     event: 'email_changed', email, reason: target.email, userId: target.id, actorId: currentUser.id, ...authReqContext(c),
   })
-  await sendInvite(c, db, { id: target.id, email })
+  await deliverLink(c, db, { id: target.id, email }, 'invite')
   return c.json({ ok: true, email })
 })
 
@@ -380,27 +437,10 @@ adminApiRouter.post('/members/:id/resend-login', async (c) => {
   if (!target) return c.json({ error: 'User not found' }, 404)
   if (target.deactivatedAt) return c.json({ error: 'Cannot resend a login link to a deactivated user' }, 400)
 
-  // Match the public login link's TTL (a wider window for slow mail gateways),
-  // not the 7-day invite window — this is a login link, not an invitation.
-  const LOGIN_LINK_DURATION_MS = 60 * 60 * 1000
-  const rawToken = await generateToken()
-  const tokenHash = await hashToken(rawToken)
-  const expiresAt = new Date(Date.now() + LOGIN_LINK_DURATION_MS).toISOString()
+  const claim = await claimAdminSend(c, target, 'login')
+  if (!claim.ok) return c.json({ error: claim.message }, 429)
 
-  await db.insert(magicLinks).values({
-    id: crypto.randomUUID(),
-    userId: target.id,
-    tokenHash,
-    expiresAt,
-  })
-
-  const url = `${c.env.APP_URL}/auth/verify?token=${encodeURIComponent(rawToken)}`
-  await recordAuthEvent(db, { event: 'link_requested', email: target.email, userId: target.id, linkType: 'login', ...authReqContext(c) })
-  try {
-    c.executionCtx.waitUntil(sendMagicLink(target.email, url, c.env, 'login', db, target.id).catch(console.error))
-  } catch {
-    sendMagicLink(target.email, url, c.env, 'login', db, target.id).catch(console.error)
-  }
+  await deliverLink(c, db, target, 'login')
 
   return c.json({ ok: true })
 })
@@ -659,6 +699,7 @@ adminApiRouter.get('/members/:id/auth-events', async (c) => {
       createdAt: authEvents.createdAt,
       messageId: authEvents.messageId,
       email: authEvents.email,
+      actorId: authEvents.actorId,
       actorName: authEventActorName,
     })
     .from(authEvents)
@@ -865,13 +906,13 @@ adminApiRouter.post('/keyword-resync', async (c) => {
 
   // Find unprocessed bills that now match keywords — queue them for AI processing
   const unprocessed = await db
-    .select({ externalId: bills.externalId, title: bills.title, abstract: bills.abstract })
+    .select({ externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber })
     .from(bills)
     .where(and(isNull(bills.aiProcessedAt), isNotNull(bills.externalId)))
     .all()
 
   const matching = unprocessed.filter(b =>
-    matchesKeywords(`${b.title} ${b.abstract ?? ''}`, keywords)
+    matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
   )
 
   const BATCH_SIZE = 100
@@ -919,13 +960,13 @@ adminApiRouter.post('/keyword-resync', async (c) => {
 
   // ── Cleanup pass: demote or protect stale keyword matches ──
   const keywordBills = await db
-    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, priority: bills.priority })
+    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber, priority: bills.priority })
     .from(bills)
     .where(and(eq(bills.matchType, 'keyword'), isNotNull(bills.externalId)))
     .all()
 
   const staleBills = keywordBills.filter(b =>
-    !matchesKeywords(`${b.title} ${b.abstract ?? ''}`, keywords)
+    !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
   )
 
   let demoted = 0
@@ -998,23 +1039,33 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
   if (keywords.length === 0) return c.json({ wouldAdd: 0, wouldDemote: 0, wouldProtect: 0 })
 
   // wouldAdd: lightweight bills that are unprocessed and would now match
+  //
+  // Under the match-all list the count must equal what /keyword-resync will queue: every
+  // unprocessed bill with an externalId, including ones already marked keyword-matched
+  // whose analysis never ran, so the matchType filter is dropped. Stub bills that only
+  // central holds and would promote cannot be counted here, which is why the UI says "~".
+  const matchAll = keywords.length === 1 && isWildcardKeyword(keywords[0])
   const lightweightUnprocessed = await db
-    .select({ title: bills.title, abstract: bills.abstract })
+    .select({ title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber })
     .from(bills)
-    .where(and(isNull(bills.aiProcessedAt), isNotNull(bills.externalId), isNull(bills.matchType)))
+    .where(and(
+      isNull(bills.aiProcessedAt),
+      isNotNull(bills.externalId),
+      ...(matchAll ? [] : [isNull(bills.matchType)]),
+    ))
     .all()
   const wouldAdd = lightweightUnprocessed.filter(b =>
-    matchesKeywords(`${b.title} ${b.abstract ?? ''}`, keywords)
+    matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
   ).length
 
   // wouldDemote / wouldProtect: keyword bills that would no longer match
   const keywordBills = await db
-    .select({ id: bills.id, title: bills.title, abstract: bills.abstract, priority: bills.priority })
+    .select({ id: bills.id, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber, priority: bills.priority })
     .from(bills)
     .where(eq(bills.matchType, 'keyword'))
     .all()
   const staleBills = keywordBills.filter(b =>
-    !matchesKeywords(`${b.title} ${b.abstract ?? ''}`, keywords)
+    !matchesKeywords(billMatchText({ title: b.title, description: b.abstract, billNumber: b.billNumber }), keywords)
   )
 
   let wouldDemote = 0
@@ -1040,6 +1091,24 @@ adminApiRouter.post('/keyword-resync-preview', async (c) => {
   }
 
   return c.json({ wouldAdd, wouldDemote, wouldProtect })
+})
+
+// POST /admin/keyword-match-summary — how many of the instance's bills a keyword list matches.
+// Accepts { keywords: string[] } (the proposed list, not yet saved) and counts against every
+// bill, analyzed or not, with the shared matcher. Also reports how many bills saving would
+// newly match or unmatch versus the saved list. Reads only; no central or AI calls.
+adminApiRouter.post('/keyword-match-summary', async (c) => {
+  const db = getDb(c.env.DB)
+  const body = await c.req.json().catch(() => null) as { keywords?: unknown } | null
+  const keywords = body?.keywords
+  if (!Array.isArray(keywords) || !keywords.every((k): k is string => typeof k === 'string')) {
+    return c.json({ error: 'keywords must be a list of strings' }, 400)
+  }
+
+  const kwRow = await db.select().from(associationConfig).where(eq(associationConfig.key, 'keywords')).get()
+  const saved: string[] = kwRow ? JSON.parse(kwRow.value) : []
+
+  return c.json(await summarizeKeywordMatches(db, c.env.TENANT_ID, keywords, saved))
 })
 
 // POST /admin/reprocess-bill/:externalId — reprocess a single bill, forcing AI re-run

@@ -108,6 +108,8 @@ async function buildForkInstance() {
   insert(`INSERT INTO official_positions (id, bill_id, position, notes, set_by) VALUES ('op-1', ?, 'Support', 'Testified in favor.', 'u-1')`, B0769)
   insert(`INSERT INTO comments (id, bill_id, user_id, content) VALUES ('c-1', ?, 'u-2', 'The hearing moved.')`, B0400)
   insert(`INSERT INTO notes (id, bill_id, user_id, content) VALUES ('n-1', ?, 'u-1', 'Ask about the fiscal note.')`, B0400)
+  // A mention of u-1 in that comment, held in the table 0085 replaces.
+  insert(`INSERT INTO comment_mentions (id, comment_id, user_id, source_type, source_id) VALUES ('cm-1', 'c-1', 'u-1', 'user', 'u-1')`)
   await env.DB.batch(statements)
 }
 
@@ -151,9 +153,18 @@ describe('a fork\'s instance, moved onto upstream', () => {
 
     await applyD1Migrations(env.DB, migrationsFromFiles(upstreamMigrations))
 
-    // No table loses a row, and what the team holds is as it was.
+    // No table loses a row, and what the team holds is as it was. 0085 moves
+    // comment_mentions into notifications and drops it, so its rows are
+    // counted there.
     const after = await tableCounts()
-    expect(Object.entries(counts).filter(([t, n]) => !((after[t] ?? -1) >= n))).toEqual([])
+    const kept = { ...counts }
+    const mentions = kept.comment_mentions ?? 0
+    delete kept.comment_mentions
+    expect(Object.entries(kept).filter(([t, n]) => !((after[t] ?? -1) >= n))).toEqual([])
+    expect(mentions).toBe(1)
+    expect(await rows(`SELECT id, recipient_id, kind, comment_id, actor_id FROM notifications`)).toEqual([
+      { id: 'cm-1', recipient_id: 'u-1', kind: 'mention', comment_id: 'c-1', actor_id: 'u-2' },
+    ])
     expect(await teamState()).toEqual(team)
 
     const applied = (await rows('SELECT name FROM d1_migrations ORDER BY id')).map(r => r.name)

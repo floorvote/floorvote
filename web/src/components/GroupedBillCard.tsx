@@ -56,7 +56,8 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
     if (el) setHasOverflow(el.scrollHeight > el.clientHeight)
   }, [height, rows.length])
 
-  const billUrl = buildBillUrl({ id: billId, state: billState, sessionSlug: billSessionSlug, billNumber })
+  // A bill-less group never reaches this card (Feed renders it as a FeedActivityRow).
+  const billUrl = buildBillUrl({ id: billId ?? undefined, state: billState, sessionSlug: billSessionSlug, billNumber })
 
   function goTo(url: string, e: React.MouseEvent) {
     // ⌘/Ctrl/Shift-click → open in a new tab/window (middle-click handled by

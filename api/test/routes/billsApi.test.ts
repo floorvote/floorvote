@@ -1807,7 +1807,7 @@ describe('POST /bills/bulk (admin only)', () => {
     expect(posRows.every(r => r.position === 'Support')).toBe(true)
     const events = await db.select().from(fe).where(eq(fe.type, 'position_set')).all()
     expect(events).toHaveLength(2)
-    expect(events.every(e => !JSON.parse(e.metadata).isBulk)).toBe(true)
+    expect(events.every(e => e.billId !== null)).toBe(true)
   })
 
   it('updates existing position when bill already has one', async () => {
@@ -1827,7 +1827,7 @@ describe('POST /bills/bulk (admin only)', () => {
     expect(rows[0].position).toBe('Support')
   })
 
-  it('writes one summary feed event (isBulk=true) when >10 bills', async () => {
+  it('writes one bill-less priority event naming every bill when >10 bills', async () => {
     const extraIds: string[] = []
     for (let i = 4; i <= 11; i++) {
       extraIds.push(await seedBill({ billNumber: `HB ${i}` }))
@@ -1843,9 +1843,34 @@ describe('POST /bills/bulk (admin only)', () => {
     const { feedEvents: fe } = await import('../../src/db/schema')
     const events = await db.select().from(fe).where(eq(fe.type, 'priority_set')).all()
     expect(events).toHaveLength(1)
+    expect(events[0].billId).toBeNull()
     const meta = JSON.parse(events[0].metadata) as Record<string, unknown>
-    expect(meta.isBulk).toBe(true)
+    expect(meta.priority).toBe('high')
     expect(meta.count).toBe(11)
+    expect([...(meta.billIds as string[])].sort()).toEqual([...allIds].sort())
+  })
+
+  it('writes one bill-less position event naming every bill when >10 bills', async () => {
+    const extraIds: string[] = []
+    for (let i = 4; i <= 11; i++) {
+      extraIds.push(await seedBill({ billNumber: `HB ${i}` }))
+    }
+    const allIds = [billId1, billId2, billId3, ...extraIds]
+    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: allIds, position: 'Support' }),
+    })
+    expect(res.status).toBe(200)
+    const db = getDb(env.DB)
+    const { feedEvents: fe } = await import('../../src/db/schema')
+    const events = await db.select().from(fe).where(eq(fe.type, 'position_set')).all()
+    expect(events).toHaveLength(1)
+    expect(events[0].billId).toBeNull()
+    const meta = JSON.parse(events[0].metadata) as Record<string, unknown>
+    expect(meta.position).toBe('Support')
+    expect(meta.count).toBe(11)
+    expect([...(meta.billIds as string[])].sort()).toEqual([...allIds].sort())
   })
 
   it('returns 400 when >1000 bills would be affected', async () => {
@@ -2505,10 +2530,26 @@ describe('GET /bills/:id committees', () => {
     const detail = async (id: string) => {
       const res = await app.request(`/api/bills/${id}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
       expect(res.status).toBe(200)
-      return await res.json() as { committee: string | null; referrals: unknown[] }
+      return await res.json() as { committee: unknown; referrals: unknown[] }
     }
 
-    expect(await detail(referred)).toMatchObject({ committee: 'Campaigns and Elections', referrals })
-    expect(await detail(older)).toMatchObject({ committee: 'Stored committee', referrals: [] })
+    // The page needs the pending committee's id and chamber as well as its name.
+    expect(await detail(referred)).toMatchObject({
+      committee: { committeeId: '7001', name: 'Campaigns and Elections', chamber: 'A' },
+      referrals,
+    })
+    // A stored name has no id or chamber to send.
+    expect(await detail(older)).toMatchObject({
+      committee: { committeeId: null, name: 'Stored committee', chamber: null },
+      referrals: [],
+    })
+  })
+
+  it('sends no committee when central names none and none is stored', async () => {
+    const token = await seedSession(await seedUser({ role: 'member' }))
+    const bill = await seedBill({ billNumber: 'AB 3', externalId: 'legiscan:303' })
+    const central = { fetch: vi.fn(async () => Response.json({})) }
+    const res = await app.request(`/api/bills/${bill}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+    expect((await res.json() as { committee: unknown }).committee).toBeNull()
   })
 })

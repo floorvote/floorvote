@@ -79,6 +79,16 @@ max_concurrency = 1
 # binding = "TENANT_QUEUE_MY_ORG"
 # queue = "floorvote-my-org-queue"
 
+# Engagement stats for a consumer Worker on the same account: central exports a
+# `StatsApi` entrypoint whose `tenantStatsSince("YYYY-MM-DD")` returns every
+# tenant's daily tenant_stats rows, staff-excluded values parsed. Nothing goes
+# here; the consumer declares the binding in its own config, naming this
+# Worker by its environment-scoped name:
+#   [[services]]
+#   binding = "FLOORVOTE"
+#   service = "floorvote-central-legiscan"
+#   entrypoint = "StatsApi"
+
 # Per-tenant service bindings for central→tenant RPC:
 # [[env.legiscan.services]]
 # binding = "TENANT_MY_ORG"

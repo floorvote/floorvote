@@ -31,6 +31,14 @@ const voteReject = { value: false }
 // selection returning 400), so we can assert the toolbar/chip row survive it.
 const billsListError = vi.hoisted(() => ({ value: null as string | null }))
 
+// Lets a test answer `/bills/facets` itself (e.g. hold one reply open so a
+// later request can overtake it) and swap the bills the list returns. Both
+// default to null, which keeps the fixture behaviour every other test relies on.
+const facetsState = vi.hoisted(() => ({
+  respond: null as ((path: string) => unknown) | null,
+  bills: null as unknown[] | null,
+}))
+
 // Lets a test hold the `/views` fetch open (to simulate it resolving on a
 // later tick than the mount commit) and control what it eventually resolves
 // with. Defaults to an immediate empty list, matching every test that doesn't
@@ -101,11 +109,20 @@ const FACETS = {
   state: { RI: 3 },
   position: {},
   tags: {},
-  subjects: { 'UT:Counties': 1 },
+  subjects: { 'UT:Counties': 1 } as Record<string, number>,
+  // Unfiltered, unlike `subjects`: every state that has subjects at all.
+  subjectStates: ['UT'] as string[] | undefined,
+  // Unfiltered too: every state the instance has bills in, which is what * coverage means.
+  billStates: ['UT'] as string[] | undefined,
   customFields: {},
   myBillsCount: 0,
   newMatchesCount: 0,
 }
+
+// What the instance covers, as GET /config reports it, handed to BillList
+// through ConfigContext. Null = config not loaded, which is what every test
+// that doesn't care about covered states gets.
+const configState: { value: { states: string[] } | null } = { value: null }
 
 vi.mock('../../lib/api', () => {
   class ApiError extends Error {
@@ -147,7 +164,8 @@ vi.mock('../../lib/api', () => {
       }
       return viewsState.response as T
     }
-    if (path.startsWith('/bills/facets')) return FACETS as T
+    if (path.startsWith('/bills/facets')) return (facetsState.respond ? facetsState.respond(path) : FACETS) as T
+    if (path === '/bills/bulk-dismiss' || path.endsWith('/triage-dismiss')) return {} as T
     if (path.endsWith('/votes')) {
       // When a test wants the vote to fail, hold the rejection open (deferred) so
       // the optimistic count stays observable until the test triggers the failure
@@ -167,7 +185,8 @@ vi.mock('../../lib/api', () => {
       // Honor a status filter so the test can observe the list responding.
       const qs = new URLSearchParams(path.split('?')[1])
       const statuses = qs.getAll('status')
-      const filtered = statuses.length > 0 ? BILLS.filter(b => statuses.includes(b.status)) : BILLS
+      const source = (facetsState.bills ?? BILLS) as typeof BILLS
+      const filtered = statuses.length > 0 ? source.filter(b => statuses.includes(b.status)) : source
       return { bills: filtered, pagination: { page: 1, pageSize: 100, total: filtered.length, totalPages: 1 } } as T
     }
     return {} as T
@@ -192,15 +211,18 @@ vi.mock('@tanstack/react-virtual', () => ({
 import { BillList } from './index'
 import { ApiError } from '../../lib/api'
 import { AuthProvider } from '../../context/AuthContext'
-import { SidebarRefreshProvider } from '../../context/SidebarRefreshContext'
+import { SidebarRefreshProvider, useRegisterSidebarRefresh } from '../../context/SidebarRefreshContext'
+import { ConfigContext } from '../../context/ConfigContext'
 
 function Wrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter initialEntries={['/bills']}>
-      <AuthProvider>
-        <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
-        <LocationProbe />
-      </AuthProvider>
+      <ConfigContext value={{ config: configState.value, multiState: (configState.value?.states.length ?? 0) > 1, loading: false }}>
+        <AuthProvider>
+          <SidebarRefreshProvider>{children}</SidebarRefreshProvider>
+          <LocationProbe />
+        </AuthProvider>
+      </ConfigContext>
     </MemoryRouter>
   )
 }
@@ -222,6 +244,8 @@ beforeEach(() => {
   deferred.rejectVote = null
   voteReject.value = false
   billsListError.value = null
+  facetsState.respond = null
+  facetsState.bills = null
   demoState.demoLocked = false
   demoState.demoMode = false
   demoState.settled = true
@@ -231,6 +255,10 @@ beforeEach(() => {
   customFieldsState.deferred = false
   customFieldsState.response = []
   resolveCustomFields = null
+  configState.value = null
+  FACETS.subjects = { 'UT:Counties': 1 }
+  FACETS.subjectStates = ['UT']
+  FACETS.billStates = ['UT']
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -302,19 +330,115 @@ describe('BillList page', () => {
     expect(screen.getByText(/Sorted by:/)).toBeInTheDocument()
   })
 
-  // The Subject filter's tooltip replaced the old under-the-filter-row
-  // "excludes states with no subjects" warning with a caveat baked into the
-  // tooltip copy itself.
-  it('shows the subject-assignment caveat in the Subject filter tooltip', async () => {
-    render(<BillList />, { wrapper: Wrapper })
-    await screen.findByText('Early Voting Centers')
+  // The Subject filter's tooltip carries a caveat about legislatures that
+  // assign no subjects, but only where it applies: when some state the instance
+  // covers has no subjects. The caveat never names a state.
+  describe('Subject filter tooltip', () => {
+    const SHORT = 'Filter by legislature-assigned subject.'
+    const CAVEAT = `${SHORT} Not all legislatures assign subjects.`
 
-    const subjectButton = await screen.findByRole('button', { name: 'Subject' })
-    fireEvent.pointerEnter(subjectButton, { pointerType: 'mouse' })
+    async function hoverSubjectFilter() {
+      render(<BillList />, { wrapper: Wrapper })
+      await screen.findByText('Early Voting Centers')
+      const subjectButton = await screen.findByRole('button', { name: 'Subject' })
+      fireEvent.pointerEnter(subjectButton, { pointerType: 'mouse' })
+    }
 
-    expect(await screen.findByText(
-      'Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)',
-    )).toBeInTheDocument()
+    it('is just the short text on a single-state instance with subjects', async () => {
+      configState.value = { states: ['UT'] }
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('is just the short text when every covered state has subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1, 'NJ:Elections': 2 }
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    // The subjects facet is scoped by the active filters, so a State=UT filter
+    // (or a search that only hits UT bills) leaves NJ out of it even though NJ
+    // has subjects. The tooltip must go by subjectStates, not by the facet.
+    it('is just the short text when a filter hides a state that does have subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat, without naming a state, when one covered state has no subjects', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+      expect(screen.queryByText(/NJ/)).not.toBeInTheDocument()
+    })
+
+    it('adds the same caveat, and no state list, when several covered states have no subjects', async () => {
+      configState.value = { states: ['AZ', 'NJ', 'OH', 'UT'] }
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat on a single covered state that has no subjects', async () => {
+      configState.value = { states: ['NJ'] }
+      FACETS.subjectStates = []
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+    })
+
+    it('is just the short text on * coverage when every state with bills has subjects', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = ['NJ', 'UT']
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat on * coverage when a state with bills has no subjects, never printing *', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = ['NJ', 'OH', 'UT']
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+      expect(screen.queryByText(/\*/)).not.toBeInTheDocument()
+    })
+
+    it('is just the short text on * coverage when the facets carry no bill states yet', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = undefined
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    // subjectStates leaves a suppressed state out (tested at the API seam), so
+    // a suppressed state lacks subjects as far as the tooltip can tell.
+    it('adds the caveat when a covered state is suppressed (absent from subjectStates)', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+    })
+
+    it('is just the short text while the config has not loaded', async () => {
+      configState.value = null
+      FACETS.subjectStates = []
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('is just the short text while the facets carry no subjectStates yet', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjectStates = undefined
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
   })
 
   it('re-fetches and narrows the list when a status filter is applied', async () => {
@@ -922,6 +1046,51 @@ describe('BillList active filter chips — custom fields', () => {
   })
 })
 
+// Regression for #241: every filter change clears the bulk selection so a bulk
+// action never reaches bills that are no longer shown. cf_ filters were the
+// exception because the reset keys were a hand-written list that omitted them.
+describe('BillList bulk selection — custom-field filters', () => {
+  async function renderWithSelection(initial: string) {
+    customFieldsState.response = [
+      { id: 'cf-phase', name: 'Phase', slug: 'phase', type: 'dropdown', options: ['Early', 'Late'], displayOrder: 1 },
+    ]
+    render(
+      <MemoryRouter initialEntries={[initial]}>
+        <AuthProvider>
+          <SidebarRefreshProvider><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('Early Voting Centers')
+    const row = document.querySelector('.bill-row') as HTMLElement
+    fireEvent.mouseEnter(row)
+    fireEvent.click(await within(row).findByRole('checkbox'))
+    await screen.findByText('1 bill selected')
+  }
+  const selectionGone = () => waitFor(() => expect(screen.queryByText('1 bill selected')).toBeNull())
+
+  it('adding a cf_ filter clears the selection', async () => {
+    await renderWithSelection('/bills')
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
+    fireEvent.click(await screen.findByText('Early'))
+    await selectionGone()
+  })
+
+  it('changing a cf_ filter clears the selection', async () => {
+    await renderWithSelection('/bills?cf_phase=Early')
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
+    fireEvent.click(await screen.findByText('Late'))
+    await selectionGone()
+  })
+
+  it('removing a cf_ filter clears the selection', async () => {
+    await renderWithSelection('/bills?cf_phase=Early')
+    fireEvent.click((await screen.findAllByRole('button', { name: /Phase/ }))[0])
+    fireEvent.click(await screen.findByText('Early'))
+    await selectionGone()
+  })
+})
+
 describe('BillList active filter chips — group operator interleaving', () => {
   it('renders zero operators with exactly one active filter group', async () => {
     render(
@@ -1004,5 +1173,122 @@ describe('BillList active filter chips — relevance threshold alone', () => {
       </MemoryRouter>,
     )
     await screen.findByText('Relevance 5+')
+  })
+})
+
+// #331: the dismiss button's count comes from /bills/facets, and the button acts
+// on whatever the server matches under the filters at click time. A slow reply
+// to an older request must not overwrite the counts for the newest one, and every
+// dismiss path must refresh the sidebar's "N new" chip right away.
+describe('BillList new-match dismiss — counts and sidebar chip', () => {
+  const NEW_MATCH = makeBill({
+    id: 'bill-new', billNumber: 'HB 9', title: 'Fresh Match', matchType: 'keyword',
+    newMatchAt: '2026-02-02 09:00:00', triagedAt: null,
+  })
+
+  // Stands in for the Sidebar: registers the function the page calls to
+  // re-fetch the "N new" chip, and counts those calls.
+  function renderWithSidebarSpy() {
+    const refresh = vi.fn()
+    function SidebarProbe() {
+      useRegisterSidebarRefresh(refresh)
+      return null
+    }
+    render(
+      <MemoryRouter initialEntries={['/bills']}>
+        <AuthProvider>
+          <SidebarRefreshProvider><SidebarProbe /><BillList /></SidebarRefreshProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+    return refresh
+  }
+
+  it('keeps the newest request\'s count when a slower reply to an older request arrives last', async () => {
+    let resolveSearchReply: ((v: unknown) => void) | null = null
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+      ? new Promise(res => { resolveSearchReply = res })
+      : { ...FACETS, newMatchesCount: 61 }
+
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')
+    const search = screen.getByPlaceholderText('Search…')
+
+    fireEvent.change(search, { target: { value: 'foo' } })
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+    // The search is cleared while the reply for "foo" is still in flight.
+    const callsBeforeClear = apiCalls.length
+    fireEvent.change(search, { target: { value: '' } })
+    await waitFor(() => expect(apiCalls.slice(callsBeforeClear).some(c => c.startsWith('/bills/facets') && !c.includes('q='))).toBe(true))
+
+    // Now the slow reply for the old search lands: 1 new match under "foo".
+    resolveSearchReply!({ ...FACETS, newMatchesCount: 1 })
+
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    expect(await screen.findByRole('button', { name: /Dismiss new matches \(61\)/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Dismiss new matches \(1\)/ })).toBeNull()
+  })
+
+  it('offers no dismiss count for new filters until the facet reply for them lands', async () => {
+    let resolveSearchReply: ((v: unknown) => void) | null = null
+    facetsState.respond = (path) => new URLSearchParams(path.split('?')[1]).get('q') === 'foo'
+      ? new Promise(res => { resolveSearchReply = res })
+      : { ...FACETS, newMatchesCount: 61 }
+
+    render(<Wrapper><BillList /></Wrapper>)
+    await screen.findByText('Early Voting Centers')
+
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'foo' } })
+    await waitFor(() => expect(apiCalls.some(c => c.startsWith('/bills/facets') && c.includes('q=foo'))).toBe(true))
+
+    // The reply for "foo" is still in flight, so 61 describes the old filters,
+    // but the dismiss request would carry q=foo.
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    expect(screen.queryByRole('button', { name: /Dismiss new matches/ })).toBeNull()
+
+    resolveSearchReply!({ ...FACETS, newMatchesCount: 3 })
+    expect(await screen.findByRole('button', { name: /Dismiss new matches \(3\)/ })).toBeInTheDocument()
+  })
+
+  it('refreshes the sidebar chip after a select-all dismiss', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.respond = () => ({ ...FACETS, newMatchesCount: 61 })
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Early Voting Centers')
+    refresh.mockClear()
+
+    fireEvent.click(await screen.findByTitle('Select all matching filters'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches \(61\)/ }))
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bulk-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('refreshes the sidebar chip after dismissing selected rows', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    facetsState.bills = [NEW_MATCH]
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    refresh.mockClear()
+
+    const row = document.querySelector('.bill-row') as HTMLElement
+    fireEvent.mouseEnter(row)
+    fireEvent.click(await within(row).findByRole('checkbox'))
+    fireEvent.click(await screen.findByRole('button', { name: /Dismiss new matches \(1\)/ }))
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bulk-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+  })
+
+  it('refreshes the sidebar chip after dismissing a single row', async () => {
+    facetsState.bills = [NEW_MATCH]
+    const refresh = renderWithSidebarSpy()
+    await screen.findByText('Fresh Match')
+    refresh.mockClear()
+
+    fireEvent.click((await screen.findAllByTitle('Reviewed — no priority'))[0])
+
+    await waitFor(() => expect(apiCalls).toContain('/bills/bill-new/triage-dismiss'))
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
   })
 })

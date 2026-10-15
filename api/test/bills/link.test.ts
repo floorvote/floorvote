@@ -308,4 +308,29 @@ describe('POST /api/bills/:id/link', () => {
     expect(await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, eventId)).all())
       .toEqual([{ eventId, billId: filedId }])
   })
+
+  it('carries a mention on a draft comment over to the filed bill, still unread', async () => {
+    const filedId = await seedBill({ billNumber: 'HB 11', externalId: 'legiscan:1111' })
+    const draftId = await createDraft(adminToken, 'Draft for HB 11')
+    const commentRes = await SELF.fetch(`https://x/api/bills/${draftId}/comments`, {
+      method: 'POST',
+      headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: `<p><span data-type="mention" data-id="user:${memberId}" data-label="Member">@Member</span></p>` }),
+    })
+    expect(commentRes.status).toBe(201)
+
+    await link(draftId, filedId)
+
+    const notificationsFor = async () => {
+      const res = await SELF.fetch('https://x/api/notifications', { headers: { Cookie: `session=${memberToken}` } })
+      return await res.json<{ unreadCount: number; notifications: Array<{ billId: string; billNumber: string; isUnread: boolean }> }>()
+    }
+    const before = await notificationsFor()
+    expect(before.unreadCount).toBe(1)
+    expect(before.notifications.map(n => [n.billId, n.billNumber, n.isUnread])).toEqual([[filedId, 'HB 11', true]])
+
+    // Opening the filed bill's page marks it read.
+    await SELF.fetch(`https://x/api/notifications/mark-read-by-bill/${filedId}`, { method: 'POST', headers: { Cookie: `session=${memberToken}` } })
+    expect((await notificationsFor()).unreadCount).toBe(0)
+  })
 })

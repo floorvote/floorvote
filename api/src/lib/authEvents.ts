@@ -10,6 +10,15 @@ export type AuthEventType =
   // An admin changed a pending invite's address: `email` is the new address,
   // `reason` the old one, and `actorId` the admin.
   | 'email_changed'
+  // The steps of a confirmed email change (lib/emailChange.ts). Each has the
+  // new address as `email`, the old one as `reason`, and the member who asked
+  // for the change as `actorId` (the member themselves for a self-service
+  // change). A cancel the system made, not a person, has no actor.
+  | 'email_change_requested' | 'email_change_confirmed' | 'email_change_cancelled'
+  // "This wasn't me" pressed from an old-address notice (lib/emailChangeReport.ts).
+  // `email` is the new address and `reason` the old one. No actor, because the
+  // person pressing it is not signed in.
+  | 'email_change_reported'
 
 export interface AuthEventInput {
   event: AuthEventType

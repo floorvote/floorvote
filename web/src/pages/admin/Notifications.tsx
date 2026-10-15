@@ -37,10 +37,12 @@ export function Notifications() {
   const [saving, setSaving] = useState<string | null>(null)
 
   // Turning a setting OFF stops email for everyone, so confirm first (browser confirm,
-  // matching the rest of the app). Turning ON is benign — members can still opt out
-  // individually — so it applies immediately.
-  const confirmOff = (label: string) =>
-    window.confirm(`Turn off ${label} for everyone? This stops it for all members, not just you. Members can also opt out individually on their Account page.`)
+  // matching the rest of the app). Turning ON is benign, so it
+  // applies immediately. Members can opt out individually of the digest, week-ahead,
+  // and reply emails, but not of mention emails, so the conversation switch's
+  // confirm leaves the opt-out sentence off.
+  const confirmOff = (label: string, memberCanOptOut = true) =>
+    window.confirm(`Turn off ${label} for everyone? This stops it for all members, not just you.${memberCanOptOut ? ' Members can also opt out individually on their Account page.' : ''}`)
 
   useEffect(() => {
     apiFetch<AdminConfigResponse>('/admin/config')
@@ -145,7 +147,7 @@ export function Notifications() {
       <div style={{ ...CARD, padding: 24 }}>
         <h1 style={CARD_TITLE}>Email notifications</h1>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.6, marginTop: 4 }}>
-          These settings control email for <strong>everyone</strong>, not just you — turning one off stops it for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
+          These are settings for <strong>everyone in the instance</strong>, not just you—turning one off stops that email for all members. To change your own delivery, use the email preferences on your <Link to="/profile" style={{ color: color.linkBlue }}>Account page</Link>.
         </div>
         {loading ? (
           <div style={{ marginTop: 16, color: color.textMuted, fontSize: fontSize.sm }}>Loading…</div>
@@ -246,17 +248,17 @@ export function Notifications() {
             <div style={settingBox}>
               <div style={boxHeader}>
                 <div>
-                  <div style={boxTitle}>Send @-mention emails to members</div>
+                  <div style={boxTitle}>Send conversation emails to members</div>
                   <div style={boxDesc}>
-                    Email members when they (or a role they are assigned) are @-mentioned in a comment.
+                    Covers mentions of a member, a role, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply emails but not mention emails. In-app notifications are not affected.
                   </div>
                 </div>
                 <IosToggle
                   checked={mentionEmails}
                   disabled={demoLocked}
                   busy={saving === 'mention'}
-                  onChange={(n) => { if (!n && !confirmOff('@-mention emails')) return; updateMention(n) }}
-                  ariaLabel="Toggle @-mention emails"
+                  onChange={(n) => { if (!n && !confirmOff('conversation emails', false)) return; updateMention(n) }}
+                  ariaLabel="Toggle conversation emails"
                 />
               </div>
             </div>

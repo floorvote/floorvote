@@ -20,7 +20,30 @@ describe('Notifications page', () => {
     mockConfig()
     render(<MemoryRouter><Notifications /></MemoryRouter>)
     expect(await screen.findByText(/digest of recent bill activity/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/@-?mention/i).length).toBeGreaterThan(0)
+    expect(screen.getByRole('switch', { name: /conversation emails/i })).toBeInTheDocument()
+  })
+
+  it('names the switch "Conversation emails", not "@-mention emails", and says it covers mentions and replies for the whole instance', async () => {
+    mockConfig()
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    expect(await screen.findByText('Send conversation emails to members')).toBeInTheDocument()
+    expect(screen.queryByText(/@-mention emails/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/mentions of a member, a role, or @everyone in comments, and replies on bills members have commented on, for the whole instance/i)).toBeInTheDocument()
+  })
+
+  it('frames the page as settings for everyone in the instance', async () => {
+    mockConfig()
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    expect(await screen.findByText(/everyone in the instance/i)).toBeInTheDocument()
+  })
+
+  it('stores the conversation switch under the existing mention_emails_enabled key', async () => {
+    mockConfig()
+    const spy = vi.spyOn(api, 'apiFetch')
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<MemoryRouter><Notifications /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('switch', { name: /conversation emails/i }))
+    await waitFor(() => expect(spy).toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ mention_emails_enabled: false }) })))
   })
 
   it('toggling mention emails OFF confirms first (browser confirm), then PUTs', async () => {
@@ -28,7 +51,7 @@ describe('Notifications page', () => {
     const spy = vi.spyOn(api, 'apiFetch')
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MemoryRouter><Notifications /></MemoryRouter>)
-    const sw = await screen.findByRole('switch', { name: /mention/i })
+    const sw = await screen.findByRole('switch', { name: /conversation/i })
     fireEvent.click(sw)
     expect(confirmSpy).toHaveBeenCalled()
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT' })))
@@ -39,7 +62,7 @@ describe('Notifications page', () => {
     const spy = vi.spyOn(api, 'apiFetch')
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(<MemoryRouter><Notifications /></MemoryRouter>)
-    const sw = await screen.findByRole('switch', { name: /mention/i })
+    const sw = await screen.findByRole('switch', { name: /conversation/i })
     fireEvent.click(sw)
     expect(spy).not.toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT' }))
   })
@@ -49,7 +72,7 @@ describe('Notifications page', () => {
     const spy = vi.spyOn(api, 'apiFetch')
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<MemoryRouter><Notifications /></MemoryRouter>)
-    const sw = await screen.findByRole('switch', { name: /mention/i })
+    const sw = await screen.findByRole('switch', { name: /conversation/i })
     fireEvent.click(sw)
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT' })))
     expect(confirmSpy).not.toHaveBeenCalled()

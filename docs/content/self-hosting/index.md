@@ -124,9 +124,6 @@ crons = ["0 * * * *"]
 
 See `central/wrangler.example.toml` for the complete template, including optional bindings.
 
-> [!TIP]
-> To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` and rebuild. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
-
 ### 3. Set central secrets
 
 From inside `central/`. First generate a strong `ADMIN_SECRET` — copy the output, you'll paste it at the prompt in a moment, and save it to your password manager:
@@ -205,7 +202,7 @@ npx tsx scripts/seed-legiscan.ts \
 This loads the bills into central only. Linking them to a team and running AI summaries happens when you [add the tenant](/self-hosting/tenants#step-12-seed-the-active-session-s).
 
 > [!CAUTION]
-> **Speed:** about 1,000 bills per minute against the remote database, so a typical state session (500–3,000 bills) takes 1–5 minutes. There's a `--from-api` option that downloads the dataset for you, but it can run out of memory on very large states (16,000+ bills) — use the manual download with `--from-dir` for those.
+> **Speed:** the seeder writes to the remote database in batches over HTTP, so it manages about 45 bills a minute. A typical state session (500–3,000 bills) takes 10 to 70 minutes, and a large state takes hours; the timing table under [Path B](/self-hosting/tenants#path-b-brand-new-state-central-has-no-bills-yet) has the figures. There's a `--from-api` option that downloads the dataset for you, but it can run out of memory on very large states (16,000+ bills) — use the manual download with `--from-dir` for those.
 
 ## Optional: use a legislature's own data
 
