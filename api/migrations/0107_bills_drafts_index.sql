@@ -4,9 +4,9 @@
 -- It asks SELECT id FROM bills WHERE is_draft = 1 LIMIT 1. Nearly no tenant has
 -- many drafts, so idx_bills_is_draft (0047) has one distinct value in its
 -- statistics, every bill's 0, and the planner reads the whole table before it
--- would read that index. On a copy of 93,000 bills with no draft that probe cost
--- about 8 ms locally and about 9 times that on D1, the largest single statement
--- of a facets request.
+-- would read that index. On a synthetic copy of 93,000 bills with no draft that
+-- probe cost about 8 ms locally, and the ticket estimated about 9 times that on
+-- D1, the largest single statement of a facets request.
 --
 -- This index holds only the drafts, so the probe reads at most one entry of it
 -- and none of the table, with or without statistics, with no draft or with
@@ -22,6 +22,8 @@
 -- engine re-plans with the bound value, which not every SQLite build does, so
 -- the probe writes the 1 in its SQL, as listRoutes.ts does. Binding it, as
 -- eq(bills.isDraft, true) does, can bring the table scan back with no error.
+-- So does is_draft = true, which SQLite does not match to the index's = 1. The
+-- probe must stay the literal = 1.
 -- api/test/routes/billsFacetsPlan.test.ts pins the SQL and the plan of the
 -- real request.
 --
