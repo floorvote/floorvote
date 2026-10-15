@@ -519,7 +519,7 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
 // Bounded, since a tenant asks on every delivery of a tracked bill and the fetch's own
 // notification can make another tenant ask for the first bill back:
 // - A bill fetched within FETCH_COOLDOWN_HOURS is skipped, since that fetch already notified
-//   every tenant linked to it. Queuing stamps texts_fetched_at, so two tenants asking for
+//   every tenant linked to it. Queuing stamps texts_fetched_at (after the send), so two tenants asking for
 //   each other's bills end after one round.
 // - A bill whose texts central already holds is queued with skipFetch, which needs no
 //   provider call. Only a bill with no texts costs a getBill against the shared monthly quota.
@@ -553,12 +553,12 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
   }
   due.sort((a, b) => a - b)
 
+  // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill for a day.
   const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
   for (let i = 0; i < due.length; i += 90) {
-    await db.update(schema.bills).set({ textsFetchedAt: now }).where(inArray(schema.bills.billId, due.slice(i, i + 90)))
-  }
-  for (let i = 0; i < due.length; i += 100) {
-    await c.env.INGESTOR_QUEUE.sendBatch(due.slice(i, i + 100).map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
+    const batch = due.slice(i, i + 90)
+    await c.env.INGESTOR_QUEUE.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
+    await db.update(schema.bills).set({ textsFetchedAt: now }).where(inArray(schema.bills.billId, batch))
   }
 
   return c.json({ ok: true, tenantId, queued: due.length })

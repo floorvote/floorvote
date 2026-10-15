@@ -468,6 +468,18 @@ describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking t
     expect(sent).toEqual([{ billId: 602 }, { billId: 601 }])
   })
 
+  it('leaves a bill unstamped when the queue send fails, so the next ask isn\'t held off for a day', async () => {
+    await seedLinked()
+    const failing: any = { ...TEST_ENV, INGESTOR_QUEUE: { sendBatch: async () => { throw new Error('queue down') } } }
+    const res = await post(failing, [601])
+    expect(res.status).toBe(500)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select({ at: schema.bills.textsFetchedAt }).from(schema.bills).where(eq(schema.bills.billId, 601)).get())!.at).toBeNull()
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601])
+    expect(sent).toEqual([{ billId: 601 }])
+  })
+
   it('rejects a billIds that isn\'t a list', async () => {
     const { env2, sent } = ingestorEnv()
     const res = await app.fetch(new Request('http://central/api/tenants/fetch-bills/ri', { method: 'POST', headers: AUTH, body: JSON.stringify({ billIds: '601' }) }), env2)
