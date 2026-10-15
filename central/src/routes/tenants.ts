@@ -485,8 +485,9 @@ tenantsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), 
 tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
-  const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
-  const billIds = (body.billIds ?? []).filter(n => Number.isInteger(n) && n > 0)
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const billIds = (body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0)
   if (billIds.length > REPROCESS_LIMIT) {
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
@@ -513,32 +514,54 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
 // For a bill the tenant wants the text of without tracking it, such as a companion that
 // didn't match its keywords (promote-bills would track it). Queues the ingestor with no
 // forceAI, so every tenant linked to a bill gets the usual notification and none is told
-// to run AI. Only bills the tenant is linked to are queued. One getBill() per bill against
-// the shared monthly quota, so the count is capped at REPROCESS_LIMIT, as promote-bills is.
+// to run AI. Only bills the tenant is linked to are queued.
+//
+// Bounded, since a tenant asks on every delivery of a tracked bill and the fetch's own
+// notification can make another tenant ask for the first bill back:
+// - A bill fetched within FETCH_COOLDOWN_HOURS is skipped, since that fetch already notified
+//   every tenant linked to it. Queuing stamps texts_fetched_at, so two tenants asking for
+//   each other's bills end after one round.
+// - A bill whose texts central already holds is queued with skipFetch, which needs no
+//   provider call. Only a bill with no texts costs a getBill against the shared monthly quota.
+// The count is capped at REPROCESS_LIMIT, as promote-bills is.
+const FETCH_COOLDOWN_HOURS = 24
+
 tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
-  const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
-  const requested = [...new Set((body.billIds ?? []).filter(n => Number.isInteger(n) && n > 0))]
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const requested = [...new Set((body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0))]
   if (requested.length > REPROCESS_LIMIT) {
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
 
-  const linked: number[] = []
+  const cutoff = new Date(Date.now() - FETCH_COOLDOWN_HOURS * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const due: number[] = []
+  const held = new Set<number>()
   for (let i = 0; i < requested.length; i += 90) {
-    const rows = await db.select({ billId: schema.billTenants.billId })
+    const part = requested.slice(i, i + 90)
+    const rows = await db.select({ billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt })
       .from(schema.billTenants)
-      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, requested.slice(i, i + 90))))
+      .leftJoin(schema.bills, eq(schema.bills.billId, schema.billTenants.billId))
+      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
       .all()
-    linked.push(...rows.map(r => r.billId))
+    due.push(...rows.filter(r => !r.fetchedAt || r.fetchedAt <= cutoff).map(r => r.billId))
+    const withTexts = await db.selectDistinct({ billId: schema.billTexts.billId }).from(schema.billTexts)
+      .where(inArray(schema.billTexts.billId, part)).all()
+    for (const r of withTexts) held.add(r.billId)
   }
-  linked.sort((a, b) => a - b)
+  due.sort((a, b) => a - b)
 
-  for (let i = 0; i < linked.length; i += 100) {
-    await c.env.INGESTOR_QUEUE.sendBatch(linked.slice(i, i + 100).map(billId => ({ body: { billId } })))
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
+  for (let i = 0; i < due.length; i += 90) {
+    await db.update(schema.bills).set({ textsFetchedAt: now }).where(inArray(schema.bills.billId, due.slice(i, i + 90)))
+  }
+  for (let i = 0; i < due.length; i += 100) {
+    await c.env.INGESTOR_QUEUE.sendBatch(due.slice(i, i + 100).map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
   }
 
-  return c.json({ ok: true, tenantId, queued: linked.length })
+  return c.json({ ok: true, tenantId, queued: due.length })
 })
 
 tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {

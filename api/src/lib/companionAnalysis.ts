@@ -88,3 +88,15 @@ async function requestFetch(env: Env, centralBillIds: number[]): Promise<void> {
     console.error('[companion-analysis] central fetch-bills failed:', err)
   }
 }
+
+/**
+ * Whether the bill didn't match and its companion group has a tracked bill,
+ * which is what pulls it in. A retry or regeneration of its analysis must say
+ * so with `groupAnalysis`, since without it the local keywords decide the
+ * bill's match type, and central, which said it didn't match, is the source
+ * of truth.
+ */
+export async function isPulledByGroup(db: AppDb, billId: string): Promise<boolean> {
+  const members = await db.select({ id: bills.id, matchType: bills.matchType }).from(bills).where(inGroupOf(bills.id, billId)).all()
+  return members.some(m => m.id === billId && m.matchType === null) && members.some(m => m.matchType !== null)
+}

@@ -21,6 +21,7 @@ import { recordAuthEvent, authReqContext, authEventActor, authEventActorName } f
 import { getAccountDeletionEnabled, ACCOUNT_DELETION_KEY } from '../lib/accountDeletion'
 import { countActiveOwners } from '../lib/owners'
 import { healStalledAiBills } from '../lib/healStalledAi'
+import { isPulledByGroup } from '../lib/companionAnalysis'
 import { exportApiRouter } from './exportApi'
 import { customFieldsApiRouter } from './customFieldsApi'
 import { adminSavedViewsRouter } from './savedViewsApi'
@@ -1115,7 +1116,10 @@ adminApiRouter.post('/keyword-match-summary', async (c) => {
 adminApiRouter.post('/reprocess-bill/:externalId', async (c) => {
   if (!c.env.BILL_QUEUE) return c.json({ error: 'Queue not configured' }, 503)
   const externalId = decodeURIComponent(c.req.param('externalId'))
-  await c.env.BILL_QUEUE.send({ tenantId: c.env.TENANT_ID, billId: externalId, forceAI: true, interactive: true })
+  // A bill pulled in by its companion group keeps the match type central gave it (lib/companionAnalysis.ts).
+  const bill = await getDb(c.env.DB).select({ id: bills.id }).from(bills).where(eq(bills.externalId, externalId)).get()
+  const groupAnalysis = bill ? await isPulledByGroup(getDb(c.env.DB), bill.id) : false
+  await c.env.BILL_QUEUE.send({ tenantId: c.env.TENANT_ID, billId: externalId, forceAI: true, ...(groupAnalysis ? { groupAnalysis: true as const } : {}), interactive: true })
   return c.json({ queued: 1 })
 })
 

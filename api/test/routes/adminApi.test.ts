@@ -1101,6 +1101,43 @@ describe('POST /admin/reprocess-bill/:externalId', () => {
   })
 })
 
+describe('POST /admin/reprocess-bill/:externalId for a bill pulled in by its group', () => {
+  let adminCookie: string
+  const sent: unknown[] = []
+  const mockQueue = { send: vi.fn().mockImplementation((msg: unknown) => { sent.push(msg); return Promise.resolve() }) }
+  const regenerate = (externalId: string) => app.request(`/api/admin/reprocess-bill/${encodeURIComponent(externalId)}`, {
+    method: 'POST',
+    headers: { Cookie: adminCookie },
+  }, { ...env, BILL_QUEUE: mockQueue })
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    sent.length = 0
+    adminCookie = `session=${await seedSession(await seedUser({ role: 'admin' }))}`
+    await seedBill({ id: 'a190', billNumber: 'A190', externalId: 'legiscan:190', matchType: 'keyword', tenantSummary: 'x', aiProcessedAt: '2026-09-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', externalId: 'legiscan:1713', matchType: null, tenantSummary: 'x', aiProcessedAt: '2026-09-02 00:00:00' })
+    await seedBill({ id: 'solo', billNumber: 'HB 1', externalId: 'legiscan:5', matchType: null })
+    await getDb(env.DB).update(bills).set({ groupKey: 'a190' }).where(eq(bills.billNumber, 'A190'))
+    await getDb(env.DB).update(bills).set({ groupKey: 'a190' }).where(eq(bills.billNumber, 'S1713'))
+  })
+
+  it('marks the regeneration a group analysis, so local keywords can\'t make it a match', async () => {
+    expect((await regenerate('legiscan:1713')).status).toBe(200)
+    expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:1713', forceAI: true, groupAnalysis: true, interactive: true }])
+  })
+
+  it('leaves a tracked bill\'s regeneration as it was', async () => {
+    await regenerate('legiscan:190')
+    expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:190', forceAI: true, interactive: true }])
+  })
+
+  it('leaves the regeneration of a bill in no group as it was', async () => {
+    await regenerate('legiscan:5')
+    expect(sent).toEqual([{ tenantId: env.TENANT_ID, billId: 'legiscan:5', forceAI: true, interactive: true }])
+  })
+})
+
 describe('GET /admin/config taxonomy handling', () => {
   let adminCookie: string
 

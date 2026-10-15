@@ -262,6 +262,32 @@ describe('companions that didn\'t match are analyzed through their group', () =>
     })
   })
 
+  describe('the group shows the pulled companion\'s analysis', () => {
+    // #377: a group's summary and tags are those of its most recent analysis, on whichever bill it is. A pulled
+    // companion's analysis is newer than the tracked bill's, so it replaces the group's on every member's page.
+    // This pins that, so a change to it is a decision.
+    it('makes its summary and tags the group\'s on the tracked bill\'s page, until the group splits', async () => {
+      const db = getDb(env.DB)
+      await db.insert(associationConfig).values({ key: 'tag_taxonomy', value: JSON.stringify([{ name: 'Energy' }, { name: 'Labor' }]) })
+      await db.update(bills).set({ tags: JSON.stringify(['Labor']) }).where(eq(bills.id, 'a190'))
+      await db.update(bills).set({ textR2Key: 'bills/legiscan:1713.html' }).where(eq(bills.id, 'b1713'))
+      const llm = await import('../../src/lib/llm')
+      vi.mocked(llm.processBill).mockResolvedValue({ summary: 'S1713 summary', tags: ['Energy'], relevanceScore: 5, affectedCitations: [] })
+      const token = await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
+      const page = async () => (await (await SELF.fetch('http://localhost/api/bills/a190', { headers: { Cookie: `session=${token}` } })).json()) as { tenantSummary: string; tags: string[] }
+
+      await deliver('legiscan:190')
+      await drain()
+      expect(await page()).toMatchObject({ tenantSummary: 'S1713 summary', tags: ['Energy'] })
+
+      central.set('legiscan:190', { number: 'A190', text: true, relatedBills: [], updatedAt: '2026-10-02T00:00:00Z' })
+      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [], updatedAt: '2026-10-02T00:00:00Z' })
+      await deliver('legiscan:190')
+      await deliver('legiscan:1713')
+      expect(await page()).toMatchObject({ tenantSummary: 'A190 summary', tags: ['Labor'] })
+    })
+  })
+
   describe('a split companion stays analyzed and untracked unless it matches on its own', () => {
     beforeEach(async () => {
       await getDb(env.DB).update(bills).set({ textR2Key: 'bills/legiscan:1713.html' }).where(eq(bills.id, 'b1713'))
