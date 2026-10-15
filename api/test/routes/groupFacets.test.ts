@@ -153,6 +153,16 @@ describe('facet counts count a companion group once', () => {
     })
   })
 
+  describe('D1 limits', () => {
+    it('counts a broad OR selection of states and statuses, which is more than a hundred bound values', async () => {
+      await seedBill({ id: 'a190', billNumber: 'A190', status: 'S0', statusStage: 'passed', state: 'NJ' })
+      await seedBill({ id: 'b1713', billNumber: 'S1713', status: 'S1', statusStage: 'introduced', state: 'S1' })
+      await group('a190', 'b1713')
+      const picks = Array.from({ length: 45 }, (_, i) => [`status=S${i}`, `state=S${i}`]).flat()
+      expect((await facets(`match=any&${picks.join('&')}`)).status.S0).toBe(1)
+    })
+  })
+
   describe('the OR resulting total', () => {
     it('adds a group only when none of its bills is in the current result', async () => {
       // The group is in the current result through A190 (Passed). S1713 (Introduced) has the value

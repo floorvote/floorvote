@@ -426,7 +426,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       mine.length > 0 ? countGroups(db, both(currentOnM, myBillsCondition(mine)(m)), true) : Promise.resolve(0),
       isAdmin ? countGroups(db, both(currentOnM, newMatchWhere(newMatchMinRelevance, m)), true) : Promise.resolve(0),
       countGroups(db, both(currentOnM, unvotedCondition(voted)(m))),
-      countGroups(db, both(currentOnM, eq(m.isDraft, true)), true),
+      // Most tenants have no drafts, where a count read through the draft index would still read the table (it holds one value).
+      hasDrafts ? countGroups(db, both(currentOnM, eq(m.isDraft, true))) : Promise.resolve(0),
       customFieldCounts,
     ])
 

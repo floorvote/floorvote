@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm'
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import type { AppDb } from '../../types'
 import type { BillsTable } from '../../lib/teamFields'
 import { billsAs, type BillsFilter } from './query'
@@ -35,22 +36,49 @@ const me = billsAs('me') // the bill holding a team field value
 export type Counting = {
   /** The facet's filter on a bill (`many`: see BillsFilter), undefined for every bill. */
   where: BillsFilter
-  /** Under OR: true for a bill of a group none of whose bills is in the current result. */
-  fresh: ((t: BillsTable) => SQL) | undefined
+  /** Under OR: the groups to count are those with no bill in the current result. */
+  fresh: Fresh | undefined
 }
+
+/**
+ * What a statement that counts only groups none of whose bills is in the current result needs: `test` is true
+ * of a bill of such a group, and `cte`, when there is one, starts the statement.
+ */
+export type Fresh = { cte?: SQL; test: (t: BillsTable) => SQL }
 
 /** A group's bills' values of the columns counted, and the number of groups. */
 export type CountRow = { values: unknown[]; n: number }
 
 /**
  * True for a bill in no group meeting the current result, and for a bill of a
- * group none of whose bills meets it. The group's bills in the result come from
- * one list, built once for the statement, not found by a probe of each bill's group.
+ * group none of whose bills meets it. A bill with no companions is tested by
+ * the current filter itself, and a grouped bill by a list of the groups in the
+ * result, built once for the statement. That holds the filter's values twice in
+ * a statement, which D1's 100 bound values allow a filter of 30 or fewer. A
+ * larger filter (a broad OR selection) is read once into a list of every bill
+ * in the result instead, named by its id or its group key, which costs a list of
+ * every such bill per statement and so is only used where the first would fail.
  */
-export function freshOf(current: BillsFilter): (t: BillsTable) => SQL {
+export function freshOf(current: BillsFilter): Fresh {
   const cm = billsAs('cm')
-  return t => sql`CASE WHEN ${t.groupKey} IS NULL THEN COALESCE((${current(t, true)}), 0) = 0
-    ELSE ${t.groupKey} NOT IN (SELECT cm.group_key FROM bills cm WHERE cm.group_key IS NOT NULL AND ${current(cm, true)}) END`
+  const values = new SQLiteSyncDialect().sqlToQuery(current(billsAs('probe'), true)!).params.length
+  if (values > 30) {
+    return {
+      cte: sql`cur AS MATERIALIZED (SELECT ${cm.id} AS id, ${cm.groupKey} AS gk FROM bills cm WHERE ${current(cm, true)})`,
+      test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN ${t.id} NOT IN (SELECT id FROM cur)
+        ELSE ${t.groupKey} NOT IN (SELECT gk FROM cur WHERE gk IS NOT NULL) END`,
+    }
+  }
+  return {
+    test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN COALESCE((${current(t, true)}), 0) = 0
+      ELSE ${t.groupKey} NOT IN (SELECT cm.group_key FROM bills cm WHERE cm.group_key IS NOT NULL AND ${current(cm, true)}) END`,
+  }
+}
+
+/** `WITH` the statement's common tables, or nothing when it has none. */
+const withCtes = (ctes: Array<SQL | undefined>) => {
+  const used = ctes.filter((c): c is SQL => c !== undefined)
+  return used.length > 0 ? sql`WITH ${sql.join(used, sql`, `)} ` : sql``
 }
 
 const valueColumns = (values: SQL[]) => values.map((v, i) => sql`${v} AS ${sql.raw(`v${i}`)}`)
@@ -70,10 +98,11 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
 export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL }): Promise<CountRow[]> {
   const { values, from } = source
   const w = c.where(m, true)
-  const fresh = c.fresh?.(m)
+  const fresh = c.fresh?.test(m)
+  const cte = withCtes([c.fresh?.cte])
   const [whole, grouped] = await Promise.all([
-    db.all(sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
-    db.all(sql`SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
+    db.all(sql`${cte}SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from}${w ? sql` WHERE ${w}` : sql``}${groupBy(values)}`) as Promise<Record<string, unknown>[]>,
+    db.all(sql`${cte}SELECT ${sql.join([...valueNames(values), sql`COALESCE(SUM(n), 0) AS bills`, sql`${fresh ? sql`COALESCE(SUM(CASE WHEN n > 0 THEN 1 ELSE 0 END), 0)` : sql`COUNT(*)`} AS groups`], sql`, `)}
       FROM (SELECT ${sql.join([...valueColumns(values), sql`${countOf(fresh)} AS n`], sql`, `)} FROM ${from} WHERE ${m.groupKey} IS NOT NULL${w ? sql` AND ${w}` : sql``}
         GROUP BY ${sql.join([sql`${m.groupKey}`, ...values], sql`, `)})${groupBy(valueNames(values))}`) as Promise<Record<string, unknown>[]>,
   ])
@@ -100,17 +129,17 @@ export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; f
  */
 export async function countHolders(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; holds: SQL; many?: boolean }): Promise<CountRow[]> {
   const { values, from, holds } = source
-  const select = sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(c.fresh?.(me))} AS n`], sql`, `)} FROM ${from}`
+  const select = sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(c.fresh?.test(me))} AS n`], sql`, `)} FROM ${from}`
   const w = source.many ? c.where(m, true) : c.where(m)
   let rows: Record<string, unknown>[]
   if (w && source.many) {
-    rows = await db.all(sql`WITH q AS MATERIALIZED (SELECT ${m.id} AS id, ${m.groupKey} AS gk FROM bills m WHERE ${w})
+    rows = await db.all(sql`${withCtes([c.fresh?.cte, sql`q AS MATERIALIZED (SELECT ${m.id} AS id, ${m.groupKey} AS gk FROM bills m WHERE ${w})`])}
       ${select} WHERE ${holds} AND (${me.id} IN (SELECT id FROM q) OR ${me.groupKey} IN (SELECT gk FROM q WHERE gk IS NOT NULL))${groupBy(values)}`) as Record<string, unknown>[]
   } else {
     const qualifies = w
       ? sql` AND EXISTS (SELECT 1 FROM bills m WHERE (${m.id} = ${me.id} OR ${m.groupKey} = ${me.groupKey}) AND ${w})`
       : sql``
-    rows = await db.all(sql`${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
+    rows = await db.all(sql`${withCtes([c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
   }
   return rows.map(r => ({ values: valuesOf(r, values.length), n: Number(r.n) }))
 }

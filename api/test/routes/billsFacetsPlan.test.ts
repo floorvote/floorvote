@@ -65,6 +65,8 @@ describe('GET /bills/facets query plans', () => {
           CASE WHEN i <= 7500 THEN 'bill' || printf('%05d', ((i - 1) / 2) * 2 + 1) END FROM n`),
       env.DB.prepare("INSERT INTO official_positions (id, bill_id, position, set_by) SELECT 'p' || id, id, 'Support', 'u' FROM bills WHERE substr(id, 5) % 1500 = 0"),
       env.DB.prepare('ANALYZE'),
+      // One draft, as a tenant that has any has a few: the stats still say every bill has the same is_draft.
+      env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"),
     ])
   })
 
@@ -114,5 +116,13 @@ describe('GET /bills/facets query plans', () => {
       }
     }
     expect(probes.length, 'no facet tested a group through its bills').toBeGreaterThan(0)
+  })
+
+  it('counts the my bills, new matches, unvoted, and drafts of the current result without reading the table', async () => {
+    // The statements countGroups prepares: each reads an index, never the whole table. A count held `selective`
+    // when that was a guess forced a table scan on every request, since is_draft has one value in most tenants.
+    const counts = (await facetPlans()).filter(p => /^SELECT COUNT\(\*\) AS (n|groups)/.test(p.sql.trim()) && / bills m\b/.test(p.sql))
+    expect(counts.length, 'no special counts').toBeGreaterThanOrEqual(4)
+    for (const count of counts) expect(count.plan, `${count.sql}\n${count.plan}`).not.toMatch(TABLE_SCAN)
   })
 })
