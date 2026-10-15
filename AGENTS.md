@@ -12,7 +12,7 @@ Legislative bill tracking for teams. Each organization gets an isolated deployme
 
 **Binding-authenticated RPC:** Tenant→central uses the `TenantApi` WorkerEntrypoint via service bindings. Central→tenant uses the `CentralApi` entrypoint. Neither direction transmits a shared secret. A consumer Worker on the same account that reads engagement stats (every tenant's daily `tenant_stats` rows) binds to central's separate `StatsApi` entrypoint and calls `tenantStatsSince("YYYY-MM-DD")`; it has no HTTP route, and tenants never bind to it.
 
-**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`, and its `vocabulary.ts` gives every status it writes a label, common stage, rank, terminal flag, and explainer. Fields only one provider publishes are declared there as extras and shown in one generic panel on the bill page, never sorted, filtered, notified on, or sent to AI, and every provider keeps a field inventory its mapping test checks fixtures against (see "Provider extras" in `docs/internal/sync-pipeline.md`). A provider that publishes the legislature's own calendar implements `listBodyEvents` (body events: hearings, roundtables, and meetings, with or without bills, shown on instances' calendars as each instance's event rules choose, as "Body events" in `docs/internal/sync-pipeline.md` describes), and instances gate features on each state's capabilities, never its name. Central's `state_providers` table records which provider each state syncs from, and a state with no row is LegiScan's. A cutover (`central/src/lib/cutover.ts`) moves a state instances already track to another provider, keeping every bill's handle and never writing to an instance's database. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off until an admin claim gives them a state, and synced as snapshots by `cron/sync-snapshots.ts` (see `docs/internal/sync-pipeline.md`, whose "DC Council (LIMS)" section covers DC's mapping, its fail-closed rules, and the re-ingest a LIMS mapping change needs, and whose "Maryland (MGA)" and "Virginia (LIS)" sections cover those states).
+**Providers:** central reads legislative data through providers in `central/src/providers/`, with LegiScan the default. A provider calls its API and maps responses into the shapes in `providers/types.ts`, and core writes the results. ESLint lets provider code import only `providers/sdk.ts` and core import providers only through the registry, `providers/index.ts` (`central/eslint-provider-boundary.mjs`). A provider's `ctx.env` holds only the env keys it declares in `envKeys`, and its `vocabulary.ts` gives every status it writes a label, common stage, rank, terminal flag, and explainer. Its relationship labels map there to `identical`, `package`, or `related` kinds, by name and with per-state overrides, and central attaches the kind when it serves a bill's related bills. Fields only one provider publishes are declared there as extras and shown in one generic panel on the bill page, never sorted, filtered, notified on, or sent to AI, and every provider keeps a field inventory its mapping test checks fixtures against (see "Provider extras" in `docs/internal/sync-pipeline.md`). A provider that publishes the legislature's own calendar implements `listBodyEvents` (body events: hearings, roundtables, and meetings, with or without bills, shown on instances' calendars as each instance's event rules choose, as "Body events" in `docs/internal/sync-pipeline.md` describes), and instances gate features on each state's capabilities, never its name. Central's `state_providers` table records which provider each state syncs from, and a state with no row is LegiScan's. A cutover (`central/src/lib/cutover.ts`) moves a state instances already track to another provider, keeping every bill's handle and never writing to an instance's database. DC (LIMS), Maryland (MGA), and Virginia (LIS) are opt-in providers, off until an admin claim gives them a state, and synced as snapshots by `cron/sync-snapshots.ts` (see `docs/internal/sync-pipeline.md`, whose "DC Council (LIMS)" section covers DC's mapping, its fail-closed rules, and the re-ingest a LIMS mapping change needs, and whose "Maryland (MGA)" and "Virginia (LIS)" sections cover those states).
 
 **Bill pipeline:**
 1. Central hourly cron → per-state keyword union filter → queue matching bills to ingestor
@@ -103,7 +103,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 |---|---|
 | `LEGISCAN_API_KEY` | LegiScan bill data |
 | `ADMIN_SECRET` | Protects `/api/admin/*` and `/api/tenants/*` routes |
-| `RESEND_API_KEY` | Optional fallback for admin dashboard magic-link email (used unless `EMAIL_PROVIDER=cloudflare` and the `EMAIL` binding is set) |
+| `RESEND_API_KEY` | Admin dashboard magic-link email. Required for dashboard login: `dash-auth.ts` sends nothing and still answers ok if this or `ADMIN_APP_URL` is unset |
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
@@ -131,6 +131,8 @@ Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-le
 **Always add new migration files — never edit existing ones.**
 
 **Keep `;` out of SQL comments in `api/migrations/`.** The api test helper (`parseMigration` in `api/test/helpers.ts`) splits a file on `;` before it strips comments, so the words after the semicolon run as SQL. Every test that calls `applyMigrations()` then fails with a syntax error that points at the prose, not the cause. A period or an em dash does the same job.
+
+**A migration with a trigger** (0103 is the first) registers in `applyMigrations` through `splitStatements`, not `parseMigration`, which would split the trigger's body apart. Wrangler ends a `CREATE TRIGGER` at the first `END` that follows a `;` and is followed by `;` (whitespace between, any case), and `splitStatements` follows the same rule. A migration that rebuilds `bills` must recreate 0103's triggers and `idx_bills_group_tags`, and nothing may write `bills` with `INSERT OR REPLACE`, which skips the delete trigger and leaves a stale group tag that matches.
 
 **Numbers and names a downstream fork owns.** Open-City-Advocates' fork applied its own migrations in production, and moving it onto upstream depends on these staying free (`docs/internal/fork-upgrade.md`):
 
@@ -215,7 +217,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 1. Import colors/radii/font sizes from `web/src/styles/tokens.ts`. Spacing is raw numbers.
 2. Register Material Symbols icons in `icon_names=` in `web/index.html` before use.
 3. Never edit existing migration files — create new ones.
-4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`, which the guard in `scripts/verify-timestamp-writes.ts` honors (see `docs/internal/dates.md`).
+4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`. The guard `scripts/verify-timestamp-writes.ts` enforces this in CI; run it locally with `npm run verify:timestamps` (see `docs/internal/dates.md`).
 5. Relevance scores are 1–10, not 0–100.
 6. Tenants never call legislative APIs directly — all data flows through central.
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.
@@ -223,10 +225,13 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 9. Never run `wrangler deploy` directly — use `npm run deploy:tenant`.
 10. Don't mock D1 in tests — use real @cloudflare/vitest-pool-workers bindings.
 11. Don't leave `web/dist` around during local dev — it breaks the Vite `/api` proxy.
+12. Stub `fetch` per test with `stubFetch` (`api/test/helpers.ts`). An unstubbed request fails the test and names its URL (`api/test/setup.ts`).
+13. Send requests that start background work (`ctx.waitUntil`, such as email) through `appFetch`, not `SELF.fetch`. The work then finishes, and a failure in it fails the test.
 
 ### Conventions
 
 - **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [Forking and operator overlays](https://floorvote.org/docs/contributing/#forking-and-operator-overlays).
+- **Button labels.** A label ends in a single ellipsis character (`…`) when its click opens a step that asks for input or a choice, or shows something new, before the action happens ("Feedback…" opens a form). A confirmation that only warns does not count, since the label already says what will happen ("Delete role" keeps its plain label); if a confirmation would reveal something new, show it beside the button instead, as the bulk bar does with its AI analysis count.
 
 ## graphify
 

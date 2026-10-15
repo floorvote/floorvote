@@ -82,6 +82,8 @@ export const bills = sqliteTable('bills', {
   createdAt:       text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt:       text('updated_at').notNull().default(sql`(datetime('now'))`),
   textsFetchedAt:  text('texts_fetched_at'),
+  /** When a tenant last asked for the bill to be fetched without tracking it (0040). A lock on asking again, never read as a fetch. */
+  textsRequestedAt: text('texts_requested_at'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   provider:        text('provider').notNull().default('legiscan'),
   /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link, useNavigate, useNavigation, useLocation, useLoaderData, redirect, type LoaderFunctionArgs } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { apiFetchForLoader } from '../lib/loaderFetch'
@@ -22,6 +22,7 @@ import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
 import { LegislativeHistory, syntheticLatestAction } from '../components/LegislativeHistory'
+import { CommitteeLine, type CommitteeRef, type ReferralRef } from '../components/CommitteeLine'
 import { TabularRow } from '../components/TabularRow'
 import { BillTextPanel } from '../components/BillTextPanel'
 import { BillTextChip } from '../components/BillTextChip'
@@ -36,7 +37,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
-import { COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
+import { COMPANION_TAG, COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT, FONT_SANS, FORM_LABEL } from '../lib/textStyles'
 import { HoverTooltip } from '../components/HoverTooltip'
 import { SubjectsTrigger, SubjectsPanel } from '../components/SubjectsDisclosure'
@@ -62,6 +63,12 @@ import { editableFieldBox } from '../lib/editableFieldStyle'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
+import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
+import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import { GroupWithDialog } from '../components/GroupWithDialog'
+import { splitConfirmText } from '../lib/splitConfirm'
+import { placeGroupingLines } from '../lib/groupingLine'
+import { GroupingLine } from '../components/GroupingLine'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
@@ -382,6 +389,9 @@ function ItemDateText({ item }: { item: { date: string | null; dateResolved?: st
 
 type Comment = {
   id: string
+  /** The bill the comment was posted on: in a companion group, maybe a companion. Absent on one just posted here. */
+  billId?: string
+  billNumber?: string | null
   userId: string
   userName: string
   userSubtitle: string | null
@@ -392,7 +402,8 @@ type Comment = {
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
 type VoteSummaryEntry = { date: string; chamber: string; desc: string; yea: number; nay: number; nv: number; absent: number; passed: number; legislatorVotes?: { personId?: string; name: string; vote: string }[] }
-type RelatedBill = { billId: number; billNumber: string; type: string; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
+// `kind` is what the bill's provider makes of the legislature's label (`type`). A central that predates kinds sends none.
+type RelatedBill = { billId: number; billNumber: string; type: string; kind?: RelationshipKind; route: { id: string; billNumber: string; sessionSlug: string; state: string } | null }
 
 type BillDetailData = {
   id: string
@@ -418,8 +429,8 @@ type BillDetailData = {
   stateUrl?: string | null
   url?: string | null
   legiscanUrl?: string | null
-  committee: string | null
-  referrals?: { date: string | null; committeeId: string | null; chamber: string | null; name: string }[]
+  committee: CommitteeRef | null
+  referrals?: ReferralRef[]
   tenantSummary: string | null
   tags: string[]
   relevanceScore: number | null
@@ -498,6 +509,12 @@ type BillDetailData = {
   textStatus: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   myVote: 'support' | 'oppose' | 'neutral' | null
   myNote: string | null
+  /** The member's private notes across the bill's companion group, this bill's first. */
+  myNotes?: GroupNote[]
+  /** Where the bill's companion group formed or split, for the lines in its comment thread. */
+  groupingEvents?: GroupingEvent[]
+  /** The bills in its companion group, this one first: just this one in no group. */
+  groupBills?: GroupBill[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -635,6 +652,8 @@ export function BillDetail() {
   const [positionMeta, setPositionMeta] = useState<{ setByName: string; updatedAt: string } | null>(prefetchedBill?.position ? { setByName: prefetchedBill.position.setByName, updatedAt: prefetchedBill.position.updatedAt } : null)
   const [voteCounts, setVoteCounts] = useState(prefetchedBill?.voteCounts ?? { support: 0, oppose: 0, neutral: 0, total: 0 })
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
+  // Lines where the bill's companion group formed or split, placed among the comments by time.
+  const groupingLines = useMemo(() => placeGroupingLines(comments, bill?.groupingEvents ?? []), [comments, bill?.groupingEvents])
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [config, setConfig] = useState<{ positionVocabulary: string[]; instanceDomains: Record<string, string>; orgNoun: string } | null>(null)
@@ -684,7 +703,11 @@ export function BillDetail() {
   // button's other disabled reasons.
   const linkGate = useRequiredSubmit({ missingRequired: !linkTarget, blocked: linking || demoLocked })
   const [deletingDraft, setDeletingDraft] = useState(false)
+  // The page's toast for overflow-menu actions: Copy link's feedback, and a failed split.
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  // Grouping by hand, from the overflow menu (admins).
+  const [groupWithOpen, setGroupWithOpen] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   const [filedOptions, setFiledOptions] = useState<BillOption[]>([])
   const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
   const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
@@ -790,14 +813,17 @@ export function BillDetail() {
   useEffect(() => {
     const hash = location.hash
     if (!hash.startsWith('#section-') && !hash.startsWith('#text-')) return
-    if (handledSectionHashRef.current === hash) return
+    // Each navigation has its own location key, so a link to a hash the page is
+    // already on (the committee line's) is handled again, not skipped.
+    const handled = `${location.key}${hash}`
+    if (handledSectionHashRef.current === handled) return
 
     if (hash.startsWith('#text-')) {
       const docId = hash.slice('#text-'.length)
       if (docId) {
         setRequestedDocId(docId)
         setShowBillText(true)
-        handledSectionHashRef.current = hash
+        handledSectionHashRef.current = handled
       }
       return
     }
@@ -814,7 +840,7 @@ export function BillDetail() {
     const timerId = setTimeout(() => {
       const el = document.getElementById(sectionId)
       if (!el) return
-      handledSectionHashRef.current = hash
+      handledSectionHashRef.current = handled
       const rect = el.getBoundingClientRect()
       const container = getScrollContainer()
       const isInView = rect.top >= 64 && rect.bottom <= window.innerHeight
@@ -827,7 +853,7 @@ export function BillDetail() {
       }, 1500)
     }, 0)
     return () => clearTimeout(timerId)
-  }, [location.hash, bill?.id])
+  }, [location.hash, location.key, bill?.id])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
   // of the response, NotificationsContext.tsx), so depending on `notifications` itself
@@ -1412,6 +1438,43 @@ export function BillDetail() {
                   disabled: regenerating || demoLocked,
                 })
               }
+              // Grouping by hand (#382). A draft has no legislative record to
+              // share a group with: linking it to its filed bill does that.
+              const groupBills = bill.groupBills ?? []
+              if (isAdmin && !bill.isDraft) {
+                menuRows.push({
+                  key: 'group-with',
+                  label: 'Group with…',
+                  description: 'Share one discussion and the team\'s values with an identical bill.',
+                  disabled: demoLocked,
+                  onSelect: () => setGroupWithOpen(true),
+                })
+              }
+              if (isAdmin && groupBills.length > 1) {
+                menuRows.push({
+                  key: 'split',
+                  label: 'Split from group',
+                  description: `Give ${bill.billNumber} back its own discussion and the team's values.`,
+                  disabled: splitting || demoLocked,
+                  onSelect: async () => {
+                    if (splitting || demoLocked) return
+                    setSplitting(true)
+                    try {
+                      // The server says what the split would leave, so the
+                      // confirmation can name bills that would come apart.
+                      const preview = await apiFetch<{ billNumber: string; parts: GroupBill[][] }>(`/bills/${bill.id}/split-preview`)
+                      if (!window.confirm(splitConfirmText(bill.billNumber, preview.parts.map(part => part.map(b => b.billNumber))))) return
+                      await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
+                      await refetchBill()
+                    } catch {
+                      setCopyFeedback("Couldn't split the bill from its group. Try again.")
+                      setTimeout(() => setCopyFeedback(null), 4000)
+                    } finally {
+                      setSplitting(false)
+                    }
+                  },
+                })
+              }
               if (isAdmin && bill.isDraft) {
                 menuRows.push({
                   key: 'delete-draft',
@@ -1580,11 +1643,11 @@ export function BillDetail() {
             : bill.billType
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
-          const grouped = new Map<string, RelatedBill[]>()
-          for (const r of bill.relatedBillIds) {
-            const key = r.type || 'related'
-            if (!grouped.has(key)) grouped.set(key, [])
-            grouped.get(key)!.push(r)
+          // One line for each kind, identical companions first, whatever labels the legislature used.
+          const grouped = new Map<RelationshipKind, RelatedBill[]>()
+          for (const kind of RELATIONSHIP_KINDS) {
+            const ofKind = bill.relatedBillIds.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
+            if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
           const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
@@ -1612,10 +1675,10 @@ export function BillDetail() {
             )
           }
           if (typeLabel) metaItems.push(<span key="type" style={{ whiteSpace: 'nowrap' }}>{typeLabel}</span>)
-          grouped.forEach((related, type) => {
-            const label = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          grouped.forEach((related, kind) => {
+            const label = RELATIONSHIP_KIND_LABELS[kind]
             metaItems.push(
-              <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                 <span style={{ color: color.textMuted }}>{label}:</span>
                 {related.map((r, i) => {
                   const isLast = i === related.length - 1
@@ -1690,28 +1753,8 @@ export function BillDetail() {
           />
         )}
 
-        {/* Meta row 2: committee / referrals */}
-        {(bill.committee || (bill.referrals?.length ?? 0) > 0) && (
-          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6 }}>
-            {bill.committee ? (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Committee:</span>
-                {bill.committee}
-              </>
-            ) : (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Referrals:</span>
-                {(bill.referrals ?? []).map((r, i) => (
-                  <span key={i}>
-                    {i > 0 && <span style={{ color: color.borderStrong, margin: '0 6px' }}>·</span>}
-                    {r.name}
-                    {r.date && <span style={{ color: color.textMuted, marginLeft: 4 }}>{r.date.slice(0, 7)}</span>}
-                  </span>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+        {/* Meta row 2: where the bill is in committee */}
+        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} history={bill.history} lastAction={bill.lastAction} lastActionDate={bill.lastActionDate} linkToHistory={!!bill.lastAction} />
 
         {/* Meta row 3: sponsors */}
         {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (
@@ -2751,7 +2794,9 @@ export function BillDetail() {
               Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
             </div>
             {comments.map((comment, idx) => (
-              <div key={comment.id} id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
+              <Fragment key={comment.id}>
+              {groupingLines.before.get(comment.id)?.map(e => <GroupingLine key={e.id} event={e} />)}
+              <div id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / subtitle / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
@@ -2763,6 +2808,10 @@ export function BillDetail() {
                     {comment.userName}
                     {comment.userSubtitle && (
                       <span style={{ fontSize: COMMENT_STYLE.subtitleSize, fontWeight: COMMENT_STYLE.subtitleWeight, color: COMMENT_STYLE.subtitleColor, marginLeft: 4 }}>{comment.userSubtitle}</span>
+                    )}
+                    {/* A comment posted on a companion in this bill's group. */}
+                    {comment.billId && comment.billId !== bill.id && comment.billNumber && (
+                      <span title={`Posted on ${comment.billNumber}`} style={{ ...COMPANION_TAG, marginLeft: 6 }}>{comment.billNumber}</span>
                     )}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
@@ -2906,7 +2955,9 @@ export function BillDetail() {
                   )}
                 </div>
               </div>
+              </Fragment>
             ))}
+            {groupingLines.after.map(e => <GroupingLine key={e.id} event={e} />)}
             <div style={{ marginTop: 12 }}>
               {/* Key on the bill so navigating to another bill remounts a fresh,
                   empty composer. Without this, the unkeyed editor keeps the prior
@@ -2994,7 +3045,7 @@ export function BillDetail() {
           <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} />
 
           <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
-            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} />
+            <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} notes={bill.myNotes} />
           </div>
         </div>
       </div>
@@ -3003,6 +3054,16 @@ export function BillDetail() {
       <div style={{ padding: '12px 0', borderTop: `1px solid ${color.borderDefault}` }}>
         <Link to={sessionStorage.getItem('lastBillsUrl') ?? '/bills'} style={{ fontSize: fontSize.sm, color: color.linkBlue, textDecoration: 'none' }}>← Back to bills</Link>
       </div>
+
+      {groupWithOpen && (
+        <GroupWithDialog
+          billId={bill.id}
+          billNumber={bill.billNumber}
+          groupBillIds={(bill.groupBills ?? []).map(b => b.billId).concat(bill.id)}
+          onClose={() => setGroupWithOpen(false)}
+          onGrouped={() => { setGroupWithOpen(false); void refetchBill() }}
+        />
+      )}
 
       {copyFeedback && (
         <div style={{

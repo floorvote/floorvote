@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, billCustomFieldValues, customFieldDefinitions, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -33,6 +33,7 @@ async function seedFields() {
 }
 
 beforeEach(async () => {
+  stubFetch() // central lookups and background backfills are answered, never real
   await resetDb()
   await applyMigrations()
   adminId = await seedUser({ email: 'admin@x.com', role: 'admin', name: 'Admin Person' })
@@ -42,7 +43,7 @@ beforeEach(async () => {
 })
 
 function post(body: unknown, token = adminToken) {
-  return SELF.fetch('https://x/api/bills/draft', {
+  return appFetch('https://x/api/bills/draft', {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -50,7 +51,7 @@ function post(body: unknown, token = adminToken) {
 }
 
 function put(billId: string, body: unknown, token = adminToken) {
-  return SELF.fetch(`https://x/api/bills/${billId}/custom-fields`, {
+  return appFetch(`https://x/api/bills/${billId}/custom-fields`, {
     method: 'PUT',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -191,7 +192,7 @@ describe('POST /api/bills/draft — custom fields, stamping', () => {
   it("shows the values on the draft's bill page right away, set by the creating admin", async () => {
     const res = await create({ [F.date]: '2027-01-15', [F.multi]: ['Tag A', 'Tag C'] })
     const { id } = await res.json<{ id: string }>()
-    const detail = await SELF.fetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${adminToken}` } })
+    const detail = await appFetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${adminToken}` } })
     expect(detail.status).toBe(200)
     const body = await detail.json<{ customFieldValues: Record<string, { value: string; setBy: string; updatedAt: string }> }>()
     expect(Object.keys(body.customFieldValues).sort()).toEqual([F.date, F.multi].sort())
@@ -202,7 +203,7 @@ describe('POST /api/bills/draft — custom fields, stamping', () => {
   it('shows the values to a member viewing the draft, too', async () => {
     const res = await create({ [F.single]: 'Category B' })
     const { id } = await res.json<{ id: string }>()
-    const detail = await SELF.fetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${memberToken}` } })
+    const detail = await appFetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${memberToken}` } })
     expect(detail.status).toBe(200)
     const body = await detail.json<{ customFieldValues: Record<string, { value: string }> }>()
     expect(body.customFieldValues[F.single]).toMatchObject({ value: 'Category B' })
@@ -403,7 +404,7 @@ describe('custom fields set at creation carry over on link', () => {
     const { id: draftId } = await res.json<{ id: string }>()
     const before = Object.fromEntries((await valuesFor(draftId)).map(v => [v.fieldId, v]))
 
-    const link = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const link = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),

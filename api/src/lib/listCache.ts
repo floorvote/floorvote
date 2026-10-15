@@ -3,10 +3,11 @@ import type { Env } from '../types'
 // ── Default-list query cache ──────────────────────────────────────────────
 // Caches ONLY the shared, expensive count+ordered-page query for GET /bills
 // (the full table scan + filesort). The cached payload is the `{ total, billRows }`
-// pair and NOTHING per-user: enrichment (myVote/myNote/myComment, vote counts,
-// positions, comment counts, custom-field values) is always recomputed fresh
-// per request from the page's bill IDs, so a shared cache never leaks one user's
-// state to another.
+// pair, where billRows names the companion groups on the page by group key, and
+// NOTHING per-user: what a row shows (the bills of each group, myVote/myNote/
+// myComment, vote counts, positions, comment counts, custom-field values) is
+// always read fresh per request from the page's group keys, so a shared cache
+// never leaks one user's state to another.
 //
 // Backed by the Workers Cache API (`caches.default`), scoped per tenant via the
 // synthetic cache-key URL. Requests with per-user filters (myBills / unvoted)
@@ -16,8 +17,9 @@ import type { Env } from '../types'
 
 export type CachedListPage = {
   total: number
-  // billRows are the raw `bills` table rows (db.select().from(bills)); typed loosely
-  // here because the row shape is owned by the route/schema, not this cache module.
+  // billRows are the groups on the page, in order, each `{ id }` with the group's
+  // key (a bill with no companions is its own group); typed loosely here because
+  // the row shape is owned by the route, not this cache module.
   billRows: Record<string, unknown>[]
 }
 

@@ -17,6 +17,7 @@ import { mentionEmailsEnabled, tiptapToEmailHtml } from './mentions'
 import { sendBatch, resolveAssocName, type EmailMessage } from './email'
 import { activeUser } from './accountDeletion'
 import { displayName } from './displayName'
+import { inGroupOf } from './companionGroups'
 import { billUrl } from '../../../shared/sessionSlug'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { buildBillCardModel } from '../../../shared/billCardModel'
@@ -40,7 +41,7 @@ type Participant = { id: string; email: string; emailReplies: boolean }
 
 /**
  * The members to notify about a new comment: everyone else with a live comment
- * on the bill, minus the author. Deactivated members and members without a
+ * on the bill or another bill in its companion group, minus the author. Deactivated members and members without a
  * login session are skipped, as role mentions skip them. The caller removes
  * anyone the comment mentions.
  */
@@ -50,7 +51,9 @@ async function replyRecipients(db: Db, billId: string, authorUserId: string): Pr
     .from(comments)
     .innerJoin(users, eq(comments.userId, users.id))
     .where(and(
-      eq(comments.billId, billId),
+      // A companion group is one conversation, so its participants are everyone
+      // who commented on any of its bills.
+      inGroupOf(comments.billId, billId),
       isNull(comments.deletedAt),
       ne(users.id, authorUserId),
       activeUser,

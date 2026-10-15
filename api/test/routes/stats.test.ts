@@ -3,8 +3,8 @@ import { env } from 'cloudflare:test'
 import { SELF } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { memberVotes, associationConfig, calendarEvents, users } from '../../src/db/schema'
-import { eq } from 'drizzle-orm'
+import { memberVotes, associationConfig, calendarEvents, users, bills } from '../../src/db/schema'
+import { eq, inArray } from 'drizzle-orm'
 import { app } from '../../src/index'
 
 describe('GET /stats/sidebar', () => {
@@ -226,6 +226,24 @@ describe('GET /api/stats memberCount', () => {
     const r = await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })
     const body = await r.json() as { memberCount: number }
     expect(body.memberCount).toBe(2) // me + active; gone is excluded
+  })
+})
+
+describe('GET /api/stats newMatchesCount', () => {
+  let token: string
+  beforeEach(async () => {
+    await resetDb(); await applyMigrations()
+    token = await seedSession(await seedUser({ email: 'admin@b.com', role: 'admin' }))
+  })
+
+  // The dashboard's "N new" is the size of the triage worklist, and a companion group is one item on it.
+  it('counts a companion group once', async () => {
+    await seedBill({ id: 'a190', billNumber: 'A190', newMatchAt: '2026-03-01 00:00:00' })
+    await seedBill({ id: 'b1713', billNumber: 'S1713', newMatchAt: '2026-03-02 00:00:00' })
+    await seedBill({ id: 'solo', billNumber: 'HB 1', newMatchAt: '2026-03-03 00:00:00' })
+    await getDb(env.DB).update(bills).set({ groupKey: 'a190' }).where(inArray(bills.id, ['a190', 'b1713']))
+    const r = await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })
+    expect((await r.json() as { newMatchesCount: number }).newMatchesCount).toBe(2)
   })
 })
 
