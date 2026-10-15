@@ -575,8 +575,9 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
 // attribution of the providers those states come from (lib/attribution.ts),
 // so its footer credits them, and where central's admin dashboard lives
 // (ADMIN_APP_URL, already set for the dashboard's sign-in emails), so a
-// superadmin's Profile page can link there. Each state's events come from the provider that
-// owns it. Cancelled events come too, marked, so the instance cancels its copy.
+// superadmin's Profile page can link there. Each state's events come from the
+// provider that owns it. Cancelled events come too, marked, so the instance
+// cancels its copy.
 tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const from = c.req.query('from') ?? ''
@@ -597,8 +598,10 @@ tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) 
     const provider = findProvider(owners.get(state))
     if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to))
   }
-  const dashboardUrl = httpUrl(c.env.ADMIN_APP_URL)?.replace(/\/+$/, '')
-  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), ...(dashboardUrl ? { dashboardUrl } : {}), events })
+  // null, not a missing key, when central has no usable dashboard address: the instance forgets the
+  // address on null, and keeps what it has on a missing key (an older central).
+  const dashboardUrl = httpUrl(c.env.ADMIN_APP_URL)?.replace(/\/+$/, '') ?? null
+  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), dashboardUrl, events })
 })
 
 // What the instance's event rules can choose from (#298), for each state it

@@ -214,10 +214,17 @@ export async function syncBodyEvents(env: Env, db: AppDb): Promise<BodyEventSync
   }
 
   // Likewise for the dashboard address: only an http(s) URL is kept, since the Profile page renders it as a link.
-  const dashboardUrl = typeof body.dashboardUrl === 'string' ? httpUrl(body.dashboardUrl) : null
-  if (dashboardUrl) {
-    await db.insert(associationConfig).values({ key: DASHBOARD_URL_KEY, value: dashboardUrl })
-      .onConflictDoUpdate({ target: associationConfig.key, set: { value: dashboardUrl } })
+  // An explicit null means central has no dashboard (ADMIN_APP_URL unset), so the instance forgets the
+  // address rather than link to one that is gone. A missing key (an older central) leaves it alone, and
+  // so does any value that is neither null nor a valid URL: a bad answer never overwrites a good address.
+  if (body.dashboardUrl === null) {
+    await db.delete(associationConfig).where(eq(associationConfig.key, DASHBOARD_URL_KEY))
+  } else {
+    const dashboardUrl = typeof body.dashboardUrl === 'string' ? httpUrl(body.dashboardUrl) : null
+    if (dashboardUrl) {
+      await db.insert(associationConfig).values({ key: DASHBOARD_URL_KEY, value: dashboardUrl })
+        .onConflictDoUpdate({ target: associationConfig.key, set: { value: dashboardUrl } })
+    }
   }
 
   return reconcileBodyEvents(env, db, body.events as CentralBodyEvent[], from, to, anyBodyEvents(capabilities))
