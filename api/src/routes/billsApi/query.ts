@@ -247,6 +247,8 @@ export type BillFilterParams = {
   q: string | undefined
   minRelevance: string | undefined
   myBillsParam: string | undefined
+  /** The member's bills (`loadMyBillsInGroups`) when the caller has read them already, so a request reads them once. */
+  myBillIds?: readonly string[]
   unvoted: string | undefined
   newMatches: string | undefined
   drafts: string | undefined
@@ -516,7 +518,7 @@ export async function buildFilterParts(
   let noMatch = false
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
     // A member's engagement is with the group, as unvoted's votes are: a group is mine when any bill of it is.
-    const myIds = await loadMyBillsInGroups(db, p.userId)
+    const myIds = p.myBillIds ?? await loadMyBillsInGroups(db, p.userId)
     // Scope, not a bill fact: an empty set means no rows regardless of the group operator.
     if (myIds.length === 0) noMatch = true
     else scopes.push(myBillsCondition(myIds))

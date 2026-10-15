@@ -208,6 +208,30 @@ describe('bulk actions on companion groups', () => {
       expect((await list('newMatches=1')).pagination.total).toBe(0)
     })
 
+    it("dismisses the groups the list shows under my bills, a group reached through the bill that isn't mine", async () => {
+      const match = { matchType: 'keyword', newMatchAt: '2026-10-01 10:00:00' } as const
+      // {A, B}: I voted on A, and only B is a new match that meets the status filter.
+      await seedBill({ id: 'a190', billNumber: 'A190', state: 'NJ', status: 'Introduced' })
+      await seedBill({ id: 'b1713', billNumber: 'S1713', state: 'NJ', status: 'Passed', ...match })
+      await group('a190', 'b1713')
+      // A group with none of my bills, a new match too.
+      await seedBill({ id: 'c1', billNumber: 'HB 3', state: 'NJ', status: 'Passed', ...match })
+      await seedBill({ id: 'd1', billNumber: 'HB 4', state: 'NJ', status: 'Passed', ...match })
+      await group('c1', 'd1')
+      // A bill in no group, a new match I noted.
+      await seedBill({ id: 'solo', billNumber: 'HB 1', state: 'NJ', status: 'Passed', ...match })
+      await db().insert(memberVotes).values({ id: 'v1', userId: ada, billId: 'a190', position: 'support' })
+      await db().insert(notes).values({ id: 'n1', billId: 'solo', userId: ada, content: '<p>mine</p>' })
+      const qs = 'myBills=1&newMatches=1&status=Passed'
+      expect((await list(qs)).pagination.total).toBe(2)
+      const filter = { myBills: '1', newMatches: '1', status: ['Passed'] }
+      expect((await dismissFilter(filter)).dismissed).toBe(2)
+      expect((await list(qs)).pagination.total).toBe(0)
+      // Only the group with none of my bills is still a new match.
+      const left = (await list('newMatches=1')).bills
+      expect(left.map(r => r.group?.map(g => g.id).sort().join('+'))).toEqual(['c1+d1'])
+    })
+
     it('dismisses through a broad filter without sending the matching groups in one parameter', async () => {
       // 600 new-match pairs under one broad filter: a list of their keys would be about 25 KB, and on the
       // default list of a large instance several MB, over D1's 2 MB limit for one string.

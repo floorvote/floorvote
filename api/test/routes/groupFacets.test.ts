@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { seedBill } from '../helpers'
 import { bills, billCustomFieldValues, billSubjects, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
@@ -221,6 +222,28 @@ describe('facet counts count a companion group once', () => {
         expect((await facets('status=Passed')).myBillsCount).toBe(0)
         expect((await facets('status=Introduced')).myBillsCount).toBe(1)
         expect((await facets('')).myBillsCount).toBe(1)
+      })
+
+      it("reads the member's bills once per facets request, with or without the scope on", async () => {
+        await seed()
+        await vote('a190')
+        await db().insert(notes).values({ id: 'n1', billId: 'b1713', userId: ada, content: '<p>mine</p>' })
+        // loadMyBillIds reads the member's notes once, so the statements that read them count its runs.
+        const noteReads: string[] = []
+        const realPrepare = env.DB.prepare.bind(env.DB)
+        const spy = vi.spyOn(env.DB, 'prepare').mockImplementation((sql: string) => {
+          if (/from "notes"/i.test(sql)) noteReads.push(sql)
+          return realPrepare(sql)
+        })
+        try {
+          for (const qs of ['', 'myBills=1', 'myBills=1&status=Passed&unvoted=1']) {
+            noteReads.length = 0
+            await facets(qs)
+            expect([qs, noteReads.length]).toEqual([qs, 1])
+          }
+        } finally {
+          spy.mockRestore()
+        }
       })
 
       it('counts the my bills of an OR selection by the groups it reaches', async () => {

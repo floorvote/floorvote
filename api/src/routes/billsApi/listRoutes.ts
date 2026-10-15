@@ -209,7 +209,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
     // Threshold is only needed for the admin count or when the worklist filter is active.
-    const newMatchMinRelevance = (isAdmin || newMatchesActive) ? await getNewMatchMinRelevance(db) : 0
+    // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
+    // facets both use them, alongside the threshold's read.
+    const [newMatchMinRelevance, mine] = await Promise.all([
+      (isAdmin || newMatchesActive) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
+      loadMyBillsInGroups(db, currentUser.id),
+    ])
 
     const cfParamMap: Record<string, string[]> = {}
     for (const [key, value] of new URL(c.req.url).searchParams) {
@@ -226,6 +231,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const parts = await buildFilterParts(db, {
       statuses, stages, priorities, positionValues, sessions, years, states, tagFilters, subjectFilters, q, minRelevance,
       myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
+      myBillIds: mine,
       unvoted,
       newMatches: newMatchesActive ? '1' : undefined,
       newMatchMinRelevance,
@@ -380,7 +386,6 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const tagSet = await loadTaxonomyTagNameSet(db)
     // "Any tag" = a valid (in-taxonomy) tag.
     const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.groupTags}) > 0`
-    const mine = await loadMyBillsInGroups(db, currentUser.id)
     const voted = await loadVotedInGroups(db, currentUser.id)
     const m = billsAs('m')
     const me = billsAs('me')
