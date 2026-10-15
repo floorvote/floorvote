@@ -17,6 +17,7 @@ import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { requestEmailChange, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
+import { isSuperadminUser, SUPERADMIN_PROFILE_MANAGED_ERROR } from '../lib/superadminProfile'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -64,6 +65,10 @@ usersRouter.patch('/me', async (c) => {
   const currentUser = c.get('user')
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>))
   const raw = body && typeof body === 'object' ? body : {}
+  // A superadmin's name and title are kept in central and overwritten at each sign-in.
+  if (('name' in raw || 'subtitle' in raw) && await isSuperadminUser(c, currentUser.email)) {
+    return c.json({ error: SUPERADMIN_PROFILE_MANAGED_ERROR }, 403)
+  }
   const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
   const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 

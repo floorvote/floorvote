@@ -1,7 +1,7 @@
 import { env, SELF } from 'cloudflare:test'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { app } from '../../src/index'
-import { resetDb, applyMigrations, seedUser, seedSession, seedMagicLink } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedMagicLink } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { users, authEvents, sessions } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -44,6 +44,7 @@ function centralMockFor(opts: { superadminEmails?: string[] }): { fetch: (req: R
 }
 
 beforeEach(async () => {
+  stubFetch() // the sign-in email goes out through fetch
   await resetDb()
   await applyMigrations()
   // In-isolate superadmin allowlist cache (D3) persists across tests in the same
@@ -54,7 +55,7 @@ beforeEach(async () => {
 describe('POST /auth/magic-link — body size limit (D5)', () => {
   it('rejects an oversized request body with 413', async () => {
     const huge = JSON.stringify({ email: 'member@example.com', pad: 'x'.repeat(64 * 1024) })
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       { method: 'POST', body: huge, headers: { 'Content-Type': 'application/json' } },
       env,
@@ -64,7 +65,7 @@ describe('POST /auth/magic-link — body size limit (D5)', () => {
 
   it('accepts a normal-sized body', async () => {
     await seedUser({ email: 'member@example.com' })
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       { method: 'POST', body: JSON.stringify({ email: 'member@example.com' }), headers: { 'Content-Type': 'application/json' } },
       env,
@@ -78,7 +79,7 @@ describe('POST /auth/magic-link — rate limit + Turnstile gates', () => {
 
   it('returns 429 when the per-IP rate limiter is exceeded', async () => {
     await seedUser({ email: 'member@example.com' })
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       { method: 'POST', body: JSON.stringify({ email: 'member@example.com' }), headers: { 'Content-Type': 'application/json' } },
       { ...env, LOGIN_RATE_LIMITER: blockingLimiter },
@@ -88,7 +89,7 @@ describe('POST /auth/magic-link — rate limit + Turnstile gates', () => {
 
   it('returns 403 when Turnstile is configured but no token is sent (fail-closed)', async () => {
     await seedUser({ email: 'member@example.com' })
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       { method: 'POST', body: JSON.stringify({ email: 'member@example.com' }), headers: { 'Content-Type': 'application/json' } },
       { ...env, TURNSTILE_SECRET_KEY: 'test-secret' },
@@ -98,7 +99,7 @@ describe('POST /auth/magic-link — rate limit + Turnstile gates', () => {
 
   it('is unaffected when neither gate is configured (fail-open default)', async () => {
     await seedUser({ email: 'member@example.com' })
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       { method: 'POST', body: JSON.stringify({ email: 'member@example.com' }), headers: { 'Content-Type': 'application/json' } },
       env,
@@ -111,7 +112,7 @@ describe('POST /auth/magic-link', () => {
   it('returns 200 for a known email', async () => {
     await seedUser({ email: 'member@example.com' })
 
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -127,7 +128,7 @@ describe('POST /auth/magic-link', () => {
 
   it('returns 200 for an unknown email (no account disclosure)', async () => {
     const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: [] }) } as unknown as typeof env
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -143,7 +144,7 @@ describe('POST /auth/magic-link', () => {
 
   it('records a link_requested_unknown auth event for unregistered emails', async () => {
     const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: [] }) } as unknown as typeof env
-    await app.request(
+    await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -161,7 +162,7 @@ describe('POST /auth/magic-link', () => {
   })
 
   it('returns 400 for a missing email', async () => {
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -448,7 +449,7 @@ describe('POST /auth/magic-link — superadmin auto-provisioning', () => {
     expect(await db.select().from(users).where(eq(users.email, 'super@example.com')).get()).toBeUndefined()
 
     const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: ['super@example.com'] }) } as unknown as typeof env
-    const res = await app.request(
+    const res = await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -482,7 +483,7 @@ describe('POST /auth/magic-link — superadmin auto-provisioning', () => {
   it('does NOT create a user row for an unknown non-superadmin email', async () => {
     const db = getDb(env.DB)
     const testEnv = { ...env, CENTRAL: centralMockFor({ superadminEmails: [] }) } as unknown as typeof env
-    await app.request(
+    await appFetch(
       '/api/auth/magic-link',
       {
         method: 'POST',
@@ -693,7 +694,7 @@ describe('auth event logging — magic-link request', () => {
   it('records link_requested for a known user', async () => {
     const db = getDb(env.DB)
     const uid = await seedUser({ email: 'known@b.com' })
-    const res = await SELF.fetch('http://localhost/api/auth/magic-link', {
+    const res = await appFetch('http://localhost/api/auth/magic-link', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'known@b.com' }),
     })
@@ -709,7 +710,7 @@ describe('auth event logging — magic-link request', () => {
     const db = getDb(env.DB)
     const uid = await seedUser({ email: 'spammy@b.com' })
     for (let i = 0; i < 6; i++) {
-      await SELF.fetch('http://localhost/api/auth/magic-link', {
+      await appFetch('http://localhost/api/auth/magic-link', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: 'spammy@b.com' }),
       })
