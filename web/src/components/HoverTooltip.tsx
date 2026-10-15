@@ -2,6 +2,7 @@ import { useId, useState, useRef, useEffect, useLayoutEffect, type ReactNode, ty
 import { createPortal } from 'react-dom'
 import { SR_ONLY } from '../lib/textStyles'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
+import { color } from '../styles/tokens'
 
 export type Placement = 'top' | 'top-start' | 'top-end' | 'bottom' | 'bottom-start' | 'right'
 
@@ -74,7 +75,10 @@ interface HoverTooltipProps {
   // rather than a control. Makes the hover reachable and readable without a
   // pointer:
   //  - the term gets a tab stop (a focusable span wraps `children`), so
-  //    keyboard users reach the explainer by focusing it;
+  //    keyboard users reach the explainer by focusing it, and Escape hides it;
+  //  - the term gets a dotted underline, so it reads as having an explainer
+  //    without an ⓘ. The cursor stays the default arrow: a pointer would say
+  //    "click me", and FloorVote never uses the help cursor;
   //  - `text` is also rendered in a visually hidden span the term points to
   //    through aria-describedby, so screen readers get it persistently;
   //  - placement defaults to 'bottom' and maxWidth to 320 (both overridable);
@@ -275,13 +279,16 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
   const handlePointerLeave = () => { if (!pinnedRef.current) hide() }
   const handleFocus = () => show()
   const handleBlur = () => hide()
+  const handleKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Escape') hide()
+  }
 
   if (describing && !text) return <>{children}</>
 
   const trigger = describing && !describeOpts.interactive
     // Focusable on purpose: keyboard users reach the explainer by focusing the term.
     // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-    ? <span tabIndex={0} aria-describedby={describeId}>{children}</span>
+    ? <span tabIndex={0} aria-describedby={describeId} style={{ borderBottom: `1px dotted ${color.textMuted}` }}>{children}</span>
     : children
   const inner = <>{trigger}{portal && bubble ? createPortal(bubble, document.body) : bubble}</>
 
@@ -294,9 +301,6 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
         pinnedRef.current = true
         show()
       }
-    }
-    const handleKeyDown = (e: ReactKeyboardEvent) => {
-      if (e.key === 'Escape') hide()
     }
     return (
       <button
@@ -329,14 +333,18 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
     )
   }
 
+  // onKeyDown only catches Escape bubbling up from the focusable child, as
+  // onFocus/onBlur catch its focus; the wrapper is not a control of its own.
   const wrapper = block
     ? (
-      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur} onKeyDown={handleKeyDown}>
         {inner}
       </div>
     )
     : (
-      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur} onKeyDown={handleKeyDown}>
         {inner}
       </span>
     )

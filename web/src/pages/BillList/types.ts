@@ -92,6 +92,13 @@ export type FacetCounts = {
   position: Record<string, number>
   tags:     Record<string, number>
   subjects: Record<string, number>
+  /**
+   * Every state that has subjects (suppressed ones excluded), whatever filters
+   * are active, unlike `subjects`. Absent = not known yet.
+   */
+  subjectStates?: string[]
+  /** Every state the instance has bills in, whatever filters are active. Absent = not known yet. */
+  billStates?: string[]
   customFields: Record<string, Record<string, number>>
   myBillsCount: number
   newMatchesCount: number

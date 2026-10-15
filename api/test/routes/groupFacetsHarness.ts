@@ -3,6 +3,7 @@ import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
+import { clearBillStatesCache } from '../../src/lib/billStates'
 import {
   associationConfig, billCustomFieldValues, billSubjects, bills, customFieldDefinitions, memberVotes, notes, officialPositions,
 } from '../../src/db/schema'
@@ -17,6 +18,8 @@ export type Facets = {
   priority: Counts; position: Counts; tags: Counts; subjects: Counts
   customFields: Record<string, Counts>
   myBillsCount: number; newMatchesCount: number; unvotedCount: number; draftCount: number
+  // Unfiltered, per bill (#528): the states with subjects, and on * coverage the states with bills.
+  subjectStates: string[]; billStates?: string[]
 }
 
 let cookie: string
@@ -39,6 +42,8 @@ export async function group(...ids: string[]) {
 }
 export async function reset() {
   await resetDb()
+  // The states-with-bills list is cached per tenant across requests; the database it read is gone.
+  clearBillStatesCache()
   await applyMigrations()
   ada = await seedUser({ name: 'ada', email: 'ada@example.com', role: 'admin' })
   cookie = `session=${await seedSession(ada)}`

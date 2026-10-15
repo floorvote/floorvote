@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
-import { bills, customFieldDefinitions } from '../../db/schema'
+import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
+import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
@@ -254,15 +255,29 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       .all()
     const hasDrafts = hasDraftRow !== undefined
 
-    if (parts.noMatch) {
-      return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
-    }
-
     // Loaded unconditionally (not just when a `subject` param is present): the
     // subjects facet's own counts must omit suppressed states even with no
     // active subject filter, and a suppressed value in the filter must not
     // narrow the other dimensions' counts either (see filterSuppressedSubjects).
     const suppressedSubjectStates = await loadSuppressedSubjectStates(db)
+
+    // Which states have subjects at all, with no filter applied (a state-leading
+    // index makes this a cheap skip-scan). The `subjects` facet below is scoped
+    // by the other active filters, so it can't tell the web app "this state has
+    // none" from "a filter hid it". Suppressed states count as having none.
+    // Counted per bill, not per companion group: a state is in the list when
+    // any bill there has subjects, whichever bill stands for its group's row.
+    const subjectStates = (await db.selectDistinct({ state: billSubjects.state }).from(billSubjects).all())
+      .map(r => r.state)
+      .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
+      .sort()
+    // Every state the instance has bills in, for `*` coverage; absent on an
+    // explicit list, and cached per tenant (lib/billStates.ts). Per bill too.
+    const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
+
+    if (parts.noMatch) {
+      return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
+    }
 
     // The list's filter in full: the current result, which myBillsCount, newMatchesCount, unvotedCount,
     // draftCount, and an OR facet's resulting total are counted within.
@@ -492,6 +507,8 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       position: positionCountsOut,
       tags: tagCountsOut,
       subjects: subjectCounts,
+      subjectStates,
+      billStates,
       customFields,
       myBillsCount,
       newMatchesCount,

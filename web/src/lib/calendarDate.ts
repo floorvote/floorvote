@@ -22,6 +22,14 @@ export function eventDateLabel(iso: string): { label: string; isToday: boolean }
   return { label: isToday ? formatTodayHeader(iso) : formatDateHeader(iso), isToday }
 }
 
+// "Mar 2026" — month + year, for a date-only string such as a referral date.
+export function formatMonthYear(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ''
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
 // "Jun 9" — month + day, for compact date stamps (e.g. change-history tooltips).
 // Accepts a date-only string or a full timestamp.
 export function formatMonthDay(iso: string): string {

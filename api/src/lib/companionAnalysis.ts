@@ -2,9 +2,21 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { bills } from '../db/schema'
 import { centralFetch } from './centralFetch'
 import { inGroupOf } from './companionGroups'
-import { nowDb } from './dbTime'
+import { nowDb, toDbTs } from './dbTime'
+import { HEAL_MIN_AGE_MS } from './healStalledAi'
 import { isHandle, parseHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
+
+/**
+ * Companion analyses a group can have queued or running at once, one model call each.
+ *
+ * Real groups are a handful of bills, so this never binds on them. It bounds a pathological one (a
+ * long chain of identical bills, a vocabulary edit that joins many at once), which would otherwise
+ * queue a model call for every unmatched member from a single delivery. The members it leaves
+ * stay waiting, and the next delivery of the group queues more as the others finish (see
+ * pullCompanions), so a large group is analyzed in full at this many at a time and nothing is dropped.
+ */
+export const MAX_COMPANION_ANALYSES_PER_DELIVERY = 10
 
 /**
  * Companions that didn't match (see **Pulled companion** in CONTEXT.md).
@@ -26,6 +38,10 @@ import type { AppDb, Env, TenantQueueMessage } from '../types'
  *   `groupAnalysis` message. It is claimed first, by stamping `ai_attempted_at`
  *   on a bill where it's null, so deliveries racing each other queue it once
  *   and a failed attempt isn't repeated here. The AI heal retries it from there.
+ *   No more than MAX_COMPANION_ANALYSES_PER_DELIVERY are queued or running in the
+ *   group at once: those claimed within the last hour and not yet done count, so
+ *   the rest wait unclaimed. Each finished analysis is itself a delivery of a
+ *   group member, and queues the next one then.
  * - It doesn't: ask central to fetch the bill from its provider, which sends
  *   it back to every instance linked to it. That delivery carries the text,
  *   and so queues the analysis. Central fetches only because a tracked
@@ -45,15 +61,22 @@ export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessag
     matchType: bills.matchType,
     aiProcessedAt: bills.aiProcessedAt,
     aiSkipReason: bills.aiSkipReason,
+    aiAttemptedAt: bills.aiAttemptedAt,
     textR2Key: bills.textR2Key,
   }).from(bills).where(inGroupOf(bills.id, delivered.id)).all()
   if (!members.some(m => m.matchType !== null)) return
 
-  const waiting = members.filter(m => m.matchType === null && m.aiProcessedAt === null && m.aiSkipReason === null && isHandle(m.externalId))
+  const waiting = members
+    .filter(m => m.matchType === null && m.aiProcessedAt === null && m.aiSkipReason === null && isHandle(m.externalId))
+    .sort((a, b) => a.externalId!.localeCompare(b.externalId!))
+  // An analysis claimed within the heal's age floor is queued or running. An older one is stalled, and the heal's.
+  const stalledBefore = toDbTs(new Date(Date.now() - HEAL_MIN_AGE_MS))
+  let room = MAX_COMPANION_ANALYSES_PER_DELIVERY - waiting.filter(m => m.aiAttemptedAt !== null && m.aiAttemptedAt >= stalledBefore).length
   const toFetch: number[] = []
   for (const bill of waiting) {
     if (bill.textR2Key) {
-      await queueAnalysis(env, db, bill.id, bill.externalId!)
+      if (bill.aiAttemptedAt !== null || room <= 0) continue
+      if (await queueAnalysis(env, db, bill.id, bill.externalId!)) room--
     } else if (delivered.matchType !== null || (bill.id === delivered.id && (msg.stubOnly || msg.metadataOnly))) {
       toFetch.push(parseHandle(bill.externalId)!)
     }
@@ -61,18 +84,19 @@ export async function pullCompanions(env: Env, db: AppDb, msg: TenantQueueMessag
   if (toFetch.length > 0) await requestFetch(env, toFetch)
 }
 
-/** Queue the bill's analysis once: only the delivery that stamps its first attempt does. */
-async function queueAnalysis(env: Env, db: AppDb, billId: string, externalId: string): Promise<void> {
-  if (!env.BILL_QUEUE) return
+/** Queue the bill's analysis once: only the delivery that stamps its first attempt does, and it returns true. */
+async function queueAnalysis(env: Env, db: AppDb, billId: string, externalId: string): Promise<boolean> {
+  if (!env.BILL_QUEUE) return false
   const claimed = await db.update(bills).set({ aiAttemptedAt: nowDb() })
     .where(and(eq(bills.id, billId), isNull(bills.aiAttemptedAt))).run()
-  if ((claimed.meta?.changes ?? 0) !== 1) return
+  if ((claimed.meta?.changes ?? 0) !== 1) return false
   try {
     await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: externalId, groupAnalysis: true } satisfies TenantQueueMessage)
   } catch (err) {
     // The attempt is stamped, so the hourly AI heal picks the bill up.
     console.error(`[companion-analysis] could not queue the analysis of ${externalId}:`, err)
   }
+  return true
 }
 
 async function requestFetch(env: Env, centralBillIds: number[]): Promise<void> {

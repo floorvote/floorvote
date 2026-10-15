@@ -9,8 +9,9 @@ name: CI (docs)
 # nothing an author could do but ask an admin to bypass.
 #
 # This declares the same job names over exactly the paths ci.yml ignores, so the
-# contexts always report. There is genuinely nothing to build or test in a prose
-# change; the point is to satisfy the ruleset, not to pretend work happened.
+# contexts always report. There is nothing to build or test in a prose change,
+# so most jobs only satisfy the ruleset. check-scripts is the exception: it runs
+# the docs link test.
 #
 # INVARIANT: the `paths` below must stay the exact complement of ci.yml's
 # `paths-ignore`, and the job names here must match ci.yml's. If you add, rename
@@ -49,7 +50,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "docs-only change — no web/ code touched."
+  # Not an echo: this is the one job here that does real work, because the docs
+  # link check (scripts/lib/docs-links.test.ts) is exactly what a docs-only
+  # change can break. It runs only that test, so the job stays cheap.
   check-scripts:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "docs-only change — no scripts/ touched."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run lib/docs-links.test.ts
+        working-directory: scripts

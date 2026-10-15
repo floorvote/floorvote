@@ -519,12 +519,18 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
 // Bounded, since a tenant asks on every delivery of a tracked bill and the fetch's own
 // notification can make another tenant ask for the first bill back:
 // - A bill fetched within FETCH_COOLDOWN_HOURS is skipped, since that fetch already notified
-//   every tenant linked to it. Queuing stamps texts_fetched_at (after the send), so two tenants asking for
-//   each other's bills end after one round.
+//   every tenant linked to it. texts_fetched_at is the ingest's, stamped once a fetch succeeds.
+// - A bill asked for within REQUEST_COOLDOWN_HOURS is skipped too. Queuing stamps
+//   texts_requested_at (after the send), a lock on asking again and nothing more: stamping
+//   texts_fetched_at here would read a fetch that failed, or hasn't run yet, as "central looked and
+//   found no texts" for a day. So a fetch that never completes is asked for again after an hour, and
+//   two tenants asking for each other's bills end after one round, because the first fetch's ingest
+//   stamps texts_fetched_at.
 // - A bill whose texts central already holds is queued with skipFetch, which needs no
 //   provider call. Only a bill with no texts costs a getBill against the shared monthly quota.
 // The count is capped at REPROCESS_LIMIT, as promote-bills is.
 const FETCH_COOLDOWN_HOURS = 24
+const REQUEST_COOLDOWN_HOURS = 1
 
 tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
@@ -536,29 +542,31 @@ tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c)
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
 
-  const cutoff = new Date(Date.now() - FETCH_COOLDOWN_HOURS * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const fetchedCutoff = hoursAgo(FETCH_COOLDOWN_HOURS)
+  const requestedCutoff = hoursAgo(REQUEST_COOLDOWN_HOURS)
   const due: number[] = []
   const held = new Set<number>()
   for (let i = 0; i < requested.length; i += 90) {
     const part = requested.slice(i, i + 90)
-    const rows = await db.select({ billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt })
+    const rows = await db.select({ billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt, requestedAt: schema.bills.textsRequestedAt })
       .from(schema.billTenants)
       .leftJoin(schema.bills, eq(schema.bills.billId, schema.billTenants.billId))
       .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
       .all()
-    due.push(...rows.filter(r => !r.fetchedAt || r.fetchedAt <= cutoff).map(r => r.billId))
+    due.push(...rows.filter(r => (!r.fetchedAt || r.fetchedAt <= fetchedCutoff) && (!r.requestedAt || r.requestedAt <= requestedCutoff)).map(r => r.billId))
     const withTexts = await db.selectDistinct({ billId: schema.billTexts.billId }).from(schema.billTexts)
       .where(inArray(schema.billTexts.billId, part)).all()
     for (const r of withTexts) held.add(r.billId)
   }
   due.sort((a, b) => a - b)
 
-  // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill for a day.
-  const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
+  // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill from the next ask.
+  const now = nowDb()
   for (let i = 0; i < due.length; i += 90) {
     const batch = due.slice(i, i + 90)
     await c.env.INGESTOR_QUEUE.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
-    await db.update(schema.bills).set({ textsFetchedAt: now }).where(inArray(schema.bills.billId, batch))
+    await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, batch))
   }
 
   return c.json({ ok: true, tenantId, queued: due.length })
