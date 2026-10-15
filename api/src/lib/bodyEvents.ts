@@ -101,7 +101,8 @@ export async function readStateCapabilities(db: AppDb): Promise<{ data: Record<s
 /** The address central last sent for its admin dashboard, or null before it has. */
 export async function readCentralDashboardUrl(db: AppDb): Promise<string | null> {
   const row = await db.select().from(associationConfig).where(eq(associationConfig.key, DASHBOARD_URL_KEY)).get()
-  return httpUrl(row?.value)
+  // Without trailing slashes, so a forked central that sends one can't make `${url}/profile` a `//profile`.
+  return httpUrl(row?.value)?.replace(/\/+$/, '') ?? null
 }
 
 /** The longest name and note an instance shows, so a bad answer can't fill the footer. */

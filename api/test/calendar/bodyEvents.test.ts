@@ -356,6 +356,12 @@ describe('central dashboard address', () => {
     expect(await configDashboardUrl()).toBe('https://admin.example.com')
   })
 
+  it('drops a trailing slash, so a link built from it has no double slash', async () => {
+    central.dashboardUrl = 'https://admin.example.com//'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
   it('ignores an address that is not an http(s) URL, since the page renders it as a link', async () => {
     central.dashboardUrl = 'javascript:alert(1)'
     await sync()
