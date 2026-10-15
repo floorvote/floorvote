@@ -44,7 +44,7 @@ vi.mock('../context/DemoContext', () => ({
 }))
 vi.mock('../context/SidebarRefreshContext', () => ({ useSidebarRefresh: () => vi.fn() }))
 vi.mock('../context/NotificationsContext', () => ({
-  useNotifications: () => ({ unreadCount: 0, mentions: [], refresh: vi.fn(async () => {}) }),
+  useNotifications: () => ({ unreadCount: 0, notifications: [], refresh: vi.fn(async () => {}) }),
 }))
 vi.mock('../hooks/usePolling', () => ({ usePolling: () => {} }))
 vi.mock('../hooks/usePageTitle', () => ({ usePageTitle: () => {} }))

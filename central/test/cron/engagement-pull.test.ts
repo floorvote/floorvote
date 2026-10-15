@@ -365,6 +365,60 @@ describe('latency probe + DB-health alert', () => {
   })
 })
 
+// A decommissioned tenant is marked active = 0 (scripts/teardown-instance.sh)
+// but its row stays. Its hostname may now redirect elsewhere or not resolve, so
+// probing it would fail every day and page the operator about a tenant they
+// already retired.
+describe('inactive tenants', () => {
+  async function seedWithInactive() {
+    await seedTwoTenants()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.tenants).values(
+      { tenantId: 'retired', name: 'Retired', apiUrl: 'https://retired.example/api', stateCoverage: '["RI"]', active: false } as any,
+    )
+  }
+
+  it('does not probe an inactive tenant', async () => {
+    await seedWithInactive()
+    const fetchMock = vi.fn(async () => fakeResponse(FULL_METRICS))
+    vi.stubGlobal('fetch', fetchMock)
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats({ ...TEST_ENV, D_LATENCY_THRESHOLD_MS: '5000' }, db)
+    const urls = fetchMock.mock.calls.map((c: any[]) => String(c[0]))
+    expect(urls.some((u) => u.includes('retired.example'))).toBe(false)
+    expect(urls.filter((u) => u.includes('ri.example') || u.includes('acme.example')).length).toBe(2)
+  })
+
+  it('writes no row for an inactive tenant and still writes the active ones', async () => {
+    await seedWithInactive()
+    vi.stubGlobal('fetch', vi.fn(async () => fakeResponse(FULL_METRICS)))
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats({ ...TEST_ENV, D_LATENCY_THRESHOLD_MS: '5000' }, db)
+    const rows = await db.select().from(schema.tenantStats).all()
+    expect(rows.map((r) => r.tenantId).sort()).toEqual(['acme', 'ri'])
+  })
+
+  it('does not alert about an inactive tenant whose host would fail', async () => {
+    await seedWithInactive()
+    vi.stubGlobal('fetch', vi.fn(async (url: any) =>
+      String(url).includes('retired.example')
+        ? new Response('Not authenticated', { status: 401 })
+        : fakeResponse(FULL_METRICS)))
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats({ ...TEST_ENV, D_LATENCY_THRESHOLD_MS: '5000' }, db)
+    expect(mockSendOpsAlert).not.toHaveBeenCalled()
+  })
+
+  it('does not update lastSeenAt on an inactive tenant', async () => {
+    await seedWithInactive()
+    vi.stubGlobal('fetch', vi.fn(async () => fakeResponse(FULL_METRICS)))
+    const db = drizzle(env.DB, { schema })
+    await pullEngagementStats({ ...TEST_ENV, D_LATENCY_THRESHOLD_MS: '5000' }, db)
+    const t = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, 'retired')).get()
+    expect(t?.lastSeenAt ?? null).toBeNull()
+  })
+})
+
 describe('shouldRunEngagementPull', () => {
   it('returns true at UTC hour 6', () => {
     const d = new Date('2026-05-29T06:00:00Z')

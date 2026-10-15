@@ -2,7 +2,7 @@
 /**
  * verify-timestamp-writes.ts (G1) — walks api/src + central/src and fails (exit 1)
  * if `new Date().toISOString()` is used where it would land in a stored timestamp
- * column. Run from the nightly repo-health routine. Usage: npx tsx scripts/verify-timestamp-writes.ts
+ * column. Runs in CI (check-scripts job). Usage: npm run verify:timestamps
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,7 +20,7 @@ function walk(dir: string, acc: string[] = []): string[] {
 }
 
 function main(): void {
-  const repoRoot = path.resolve(__dirname, '..')
+  const repoRoot = path.resolve(import.meta.dirname, '..')
   const violations = ROOTS.flatMap((root) =>
     walk(path.join(repoRoot, root)).flatMap((f) =>
       findViolations(path.relative(repoRoot, f), fs.readFileSync(f, 'utf8'))

@@ -1,9 +1,10 @@
 /// <reference types="vite/client" />
 import { env, applyD1Migrations, reset } from 'cloudflare:test'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '../src/db/client'
 import { splitStatements } from '../../shared/sqlStatements'
 import { generateToken, hashToken } from '../src/lib/crypto'
-import { users, sessions, magicLinks, bills, billTexts, roles, userRoles, comments, commentMentions, calendarEvents, authEvents } from '../src/db/schema'
+import { users, sessions, magicLinks, bills, billTexts, roles, userRoles, comments, notifications, calendarEvents, authEvents } from '../src/db/schema'
 
 // Every file in api/migrations/, so a new migration is applied by the tests the
 // moment it lands, with no list to update. test/migrations/allApplied.test.ts
@@ -50,6 +51,7 @@ export async function seedUser(overrides?: {
   subtitle?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
+  emailRepliesEnabled?: boolean
   deactivatedAt?: string | null
   invitedBy?: string | null
 }): Promise<string> {
@@ -63,6 +65,7 @@ export async function seedUser(overrides?: {
     subtitle: overrides?.subtitle ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
+    emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
     invitedBy: overrides?.invitedBy ?? null,
   })
@@ -246,6 +249,23 @@ export async function seedComment(
   return id
 }
 
+/**
+ * The stored mention notifications, flattened to the shape the old
+ * comment_mentions table had, for tests that check who a comment reached and how.
+ */
+export async function mentionRecords(commentId?: string): Promise<Array<{
+  id: string; commentId: string | null; userId: string; sourceType: 'user' | 'role' | 'everyone'; sourceId: string; readAt: string | null
+}>> {
+  const rows = await getDb(env.DB).select().from(notifications)
+    .where(commentId ? and(eq(notifications.kind, 'mention'), eq(notifications.commentId, commentId)) : eq(notifications.kind, 'mention'))
+    .all()
+  return rows.map(r => {
+    const data = JSON.parse(r.data) as { sourceType: 'user' | 'role' | 'everyone'; sourceId: string }
+    return { id: r.id, commentId: r.commentId, userId: r.recipientId, sourceType: data.sourceType, sourceId: data.sourceId, readAt: r.readAt }
+  })
+}
+
+/** Seeds a mention notification for `userId` on a comment, from the comment's author. */
 export async function seedCommentMention(
   commentId: string,
   userId: string,
@@ -257,12 +277,16 @@ export async function seedCommentMention(
 ): Promise<string> {
   const db = getDb(env.DB)
   const id = crypto.randomUUID()
-  await db.insert(commentMentions).values({
+  const comment = await db.select({ billId: comments.billId, userId: comments.userId }).from(comments).where(eq(comments.id, commentId)).get()
+  if (!comment) throw new Error(`seedCommentMention: no comment ${commentId}`)
+  await db.insert(notifications).values({
     id,
+    recipientId: userId,
+    kind: 'mention',
+    billId: comment.billId,
     commentId,
-    userId,
-    sourceType: overrides?.sourceType ?? 'user',
-    sourceId: overrides?.sourceId ?? userId,
+    actorId: comment.userId,
+    data: JSON.stringify({ sourceType: overrides?.sourceType ?? 'user', sourceId: overrides?.sourceId ?? userId }),
     readAt: overrides?.readAt ?? null,
     createdAt: new Date().toISOString(),
   })
@@ -298,7 +322,7 @@ export async function seedCalendarEvent(
 export async function seedAuthEvent(
   userId: string,
   event: string,
-  overrides: { email?: string; reason?: string; linkType?: string; provider?: string; messageId?: string; createdAt?: string } = {},
+  overrides: { email?: string; reason?: string; linkType?: string; provider?: string; messageId?: string; createdAt?: string; actorId?: string } = {},
 ): Promise<void> {
   const db = getDb(env.DB)
   await db.insert(authEvents).values({
@@ -310,6 +334,7 @@ export async function seedAuthEvent(
     linkType: overrides.linkType ?? null,
     provider: overrides.provider ?? null,
     messageId: overrides.messageId ?? null,
+    actorId: overrides.actorId ?? null,
     ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
   })
 }

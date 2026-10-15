@@ -13,6 +13,7 @@ import { FilterSheet } from '../../components/FilterSheet'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { useSidebarRefresh } from '../../context/SidebarRefreshContext'
 import { useDemo } from '../../context/DemoContext'
+import { useConfig } from '../../context/ConfigContext'
 import { CARD } from '../../lib/cardStyle'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billUrl } from '../../lib/sessionSlug'
@@ -48,6 +49,22 @@ export const knownStatuses: Set<string> = new Set()
 export const knownTagsCache: Set<string> = new Set()
 
 /**
+ * The Subject filter's hover text. The caveat about legislatures that assign
+ * no subjects appears only when a covered state has none, and never names one.
+ * `*` coverage means the states the instance has bills in (`billStates`). A
+ * state has subjects if `subjectStates` lists it: every state with any subject,
+ * suppressed ones excluded, independent of the active filters, unlike the
+ * subject facet, which a state or search filter can empty of a state that does
+ * have subjects. Not known yet means no caveat.
+ */
+function subjectFilterTooltip(coverage: string[], subjectStates?: string[], billStates?: string[]): string {
+  const base = 'Filter by legislature-assigned subject.'
+  if (!subjectStates) return base
+  const covered = coverage.includes('*') ? (billStates ?? []) : coverage
+  return covered.some(s => !subjectStates.includes(s)) ? `${base} Not all legislatures assign subjects.` : base
+}
+
+/**
  * Read-only peek at the warmed first-page cache. The cache stays module-private
  * on purpose; this exists because "billListLoader's fast path warmed it" has no
  * other observable effect short of rendering the whole list, and that fast path
@@ -66,7 +83,7 @@ export function peekBillsListCache(): { params: string; page: BillsListPage } | 
 // cancels outlives its navigation and keeps hitting a struggling API forever.
 export async function prefetchBills(targetUrl: string, opts?: { signal?: AbortSignal }): Promise<void> {
   const search = new URLSearchParams(targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?') + 1) : '')
-  const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE)
+  const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE, cachedCustomFieldDefs ?? [])
   const data = await apiFetchForLoader<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`, opts)
   billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
 }
@@ -145,6 +162,11 @@ export function BillList() {
     return initial
   })
 
+  // Which filters the applied facet reply was computed for. The bulk dismiss acts
+  // on the filters as they stand when clicked, so its count is only shown while
+  // this matches them (see filterNewMatchCount below).
+  const [facetCountsKey, setFacetCountsKey] = useState<string | null>(null)
+
   const [positionVocabulary, setPositionVocabulary] = useState<string[]>(['Support', 'Oppose', 'Amend', 'Monitor', 'No Position'])
   const [tagTaxonomy, setTagTaxonomy] = useState<string[]>([])
   const [orgNoun, setOrgNoun] = useState<string>(DEFAULT_ORG_NOUN)
@@ -154,6 +176,10 @@ export function BillList() {
 
   const hasFetchedOnce = useRef(false)
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>(cachedCustomFieldDefs ?? [])
+  // Read by fetchBills for its cache key without joining its deps: defs arriving
+  // must not refetch on their own (a cf filter's key change already does).
+  const customFieldDefsRef = useRef(customFieldDefs)
+  customFieldDefsRef.current = customFieldDefs
 
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin' || user?.role === 'owner'
@@ -179,6 +205,7 @@ export function BillList() {
   // surfaces gate State (multi-state) and New matches (admin-only) through
   // this same context so they can't drift on which dimensions appear.
   const stageUseful = useStageFilterUseful()
+  const { config } = useConfig()
   const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, stageUseful, stageActive: f.filterStages.length > 0 }
 
   // Relevance slider: track the thumb locally so it moves instantly while
@@ -207,7 +234,9 @@ export function BillList() {
   // --- bulk selection (hook) ---
   const { selection, isSelectionMode, handleToggleSelect, handleSelectAllFilters, handleClearSelection } = useBulkActions({
     sortedRef,
-    resetDeps: [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir],
+    // currentFilters is memoized over every filter dimension (custom fields
+    // included), so a new dimension added there resets the selection too.
+    resetDeps: [f.currentFilters, sortCol, sortDir],
   })
 
   const fetchBills = useCallback(async (nextPage: number, append: boolean) => {
@@ -216,7 +245,7 @@ export function BillList() {
       years: f.filterYears, states: f.filterStates, minRelevance: f.filterMinRelevance,
       myBills: f.myBills, unvoted: f.unvotedOnly, newMatches: f.newMatches, drafts: f.drafts, matchAny: f.matchAny,
       tags: f.selectedTags, subjects: f.selectedSubjects, search: f.search, sortCol, sortDir, cfFilters: f.cfFilters,
-    }, nextPage, PAGE_SIZE)
+    }, nextPage, PAGE_SIZE, customFieldDefsRef.current)
     const hitCache = nextPage === 1 && !append && !hasFetchedOnce.current && billsListCache?.params === paramsStr
     if (hitCache) {
       setAllBills(billsListCache!.page.bills)
@@ -253,6 +282,8 @@ export function BillList() {
     }
   }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, sortCol, sortDir, f.cfFilters])
 
+  const facetSeqRef = useRef(0)
+  const filtersKey = JSON.stringify(f.currentFilters)
   const fetchFacets = useCallback(async () => {
     const params = new URLSearchParams()
     if (f.filterStatuses.length > 0) f.filterStatuses.forEach(s => params.append('status', s))
@@ -273,15 +304,21 @@ export function BillList() {
     for (const [key, values] of Object.entries(f.cfFilters)) {
       values.forEach(v => params.append(`cf_${key}`, v))
     }
+    // Only the newest request may write the counts. The dismiss button acts on
+    // the filters as they stand now, so a slower reply to an earlier request
+    // (a search cleared before its reply returned) must not overwrite them.
+    const seq = ++facetSeqRef.current
     try {
       const data = await apiFetch<FacetCounts>(`/bills/facets?${params}`)
+      if (seq !== facetSeqRef.current) return
       cachedFacetCounts = data
       updateKnownStates(data)
       setFacetCounts(data)
+      setFacetCountsKey(filtersKey)
     } catch {
       // non-fatal — leave previous counts in place
     }
-  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters])
+  }, [f.filterStatuses, f.filterStages, f.filterPriorities, f.filterPositions, f.filterYears, f.filterStates, f.filterMinRelevance, f.myBills, f.unvotedOnly, f.newMatches, f.drafts, f.matchAny, f.selectedTags, f.selectedSubjects, f.search, f.cfFilters, filtersKey])
 
   // Infinite scroll — fire next page fetch when the sentinel enters the viewport
   useEffect(() => {
@@ -488,11 +525,12 @@ export function BillList() {
 
   // Triage dismiss already hit the API in NewMatchTriageControl. Mark the bill
   // dismissed locally so the row's triage control reverts to a plain priority
-  // select, and refresh facets so the "New matches" count drops.
+  // select, and refresh facets and the sidebar so both "new" counts drop.
   const handleTriageDismiss = useCallback((billId: string) => {
     setAllBills(prev => prev.map(b => b.id === billId ? { ...b, triagedAt: new Date().toISOString() } : b))
     fetchFacets()
-  }, [fetchFacets])
+    refreshSidebar()
+  }, [fetchFacets, refreshSidebar])
 
   const selectedBills = useMemo(() => {
     if (selection.mode !== 'ids') return []
@@ -523,6 +561,7 @@ export function BillList() {
       billsListCache = null
       void fetchBills(1, false)
       void fetchFacets()
+      refreshSidebar()
       return
     }
     const idSet = new Set(updatedIds)
@@ -950,7 +989,7 @@ export function BillList() {
           {f.subjectGroups.length > 0 && (
             <HoverTooltip
               maxWidth={280}
-              text="Filter by legislature-assigned subject. (Not all legislatures assign subjects, and those that do might assign them inconsistently.)"
+              text={subjectFilterTooltip(config?.states ?? [], facetCounts.subjectStates, facetCounts.billStates)}
             >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}
@@ -1224,7 +1263,10 @@ export function BillList() {
           positionVocabulary={positionVocabulary}
           customFieldDefs={customFieldDefs.filter((fld): fld is typeof fld & { type: 'binary' | 'dropdown' } => fld.type === 'binary' || fld.type === 'dropdown')}
           currentFilters={f.currentFilters}
-          filterNewMatchCount={filterCounts.newMatchesCount}
+          // 0 hides the dismiss button until the reply for the current filters lands
+          // (filter change in flight, or its request failed): never offer a count
+          // for filters other than the ones the dismiss request will carry.
+          filterNewMatchCount={facetCountsKey === filtersKey ? filterCounts.newMatchesCount : 0}
           selectedBills={selectedBills}
           onClearSelection={handleClearSelection}
           onApplied={handleBulkApplied}

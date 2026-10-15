@@ -59,7 +59,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // Step 1: Truncate engagement tables (order respects FK constraints)
   await db.batch([
     db.prepare('DELETE FROM comment_reactions'),
-    db.prepare('DELETE FROM comment_mentions'),  // must come before comments (no FK cascade on this table)
+    db.prepare('DELETE FROM notifications'),  // before comments, so the reset never leans on the FK cascade
     db.prepare('DELETE FROM comments'),
     db.prepare('DELETE FROM member_votes'),
     db.prepare('DELETE FROM official_positions'),
@@ -238,12 +238,15 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     ).bind(c.id, c.externalId, c.userId, c.content, daysAgoDb(c.daysAgo), c.externalId),
   ))
 
-  // comment_mentions — one row per (comment, notified user). Guarded on the
-  // comment existing, which itself is guarded on the bill existing.
+  // Mention notifications — one row per (comment, notified user), unread, from
+  // the comment's author. Guarded on the comment existing, which itself is
+  // guarded on the bill existing. The seed's literal ids are kept verbatim,
+  // which is what the browser's demo read state (web/src/lib/demoReadState.ts)
+  // keys on.
   await batch(seed.mentions.map((m) =>
     db.prepare(
-      `INSERT OR IGNORE INTO comment_mentions (id, comment_id, user_id, source_type, source_id, created_at)
-       SELECT ?, id, ?, ?, ?, ?
+      `INSERT OR IGNORE INTO notifications (id, recipient_id, kind, bill_id, comment_id, actor_id, data, created_at)
+       SELECT ?, ?, 'mention', bill_id, id, user_id, json_object('sourceType', ?, 'sourceId', ?), ?
        FROM comments WHERE id = ? LIMIT 1`
     ).bind(m.id, m.userId, m.sourceType, m.sourceId, daysAgoDb(m.daysAgo), m.commentId),
   ))

@@ -9,22 +9,35 @@ import { isValidEmail, trimEmailPunctuation } from '../../../shared/email'
 // Messages the server also sends, so a refusal reads the same whichever side
 // catches it.
 const INVALID = 'Invalid email address'
-const UNCHANGED = "That's already their address. Check it for a typo, or use Resend invite to send to it again."
+const UNCHANGED_INVITE = "That's already their address. Check it for a typo, or use Resend invite to send to it again."
+const UNCHANGED_ACTIVE = "That's already their address. Check it for a typo."
 
 interface ChangeEmailDialogProps {
   member: { id: string; email: string }
+  /**
+   * A pending invite's address is fixed on the spot and a new invite goes out.
+   * An active member's change is only asked for: it takes effect when they
+   * confirm it from the new address.
+   */
+  pendingInvite: boolean
   onClose: () => void
-  /** Called with the stored address once the change is saved and the new invite is on its way. */
-  onChanged: (email: string) => void
+  /**
+   * Called once the request is accepted. For a pending invite the address is
+   * saved and the new invite is on its way. For an active member (`pending`)
+   * a confirmation is on its way to the new address and nothing has changed yet.
+   */
+  onChanged: (email: string, pending: boolean) => void
 }
 
 /**
- * Fix a pending invite's address and send a new invite in one step. The
- * address is cleaned the way the invite paste parser cleans one (stray edge
+ * Fix a pending invite's address and send a new invite in one step, or ask to
+ * change an active member's address, which waits for the new address to confirm
+ * it. The address is cleaned the way the invite paste parser cleans one (stray edge
  * punctuation, then lowercase) and checked with the same shared rule, so an
  * obviously bad or unchanged address never reaches the server.
  */
-export function ChangeEmailDialog({ member, onClose, onChanged }: ChangeEmailDialogProps) {
+export function ChangeEmailDialog({ member, pendingInvite, onClose, onChanged }: ChangeEmailDialogProps) {
+  const unchanged = pendingInvite ? UNCHANGED_INVITE : UNCHANGED_ACTIVE
   const [value, setValue] = useState(member.email)
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
@@ -39,16 +52,16 @@ export function ChangeEmailDialog({ member, onClose, onChanged }: ChangeEmailDia
     if (gate.refuse()) return
     const email = trimEmailPunctuation(value).toLowerCase()
     if (!isValidEmail(email)) { setError(INVALID); return }
-    if (email === member.email.trim().toLowerCase()) { setError(UNCHANGED); return }
+    if (email === member.email.trim().toLowerCase()) { setError(unchanged); return }
 
     setSending(true)
     setError(null)
     try {
-      const res = await apiFetch<{ ok: true; email: string }>(`/admin/members/${member.id}/change-email`, {
+      const res = await apiFetch<{ ok: true; email: string; pending?: boolean }>(`/admin/members/${member.id}/change-email`, {
         method: 'POST',
         body: JSON.stringify({ email }),
       })
-      onChanged(res.email ?? email)
+      onChanged(res.email ?? email, res.pending === true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't change the address. Try again.")
       setSending(false)
@@ -102,7 +115,9 @@ export function ChangeEmailDialog({ member, onClose, onChanged }: ChangeEmailDia
           </p>
         )}
         <p style={{ ...HELPER_TEXT, margin: '8px 0 0' }}>
-          The old invite link will stop working, and a new invite goes to this address.
+          {pendingInvite
+            ? 'The old invite link will stop working, and a new invite goes to this address.'
+            : 'We email this address a link to confirm the change, and tell the current address. Nothing changes until it is confirmed. When it is, the member is signed out everywhere and uses the new address to sign in.'}
         </p>
 
         <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
@@ -116,7 +131,7 @@ export function ChangeEmailDialog({ member, onClose, onChanged }: ChangeEmailDia
               opacity: gate.disabled ? 0.5 : 1,
             }}
           >
-            {sending ? 'Sending…' : 'Send new invite'}
+            {sending ? 'Sending…' : pendingInvite ? 'Send new invite' : 'Send confirmation'}
           </button>
         </div>
         {/* Below the button row, never in it: revealing it must not move the button. */}

@@ -136,7 +136,9 @@ describe('the fork upgrade rehearsal', () => {
     expect(own.appliedOwn).toEqual(['0900_oca_notes.sql'])
     expect(own.notes).toContain('Pending files that aren\'t upstream\'s, applied as your own: 0900_oca_notes.sql. If any isn\'t yours, the upstream ref is stale or wrong.')
     const text = formatReport(own)
-    expect(text).toMatch(/Upstream migrations applied: 0075_auth_events_email_changed\.sql through 0083_calendar_event_rules\.sql \(7\)/)
+    // What the rehearsal applies of upstream's is every file in api/migrations the fork hasn't, in wrangler's order. Derived, so a new tenant migration doesn't break this.
+    const fresh = upstreamMigrations('instance').map(m => m.name).filter(n => !forkFiles('instance').includes(n)).sort(compareMigrationNames)
+    expect(text).toContain(`Upstream migrations applied: ${fresh[0]} through ${fresh[fresh.length - 1]} (${fresh.length})`)
     expect(text).toMatch(/Your own migrations applied: 0900_oca_notes\.sql/)
 
     // Without upstream's names, the cherry-picked files pass for upstream's and their tables go unchecked.

@@ -430,7 +430,7 @@ describe('lake-michigan mention fan-out', () => {
       // api/src/lib/mentions.ts filters the author out (`rm.userId !== authorUserId`),
       // so the app can never write such a row. A seeded one would show the demo
       // visitor an unread "you were mentioned" pointing at their own comment,
-      // because notificationsApi.ts selects every comment_mentions row for them.
+      // because GET /notifications returns every stored notification for them.
       expect(m.userId, `mention ${m.id} on ${m.commentId} targets its own author`).not.toBe(author)
     }
   })
