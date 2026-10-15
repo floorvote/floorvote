@@ -467,7 +467,11 @@ async function applyCentralBill(
   // (i.e. text content actually changed) also bypasses, which re-attempts AI and
   // either succeeds (clearing the reason) or hits the same skip.
   const centralHasNewR2Key = !!centralBill.textR2Key && !existing?.textR2Key
-  if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
+  // A bill that didn't match and now does (a companion analyzed through its group, say, whose title changed)
+  // is news even when its provider data hasn't: central says so with the match type alone, and nothing here
+  // stored it.
+  const newlyMatched = !!msg.matchType && !existing?.matchType
+  if (!msg.forceMetadata && !msg.forceAI && !msg.stubOnly && !msg.metadataOnly && !centralHasNewR2Key && !newlyMatched && existing?.providerUpdatedAt === centralBill.updatedAt && (existing?.aiProcessedAt != null || existing?.aiSkipReason != null)) {
     // Calendar reconciliation must still run even when the bill itself hasn't changed,
     // since hearings are updated independently of bill metadata.
     if (msg.calendar && existing && (existing.matchType !== null || existing.priority !== null)) {
@@ -703,7 +707,16 @@ async function applyCentralBill(
   // New-match signal: the first time a bill becomes a fully-analyzed KEYWORD match
   // (manual adds are excluded — the adding admin already knows). Set once; later
   // re-analysis / status changes / keyword-resync re-promotes won't re-surface it.
-  const isFirstKeywordMatch = !!aiResult && derivedMatchType === 'keyword' && !existing?.newMatchAt
+  //
+  // A bill analyzed before it matched (a companion pulled in through its group) matches with no new
+  // analysis when its text hasn't changed, so the model doesn't run again. It is still the first
+  // time it matches, unless it matched before: the feed event is written once per bill, and a
+  // dismissed match that lost its keywords and regained them is not news twice.
+  const priorMatchEvent = !aiResult && derivedMatchType === 'keyword' && !existing?.newMatchAt && existing?.matchType === null && existing.aiProcessedAt != null
+    ? !!(await db.select({ id: feedEvents.id }).from(feedEvents).where(and(eq(feedEvents.billId, existing.id), eq(feedEvents.type, 'bill_matched'))).get())
+    : null
+  const isFirstKeywordMatch = derivedMatchType === 'keyword' && !existing?.newMatchAt
+    && (!!aiResult || priorMatchEvent === false)
 
   const upsertData = {
     ...billData,
@@ -727,7 +740,6 @@ async function applyCentralBill(
       // …and any heal attempts. A bill that recovers starts clean, so a failure
       // months from now is not poisoned by an old, unrelated outage.
       aiHealAttempts: 0,
-      ...(isFirstKeywordMatch ? { newMatchAt: now } : {}),
     } : aiSkipReason ? {
       // Permanent AI failure on this text. Recording lastAiTextHash here serves the
       // same dedup role as on success: if the text actually changes later, AI re-runs.
@@ -762,6 +774,7 @@ async function applyCentralBill(
       // have simply never been analyzed look stalled.
       aiAttemptedAt: now,
     } : {}),
+    ...(isFirstKeywordMatch ? { newMatchAt: now } : {}),
     ...(queueChanges.length > 0 ? { updatedAt: now } : {}),
   }
 

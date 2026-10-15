@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { runDigest } from '../../src/lib/digest'
 import { associationConfig, bills, feedEvents } from '../../src/db/schema'
+import { MAX_COMPANION_ANALYSES_PER_DELIVERY } from '../../src/lib/companionAnalysis'
 import type { TenantQueueMessage } from '../../src/types'
 
 // A companion that didn't match the instance's keywords is analyzed anyway once
@@ -318,6 +319,138 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       const companion = await billRow('b1713')
       expect(companion.matchType).toBe('keyword')
       expect(companion.newMatchAt).not.toBeNull()
+    })
+  })
+
+  describe('a pulled companion that newly matches through an ordinary central notification', () => {
+    // Central's keyword edit sends forceAI with the match type. Its cron sync sends neither: a title or description
+    // change that newly matches arrives as the match type alone, for a bill whose text hash hasn't changed, so the
+    // analysis is deduped and nothing else runs. The companion must still become tracked, and a new match.
+    beforeEach(async () => {
+      await getDb(env.DB).update(bills).set({ textR2Key: 'bills/legiscan:1713.html' }).where(eq(bills.id, 'b1713'))
+      await deliver('legiscan:190')
+      await drain()
+      await expectCompanionAnalyzed()
+      vi.mocked((await import('../../src/lib/llm')).processBill).mockClear()
+    })
+
+    const matchedEvents = async () => (await getDb(env.DB).select().from(feedEvents).where(eq(feedEvents.type, 'bill_matched')).all()).filter(e => e.billId === 'b1713')
+
+    it('is tracked and flagged as a new match, without the model running again', async () => {
+      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [identical('A190', 190)], updatedAt: '2026-10-02T00:00:00Z' })
+      await deliver('legiscan:1713', { matchType: 'keyword' })
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBe('keyword')
+      expect(companion.newMatchAt).not.toBeNull()
+      expect(await matchedEvents()).toHaveLength(1)
+      expect(vi.mocked((await import('../../src/lib/llm')).processBill)).not.toHaveBeenCalled()
+    })
+
+    it('is tracked and flagged even when central\'s updated-at hasn\'t moved, which the unchanged-bill check would otherwise skip', async () => {
+      await deliver('legiscan:1713', { matchType: 'keyword' })
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBe('keyword')
+      expect(companion.newMatchAt).not.toBeNull()
+      expect(await matchedEvents()).toHaveLength(1)
+    })
+
+    it('is tracked and flagged after its group has split', async () => {
+      central.set('legiscan:190', { number: 'A190', text: true, relatedBills: [], updatedAt: '2026-10-02T00:00:00Z' })
+      central.set('legiscan:1713', { number: 'S1713', text: true, relatedBills: [], updatedAt: '2026-10-02T00:00:00Z' })
+      await deliver('legiscan:190')
+      await deliver('legiscan:1713', { matchType: 'keyword' })
+      expect((await billRow('b1713')).groupKey).toBeNull()
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBe('keyword')
+      expect(companion.newMatchAt).not.toBeNull()
+    })
+
+    it('is not flagged a second time when it matched before, was dismissed, and matches again', async () => {
+      await getDb(env.DB).insert(feedEvents).values({ id: 'earlier', type: 'bill_matched', billId: 'b1713', userId: 'system', metadata: '{}' })
+      await deliver('legiscan:1713', { matchType: 'keyword' })
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBe('keyword')
+      expect(companion.newMatchAt).toBeNull()
+      expect(await matchedEvents()).toHaveLength(1)
+    })
+
+    it('leaves a companion central still says doesn\'t match as it was, untracked and unflagged', async () => {
+      await deliver('legiscan:1713', { matchType: null })
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBeNull()
+      expect(companion.newMatchAt).toBeNull()
+      expect(await matchedEvents()).toEqual([])
+    })
+
+    it('is tracked but not flagged when central says it was added by hand, since the admin who added it knows', async () => {
+      await deliver('legiscan:1713', { matchType: 'manual' })
+      const companion = await billRow('b1713')
+      expect(companion.matchType).toBe('manual')
+      expect(companion.newMatchAt).toBeNull()
+    })
+  })
+
+  describe('one delivery can queue only so many companion analyses', () => {
+    const COUNT = MAX_COMPANION_ANALYSES_PER_DELIVERY * 2 + 5
+    const handleOf = (i: number) => `legiscan:${2000 + i}`
+    beforeEach(async () => {
+      const members = Array.from({ length: COUNT }, (_, i) => i)
+      for (const i of members) {
+        await seedBill({ id: `c${i}`, billNumber: `C${i}`, state: 'NJ', externalId: handleOf(i), matchType: null })
+        await getDb(env.DB).update(bills).set({ textR2Key: `bills/${handleOf(i)}.html` }).where(eq(bills.id, `c${i}`))
+        central.set(handleOf(i), { number: `C${i}`, text: true, relatedBills: [identical('A190', 190)] })
+      }
+      central.set('legiscan:190', { number: 'A190', text: true, relatedBills: members.map(i => identical(`C${i}`, 2000 + i)) })
+    })
+
+    it('queues no more than the cap from one delivery of a large group', async () => {
+      await deliver('legiscan:190')
+      expect(queued).toHaveLength(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+      expect(new Set(queued.map(m => m.billId)).size).toBe(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+      expect(queued.every(m => m.groupAnalysis === true)).toBe(true)
+    })
+
+    it('doesn\'t queue more by delivering the group again while those are still waiting their turn', async () => {
+      await deliver('legiscan:190')
+      await deliver('legiscan:190')
+      await deliver('legiscan:2003')
+      expect(queued).toHaveLength(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+    })
+
+    it('analyzes the rest on a later pass, as each analysis finishes, never with more than the cap waiting', async () => {
+      const llm = await import('../../src/lib/llm')
+      await deliver('legiscan:190')
+      let mostWaiting = queued.length
+      while (queued.length > 0) {
+        await processCentralNotification(queued.shift()!, testEnv(), getDb(env.DB))
+        mostWaiting = Math.max(mostWaiting, queued.length)
+      }
+      expect(mostWaiting).toBe(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+      const rows = await getDb(env.DB).select({ id: bills.id, at: bills.aiProcessedAt, matchType: bills.matchType }).from(bills).all()
+      const companions = rows.filter(r => r.id.startsWith('c'))
+      expect(companions).toHaveLength(COUNT)
+      expect(companions.every(r => r.at !== null && r.matchType === null)).toBe(true)
+      expect(vi.mocked(llm.processBill)).toHaveBeenCalledTimes(COUNT)
+    })
+
+    it('picks the rest up when a later delivery of the group finds the first ones done', async () => {
+      await deliver('legiscan:190')
+      await drain()
+      await deliver('legiscan:190')
+      await drain()
+      const rows = await getDb(env.DB).select({ id: bills.id, at: bills.aiProcessedAt }).from(bills).all()
+      expect(rows.filter(r => r.id.startsWith('c') && r.at === null)).toEqual([])
+    })
+
+    it('counts an analysis that has been waiting more than an hour as stalled, for the heal, rather than as holding a place', async () => {
+      await deliver('legiscan:190')
+      const stuck = queued.splice(0, queued.length)
+      expect(stuck).toHaveLength(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+      // The messages were lost. Their claims are old enough that the hourly heal owns them.
+      await getDb(env.DB).update(bills).set({ aiAttemptedAt: '2026-01-01 00:00:00' }).where(inArray(bills.externalId, stuck.map(m => m.billId)))
+      await deliver('legiscan:190')
+      expect(queued).toHaveLength(MAX_COMPANION_ANALYSES_PER_DELIVERY)
+      expect(queued.some(m => stuck.some(o => o.billId === m.billId))).toBe(false)
     })
   })
 
