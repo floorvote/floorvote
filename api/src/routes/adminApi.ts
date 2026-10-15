@@ -32,6 +32,7 @@ import { isPreviouslyBounced, previouslyBouncedAddresses } from '../lib/bouncedA
 import { adminSendChecks, claimSend, releaseSend } from '../lib/adminSendLimits'
 import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/emailChange'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
+import { userTitleSql } from '../lib/userTitle'
 
 export const adminApiRouter = new Hono<AppEnv>()
 
@@ -51,7 +52,7 @@ adminApiRouter.get('/members', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      title: users.title,
+      title: userTitleSql,
       createdAt: users.createdAt,
       lastActive: users.lastActive,
       deactivatedAt: users.deactivatedAt,

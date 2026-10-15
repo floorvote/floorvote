@@ -23,6 +23,7 @@ import { buildBillCardModel } from '../../../shared/billCardModel'
 import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateTime } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { fontWeight } from '../../../shared/tokens'
+import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -170,7 +171,7 @@ async function sendReplyEmails(
   env: ReplyEnv,
 ): Promise<void> {
   const [author] = await db
-    .select({ name: users.name, email: users.email, title: users.title })
+    .select({ name: users.name, email: users.email, title: userTitleSql })
     .from(users).where(eq(users.id, authorUserId)).all()
   const [bill] = await db
     .select({

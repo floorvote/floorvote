@@ -25,6 +25,7 @@ import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
 import { confirmEmailChange, emailChangeLinkStatus, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { reportNotMe, notMeLinkStatus, NOT_ME_ERRORS } from '../lib/emailChangeReport'
+import { titleOf, userTitleSql } from '../lib/userTitle'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -423,9 +424,9 @@ authRoutes.get('/me', async (c) => {
             email: localUser!.email,
             name: localUser!.name,
             role: localUser!.role,
-            title: localUser!.title,
+            title: titleOf(localUser!),
             // `subtitle` is the old name for `title`. Remove in the release after this one.
-            subtitle: localUser!.title,
+            subtitle: titleOf(localUser!),
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
@@ -452,7 +453,7 @@ authRoutes.get('/me', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      title: users.title,
+      title: userTitleSql,
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
       emailWeekAheadEnabled: users.emailWeekAheadEnabled,

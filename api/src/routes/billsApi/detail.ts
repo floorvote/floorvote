@@ -15,6 +15,7 @@ import { activeUser } from '../../lib/accountDeletion'
 import { loadTaxonomyTagNameSet, filterTagsToTaxonomy } from '../../lib/taxonomy'
 import { parseSubjects, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
 import { displayName, userDisplayNameSql } from '../../lib/displayName'
+import { titleOf, userTitleSql } from '../../lib/userTitle'
 
 type CentralBillRich = {
   billType?: string | null
@@ -89,7 +90,7 @@ export async function buildBillDetail(
         c: comments,
         userName: users.name,
         userEmail: users.email,
-        userTitle: users.title,
+        userTitle: userTitleSql,
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
@@ -150,7 +151,7 @@ export async function buildBillDetail(
     const entry = emojiMap.get(r.emoji)!
     entry.count++
     // `subtitle` is the old name for `title`. Remove in the release after this one.
-    entry.reactors.push({ name: displayName(reactor), title: reactor.title, subtitle: reactor.title })
+    entry.reactors.push({ name: displayName(reactor), title: titleOf(reactor), subtitle: titleOf(reactor) })
     if (r.userId === currentUser.id) entry.userReacted = true
   }
 

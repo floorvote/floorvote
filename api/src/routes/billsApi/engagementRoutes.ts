@@ -17,6 +17,7 @@ import { nowDb } from '../../lib/dbTime'
 import { activeUser } from '../../lib/accountDeletion'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { displayName } from '../../lib/displayName'
+import { titleOf, userTitleSql } from '../../lib/userTitle'
 
 // Max live (non-deleted) comments one bill may hold on a DEMO_MODE tenant. The
 // per-IP limiter in demoReadOnly bounds the *rate* an anonymous visitor can
@@ -150,7 +151,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         c: comments,
         userName: users.name,
         userEmail: users.email,
-        userTitle: users.title,
+        userTitle: userTitleSql,
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
@@ -180,7 +181,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
       const entry = emojiMap.get(r.emoji)!
       entry.count++
       // `subtitle` is the old name for `title`. Remove in the release after this one.
-      entry.reactors.push({ name: displayName(reactor), title: reactor.title, subtitle: reactor.title })
+      entry.reactors.push({ name: displayName(reactor), title: titleOf(reactor), subtitle: titleOf(reactor) })
       if (r.userId === currentUser.id) entry.userReacted = true
     }
 

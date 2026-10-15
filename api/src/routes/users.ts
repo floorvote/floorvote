@@ -18,6 +18,7 @@ import { verifyTurnstile } from '../../../shared/turnstile'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { requestEmailChange, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { isSuperadminUser, SUPERADMIN_PROFILE_MANAGED_ERROR } from '../lib/superadminProfile'
+import { userTitleSql } from '../lib/userTitle'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -28,7 +29,7 @@ usersRouter.use('*', requireAuth)
 usersRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const rows = await db
-    .select({ id: users.id, name: users.name, email: users.email, title: users.title, role: users.role })
+    .select({ id: users.id, name: users.name, email: users.email, title: userTitleSql, role: users.role })
     .from(users)
     .where(activeUser)
     // By the name as shown, ignoring case: a member with no name sorts by their
@@ -75,7 +76,7 @@ usersRouter.patch('/me', async (c) => {
   if (('name' in raw || titleKey) && await isSuperadminUser(c, currentUser.email)) {
     return c.json({ error: SUPERADMIN_PROFILE_MANAGED_ERROR }, 403)
   }
-  const updates: { title?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
+  const updates: { title?: string | null; subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
   const echo: { title?: string | null; subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 
   if ('name' in raw) {
@@ -98,7 +99,8 @@ usersRouter.patch('/me', async (c) => {
       return c.json({ error: 'Title too long (max 200 characters)' }, 400)
     }
     // `subtitle` is the old name for `title`. Remove in the release after this one.
-    updates.title = echo.title = echo.subtitle = title
+    // keep subtitle in sync until the drop migration (follow-up issue)
+    updates.title = updates.subtitle = echo.title = echo.subtitle = title
   }
   if (typeof raw.emailDigestEnabled === 'boolean') {
     updates.emailDigestEnabled = raw.emailDigestEnabled ? 1 : 0
@@ -340,7 +342,7 @@ rolesRouter.get('/', async (c) => {
       userId: users.id,
       name: users.name,
       email: users.email,
-      title: users.title,
+      title: userTitleSql,
     })
     .from(userRoles)
     .innerJoin(users, eq(userRoles.userId, users.id))

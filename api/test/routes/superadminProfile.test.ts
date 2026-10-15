@@ -45,6 +45,10 @@ async function dashboardSignIn(jwt: string, e = asEnv([SUPER])) {
 const userRow = async (email: string) =>
   getDb(env.DB).select().from(users).where(eq(users.email, email)).get()
 
+// Both columns as stored. The raw query bypasses the schema, so it reads what the previous build would.
+const titleColumns = (email: string) =>
+  env.DB.prepare('SELECT title, subtitle FROM users WHERE email = ?').bind(email).first<{ title: string | null; subtitle: string | null }>()
+
 function patchMe(cookie: string, body: unknown, e = asEnv([SUPER])) {
   return app.request('/api/users/me', {
     method: 'PATCH',
@@ -68,6 +72,38 @@ describe('dashboard sign-in applies the central profile', () => {
     const row = await userRow(SUPER)
     expect(row?.name).toBe('Ada Lovelace')
     expect(row?.title).toBe('Operator support')
+  })
+
+  // The dashboard sign-in answers in the same shape as /auth/me, so it carries
+  // the old `subtitle` key too. Remove with the aliases (see titleAliases.test.ts).
+  it('answers with the title under both names, so a tab on the previous web bundle shows it', async () => {
+    const { res, body } = await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
+    expect(res.status).toBe(200)
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Operator support', 'Operator support'])
+  })
+
+  it('answers with a null title under both names when central has a blank one', async () => {
+    const { body } = await dashboardSignIn(await tokenWith('Ada Lovelace', ''))
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual([null, null])
+  })
+
+  it('answers a returning superadmin with the title under both names', async () => {
+    await seedUser({ email: SUPER, role: 'admin', name: 'Ada', title: 'Existing title' })
+    // A token from before profiles carries no title, so the stored one is what shows.
+    const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
+    const { body } = await dashboardSignIn(older)
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Existing title', 'Existing title'])
+  })
+
+  // The previous build reads `users.subtitle`, so the profile apply writes both
+  // columns until the drop migration (see titleColumns.test.ts).
+  it('writes the title to both columns on a new superadmin copy and on each refresh', async () => {
+    await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
+    expect(await titleColumns(SUPER)).toEqual({ title: 'Operator support', subtitle: 'Operator support' })
+    await dashboardSignIn(await tokenWith('Ada King', 'Engineer'))
+    expect(await titleColumns(SUPER)).toEqual({ title: 'Engineer', subtitle: 'Engineer' })
+    await dashboardSignIn(await tokenWith('Ada King', ''))
+    expect(await titleColumns(SUPER)).toEqual({ title: null, subtitle: null })
   })
 
   it('overwrites an existing copy on each sign-in', async () => {
@@ -176,6 +212,30 @@ describe('PATCH /users/me for a superadmin', () => {
 
   it('rejects a title edit and leaves the title unchanged', async () => {
     const res = await patchMe(await superCookie(), { title: 'CEO' })
+    expect(res.status).toBe(403)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+  })
+
+  // A tab on the previous web bundle sends `subtitle`, which a superadmin must
+  // not be able to use to get around the central-managed profile.
+  it('rejects a `subtitle` edit like a `title` one, and leaves both columns unchanged', async () => {
+    const cookie = await superCookie()
+    const before = await titleColumns(SUPER)
+    const res = await patchMe(cookie, { subtitle: 'CEO' })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { error: string }).error).toMatch(/admin dashboard/i)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+    expect(await titleColumns(SUPER)).toEqual(before)
+  })
+
+  it('rejects a `subtitle` edit of null, which would clear the title', async () => {
+    const res = await patchMe(await superCookie(), { subtitle: null })
+    expect(res.status).toBe(403)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+  })
+
+  it('rejects `subtitle` sent beside `title`', async () => {
+    const res = await patchMe(await superCookie(), { title: 'Operator support', subtitle: 'CEO' })
     expect(res.status).toBe(403)
     expect((await userRow(SUPER))?.title).toBe('Operator support')
   })

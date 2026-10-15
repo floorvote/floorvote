@@ -17,6 +17,7 @@ import { chunk, D1_MAX_PARAMS } from './chunk'
 import { nowDb } from './dbTime'
 import { activeUser } from './accountDeletion'
 import { userDisplayNameSql } from './displayName'
+import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -185,7 +186,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
       commentContent: comments.content,
       actorId: users.id,
       actorName: userDisplayNameSql,
-      actorTitle: users.title,
+      actorTitle: userTitleSql,
       billId: bills.id,
       billNumber: bills.billNumber,
       billTitle: bills.title,

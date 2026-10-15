@@ -33,7 +33,8 @@ export async function isSuperadminUser<E extends { Bindings: Env }>(c: Context<E
 
 /**
  * Copy the central profile in a superadmin token onto the instance's user row,
- * overwriting name and title (central's `title` maps to `users.title` as it is).
+ * overwriting name and title (central's `title` maps to `users.title` as it is,
+ * and is also written to `users.subtitle` for the previous build).
  * A token without the profile claims, from central before profiles, changes
  * nothing. Returns the row as it now stands.
  */
@@ -46,8 +47,9 @@ export async function applyTokenProfile<U extends Pick<UserRow, 'id' | 'name' | 
   const name = token.name.trim()
   const title = token.title.trim() || null
   if (user.name === name && user.title === title) return user
-  await db.update(users).set({ name, title }).where(eq(users.id, user.id))
-  return { ...user, name, title }
+  // keep subtitle in sync until the drop migration (follow-up issue)
+  await db.update(users).set({ name, title, subtitle: title }).where(eq(users.id, user.id))
+  return { ...user, name, title, subtitle: title }
 }
 
 /**

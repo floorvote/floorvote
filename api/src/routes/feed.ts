@@ -8,6 +8,7 @@ import { PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
+import { userTitleSql } from '../lib/userTitle'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -87,7 +88,7 @@ feedRouter.get('/', async (c) => {
         userId: feedEvents.userId,
         userName: users.name,
         userEmail: users.email,
-        userTitle: users.title,
+        userTitle: userTitleSql,
         metadata: feedEvents.metadata,
         createdAt: feedEvents.createdAt,
       })

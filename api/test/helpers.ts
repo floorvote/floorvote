@@ -295,7 +295,9 @@ export async function seedUser(overrides?: {
     email: overrides?.email ?? `user-${id}@example.com`,
     name: overrides?.name ?? 'Test User',
     role: overrides?.role ?? 'member',
+    // Seeds both columns, like the code it stands in for. Rows the previous build wrote have only `subtitle` (see titleColumns.test.ts).
     title: overrides?.title ?? null,
+    subtitle: overrides?.title ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
     emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,

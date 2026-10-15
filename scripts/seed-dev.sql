@@ -13,6 +13,8 @@ INSERT OR IGNORE INTO users (id, email, name, role, title, can_vote, created_at)
   ('user-tom', 'tom.brennan@example.com', 'Tom Brennan', 'admin', 'Policy Director', 1, '2025-09-20 10:00:00'),
   ('user-amy', 'amy.foster@example.com', 'Amy Foster', 'member', 'Town Moderator, Bristol', 0, '2025-12-01 08:00:00'),
   ('user-noname', 'newuser@example.com', '', 'member', NULL, 1, '2026-01-05 10:00:00');
+-- keep subtitle in sync until the drop migration (follow-up issue)
+UPDATE users SET subtitle = title WHERE title IS NOT NULL;
 
 -- === ROLES ===
 INSERT OR IGNORE INTO roles (id, name) VALUES

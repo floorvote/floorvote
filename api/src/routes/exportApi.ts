@@ -13,6 +13,7 @@ import { HANDLE_PREFIX, parseHandle } from '../../../shared/billHandle'
 import { EXPORT_TABLES, type ExportTable } from '../../../shared/exportTables'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../lib/billSubjects'
 import type { AppEnv } from '../types'
+import { titleOf } from '../lib/userTitle'
 
 const tableMap = {
   users,
@@ -246,6 +247,8 @@ exportApiRouter.get('/:table', async (c) => {
       for (const col of SAFE_USER_COLUMNS) {
         filtered[col] = row[col]
       }
+      // The column is `title`, with no `subtitle` alias. A member only the previous build wrote has just `subtitle`.
+      filtered.title = titleOf(row)
       return filtered
     }) as any
   }
