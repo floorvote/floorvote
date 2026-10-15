@@ -5,7 +5,7 @@ import { asc, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { billGroupOverrides, bills, comments, officialPositions, teamEvents } from '../../src/db/schema'
-import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
+import { previewSplit, syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
 // Grouping and splitting bills by hand (#382). An admin groups any two bills
@@ -21,7 +21,7 @@ type Detail = {
   groupBills: Array<{ billId: string; billNumber: string }>
   comments: Array<{ id: string }>
   position: { position: string } | null
-  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billNumber: string }> }>
+  groupingEvents: Array<{ type: string; actorName: string | null; with: Array<{ billNumber: string }>; undoneSplits?: Array<Array<{ billNumber: string }>> }>
 }
 
 describe('grouping and splitting bills by hand', () => {
@@ -59,7 +59,7 @@ describe('grouping and splitting bills by hand', () => {
     send.mockReset()
     vi.mocked(centralFetch).mockReset()
     vi.mocked(centralFetch).mockResolvedValue(new Response('{}', { status: 200 }))
-    for (const [name, role] of [['ann', 'member'], ['ada', 'admin']] as const) {
+    for (const [name, role] of [['ann', 'member'], ['ada', 'admin'], ['olive', 'owner']] as const) {
       user[name] = await seedUser({ name, email: `${name}@example.com`, role })
       cookie[name] = `session=${await seedSession(user[name])}`
     }
@@ -79,7 +79,34 @@ describe('grouping and splitting bills by hand', () => {
     })
   })
 
+  describe('an owner', () => {
+    // The owner role holds every admin ability, so all three routes take it.
+    it('groups, previews a split, and splits, as an admin does', async () => {
+      expect((await groupWith('olive', 'a190', 'b1713')).status).toBe(200)
+      expect(await keys('a190', 'b1713')).toEqual(['a190', 'a190'])
+      expect((await as('olive', '/bills/b1713/split-preview')).status).toBe(200)
+      expect((await splitOff('olive', 'b1713')).status).toBe(200)
+      expect(await keys('a190', 'b1713')).toEqual([null, null])
+      const events = await db().select().from(teamEvents).where(eq(teamEvents.actorUserId, user.olive)).all()
+      expect(events.map(e => [e.billId, e.type]).sort()).toEqual([['a190', 'grouped'], ['a190', 'split'], ['b1713', 'grouped'], ['b1713', 'split']])
+    })
+  })
+
   describe('grouping', () => {
+    it('groups bills from different states and sessions, since the picker and the route take any two in the instance', async () => {
+      await seedBill({ id: 'g5000', billNumber: 'TX5000', state: 'TX', session: '2027', sessionId: '9', externalId: 'legiscan:5000' })
+      const res = await groupWith('ada', 'a190', 'g5000')
+      expect(res.status).toBe(200)
+      expect(await keys('a190', 'g5000')).toEqual(['a190', 'a190'])
+      expect(((await res.json()) as { groupBills: Array<{ billNumber: string }> }).groupBills.map(b => b.billNumber)).toEqual(['A190', 'TX5000'])
+      // A later sync that names neither bill's companions leaves them grouped.
+      await sync('legiscan:190', [])
+      await sync('legiscan:5000', [])
+      expect(await keys('a190', 'g5000')).toEqual(['a190', 'a190'])
+      // And each bill's page shows the other in its group.
+      expect((await detail('g5000')).groupBills.map(b => b.billNumber)).toEqual(['TX5000', 'A190'])
+    })
+
     it('groups two bills no provider links, in a state that publishes no companion data', async () => {
       const res = await groupWith('ada', 'c1714', 'd2000')
       expect(res.status).toBe(200)
@@ -188,6 +215,212 @@ describe('grouping and splitting bills by hand', () => {
       expect((await preview('ann', 'b1713')).status).toBe(403)
       expect((await preview('ada', 'c1714')).status).toBe(409)
       expect((await preview('ada', 'nope')).status).toBe(404)
+    })
+  })
+
+  describe('the split preview matches the split', () => {
+    // The confirmation's text is the admin's only warning, so what it says the rest will fall into must be
+    // what the split leaves. Each shape is previewed, then split for real, and the two compared.
+    const NUMBERS: Record<string, string> = { a190: 'A190', b1713: 'S1713', c1714: 'S1714', d2000: 'H2000', e3000: 'H3000', f4000: 'H4000' }
+    const HANDLE: Record<string, number> = { a190: 190, b1713: 1713, c1714: 1714, d2000: 2000, e3000: 3000, f4000: 4000 }
+
+    /** Deliver each pair as the provider names it: the bill with the smaller id names the other. */
+    const linkAll = async (...pairs: Array<[string, string]>) => {
+      const named = new Map<string, number[]>()
+      for (const [a, b] of pairs) named.set(a, [...(named.get(a) ?? []), HANDLE[b]])
+      for (const [a, companions] of named) await sync(`legiscan:${HANDLE[a]}`, companions)
+    }
+    /** The groups the rest fell into, by bill number, as the keys the split really left. */
+    async function leftBy(billId: string, rest: string[]): Promise<string[][]> {
+      const rows = await db().select({ id: bills.id, k: bills.groupKey }).from(bills).all()
+      const key = (id: string) => rows.find(r => r.id === id)!.k ?? `alone:${id}`
+      const byKey = new Map<string, string[]>()
+      for (const id of rest) byKey.set(key(id), [...(byKey.get(key(id)) ?? []), NUMBERS[id]])
+      return [...byKey.values()].map(p => p.sort((x, y) => x.localeCompare(y, 'en', { numeric: true }))).sort((x, y) => x[0].localeCompare(y[0], 'en', { numeric: true }))
+    }
+    async function expectPreviewMatchesSplit(billId: string, rest: string[], expected: string[][]) {
+      const overridesBefore = await db().select().from(billGroupOverrides).all()
+      const parts = await previewSplit(db(), billId)
+      const previewed = parts!.map(p => p.map(b => b.billNumber))
+      expect(previewed).toEqual(expected)
+      // Previewing wrote nothing.
+      expect(await db().select().from(billGroupOverrides).all()).toEqual(overridesBefore)
+      expect((await splitOff('ada', billId)).status).toBe(200)
+      expect(await leftBy(billId, rest)).toEqual(previewed)
+    }
+    const extra = async () => {
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await seedBill({ id: 'f4000', billNumber: 'H4000', state: 'RI', externalId: 'legiscan:4000' })
+    }
+
+    it('a group of two leaves one bill alone', async () => {
+      await linkAll(['b1713', 'a190'])
+      await expectPreviewMatchesSplit('b1713', ['a190'], [['A190']])
+      expect((await previewSplit(db(), 'b1713'))).toBeNull()
+    })
+
+    it('a triangle leaves the other two together, whichever bill goes', async () => {
+      await linkAll(['a190', 'b1713'], ['a190', 'c1714'], ['b1713', 'c1714'])
+      await expectPreviewMatchesSplit('a190', ['b1713', 'c1714'], [['S1713', 'S1714']])
+    })
+
+    it('a star splits into singles when its hub goes', async () => {
+      await linkAll(['b1713', 'a190'], ['b1713', 'c1714'], ['b1713', 'd2000'])
+      await expectPreviewMatchesSplit('b1713', ['a190', 'c1714', 'd2000'], [['A190'], ['H2000'], ['S1714']])
+    })
+
+    it('a star keeps together when a leaf goes', async () => {
+      await linkAll(['b1713', 'a190'], ['b1713', 'c1714'], ['b1713', 'd2000'])
+      await expectPreviewMatchesSplit('a190', ['b1713', 'c1714', 'd2000'], [['H2000', 'S1713', 'S1714']])
+    })
+
+    it('a chain comes apart where the bill was its middle', async () => {
+      await linkAll(['a190', 'b1713'], ['b1713', 'c1714'], ['c1714', 'd2000'])
+      await expectPreviewMatchesSplit('b1713', ['a190', 'c1714', 'd2000'], [['A190'], ['H2000', 'S1714']])
+    })
+
+    it('a ring of four stays whole without one of its bills', async () => {
+      await linkAll(['a190', 'b1713'], ['b1713', 'c1714'], ['c1714', 'd2000'], ['a190', 'd2000'])
+      await expectPreviewMatchesSplit('b1713', ['a190', 'c1714', 'd2000'], [['A190', 'H2000', 'S1714']])
+    })
+
+    it('a group joined by hand comes apart at the bill the admin joined it through', async () => {
+      await linkAll(['b1713', 'a190'])
+      expect((await groupWith('ada', 'b1713', 'c1714')).status).toBe(200)
+      await expectPreviewMatchesSplit('b1713', ['a190', 'c1714'], [['A190'], ['S1714']])
+    })
+
+    it('a group across states, joined by hand, is previewed as it splits', async () => {
+      await seedBill({ id: 'g5000', billNumber: 'TX5000', state: 'TX', externalId: 'legiscan:5000' })
+      expect((await groupWith('ada', 'a190', 'g5000')).status).toBe(200)
+      expect((await groupWith('ada', 'a190', 'b1713')).status).toBe(200)
+      NUMBERS.g5000 = 'TX5000'
+      await expectPreviewMatchesSplit('a190', ['b1713', 'g5000'], [['S1713'], ['TX5000']])
+    })
+
+    it('a group holding an earlier split keeps that split in the preview', async () => {
+      // H2000 was split from A190 and stays out, and S1714 is identical to A190, S1713, and H2000.
+      await extra()
+      await linkAll(['a190', 'b1713'], ['a190', 'c1714'], ['b1713', 'c1714'], ['d2000', 'c1714'])
+      expect((await splitOff('ada', 'd2000')).status).toBe(200)
+      const rest = ['a190', 'c1714']
+      const parts = (await previewSplit(db(), 'b1713'))!.map(p => p.map(b => b.billNumber))
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      expect(await leftBy('b1713', rest)).toEqual(parts)
+    })
+
+    it('a bill in no group has nothing to preview', async () => {
+      expect(await previewSplit(db(), 'a190')).toBeNull()
+    })
+  })
+
+  describe('grouping again what was split', () => {
+    // Grouping a bill again with one it was split from undoes that split, and takes every other split between
+    // the two groups with it, since a split is a cannot-link and nothing else deletes one. The admin is told
+    // which, before (the preview) and after (the response and the grouping event).
+    type Undone = Array<Array<{ billId: string; billNumber: string }>>
+    const names = (pairs: Undone | undefined) => (pairs ?? []).map(p => p.map(b => b.billNumber))
+    const groupPreview = (name: string, billId: string, withBillId: string) =>
+      as(name, `/bills/${billId}/group-preview?withBillId=${withBillId}`)
+
+    /** H3000 split from a group of A190 and S1713, so it holds a split with each. */
+    async function splitOffThreeGroup() {
+      await seedBill({ id: 'e3000', billNumber: 'H3000', state: 'RI', externalId: 'legiscan:3000' })
+      await sync('legiscan:3000', [1713, 190])
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'e3000')).status).toBe(200)
+    }
+
+    it('previews no undone split for two bills that were never split, and writes nothing', async () => {
+      const res = await groupPreview('ada', 'c1714', 'd2000')
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as { undoneSplits: Undone }).undoneSplits).toEqual([])
+      expect(await keys('c1714', 'd2000')).toEqual([null, null])
+      expect(await db().select().from(billGroupOverrides).all()).toEqual([])
+    })
+
+    it('previews the one split of a pair, by bill number', async () => {
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      const res = await groupPreview('ada', 'b1713', 'a190')
+      expect(names(((await res.json()) as { undoneSplits: Undone }).undoneSplits)).toEqual([['A190', 'S1713']])
+    })
+
+    it('previews every split between the two groups, including the ones the bill was not a part of', async () => {
+      await splitOffThreeGroup()
+      // Regrouping H3000 with A190 also takes back its split from S1713, which it never named.
+      const res = await groupPreview('ada', 'e3000', 'a190')
+      expect(res.status).toBe(200)
+      expect(names(((await res.json()) as { undoneSplits: Undone }).undoneSplits)).toEqual([['A190', 'H3000'], ['H3000', 'S1713']])
+      expect(await db().select().from(billGroupOverrides).where(eq(billGroupOverrides.kind, 'split')).all()).toHaveLength(2)
+    })
+
+    it('previews the same from either bill of the pair', async () => {
+      await splitOffThreeGroup()
+      const fromHere = names(((await (await groupPreview('ada', 'e3000', 'a190')).json()) as { undoneSplits: Undone }).undoneSplits)
+      const fromThere = names(((await (await groupPreview('ada', 'a190', 'e3000')).json()) as { undoneSplits: Undone }).undoneSplits)
+      expect(fromThere).toEqual(fromHere)
+    })
+
+    it('answers the preview with the refusals the grouping would give', async () => {
+      await sync('legiscan:1713', [190])
+      await seedBill({ id: 'e-draft', billNumber: 'DRAFT-1', state: 'RI', isDraft: true })
+      expect((await groupPreview('ada', 'a190', 'b1713')).status).toBe(409)
+      expect((await groupPreview('ada', 'a190', 'a190')).status).toBe(400)
+      expect((await groupPreview('ada', 'a190', 'e-draft')).status).toBe(400)
+      expect((await groupPreview('ada', 'a190', 'nope')).status).toBe(404)
+      expect((await as('ada', '/bills/a190/group-preview')).status).toBe(400)
+      expect((await groupPreview('ann', 'a190', 'd2000')).status).toBe(403)
+      expect((await groupPreview('olive', 'a190', 'd2000')).status).toBe(200)
+    })
+
+    it('answers a preview that would be a refused conflict with the same refusal as the grouping', async () => {
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      await sync('legiscan:1714', [1713])
+      const refused = await groupWith('ada', 'c1714', 'a190')
+      const previewed = await groupPreview('ada', 'c1714', 'a190')
+      expect([refused.status, previewed.status]).toEqual([409, 409])
+      expect(await previewed.json()).toEqual(await refused.json())
+    })
+
+    it('reports an ordinary grouping as undoing nothing', async () => {
+      const body = await (await groupWith('ada', 'c1714', 'd2000')).json() as { undoneSplitCount: number; undoneSplits: Undone }
+      expect(body.undoneSplitCount).toBe(0)
+      expect(body.undoneSplits).toEqual([])
+    })
+
+    it('reports the split a regrouped pair undoes', async () => {
+      await sync('legiscan:1713', [190])
+      expect((await splitOff('ada', 'b1713')).status).toBe(200)
+      const body = await (await groupWith('ada', 'b1713', 'a190')).json() as { undoneSplitCount: number; undoneSplits: Undone }
+      expect(body.undoneSplitCount).toBe(1)
+      expect(names(body.undoneSplits)).toEqual([['A190', 'S1713']])
+    })
+
+    it('reports every split a regrouping undoes, and agrees with what the preview said', async () => {
+      await splitOffThreeGroup()
+      const said = names(((await (await groupPreview('ada', 'e3000', 'a190')).json()) as { undoneSplits: Undone }).undoneSplits)
+      const body = await (await groupWith('ada', 'e3000', 'a190')).json() as { undoneSplitCount: number; undoneSplits: Undone }
+      expect(body.undoneSplitCount).toBe(2)
+      expect(names(body.undoneSplits)).toEqual(said)
+      expect(await db().select().from(billGroupOverrides).where(eq(billGroupOverrides.kind, 'split')).all()).toEqual([])
+    })
+
+    it('records the undone splits on the grouping event, so the page still shows them later', async () => {
+      await splitOffThreeGroup()
+      expect((await groupWith('ada', 'e3000', 'a190')).status).toBe(200)
+      // The sync that first grouped the three wrote an event of its own, with no actor.
+      const grouped = (await detail('e3000')).groupingEvents.filter(e => e.type === 'grouped' && e.actorName === 'ada')
+      expect(grouped).toHaveLength(1)
+      expect(names(grouped[0].undoneSplits as Undone)).toEqual([['A190', 'H3000'], ['H3000', 'S1713']])
+    })
+
+    it('records no undone splits on the event of an ordinary grouping, nor on a split', async () => {
+      expect((await groupWith('ada', 'c1714', 'd2000')).status).toBe(200)
+      expect((await splitOff('ada', 'c1714')).status).toBe(200)
+      const events = (await detail('c1714')).groupingEvents
+      expect(events.map(e => [e.type, e.undoneSplits ?? []])).toEqual([['grouped', []], ['split', []]])
     })
   })
 

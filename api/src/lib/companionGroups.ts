@@ -150,7 +150,7 @@ export async function syncIdenticalCompanions(
   db: AppDb,
   externalId: string,
   relatedBills: readonly CentralRelatedBill[],
-  opts: { actorUserId?: string | null } = {},
+  opts: RecomputeOptions = {},
 ): Promise<void> {
   if (!isHandle(externalId)) return
   const next = new Set(relatedBills.flatMap(r =>
@@ -192,6 +192,12 @@ const nodeColumns = { id: bills.id, billNumber: bills.billNumber, externalId: bi
 const RECOMPUTE_ATTEMPTS = 5
 
 /**
+ * `actorUserId`: who grouped or split the bills, when an admin did. `undoneSplits`: the splits that admin's
+ * grouping undid, recorded on each `grouped` event it writes.
+ */
+export type RecomputeOptions = { actorUserId?: string | null; undoneSplits?: ReadonlyArray<readonly [GroupBill, GroupBill]> }
+
+/**
  * Recompute the groups of these bills and of every bill grouped with them
  * before, write the keys that changed, and record a grouping event on each
  * bill that joined or left companions: `grouped` naming the bills it joined,
@@ -210,7 +216,7 @@ const RECOMPUTE_ATTEMPTS = 5
 export async function recomputeGroups(
   db: AppDb,
   billIds: readonly string[],
-  opts: { actorUserId?: string | null } = {},
+  opts: RecomputeOptions = {},
 ): Promise<void> {
   for (let attempt = 1; attempt <= RECOMPUTE_ATTEMPTS; attempt++) {
     if (await tryRecomputeGroups(db, billIds, opts)) return
@@ -284,7 +290,7 @@ async function walkComponent(db: AppDb, billIds: readonly string[]): Promise<Wal
 async function tryRecomputeGroups(
   db: AppDb,
   billIds: readonly string[],
-  opts: { actorUserId?: string | null },
+  opts: RecomputeOptions,
 ): Promise<boolean> {
   const { nodes, oldGroups, linksRead, overridesRead } = await walkComponent(db, billIds)
 
@@ -335,12 +341,12 @@ async function tryRecomputeGroups(
     if (newKey !== node.groupKey) rekey.set(newKey, [...(rekey.get(newKey) ?? []), node.id])
 
     const groupBillIds = [...members].sort()
-    const event = (type: GroupingEventType, withIds: string[], replaced: ReplacedTeamValue[]) => {
-      const metadata: GroupingEventMetadata = { with: byNumber(withIds), groupBillIds, replaced }
+    const event = (type: GroupingEventType, withIds: string[], replaced: ReplacedTeamValue[], undoneSplits: ReadonlyArray<readonly [GroupBill, GroupBill]> = []) => {
+      const metadata: GroupingEventMetadata = { with: byNumber(withIds), groupBillIds, replaced, ...(undoneSplits.length > 0 ? { undoneSplits: undoneSplits.map(([a, b]) => [a, b] as [GroupBill, GroupBill]) } : {}) }
       events.push({ id: crypto.randomUUID(), billId: node.id, type, actorUserId: opts.actorUserId ?? null, metadata: JSON.stringify(metadata), createdAt: now })
     }
     if (left.length > 0) event('split', left, [])
-    if (joined.length > 0) event('grouped', joined, replacedIn.get(members) ?? [])
+    if (joined.length > 0) event('grouped', joined, replacedIn.get(members) ?? [], opts.undoneSplits)
   }
 
   const rekeyed = [...rekey].flatMap(([key, ids]) => ids.map(id => [id, key]))
@@ -544,20 +550,26 @@ function escapeHtml(s: string): string {
 /** Two bills an admin split apart that a grouping by hand would put back in one group. */
 export type SplitConflict = { split: [GroupBill, GroupBill] }
 
+/** A split pair by bill number, the lower number first. */
+export type SplitPair = [GroupBill, GroupBill]
+
 /**
- * An admin groups two bills by hand (see **Group override** in CONTEXT.md):
- * a `link` override joins them as an identical link would, so their groups
- * become one, and it holds on every later sync whatever the provider says.
- * The grouping events name the admin.
- *
- * Their groups may not hold two bills an admin split apart, since a split is
- * a cannot-link: that's a conflict, returned and not written. Except when the
- * two bills are such a pair: grouping a bill again with one it was split from
- * undoes the split, so the pair's split becomes the link, and any other split
- * between the two groups (left by the same split, from the rest of that group)
- * is removed.
+ * What grouping two bills by hand would do, read and not written: refused with
+ * the split pair that stops it, or allowed with the splits it would undo.
  */
-export async function groupByHand(db: AppDb, billId: string, withBillId: string, actorUserId: string): Promise<SplitConflict | null> {
+export type GroupingPlan = { conflict: SplitConflict } | { undoneSplits: SplitPair[]; stored: Array<{ billId: string; otherBillId: string }> }
+
+/**
+ * Read what `groupByHand` would do for the pair. Their groups may not hold two
+ * bills an admin split apart, since a split is a cannot-link: that's a
+ * conflict. Except when the two bills are such a pair: grouping a bill again
+ * with one it was split from undoes the split, so the pair's split becomes the
+ * link, and any other split between the two groups (left by the same split,
+ * from the rest of that group) is removed. `undoneSplits` is every split pair
+ * between the two groups, the pair's own included, each by bill number and in
+ * bill-number order. Empty for two bills nothing was split between.
+ */
+export async function planGroupByHand(db: AppDb, billId: string, withBillId: string): Promise<GroupingPlan> {
   const [mine, theirs] = await Promise.all([loadGroupBills(db, billId), loadGroupBills(db, withBillId)])
   const numberOf = new Map([...mine, ...theirs].map(b => [b.billId, b.billNumber]))
   const mineIds = JSON.stringify(mine.map(b => b.billId))
@@ -568,20 +580,35 @@ export async function groupByHand(db: AppDb, billId: string, withBillId: string,
       (${billGroupOverrides.billId} IN (SELECT value FROM json_each(${mineIds})) AND ${billGroupOverrides.otherBillId} IN (SELECT value FROM json_each(${theirIds})))
       OR (${billGroupOverrides.billId} IN (SELECT value FROM json_each(${theirIds})) AND ${billGroupOverrides.otherBillId} IN (SELECT value FROM json_each(${mineIds}))))`))
     .all()
+  const pairs = between
+    .map(o => [o.billId, o.otherBillId].map(id => ({ billId: id, billNumber: numberOf.get(id)! })).sort(compareBillNumbers) as SplitPair)
+    .sort((a, b) => compareBillNumbers(a[0], b[0]) || compareBillNumbers(a[1], b[1]))
   const undoing = between.some(o => pairKey(o.billId, o.otherBillId) === pairKey(billId, withBillId))
-  if (between.length > 0 && !undoing) {
-    const first = between.map(o => [o.billId, o.otherBillId].map(id => ({ billId: id, billNumber: numberOf.get(id)! })).sort(compareBillNumbers))
-      .sort((a, b) => compareBillNumbers(a[0], b[0]) || compareBillNumbers(a[1], b[1]))[0]
-    return { split: [first[0], first[1]] }
-  }
-  const others = between.filter(o => pairKey(o.billId, o.otherBillId) !== pairKey(billId, withBillId))
+  if (between.length > 0 && !undoing) return { conflict: { split: [pairs[0][0], pairs[0][1]] } }
+  return { undoneSplits: pairs, stored: between }
+}
+
+/**
+ * An admin groups two bills by hand (see **Group override** in CONTEXT.md):
+ * a `link` override joins them as an identical link would, so their groups
+ * become one, and it holds on every later sync whatever the provider says.
+ * The grouping events name the admin.
+ *
+ * The conflict, or the splits undone (see `planGroupByHand`), is returned.
+ * When a split is undone, the pair's split becomes the link in the same batch
+ * that removes the others, and the `grouped` events record the splits undone.
+ */
+export async function groupByHand(db: AppDb, billId: string, withBillId: string, actorUserId: string): Promise<{ conflict: SplitConflict } | { undoneSplits: SplitPair[] }> {
+  const plan = await planGroupByHand(db, billId, withBillId)
+  if ('conflict' in plan) return plan
+  const others = plan.stored.filter(o => pairKey(o.billId, o.otherBillId) !== pairKey(billId, withBillId))
   await db.batch([
     upsertOverride(db, billId, withBillId, 'link', actorUserId),
     ...others.map(o => db.delete(billGroupOverrides).where(and(
       eq(billGroupOverrides.billId, o.billId), eq(billGroupOverrides.otherBillId, o.otherBillId), eq(billGroupOverrides.kind, 'split')))),
   ])
-  await recomputeGroups(db, [billId, withBillId], { actorUserId })
-  return null
+  await recomputeGroups(db, [billId, withBillId], { actorUserId, undoneSplits: plan.undoneSplits })
+  return { undoneSplits: plan.undoneSplits }
 }
 
 /**
@@ -592,18 +619,24 @@ export async function groupByHand(db: AppDb, billId: string, withBillId: string,
  * S1713, and not to each other) come apart, and an admin can group them by
  * hand. False, writing nothing, for a bill in no group.
  *
- * The overrides land in one batch, and the guarded recompute then reads them.
- * A sync or another admin changing the group at the same moment can't leave a
- * key that disagrees with the links: whichever recompute writes last read
- * every link and override as they stand.
+ * The pairs are written by one statement that reads the group as it writes,
+ * so a bill that joins the group at the same moment is split from too, or
+ * joins after the pairs are stored and is handled by its own recompute. The
+ * guarded recompute then reads the overrides. A sync or another admin changing
+ * the group at the same moment can't leave a key that disagrees with the
+ * links: whichever recompute writes last read every link and override as they
+ * stand.
  */
 export async function splitFromGroup(db: AppDb, billId: string, actorUserId: string): Promise<boolean> {
-  const members = await db.select(nodeColumns).from(bills).where(inGroupOf(bills.id, billId)).all()
-  const rest = members.filter(m => m.id !== billId)
-  if (rest.length === 0) return false
-  const writes = rest.map(n => upsertOverride(db, billId, n.id, 'split', actorUserId))
-  await db.batch(writes as [typeof writes[number], ...typeof writes])
-  await recomputeGroups(db, members.map(m => m.id), { actorUserId })
+  const now = nowDb()
+  // The smaller id first, as the table stores a pair. `min` and `max` of two values compare as bills.id does.
+  const stored = await db.insert(billGroupOverrides)
+    .select(sql`SELECT min(m.id, ${billId}), max(m.id, ${billId}), 'split', ${actorUserId}, ${now}
+      FROM bills m WHERE m.id IN ${groupMemberIds(billId)} AND m.id <> ${billId}`)
+    .onConflictDoUpdate({ target: [billGroupOverrides.billId, billGroupOverrides.otherBillId], set: { kind: 'split', actorUserId, createdAt: now } })
+    .returning({ billId: billGroupOverrides.billId, otherBillId: billGroupOverrides.otherBillId })
+  if (stored.length === 0) return false
+  await recomputeGroups(db, [...new Set([billId, ...stored.flatMap(p => [p.billId, p.otherBillId])])], { actorUserId })
   return true
 }
 

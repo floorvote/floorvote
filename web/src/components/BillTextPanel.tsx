@@ -3,8 +3,9 @@ import { useVerticalResize, ResizeHandle } from './ResizeHandle'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
+import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
-import { color, radius, fontSize } from '../styles/tokens'
+import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
   return (
@@ -46,6 +47,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
 
   const selectedVersion = texts.find(t => t.docId === selectedDocId) ?? texts[0] ?? null
   const isPdf = selectedVersion?.mime === 'application/pdf'
+  const [inlinePdf] = useState(() => canRenderPdfInline())
   const { height: pdfHeight, handlePointerDown: handlePdfResize } = useVerticalResize(480, 200)
   const { height: htmlHeight, handlePointerDown: handleHtmlResize } = useVerticalResize(320, 200)
 
@@ -112,6 +114,11 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
       const res = await fetch(`/api/bills/${billId}/text/${docId}`, { credentials: 'include' })
       if (!res.ok) {
         setFailedDocIds(prev => new Set(prev).add(docId))
+        return
+      }
+      if (!inlinePdf) {
+        // The fallback card links straight to the API; the fetch only checks the text is cached.
+        void res.body?.cancel()
         return
       }
       const blob = await res.blob()
@@ -218,7 +225,26 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
             </div>
           )}
 
-          {isPdf ? (
+          {isPdf && !loadFailed && !inlinePdf ? (
+            <div style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+              <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: 0 }}>
+                This browser can't show the PDF inline.
+              </p>
+              <a
+                href={`/api/bills/${billId}/text/${selectedDocId}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ background: color.billBadgeNavy, color: color.white, fontSize: fontSize.base, fontWeight: fontWeight.semibold, padding: '10px 20px', borderRadius: radius.md, textDecoration: 'none' }}
+              >
+                Open PDF <ExternalLinkIcon size={14} />
+              </a>
+              {selectedVersion?.stateLink && (
+                <a href={selectedVersion.stateLink} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>
+                  View on legislature <ExternalLinkIcon size={14} />
+                </a>
+              )}
+            </div>
+          ) : isPdf ? (
             <div>
               {!loadFailed && (
                 <>

@@ -66,4 +66,10 @@
 
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
 
-**Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention today; replies and reactions follow). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
+**Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention, a reply, or a reaction). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
+
+**Keyword**: one line of an instance's keyword list, matched against a bill's title, abstract, and number. A bare word matches a whole word, `*` widens it (`election*`), and `#` stands for one digit. A list whose only entry is `*` matches every bill and sends all of them to AI, so it is a cost decision. Unrelated to `state_coverage`'s `["*"]`, which means every state. Avoid: "tag," which AI assigns from the instance's taxonomy, and "subject," which the legislature assigns.
+
+**Subject**: a term a legislature assigns to a bill, shown on the bill page and filterable on the Bills page, grouped by state because each legislature's vocabulary is its own. An operator can hide a state's subjects with the `subjects_suppressed_states` config row. Avoid: "tag," which is the instance's own taxonomy applied by AI.
+
+**Saved view**: a named set of Bills page filters and a sort order that an admin saves and every member sees in the view switcher. Applying one puts its slug in the address as `?view=`. Avoid: "preset"; "saved filter."

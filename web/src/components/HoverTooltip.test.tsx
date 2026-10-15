@@ -524,6 +524,34 @@ describe('HoverTooltip describe option', () => {
     expect(bubble('A bill that became law.')).toBeDefined()
   })
 
+  it('hides the explainer on Escape, keeping focus on the term', async () => {
+    const user = userEvent.setup()
+    render(<HoverTooltip text="A bill that became law." describe>Chapter</HoverTooltip>)
+    await user.tab()
+    const term = screen.getByText('Chapter')
+    expect(term).toHaveFocus()
+    expect(bubble('A bill that became law.')).toBeDefined()
+    await user.keyboard('{Escape}')
+    expect(bubble('A bill that became law.')).toBeUndefined()
+    expect(term).toHaveFocus()
+  })
+
+  it('hides the explainer on Escape when the term is an interactive child', async () => {
+    const user = userEvent.setup()
+    render(<HoverTooltip text="A bill that became law." describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
+    await user.tab()
+    expect(bubble('A bill that became law.')).toBeDefined()
+    await user.keyboard('{Escape}')
+    expect(bubble('A bill that became law.')).toBeUndefined()
+  })
+
+  it('marks the term with a dotted underline and keeps the default cursor', () => {
+    render(<HoverTooltip text="A bill that became law." describe>Chapter</HoverTooltip>)
+    const term = screen.getByText('Chapter')
+    expect(term.style.borderBottom).toContain('dotted')
+    expect(term.style.cursor).toBe('')
+  })
+
   it('renders plain text when there is no explainer', () => {
     render(<HoverTooltip text={null} describe>Chapter</HoverTooltip>)
     const term = screen.getByText('Chapter')

@@ -21,8 +21,8 @@
 --
 -- No semicolons in these comments, as in every migration. Wrangler ends a
 -- CREATE TRIGGER at the first END that follows a semicolon and is followed by
--- one, with whitespace between, and api/test/helpers.ts splits this file the
--- same way (splitStatements).
+-- one, with whitespace between, and the test helpers split this file the
+-- same way (shared/sqlStatements.ts).
 DROP TRIGGER IF EXISTS bills_group_tags_insert;
 DROP TRIGGER IF EXISTS bills_group_tags_update;
 DROP TRIGGER IF EXISTS bills_group_tags_delete;
