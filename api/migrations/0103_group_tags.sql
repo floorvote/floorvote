@@ -23,16 +23,17 @@
 -- an instance's bills. A tag filter or tag facet names that condition, so it
 -- starts from them, not from every bill. ANALYZE gives the planner its size.
 --
--- No semicolons in these comments. api/test/helpers.ts splits migration files
--- on the statement terminator before it strips comment lines. Each END below
--- is in capitals and followed by a space or the terminator, which is how
--- wrangler's splitter finds the end of a trigger or a CASE.
+-- No semicolons in these comments, as in every migration. Wrangler ends a
+-- CREATE TRIGGER at the first END that follows a semicolon and is followed by
+-- one, with whitespace between, and api/test/helpers.ts splits this file the
+-- same way (splitStatements).
 ALTER TABLE bills ADD COLUMN group_tags TEXT NOT NULL DEFAULT '[]';
 
 UPDATE bills SET group_tags = CASE WHEN group_key IS NULL THEN tags
   ELSE COALESCE((SELECT g.tags FROM bills g WHERE g.group_key = bills.group_key
     AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
-    ORDER BY COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]') END;
+    ORDER BY COALESCE(g.ai_processed_at, '') DESC, g.id DESC LIMIT 1), '[]') END
+WHERE group_key IS NOT NULL OR tags <> '[]';
 
 CREATE TRIGGER bills_group_tags_insert AFTER INSERT ON bills
 WHEN NEW.group_key IS NOT NULL OR NEW.group_tags IS NOT NEW.tags
