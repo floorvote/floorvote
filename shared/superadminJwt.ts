@@ -47,11 +47,19 @@ export async function signSuperadminJwt(
   name: string,
   privateJwk: string,
   nowSec: number = Math.floor(Date.now() / 1000),
+  /**
+   * The superadmin's profile title. Pass it (even blank) when the token carries
+   * the central profile, so instances overwrite their copy of name and title.
+   * Leave it out and the claim is absent, which instances read as "no profile
+   * to apply" and leave their existing values alone.
+   */
+  title?: string,
 ): Promise<string> {
   const header = b64uStr(JSON.stringify({ alg: 'ES256', typ: 'JWT' }))
   const payload = b64uStr(JSON.stringify({
     email,
     name,
+    ...(title === undefined ? {} : { title }),
     iss: SUPERADMIN_JWT_ISS,
     aud: SUPERADMIN_JWT_AUD,
     jti: crypto.randomUUID(),
@@ -83,7 +91,7 @@ export async function verifySuperadminJwt(
   token: string,
   publicJwk: string,
   opts: VerifySuperadminOpts = {},
-): Promise<{ email: string; name: string; jti: string } | null> {
+): Promise<{ email: string; name: string; title: string | null; jti: string } | null> {
   const nowSec = opts.nowSec ?? Math.floor(Date.now() / 1000)
   const parts = token.split('.')
   if (parts.length !== 3) return null
@@ -106,7 +114,7 @@ export async function verifySuperadminJwt(
   } catch { return null }
   if (!ok) return null
 
-  let payload: { email?: unknown; name?: unknown; exp?: unknown; iss?: unknown; aud?: unknown; jti?: unknown }
+  let payload: { email?: unknown; name?: unknown; title?: unknown; exp?: unknown; iss?: unknown; aud?: unknown; jti?: unknown }
   try { payload = JSON.parse(unb64uStr(body)) } catch { return null }
   if (typeof payload.exp !== 'number' || payload.exp < nowSec) return null
   // Required claims — reject anything not minted by the current hardened signer
@@ -116,5 +124,12 @@ export async function verifySuperadminJwt(
   if (typeof payload.jti !== 'string' || payload.jti.length === 0) return null
   if (typeof payload.email !== 'string') return null
   if (opts.isRevoked && await opts.isRevoked(payload.jti)) return null
-  return { email: payload.email, name: typeof payload.name === 'string' ? payload.name : '', jti: payload.jti }
+  // `title` is null when the claim is absent (a token from before profiles).
+  // Present, even blank, it means the token carries the central profile.
+  return {
+    email: payload.email,
+    name: typeof payload.name === 'string' ? payload.name : '',
+    title: typeof payload.title === 'string' ? payload.title : null,
+    jti: payload.jti,
+  }
 }

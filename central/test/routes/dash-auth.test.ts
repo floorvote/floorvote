@@ -46,34 +46,9 @@ describe('GET /admin/dash/auth/me', () => {
       TEST_ENV,
     )
     expect(res.status).toBe(200)
-    const body = await res.json() as { data: { email: string; name: string } }
+    const body = await res.json() as { data: { email: string } }
     expect(body.data.email).toBe('admin@example.com')
-    expect(body.data.name).toBe('Will')
     expect(res.headers.get('Set-Cookie')).toMatch(/admin_session=/)
-  })
-
-  it('returns name from session on second call (session cookie reuse)', async () => {
-    const db = drizzle(env.DB, { schema })
-    // Bootstrap a session with name stored
-    const jwt = await signSuperadminJwt('admin@example.com', 'Will', keys.priv)
-    const firstRes = await app.fetch(
-      new Request('http://central/admin/dash/auth/me', { headers: { Cookie: `superadmin_jwt=${jwt}` } }),
-      TEST_ENV,
-    )
-    expect(firstRes.status).toBe(200)
-    const setCookie = firstRes.headers.get('Set-Cookie') ?? ''
-    const sessionTokenMatch = setCookie.match(/admin_session=([^;]+)/)
-    expect(sessionTokenMatch).not.toBeNull()
-    const sessionToken = sessionTokenMatch![1]
-
-    // Second call uses the session cookie — name should come from the session row
-    const secondRes = await app.fetch(
-      new Request('http://central/admin/dash/auth/me', { headers: { Cookie: `admin_session=${sessionToken}` } }),
-      TEST_ENV,
-    )
-    expect(secondRes.status).toBe(200)
-    const body2 = await secondRes.json() as { data: { email: string; name: string } }
-    expect(body2.data.name).toBe('Will')
   })
 
   it('rejects a superadmin_jwt whose jti has been revoked (M3)', async () => {

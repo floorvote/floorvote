@@ -139,7 +139,10 @@ type ProbeResult = {
 } & ({ ok: true; metrics: Record<MetricKey, number>; excluded: Record<string, number> | null } | { ok: false })
 
 export async function pullEngagementStats(env: Env, db: DB): Promise<void> {
-  const tenants = await db.select().from(schema.tenants).all()
+  // Inactive tenants are decommissioned (teardown sets active = 0 but keeps the
+  // row). Their host may redirect or be gone, so probing one only raises a
+  // daily false alert about a tenant the operator already retired.
+  const tenants = await db.select().from(schema.tenants).where(eq(schema.tenants.active, true)).all()
   const date = todayUtcDate()
   const excludeDomains = await getExcludeDomains(db)
 

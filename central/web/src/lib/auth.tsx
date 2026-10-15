@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api, ApiError } from './api'
 
-type Identity = { email: string; name: string }
+type Identity = { email: string }
 
 const AuthContext = createContext<{
   identity: Identity | null

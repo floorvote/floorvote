@@ -49,6 +49,7 @@ const ALLOW: SurfacePattern[] = [
   { method: 'POST', segments: ['api', 'admin', 'update-bill-match-types', ':id'] },
   { method: 'GET', segments: ['api', 'admin', 'superadmin', 'check'] },
   { method: 'GET', segments: ['api', 'admin', 'superadmin', 'emails'] },
+  { method: 'POST', segments: ['api', 'admin', 'superadmin', 'profile'] },
 ]
 
 // Note: `GET /api/bills/sessions` and `GET /api/bills/labels` each match BOTH

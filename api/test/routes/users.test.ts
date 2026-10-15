@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, comments, notes, users, associationConfig } from '../../src/db/schema'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 const LAST_OWNER_ERROR = 'Transfer ownership before deactivating or deleting your account.'
 
