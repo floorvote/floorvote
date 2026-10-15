@@ -1695,7 +1695,7 @@ export function BillDetail() {
         )}
 
         {/* Meta row 2: where the bill is in committee */}
-        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} linkToHistory={!!bill.lastAction} />
+        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} history={bill.history} lastAction={bill.lastAction} lastActionDate={bill.lastActionDate} linkToHistory={!!bill.lastAction} />
 
         {/* Meta row 3: sponsors */}
         {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (

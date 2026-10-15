@@ -105,4 +105,21 @@ describe('the committee line on a bill page', () => {
     expect(screen.queryByRole('link', { name: /Judiciary/ })).not.toBeInTheDocument()
     expect(screen.getByText('Last referred to:').parentElement).toHaveTextContent('Last referred to: Judiciary (Senate), Mar 2026')
   })
+
+  it('is not shown when the bill\'s stored detail is older than its last action', async () => {
+    renderBill({ lastAction: 'Referred to Committee of the Whole', lastActionDate: '2026-09-01' })
+    await screen.findByRole('button', { name: /^Actions/ })
+    expect(screen.queryByText(/In committee:|Last referred to:/)).not.toBeInTheDocument()
+  })
+
+  it('is not shown for referrals only when the stored detail is older than its last action', async () => {
+    renderBill({ committee: null, lastAction: 'Referred to Committee of the Whole', lastActionDate: '2026-09-01' })
+    await screen.findByRole('button', { name: /^Actions/ })
+    expect(screen.queryByText(/In committee:|Last referred to:/)).not.toBeInTheDocument()
+  })
+
+  it('is shown when the stored detail matches its last action', async () => {
+    renderBill()
+    expect(await screen.findByText('In committee:')).toBeInTheDocument()
+  })
 })

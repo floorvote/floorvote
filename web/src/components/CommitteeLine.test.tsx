@@ -3,10 +3,22 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { CommitteeLine, type CommitteeRef, type ReferralRef } from './CommitteeLine'
 
-function renderLine(committee: CommitteeRef | null, referrals: ReferralRef[]) {
+interface Detail { history: { date: string; action: string }[]; lastAction: string | null; lastActionDate: string | null }
+
+/** The bill's stored detail agrees with its last action, so the committee data can be trusted. */
+const CURRENT: Detail = {
+  history: [{ date: '2026-03-02', action: 'Referred to Judiciary' }],
+  lastAction: 'Referred to Judiciary',
+  lastActionDate: '2026-03-02',
+}
+
+/** The last action is newer than anything in the stored detail, as for a bill refreshed only from the master list. */
+const STALE: Detail = { ...CURRENT, lastAction: 'Referred to Committee of the Whole', lastActionDate: '2026-09-01' }
+
+function renderLine(committee: CommitteeRef | null, referrals: ReferralRef[], detail: Detail = CURRENT) {
   return render(
     <MemoryRouter initialEntries={['/bills/42']}>
-      <CommitteeLine committee={committee} referrals={referrals} />
+      <CommitteeLine committee={committee} referrals={referrals} {...detail} />
     </MemoryRouter>,
   )
 }
@@ -65,7 +77,7 @@ describe('CommitteeLine', () => {
   it('is plain text, with no link, when told the page has no Legislative History section', () => {
     render(
       <MemoryRouter initialEntries={['/bills/42']}>
-        <CommitteeLine committee={{ committeeId: '7001', name: 'Judiciary', chamber: 'S' }} referrals={[JUDICIARY_SENATE]} linkToHistory={false} />
+        <CommitteeLine committee={{ committeeId: '7001', name: 'Judiciary', chamber: 'S' }} referrals={[JUDICIARY_SENATE]} {...CURRENT} linkToHistory={false} />
       </MemoryRouter>,
     )
     expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
@@ -75,5 +87,65 @@ describe('CommitteeLine', () => {
   it('links to the Legislative History section of the bill page', () => {
     renderLine({ committeeId: '7001', name: 'Judiciary', chamber: 'S' }, [JUDICIARY_SENATE])
     expect(screen.getByRole('link', { name: /Judiciary/ })).toHaveAttribute('href', '/bills/42#section-actions')
+  })
+
+  describe('when the stored detail is older than the last action', () => {
+    const PENDING = { committeeId: '7001', name: 'Judiciary', chamber: 'S' }
+
+    it('renders nothing for a pending committee, which came from the same old detail', () => {
+      const { container } = renderLine(PENDING, [JUDICIARY_SENATE], STALE)
+      expect(container).toBeEmptyDOMElement()
+      expect(screen.queryByText(/In committee/)).not.toBeInTheDocument()
+    })
+
+    it('renders nothing for referrals only', () => {
+      const { container } = renderLine(null, [JUDICIARY_SENATE], STALE)
+      expect(container).toBeEmptyDOMElement()
+      expect(screen.queryByText(/Last referred to/)).not.toBeInTheDocument()
+    })
+
+    it('does not depend on what the last action says', () => {
+      const { container } = renderLine(PENDING, [JUDICIARY_SENATE], { ...STALE, lastAction: 'Read third time' })
+      expect(container).toBeEmptyDOMElement()
+    })
+
+    it('renders nothing when a same-date last action differs in text from the history', () => {
+      const { container } = renderLine(PENDING, [JUDICIARY_SENATE], { ...CURRENT, lastAction: 'Amended in committee' })
+      expect(container).toBeEmptyDOMElement()
+    })
+  })
+
+  describe('when the stored detail is current', () => {
+    const PENDING = { committeeId: '7001', name: 'Judiciary', chamber: 'S' }
+
+    it('says "In committee" with the chamber for a pending committee', () => {
+      renderLine(PENDING, [JUDICIARY_SENATE], CURRENT)
+      expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
+    })
+
+    it('says "Last referred to" for referrals only', () => {
+      renderLine(null, [JUDICIARY_SENATE], CURRENT)
+      expect(screen.getByText('Last referred to:').parentElement).toHaveTextContent('Last referred to: Judiciary (Senate), Mar 2026')
+    })
+
+    it('treats a bill with no last action as current', () => {
+      renderLine(PENDING, [JUDICIARY_SENATE], { history: [], lastAction: null, lastActionDate: null })
+      expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
+    })
+
+    it('treats a last action that matches the newest history entry as current', () => {
+      renderLine(null, [JUDICIARY_SENATE], CURRENT)
+      expect(screen.getByText('Last referred to:')).toBeInTheDocument()
+    })
+
+    it('treats a last action older than the newest history entry as current', () => {
+      renderLine(PENDING, [JUDICIARY_SENATE], { ...CURRENT, lastAction: 'Introduced', lastActionDate: '2026-01-05' })
+      expect(screen.getByText('In committee:')).toBeInTheDocument()
+    })
+
+    it('treats an empty history as current, as LegislativeHistory does', () => {
+      renderLine(PENDING, [JUDICIARY_SENATE], { history: [], lastAction: 'Introduced', lastActionDate: '2026-01-05' })
+      expect(screen.getByText('In committee:')).toBeInTheDocument()
+    })
   })
 })
