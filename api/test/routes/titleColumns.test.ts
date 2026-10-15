@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole } from '../helpers'
+import { stubFetch, resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { commentReactions, feedEvents } from '../../src/db/schema'
 import { writeNotifications } from '../../src/lib/notifications'
@@ -38,6 +38,11 @@ async function seedLegacyUser(o: { name: string; email: string; role?: string; s
 
 beforeEach(async () => {
   await resetDb()
+  // The first PATCH /users/me looks up central's superadmin allowlist (cached for the rest of the file),
+  // and the network guard refuses a fetch no test stubbed. An empty allowlist: nobody here is a superadmin.
+  stubFetch(url => (new URL(url).pathname === '/api/admin/superadmin/emails'
+    ? new Response(JSON.stringify({ hashes: [] }), { status: 200 })
+    : new Response('not found', { status: 404 })))
   await applyMigrations()
 })
 
