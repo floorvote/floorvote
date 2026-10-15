@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
-import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { comments, commentReactions, feedEvents } from '../../src/db/schema'
 import { REACTION_EMOJIS } from '../../../shared/reactionEmojis'
 import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../shared/feedUtils'
 
 async function postComment(billId: string, token: string, content = 'Test comment') {
-  return SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+  return appFetch(`http://localhost/api/bills/${billId}/comments`, {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
@@ -23,6 +22,7 @@ describe('GET /bills/:id/comments', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser({ name: 'Alice', title: 'Clerk' })
@@ -47,7 +47,7 @@ describe('GET /bills/:id/comments', () => {
   })
 
   it('returns comments with author info and reactions', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -69,6 +69,7 @@ describe('POST /bills/:id/comments', () => {
   let billId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser()
@@ -135,6 +136,7 @@ describe('PATCH /comments/:id (sanitization, H5)', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser()
@@ -147,7 +149,7 @@ describe('PATCH /comments/:id (sanitization, H5)', () => {
 
   it('sanitizes edited comment HTML on update', async () => {
     const hostile = '<p>edited <strong>bold</strong></p><img src=x onerror="alert(1)"><script>alert(2)</script>'
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'PATCH',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: hostile }),
@@ -171,6 +173,7 @@ describe('PATCH /comments/:id (feed preview)', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser()
@@ -182,7 +185,7 @@ describe('PATCH /comments/:id (feed preview)', () => {
   })
 
   async function patch(content: string) {
-    return SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    return appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'PATCH',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content }),
@@ -227,6 +230,7 @@ describe('POST /comments/:id/reactions', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser()
@@ -255,7 +259,7 @@ describe('POST /comments/:id/reactions', () => {
   }
 
   it('adds a reaction', async () => {
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}/reactions`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ emoji: '👍' }),
@@ -264,12 +268,12 @@ describe('POST /comments/:id/reactions', () => {
   })
 
   it('is idempotent (duplicate reaction is ignored)', async () => {
-    await SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
+    await appFetch(`http://localhost/api/comments/${commentId}/reactions`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ emoji: '👍' }),
     })
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}/reactions`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ emoji: '👍' }),
@@ -281,7 +285,7 @@ describe('POST /comments/:id/reactions', () => {
   })
 
   it('returns 404 for a non-existent comment ID (SEC-C2)', async () => {
-    const res = await SELF.fetch(`http://localhost/api/comments/${crypto.randomUUID()}/reactions`, {
+    const res = await appFetch(`http://localhost/api/comments/${crypto.randomUUID()}/reactions`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ emoji: '👍' }),
@@ -298,7 +302,7 @@ describe('POST /comments/:id/reactions', () => {
   // offers, which is the only set a member can actually produce.
   describe('emoji validation — the offered set, and nothing else', () => {
     const react = (emoji: string) =>
-      SELF.fetch(`http://localhost/api/comments/${commentId}/reactions`, {
+      appFetch(`http://localhost/api/comments/${commentId}/reactions`, {
         method: 'POST',
         headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ emoji }),
@@ -356,6 +360,7 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser()
@@ -369,7 +374,7 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
 
   it('removes a reaction', async () => {
     const emoji = encodeURIComponent('👍')
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}/reactions/${emoji}`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}/reactions/${emoji}`, {
       method: 'DELETE',
       headers: { Cookie: `session=${memberToken}` },
     })
@@ -380,7 +385,7 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
   })
 
   it('returns 400 for a malformed percent-encoded emoji in the path (SEC-M3)', async () => {
-    const res = await SELF.fetch(
+    const res = await appFetch(
       `http://localhost/api/comments/${commentId}/reactions/%ZZ`,
       { method: 'DELETE', headers: { Cookie: `session=${memberToken}` } },
     )
@@ -406,7 +411,7 @@ describe('DELETE /comments/:id/reactions/:emoji', () => {
     ['legacy smuggled text', '😀BUY-CRYPTO'],
   ])('removes a legacy reaction outside the offered set (%s)', async (_label, emoji) => {
     await seedOwnReaction(emoji)
-    const res = await SELF.fetch(
+    const res = await appFetch(
       `http://localhost/api/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`,
       { method: 'DELETE', headers: { Cookie: `session=${memberToken}` } },
     )
@@ -425,6 +430,7 @@ describe('DELETE /comments/:id', () => {
   let commentId: string
 
   beforeEach(async () => {
+    stubFetch() // mention emails go out through fetch
     await resetDb()
     await applyMigrations()
     memberId = await seedUser({ role: 'member' })
@@ -433,7 +439,7 @@ describe('DELETE /comments/:id', () => {
     adminToken = await seedSession(adminId)
     billId = await seedBill()
     const db = getDb(env.DB)
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: `session=${memberToken}` },
       body: JSON.stringify({ content: 'My comment' }),
@@ -443,7 +449,7 @@ describe('DELETE /comments/:id', () => {
   })
 
   it('deletes own comment and returns 204', async () => {
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'DELETE',
       headers: { Cookie: `session=${memberToken}` },
     })
@@ -457,7 +463,7 @@ describe('DELETE /comments/:id', () => {
   })
 
   it('suppresses the matching comment_added feed event', async () => {
-    await SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    await appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'DELETE',
       headers: { Cookie: `session=${memberToken}` },
     })
@@ -471,7 +477,7 @@ describe('DELETE /comments/:id', () => {
   it('returns 403 when member tries to delete another member\'s comment', async () => {
     const otherId = await seedUser({ role: 'member', email: 'other@example.com' })
     const otherToken = await seedSession(otherId)
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'DELETE',
       headers: { Cookie: `session=${otherToken}` },
     })
@@ -479,7 +485,7 @@ describe('DELETE /comments/:id', () => {
   })
 
   it('allows admin to delete any comment', async () => {
-    const res = await SELF.fetch(`http://localhost/api/comments/${commentId}`, {
+    const res = await appFetch(`http://localhost/api/comments/${commentId}`, {
       method: 'DELETE',
       headers: { Cookie: `session=${adminToken}` },
     })

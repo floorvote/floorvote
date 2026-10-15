@@ -103,7 +103,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 |---|---|
 | `LEGISCAN_API_KEY` | LegiScan bill data |
 | `ADMIN_SECRET` | Protects `/api/admin/*` and `/api/tenants/*` routes |
-| `RESEND_API_KEY` | Optional fallback for admin dashboard magic-link email (used unless `EMAIL_PROVIDER=cloudflare` and the `EMAIL` binding is set) |
+| `RESEND_API_KEY` | Admin dashboard magic-link email. Required for dashboard login: `dash-auth.ts` sends nothing and still answers ok if this or `ADMIN_APP_URL` is unset |
 | `CF_QUEUES_TOKEN` | Cloudflare API token (Queues: Edit) for dynamic per-tenant queue delivery |
 | `SUPERADMIN_JWT_PRIVATE_KEY` | ES256 private JWK — central is the sole issuer of superadmin tokens |
 | `SUPERADMIN_EMAILS` | Comma-separated superadmin allowlist |
@@ -215,7 +215,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 1. Import colors/radii/font sizes from `web/src/styles/tokens.ts`. Spacing is raw numbers.
 2. Register Material Symbols icons in `icon_names=` in `web/index.html` before use.
 3. Never edit existing migration files — create new ones.
-4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`, which the guard in `scripts/verify-timestamp-writes.ts` honors (see `docs/internal/dates.md`).
+4. Timestamps: `datetime('now')` in SQL, never ISO. Frontend: `feedTsToEpoch`. A `new Date().toISOString()` that is never stored needs a same-line `// ts-write-ok: <reason>`. The guard `scripts/verify-timestamp-writes.ts` enforces this in CI; run it locally with `npm run verify:timestamps` (see `docs/internal/dates.md`).
 5. Relevance scores are 1–10, not 0–100.
 6. Tenants never call legislative APIs directly — all data flows through central.
 7. Use `apiFetchForLoader` in route loaders, not raw `apiFetch`.
@@ -223,10 +223,13 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 9. Never run `wrangler deploy` directly — use `npm run deploy:tenant`.
 10. Don't mock D1 in tests — use real @cloudflare/vitest-pool-workers bindings.
 11. Don't leave `web/dist` around during local dev — it breaks the Vite `/api` proxy.
+12. Stub `fetch` per test with `stubFetch` (`api/test/helpers.ts`). An unstubbed request fails the test and names its URL (`api/test/setup.ts`).
+13. Send requests that start background work (`ctx.waitUntil`, such as email) through `appFetch`, not `SELF.fetch`. The work then finishes, and a failure in it fails the test.
 
 ### Conventions
 
 - **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [Forking and operator overlays](https://floorvote.org/docs/contributing/#forking-and-operator-overlays).
+- **Button labels.** A label ends in a single ellipsis character (`…`) when its click opens a step that asks for input or a choice, or shows something new, before the action happens ("Feedback…" opens a form). A confirmation that only warns does not count, since the label already says what will happen ("Delete role" keeps its plain label); if a confirmation would reveal something new, show it beside the button instead, as the bulk bar does with its AI analysis count.
 
 ## graphify
 

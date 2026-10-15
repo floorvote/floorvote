@@ -8,6 +8,8 @@ describe('chamberLabel', () => {
   it('maps H to House', () => expect(chamberLabel('H')).toBe('House'))
   it('maps lower to House', () => expect(chamberLabel('lower')).toBe('House'))
   it('maps A to Assembly', () => expect(chamberLabel('A')).toBe('Assembly'))
+  it('maps C to Council', () => expect(chamberLabel('C')).toBe('Council'))
+  it('maps J to Joint', () => expect(chamberLabel('J')).toBe('Joint'))
   it('returns empty string for undefined', () => expect(chamberLabel(undefined)).toBe(''))
   it('returns value as-is for unknown code', () => expect(chamberLabel('X')).toBe('X'))
 })

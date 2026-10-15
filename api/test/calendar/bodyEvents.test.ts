@@ -257,8 +257,8 @@ describe('state capabilities', () => {
 describe('data attribution', () => {
   const configAttribution = async () => (await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any).attribution
 
-  it('credits LegiScan on GET /config until central has answered', async () => {
-    expect(await configAttribution()).toMatchObject({ providers: [{ id: 'legiscan', name: 'LegiScan', url: 'https://legiscan.com', license: { name: 'CC BY 4.0' } }] })
+  it('leaves attribution out of GET /config until central has answered', async () => {
+    expect(await configAttribution()).toBeUndefined()
   })
 
   it('reaches GET /config from the body-event sync, as central declares it', async () => {
@@ -277,7 +277,7 @@ describe('data attribution', () => {
     expect(await configAttribution()).toEqual(DC_ATTRIBUTION)
   })
 
-  it('drops a credit that is not a name and http(s) link, and falls back to LegiScan when none is left', async () => {
+  it('drops a credit that is not a name and http(s) link, and leaves attribution out when none is left', async () => {
     central.attribution = {
       providers: [
         { ...LIMS_CREDIT, url: 'javascript:alert(1)' },
@@ -289,7 +289,7 @@ describe('data attribution', () => {
     expect((await configAttribution()).providers).toEqual([{ id: 'ok', name: 'LegiScan', url: 'https://legiscan.com', note: 'From LegiScan.' }])
     central.attribution = { providers: [{ ...LIMS_CREDIT, url: '/relative' }] }
     await sync()
-    expect((await configAttribution()).providers[0]).toMatchObject({ id: 'legiscan', license: { name: 'CC BY 4.0' } })
+    expect(await configAttribution()).toBeUndefined()
   })
 
   it('keeps a credit with no note, with or without a license, and still keeps a note when one is sent', async () => {
@@ -318,11 +318,11 @@ describe('data attribution', () => {
     expect((await configAttribution()).providers).toEqual([{ id: 'long', name: 'N'.repeat(200), url: 'http://legislature.example.test', note: 'T'.repeat(500) }])
   })
 
-  it('serves LegiScan\'s credit when the stored attribution is corrupt', async () => {
+  it('leaves attribution out when the stored attribution is corrupt', async () => {
     const db = getDb(env.DB)
     for (const value of ['not json', '{"data":"x"}', '{"data":{"providers":"x"}}', 'null']) {
       await db.insert(associationConfig).values({ key: 'data_attribution', value }).onConflictDoUpdate({ target: associationConfig.key, set: { value } })
-      expect((await configAttribution()).providers).toEqual([expect.objectContaining({ id: 'legiscan', name: 'LegiScan' })])
+      expect(await configAttribution()).toBeUndefined()
     }
   })
 

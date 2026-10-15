@@ -8,7 +8,7 @@ Once your central service and at least one tenant are running, this page covers 
 
 ## Optional: superadmin dashboard
 
-The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA), then set these secrets on central (run from inside `central/`):
+The LegiScan central can serve a superadmin dashboard with its own magic-link login and cross-domain single sign-on. It's optional — central works fine without it. To turn it on, first make sure your `central/wrangler.toml` has the `[env.legiscan.assets]` block from the example (it tells Cloudflare to serve the dashboard SPA). Also set `ADMIN_APP_URL` (the dashboard's base URL, used in its sign-in links) and `EMAIL_FROM` (the sender address, on a domain you have verified) in `[env.legiscan.vars]`. Without `EMAIL_FROM` the mail goes out as `notifications@example.com`, which you won't have verified. Then set these secrets on central (run from inside `central/`):
 
 ```bash
 # Magic-link email for the dashboard
@@ -21,7 +21,10 @@ wrangler secret put SUPERADMIN_JWT_PRIVATE_KEY --env legiscan
 wrangler secret put SUPERADMIN_EMAILS --env legiscan
 ```
 
-Generate an ES256 keypair with any JWK tool. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
+Generate the keypair with `node scripts/gen-superadmin-keys.mjs` from the repository root, which prints both halves as JWK JSON. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
+
+> [!WARNING]
+> The dashboard login needs both `RESEND_API_KEY` and `ADMIN_APP_URL`. If either is unset, signing in as a listed superadmin still answers "ok" but sends no email (central logs a warning), so it looks like the link never arrives.
 
 ### Superadmin profile
 
@@ -46,9 +49,11 @@ wrangler secret put CF_ANALYTICS_TOKEN --env legiscan
 wrangler secret put CF_EMAIL_TOKEN --env legiscan
 ```
 
+`CF_EMAIL_TOKEN` lets central read Cloudflare's suppression list of addresses that bounced, and it also needs the `CF_ACCOUNT_ID` var. The list feeds the suppression banner on Login activity and the previously-bounced check when an admin bulk-invites members or changes a member's email. Without the token, those checks count only the bounces the instance itself recorded.
+
 ## Adding a new state to an existing tenant
 
-Update `state_coverage` in the tenant's `association_config`, then load that state's bills into central (see the seeding steps in [Adding tenants](/self-hosting/tenants#step-12-seed-the-active-session-s)). Central will then notify the tenant of any bills matching its keywords.
+Update `state_coverage` in the tenant's `association_config` (the same `INSERT OR REPLACE` as [Step 4b](/self-hosting/tenants#step-4b-seed-the-state-list-multi-state-teams-only)), and run `force-register` ([Step 8](/self-hosting/tenants#step-8-register-the-tenant-with-central)) so central hears about it now instead of at the tenant's next daily registration. Then load that state's bills into central (see the seeding steps in [Adding tenants](/self-hosting/tenants#step-12-seed-the-active-session-s)). Central will then notify the tenant of any bills matching its keywords.
 
 ## Adding another tenant
 
@@ -61,7 +66,7 @@ The repo ships a manual deploy workflow at `.github/workflows/deploy.yml` (`work
 **One-time setup:**
 
 1. Create a Cloudflare API token scoped to your account with **Workers Scripts: Edit**, **D1: Edit**, and **Queues: Edit** (add **Workers Routes: Edit** only if your deploys change routes). Add it as the repository secret `CLOUDFLARE_API_TOKEN` (repo → Settings → Secrets and variables → Actions).
-2. Create a GitHub **Environment** named `production` (repo → Settings → Environments) and scope the token to it. Restrict its deployment branches to your default branch; on GitHub Team or Pro you can also require reviewer approval.
+2. Create a GitHub **Environment** named `production` (repo → Settings → Environments) and scope the token to it. Restrict its deployment branches to your default branch; on GitHub Team or Pro you can also require reviewer approval. Then uncomment the `environment: production` line in `.github/workflows/deploy.yml`. It ships commented out, and until it is on, the environment's restrictions and approvals don't apply to deploys.
 
 **Deploying:**
 
@@ -80,7 +85,8 @@ Pull the latest code and redeploy. Always use the deploy scripts so migrations a
 
 ```bash
 git pull origin main
-cd central && npm install && npm run deploy:legiscan
+npm ci
+cd central && npm ci && npm run deploy:legiscan
 
 # Repeat for each tenant
 cd ../api && npm run deploy:tenant -- org-nj

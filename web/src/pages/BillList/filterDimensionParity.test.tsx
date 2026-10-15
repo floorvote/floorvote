@@ -601,9 +601,9 @@ describe('Stage dimension — hidden when every covered state is on LegiScan', (
     expect(screen.getByRole('button', { name: filterDimensionLabel('status') })).toBeInTheDocument()
   })
 
-  it('hides Stage when central names no providers (LegiScan is the default)', () => {
+  it('shows Stage until config names the providers, as before central has answered', () => {
     renderConfiguredMobile(undefined)
-    expect(screen.queryByRole('button', { name: stageName })).toBeNull()
+    expect(screen.getByRole('button', { name: stageName })).toBeInTheDocument()
   })
 
   it('shows Stage on both surfaces when any covered state is on another provider', async () => {

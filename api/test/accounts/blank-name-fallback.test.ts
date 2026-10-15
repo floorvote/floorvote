@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedCommentMention, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, billCustomFieldValues, commentReactions, customFieldDefinitions, feedEvents, memberVotes, officialPositions } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 import { extractAndNotifyMentions } from '../../src/lib/mentions'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 // A user can clear their name (#233). Everywhere the server hands a person's
 // name to a reader, a blank name falls back to the email address, the same way
