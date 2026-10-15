@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedBill, seedUser } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { bills } from '../../src/db/schema'
+import { billGroupOverrides, bills } from '../../src/db/schema'
 import { groupByHand, recomputeGroups, splitFromGroup, syncIdenticalCompanions } from '../../src/lib/companionGroups'
 
 // Grouping and splitting by hand while other writes land (#382). Two admins
@@ -53,10 +53,11 @@ function holding(opts: {
 
 function gate() {
   let release!: () => void
-  let reached!: () => void
+  let reach!: () => void
   const released = new Promise<void>(r => { release = r })
-  const atHold = new Promise<void>(r => { reached = r })
-  return { release, released, reached, atHold }
+  const atHold = new Promise<void>(r => { reach = r })
+  const g = { release, released, atHold, held: false, reached: () => { g.held = true; reach() } }
+  return g
 }
 
 async function keys(...ids: string[]) {
@@ -79,6 +80,25 @@ describe('grouping by hand while other writes land', () => {
     await seedBill({ id: 'c1714', billNumber: 'S1714', state: 'NJ', externalId: 'legiscan:1714' })
   })
 
+  it('writes a grouping in one attempt when nothing races it', async () => {
+    // 0103's triggers update other bills' group tags in the same statement as
+    // the key update, so the update reports more changes than the keys it set.
+    // That is still a write that applied, and must not be retried.
+    let walks = 0
+    const counting = {
+      prepare: (query: string) => {
+        if (/^\s*select/i.test(query) && query.includes('bill_group_overrides')) walks++
+        return env.DB.prepare(query)
+      },
+      batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts),
+      exec: (query: string) => env.DB.exec(query),
+    } as unknown as D1Database
+    await groupByHand(getDb(counting), 'a190', 'b1713', admin)
+    expect(await keys('a190', 'b1713')).toEqual(['a190', 'a190'])
+    // One read of each bill's overrides: a single walk of the two bills.
+    expect(walks).toBe(2)
+  })
+
   it('leaves a split bill out when a sync of its group was part way through its walk', async () => {
     await syncIdenticalCompanions(db(), 'legiscan:190', [{ sastBillId: 1713, kind: 'identical' }, { sastBillId: 1714, kind: 'identical' }])
     expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', 'a190'])
@@ -95,8 +115,31 @@ describe('grouping by hand while other writes land', () => {
     await splitFromGroup(db(), 'c1714', admin)
     g.release()
     await syncing
+    // The split did land in the middle of the sync.
+    expect(g.held).toBe(true)
 
     expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', null])
+  })
+
+  it('reads the overrides again when one is stored after its walk, even before that action regroups', async () => {
+    await syncIdenticalCompanions(db(), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
+
+    // A sync adds S1714 to the group and is about to write when an admin's
+    // split of S1713 is stored. The split's own recompute hasn't run (its
+    // worker could die there), so only the sync's guard can see the split.
+    const g = gate()
+    const syncing = syncIdenticalCompanions(
+      getDb(holding({ holdBatch: qs => qs.some(q => q.includes('team_events')) }, g.released, g.reached)),
+      'legiscan:1714',
+      [{ sastBillId: 190, kind: 'identical' }],
+    )
+    await Promise.race([g.atHold, syncing])
+    await db().insert(billGroupOverrides).values({ billId: 'a190', otherBillId: 'b1713', kind: 'split', actorUserId: other })
+    g.release()
+    await syncing
+    expect(g.held).toBe(true)
+
+    expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', null, 'a190'])
   })
 
   it('agrees with both admins when one groups and the other splits at once', async () => {
@@ -113,6 +156,7 @@ describe('grouping by hand while other writes land', () => {
     await splitFromGroup(db(), 'b1713', other)
     g.release()
     await grouping
+    expect(g.held).toBe(true)
 
     expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', null, 'a190'])
     // A fresh recompute finds nothing to change.

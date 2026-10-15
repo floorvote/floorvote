@@ -355,8 +355,11 @@ async function tryRecomputeGroups(
       .where(and(sql`${bills.id} IN (SELECT json_extract(k.value, '$[0]') FROM json_each(${JSON.stringify(rekeyed)}) k)`, unchanged)),
   ])
   // A membership change always moves at least one key, so an update that
-  // changed nothing means the guard failed.
-  return rekeyed.length > 0 ? changesOf(updated) === rekeyed.length : changesOf(inserted) === events.length
+  // changed nothing means the guard failed. The guard's subqueries don't
+  // depend on the row, so the update sets every key or none, and one that
+  // applied reports more changes than keys when 0103's triggers rewrote other
+  // bills' group tags in the same statement.
+  return rekeyed.length > 0 ? changesOf(updated) >= rekeyed.length : changesOf(inserted) === events.length
 }
 
 function changesOf(result: unknown): number {
