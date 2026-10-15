@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api'
 import { SECTION_LABEL } from '../lib/textStyles'
 import { Picker } from './Picker'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
-import { promotableCount, bulkConfirmMessage } from './bulkConfirm'
+import { promotableCount, bulkConfirmMessage, describeMultiDelta } from './bulkConfirm'
 import { useDemo } from '../context/DemoContext'
 import { parseStoredMulti } from '../../../shared/customFieldValues'
 
@@ -441,14 +441,11 @@ export function BulkActionBar({
         .filter(([, d]) => d.additions.length > 0 || d.removals.length > 0)
         .map(([fieldId, d]) => {
           const def = customFieldDefs.find(f => f.id === fieldId)
-          const parts: string[] = []
-          if (d.additions.length > 0) parts.push(`+ ${d.additions.join(', ')}`)
-          if (d.removals.length > 0) parts.push(`− ${d.removals.join(', ')}`)
-          return `• ${def?.name ?? 'Custom field'}: ${parts.join('  ')}`
+          return `• ${def?.name ?? 'Custom field'}: ${describeMultiDelta(d)}`
         }),
     ].filter(Boolean).join('\n')
 
-    const confirmed = window.confirm(bulkConfirmMessage({ count, lines, promotableCount: promoteCount }))
+    const confirmed = window.confirm(bulkConfirmMessage({ count, lines, promotableCount: promoteCount, hasMultiChange: hasMultiPending }))
     if (!confirmed) return
 
     setApplying(true)

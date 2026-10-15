@@ -500,6 +500,139 @@ describe('BulkActionBar — drafts filter', () => {
   })
 })
 
+// The confirmation used to read "• Tags: + a, b  − c", which admins could not
+// decode. It now says what happens to each selected bill, in words.
+describe('BulkActionBar multi-select confirmation wording', () => {
+  const tagsDef = {
+    id: 'f1', name: 'Tags', type: 'dropdown' as const, options: ['a', 'b', 'c', 'd', 'e'], multiple: true,
+  }
+  const stageDef = { id: 'f2', name: 'Stage', type: 'dropdown' as const, options: ['x', 'y'], multiple: false }
+  const STAYS = 'Other values on each bill stay as they are.'
+
+  // Every selected bill holds `d` and `e`: clicking those stages a removal,
+  // clicking `a`, `b`, or `c` stages an addition.
+  function renderWithAllHaving() {
+    vi.mocked(apiFetch).mockClear()
+    vi.mocked(apiFetch).mockImplementation((path: string) => {
+      if (path.startsWith('/bills/bulk-values')) {
+        return Promise.resolve({
+          count: 3, priorities: {}, positions: {}, customFields: {},
+          multiCustomFields: { f1: { d: 3, e: 3 } }, nullMatchCount: 0,
+        })
+      }
+      return Promise.resolve({ dismissed: 0 })
+    })
+    return render(
+      <BulkActionBar
+        selection={{ mode: 'filter' }}
+        total={3}
+        positionVocabulary={['Support', 'Oppose']}
+        customFieldDefs={[tagsDef, stageDef]}
+        currentFilters={noFilters}
+        filterNewMatchCount={0}
+        selectedBills={[]}
+        onClearSelection={vi.fn()}
+        onApplied={vi.fn()}
+      />,
+    )
+  }
+
+  const tagsPill = () => screen.getByRole('button', { name: /Tags:/i })
+
+  async function stageTags(toggle: string[]) {
+    renderWithAllHaving()
+    await waitFor(() => expect(tagsPill()).toBeEnabled())
+    fireEvent.click(tagsPill())
+    for (const opt of toggle) fireEvent.click(screen.getByText(opt))
+  }
+
+  function applyAndCaptureConfirm(): string {
+    // Spies on window.confirm persist across tests in this file; start from a clean count.
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    confirm.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /Apply to 3 bills/i }))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    return confirm.mock.calls[0][0] as string
+  }
+
+  async function confirmFor(toggle: string[]): Promise<string> {
+    await stageTags(toggle)
+    return applyAndCaptureConfirm()
+  }
+
+  it('says "add A" for a single addition', async () => {
+    const msg = await confirmFor(['a'])
+    expect(msg).toContain('• Tags: add a\n')
+    expect(msg).not.toContain('remove')
+  })
+
+  it('joins two additions with "and"', async () => {
+    const msg = await confirmFor(['a', 'b'])
+    expect(msg).toContain('• Tags: add a and b\n')
+  })
+
+  it('joins three additions with a serial comma', async () => {
+    const msg = await confirmFor(['a', 'b', 'c'])
+    expect(msg).toContain('• Tags: add a, b, and c\n')
+  })
+
+  it('says "remove D" for a single removal', async () => {
+    const msg = await confirmFor(['d'])
+    expect(msg).toContain('• Tags: remove d\n')
+    expect(msg).not.toContain('add')
+  })
+
+  it('joins two removals with "and"', async () => {
+    const msg = await confirmFor(['d', 'e'])
+    expect(msg).toContain('• Tags: remove d and e\n')
+  })
+
+  it('says "add A and B, remove D" when both are staged', async () => {
+    const msg = await confirmFor(['a', 'b', 'd'])
+    expect(msg).toContain('• Tags: add a and b, remove d\n')
+  })
+
+  it('says the other values stay put exactly once, under the list, however many multi-select changes', async () => {
+    const msg = await confirmFor(['a', 'd'])
+    expect(msg.split(STAYS)).toHaveLength(2)
+    expect(msg.indexOf(STAYS)).toBeGreaterThan(msg.indexOf('• Tags:'))
+  })
+
+  it('uses no + or − signs for multi-select changes', async () => {
+    const msg = await confirmFor(['a', 'b', 'd'])
+    expect(msg).not.toMatch(/[+−]/)
+  })
+
+  it('does not mention other values when no multi-select change is staged', async () => {
+    renderWithAllHaving()
+    await waitFor(() => expect(tagsPill()).toBeEnabled())
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('High'))
+    const msg = applyAndCaptureConfirm()
+    expect(msg).toContain('• Priority → High')
+    expect(msg).not.toContain(STAYS)
+  })
+
+  it('leaves priority, position, and single-value field lines unchanged beside a multi-select change', async () => {
+    renderWithAllHaving()
+    await waitFor(() => expect(tagsPill()).toBeEnabled())
+    fireEvent.click(priorityPill())
+    fireEvent.click(screen.getByText('High'))
+    fireEvent.click(screen.getByRole('button', { name: /Position:/i }))
+    fireEvent.click(screen.getByText('Support'))
+    fireEvent.click(screen.getByRole('button', { name: /Stage:/i }))
+    fireEvent.click(screen.getByText('x'))
+    fireEvent.click(tagsPill())
+    fireEvent.click(screen.getByText('a'))
+    const msg = applyAndCaptureConfirm()
+    expect(msg).toContain('• Priority → High\n')
+    expect(msg).toContain('• Position → Support\n')
+    expect(msg).toContain('• Stage → x\n')
+    expect(msg).toContain('• Tags: add a\n')
+    expect(msg.split(STAYS)).toHaveLength(2)
+  })
+})
+
 // A staged priority promotes untracked bills (matchType null) to full tracking
 // and queues them for AI analysis. The confirmation has always said how many;
 // the bar says it too, before Apply is clicked, so the Apply label needs no
