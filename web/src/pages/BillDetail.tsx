@@ -701,6 +701,7 @@ export function BillDetail() {
   // button's other disabled reasons.
   const linkGate = useRequiredSubmit({ missingRequired: !linkTarget, blocked: linking || demoLocked })
   const [deletingDraft, setDeletingDraft] = useState(false)
+  // The page's toast for overflow-menu actions: Copy link's feedback, and a failed split.
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   // Grouping by hand, from the overflow menu (admins).
   const [groupWithOpen, setGroupWithOpen] = useState(false)

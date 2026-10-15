@@ -24,12 +24,17 @@ export function registerGroupRoutes(router: Hono<AppEnv>) {
     if (typeof withBillId !== 'string' || withBillId === '') return c.json({ error: 'withBillId is required' }, 400)
     if (withBillId === billId) return c.json({ error: 'A bill cannot be grouped with itself' }, 400)
 
-    const found = await db.select({ id: bills.id, isDraft: bills.isDraft, externalId: bills.externalId, matchType: bills.matchType })
+    const found = await db.select({ id: bills.id, isDraft: bills.isDraft, externalId: bills.externalId, matchType: bills.matchType, groupKey: bills.groupKey })
       .from(bills).where(inArray(bills.id, [billId, withBillId])).all()
     if (found.length < 2) return c.json({ error: 'Not found' }, 404)
     // A draft has no legislative record to share a group with. Linking it to
     // its filed bill is how its engagement joins another bill.
     if (found.some(b => b.isDraft)) return c.json({ error: 'A draft bill cannot be grouped. Link it to its filed bill instead.' }, 400)
+    // Already one group: a link here would change nothing now, and would only
+    // pin the two together against what the provider later says.
+    if (found[0].groupKey !== null && found[0].groupKey === found[1].groupKey) {
+      return c.json({ error: 'These bills are already in one group' }, 409)
+    }
 
     await groupByHand(db, billId, withBillId, c.get('user').id)
 

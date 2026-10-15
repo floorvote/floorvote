@@ -4,7 +4,7 @@ import { app } from '../../src/index'
 import { asc, eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { bills, comments, officialPositions, teamEvents } from '../../src/db/schema'
+import { billGroupOverrides, bills, comments, officialPositions, teamEvents } from '../../src/db/schema'
 import { syncIdenticalCompanions } from '../../src/lib/companionGroups'
 import { centralFetch } from '../../src/lib/centralFetch'
 
@@ -92,6 +92,16 @@ describe('grouping and splitting bills by hand', () => {
       expect((await groupWith('ada', 'c1714', 'd2000')).status).toBe(200)
       expect((await groupWith('ada', 'b1713', 'd2000')).status).toBe(200)
       expect(await keys('a190', 'b1713', 'c1714', 'd2000')).toEqual(['a190', 'a190', 'a190', 'a190'])
+    })
+
+    it('refuses two bills already in one group, and stores no override for them', async () => {
+      // A190 and S1714 are grouped through S1713, not with each other.
+      await sync('legiscan:190', [1713])
+      await sync('legiscan:1714', [1713])
+      const res = await groupWith('ada', 'a190', 'c1714')
+      expect(res.status).toBe(409)
+      expect(await db().select().from(billGroupOverrides).all()).toEqual([])
+      expect(await db().select().from(teamEvents).where(eq(teamEvents.actorUserId, user.ada)).all()).toEqual([])
     })
 
     it("refuses the bill itself, a draft, and a bill that doesn't exist", async () => {

@@ -60,6 +60,9 @@ function gate() {
   return g
 }
 
+/** A statement that reads one or more bills' group overrides (not the walk's check for any). */
+const readsOverrides = (query: string) => /^\s*select/i.test(query) && query.includes('from "bill_group_overrides"')
+
 async function keys(...ids: string[]) {
   const rows = await getDb(env.DB).select({ id: bills.id, k: bills.groupKey }).from(bills).all()
   return ids.map(id => rows.find(r => r.id === id)?.k ?? null)
@@ -87,7 +90,7 @@ describe('grouping by hand while other writes land', () => {
     let walks = 0
     const counting = {
       prepare: (query: string) => {
-        if (/^\s*select/i.test(query) && query.includes('bill_group_overrides')) walks++
+        if (readsOverrides(query)) walks++
         return env.DB.prepare(query)
       },
       batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts),
@@ -99,15 +102,31 @@ describe('grouping by hand while other writes land', () => {
     expect(walks).toBe(2)
   })
 
+  it("reads no bill's overrides on a delivery when the instance has none", async () => {
+    let reads = 0
+    const counting = {
+      prepare: (query: string) => { if (readsOverrides(query)) reads++; return env.DB.prepare(query) },
+      batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts),
+      exec: (query: string) => env.DB.exec(query),
+    } as unknown as D1Database
+    await syncIdenticalCompanions(getDb(counting), 'legiscan:1713', [{ sastBillId: 190, kind: 'identical' }])
+    expect(await keys('a190', 'b1713')).toEqual(['a190', 'a190'])
+    expect(reads).toBe(0)
+  })
+
   it('leaves a split bill out when a sync of its group was part way through its walk', async () => {
     await syncIdenticalCompanions(db(), 'legiscan:190', [{ sastBillId: 1713, kind: 'identical' }, { sastBillId: 1714, kind: 'identical' }])
     expect(await keys('a190', 'b1713', 'c1714')).toEqual(['a190', 'a190', 'a190'])
+    // An override elsewhere in the instance, so the walk reads each bill's.
+    await seedBill({ id: 'd2000', billNumber: 'H2000', state: 'NJ', externalId: 'legiscan:2000' })
+    await seedBill({ id: 'e2001', billNumber: 'H2001', state: 'NJ', externalId: 'legiscan:2001' })
+    await groupByHand(db(), 'd2000', 'e2001', admin)
 
     // The sync has read A190's overrides, from before the split, and reads
     // its companions (S1714 by now split) after the split has finished.
     const g = gate()
     const syncing = syncIdenticalCompanions(
-      getDb(holding({ holdQuery: (_q, seen) => seen.some(s => s.includes('bill_group_overrides')) }, g.released, g.reached)),
+      getDb(holding({ holdQuery: (_q, seen) => seen.some(readsOverrides) }, g.released, g.reached)),
       'legiscan:190',
       [{ sastBillId: 1713, kind: 'identical' }, { sastBillId: 1714, kind: 'identical' }],
     )

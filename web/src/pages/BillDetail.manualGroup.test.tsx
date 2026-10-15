@@ -254,4 +254,18 @@ describe('grouping and splitting from the overflow menu', () => {
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith('/bills/42/split', { method: 'POST' }))
     await waitFor(() => expect(reads()).toBeGreaterThan(readsBefore))
   })
+
+  it('says so when the split fails', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const apiFetch = renderBillDetail(GROUPED)
+    const answer = apiFetch.getMockImplementation()!
+    apiFetch.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === '/bills/42/split') throw new Error('500')
+      return answer(path, init)
+    })
+    await openMenu(user)
+    await user.click(screen.getByRole('menuitem', { name: /Split from group/ }))
+    expect(await screen.findByText("Couldn't split the bill from its group. Try again.")).toBeInTheDocument()
+  })
 })
