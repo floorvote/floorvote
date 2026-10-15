@@ -832,7 +832,7 @@ describe('overflow menu', () => {
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
   })
 
-  it('shows Copy link + Re-generate for an admin on a non-draft bill', async () => {
+  it('shows Copy link + Re-generate + Group with for an admin on a non-draft bill', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
     makeMockApiFetch()
@@ -840,9 +840,11 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
     expect(items[1]).toHaveTextContent(/Re-generate/)
+    // Split from group appears only on a grouped bill (BillDetail.manualGroup.test.tsx).
+    expect(items[2]).toHaveTextContent(/Group with…/)
   })
 
   it('shows Copy link + Delete draft (and no Re-generate) for an admin on a draft bill', async () => {
@@ -913,8 +915,10 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(1)
+    // Group with… is offered on any filed bill, tracked or not (#382).
+    expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
+    expect(items[1]).toHaveTextContent(/Group with…/)
   })
 
   it('hides Re-generate on a tracked bill whose analysis never landed', async () => {

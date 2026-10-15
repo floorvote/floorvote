@@ -1176,6 +1176,40 @@ describe('BillList active filter chips — relevance threshold alone', () => {
   })
 })
 
+// A companion group is one row (#379): the server sends the row's first bill and
+// the group's bills, and a vote on either bill of the group is the row's.
+describe('BillList companion group rows', () => {
+  const grouped = makeBill({
+    id: 'b1713', billNumber: 'S1713', title: 'Ballot Access Act', status: '4', sessionSlug: '2026',
+    group: [
+      { id: 'b1713', billNumber: 'S1713', state: 'RI', status: '4', sessionSlug: '2026' },
+      { id: 'a190', billNumber: 'A190', state: 'RI', status: '1', sessionSlug: '2026' },
+    ],
+  })
+  beforeEach(() => { BILLS.push(grouped) })
+  afterEach(() => { BILLS.pop() })
+
+  const groupRow = () => screen.getByText('Ballot Access Act').closest('.bill-row') as HTMLElement
+
+  it('shows the group as one row naming both bills', async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Ballot Access Act')
+    expect(screen.getAllByText('Ballot Access Act')).toHaveLength(1)
+    const numbers = within(groupRow()).getAllByRole('link').map(a => a.getAttribute('href'))
+    expect(numbers).toContain('/RI/2026/S1713')
+    expect(numbers).toContain('/RI/2026/A190')
+  })
+
+  it("updates the row when a vote is cast on the group's other bill", async () => {
+    render(<BillList />, { wrapper: Wrapper })
+    await screen.findByText('Ballot Access Act')
+    const supportCount = () => within(within(groupRow()).getAllByTestId('vote-row')[0]).getByText(/^\d+$/).textContent
+    expect(supportCount()).toBe('0')
+    window.dispatchEvent(new CustomEvent('bill-vote-changed', { detail: { billId: 'a190', newVote: 'support', prevVote: null } }))
+    await waitFor(() => expect(supportCount()).toBe('1'))
+  })
+})
+
 // #331: the dismiss button's count comes from /bills/facets, and the button acts
 // on whatever the server matches under the filters at click time. A slow reply
 // to an older request must not overwrite the counts for the newest one, and every

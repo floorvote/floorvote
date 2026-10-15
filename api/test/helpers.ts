@@ -179,6 +179,8 @@ export async function seedBill(overrides?: {
   draftText?: string | null
   newMatchAt?: string | null
   triagedAt?: string | null
+  /** Where central stored the bill's text, when the instance has been told. */
+  textR2Key?: string | null
   /** Raw `bills.subjects` column value — a JSON-encoded array string (or null),
    *  not a decoded array. Pass e.g. '["Elections"]' to mirror what LegiScan sync
    *  actually writes. */
@@ -222,6 +224,7 @@ export async function seedBill(overrides?: {
     draftText: overrides?.draftText ?? null,
     newMatchAt: overrides?.newMatchAt ?? null,
     triagedAt: overrides?.triagedAt ?? null,
+    textR2Key: overrides?.textR2Key ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })

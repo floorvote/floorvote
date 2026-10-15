@@ -78,6 +78,8 @@ export type TenantQueueMessage = {
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred
   stubOnly?: boolean // Update stub metadata only; skip full bill fetch and AI
+  /** Sent only by lib/companionAnalysis.ts: analyze a bill that didn't match, because its companion group has a tracked bill. */
+  groupAnalysis?: true
   metadataOnly?: boolean // Refresh metadata from central; skip text fetch + AI.
   matchType?: 'keyword' | 'manual' | null // Bill's match classification for this tenant
   changes?: {

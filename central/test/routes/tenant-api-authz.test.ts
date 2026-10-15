@@ -71,6 +71,11 @@ describe('TenantApi cross-tenant object-level authz (props.tenantId)', () => {
       expect(res.status).toBe(403)
     })
 
+    it('blocks fetch-bills for another tenant with 403', async () => {
+      const res = await bindingCall(RI, 'POST', '/api/tenants/fetch-bills/nj', { headers: JSON_HEADERS, body: '{}' })
+      expect(res.status).toBe(403)
+    })
+
     it('blocks upcoming-hearings for another tenant with 403', async () => {
       const res = await bindingCall(RI, 'GET', '/api/tenants/nj/upcoming-hearings')
       expect(res.status).toBe(403)

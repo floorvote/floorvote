@@ -52,7 +52,7 @@ describe('GET /api/bills — drafts filter', () => {
 })
 
 // CRITICAL regression: filter-mode bulk actions previously dropped `drafts` from
-// the filter -> buildBillsWhere -> chain, so "select all matching filters" with
+// the filter -> buildBillsFilter -> chain, so "select all matching filters" with
 // Drafts on quietly wrote to every bill, not just the drafts the admin saw. This
 // asserts both directions: the drafts get the write, and the filed bills it must
 // NOT touch stay untouched.

@@ -1,4 +1,19 @@
+/**
+ * A bill in a companion group, as the list row names it: enough to show its
+ * number and status and link to its own page. `matched` says whether this bill
+ * itself met the list's filters, and is absent when nothing is filtered.
+ */
+export type GroupMember = {
+  id: string
+  billNumber: string
+  state: string
+  status: string
+  sessionSlug: string
+  matched?: boolean
+}
+
 export type Bill = {
+  /** The first bill of the row's group (the furthest along), or the bill itself. */
   id: string
   billNumber: string
   title: string
@@ -31,6 +46,13 @@ export type Bill = {
   hasComment: boolean
   updatedAt: string
   customFieldValues?: Record<string, string>
+  /**
+   * Every bill in the row's companion group, the furthest along first, when the
+   * row is a group of two or more. The row's own fields are those of the first
+   * bill, and its team values, votes, and comments are the group's. Absent for
+   * a bill with no companions.
+   */
+  group?: GroupMember[]
 }
 
 export type Selection =

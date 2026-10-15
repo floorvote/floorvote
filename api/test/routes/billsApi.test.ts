@@ -1764,7 +1764,7 @@ describe('POST /bills/bulk (admin only)', () => {
 
   // CRITICAL 1 regression: a subject filter in a bulk request must narrow the
   // affected set the same way it narrows the list view. Before the fix, bulkRoutes
-  // passed subjectFilters: [] to buildBillsWhere, so a `filter.subject` the admin
+  // passed subjectFilters: [] to buildBillsFilter, so a `filter.subject` the admin
   // saw narrow the list to one bill silently applied to every bill matching the
   // rest of the filter — here, all three bills instead of just the one with the
   // matching subject.
