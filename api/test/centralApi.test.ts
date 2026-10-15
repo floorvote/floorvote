@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
 import { CentralApi } from '../src/centralApi'
-import { resetDb, applyMigrations } from './helpers'
+import { resetDb, applyMigrations, stubFetch } from './helpers'
 
 beforeEach(async () => {
   await resetDb()
@@ -17,9 +17,11 @@ describe('CentralApi RPC entrypoint', () => {
   })
 
   it('forceRegister() resolves to a boolean', async () => {
+    const central = stubFetch()
     const entry = new CentralApi(createExecutionContext(), env)
     const ok = await entry.forceRegister()
-    expect(typeof ok).toBe('boolean')
+    expect(ok).toBe(true)
+    expect(central.mock.calls.map(c => c[0])).toEqual(['https://central.test/api/tenants/register'])
   })
 
   it('sendSampleEmail() rejects an invalid type without sending', async () => {

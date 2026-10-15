@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { seedBill } from '../helpers'
-import { bills, billCustomFieldValues, billSubjects, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
+import { associationConfig, bills, billCustomFieldValues, billSubjects, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
+import { SUPPRESSED_SUBJECT_STATES_KEY } from '../../src/lib/billSubjects'
 import { ada, db, facets, group, reset, total } from './groupFacetsHarness'
 
 // Filter counts count companion groups (#380). A facet count is what the list
@@ -176,5 +177,92 @@ describe('facet counts count a companion group once', () => {
       expect(f.status.Failed).toBe(2)
       expect(await total('status=Passed&status=Introduced&match=any')).toBe(1)
     })
+  })
+})
+
+// #528's subject coverage beside the facets, on a grouped instance. subjectStates
+// and billStates say which states assign subjects and which have bills at all,
+// so they count bills, not groups: a state is in them when any bill there
+// qualifies, whichever bill stands for its group's row, and whatever filter is
+// active. Suppression still hides a state's subjects under grouping.
+describe('subject coverage beside the facets, under grouping', () => {
+  beforeEach(reset)
+
+  async function suppress(...states: string[]) {
+    await db().insert(associationConfig).values({ key: SUPPRESSED_SUBJECT_STATES_KEY, value: JSON.stringify(states) })
+  }
+  async function coverAllStates() {
+    await db().insert(associationConfig).values({ key: 'state_coverage', value: JSON.stringify(['*']) })
+  }
+
+  it("lists a state's subjects through a grouped bill that doesn't stand for the group", async () => {
+    // The group's key is a1, the bill with no subjects; its companion b2 carries them.
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'TX' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'NJ' })
+    await seedBill({ id: 'c3', billNumber: 'C3', state: 'OH' })
+    await group('a1', 'b2')
+    await db().insert(billSubjects).values({ billId: 'b2', subjectName: 'Elections', state: 'NJ' })
+    expect((await facets()).subjectStates).toEqual(['NJ'])
+    // A filter that leaves the NJ bill out of the result doesn't drop NJ.
+    expect((await facets('state=OH')).subjectStates).toEqual(['NJ'])
+  })
+
+  it('lists every state with bills on * coverage, counting each bill of a group', async () => {
+    await coverAllStates()
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'TX' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'NJ' })
+    await seedBill({ id: 'c3', billNumber: 'C3', state: 'OH' })
+    await group('a1', 'b2')
+    expect((await facets()).billStates).toEqual(['NJ', 'OH', 'TX'])
+  })
+
+  it('leaves billStates out on an explicit list of states, grouped or not', async () => {
+    await db().insert(associationConfig).values({ key: 'state_coverage', value: JSON.stringify(['NJ', 'TX']) })
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'TX' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'NJ' })
+    await group('a1', 'b2')
+    expect('billStates' in await facets()).toBe(false)
+  })
+
+  it('still returns both when My Bills matches no group', async () => {
+    await coverAllStates()
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'TX' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'NJ' })
+    await group('a1', 'b2')
+    await db().insert(billSubjects).values({ billId: 'b2', subjectName: 'Elections', state: 'NJ' })
+    const f = await facets('myBills=1')
+    expect(f.status).toEqual({})
+    expect(f.subjectStates).toEqual(['NJ'])
+    expect(f.billStates).toEqual(['NJ', 'TX'])
+  })
+
+  it("hides a suppressed state's subjects from a group whose other bill keeps its own", async () => {
+    await coverAllStates()
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'NJ' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'UT' })
+    await group('a1', 'b2')
+    await db().insert(billSubjects).values([
+      { billId: 'a1', subjectName: 'Local Government', state: 'NJ' },
+      { billId: 'b2', subjectName: 'Elections', state: 'UT' },
+    ])
+    await suppress('NJ')
+    const f = await facets()
+    expect(f.subjects).toEqual({ 'UT:Elections': 1 })
+    expect(f.subjectStates).toEqual(['UT'])
+    // Suppression hides subjects, not bills: NJ still has one.
+    expect(f.billStates).toEqual(['NJ', 'UT'])
+  })
+
+  it('ignores a subject filter naming a suppressed state under grouping, rather than matching nothing', async () => {
+    await seedBill({ id: 'a1', billNumber: 'A1', state: 'NJ' })
+    await seedBill({ id: 'b2', billNumber: 'B2', state: 'UT' })
+    await seedBill({ id: 'c3', billNumber: 'C3', state: 'OH' })
+    await group('a1', 'b2')
+    await db().insert(billSubjects).values({ billId: 'a1', subjectName: 'Local Government', state: 'NJ' })
+    await suppress('NJ')
+    const f = await facets('subject=NJ:Local%20Government')
+    expect(f.state).toEqual((await facets()).state)
+    expect(f.subjectStates).toEqual([])
+    expect(await total('subject=NJ:Local%20Government')).toBe(2)
   })
 })
