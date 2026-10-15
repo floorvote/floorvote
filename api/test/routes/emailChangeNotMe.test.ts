@@ -397,6 +397,15 @@ describe('pressing the button', () => {
     expect(alerts()[0].text).toContain('Requested by: Ada Admin (ada@org.org)')
   })
 
+  it('shows a nameless admin by email once, not as "email (email)"', async () => {
+    await env.DB.prepare('UPDATE users SET name = ? WHERE id = ?').bind('', admin).run()
+    const adminToken = await issueNotMeToken(getDb(env.DB), {
+      id: crypto.randomUUID(), userId: jane, oldEmail: 'jane@oldjob.org', newEmail: 'jane@elsewhere.org', requestedBy: admin,
+    })
+    await press(adminToken)
+    expect(alerts()[0].text).toContain('Requested by: ada@org.org\n')
+  })
+
   it('still signs the member out, and says so, when no alert could be sent', async () => {
     sendFails = true
     const r = await press(token)

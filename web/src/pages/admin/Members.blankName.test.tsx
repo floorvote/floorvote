@@ -40,6 +40,7 @@ function renderMembers() {
     if (path === '/admin/members') return [SELF, NAMED, CLEARED] as never
     if (path === '/admin/roles') return [] as never
     if (path === '/admin/config') return {} as never
+    if (path.endsWith('/auth-events')) return { events: [], suppression: { suppressed: false }, delivery: {} } as never
     return {} as never
   })
   return render(
@@ -80,5 +81,28 @@ describe('Members table, member with no name', () => {
     await user.type(screen.getByPlaceholderText(/search by name, email, role, or permission level/i), 'cleared')
     expect(screen.getByRole('link', { name: 'cleared@example.com' })).toBeInTheDocument()
     expect(screen.queryByText('Named Member')).not.toBeInTheDocument()
+  })
+
+  // Login activity's header pairs the member's name with their email; a
+  // nameless member's name is their email, so it must not be printed twice (#513).
+  async function openLoginActivity(email: string) {
+    const user = userEvent.setup()
+    await user.click(within(rowFor(email)).getByRole('button', { name: '···' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Login activity' }))
+    return (await screen.findByText('Login activity')).parentElement as HTMLElement
+  }
+
+  it('shows a nameless member\'s email once in the Login activity header', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('cleared@example.com')
+    expect(header.textContent).toBe('Login activitycleared@example.com')
+  })
+
+  it('still shows "Name · email" in the Login activity header for a named member', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('named@example.com')
+    expect(header.textContent).toBe('Login activityNamed Member · named@example.com')
   })
 })
