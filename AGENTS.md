@@ -227,6 +227,7 @@ Route loaders must use `apiFetchForLoader` (not raw `apiFetch`) — a raw 401 by
 ### Conventions
 
 - **Working in a fork.** If your checkout carries operator-specific files not tracked upstream (e.g. deploy configs, an internal ops runbook), decide up front whether a change belongs upstream or stays fork-only before creating a worktree or branch — see [Forking and operator overlays](https://floorvote.org/docs/contributing/#forking-and-operator-overlays).
+- **Button labels.** A label ends in a single ellipsis character (`…`) when its click opens a step that asks for input or a choice, or shows something new, before the action happens ("Feedback…" opens a form). A confirmation that only warns does not count, since the label already says what will happen ("Delete role" keeps its plain label); if a confirmation would reveal something new, show it beside the button instead, as the bulk bar does with its AI analysis count.
 
 ## graphify
 

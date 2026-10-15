@@ -23,6 +23,12 @@ wrangler secret put SUPERADMIN_EMAILS --env legiscan
 
 Generate an ES256 keypair with any JWK tool. Central holds the private half; each tenant verifies with the matching **public** JWK, which is not a secret — it goes in each tenant's `[env.*.vars]` as `SUPERADMIN_JWT_PUBLIC_KEY` (see the tenant env block in [Adding tenants](/self-hosting/tenants)).
 
+### Superadmin profile
+
+Each superadmin has one profile, a name and a title, kept in central and edited once on the dashboard's **Your profile** page. Central puts both in the sign-in token it issues. Each time a superadmin reaches a tenant through the dashboard, the tenant creates or overwrites its copy of their name and title from the token, so the same person appears the same way everywhere. A superadmin who signs in to a tenant directly by emailed link gets the same refresh: the tenant asks central, over its authenticated connection, for that one person's profile. The check and the lookup run in the background, so no one's sign-in waits on central, and the new name and title show on the superadmin's next page load. Central answers only for a superadmin, so the superadmin list stays private, and if central can't be reached the existing name and title stay. A saved change reaches a tenant the next time the superadmin signs in to it either way. The title doubles as the visible marker of operator staff, for example "Operator support."
+
+On a tenant's Profile page, a superadmin's name and title are read-only, with a note that they're managed in the admin dashboard, and the tenant's API refuses edits to them. A superadmin who has not saved a profile yet leaves each tenant's existing name and title alone.
+
 ## Optional: observability panels
 
 These power the operations dashboards and the Members "Login activity" panel. Each one quietly does nothing when its credentials are unset — no crash, the feature just stays dark.
@@ -79,6 +85,9 @@ cd central && npm install && npm run deploy:legiscan
 # Repeat for each tenant
 cd ../api && npm run deploy:tenant -- org-nj
 ```
+
+> [!NOTE]
+> **Deploy central before the tenants.** Central now runs a migration for the superadmin profile table and adds each superadmin's name and title to the sign-in token. Tenants ignore token fields they don't know, so central first is always safe. A tenant deployed ahead of central keeps working, including emailed-link sign-in, but it doesn't receive superadmin profiles until central is upgraded.
 
 > [!NOTE]
 > **Check where your central settings live.** Older versions of `central/wrangler.example.toml` put a few optional settings only in the top-level block, outside `[env.legiscan]`: `DEAD_LETTER_QUEUE`, `EMAIL_FROM`, `ALERT_EMAILS`, `SUPERADMIN_JWT_PUBLIC_KEY`, and the dead-letter `[[queues.consumers]]` entry. Wrangler doesn't carry top-level vars or queue consumers into an environment, so if you filled any of these in at the top level, your central never used them. Job-failure alerts went nowhere, email used the default sender, and superadmin login stayed off. Move them into `[env.legiscan.vars]` and `[[env.legiscan.queues.consumers]]`, then redeploy. Keep the top-level `name` and compatibility settings, which the `legiscan` environment inherits. The rest of the old top-level block (its `main`, D1, R2, queue, cron, and `[vars]` entries) is unused and can be deleted.

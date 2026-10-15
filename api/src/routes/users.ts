@@ -10,7 +10,14 @@ import { getAccountDeletionEnabled, activeUser } from '../lib/accountDeletion'
 import { nowDb } from '../lib/dbTime'
 import { countActiveOwners } from '../lib/owners'
 import { userDisplayNameSql } from '../lib/displayName'
-import { authEventActor, authEventActorName } from '../lib/authEvents'
+import { authEventActor, authEventActorName, authReqContext } from '../lib/authEvents'
+import { getCookie } from 'hono/cookie'
+import { hashToken } from '../lib/crypto'
+import { checkRateLimit } from '../../../shared/rateLimit'
+import { verifyTurnstile } from '../../../shared/turnstile'
+import { isSuperadminRequest } from '../lib/superadminRequest'
+import { requestEmailChange, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
+import { isSuperadminUser, SUPERADMIN_PROFILE_MANAGED_ERROR } from '../lib/superadminProfile'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -58,6 +65,10 @@ usersRouter.patch('/me', async (c) => {
   const currentUser = c.get('user')
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>))
   const raw = body && typeof body === 'object' ? body : {}
+  // A superadmin's name and title are kept in central and overwritten at each sign-in.
+  if (('name' in raw || 'subtitle' in raw) && await isSuperadminUser(c, currentUser.email)) {
+    return c.json({ error: SUPERADMIN_PROFILE_MANAGED_ERROR }, 403)
+  }
   const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
   const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 
@@ -146,6 +157,46 @@ usersRouter.post('/me/deactivate', async (c) => {
   await db.update(users).set({ deactivatedAt: nowDb() }).where(eq(users.id, currentUser.id))
   await db.delete(sessions).where(eq(sessions.userId, currentUser.id))
   return c.json({ ok: true })
+})
+
+// POST /users/me/email-change  { email, turnstileToken }
+// Ask to change your own sign-in email. Nothing changes until the change is
+// confirmed from the new address (lib/emailChange.ts). No re-authentication,
+// by decision: the session is the proof. Limited per IP and gated by
+// Turnstile the way the sign-in form is, plus three requests per member a day.
+usersRouter.post('/me/email-change', async (c) => {
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `email-change:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+  const body = await c.req.json<{ email?: unknown; turnstileToken?: unknown }>().catch(() => ({} as { email?: unknown; turnstileToken?: unknown }))
+  const turnstileToken = typeof body.turnstileToken === 'string' ? body.turnstileToken : undefined
+  if (!(await verifyTurnstile(c.env.TURNSTILE_SECRET_KEY, turnstileToken, ip))) {
+    return c.json({ error: 'Verification required.' }, 403)
+  }
+
+  const db = getDb(c.env.DB)
+  const currentUser = c.get('user')
+  // A superadmin's identity is central's (#370), so it never changes here. The
+  // address check lives in requestEmailChange and the commit; this one is the
+  // request's own operator cookie, which only the route can see.
+  if (await isSuperadminRequest(c)) {
+    return c.json({ error: EMAIL_CHANGE_ERRORS.superadmin }, 403)
+  }
+
+  // The session asking is the one the commit leaves signed in.
+  const session = await db.select({ id: sessions.id }).from(sessions)
+    .where(eq(sessions.tokenHash, await hashToken(getCookie(c, 'session') ?? ''))).get()
+
+  const result = await requestEmailChange(c.env, db, {
+    member: { id: currentUser.id, email: currentUser.email },
+    requesterId: currentUser.id,
+    sessionId: session?.id ?? null,
+    rawNewEmail: body.email,
+    ctx: authReqContext(c),
+  })
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  return c.json({ ok: true, email: result.email })
 })
 
 // GET /users/me/bills — bills the user has voted on, commented on, or noted
@@ -246,6 +297,7 @@ usersRouter.get('/me/auth-events', async (c) => {
       ipCountry: authEvents.ipCountry,
       createdAt: authEvents.createdAt,
       email: authEvents.email,
+      actorId: authEvents.actorId,
       actorName: authEventActorName,
     })
     .from(authEvents)

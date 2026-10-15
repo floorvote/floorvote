@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConfig } from '../context/ConfigContext'
 import { SettingsNav } from '../components/SettingsNav'
+import { Turnstile } from '../components/Turnstile'
 import { apiFetch, ApiError } from '../lib/api'
 import { CARD } from '../lib/cardStyle'
 import { CARD_TITLE, FORM_LABEL, HELPER_TEXT } from '../lib/textStyles'
@@ -14,11 +15,11 @@ import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from
 import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
-import { emailChangedLabel, type EmailChangedFields } from '../lib/emailChangedLabel'
+import { emailChangedLabel, ownEmailChangeLabel, type EmailChangeStepFields } from '../lib/emailChangedLabel'
 
 const SECTION_CARD: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
 
-type AccountAuthEvent = EmailChangedFields & {
+type AccountAuthEvent = EmailChangeStepFields & {
   id: string
   event: string
   linkType: string | null
@@ -27,7 +28,9 @@ type AccountAuthEvent = EmailChangedFields & {
   createdAt: string
 }
 
-function accountEventLabel(e: AccountAuthEvent): string {
+function accountEventLabel(e: AccountAuthEvent, selfId: string): string {
+  const step = ownEmailChangeLabel(e, selfId)
+  if (step) return step
   switch (e.event) {
     case 'link_requested':
       return e.linkType === 'invite' ? 'Invite sent' : 'Login link requested'
@@ -222,6 +225,55 @@ export function Profile() {
     }
   }
 
+  // Change email. Nothing changes until the new address confirms, so the form
+  // only asks for the address and reports where the link went. The request is
+  // gated by Turnstile like the sign-in form, when the instance has a site key.
+  const [changeEmailOpen, setChangeEmailOpen] = useState(false)
+  const [newEmail, setNewEmail] = useState('')
+  const [changeEmailSending, setChangeEmailSending] = useState(false)
+  const [changeEmailError, setChangeEmailError] = useState<string | null>(null)
+  const [changeEmailSentTo, setChangeEmailSentTo] = useState<string | null>(null)
+  // null until /auth/demo-mode answers; '' means no widget.
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileKey, setTurnstileKey] = useState(0) // bump for a fresh single-use token
+  const changeEmailReady = !changeEmailSending && !!newEmail.trim() && turnstileSiteKey !== null
+    && (!turnstileSiteKey || !!turnstileToken)
+
+  function openChangeEmail() {
+    if (demoLocked) return
+    setChangeEmailOpen(true)
+    setChangeEmailError(null)
+    setNewEmail('')
+    if (turnstileSiteKey === null) {
+      apiFetch<{ turnstileSiteKey?: string }>('/auth/demo-mode')
+        .then((r) => setTurnstileSiteKey(r.turnstileSiteKey ?? ''))
+        .catch(() => setTurnstileSiteKey(''))
+    }
+  }
+
+  async function handleChangeEmail(e: React.FormEvent) {
+    e.preventDefault()
+    if (!changeEmailReady) return
+    setChangeEmailSending(true)
+    setChangeEmailError(null)
+    try {
+      const r = await apiFetch<{ ok: true; email: string }>('/users/me/email-change', {
+        method: 'POST',
+        body: JSON.stringify({ email: newEmail, turnstileToken }),
+      })
+      setChangeEmailSentTo(r.email)
+      setChangeEmailOpen(false)
+    } catch (err) {
+      setChangeEmailError(err instanceof ApiError ? err.message : 'Failed to send the confirmation. Please try again.')
+    } finally {
+      setChangeEmailSending(false)
+      // Turnstile tokens are single use: remount the widget for the next try.
+      setTurnstileToken(null)
+      setTurnstileKey((k) => k + 1)
+    }
+  }
+
   // Account: login activity, deactivation, deletion
   const [activityOpen, setActivityOpen] = useState(false)
   const [activityLoading, setActivityLoading] = useState(false)
@@ -315,6 +367,28 @@ export function Profile() {
       {/* Profile card */}
       <div style={SECTION_CARD}>
         <h1 style={CARD_TITLE}>Profile</h1>
+        {user?.isSuperadmin ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+              <div>
+                <span style={FORM_LABEL}>Name</span>
+                <div style={{ fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textPrimary }}>{user.name || '—'}</div>
+              </div>
+              <div>
+                <span style={FORM_LABEL}>Email</span>
+                <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.email}</div>
+              </div>
+            </div>
+            <div>
+              <span style={FORM_LABEL}>Title</span>
+              <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.subtitle || '—'}</div>
+              <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
+                Your name and title are managed in the admin dashboard. They update here when you sign in from the admin dashboard.
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
           <div>
             <label style={FORM_LABEL} htmlFor="name-input">Name</label>
@@ -340,9 +414,84 @@ export function Profile() {
           </div>
           <div>
             <span style={FORM_LABEL}>Email</span>
-            <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user?.email ?? '—'}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 10 }}>
+              <span style={{ fontSize: fontSize.base, color: color.textPrimary, overflowWrap: 'anywhere' }}>{user?.email ?? '—'}</span>
+              {!changeEmailOpen && (
+                <button
+                  type="button"
+                  onClick={openChangeEmail}
+                  disabled={demoLocked}
+                  style={{
+                    background: 'none', border: 'none', padding: 0, fontSize: fontSize.sm,
+                    color: demoLocked ? color.textMuted : color.linkBlue,
+                    cursor: demoLocked ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Change email…
+                </button>
+              )}
+            </div>
           </div>
         </div>
+
+        {changeEmailOpen && (
+          <form onSubmit={handleChangeEmail} style={{ marginBottom: 20, maxWidth: 400 }}>
+            <label style={FORM_LABEL} htmlFor="new-email-input">New email</label>
+            <input
+              id="new-email-input"
+              type="email"
+              autoComplete="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              style={{
+                display: 'block', width: '100%', fontSize: fontSize.base, padding: '8px 12px',
+                border: `1px solid ${color.borderStrong}`, borderRadius: radius.md, outline: 'none',
+                color: color.textPrimary, boxSizing: 'border-box',
+              }}
+            />
+            <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
+              We&apos;ll email a link to the new address. Your email changes only when you open it and confirm.
+            </div>
+            {turnstileSiteKey && (
+              <div style={{ marginTop: 12 }}>
+                <Turnstile key={turnstileKey} sitekey={turnstileSiteKey} onToken={setTurnstileToken} />
+              </div>
+            )}
+            {changeEmailError && (
+              <div role="alert" style={{ fontSize: fontSize.sm, color: color.textErrorRed, marginTop: 8 }}>{changeEmailError}</div>
+            )}
+            <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+              <button
+                type="submit"
+                disabled={!changeEmailReady}
+                style={{
+                  background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md,
+                  padding: '8px 20px', fontSize: fontSize.base, fontWeight: fontWeight.medium,
+                  cursor: changeEmailReady ? 'pointer' : 'not-allowed', opacity: changeEmailReady ? 1 : 0.5,
+                }}
+              >
+                {changeEmailSending ? 'Sending…' : 'Send confirmation'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChangeEmailOpen(false)}
+                style={{
+                  background: 'none', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md,
+                  padding: '8px 16px', fontSize: fontSize.base, color: color.textSecondary, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {changeEmailSentTo && !changeEmailOpen && (
+          <div role="status" style={{ marginBottom: 20, padding: '10px 12px', background: color.bgInfo, borderRadius: radius.md, fontSize: fontSize.sm, color: color.textPrimary }}>
+            We sent a confirmation link to <strong>{changeEmailSentTo}</strong>. Your email stays {user?.email} until you
+            open that link and confirm. It expires in 24 hours.
+          </div>
+        )}
 
         <div style={{ marginBottom: 20 }}>
           <label style={FORM_LABEL} htmlFor="subtitle-input">Subtitle</label>
@@ -395,6 +544,8 @@ export function Profile() {
             <span style={{ fontSize: fontSize.sm, color: color.textErrorRed, fontWeight: fontWeight.medium }}>{saveError}</span>
           )}
         </div>
+          </>
+        )}
       </div>
 
       {/* Email card: one section for every email a member can control, plus the always-sent line */}
@@ -638,7 +789,7 @@ export function Profile() {
                         borderBottom: index === authEvents.length - 1 ? 'none' : `1px solid ${color.surfaceMuted}`,
                       }}
                     >
-                      <div style={{ fontSize: fontSize.sm, color: color.textSlate }}>{accountEventLabel(event)}</div>
+                      <div style={{ fontSize: fontSize.sm, color: color.textSlate }}>{accountEventLabel(event, user?.id ?? '')}</div>
                       <div
                         title={absoluteTime(event.createdAt)}
                         style={{ fontSize: fontSize.sm, color: color.textMuted, whiteSpace: 'nowrap', flexShrink: 0 }}

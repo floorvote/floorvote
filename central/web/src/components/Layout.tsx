@@ -11,6 +11,7 @@ const NAV = [
   { to: '/budget', label: 'Budget' },
   { to: '/ops-health', label: 'Ops health' },
   { to: '/unknown-logins', label: 'Unknown logins' },
+  { to: '/profile', label: 'Your profile' },
 ]
 
 export default function Layout() {
