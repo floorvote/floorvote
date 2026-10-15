@@ -12,7 +12,7 @@ import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../..
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
   groupUntriaged, groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
-  holdsGroupAnalysis, holdsGroupPriority, inGroupOfHeld, type BillsTable,
+  holdsGroupPriority, inGroupOfHeld, type BillsTable,
 } from '../../lib/teamFields'
 import { loadVotedInGroups } from '../../lib/companionGroups'
 
@@ -21,12 +21,8 @@ export function billsAs(name: string): BillsTable {
   return alias(bills, name) as unknown as BillsTable
 }
 
-/**
- * Any filter, applied to one reference to `bills` (the table, or an alias of it).
- * `many` says the statement tests the filter on most bills (a scan), not a few
- * (a page's bills, a lookup of one group's), which the tag filter reads: see `tagCondition`.
- */
-export type BillsFilter = (t: BillsTable, many?: boolean) => SQL | undefined
+/** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
+export type BillsFilter = (t: BillsTable) => SQL | undefined
 
 // "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
 // Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
@@ -47,7 +43,9 @@ export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL 
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
 export const FILTER_ANY = '__any__'
 
-// Membership test: the bill's JSON `tags` array contains any of `tagValues`.
+// Membership test: the bill's group tags (the JSON array of its companion
+// group's current analysis's tags, its own when it's in no group: migration
+// 0103) contain any of `tagValues`.
 // Uses json_each rather than `tags LIKE '%"tag"%'` because D1 caps LIKE patterns
 // at 50 bytes — a tag name ≥47 chars pushed the old pattern over that limit and
 // 500'd the whole query ("LIKE or GLOB pattern too complex: SQLITE_ERROR").
@@ -56,7 +54,16 @@ export const FILTER_ANY = '__any__'
 // two can't drift. Caller must pass a non-empty array.
 export function tagMembership(tagValues: string[], t: BillsTable = bills): SQL {
   // One JSON parameter, however many tags are picked.
-  return sql`EXISTS (SELECT 1 FROM json_each(${t.tags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
+  return sql`EXISTS (SELECT 1 FROM json_each(${t.groupTags}) je WHERE je.value IN (SELECT value FROM json_each(${JSON.stringify(tagValues)})))`
+}
+
+/**
+ * The bill has group tags. This is the condition of idx_bills_group_tags
+ * (0103), which holds only those bills, a few percent of all, so a tag test
+ * that names it can start from them rather than from every bill.
+ */
+export function hasGroupTags(t: BillsTable = bills): SQL {
+  return sql`${t.groupTags} <> '[]'`
 }
 
 /**
@@ -250,7 +257,7 @@ export type BillFilterParams = {
 }
 
 /** A condition on one reference to `bills`: the table itself, or an alias of it. */
-export type BillsCondition = (t: BillsTable, many?: boolean) => SQL
+export type BillsCondition = (t: BillsTable) => SQL
 
 /**
  * Priority filter values (a level, "any" for has a priority, "none" for no
@@ -303,30 +310,19 @@ export function positionCondition(positionValues: string[]): BillsCondition | un
  * Tag filter values ("any", or tags) as a condition on one bill. Tags come from
  * the AI analysis, which a companion group shares: every bill in a group meets
  * the filter when the group's current analysis does, and none through an
- * older one.
+ * older one. Each bill stores its group's current tags (its group tags), so
+ * this tests one column, as the filter did before groups.
  */
 export function tagCondition(tagFilters: string[]): BillsCondition | undefined {
   if (tagFilters.length === 0) return undefined
   const hasAny = tagFilters.includes(FILTER_ANY)
   const realTags = tagFilters.filter(t => t !== FILTER_ANY)
-  const tagTest = (t: BillsTable): SQL => {
+  return t => {
     const parts: SQL[] = []
-    if (hasAny) parts.push(sql`json_array_length(${t.tags}) > 0`) // "Any" = has any tag
+    if (hasAny) parts.push(sql`json_array_length(${t.groupTags}) > 0`) // "Any" = has any tag
     if (realTags.length > 0) parts.push(tagMembership(realTags, t))
-    return parts.length === 1 ? parts[0] : or(...parts)!
+    return and(hasGroupTags(t), parts.length === 1 ? parts[0] : or(...parts)!)!
   }
-  const h = billsAs('h')
-  return (t, many) => many
-    // Over most bills: a bill with no companions holds its own analysis, so its tags decide. A grouped bill meets
-    // the filter when its group is in a list built once (the groups whose current analysis has the tags), not by a
-    // probe of its group for each bill.
-    ? sql`CASE WHEN ${t.groupKey} IS NULL THEN ${tagTest(t)}
-        ELSE ${t.groupKey} IN (SELECT h.group_key FROM bills h WHERE h.group_key IS NOT NULL AND ${tagTest(h)} AND ${holdsGroupAnalysis(h)}) END`
-    // Over a few bills, a probe of the bill's group is cheaper than building that list.
-    : or(
-      and(tagTest(t), holdsGroupAnalysis(t))!,
-      sql`(${t.groupKey} IS NOT NULL AND EXISTS (SELECT 1 FROM bills h WHERE h.group_key = ${t.groupKey} AND ${tagTest(h)} AND ${holdsGroupAnalysis(h)}))`,
-    )!
 }
 
 /**
@@ -520,15 +516,15 @@ export async function buildFilterParts(
 export function composeFilter(parts: FilterParts, opts: { omit?: ReadonlySet<string>; facts?: boolean } = {}): BillsFilter {
   if (parts.noMatch) return () => sql`1 = 0`
   const kept = opts.facts === false ? [] : parts.facts.filter(f => !opts.omit?.has(f.key))
-  return (t, many) => {
-    const facts = kept.map(f => f.condition(t, many))
+  return t => {
+    const facts = kept.map(f => f.condition(t))
     const factCond = facts.length === 0
       ? undefined
       : facts.length === 1
         ? facts[0]
         : (parts.matchAny ? or(...facts)! : and(...facts)!)
 
-    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t, many))]
+    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t))]
     if (all.length === 0) return undefined
     return all.length === 1 ? all[0] : and(...all)!
   }

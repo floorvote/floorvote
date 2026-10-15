@@ -311,7 +311,7 @@ export async function pageOfGroups(db: AppDb, o: PageOptions): Promise<string[]>
   } else {
     // The groups of the bills meeting the filter, the filter held once: a filter that reads the table is
     // already costly, and tests each bill the way it did before groups.
-    inner = sql`SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT COALESCE(m.group_key, m.id) FROM bills m WHERE ${o.filter(m, true)})`
+    inner = sql`SELECT ${select} FROM bills c WHERE ${c.id} IN (SELECT COALESCE(m.group_key, m.id) FROM bills m WHERE ${o.filter(m)})`
   }
   // The natural bill number reads the lead bill's number several times, so its value is computed once per group
   // first. The two parts of the cheap filter's full path are one set to sort, so they are wrapped the same way.

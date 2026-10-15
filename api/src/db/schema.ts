@@ -225,6 +225,10 @@ export const bills = sqliteTable('bills', {
   // identical relationships, or null for a bill with none in this instance
   // (migration 0100). Written only by lib/companionGroups.ts.
   groupKey: text('group_key'),
+  // The tags of the bill's companion group's current analysis, or its own tags
+  // when it's in no group, as a JSON array (migration 0103). A tag filter tests
+  // these. Written only by the triggers 0103 creates, never by the app.
+  groupTags: text('group_tags').notNull().default('[]'),
 })
 
 // Identical relationships, as central's vocabulary reads them, by bill handle

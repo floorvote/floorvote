@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm'
+import { and, sql, type SQL } from 'drizzle-orm'
 import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
 import type { AppDb } from '../../types'
 import type { BillsTable } from '../../lib/teamFields'
@@ -18,8 +18,10 @@ import { billsAs, type BillsFilter } from './query'
  *   counted as before groups, then corrected for the grouped bills: the
  *   whole-population count less the grouped bills plus their distinct groups,
  *   which the group key index (0102) answers without reading the table
- *   (`countBy`).
- * - A team field (priority, position, tags, custom fields): the group has one
+ *   (`countBy`). Tags count this way too: every bill stores its group's
+ *   current tags as its group tags (migration 0103), so all bills of a group
+ *   have the same ones.
+ * - A team field (priority, position, custom fields): the group has one
  *   current value, held by one bill (teamFields.ts), so a group counts under
  *   that bill's value, once, if some bill of it qualifies (`countHolders`). A
  *   value a newer one on a companion replaced is not counted.
@@ -34,7 +36,7 @@ const me = billsAs('me') // the bill holding a team field value
 
 /** What a facet counts: the bills it counts through, and, under OR, only those of groups not already in the result. */
 export type Counting = {
-  /** The facet's filter on a bill (`many`: see BillsFilter), undefined for every bill. */
+  /** The facet's filter on a bill, undefined for every bill. */
   where: BillsFilter
   /** Under OR: the groups to count are those with no bill in the current result. */
   fresh: Fresh | undefined
@@ -68,17 +70,17 @@ export const freshForm = { perBillMax: 25 }
  */
 export function freshOf(current: BillsFilter): Fresh {
   const cm = billsAs('cm')
-  const values = new SQLiteSyncDialect().sqlToQuery(current(billsAs('probe'), true)!).params.length
+  const values = new SQLiteSyncDialect().sqlToQuery(current(billsAs('probe'))!).params.length
   if (values > freshForm.perBillMax) {
     return {
-      cte: sql`cur AS MATERIALIZED (SELECT ${cm.id} AS id, ${cm.groupKey} AS gk FROM bills cm WHERE ${current(cm, true)})`,
+      cte: sql`cur AS MATERIALIZED (SELECT ${cm.id} AS id, ${cm.groupKey} AS gk FROM bills cm WHERE ${current(cm)})`,
       test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN ${t.id} NOT IN (SELECT id FROM cur)
         ELSE ${t.groupKey} NOT IN (SELECT gk FROM cur WHERE gk IS NOT NULL) END`,
     }
   }
   return {
-    test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN COALESCE((${current(t, true)}), 0) = 0
-      ELSE ${t.groupKey} NOT IN (SELECT cm.group_key FROM bills cm WHERE cm.group_key IS NOT NULL AND ${current(cm, true)}) END`,
+    test: t => sql`CASE WHEN ${t.groupKey} IS NULL THEN COALESCE((${current(t)}), 0) = 0
+      ELSE ${t.groupKey} NOT IN (SELECT cm.group_key FROM bills cm WHERE cm.group_key IS NOT NULL AND ${current(cm)}) END`,
   }
 }
 
@@ -101,10 +103,13 @@ const valuesOf = (row: Record<string, unknown>, n: number) => Array.from({ lengt
  * groups. The grouped bills are read through the group key index, in its order
  * (the group key first), so a group's bills are met together and no group is
  * counted by a set of its own. With no values, one row counts all groups.
+ * `where`, when given, is a further condition on `m`, of the facet rather than
+ * of the filter (the tag facets count only bills with group tags).
  */
-export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL }): Promise<CountRow[]> {
+export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; where?: SQL }): Promise<CountRow[]> {
   const { values, from } = source
-  const w = c.where(m, true)
+  const filter = c.where(m)
+  const w = filter && source.where ? and(source.where, filter) : (source.where ?? filter)
   const fresh = c.fresh?.test(m)
   const cte = withCtes([c.fresh?.cte])
   const [whole, grouped] = await Promise.all([
@@ -127,26 +132,14 @@ export async function countBy(db: AppDb, c: Counting, source: { values: SQL[]; f
  * one row and counts once, if some bill of it meets the facet's filter. The
  * holder's group is tested from the holder, through the primary key and the
  * group key index.
- *
- * `many` says there are many holders (tags: every analyzed bill holds one), so
- * a probe of each holder's group would cost more than the bills meeting the
- * filter. Those are read once, through whatever index the filter has, and a
- * holder is one of them or shares a group with one: a filter that picks few
- * bills then starts from them, as before groups, not from every holder.
  */
-export async function countHolders(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; holds: SQL; many?: boolean }): Promise<CountRow[]> {
+export async function countHolders(db: AppDb, c: Counting, source: { values: SQL[]; from: SQL; holds: SQL }): Promise<CountRow[]> {
   const { values, from, holds } = source
   const select = sql`SELECT ${sql.join([...valueColumns(values), sql`${countOf(c.fresh?.test(me))} AS n`], sql`, `)} FROM ${from}`
-  const w = source.many ? c.where(m, true) : c.where(m)
-  let rows: Record<string, unknown>[]
-  if (w && source.many) {
-    rows = await db.all(sql`${withCtes([c.fresh?.cte, sql`q AS MATERIALIZED (SELECT ${m.id} AS id, ${m.groupKey} AS gk FROM bills m WHERE ${w})`])}
-      ${select} WHERE ${holds} AND (${me.id} IN (SELECT id FROM q) OR ${me.groupKey} IN (SELECT gk FROM q WHERE gk IS NOT NULL))${groupBy(values)}`) as Record<string, unknown>[]
-  } else {
-    const qualifies = w
-      ? sql` AND EXISTS (SELECT 1 FROM bills m WHERE (${m.id} = ${me.id} OR ${m.groupKey} = ${me.groupKey}) AND ${w})`
-      : sql``
-    rows = await db.all(sql`${withCtes([c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
-  }
+  const w = c.where(m)
+  const qualifies = w
+    ? sql` AND EXISTS (SELECT 1 FROM bills m WHERE (${m.id} = ${me.id} OR ${m.groupKey} = ${me.groupKey}) AND ${w})`
+    : sql``
+  const rows = await db.all(sql`${withCtes([c.fresh?.cte])}${select} WHERE ${holds}${qualifies}${groupBy(values)}`) as Record<string, unknown>[]
   return rows.map(r => ({ values: valuesOf(r, values.length), n: Number(r.n) }))
 }

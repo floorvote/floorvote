@@ -87,6 +87,7 @@ import migrationSql93 from '../migrations/0093_feed_events_billless.sql?raw'
 import migrationSql100 from '../migrations/0100_companion_groups.sql?raw'
 import migrationSql101 from '../migrations/0101_team_fields_group.sql?raw'
 import migrationSql102 from '../migrations/0102_group_key_filter_columns.sql?raw'
+import migrationSql103 from '../migrations/0103_group_tags.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -105,13 +106,19 @@ export function parseMigration(sql: string, name: string) {
 
 // Split a migration into statements on `;`, dropping `--` and `/* */`
 // comments first and ignoring semicolons inside quotes, so a `;` in a comment
-// can't break it the way it breaks parseMigration. The same splitter central's
-// tests use (central/test/helpers/migrations.ts). Not handled: a CREATE
-// TRIGGER body, whose own semicolons would be split apart.
+// can't break it the way it breaks parseMigration. Central's tests use the
+// same splitter (central/test/helpers/migrations.ts), less the last rule here:
+// a semicolon between BEGIN or CASE and its END doesn't end the statement, so
+// a CREATE TRIGGER body stays whole. Wrangler's D1 splitter has the rule too,
+// and finds a BEGIN or CASE between spaces, and an END in capitals followed
+// by a space or the terminator. This one also takes an END in any case and
+// followed by any character that can't continue a name (`END,` in 0093), so
+// it splits every migration wrangler would, and some it wouldn't.
 export function splitStatements(sql: string): string[] {
   const statements: string[] = []
   let current = ''
   let quote: string | null = null
+  let open = 0 // BEGIN or CASE blocks not yet ended
   const flush = () => {
     const s = current.trim()
     if (s.length > 0) statements.push(s + ';')
@@ -119,6 +126,7 @@ export function splitStatements(sql: string): string[] {
   }
   for (let i = 0; i < sql.length; i++) {
     const c = sql[i]
+    if (open > 0 && !quote && /\sEND$/i.test(current) && !/\w/.test(c)) open--
     if (quote) {
       current += c
       if (c === quote) quote = null
@@ -131,10 +139,11 @@ export function splitStatements(sql: string): string[] {
     } else if (c === '/' && sql[i + 1] === '*') {
       const end = sql.indexOf('*/', i + 2)
       i = end === -1 ? sql.length : end + 1
-    } else if (c === ';') {
+    } else if (c === ';' && open === 0) {
       flush()
     } else {
       current += c
+      if (/\s(BEGIN|CASE)\s$/i.test(current)) open++
     }
   }
   flush()
@@ -276,6 +285,8 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     parseMigration(migrationSql100, '0100_companion_groups'),
     parseMigration(migrationSql101, '0101_team_fields_group'),
     parseMigration(migrationSql102, '0102_group_key_filter_columns'),
+    // Split with the splitter that keeps a trigger's body whole, as wrangler's does.
+    { name: '0103_group_tags', queries: splitStatements(migrationSql103) },
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)

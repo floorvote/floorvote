@@ -4,12 +4,12 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillIds, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillIds, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
 import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
-import { holdsGroupAnalysis, holdsGroupPriority, holdsGroupValue, type BillsTable } from '../../lib/teamFields'
+import { holdsGroupPriority, holdsGroupValue, type BillsTable } from '../../lib/teamFields'
 import { loadVotedInGroups } from '../../lib/companionGroups'
 import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOptions } from './groupList'
 import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
@@ -85,7 +85,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const filter = await buildBillsFilter(db, filterParams)
     const filtered = filter(billsAs('m'))
     // The same filter for the statements that test most bills.
-    const filteredMany = filter(billsAs('m'), true)
+    const filteredMany = filter(billsAs('m'))
     const hasFilter = filtered !== undefined
     // A filter is held twice in a statement when that leaves room under D1's 100 bound parameters, which lets the
     // tracked-first path test a bill with no companions directly. A cheap filter that fits twice also gets the full path's two-part form.
@@ -381,12 +381,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
 
     const tagSet = await loadTaxonomyTagNameSet(db)
     // "Any tag" = a valid (in-taxonomy) tag.
-    const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.tags}) > 0`
+    const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.groupTags}) > 0`
     const mine = await loadMyBillIds(db, currentUser.id)
     const voted = await loadVotedInGroups(db, currentUser.id)
     const m = billsAs('m')
     const me = billsAs('me')
-    const currentOnM = current(m, true)
+    const currentOnM = current(m)
     const both = (a: SQL | undefined, b: SQL): SQL => (a ? and(a, b)! : b)
 
     // Custom fields: each field with an active filter of its own is counted with that filter left out (disjunctive).
@@ -419,8 +419,10 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // The team's own fields are the group's current value, held by one bill: a group counts under that bill's value.
       countHolders(db, counting('priority'), { values: [sql`${me.priority}`], from: sql`bills me`, holds: sql`${me.priority} IN ('high', 'medium', 'low') AND ${holdsGroupPriority(me)}` }),
       countHolders(db, counting('position'), { values: [sql`p.position`], from: sql`official_positions p CROSS JOIN bills me ON me.id = p.bill_id`, holds: holdsGroupValue('official_positions') }),
-      countHolders(db, counting('tag'), { values: [sql`jt.value`], from: sql`bills me, json_each(me.tags) jt`, holds: sql`${me.tags} <> '[]' AND ${holdsGroupAnalysis(me)}`, many: true }),
-      countHolders(db, counting('tag'), { values: [], from: sql`bills me`, holds: sql`${me.tags} <> '[]' AND ${hasTagCond(me)} AND ${holdsGroupAnalysis(me)}`, many: true }),
+      // Every bill of a group has the group's current tags as its group tags, so tags count as a fact about each
+      // bill does, starting from the few bills that have any.
+      countBy(db, counting('tag'), { values: [sql`jt.value`], from: sql`bills m, json_each(${m.groupTags}) jt`, where: hasGroupTags(m) }),
+      countBy(db, counting('tag'), { values: [], from: sql`bills m`, where: and(hasGroupTags(m), hasTagCond(m)) }),
       shiftFacets ? countGroups(db, currentOnM) : Promise.resolve(0),
       // The counts beside the facets: the groups of the current result with a bill of the kind each names.
       mine.length > 0 ? countGroups(db, both(currentOnM, myBillsCondition(mine)(m)), true) : Promise.resolve(0),

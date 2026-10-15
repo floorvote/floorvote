@@ -121,7 +121,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         // resolve against the same set the admin sees on screen, not silently AND it.
         matchAny: f.match === 'any',
       })
-      selected = filter(billsAs('m'), true)
+      selected = filter(billsAs('m'))
       // One more than the cap tells an over-cap selection from one at it.
       billIds = await matchingGroupKeys(db, selected, 1001)
     }
@@ -501,7 +501,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       })
 
       // One bill per companion group, named by its key bill.
-      billIds = await matchingGroupKeys(db, filter(billsAs('m'), true), 1000)
+      billIds = await matchingGroupKeys(db, filter(billsAs('m')), 1000)
     }
 
     if (billIds.length === 0) {

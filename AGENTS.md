@@ -132,6 +132,8 @@ Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-le
 
 **Keep `;` out of SQL comments in `api/migrations/`.** The api test helper (`parseMigration` in `api/test/helpers.ts`) splits a file on `;` before it strips comments, so the words after the semicolon run as SQL. Every test that calls `applyMigrations()` then fails with a syntax error that points at the prose, not the cause. A period or an em dash does the same job.
 
+**A migration with a trigger** (0103 is the first) registers in `applyMigrations` through `splitStatements`, not `parseMigration`, which would split the trigger's body apart. Write each `END` in capitals followed by a space or `;`, which is how wrangler's splitter finds the end of a `BEGIN` or `CASE`.
+
 **Numbers and names a downstream fork owns.** Open-City-Advocates' fork applied its own migrations in production, and moving it onto upstream depends on these staying free (`docs/internal/fork-upgrade.md`):
 
 - Central 0022, 0023, and 0024 and tenant 0071, 0072, and 0074 are reserved forever. Skip them.

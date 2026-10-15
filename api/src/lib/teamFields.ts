@@ -236,14 +236,6 @@ export function groupHasNoPriority(of: BillsTable): SQL {
   return sql`(${of.priority} IS NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
 }
 
-/** `of` holds its group's analysis, the team summary and tags: no other member was analyzed more recently. */
-export function holdsGroupAnalysis(of: BillsTable): SQL {
-  return sql`(${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey}
-    AND (g.ai_processed_at IS NOT NULL OR g.tenant_summary IS NOT NULL OR g.tags <> '[]')
-    AND (COALESCE(g.ai_processed_at, '') > COALESCE(${of.aiProcessedAt}, '')
-      OR (COALESCE(g.ai_processed_at, '') = COALESCE(${of.aiProcessedAt}, '') AND g.id > ${of.id}))))`
-}
-
 // ── Recording changes ───────────────────────────────────────────────────────
 
 /** A team field set on one bill: the group's value before and after. */
