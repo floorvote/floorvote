@@ -22,6 +22,7 @@ const base = {
 
 const SELF = { ...base, id: 'admin-1', email: 'self@example.com', name: 'Self Admin', role: 'admin' as const }
 const NAMED = { ...base, id: 'm-1', email: 'named@example.com', name: 'Named Member', role: 'member' as const }
+const BLANKED = { ...base, id: 'm-3', email: 'blanked@example.com', name: '   ', role: 'member' as const }
 const CLEARED = { ...base, id: 'm-2', email: 'cleared@example.com', name: '', role: 'member' as const }
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -37,7 +38,7 @@ vi.mock('../../context/DemoContext', () => ({
 
 function renderMembers() {
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
-    if (path === '/admin/members') return [SELF, NAMED, CLEARED] as never
+    if (path === '/admin/members') return [SELF, NAMED, CLEARED, BLANKED] as never
     if (path === '/admin/roles') return [] as never
     if (path === '/admin/config') return {} as never
     if (path.endsWith('/auth-events')) return { events: [], suppression: { suppressed: false }, delivery: {} } as never
@@ -97,6 +98,13 @@ describe('Members table, member with no name', () => {
     await screen.findByText('Named Member')
     const header = await openLoginActivity('cleared@example.com')
     expect(header.textContent).toBe('Login activitycleared@example.com')
+  })
+
+  it('shows the email once in the Login activity header when a legacy name is only whitespace', async () => {
+    renderMembers()
+    await screen.findByText('Named Member')
+    const header = await openLoginActivity('blanked@example.com')
+    expect(header.textContent).toBe('Login activityblanked@example.com')
   })
 
   it('still shows "Name · email" in the Login activity header for a named member', async () => {

@@ -181,7 +181,7 @@ async function alertAdmins(env: Env, db: AppDb, row: ReportRow, cancelledTo: str
 
     const requestedBy = selfRequested
       ? 'the member'
-      : requester ? (requester.name ? `${requester.name} (${requester.email})` : requester.email) : 'a member who has since been removed'
+      : requester ? (requester.name?.trim() ? `${requester.name.trim()} (${requester.email})` : requester.email) : 'a member who has since been removed'
     const current = normalizeMemberAddress(member.email)
     const stillPending = await db.select({ newEmail: emailChanges.newEmail }).from(emailChanges).where(eq(emailChanges.userId, row.userId)).get()
     // The commit's own event is the record that the change took effect.

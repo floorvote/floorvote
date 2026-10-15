@@ -1454,7 +1454,7 @@ export function Members() {
                   Login activity
                 </div>
                 <div style={{ fontSize: fontSize.sm, color: color.textMuted, marginTop: 2 }}>
-                  {activityMember.name ? `${activityMember.name} · ${activityMember.email}` : activityMember.email}
+                  {activityMember.name?.trim() ? `${activityMember.name.trim()} · ${activityMember.email}` : activityMember.email}
                 </div>
               </div>
               <button
