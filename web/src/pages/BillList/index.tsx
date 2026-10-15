@@ -50,21 +50,18 @@ export const knownTagsCache: Set<string> = new Set()
 
 /**
  * The Subject filter's hover text. The caveat about legislatures that assign
- * no subjects only helps where one is covered, so it appears only when a
- * covered state has no subjects. That comes from `subjectStates` (every state
- * with subjects, suppressed ones excluded, independent of the active filters),
- * not from the subject facet, which a state or search filter can empty of a
- * state that does have subjects. Not known yet means no caveat.
+ * no subjects appears only when a covered state has none, and never names one.
+ * `*` coverage means the states the instance has bills in (`billStates`). A
+ * state has subjects if `subjectStates` lists it: every state with any subject,
+ * suppressed ones excluded, independent of the active filters, unlike the
+ * subject facet, which a state or search filter can empty of a state that does
+ * have subjects. Not known yet means no caveat.
  */
-function subjectFilterTooltip(coveredStates: string[], subjectStates: string[] | undefined): string {
+function subjectFilterTooltip(coverage: string[], subjectStates?: string[], billStates?: string[]): string {
   const base = 'Filter by legislature-assigned subject.'
   if (!subjectStates) return base
-  const without = coveredStates.filter(s => !subjectStates.includes(s)).sort()
-  if (without.length === 0) return base
-  const names = without.length <= 2
-    ? without.join(' and ')
-    : `${without.slice(0, -1).join(', ')}, and ${without[without.length - 1]}`
-  return `${base} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for ${names}.)`
+  const covered = coverage.includes('*') ? (billStates ?? []) : coverage
+  return covered.some(s => !subjectStates.includes(s)) ? `${base} Not all legislatures assign subjects.` : base
 }
 
 /**
@@ -992,7 +989,7 @@ export function BillList() {
           {f.subjectGroups.length > 0 && (
             <HoverTooltip
               maxWidth={280}
-              text={subjectFilterTooltip(config?.states ?? [], facetCounts.subjectStates)}
+              text={subjectFilterTooltip(config?.states ?? [], facetCounts.subjectStates, facetCounts.billStates)}
             >
               <SubjectFilterDropdown
                 subjectGroups={f.subjectGroups}

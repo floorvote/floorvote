@@ -357,6 +357,9 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       .map(r => r.state)
       .filter(st => !isSubjectsSuppressedForState(suppressedSubjectStates, st))
       .sort()
+    // Every state the instance has bills in, also unfiltered: what `*` coverage
+    // means to the web app's subject-filter tooltip.
+    const billStates = (await db.selectDistinct({ state: bills.state }).from(bills).all()).map(r => r.state).sort()
 
     let positionFilter: SQL | undefined
     if (positionValues.length > 0) {
@@ -416,7 +419,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       ])
       const ids = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
       if (ids.length > 0) baseConditions.push(inArray(bills.id, ids))
-      else return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
+      else return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
     }
 
     // Shared by the `unvoted` scope filter above and unvotedCount below, so
@@ -793,6 +796,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       tags: tagCountsOut,
       subjects: subjectCounts,
       subjectStates,
+      billStates,
       customFields,
       myBillsCount,
       newMatchesCount,

@@ -111,7 +111,9 @@ const FACETS = {
   tags: {},
   subjects: { 'UT:Counties': 1 } as Record<string, number>,
   // Unfiltered, unlike `subjects`: every state that has subjects at all.
-  subjectStates: ['UT'] as string[],
+  subjectStates: ['UT'] as string[] | undefined,
+  // Unfiltered too: every state the instance has bills in, which is what * coverage means.
+  billStates: ['UT'] as string[] | undefined,
   customFields: {},
   myBillsCount: 0,
   newMatchesCount: 0,
@@ -256,6 +258,7 @@ beforeEach(() => {
   configState.value = null
   FACETS.subjects = { 'UT:Counties': 1 }
   FACETS.subjectStates = ['UT']
+  FACETS.billStates = ['UT']
   document.body.classList.remove('nav-pending')
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
 })
@@ -327,11 +330,12 @@ describe('BillList page', () => {
     expect(screen.getByText(/Sorted by:/)).toBeInTheDocument()
   })
 
-  // The Subject filter's tooltip carries a caveat about states that assign no
-  // subjects, but only where it applies: when some state the instance covers
-  // has no subject group. Everywhere else it is noise.
+  // The Subject filter's tooltip carries a caveat about legislatures that
+  // assign no subjects, but only where it applies: when some state the instance
+  // covers has no subjects. The caveat never names a state.
   describe('Subject filter tooltip', () => {
     const SHORT = 'Filter by legislature-assigned subject.'
+    const CAVEAT = `${SHORT} Not all legislatures assign subjects.`
 
     async function hoverSubjectFilter() {
       render(<BillList />, { wrapper: Wrapper })
@@ -365,24 +369,73 @@ describe('BillList page', () => {
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
     })
 
-    it('adds the caveat, naming the state, when a covered state has no subjects', async () => {
+    it('adds the caveat, without naming a state, when one covered state has no subjects', async () => {
       configState.value = { states: ['NJ', 'UT'] }
       FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
-      expect(await screen.findByText(
-        `${SHORT} (Not all legislatures assign subjects, and those that do might assign them inconsistently. No subjects for NJ.)`,
-      )).toBeInTheDocument()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+      expect(screen.queryByText(/NJ/)).not.toBeInTheDocument()
     })
 
-    it('names every covered state that has no subjects, with a serial comma', async () => {
+    it('adds the same caveat, and no state list, when several covered states have no subjects', async () => {
       configState.value = { states: ['AZ', 'NJ', 'OH', 'UT'] }
       FACETS.subjectStates = ['UT']
       await hoverSubjectFilter()
-      expect(await screen.findByText(/No subjects for AZ, NJ, and OH\.\)$/)).toBeInTheDocument()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat on a single covered state that has no subjects', async () => {
+      configState.value = { states: ['NJ'] }
+      FACETS.subjectStates = []
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+    })
+
+    it('is just the short text on * coverage when every state with bills has subjects', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = ['NJ', 'UT']
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('adds the caveat on * coverage when a state with bills has no subjects, never printing *', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = ['NJ', 'OH', 'UT']
+      FACETS.subjectStates = ['NJ', 'UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
+      expect(screen.queryByText(/\*/)).not.toBeInTheDocument()
+    })
+
+    it('is just the short text on * coverage when the facets carry no bill states yet', async () => {
+      configState.value = { states: ['*'] }
+      FACETS.billStates = undefined
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    // subjectStates leaves a suppressed state out (tested at the API seam), so
+    // a suppressed state lacks subjects as far as the tooltip can tell.
+    it('adds the caveat when a covered state is suppressed (absent from subjectStates)', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjects = { 'UT:Counties': 1 }
+      FACETS.subjectStates = ['UT']
+      await hoverSubjectFilter()
+      expect(await screen.findByText(CAVEAT)).toBeInTheDocument()
     })
 
     it('is just the short text while the config has not loaded', async () => {
       configState.value = null
+      FACETS.subjectStates = []
+      await hoverSubjectFilter()
+      expect(await screen.findByText(SHORT)).toBeInTheDocument()
+    })
+
+    it('is just the short text while the facets carry no subjectStates yet', async () => {
+      configState.value = { states: ['NJ', 'UT'] }
+      FACETS.subjectStates = undefined
       await hoverSubjectFilter()
       expect(await screen.findByText(SHORT)).toBeInTheDocument()
     })

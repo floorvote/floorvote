@@ -34,6 +34,7 @@ type ListBody = {
 type FacetsBody = {
   subjects: Record<string, number>
   subjectStates: string[]
+  billStates: string[]
 }
 
 describe('GET /bills — subject filtering', () => {
@@ -154,6 +155,29 @@ describe('GET /bills — subject filtering', () => {
 
     expect(body.subjects['NJ:Education']).toBeUndefined()
     expect(body.subjectStates).toEqual(['NJ', 'UT'])
+    // The state facet is filtered to UT; billStates is not, so the web app can
+    // resolve * coverage to every state the instance has bills in.
+    expect(body.billStates).toEqual(['NJ', 'OH', 'UT'])
+  })
+
+  it('lists no bill states when there are no bills', async () => {
+    const res = await app.request('/api/bills/facets', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.billStates).toEqual([])
+    expect(body.subjectStates).toEqual([])
+  })
+
+  it('billStates still lists every state when My Bills narrows the result to none', async () => {
+    const db = getDb(env.DB)
+    await seedBillWithSubjects(db, { id: 's21', state: 'UT' }, ['Election Law'])
+    await seedBillWithSubjects(db, { id: 's22', state: 'OH' }, [])
+
+    const res = await app.request('/api/bills/facets?myBills=true', { headers: { Cookie: `session=${token}` } }, env)
+    const body = await res.json() as FacetsBody
+
+    expect(body.billStates).toEqual(['OH', 'UT'])
+    expect(body.subjectStates).toEqual(['UT'])
   })
 
   // IMPORTANT 1 regression: subjectMembership binds 2 params per value with no cap,
@@ -210,6 +234,8 @@ describe('GET /bills — subject suppression', () => {
     const body = await res.json() as FacetsBody
 
     expect(body.subjectStates).toEqual(['UT'])
+    // A suppressed state still has bills; only its subjects are hidden.
+    expect(body.billStates).toEqual(['NJ', 'UT'])
   })
 
   it('a subject filter naming a suppressed state is ignored, not treated as matching nothing', async () => {
