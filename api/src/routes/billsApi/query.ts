@@ -392,77 +392,106 @@ export async function buildCustomFieldFilters(
   return conditions
 }
 
-/** Each custom field's condition on the `bills` table, for the facets, which test the one table. */
-export async function buildCustomFieldConditions(
-  db: ReturnType<typeof getDb>,
-  cfParamMap: Record<string, string[]>,
-): Promise<Record<string, SQL>> {
-  const filters = await buildCustomFieldFilters(db, cfParamMap)
-  return Object.fromEntries(Object.entries(filters).map(([fieldId, condition]) => [fieldId, condition(bills)]))
+/**
+ * The ids of the bills a member has voted on, noted, or commented on: the "my
+ * bills" scope. Shared by the list filter and the facets' own count of it.
+ */
+export async function loadMyBillIds(db: ReturnType<typeof getDb>, userId: string): Promise<string[]> {
+  const [voteRows, noteRows, commentRows] = await Promise.all([
+    db.select({ billId: memberVotes.billId }).from(memberVotes).where(eq(memberVotes.userId, userId)).all(),
+    db.select({ billId: notes.billId }).from(notes).where(and(eq(notes.userId, userId), ne(notes.content, ''))).all(),
+    db.select({ billId: comments.billId }).from(comments).where(and(eq(comments.userId, userId), isNull(comments.deletedAt))).all(),
+  ])
+  return [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
+}
+
+/** A bill the member's own: one of `mine`, as one JSON parameter, so a member with many bills stays under D1's parameter limit. */
+export const myBillsCondition = (mine: readonly string[]): BillsCondition =>
+  t => sql`${t.id} IN (SELECT value FROM json_each(${JSON.stringify(mine)}))`
+
+/** A bill the member has not voted on: not one of `voted`, every bill of a group the member voted on any bill of (`loadVotedInGroups`). */
+export const unvotedCondition = (voted: readonly string[]): BillsCondition =>
+  t => sql`${t.id} NOT IN (SELECT value FROM json_each(${JSON.stringify(voted)}))`
+
+/**
+ * The parts of the list's filters, each a condition on one bill, before they are
+ * joined into one filter (`composeFilter`). The facets count a dimension with
+ * that dimension's own part left out, so they take the parts by name.
+ */
+export type FilterParts = {
+  /** The bill facts, which the group operator joins: each dimension's name (`cf:<field id>` for a custom field) and its condition. */
+  facts: Array<{ key: string; condition: BillsCondition }>
+  /** The viewer-relative predicates and search, which always narrow. */
+  scopes: BillsCondition[]
+  /** "My bills" was asked for by a member with none, so nothing matches whatever else is set. */
+  noMatch: boolean
+  matchAny: boolean
 }
 
 /**
- * The list's filters as a function of the bill they test. Filter predicates
- * stay per bill: the bill list asks of each bill in a companion group whether
- * it meets the filter and shows the group if any does (see groupList.ts), and
- * the team's own fields are read through the group's current value (above).
- * Built once, applied to as many references to `bills` as a query needs.
+ * The list's filters as parts, each a condition on the bill it tests. Filter
+ * predicates stay per bill: the bill list asks of each bill in a companion
+ * group whether it meets the filter and shows the group if any does (see
+ * groupList.ts), and the team's own fields are read through the group's
+ * current value (above).
  */
-export async function buildBillsFilter(
+export async function buildFilterParts(
   db: ReturnType<typeof getDb>,
   p: BillFilterParams,
-): Promise<BillsFilter> {
+): Promise<FilterParts> {
   // Bill facts render as chip-row groups and are joined by the group operator.
   // Scope conditions (the viewer-relative predicates and search) always
   // AND on top: `(fact1 OP fact2 OP … ) AND search AND myBills AND unvoted …`.
   // See docs/superpowers/specs/2026-09-07-filter-group-operator-design.md.
-  const billFacts: BillsCondition[] = []
+  const facts: FilterParts['facts'] = []
   const scopes: BillsCondition[] = []
 
   const statusValues = statusFilterValues(p.statuses)
-  if (statusValues.length > 0) billFacts.push(t => multiFilter(t.status, statusValues)!)
-  if (p.stages.length > 0) billFacts.push(t => multiFilter(t.statusStage, p.stages)!)
+  if (statusValues.length > 0) facts.push({ key: 'status', condition: t => multiFilter(t.status, statusValues)! })
+  if (p.stages.length > 0) facts.push({ key: 'stage', condition: t => multiFilter(t.statusStage, p.stages)! })
 
   // Priority is sparse (bills can have none): "Any" = has a priority, "none" = no priority.
   const priority = priorityCondition(p.priorities)
-  if (priority) billFacts.push(priority)
+  if (priority) facts.push({ key: 'priority', condition: priority })
 
-  if (p.sessions.length > 0) billFacts.push(t => multiFilter(t.session, p.sessions)!)
+  if (p.sessions.length > 0) facts.push({ key: 'session', condition: t => multiFilter(t.session, p.sessions)! })
 
   if (p.years.length > 0) {
-    billFacts.push(t => p.years.length === 1
-      ? eq(t.yearStart, Number(p.years[0]))
-      : inArray(t.yearStart, p.years.map(Number)))
+    facts.push({
+      key: 'year',
+      condition: t => p.years.length === 1
+        ? eq(t.yearStart, Number(p.years[0]))
+        : inArray(t.yearStart, p.years.map(Number)),
+    })
   }
 
-  if (p.states.length > 0) billFacts.push(t => multiFilter(t.state, p.states)!)
+  if (p.states.length > 0) facts.push({ key: 'state', condition: t => multiFilter(t.state, p.states)! })
 
   if (p.q && buildSearchCondition(p.q)) scopes.push(t => buildSearchCondition(p.q!, t)!)
   if (p.minRelevance) {
     const min = parseInt(p.minRelevance, 10)
-    billFacts.push(t => sql`${t.relevanceScore} >= ${min}`)
+    facts.push({ key: 'relevance', condition: t => sql`${t.relevanceScore} >= ${min}` })
   }
 
   // One condition per custom field; each is a bill fact, so each joins the group operator.
-  billFacts.push(...Object.values(await buildCustomFieldFilters(db, p.cfParamMap)))
+  for (const [fieldId, condition] of Object.entries(await buildCustomFieldFilters(db, p.cfParamMap))) {
+    facts.push({ key: `cf:${fieldId}`, condition })
+  }
 
   const tag = tagCondition(p.tagFilters)
-  if (tag) billFacts.push(tag)
+  if (tag) facts.push({ key: 'tag', condition: tag })
 
   if (p.subjectFilters.length > 0) {
     const suppressed = await loadSuppressedSubjectStates(db)
     const allowed = filterSuppressedSubjects(p.subjectFilters, suppressed)
-    if (allowed.length > 0) billFacts.push(t => subjectMembership(allowed, t))
+    if (allowed.length > 0) facts.push({ key: 'subject', condition: t => subjectMembership(allowed, t) })
   }
 
   const position = positionCondition(p.positionValues)
-  if (position) billFacts.push(position)
+  if (position) facts.push({ key: 'position', condition: position })
 
   // A member's votes are the group's: unvoted means no vote on any bill in it. One JSON parameter of the bills to leave out.
-  if (p.unvoted === '1') {
-    const voted = JSON.stringify(await loadVotedInGroups(db, p.userId))
-    scopes.push(t => sql`${t.id} NOT IN (SELECT value FROM json_each(${voted}))`)
-  }
+  if (p.unvoted === '1') scopes.push(unvotedCondition(await loadVotedInGroups(db, p.userId)))
 
   if (p.newMatches === '1' || p.newMatches === 'true') {
     scopes.push(t => newMatchWhere(p.newMatchMinRelevance, t))
@@ -472,33 +501,45 @@ export async function buildBillsFilter(
     scopes.push(t => eq(t.isDraft, true))
   }
 
+  let noMatch = false
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
-    const [voteRows, noteRows, commentRows] = await Promise.all([
-      db.select({ billId: memberVotes.billId }).from(memberVotes).where(eq(memberVotes.userId, p.userId)).all(),
-      db.select({ billId: notes.billId }).from(notes).where(and(eq(notes.userId, p.userId), ne(notes.content, ''))).all(),
-      db.select({ billId: comments.billId }).from(comments).where(and(eq(comments.userId, p.userId), isNull(comments.deletedAt))).all(),
-    ])
-    const myIds = [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
-    // Scope, not a bill fact: an empty set means no rows regardless of the group
-    // operator, so this stays an unconditional early return.
-    if (myIds.length === 0) return () => sql`1 = 0`
-    // One JSON parameter, so a member with many bills stays under D1's parameter limit.
-    const mine = JSON.stringify(myIds)
-    scopes.push(t => sql`${t.id} IN (SELECT value FROM json_each(${mine}))`)
+    const myIds = await loadMyBillIds(db, p.userId)
+    // Scope, not a bill fact: an empty set means no rows regardless of the group operator.
+    if (myIds.length === 0) noMatch = true
+    else scopes.push(myBillsCondition(myIds))
   }
 
+  return { facts, scopes, noMatch, matchAny: p.matchAny }
+}
+
+/**
+ * The parts joined into one filter on a bill. `omit` leaves out the named
+ * facts, as a facet does for its own dimension, and `facts: false` leaves out
+ * every one, keeping the scopes alone.
+ */
+export function composeFilter(parts: FilterParts, opts: { omit?: ReadonlySet<string>; facts?: boolean } = {}): BillsFilter {
+  if (parts.noMatch) return () => sql`1 = 0`
+  const kept = opts.facts === false ? [] : parts.facts.filter(f => !opts.omit?.has(f.key))
   return (t, many) => {
-    const facts = billFacts.map(f => f(t, many))
+    const facts = kept.map(f => f.condition(t, many))
     const factCond = facts.length === 0
       ? undefined
       : facts.length === 1
         ? facts[0]
-        : (p.matchAny ? or(...facts)! : and(...facts)!)
+        : (parts.matchAny ? or(...facts)! : and(...facts)!)
 
-    const all = [...(factCond ? [factCond] : []), ...scopes.map(f => f(t, many))]
+    const all = [...(factCond ? [factCond] : []), ...parts.scopes.map(f => f(t, many))]
     if (all.length === 0) return undefined
     return all.length === 1 ? all[0] : and(...all)!
   }
+}
+
+/** The list's filters as a function of the bill they test, built once and applied to as many references to `bills` as a query needs. */
+export async function buildBillsFilter(
+  db: ReturnType<typeof getDb>,
+  p: BillFilterParams,
+): Promise<BillsFilter> {
+  return composeFilter(await buildFilterParts(db, p))
 }
 
 /**

@@ -11,7 +11,7 @@ import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { myGroupVote } from '../lib/companionGroups'
-import { newMatchWhere } from './billsApi/query'
+import { billsAs, newMatchWhere } from './billsApi/query'
 import { getNewMatchMinRelevance } from '../lib/newMatch'
 import { hasLoggedInWhere } from '../lib/loginHistory'
 
@@ -53,8 +53,10 @@ statsRouter.get('/', async (c) => {
   let newMatchesCount = 0
   if (user.role === 'admin' || user.role === 'owner') {
     const threshold = await getNewMatchMinRelevance(db)
-    const row = await db.select({ count: count() }).from(bills).where(newMatchWhere(threshold)).get()
-    newMatchesCount = row?.count ?? 0
+    // A companion group is one item on the worklist, so the count is of groups. The worklist is small and found from
+    // its own index, so its bills are read once and counted by the group each names (a bill with no companions names itself).
+    const [row] = await db.all(sql`SELECT COUNT(DISTINCT COALESCE(m.group_key, m.id)) AS n FROM bills m WHERE ${newMatchWhere(threshold, billsAs('m'))}`) as { n: number }[]
+    newMatchesCount = Number(row.n)
   }
 
   return c.json({

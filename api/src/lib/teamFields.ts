@@ -172,8 +172,11 @@ export function groupUntriaged(of: BillsTable = bills): SQL {
 /** A bills table or an alias of it. */
 export type BillsTable = typeof bills
 
-/** Position (or custom field) rows from `official_positions p` and `bill_custom_field_values p` hold the group's current value: none for the same field was set more recently by another member. */
-function holdsGroupValue(table: 'official_positions' | 'bill_custom_field_values'): SQL {
+/**
+ * Position (or custom field) rows from `official_positions p` and `bill_custom_field_values p`, with their bill
+ * as `me`, hold the group's current value: none for the same field was set more recently by another member.
+ */
+export function holdsGroupValue(table: 'official_positions' | 'bill_custom_field_values'): SQL {
   // The field is correlated with the row's own, not bound again, so a custom field filter binds its id once.
   const sameField = table === 'bill_custom_field_values' ? sql` AND q.field_id = p.field_id` : sql``
   return sql`NOT EXISTS (SELECT 1 FROM ${sql.raw(table)} q JOIN bills g ON g.id = q.bill_id
