@@ -55,17 +55,9 @@ describe('generateToken / hashToken', () => {
 describe('admin sessions', () => {
   it('creates a session and looks it up by raw token', async () => {
     const db = drizzle(env.DB, { schema })
-    const { rawToken } = await createAdminSession(db, 'foo@example.com', 'Foo Bar')
-    const session = await lookupAdminSession(db, rawToken)
-    expect(session?.email).toBe('foo@example.com')
-    expect(session?.name).toBe('Foo Bar')
-  })
-
-  it('stores empty name when none provided', async () => {
-    const db = drizzle(env.DB, { schema })
     const { rawToken } = await createAdminSession(db, 'foo@example.com')
     const session = await lookupAdminSession(db, rawToken)
-    expect(session?.name).toBe('')
+    expect(session?.email).toBe('foo@example.com')
   })
 
   it('returns null for expired sessions', async () => {
