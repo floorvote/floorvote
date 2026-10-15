@@ -44,27 +44,15 @@ export function isSuperAdmin(email: string, superAdminEmails: string | undefined
 export async function createAdminSession(
   db: DB,
   email: string,
-  nameOrOpts: string | { ttlMs?: number } = '',
   opts: { ttlMs?: number } = {},
 ): Promise<{ rawToken: string; expiresAt: string }> {
-  // Support both old signature (db, email, opts) and new (db, email, name, opts)
-  let name: string
-  let resolvedOpts: { ttlMs?: number }
-  if (typeof nameOrOpts === 'string') {
-    name = nameOrOpts
-    resolvedOpts = opts
-  } else {
-    name = ''
-    resolvedOpts = nameOrOpts
-  }
   const rawToken = await generateToken()
   const tokenHash = await hashToken(rawToken)
-  const ttl = resolvedOpts.ttlMs ?? SESSION_TTL_MS
+  const ttl = opts.ttlMs ?? SESSION_TTL_MS
   const expiresAt = new Date(Date.now() + ttl).toISOString()
   await db.insert(schema.adminSessions).values({
     id: crypto.randomUUID(),
     email: email.toLowerCase(),
-    name,
     tokenHash,
     expiresAt,
   })
@@ -74,16 +62,16 @@ export async function createAdminSession(
 export async function lookupAdminSession(
   db: DB,
   rawToken: string,
-): Promise<{ email: string; name: string } | null> {
+): Promise<{ email: string } | null> {
   const tokenHash = await hashToken(rawToken)
   const row = await db
-    .select({ email: schema.adminSessions.email, name: schema.adminSessions.name, expiresAt: schema.adminSessions.expiresAt })
+    .select({ email: schema.adminSessions.email, expiresAt: schema.adminSessions.expiresAt })
     .from(schema.adminSessions)
     .where(eq(schema.adminSessions.tokenHash, tokenHash))
     .get()
   if (!row) return null
   if (new Date(row.expiresAt).getTime() < Date.now()) return null
-  return { email: row.email, name: row.name }
+  return { email: row.email }
 }
 
 export async function deleteAdminSession(db: DB, rawToken: string): Promise<void> {
@@ -129,7 +117,7 @@ export function requireAdmin(): MiddlewareHandler<DashEnv> {
         if (!isSuperAdmin(payload.email, c.env.SUPERADMIN_EMAILS)) {
           return c.json({ error: { code: 'forbidden', message: 'Not authorized' } }, 403)
         }
-        const { rawToken, expiresAt } = await createAdminSession(db, payload.email, payload.name)
+        const { rawToken, expiresAt } = await createAdminSession(db, payload.email)
         setCookie(c, 'admin_session', rawToken, {
           httpOnly: true, secure: true, sameSite: 'Lax', path: '/',
           expires: new Date(expiresAt),

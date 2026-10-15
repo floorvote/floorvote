@@ -222,10 +222,20 @@ describe('BillDetail org noun labels', () => {
   })
 })
 
-describe('BillDetail referrals', () => {
+describe('BillDetail committee line', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('lists every referral, including two to one committee and one with no date', async () => {
+  it('says where the bill is, with chamber, when it has a pending committee', async () => {
+    makeMockApiFetch({
+      committee: { committeeId: '7001', name: 'Judiciary', chamber: 'S' },
+      referrals: [{ date: '2026-03-02', committeeId: '7001', name: 'Judiciary', chamber: 'S' }],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
+  })
+
+  it('says "Last referred to" for a bill with referrals and no pending committee', async () => {
     makeMockApiFetch({
       committee: null,
       referrals: [
@@ -236,10 +246,15 @@ describe('BillDetail referrals', () => {
     })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await screen.findByText('Test Bill')
-    expect(screen.getByText('Referrals:')).toBeInTheDocument()
-    expect(screen.getAllByText('Committee on Health')).toHaveLength(2)
-    expect(screen.getByText('2026-03')).toBeInTheDocument()
-    expect(screen.getByText('Retained by the Council')).toBeInTheDocument()
+    expect(screen.getByText('Last referred to:').parentElement).toHaveTextContent('Last referred to: Retained by the Council (Council)')
+    expect(screen.queryByText('Referrals:')).not.toBeInTheDocument()
+  })
+
+  it('shows no committee line for a bill with no committee and no referrals', async () => {
+    makeMockApiFetch({ committee: null, referrals: [] })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(screen.queryByText(/In committee:|Last referred to:/)).not.toBeInTheDocument()
   })
 })
 
@@ -817,7 +832,7 @@ describe('overflow menu', () => {
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
   })
 
-  it('shows Copy link + Re-generate for an admin on a non-draft bill', async () => {
+  it('shows Copy link + Re-generate + Group with for an admin on a non-draft bill', async () => {
     const user = userEvent.setup()
     authState.role = 'admin'
     makeMockApiFetch()
@@ -825,9 +840,11 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
     expect(items[1]).toHaveTextContent(/Re-generate/)
+    // Split from group appears only on a grouped bill (BillDetail.manualGroup.test.tsx).
+    expect(items[2]).toHaveTextContent(/Group with…/)
   })
 
   it('shows Copy link + Delete draft (and no Re-generate) for an admin on a draft bill', async () => {
@@ -898,8 +915,10 @@ describe('overflow menu', () => {
     await waitFor(() => expect(screen.getByText('HB 1')).toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     const items = screen.getAllByRole('menuitem')
-    expect(items).toHaveLength(1)
+    // Group with… is offered on any filed bill, tracked or not (#382).
+    expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent(/Copy link to bill/)
+    expect(items[1]).toHaveTextContent(/Group with…/)
   })
 
   it('hides Re-generate on a tracked bill whose analysis never landed', async () => {

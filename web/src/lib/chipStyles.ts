@@ -94,6 +94,13 @@ export const COUNT_BADGE = {
   fontWeight: fontWeight.normal,
 }
 
+// The bill number on a comment posted on a companion in the bill's group: the
+// gray count pill, in the heavier weight a bill number reads at.
+export const COMPANION_TAG: React.CSSProperties = {
+  ...COUNT_BADGE,
+  fontWeight: fontWeight.semibold,
+}
+
 // COUNT_BADGE with an active/hover state. When `active`, the gray fill drops to
 // `activeBg` — `transparent` (default) so the chip melts into a highlighted
 // parent (e.g. an orange nav row or widget header), or an explicit fill when the

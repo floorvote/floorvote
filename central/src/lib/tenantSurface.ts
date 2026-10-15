@@ -41,6 +41,7 @@ const ALLOW: SurfacePattern[] = [
   { method: 'POST', segments: ['api', 'tenants', 'reprocess', ':id'] },
   { method: 'POST', segments: ['api', 'tenants', 'promote-bill', ':id', ':billId'] },
   { method: 'POST', segments: ['api', 'tenants', 'promote-bills', ':id'] },
+  { method: 'POST', segments: ['api', 'tenants', 'fetch-bills', ':id'] },
   { method: 'GET', segments: ['api', 'tenants', ':id', 'upcoming-hearings'] },
   { method: 'GET', segments: ['api', 'tenants', ':id', 'body-events'] },
   { method: 'GET', segments: ['api', 'tenants', ':id', 'body-event-options'] },
@@ -49,6 +50,7 @@ const ALLOW: SurfacePattern[] = [
   { method: 'POST', segments: ['api', 'admin', 'update-bill-match-types', ':id'] },
   { method: 'GET', segments: ['api', 'admin', 'superadmin', 'check'] },
   { method: 'GET', segments: ['api', 'admin', 'superadmin', 'emails'] },
+  { method: 'POST', segments: ['api', 'admin', 'superadmin', 'profile'] },
 ]
 
 // Note: `GET /api/bills/sessions` and `GET /api/bills/labels` each match BOTH

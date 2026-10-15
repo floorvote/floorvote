@@ -2,6 +2,7 @@ import type { Env } from '../types'
 import type { StatusStage } from '../../../shared/statusStages'
 import type { ExtraDisplay } from '../../../shared/providerExtras'
 import type { CalendarKind } from '../../../shared/calendarKinds'
+import type { RelationshipKind } from '../../../shared/relationshipKinds'
 import type { DataAttribution } from '../../../shared/dataAttribution'
 
 /**
@@ -275,6 +276,37 @@ export interface ProviderVocabulary {
    * becomes a shared column instead.
    */
   readonly extras?: Readonly<Record<string, VocabularyExtra>>
+  /**
+   * What the provider's relationship labels (the `type` of each `sasts` entry)
+   * mean. Omitted when the provider publishes no relationships, or none worth
+   * more than a link.
+   */
+  readonly relationships?: VocabularyRelationships
+}
+
+/**
+ * Which of the three kinds (`identical`, `package`, `related`) each of a
+ * provider's relationship labels is. Central stores the raw relationships and
+ * attaches the kind when it serves a bill's related bills, so changing a
+ * mapping takes effect on the next read, with nothing to re-ingest. Identical
+ * companions are the ones instances can group, so map a label `identical` only
+ * where it names the same bill filed twice.
+ *
+ * Labels are matched by name, never by the numeric type id: ids collide across
+ * providers (LegiScan's 1 is "Same As", Maryland's is "Cross-filed"). The match
+ * ignores case, spacing, and hyphens, so a label is written as the provider
+ * publishes it. Any label not listed is `related`.
+ */
+export interface VocabularyRelationships {
+  /** The provider's labels, in every state it serves. */
+  readonly default: Readonly<Record<string, RelationshipKind>>
+  /**
+   * Overrides for one state, by its two-letter abbreviation, where a label
+   * means something else there. LegiScan labels Michigan's tie-barred packages
+   * of different bills "Same As". A state's entry wins over `default` for the
+   * labels it lists, and the rest fall through to `default`.
+   */
+  readonly states?: Readonly<Record<string, Readonly<Record<string, RelationshipKind>>>>
 }
 
 /**
@@ -345,7 +377,7 @@ export type FieldInventory = Readonly<Record<string, FieldUse>>
 /** What a provider does with one feed field (`FieldInventory`). */
 export type FieldUse = 'mapped' | { readonly extra: string } | { readonly ignored: string }
 
-export type { StatusStage, ExtraDisplay, CalendarKind }
+export type { StatusStage, ExtraDisplay, CalendarKind, RelationshipKind }
 
 /** One session's vote dataset, as `listVoteDatasets` lists it. */
 export interface VoteDataset {
@@ -427,6 +459,15 @@ export interface MeasureRef {
   record?: { raw: unknown; hash: string }
   /** The measure's session row, when central has one. */
   session?: StoredSession
+  /**
+   * The text documents central already stores for the measure, from an earlier
+   * ingest, as a snapshot provider's `fetchMeasure` sees them. A provider that
+   * has to look up each text's link can reuse a stored one (a text's link
+   * doesn't change for its `doc_id`) and look up only the rest. A text whose
+   * download failed is listed too, so its link is reused and core retries the
+   * download as before.
+   */
+  texts?: { docId: number; stateLink: string | null }[]
 }
 
 /** `fetchMeasure`'s result for a provider that also fetched a per-measure details response. */
