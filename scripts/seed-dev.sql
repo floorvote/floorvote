@@ -2,7 +2,7 @@
 -- Run: cd api && npx wrangler d1 execute floorvote-dev --local --file=../scripts/seed-dev.sql
 
 -- === USERS ===
-INSERT OR IGNORE INTO users (id, email, name, role, subtitle, can_vote, created_at) VALUES
+INSERT OR IGNORE INTO users (id, email, name, role, title, can_vote, created_at) VALUES
   ('user-maria', 'maria.chen@example.com', 'Maria Chen', 'owner', 'Executive Director', 1, '2025-09-15 10:00:00'),
   ('user-david', 'david.park@example.com', 'David Park', 'admin', 'Legislative Analyst', 1, '2025-10-02 09:00:00'),
   ('user-sarah', 'sarah.wright@example.com', 'Sarah Wright', 'member', 'County Clerk, Warwick', 1, '2025-10-10 14:00:00'),

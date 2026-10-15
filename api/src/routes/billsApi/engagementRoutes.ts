@@ -150,7 +150,7 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
         c: comments,
         userName: users.name,
         userEmail: users.email,
-        userSubtitle: users.subtitle,
+        userTitle: users.title,
       })
       .from(comments)
       .innerJoin(users, eq(comments.userId, users.id))
@@ -172,23 +172,26 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
           .all()
       : []
 
-    const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; subtitle: string | null }[] }>>()
+    const reactionsByComment = new Map<string, Map<string, { count: number; userReacted: boolean; reactors: { name: string; title: string | null; subtitle: string | null }[] }>>()
     for (const { reaction: r, user: reactor } of reactionRows) {
       if (!reactionsByComment.has(r.commentId)) reactionsByComment.set(r.commentId, new Map())
       const emojiMap = reactionsByComment.get(r.commentId)!
       if (!emojiMap.has(r.emoji)) emojiMap.set(r.emoji, { count: 0, userReacted: false, reactors: [] })
       const entry = emojiMap.get(r.emoji)!
       entry.count++
-      entry.reactors.push({ name: displayName(reactor), subtitle: reactor.subtitle })
+      // `subtitle` is the old name for `title`. Remove in the release after this one.
+      entry.reactors.push({ name: displayName(reactor), title: reactor.title, subtitle: reactor.title })
       if (r.userId === currentUser.id) entry.userReacted = true
     }
 
     return c.json(
-      commentRows.map(({ c: comment, userName, userEmail, userSubtitle }) => ({
+      commentRows.map(({ c: comment, userName, userEmail, userTitle }) => ({
         id: comment.id,
         userId: comment.userId,
         userName: userName || userEmail,
-        userSubtitle: userSubtitle,
+        userTitle,
+        // `subtitle` is the old name for `title`. Remove in the release after this one.
+        userSubtitle: userTitle,
         content: comment.content,
         createdAt: comment.createdAt,
         reactions: Array.from(reactionsByComment.get(comment.id)?.entries() ?? []).map(

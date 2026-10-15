@@ -384,10 +384,10 @@ type Comment = {
   id: string
   userId: string
   userName: string
-  userSubtitle: string | null
+  userTitle: string | null
   content: string
   createdAt: string
-  reactions: { emoji: string; count: number; userReacted: boolean; reactors: { name: string; subtitle: string | null }[] }[]
+  reactions: { emoji: string; count: number; userReacted: boolean; reactors: { name: string; title: string | null }[] }[]
 }
 
 type CoSponsor = { name: string; party: string | null; role?: string; district?: string; url: string | null; primary?: boolean }
@@ -673,8 +673,8 @@ export function BillDetail() {
   const [flashedSectionId, setFlashedSectionId] = useState<string | null>(null)
   const flashSectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handledSectionHashRef = useRef<string | null>(null)
-  const [rolesData, setRolesData] = useState<Array<{ id: string; name: string; members: Array<{ id: string; name: string; subtitle: string | null }> }>>([])
-  const [usersData, setUsersData] = useState<Array<{ id: string; name: string; email: string; subtitle: string | null; roles: { id: string; name: string }[] }>>([])
+  const [rolesData, setRolesData] = useState<Array<{ id: string; name: string; members: Array<{ id: string; name: string; title: string | null }> }>>([])
+  const [usersData, setUsersData] = useState<Array<{ id: string; name: string; email: string; title: string | null; roles: { id: string; name: string }[] }>>([])
   const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldDef[]>([])
   const [editingPinnedFieldId, setEditingPinnedFieldId] = useState<string | null>(null)
   const [hoveredPinnedFieldId, setHoveredPinnedFieldId] = useState<string | null>(null)
@@ -926,10 +926,10 @@ export function BillDetail() {
   }, [billKey])
 
   useEffect(() => {
-    apiFetch<Array<{ id: string; name: string; members: Array<{ id: string; name: string; subtitle: string | null }> }>>('/roles')
+    apiFetch<Array<{ id: string; name: string; members: Array<{ id: string; name: string; title: string | null }> }>>('/roles')
       .then(setRolesData)
       .catch(() => {})
-    apiFetch<Array<{ id: string; name: string; email: string; subtitle: string | null; roles: { id: string; name: string }[] }>>('/users')
+    apiFetch<Array<{ id: string; name: string; email: string; title: string | null; roles: { id: string; name: string }[] }>>('/users')
       .then(setUsersData)
       .catch(() => {})
   }, [])
@@ -1063,7 +1063,7 @@ export function BillDetail() {
       id: result.id,
       userId: user!.id,
       userName: displayName(user!),
-      userSubtitle: user!.subtitle,
+      userTitle: user!.title,
       content: result.content,
       createdAt: result.createdAt,
       reactions: [],
@@ -1079,13 +1079,13 @@ export function BillDetail() {
     // The optimistic update must keep `reactors` (the hover name list) in step with
     // `count`/`userReacted`, or the current user's name would be missing (on add) or
     // linger (on remove) in the tooltip until the next poll. Match the server shape.
-    const me = { name: displayName(user!) || 'You', subtitle: user?.subtitle ?? null }
+    const me = { name: displayName(user!) || 'You', title: user?.title ?? null }
     if (existing?.userReacted) {
       try {
         await apiFetch(`/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' })
         setComments((prev) => prev.map((c) =>
           c.id === commentId
-            ? { ...c, reactions: c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count - 1, userReacted: false, reactors: r.reactors.filter((x) => !(x.name === me.name && x.subtitle === me.subtitle)) } : r).filter((r) => r.count > 0) }
+            ? { ...c, reactions: c.reactions.map((r) => r.emoji === emoji ? { ...r, count: r.count - 1, userReacted: false, reactors: r.reactors.filter((x) => !(x.name === me.name && x.title === me.title)) } : r).filter((r) => r.count > 0) }
             : c,
         ))
       } catch (err) {
@@ -2753,7 +2753,7 @@ export function BillDetail() {
             {comments.map((comment, idx) => (
               <div key={comment.id} id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  {/* Comment header (name / subtitle / date) — shared with the
+                  {/* Comment header (name / title / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
                   <span
                     style={{ fontSize: COMMENT_STYLE.nameSize, fontWeight: COMMENT_STYLE.nameWeight, color: COMMENT_STYLE.nameColor, position: 'relative', cursor: 'default' }}
@@ -2761,8 +2761,8 @@ export function BillDetail() {
                     onMouseLeave={() => setHoveredCommentUser(null)}
                   >
                     {comment.userName}
-                    {comment.userSubtitle && (
-                      <span style={{ fontSize: COMMENT_STYLE.subtitleSize, fontWeight: COMMENT_STYLE.subtitleWeight, color: COMMENT_STYLE.subtitleColor, marginLeft: 4 }}>{comment.userSubtitle}</span>
+                    {comment.userTitle && (
+                      <span style={{ fontSize: COMMENT_STYLE.titleSize, fontWeight: COMMENT_STYLE.titleWeight, color: COMMENT_STYLE.titleColor, marginLeft: 4 }}>{comment.userTitle}</span>
                     )}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
@@ -2864,7 +2864,7 @@ export function BillDetail() {
                         {r.reactors.map((reactor) => (
                           <div key={reactor.name}>
                             <span style={{ fontWeight: fontWeight.semibold }}>{reactor.name}</span>
-                            {reactor.subtitle && <span style={{ color: color.borderStrong, marginLeft: 4 }}>{reactor.subtitle}</span>}
+                            {reactor.title && <span style={{ color: color.borderStrong, marginLeft: 4 }}>{reactor.title}</span>}
                           </div>
                         ))}
                         <span style={{

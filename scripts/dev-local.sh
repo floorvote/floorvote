@@ -85,7 +85,7 @@ echo "==> seeding local D1 from scripts/seed-dev.sql"
 # /api/* requests 401 even though the HTML page sets a session cookie.
 echo "==> ensuring demo-user row for auto-login"
 (cd "$ROOT/api" && npx wrangler d1 execute floorvote-dev --local --env dev --yes \
-  --command "INSERT OR IGNORE INTO users (id, email, name, role, subtitle, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 1, datetime('now'));")
+  --command "INSERT OR IGNORE INTO users (id, email, name, role, title, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 1, datetime('now'));")
 
 # --- 4. start the app (api 8787 + web 5173) ---------------------------------
 echo ""

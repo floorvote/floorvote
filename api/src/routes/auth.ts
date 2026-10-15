@@ -276,7 +276,7 @@ authRoutes.post('/verify', async (c) => {
   })
 
   const verifiedUser = await db
-    .select({ id: users.id, email: users.email, name: users.name, subtitle: users.subtitle })
+    .select({ id: users.id, email: users.email, name: users.name, title: users.title })
     .from(users)
     .where(eq(users.id, userId))
     .get()
@@ -423,7 +423,9 @@ authRoutes.get('/me', async (c) => {
             email: localUser!.email,
             name: localUser!.name,
             role: localUser!.role,
-            subtitle: localUser!.subtitle,
+            title: localUser!.title,
+            // `subtitle` is the old name for `title`. Remove in the release after this one.
+            subtitle: localUser!.title,
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
@@ -450,7 +452,7 @@ authRoutes.get('/me', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      subtitle: users.subtitle,
+      title: users.title,
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
       emailWeekAheadEnabled: users.emailWeekAheadEnabled,
@@ -475,7 +477,7 @@ authRoutes.get('/me', async (c) => {
   // gets their central profile refreshed.
   const profiled = await refreshProfileFromRequestToken(c, db, { ...sessionWithUser, id: sessionWithUser.userId })
   sessionWithUser.name = profiled.name
-  sessionWithUser.subtitle = profiled.subtitle
+  sessionWithUser.title = profiled.title
 
   const newExpiryInstant = new Date(Date.now() + SESSION_DURATION_MS)
   await db
@@ -509,7 +511,9 @@ authRoutes.get('/me', async (c) => {
     email: sessionWithUser.email,
     name: sessionWithUser.name,
     role: sessionWithUser.role,
-    subtitle: sessionWithUser.subtitle,
+    title: sessionWithUser.title,
+    // `subtitle` is the old name for `title`. Remove in the release after this one.
+    subtitle: sessionWithUser.title,
     canVote: !!sessionWithUser.canVote,
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,

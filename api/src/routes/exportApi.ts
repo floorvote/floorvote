@@ -40,7 +40,7 @@ void _exhaustive
 
 type TableName = keyof typeof tableMap
 
-const SAFE_USER_COLUMNS = ['id', 'email', 'name', 'role', 'subtitle', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote'] as const
+const SAFE_USER_COLUMNS = ['id', 'email', 'name', 'role', 'title', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote'] as const
 
 // A tenant's `bills` table is dominated by lightweight "monitoring" stubs —
 // bills outside the keyword set the tenant doesn't actually track (on a large

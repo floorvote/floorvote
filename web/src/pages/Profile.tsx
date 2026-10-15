@@ -61,7 +61,7 @@ function accountEventLabel(e: AccountAuthEvent, selfId: string): string {
 
 export function Profile() {
   usePageTitle('Account')
-  const { user, setSubtitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled } = useAuth()
+  const { user, setTitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled } = useAuth()
   const { demoLocked } = useDemo()
   const { config } = useConfig()
   const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
@@ -90,8 +90,8 @@ export function Profile() {
     setNameInput(user?.name ?? '')
   }, [user?.name])
 
-  // Subtitle editing
-  const [subtitleInput, setSubtitleInput] = useState(user?.subtitle ?? '')
+  // Title editing
+  const [titleInput, setTitleInput] = useState(user?.title ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -99,8 +99,8 @@ export function Profile() {
 
   // Sync input if user changes externally
   useEffect(() => {
-    setSubtitleInput(user?.subtitle ?? '')
-  }, [user?.subtitle])
+    setTitleInput(user?.title ?? '')
+  }, [user?.title])
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -203,7 +203,7 @@ export function Profile() {
     try {
       const payload = {
         name: nameInput.trim(),
-        subtitle: subtitleInput.trim() === '' ? null : subtitleInput.trim(),
+        title: titleInput.trim() === '' ? null : titleInput.trim(),
       }
       await apiFetch('/users/me', {
         method: 'PATCH',
@@ -213,7 +213,7 @@ export function Profile() {
       // would appear. The field shows what was saved (trimmed, or blank).
       setName(payload.name)
       setNameInput(payload.name)
-      setSubtitle(payload.subtitle)
+      setTitle(payload.title)
       setSaved(true)
       setSaveError(null)
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
@@ -381,7 +381,7 @@ export function Profile() {
             </div>
             <div>
               <span style={FORM_LABEL}>Title</span>
-              <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.subtitle || '—'}</div>
+              <div style={{ fontSize: fontSize.base, color: color.textPrimary }}>{user.title || '—'}</div>
               <div style={{ ...HELPER_TEXT, marginTop: 4 }}>
                 Your name and title are managed in the{' '}
                 {config?.centralDashboardUrl
@@ -497,12 +497,12 @@ export function Profile() {
         )}
 
         <div style={{ marginBottom: 20 }}>
-          <label style={FORM_LABEL} htmlFor="subtitle-input">Subtitle</label>
+          <label style={FORM_LABEL} htmlFor="title-input">Title</label>
           <input
-            id="subtitle-input"
+            id="title-input"
             type="text"
-            value={subtitleInput}
-            onChange={(e) => setSubtitleInput(e.target.value)}
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
             placeholder="e.g. County Clerk, Greene County"
             style={{
               display: 'block',

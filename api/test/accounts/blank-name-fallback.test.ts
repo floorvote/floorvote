@@ -62,9 +62,9 @@ describe('a cleared name falls back to the email', () => {
     await getDb(env.DB).insert(commentReactions).values({ id: crypto.randomUUID(), commentId, userId: clearedId, emoji: '👍' })
     type R = { reactions: Array<{ reactors: { name: string }[] }> }
     const detail = await (await get(`/bills/${billId}`)).json() as { comments: R[] }
-    expect(detail.comments[0].reactions[0].reactors).toEqual([{ name: CLEARED_EMAIL, title: null }])
+    expect(detail.comments[0].reactions[0].reactors).toEqual([{ name: CLEARED_EMAIL, title: null, subtitle: null }])
     const list = await (await get(`/bills/${billId}/comments`)).json() as R[]
-    expect(list[0].reactions[0].reactors).toEqual([{ name: CLEARED_EMAIL, title: null }])
+    expect(list[0].reactions[0].reactors).toEqual([{ name: CLEARED_EMAIL, title: null, subtitle: null }])
   })
 
   it('in "Set by" for priority', async () => {

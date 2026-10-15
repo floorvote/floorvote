@@ -8,7 +8,7 @@ type DB = ReturnType<typeof drizzle<typeof schema>>
 /** A superadmin's name and title, kept here once and applied by every instance at sign-in. */
 export type SuperadminProfile = { name: string; title: string }
 
-// The same limits an instance puts on a member's name and subtitle.
+// The same limits an instance puts on a member's name and title.
 export const PROFILE_NAME_MAX = 100
 export const PROFILE_TITLE_MAX = 200
 

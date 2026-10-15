@@ -12,7 +12,7 @@
  *   npx wrangler d1 execute floorvote-dev --local -c wrangler.dev.toml \
  *     --file ../scripts/seed-dev.sql --yes
  *   npx wrangler d1 execute floorvote-dev --local -c wrangler.dev.toml --yes \
- *     --command "INSERT OR IGNORE INTO users (id, email, name, role, subtitle, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 1, datetime('now'));"
+ *     --command "INSERT OR IGNORE INTO users (id, email, name, role, title, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 1, datetime('now'));"
  *   npx wrangler d1 execute floorvote-dev --local -c wrangler.dev.toml \
  *     --file ../scripts/example-screenshots/seed.sql --yes
  *   cd ..

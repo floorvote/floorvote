@@ -170,7 +170,7 @@ export function MembersPopup({
                     <MemberNameCell
                       name={m.name}
                       email={m.email}
-                      subtitle={m.subtitle}
+                      title={m.title}
                       isSelf={m.id === currentUserId}
                     />
                   </td>

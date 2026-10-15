@@ -80,8 +80,8 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
 
   // Canonical seed users
   await batch(seed.users.map((u) =>
-    db.prepare(`INSERT OR REPLACE INTO users (id, email, name, role, subtitle, created_at, can_vote) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .bind(u.id, u.email, u.name, u.role, u.subtitle, daysAgoDb(u.createdDaysAgo), u.canVote ? 1 : 0),
+    db.prepare(`INSERT OR REPLACE INTO users (id, email, name, role, title, created_at, can_vote) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .bind(u.id, u.email, u.name, u.role, u.title, daysAgoDb(u.createdDaysAgo), u.canVote ? 1 : 0),
   ))
 
   // Canonical roles
