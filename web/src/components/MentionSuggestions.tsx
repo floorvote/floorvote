@@ -9,6 +9,8 @@ interface UserItem {
   email: string
   subtitle: string | null
   type: 'user'
+  /** Set when the person matched only by email, so the list shows the address. */
+  matchedByEmail?: boolean
 }
 
 interface RoleItem {
@@ -207,6 +209,9 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
                   <span style={{ color: color.tooltipBg }}>{displayName(person)}</span>
                   {person.subtitle && (
                     <span style={{ color: color.textMuted, marginLeft: 6 }}>{person.subtitle}</span>
+                  )}
+                  {person.matchedByEmail && (
+                    <span style={{ color: color.textMuted, marginLeft: 6 }}>{person.email}</span>
                   )}
                 </button>
               );

@@ -20,11 +20,15 @@ export function mentionSuggestionItems({ query, users, roles, viewer }: {
   const q = query.toLowerCase()
   const others = users.filter(u => u.id !== viewer?.id)
 
-  const filteredUsers = users
-    .filter(u => displayName(u).toLowerCase().includes(q) || (u.subtitle && u.subtitle.toLowerCase().includes(q)))
-  const matchedUsers = filteredUsers
-    .slice(0, 4)
-    .map(u => ({ ...u, type: 'user' as const }))
+  // A person matches by name (or subtitle), or failing that by the start of their
+  // email address. Name matches rank first; an email-only match is flagged so the
+  // list can show the address that explains it.
+  const byName = (u: MentionUser) => displayName(u).toLowerCase().includes(q) || !!u.subtitle?.toLowerCase().includes(q)
+  const filteredUsers: Array<MentionUser & { type: 'user'; matchedByEmail?: true }> = [
+    ...users.filter(byName).map(u => ({ ...u, type: 'user' as const })),
+    ...users.filter(u => !byName(u) && u.email.toLowerCase().startsWith(q)).map(u => ({ ...u, type: 'user' as const, matchedByEmail: true as const })),
+  ]
+  const matchedUsers = filteredUsers.slice(0, 4)
   if (filteredUsers.length > 4) matchedUsers.push({ id: '__more_users__', name: '', email: '', subtitle: `${filteredUsers.length - 4} more`, type: 'user' as const })
 
   const filteredRoles = roles.filter(r => r.name.toLowerCase().includes(q))
