@@ -231,8 +231,8 @@ export async function buildBillDetail(
     legiscanUrl: centralRich?.legiscanUrl ?? null,
     billType: centralRich?.billType ?? null,
     body: centralRich?.body ?? null,
-    // Central's committee name when it has one. Only demo seeds fill bills.committee.
-    committee: centralRich?.committee?.name ?? bill.committee,
+    // Central's committee when it has one. Only demo seeds fill bills.committee, and a name has no id or chamber.
+    committee: centralRich?.committee ?? (bill.committee ? { committeeId: null, name: bill.committee, chamber: null } : null),
     referrals: centralRich?.referrals ?? [],
     tenantSummary: bill.tenantSummary,
     tags: filterTagsToTaxonomy(JSON.parse(bill.tags) as string[], tagSet),

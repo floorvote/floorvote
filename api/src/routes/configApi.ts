@@ -10,7 +10,6 @@ import { centralFetch } from '../lib/centralFetch'
 import { readStateAttribution, readStateCapabilities } from '../lib/bodyEvents'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
-import { LEGISCAN_ATTRIBUTION } from '../../../shared/dataAttribution'
 import { parseEmailList } from '../../../shared/operator'
 import type { AppEnv } from '../types'
 
@@ -201,11 +200,11 @@ configRouter.get('/', async (c) => {
   // Which data providers the footer credits. Central decides the source per
   // state (lib/stateProviders.ts) and each provider declares its own credit, so
   // the instance is told (lib/bodyEvents.ts keeps it fresh). Until central has
-  // answered, or when it names no provider, it is LegiScan's, the default
-  // provider's: the CC BY credit never lapses on an upgrade.
-  const attribution = knownAttribution && knownAttribution.providers.length > 0
-    ? knownAttribution
-    : { providers: [{ id: 'legiscan', ...LEGISCAN_ATTRIBUTION }] }
+  // answered, or when it names no provider, it is left out, so the client can
+  // tell "not known yet" from "LegiScan only": the footer then credits LegiScan,
+  // the default provider (OperatorBranding.tsx), so the CC BY credit never
+  // lapses, and the Stage filter stays offered (web/src/lib/capabilities.ts).
+  const attribution = knownAttribution && knownAttribution.providers.length > 0 ? knownAttribution : undefined
 
   const tagTaxonomy = taxonomyItems.map(t => t.name)
 

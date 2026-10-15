@@ -77,7 +77,7 @@ Copy the `CF_ACCOUNT_ID`, `CF_AIG_GATEWAY`, `CENTRAL_API_URL`, and `SUPERADMIN_J
 > - `CENTRAL_API_URL` — your central worker's URL, which wrangler printed (and told you to note) when you deployed central. See the [central setup](/self-hosting/). No dashboard needed.
 > - `CF_ACCOUNT_ID` — your Cloudflare account ID.
 > - `CF_AIG_GATEWAY` — the AI Gateway slug you created under [Cloudflare credentials](#cloudflare-credentials) above.
-> - `SUPERADMIN_JWT_PUBLIC_KEY` — the public key from the superadmin key-generation step in the central setup.
+> - `SUPERADMIN_JWT_PUBLIC_KEY` — the public key `node scripts/gen-superadmin-keys.mjs` prints when you [turn on the superadmin dashboard](/self-hosting/operating#optional-superadmin-dashboard). Without the dashboard you can leave this var out of a hand-written block, though `scripts/new-instance.sh` won't run until it is set.
 
 > [!IMPORTANT]
 > The shared, top-level `[assets]` block (inherited by every tenant env) must include `run_worker_first = ["/api/*"]`:
@@ -206,7 +206,7 @@ crons = ["0 11 * * *", "0 * * * *"]
 ```
 
 > [!IMPORTANT]
-> Register **both** crons. The Worker dispatches on the cron string, so a schedule you leave out does not error — it just means that job never runs. Drop the hourly one and bills the AI gateway sheds during a rate-limit window stay un-analyzed until someone finds them by hand.
+> Register **both** crons. The Worker dispatches on the cron string, so a schedule you leave out does not error — it just means that job never runs. Drop the hourly one and bills the AI gateway sheds during a rate-limit window stay un-analyzed until someone finds them by hand. (A [demo tenant](/self-hosting/demo) is the one exception: it takes a reset cron instead of both.)
 
 The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound tenant-to-central calls authenticate by *arrival* (that named entrypoint is only reachable over same-account bindings), so the tenant carries no shared secret.
 
@@ -216,7 +216,10 @@ The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound te
 > [!NOTE]
 > **Queue delivery needs no central change.** As long as `CF_QUEUES_TOKEN` is set on central, central finds this tenant's queue at registration and delivers to it. (A static `TENANT_QUEUE_` producer binding on central is only worth adding for a very high-volume tenant; most never need it.)
 
-Commit `api/wrangler.toml` before deploying.
+> [!TIP]
+> To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` before you deploy, since the deploy builds it in. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
+
+`api/wrangler.toml` is gitignored because it holds your account and database IDs, so don't commit it. That also leaves it with no version history, so keep a copy somewhere safe: set `WRANGLER_BACKUP_DIR` and `npm run deploy:tenant` copies it there after each deploy.
 
 ## Step 4: Run migrations
 
@@ -323,12 +326,12 @@ They then log in with a magic link sent to that email address.
 
 ## Step 11: Configure the instance
 
-Now switch from the terminal to a browser. Go to your instance at the `APP_URL` from your Step 3 config block — `https://[slug].[your-domain]` (the custom domain from Step 9). There's no password: enter the founding owner's email from Step 10 and the app emails you a magic link; click it to sign in, then open **Settings → Configuration**. A new instance starts with no keywords and no AI instructions, so there are two ways to proceed from here:
+Now switch from the terminal to a browser. Go to your instance at the `APP_URL` from your Step 3 config block — `https://[slug].[your-domain]` (the custom domain from Step 9). There's no password: enter the founding owner's email from Step 10 and the app emails you a magic link; click it to sign in, then open **Settings → Config**. A new instance starts with no keywords and no AI instructions, so there are two ways to proceed from here:
 
-- **Path 1 (recommended — explore first).** Leave the AI fields and keywords blank, seed the session in Step 12, and every bill arrives as a free monitor stub with no AI cost. Browse and search the real corpus, then come back here and fill in both sections — **and save both, in either order**: keywords in the Keywords section, saved with **Save keywords and sync** (this is the button that queues the newly-matching bills for full analysis); and AI context, relevance question, and tag taxonomy in the AI section, saved separately with **Save AI instructions**. Saving only one leaves the other on its blank default — in particular, writing AI instructions and clicking only **Save keywords and sync** leaves those instructions unsaved, silently falling back to the generic default. The free exploration window ends the moment you save the keywords — from then on, re-tuning keywords or instructions means paying for AI a second time on whatever newly matches.
-- **Path 2 (keywords already known).** Write the config now, before seeding, so the Step 12 seed produces AI summaries on its first pass. Use the `wrangler d1 execute` block below to set it directly, or fill in the same fields in **Settings → Configuration** and save.
+- **Path 1 (recommended — explore first).** Leave the AI fields and keywords blank, seed the session in Step 12, and every bill arrives as a free monitor stub with no AI cost. Browse and search the real corpus, then come back here and fill in both sections — **and save both, in either order**: keywords in the Bill keywords section, saved with **Save keywords and sync** (this is the button that queues the newly-matching bills for full analysis); and AI context, relevance question, and tag taxonomy in the AI instructions section, saved separately with **Save AI instructions**. Saving only one leaves the other on its blank default — in particular, writing AI instructions and clicking only **Save keywords and sync** leaves those instructions unsaved, silently falling back to the generic default. The free exploration window ends the moment you save the keywords — from then on, re-tuning keywords or instructions means paying for AI a second time on whatever newly matches.
+- **Path 2 (keywords already known).** Write the config now, before seeding, so the Step 12 seed produces AI summaries on its first pass. Use the `wrangler d1 execute` block below to set it directly, or fill in the same fields in **Settings → Config** and save.
 
-You can set these four fields directly in the database if you prefer (from `api/`). They live in the `association_config` table:
+You can set these fields directly in the database if you prefer (from `api/`). They live in the `association_config` table:
 
 | Key | Example |
 |-----|---------|
@@ -340,23 +343,27 @@ You can set these four fields directly in the database if you prefer (from `api/
 
 ```bash
 wrangler d1 execute floorvote-[slug] --remote --env [slug] \
-  --command "INSERT INTO association_config (key, value) VALUES
+  --command "INSERT OR REPLACE INTO association_config (key, value) VALUES
     ('keywords', '[\"election\",\"voter\",\"ballot\"]'),
     ('ai_context', 'You are analyzing bills for an association of local election officials.'),
     ('relevance_question', 'Is this bill relevant to local election administration?'),
     ('state_coverage', '[\"NJ\"]')"
 ```
 
-**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync. To widen what gets analyzed, write broader keywords covering your real scope, or manually promote specific bills once they are in view as stubs. Bear in mind that keyword matching runs on a bill's title, its abstract, and its bill number (so `hb 1019` or `hb*` track a bill or a prefix), and many states copy the title into the abstract verbatim — so in practice you are often matching against six or seven words, and broad keywords buy less coverage than they appear to.
+Each key is a row, so `INSERT OR REPLACE` also works for a key you set earlier, such as `state_coverage` in Step 4b.
 
-While you're here, set the **org noun** (team / association / coalition / custom) — it drives the labels on the positions section. (**Rerun AI on all bills** is for later — after bills are in — if you re-tune your instructions and want to regenerate existing summaries.)
+**What blank means.** An unset `ai_context`, `relevance_question`, or `tag_taxonomy` falls back to a generic default that names the association and still works — nothing breaks. Unset `keywords` is different: it means no bill matches, so nothing gets a full AI summary — central still links every bill to the team as a free monitor stub (see [When do bills start flowing in?](#when-do-bills-start-flowing-in) below), but none of them get analyzed until you set keywords and sync. To widen what gets analyzed, write broader keywords covering your real scope, or manually promote specific bills once they are in view as stubs. Bear in mind that keyword matching runs on a bill's title, its abstract, and its bill number (so `hb 1019` or `hb*` track a bill or a prefix), and many states copy the title into the abstract verbatim — so in practice you are often matching against six or seven words, and broad keywords buy less coverage than they appear to. The [keyword rules](/overview/what-can-it-do#set-keywords-for-the-topics-you-care-about) (whole words by default, `*` to widen, `#` for a digit) are the same ones the Settings hint describes.
+
+To analyze every bill instead, set the keywords to a single `*`. That is a keyword, not the `["*"]` in `state_coverage`, which means every state. It works only as the sole keyword: in a longer list it is ignored, since it would make every other keyword redundant. Saving it asks for confirmation and shows how many bills it would queue, and every one of them costs AI usage, so treat it as a cost decision.
+
+While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts.
 
 ## Step 12: Seed the active session(s)
 
 Seeding loads a whole legislative session into the team at once — bills matching its keywords get full AI summaries, and the rest come in as lightweight "monitor" stubs (no AI cost). This means the team mirrors the full session from day one.
 
 > [!TIP]
-> **No keywords yet is the expected case (Path 1 from Step 11).** Seeding uses whatever keywords are already synced to central to decide which bills get full AI versus a stub — with none set, every bill comes in as a stub, which is exactly the free-exploration state Path 1 wants. When you're ready to tune, go to **Settings → Configuration** and save both sections — keywords with **Save keywords and sync**, AI context/relevance question/tag taxonomy with **Save AI instructions**. Changing them after seeding works too, but then you'd "Rerun AI on all bills" to regenerate against the new instructions.
+> **No keywords yet is the expected case (Path 1 from Step 11).** Seeding uses whatever keywords are already synced to central to decide which bills get full AI versus a stub — with none set, every bill comes in as a stub, which is exactly the free-exploration state Path 1 wants. Save both sections when you're ready, as Step 11 describes.
 
 There are two paths, depending on whether central already has the state's bills.
 
@@ -475,6 +482,17 @@ Registration stores the team's keywords and state coverage and provisions its qu
 - **Want bills immediately:** run the seed in Step 12.
 
 Non-keyword bills arrive as lightweight monitor stubs; keyword and manually-added bills get full AI summaries.
+
+## Hiding subjects
+
+Bills show the subject terms their legislature assigned them whenever their provider supplies them (see [Subjects](/overview/what-can-it-do#subjects)). If a state's terms are too coarse to be useful, you can hide them. There is no settings screen for this: set the `subjects_suppressed_states` row of `association_config` to a JSON list of state codes, or `["*"]` for every state:
+
+```bash
+npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
+  --command "INSERT OR REPLACE INTO association_config (key, value) VALUES ('subjects_suppressed_states', '[\"NJ\"]')"
+```
+
+A hidden state's subjects disappear from its bill pages, from the Subject filter and its counts, and from the admin data export's `subjects` column, and nothing needs redeploying. Delete the row to show them again. A tenant with no row shows subjects for every state.
 
 ## Choosing the analysis model
 
