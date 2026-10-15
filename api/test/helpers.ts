@@ -89,6 +89,7 @@ import migrationSql101 from '../migrations/0101_team_fields_group.sql?raw'
 import migrationSql102 from '../migrations/0102_group_key_filter_columns.sql?raw'
 import migrationSql103 from '../migrations/0103_group_tags.sql?raw'
 import migrationSql104 from '../migrations/0104_group_overrides.sql?raw'
+import migrationSql106 from '../migrations/0106_tracked_group_analysis.sql?raw'
 
 export function parseMigration(sql: string, name: string) {
   const queries = sql
@@ -320,6 +321,8 @@ export async function applyMigrations(opts: { before?: string } = {}): Promise<v
     // Split with the splitter that keeps a trigger's body whole, as wrangler's does.
     { name: '0103_group_tags', queries: splitStatements(migrationSql103) },
     parseMigration(migrationSql104, '0104_group_overrides'),
+    // Split with the splitter that keeps a trigger's body whole, as wrangler's does.
+    { name: '0106_tracked_group_analysis', queries: splitStatements(migrationSql106) },
   ]
   const before = opts.before
   await applyD1Migrations(env.DB, before ? migrations.filter(m => m.name < before) : migrations)
