@@ -3,10 +3,11 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq, and, isNull, isNotNull, inArray, like } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { bills, billTenants, tenants, keywordRegistry, sessions } from '../db/schema'
-import { matchesUnion } from '../lib/keywords'
+import { matchesUnion, billMatchText } from '../lib/keywords'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider, type SessionRef, type SyncEntry } from '../providers'
 import { secretsMatch } from '../lib/auth'
 import { isSuperadminEmail } from '../lib/superadminIssuer'
+import { getSuperadminProfile } from '../lib/superadminProfile'
 import { revokeSuperadminJti } from '../lib/superadminRevocation'
 import { SUPERADMIN_TOKEN_TTL_SEC } from '../lib/superadminJwt'
 import { runSync } from '../cron/sync'
@@ -231,6 +232,23 @@ adminRoutes.get('/superadmin/emails', async (c) => {
   return c.json({ hashes })
 })
 
+// One superadmin's profile, for an instance refreshing its copy when that person
+// signs in by emailed link. Behind the x-admin-secret middleware above, so only
+// an authenticated instance gets an answer. The email travels in the body to
+// keep it out of request logs.
+//
+// It answers `{ profile: null }` for anyone who isn't a superadmin, exactly as
+// for a superadmin with no saved profile, and does the same database read either
+// way, so a caller learns nothing more than the `check` route already tells it.
+// A row left behind by someone taken off the list is never returned.
+adminRoutes.post('/superadmin/profile', async (c) => {
+  const body = await c.req.json<{ email?: unknown }>().catch(() => ({} as { email?: unknown }))
+  const email = typeof body?.email === 'string' ? body.email : ''
+  const profile = await getSuperadminProfile(drizzle(c.env.DB, { schema }), email)
+  const answer = isSuperadminEmail(c.env, email) ? profile : null
+  return c.json({ profile: answer })
+})
+
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -333,7 +351,7 @@ adminRoutes.post('/backfill-match-types', async (c) => {
 
     const matchedIds: number[] = []
     for (const r of unlinkedRows) {
-      const haystack = `${r.title ?? ''} ${r.description ?? ''} ${r.billNumber ?? ''}`
+      const haystack = billMatchText(r)
       if (matchesUnion(haystack, keywords).matched) {
         matchedIds.push(r.billId)
       }
@@ -413,7 +431,7 @@ adminRoutes.post('/sync-keywords/:tenantId', guardCallerTenantParam(), async (c)
   // Evaluate keyword match. Stop once we hit the cap.
   const newlyMatched: number[] = []
   for (const row of candidates) {
-    const hay = `${row.title ?? ''} ${row.description ?? ''} ${row.billNumber ?? ''}`
+    const hay = billMatchText(row)
     if (matchesUnion(hay, keywords).matched) {
       newlyMatched.push(row.billId)
       if (newlyMatched.length >= SYNC_KEYWORDS_CAP) break

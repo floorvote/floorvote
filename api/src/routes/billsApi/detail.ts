@@ -1,5 +1,6 @@
-import { eq, and, inArray, sql, desc, isNull } from 'drizzle-orm'
+import { eq, and, or, inArray, sql, desc, isNull } from 'drizzle-orm'
 import { getDb } from '../../db/client'
+import { rowidOf } from '../../db/rowid'
 import {
   bills, memberVotes, officialPositions, comments, notes, users, commentReactions, feedEvents,
   billTexts, roles, userRoles, billCustomFieldValues,
@@ -97,7 +98,7 @@ export async function buildBillDetail(
       // and a visitor's new comment landing the same second — collide on
       // created_at. rowid follows insert order, which is the intended reading
       // order for the seed's question/answer pairs.
-      .orderBy(comments.createdAt, sql`comments.rowid`)
+      .orderBy(comments.createdAt, rowidOf(comments))
       .limit(20)
       .all(),
     db.select({ count: sql<number>`count(*)` })
@@ -109,7 +110,18 @@ export async function buildBillDetail(
     db.select({ setByName: userDisplayNameSql, createdAt: feedEvents.createdAt })
       .from(feedEvents)
       .innerJoin(users, eq(feedEvents.userId, users.id))
-      .where(and(eq(feedEvents.billId, billId), eq(feedEvents.type, 'priority_set'), activeUser))
+      // A bulk priority edit is a bill-less event that lists its bills in metadata.billIds.
+      .where(and(
+        or(
+          eq(feedEvents.billId, billId),
+          and(
+            isNull(feedEvents.billId),
+            sql`EXISTS (SELECT 1 FROM json_each(${feedEvents.metadata}, '$.billIds') WHERE value = ${billId})`,
+          ),
+        ),
+        eq(feedEvents.type, 'priority_set'),
+        activeUser,
+      ))
       .orderBy(desc(feedEvents.createdAt))
       .limit(1)
       .get(),
@@ -214,8 +226,8 @@ export async function buildBillDetail(
     legiscanUrl: centralRich?.legiscanUrl ?? null,
     billType: centralRich?.billType ?? null,
     body: centralRich?.body ?? null,
-    // Central's committee name when it has one. Only demo seeds fill bills.committee.
-    committee: centralRich?.committee?.name ?? bill.committee,
+    // Central's committee when it has one. Only demo seeds fill bills.committee, and a name has no id or chamber.
+    committee: centralRich?.committee ?? (bill.committee ? { committeeId: null, name: bill.committee, chamber: null } : null),
     referrals: centralRich?.referrals ?? [],
     tenantSummary: bill.tenantSummary,
     tags: filterTagsToTaxonomy(JSON.parse(bill.tags) as string[], tagSet),

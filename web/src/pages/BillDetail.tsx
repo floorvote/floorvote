@@ -22,6 +22,7 @@ import { RelevanceChip } from '../components/RelevanceChip'
 import { SessionChip } from '../components/SessionChip'
 import { SentimentBars } from '../components/SentimentBars'
 import { LegislativeHistory, syntheticLatestAction } from '../components/LegislativeHistory'
+import { CommitteeLine, type CommitteeRef, type ReferralRef } from '../components/CommitteeLine'
 import { TabularRow } from '../components/TabularRow'
 import { BillTextPanel } from '../components/BillTextPanel'
 import { BillTextChip } from '../components/BillTextChip'
@@ -46,7 +47,7 @@ import { CommentContent } from '../components/CommentContent'
 import { CustomFieldsSection, type CustomFieldDef } from '../components/CustomFieldsSection'
 import { useDemo } from '../context/DemoContext'
 import { useNotifications } from '../context/NotificationsContext'
-import { markMentionsRead } from '../lib/demoReadState'
+import { markNotificationsRead } from '../lib/demoReadState'
 import { relativeTime, absoluteTime } from '../lib/time'
 import { COMMENT_STYLE } from '../../../shared/commentStyle'
 import { billDisplayTitle } from '../../../shared/billTitle'
@@ -418,8 +419,8 @@ type BillDetailData = {
   stateUrl?: string | null
   url?: string | null
   legiscanUrl?: string | null
-  committee: string | null
-  referrals?: { date: string | null; committeeId: string | null; chamber: string | null; name: string }[]
+  committee: CommitteeRef | null
+  referrals?: ReferralRef[]
   tenantSummary: string | null
   tags: string[]
   relevanceScore: number | null
@@ -729,7 +730,7 @@ export function BillDetail() {
   }, [resetDraftNumberGate, resetDraftStateGate])
 
   const refreshSidebar = useSidebarRefresh()
-  const { refresh: refreshNotifications, mentions } = useNotifications()
+  const { refresh: refreshNotifications, notifications } = useNotifications()
   const billRef = useRef<BillDetailData | null>(null)
 
   const applyBillData = useCallback((data: BillDetailData) => {
@@ -790,14 +791,17 @@ export function BillDetail() {
   useEffect(() => {
     const hash = location.hash
     if (!hash.startsWith('#section-') && !hash.startsWith('#text-')) return
-    if (handledSectionHashRef.current === hash) return
+    // Each navigation has its own location key, so a link to a hash the page is
+    // already on (the committee line's) is handled again, not skipped.
+    const handled = `${location.key}${hash}`
+    if (handledSectionHashRef.current === handled) return
 
     if (hash.startsWith('#text-')) {
       const docId = hash.slice('#text-'.length)
       if (docId) {
         setRequestedDocId(docId)
         setShowBillText(true)
-        handledSectionHashRef.current = hash
+        handledSectionHashRef.current = handled
       }
       return
     }
@@ -814,7 +818,7 @@ export function BillDetail() {
     const timerId = setTimeout(() => {
       const el = document.getElementById(sectionId)
       if (!el) return
-      handledSectionHashRef.current = hash
+      handledSectionHashRef.current = handled
       const rect = el.getBoundingClientRect()
       const container = getScrollContainer()
       const isInView = rect.top >= 64 && rect.bottom <= window.innerHeight
@@ -827,24 +831,24 @@ export function BillDetail() {
       }, 1500)
     }, 0)
     return () => clearTimeout(timerId)
-  }, [location.hash, bill?.id])
+  }, [location.hash, location.key, bill?.id])
 
   // Value-stable key: refresh() hands back a new array every time (a fresh parse
-  // of the response, NotificationsContext.tsx), so depending on `mentions` itself
+  // of the response, NotificationsContext.tsx), so depending on `notifications` itself
   // would make the effect below retrigger its own refresh in a loop — POST →
   // refresh() → new array identity → effect fires again → POST → ... forever,
   // for as long as the page stays open. Joining the ids means the effect only
-  // reruns when this bill's mention set actually changes. The effect below reads
-  // the ids back out of this string rather than re-deriving them from `mentions`,
-  // so `mentions` is not one of its dependencies at all — which is what keeps the
-  // dependency array exhaustive instead of needing a lint suppression. Mention ids
+  // reruns when this bill's notification set actually changes. The effect below reads
+  // the ids back out of this string rather than re-deriving them from `notifications`,
+  // so `notifications` is not one of its dependencies at all — which is what keeps the
+  // dependency array exhaustive instead of needing a lint suppression. Notification ids
   // are uuids (or the demo seed's `lm-m-*`), so none of them contains a comma.
-  const billMentionIds = useMemo(
-    () => mentions.filter(m => m.billId === bill?.id).map(m => m.id).sort().join(','),
-    [mentions, bill?.id],
+  const billNotificationIds = useMemo(
+    () => notifications.filter(n => n.billId === bill?.id).map(n => n.id).sort().join(','),
+    [notifications, bill?.id],
   )
 
-  // Mark all mention notifications for this bill as read when the page loads.
+  // Mark all of this bill's notifications as read when the page loads.
   // On a demo this is browser-local — the shared demo-user row and the reset cron
   // make the server's read_at useless there. See lib/demoReadState.ts.
   //
@@ -855,14 +859,14 @@ export function BillDetail() {
   useEffect(() => {
     if (!bill?.id || !demoSettled) return
     if (demoMode) {
-      markMentionsRead(billMentionIds ? billMentionIds.split(',') : [], demoResetAt)
+      markNotificationsRead(billNotificationIds ? billNotificationIds.split(',') : [], demoResetAt)
       void refreshNotifications()
       return
     }
     apiFetch(`/notifications/mark-read-by-bill/${bill.id}`, { method: 'POST' })
       .then(() => refreshNotifications())
       .catch(() => {})
-  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billMentionIds, demoResetAt])
+  }, [bill?.id, refreshNotifications, demoMode, demoSettled, billNotificationIds, demoResetAt])
 
   useEffect(() => {
     apiFetch<CustomFieldDef[]>('/config/custom-fields')
@@ -1690,28 +1694,8 @@ export function BillDetail() {
           />
         )}
 
-        {/* Meta row 2: committee / referrals */}
-        {(bill.committee || (bill.referrals?.length ?? 0) > 0) && (
-          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, marginBottom: 6 }}>
-            {bill.committee ? (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Committee:</span>
-                {bill.committee}
-              </>
-            ) : (
-              <>
-                <span style={{ color: color.textMuted, marginRight: 4 }}>Referrals:</span>
-                {(bill.referrals ?? []).map((r, i) => (
-                  <span key={i}>
-                    {i > 0 && <span style={{ color: color.borderStrong, margin: '0 6px' }}>·</span>}
-                    {r.name}
-                    {r.date && <span style={{ color: color.textMuted, marginLeft: 4 }}>{r.date.slice(0, 7)}</span>}
-                  </span>
-                ))}
-              </>
-            )}
-          </div>
-        )}
+        {/* Meta row 2: where the bill is in committee */}
+        <CommitteeLine committee={bill.committee} referrals={bill.referrals ?? []} history={bill.history} lastAction={bill.lastAction} lastActionDate={bill.lastActionDate} linkToHistory={!!bill.lastAction} />
 
         {/* Meta row 3: sponsors */}
         {!bill.isDraft && (bill.sponsor || bill.coSponsors.length > 0) && (

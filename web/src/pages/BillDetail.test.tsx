@@ -84,7 +84,7 @@ const notifState = vi.hoisted(() => ({
 vi.mock('../context/NotificationsContext', () => ({
   useNotifications: () => ({
     unreadCount: 0,
-    mentions: notifState.mentionIds.map(id => ({ id, billId: '42' })),
+    notifications: notifState.mentionIds.map(id => ({ kind: 'mention', id, billId: '42' })),
     refresh: notifState.refresh,
   }),
 }))
@@ -222,10 +222,20 @@ describe('BillDetail org noun labels', () => {
   })
 })
 
-describe('BillDetail referrals', () => {
+describe('BillDetail committee line', () => {
   beforeEach(() => vi.restoreAllMocks())
 
-  it('lists every referral, including two to one committee and one with no date', async () => {
+  it('says where the bill is, with chamber, when it has a pending committee', async () => {
+    makeMockApiFetch({
+      committee: { committeeId: '7001', name: 'Judiciary', chamber: 'S' },
+      referrals: [{ date: '2026-03-02', committeeId: '7001', name: 'Judiciary', chamber: 'S' }],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(screen.getByText('In committee:').parentElement).toHaveTextContent('In committee: Judiciary (Senate)')
+  })
+
+  it('says "Last referred to" for a bill with referrals and no pending committee', async () => {
     makeMockApiFetch({
       committee: null,
       referrals: [
@@ -236,10 +246,15 @@ describe('BillDetail referrals', () => {
     })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
     await screen.findByText('Test Bill')
-    expect(screen.getByText('Referrals:')).toBeInTheDocument()
-    expect(screen.getAllByText('Committee on Health')).toHaveLength(2)
-    expect(screen.getByText('2026-03')).toBeInTheDocument()
-    expect(screen.getByText('Retained by the Council')).toBeInTheDocument()
+    expect(screen.getByText('Last referred to:').parentElement).toHaveTextContent('Last referred to: Retained by the Council (Council)')
+    expect(screen.queryByText('Referrals:')).not.toBeInTheDocument()
+  })
+
+  it('shows no committee line for a bill with no committee and no referrals', async () => {
+    makeMockApiFetch({ committee: null, referrals: [] })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    await screen.findByText('Test Bill')
+    expect(screen.queryByText(/In committee:|Last referred to:/)).not.toBeInTheDocument()
   })
 })
 
@@ -770,8 +785,8 @@ describe('BillDetail mark-read-by-bill effect', () => {
       render(<MemoryRouter><BillDetail /></MemoryRouter>)
       await screen.findByText('Test Bill')
 
-      const { readMentionIds } = await import('../lib/demoReadState')
-      await waitFor(() => expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
+      const { readNotificationIds } = await import('../lib/demoReadState')
+      await waitFor(() => expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set(['m1', 'm2'])))
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
     })
 
@@ -789,8 +804,8 @@ describe('BillDetail mark-read-by-bill effect', () => {
       await new Promise(r => setTimeout(r, 50))
 
       expect(spy.mock.calls.filter(([path]) => path === '/notifications/mark-read-by-bill/42')).toHaveLength(0)
-      const { readMentionIds } = await import('../lib/demoReadState')
-      expect(readMentionIds(demoState.demoResetAt)).toEqual(new Set())
+      const { readNotificationIds } = await import('../lib/demoReadState')
+      expect(readNotificationIds(demoState.demoResetAt)).toEqual(new Set())
     })
   })
 })

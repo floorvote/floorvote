@@ -14,6 +14,7 @@ export const users = sqliteTable('users', {
   canVote: integer('can_vote').notNull().default(1),
   emailDigestEnabled: integer('email_digest_enabled').notNull().default(1),
   emailWeekAheadEnabled: integer('email_week_ahead_enabled').notNull().default(1),
+  emailRepliesEnabled: integer('email_replies_enabled').notNull().default(1),
   lastSeenFeed: text('last_seen_feed'),
 })
 
@@ -59,6 +60,39 @@ export const authEvents = sqliteTable('auth_events', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   // Who caused the event when it isn't the member it's about (migration 0075).
   actorId: text('actor_id'),
+})
+
+// A member's pending change of sign-in email (migration 0086). At most one per
+// member. Deleted when it is confirmed or cancelled, which makes its token
+// single use. See lib/emailChange.ts.
+export const emailChanges = sqliteTable('email_changes', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  oldEmail: text('old_email').notNull(),
+  newEmail: text('new_email').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  // The session a self-service request came from, kept signed in at commit.
+  requestingSessionId: text('requesting_session_id'),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+})
+
+// The "This wasn't me" tokens of an email change's old-address notices
+// (migration 0090). Single use: pressing one deletes every row for its change.
+// See lib/emailChangeReport.ts.
+export const emailChangeReports = sqliteTable('email_change_reports', {
+  id: text('id').primaryKey(),
+  // The email_changes row the notice was about. That row may be gone by now.
+  changeId: text('change_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  oldEmail: text('old_email').notNull(),
+  newEmail: text('new_email').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  requestedAt: text('requested_at').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
 // Per-hour, per-provider send counters for the email-health job (migration 0073).
@@ -251,7 +285,10 @@ export const feedEvents = sqliteTable('feed_events', {
   type: text('type', {
     enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched'],
   }).notNull(),
-  billId: text('bill_id').notNull(),
+  // Null for an event about no single bill (a bulk edit, and later instance-level
+  // events). Such an event keeps what it is about in `metadata`, and survives the
+  // deletion of any bill, which cascades only the events that point at it.
+  billId: text('bill_id'),
   userId: text('user_id').notNull(),
   metadata: text('metadata').notNull().default('{}'),
   suppressed: integer('suppressed', { mode: 'boolean' }).notNull().default(false),
@@ -394,12 +431,39 @@ export const calendarEventBills = sqliteTable('calendar_event_bills', {
   pk: primaryKey({ columns: [t.eventId, t.billId] }),
 }))
 
-export const commentMentions = sqliteTable('comment_mentions', {
+/** A mention notification's kind-specific data: how the mention reached the recipient. */
+export type MentionNotificationData = {
+  sourceType: 'user' | 'role' | 'everyone'
+  /** The user, the role, or 'all' for @everyone. */
+  sourceId: string
+}
+
+/** A reply notification carries no data of its own: the comment and its author say it all. */
+export type ReplyNotificationData = Record<string, never>
+
+/** A reaction notification's kind-specific data: which emoji was used. */
+export type ReactionNotificationData = {
+  emoji: string
+}
+
+/**
+ * The notifications inbox: one row per event a member is notified about, of a
+ * `kind` ('mention', 'reply', or 'reaction'). Rows are written when the event happens and
+ * never recomputed from comments. Rows for deleted comments are hidden at read
+ * time, not deleted. Writers and renderers per kind live in lib/notifications.ts.
+ */
+export const notifications = sqliteTable('notifications', {
   id: text('id').primaryKey(),
-  commentId: text('comment_id').notNull().references(() => comments.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  sourceType: text('source_type', { enum: ['user', 'role', 'everyone'] }).notNull(),
-  sourceId: text('source_id').notNull(),
+  recipientId: text('recipient_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['mention', 'reply', 'reaction'] }).notNull(),
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  // Nullable for a future kind about a bill alone (no comment). Every kind so far has one.
+  commentId: text('comment_id').references(() => comments.id, { onDelete: 'cascade' }),
+  actorId: text('actor_id').references(() => users.id, { onDelete: 'cascade' }),
+  /** Kind-specific JSON, e.g. MentionNotificationData for a mention. */
+  data: text('data').notNull().default('{}'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   readAt: text('read_at'),
 })
+
+export type NotificationKind = typeof notifications.$inferSelect['kind']
