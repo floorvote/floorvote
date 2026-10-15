@@ -312,6 +312,8 @@ export async function buildBillDetail(
     comments: formattedComments,
     commentsTotal: commentCountRow?.count ?? 0,
     groupingEvents,
+    // The bills in its companion group, this one first: just this one in no group.
+    groupBills,
     texts: textRows.map(t => ({
       docId: t.docId,
       type: t.type,

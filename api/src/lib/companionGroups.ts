@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, ne, or, sql, type SQL } from 'drizzle-orm'
 import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
-import { billIdenticalLinks, bills, memberVotes, notes, teamEvents } from '../db/schema'
+import { billGroupOverrides, billIdenticalLinks, bills, memberVotes, notes, teamEvents } from '../db/schema'
 import { rowidOf } from '../db/rowid'
 import { nowDb } from './dbTime'
 import { chunk } from './chunk'
@@ -177,6 +177,9 @@ export async function syncIdenticalCompanions(
 
 type Node = { id: string; billNumber: string; externalId: string | null; groupKey: string | null }
 
+/** An admin's override of companion groups, one per pair of bills (see `bill_group_overrides`). */
+type Override = { billId: string; otherBillId: string; kind: 'link' | 'split' }
+
 const nodeColumns = { id: bills.id, billNumber: bills.billNumber, externalId: bills.externalId, groupKey: bills.groupKey }
 
 // How many times a recompute that lost a race with another one re-reads and tries again.
@@ -215,24 +218,28 @@ async function tryRecomputeGroups(
   opts: { actorUserId?: string | null },
 ): Promise<boolean> {
   const nodes = new Map<string, Node>()
-  const neighbors = new Map<string, Set<string>>()
+  const walked = new Set<string>()
   const oldGroups = new Map<string, Node[]>()
-  // Every link row the walk read, by `externalId companionExternalId`.
+  // Every identical link row the walk read, by `externalId companionExternalId`.
   const linksRead = new Map<string, [string, string]>()
+  // Every override row the walk read, by pair.
+  const overridesRead = new Map<string, Override>()
 
   for (const part of chunk([...billIds], 90)) {
     for (const n of await db.select(nodeColumns).from(bills).where(inArray(bills.id, part)).all()) nodes.set(n.id, n)
   }
 
-  // Walk every bill connected to the seeds now, and every bill grouped with
-  // any of them before, so a group that loses a link is rekeyed in full.
+  // Walk every bill connected to the seeds now, by an identical link or an
+  // admin's link, and every bill grouped with any of them before, so a group
+  // that loses a link is rekeyed in full.
   const queue = [...nodes.keys()]
   while (queue.length > 0) {
     const node = nodes.get(queue.shift()!)!
-    if (neighbors.has(node.id)) continue
-    const { linked, links } = await identicalNeighbors(db, node)
+    if (walked.has(node.id)) continue
+    walked.add(node.id)
+    const { linked, links, overrides } = await identicalNeighbors(db, node)
     for (const l of links) linksRead.set(l.join(' '), l)
-    neighbors.set(node.id, new Set(linked.map(n => n.id)))
+    for (const o of overrides) overridesRead.set(`${o.billId} ${o.otherBillId}`, o)
     let before: Node[] = []
     if (node.groupKey !== null) {
       if (!oldGroups.has(node.groupKey)) {
@@ -242,29 +249,17 @@ async function tryRecomputeGroups(
     }
     for (const n of [...linked, ...before]) {
       if (!nodes.has(n.id)) nodes.set(n.id, n)
-      if (!neighbors.has(n.id)) queue.push(n.id)
+      if (!walked.has(n.id)) queue.push(n.id)
     }
   }
 
-  // A link named by either bill is one edge. Each bill's links were read at a
-  // different moment, so make the neighbor sets symmetric before walking them.
-  for (const [id, set] of neighbors) for (const other of set) neighbors.get(other)?.add(id)
+  // The edges, from everything the walk read rather than from each bill's own
+  // reads: each bill's rows were read at a different moment, and a row either
+  // bill's read saw is one edge, or one split. The guard below makes the
+  // batch apply only while those rows are exactly what's stored.
+  const neighbors = groupEdges([...nodes.values()], [...linksRead.values()], [...overridesRead.values()])
 
-  // Connected components.
-  const componentOf = new Map<string, string[]>()
-  for (const id of nodes.keys()) {
-    if (componentOf.has(id)) continue
-    const members: string[] = []
-    const stack = [id]
-    componentOf.set(id, members)
-    while (stack.length > 0) {
-      const at = stack.pop()!
-      members.push(at)
-      for (const next of neighbors.get(at) ?? []) {
-        if (!componentOf.has(next)) { componentOf.set(next, members); stack.push(next) }
-      }
-    }
-  }
+  const componentOf = connectedComponents(nodes.keys(), neighbors)
 
   const now = nowDb()
   const byNumber = (ids: Iterable<string>): GroupBill[] =>
@@ -318,11 +313,11 @@ async function tryRecomputeGroups(
   const rekeyed = [...rekey].flatMap(([key, ids]) => ids.map(id => [id, key]))
   if (rekeyed.length === 0 && events.length === 0) return true
 
-  // Everything this recompute read: each bill's key, every link touching the
-  // bills it walked, and which of the linked handles are bills here. Each
+  // Everything this recompute read: each bill's key, every link and override
+  // touching the bills it walked, and which of the linked handles are bills here. Each
   // statement below applies only while all of it still holds, and the batch
   // is one transaction, so the events and keys land together or not at all,
-  // and a recompute that raced with a change to keys, links, or bills retries
+  // and a recompute that raced with a change to keys, links, overrides, or bills retries
   // instead of writing a grouping computed from a mix of before and after.
   // JSON parameters keep any group size under D1's parameter limit.
   const read = [...nodes.values()].map(n => [n.id, n.groupKey])
@@ -330,6 +325,8 @@ async function tryRecomputeGroups(
   const links = [...linksRead.values()]
   const linkedHandles = [...new Set(links.flat())]
   const linkedBills = [...nodes.values()].filter(n => n.externalId !== null && linkedHandles.includes(n.externalId)).length
+  const ids = [...nodes.keys()]
+  const overrides = [...overridesRead.values()].map(o => [o.billId, o.otherBillId, o.kind])
   const unchanged = sql`(SELECT COUNT(*) FROM bills b, json_each(${JSON.stringify(read)}) r
       WHERE b.id = json_extract(r.value, '$[0]') AND b.group_key IS json_extract(r.value, '$[1]')) = ${read.length}
     AND (SELECT COUNT(*) FROM bill_identical_links l
@@ -338,6 +335,12 @@ async function tryRecomputeGroups(
     AND (SELECT COUNT(*) FROM bill_identical_links l, json_each(${JSON.stringify(links)}) r
       WHERE l.external_id = json_extract(r.value, '$[0]') AND l.companion_external_id = json_extract(r.value, '$[1]')) = ${links.length}
     AND (SELECT COUNT(*) FROM bills b WHERE b.external_id IN (SELECT value FROM json_each(${JSON.stringify(linkedHandles)}))) = ${linkedBills}
+    AND (SELECT COUNT(*) FROM bill_group_overrides o
+      WHERE o.bill_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
+        OR o.other_bill_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))) = ${overrides.length}
+    AND (SELECT COUNT(*) FROM bill_group_overrides o, json_each(${JSON.stringify(overrides)}) r
+      WHERE o.bill_id = json_extract(r.value, '$[0]') AND o.other_bill_id = json_extract(r.value, '$[1]')
+        AND o.kind = json_extract(r.value, '$[2]')) = ${overrides.length}
     AND ${valueRows ? teamValuesUnchanged(valueBillIds, valueRows) : sql`1`}`
   const [inserted, updated] = await db.batch([
     // Events first: the key update below changes what the guard reads.
@@ -361,21 +364,71 @@ function changesOf(result: unknown): number {
 }
 
 /**
- * The identical links naming `node` or named by it, and the bills in this
- * instance at their other ends.
+ * The identical links naming `node` or named by it, the admin's overrides
+ * pairing it with another bill, and the bills in this instance at the other
+ * ends of the links and of the `link` overrides. A split pair's other bill is
+ * no neighbor: it is only an edge to leave out.
  */
-async function identicalNeighbors(db: AppDb, node: Node): Promise<{ linked: Node[]; links: Array<[string, string]> }> {
-  if (!node.externalId) return { linked: [], links: [] }
-  const rows = await db.select({ a: billIdenticalLinks.externalId, b: billIdenticalLinks.companionExternalId })
-    .from(billIdenticalLinks)
-    .where(or(eq(billIdenticalLinks.externalId, node.externalId), eq(billIdenticalLinks.companionExternalId, node.externalId)))
-    .all()
+async function identicalNeighbors(db: AppDb, node: Node): Promise<{ linked: Node[]; links: Array<[string, string]>; overrides: Override[] }> {
+  const rows = node.externalId
+    ? await db.select({ a: billIdenticalLinks.externalId, b: billIdenticalLinks.companionExternalId })
+      .from(billIdenticalLinks)
+      .where(or(eq(billIdenticalLinks.externalId, node.externalId), eq(billIdenticalLinks.companionExternalId, node.externalId)))
+      .all()
+    : []
+  const overrides = await readOverrides(db, [node.id])
   const others = [...new Set(rows.map(r => (r.a === node.externalId ? r.b : r.a)))]
-  const linked: Node[] = []
+  const linkedIds = overrides.filter(o => o.kind === 'link').map(o => (o.billId === node.id ? o.otherBillId : o.billId))
+  const linked = new Map<string, Node>()
   for (const part of chunk(others, 90)) {
-    linked.push(...await db.select(nodeColumns).from(bills).where(and(ne(bills.id, node.id), inArray(bills.externalId, part))).all())
+    for (const n of await db.select(nodeColumns).from(bills).where(and(ne(bills.id, node.id), inArray(bills.externalId, part))).all()) linked.set(n.id, n)
   }
-  return { linked: linked.sort((x, y) => (x.id < y.id ? -1 : 1)), links: rows.map(r => [r.a, r.b]) }
+  for (const part of chunk(linkedIds, 90)) {
+    for (const n of await db.select(nodeColumns).from(bills).where(inArray(bills.id, part)).all()) linked.set(n.id, n)
+  }
+  return { linked: [...linked.values()].sort((x, y) => (x.id < y.id ? -1 : 1)), links: rows.map(r => [r.a, r.b]), overrides }
+}
+
+/** Every override pairing any of these bills with another. */
+async function readOverrides(db: AppDb, billIds: readonly string[]): Promise<Override[]> {
+  const out: Override[] = []
+  for (const part of chunk([...billIds], 45)) {
+    out.push(...await db.select({ billId: billGroupOverrides.billId, otherBillId: billGroupOverrides.otherBillId, kind: billGroupOverrides.kind })
+      .from(billGroupOverrides)
+      .where(or(inArray(billGroupOverrides.billId, part), inArray(billGroupOverrides.otherBillId, part)))
+      .all())
+  }
+  return out
+}
+
+/**
+ * Each bill's neighbors in its companion group: the bills an identical link
+ * joins it to, by handle in either direction, and the bills an admin linked it
+ * with, less any pair an admin split. An override takes precedence over the
+ * provider's links this way on every recompute, so on every sync.
+ */
+function groupEdges(nodes: readonly Node[], links: ReadonlyArray<readonly [string, string]>, overrides: readonly Override[]): Map<string, Set<string>> {
+  const idOf = new Map(nodes.flatMap(n => (n.externalId ? [[n.externalId, n.id] as const] : [])))
+  const known = new Set(nodes.map(n => n.id))
+  const split = new Set(overrides.filter(o => o.kind === 'split').map(o => pairKey(o.billId, o.otherBillId)))
+  const neighbors = new Map(nodes.map(n => [n.id, new Set<string>()]))
+  const join = (a: string | undefined, b: string | undefined) => {
+    if (!a || !b || a === b || !known.has(a) || !known.has(b) || split.has(pairKey(a, b))) return
+    neighbors.get(a)!.add(b)
+    neighbors.get(b)!.add(a)
+  }
+  for (const [a, b] of links) join(idOf.get(a), idOf.get(b))
+  for (const o of overrides) if (o.kind === 'link') join(o.billId, o.otherBillId)
+  return neighbors
+}
+
+/** The two bills of a pair in the order an override stores them, smaller id first. */
+function pair(a: string, b: string): [string, string] {
+  return a < b ? [a, b] : [b, a]
+}
+
+function pairKey(a: string, b: string): string {
+  return pair(a, b).join(' ')
 }
 
 function compareBillNumbers(a: { billNumber: string }, b: { billNumber: string }): number {
@@ -384,4 +437,84 @@ function compareBillNumbers(a: { billNumber: string }, b: { billNumber: string }
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// ── Grouping by hand ────────────────────────────────────────────────────────
+
+/**
+ * An admin groups two bills by hand (see **Group override** in CONTEXT.md):
+ * a `link` override joins them as an identical link would, so their groups
+ * become one, and it holds on every later sync whatever the provider says.
+ * It replaces a split of the same two bills, which makes grouping by hand
+ * the way to undo a split. The grouping events name the admin.
+ */
+export async function groupByHand(db: AppDb, billId: string, withBillId: string, actorUserId: string): Promise<void> {
+  const [a, b] = pair(billId, withBillId)
+  const now = nowDb()
+  await db.insert(billGroupOverrides).values({ billId: a, otherBillId: b, kind: 'link', actorUserId, createdAt: now })
+    .onConflictDoUpdate({ target: [billGroupOverrides.billId, billGroupOverrides.otherBillId], set: { kind: 'link', actorUserId, createdAt: now } })
+  await recomputeGroups(db, [billId, withBillId], { actorUserId })
+}
+
+/**
+ * An admin splits a bill from its companion group: a `split` override with
+ * each other bill in it removes any identical link or admin's link between
+ * them, on every later sync too. The rest of the group stays together: where
+ * this bill was what joined them (A190 and S1714 each identical to S1713, and
+ * not to each other), `link` overrides join what's left. False, writing
+ * nothing, for a bill in no group.
+ *
+ * The overrides land in one batch, and the guarded recompute then reads them.
+ * A sync or another admin changing the group at the same moment can't leave a
+ * key that disagrees with the links: whichever recompute writes last read
+ * every link and override as they stand.
+ */
+export async function splitFromGroup(db: AppDb, billId: string, actorUserId: string): Promise<boolean> {
+  const members = await db.select(nodeColumns).from(bills).where(inGroupOf(bills.id, billId)).all()
+  const rest = members.filter(m => m.id !== billId)
+  if (rest.length === 0) return false
+
+  // Whether the rest still hold together without this bill. Edges to it fall
+  // out, since groupEdges keeps only edges between the bills it's given.
+  const handles = rest.flatMap(n => (n.externalId ? [n.externalId] : []))
+  const links: Array<[string, string]> = []
+  for (const part of chunk(handles, 45)) {
+    links.push(...(await db.select({ a: billIdenticalLinks.externalId, b: billIdenticalLinks.companionExternalId })
+      .from(billIdenticalLinks)
+      .where(or(inArray(billIdenticalLinks.externalId, part), inArray(billIdenticalLinks.companionExternalId, part)))
+      .all()).map(r => [r.a, r.b] as [string, string]))
+  }
+  const parts = [...new Set(connectedComponents(rest.map(n => n.id), groupEdges(rest, links, await readOverrides(db, rest.map(n => n.id)))).values())]
+  const firsts = parts.map(p => p.reduce((min, id) => (id < min ? id : min))).sort()
+
+  const now = nowDb()
+  const rows = [
+    ...rest.map(n => ({ pair: pair(billId, n.id), kind: 'split' as const })),
+    ...firsts.slice(1).map(id => ({ pair: pair(firsts[0], id), kind: 'link' as const })),
+  ]
+  const writes = rows.map(({ pair: [a, b], kind }) => db.insert(billGroupOverrides)
+    .values({ billId: a, otherBillId: b, kind, actorUserId, createdAt: now })
+    .onConflictDoUpdate({ target: [billGroupOverrides.billId, billGroupOverrides.otherBillId], set: { kind, actorUserId, createdAt: now } }))
+  await db.batch(writes as [typeof writes[number], ...typeof writes])
+  await recomputeGroups(db, members.map(m => m.id), { actorUserId })
+  return true
+}
+
+/** The connected components of these bills over `neighbors`: each bill's component, shared by its members. */
+function connectedComponents(ids: Iterable<string>, neighbors: ReadonlyMap<string, ReadonlySet<string>>): Map<string, string[]> {
+  const componentOf = new Map<string, string[]>()
+  for (const id of ids) {
+    if (componentOf.has(id)) continue
+    const members: string[] = []
+    const stack = [id]
+    componentOf.set(id, members)
+    while (stack.length > 0) {
+      const at = stack.pop()!
+      members.push(at)
+      for (const next of neighbors.get(at) ?? []) {
+        if (!componentOf.has(next)) { componentOf.set(next, members); stack.push(next) }
+      }
+    }
+  }
+  return componentOf
 }

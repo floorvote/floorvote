@@ -244,6 +244,21 @@ export const billIdenticalLinks = sqliteTable('bill_identical_links', {
   index('idx_bill_identical_links_companion').on(t.companionExternalId),
 ])
 
+// An admin's overrides of companion groups (migration 0104), one row per pair
+// of bills, smaller id first: `link` groups the two as an identical link would,
+// and `split` removes any identical link between them. The group recompute
+// reads them with the provider's links on every sync (lib/companionGroups.ts).
+export const billGroupOverrides = sqliteTable('bill_group_overrides', {
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  otherBillId: text('other_bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['link', 'split'] }).notNull(),
+  actorUserId: text('actor_user_id'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.otherBillId] }),
+  index('idx_bill_group_overrides_other').on(t.otherBillId),
+])
+
 // Structured events about a bill's team-level state, one row per bill (migration
 // 0100): a companion group forming or splitting so far. `type` has no CHECK
 // constraint, so a new kind of event needs no table rebuild. A null actor

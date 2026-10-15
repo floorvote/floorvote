@@ -63,7 +63,8 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
-import type { GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import { GroupWithDialog } from '../components/GroupWithDialog'
 import { placeGroupingLines } from '../lib/groupingLine'
 import { GroupingLine } from '../components/GroupingLine'
 import { useMultiState } from '../context/ConfigContext'
@@ -510,6 +511,8 @@ type BillDetailData = {
   myNotes?: GroupNote[]
   /** Where the bill's companion group formed or split, for the lines in its comment thread. */
   groupingEvents?: GroupingEvent[]
+  /** The bills in its companion group, this one first: just this one in no group. */
+  groupBills?: GroupBill[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -699,6 +702,9 @@ export function BillDetail() {
   const linkGate = useRequiredSubmit({ missingRequired: !linkTarget, blocked: linking || demoLocked })
   const [deletingDraft, setDeletingDraft] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  // Grouping by hand, from the overflow menu (admins).
+  const [groupWithOpen, setGroupWithOpen] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   const [filedOptions, setFiledOptions] = useState<BillOption[]>([])
   const [editingDraftField, setEditingDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
   const [hoveredDraftField, setHoveredDraftField] = useState<'summary' | 'text' | 'title' | 'sponsor' | 'billNumber' | 'year' | 'state' | null>(null)
@@ -1424,6 +1430,41 @@ export function BillDetail() {
                   description: REGENERATE_PRESERVES_DESCRIPTION,
                   onSelect: handleRegenerate,
                   disabled: regenerating || demoLocked,
+                })
+              }
+              // Grouping by hand (#382). A draft has no legislative record to
+              // share a group with: linking it to its filed bill does that.
+              const groupBills = bill.groupBills ?? []
+              if (isAdmin && !bill.isDraft) {
+                menuRows.push({
+                  key: 'group-with',
+                  label: 'Group with…',
+                  description: 'Share one discussion and the team\'s values with an identical bill.',
+                  disabled: demoLocked,
+                  onSelect: () => setGroupWithOpen(true),
+                })
+              }
+              if (isAdmin && groupBills.length > 1) {
+                const others = groupBills.filter(b => b.billId !== bill.id).map(b => b.billNumber)
+                menuRows.push({
+                  key: 'split',
+                  label: 'Split from group',
+                  description: `Give ${bill.billNumber} back its own discussion and the team's values.`,
+                  disabled: splitting || demoLocked,
+                  onSelect: async () => {
+                    if (splitting || demoLocked) return
+                    if (!window.confirm(`Split ${bill.billNumber} from its group with ${others.join(', ')}? Each bill gets back its own comments, votes, notes, and team values. Grouping the bills again undoes it.`)) return
+                    setSplitting(true)
+                    try {
+                      await apiFetch(`/bills/${bill.id}/split`, { method: 'POST' })
+                      await refetchBill()
+                    } catch {
+                      setCopyFeedback("Couldn't split the bill from its group. Try again.")
+                      setTimeout(() => setCopyFeedback(null), 4000)
+                    } finally {
+                      setSplitting(false)
+                    }
+                  },
                 })
               }
               if (isAdmin && bill.isDraft) {
@@ -3025,6 +3066,16 @@ export function BillDetail() {
       <div style={{ padding: '12px 0', borderTop: `1px solid ${color.borderDefault}` }}>
         <Link to={sessionStorage.getItem('lastBillsUrl') ?? '/bills'} style={{ fontSize: fontSize.sm, color: color.linkBlue, textDecoration: 'none' }}>← Back to bills</Link>
       </div>
+
+      {groupWithOpen && (
+        <GroupWithDialog
+          billId={bill.id}
+          billNumber={bill.billNumber}
+          groupBillIds={(bill.groupBills ?? []).map(b => b.billId).concat(bill.id)}
+          onClose={() => setGroupWithOpen(false)}
+          onGrouped={() => { setGroupWithOpen(false); void refetchBill() }}
+        />
+      )}
 
       {copyFeedback && (
         <div style={{
