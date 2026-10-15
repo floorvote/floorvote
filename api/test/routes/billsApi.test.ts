@@ -1856,7 +1856,7 @@ describe('POST /bills/bulk (admin only)', () => {
       extraIds.push(await seedBill({ billNumber: `HB ${i}` }))
     }
     const allIds = [billId1, billId2, billId3, ...extraIds]
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: allIds, position: 'Support' }),
