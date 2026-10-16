@@ -10,17 +10,22 @@ import { sendMagicLink } from '../lib/email'
 import { recordAuthEvent, authReqContext } from '../lib/authEvents'
 import { getSuperAdminCookieDomain } from '../lib/superadmin'
 import { parseAppDomains } from '../lib/appDomains'
+import { findMemberByAddress, normalizeMemberAddress } from '../lib/memberAddress'
 import { rememberInstance, forgetInstance } from '../lib/instanceHint'
 import { verifySuperadminJwt } from '../../../shared/superadminJwt'
 import { isSuperadminEmailViaCentral } from '../lib/superadminCentral'
+import { applyTokenProfile, isSuperadminUser, refreshProfileFromCentral, refreshProfileFromRequestToken } from '../lib/superadminProfile'
 import { checkRateLimit } from '../../../shared/rateLimit'
 import { verifyTurnstile } from '../../../shared/turnstile'
 import { countActiveOwners } from '../lib/owners'
 import { ensureDemoSession, demoSessionCookie } from '../lib/demoSession'
 import { requireAuth } from '../middleware/auth'
-import { termsAcceptanceState } from '../lib/termsAcceptance'
+import { termsAcceptanceState, isTermsExempt } from '../lib/termsAcceptance'
 import type { AppEnv } from '../types'
 import { isValidEmail } from '../../../shared/email'
+import { confirmEmailChange, emailChangeLinkStatus, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
+import { reportNotMe, notMeLinkStatus, NOT_ME_ERRORS } from '../lib/emailChangeReport'
+import { titleOf, userTitleSql } from '../lib/userTitle'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -100,9 +105,9 @@ authRoutes.post('/magic-link', async (c) => {
   }
 
   const db = getDb(c.env.DB)
-  const normalizedEmail = body.email.toLowerCase().trim()
+  const normalizedEmail = normalizeMemberAddress(body.email)
 
-  let user = await db.select().from(users).where(eq(users.email, normalizedEmail)).get()
+  let user = await findMemberByAddress(db, normalizedEmail)
 
   if (!user && (await isSuperadminEmailViaCentral(c.env, normalizedEmail))) {
     const id = crypto.randomUUID()
@@ -272,11 +277,27 @@ authRoutes.post('/verify', async (c) => {
   })
 
   const verifiedUser = await db
-    .select({ email: users.email, name: users.name })
+    .select({ id: users.id, email: users.email, name: users.name, title: users.title })
     .from(users)
     .where(eq(users.id, userId))
     .get()
   rememberInstance(c, verifiedUser?.email)
+
+  // A superadmin's name and title are kept in central. Refresh this instance's copy
+  // on an emailed-link sign-in too; an unreachable central keeps the existing copy.
+  // The superadmin check and the refresh both call central, so they run in
+  // waitUntil, off the response path: no member's sign-in ever waits on central.
+  // The cost is that a superadmin's new name and title show on their next page
+  // load, not in this response. Without an execution context (some tests), run
+  // it inline; it never throws.
+  if (verifiedUser) {
+    const refresh = refreshProfileFromCentral(c.env, db, verifiedUser)
+    try {
+      c.executionCtx.waitUntil(refresh)
+    } catch {
+      await refresh
+    }
+  }
 
   // Tenants no longer mint the cross-tenant superadmin SSO cookie. Central is the
   // SOLE issuer: it sets the `.<parent-domain>`-scoped `superadmin_jwt` cookie on
@@ -287,6 +308,72 @@ authRoutes.post('/verify', async (c) => {
   await recordAuthEvent(db, { event: 'verify_success', email: verifiedUser?.email ?? 'unknown', userId, linkType: null, ...authReqContext(c) })
 
   return c.json({ ok: true })
+})
+
+// The confirmation page for an email change (web: /auth/confirm-email) calls
+// these two. Neither needs a session: the link may be opened on any device
+// that reads the new inbox. Status writes nothing, so a scanner prefetching the
+// page changes nothing. Only confirm commits, and it never signs anyone in.
+// Both refuse to send a referrer, like the page itself (web/public/_headers).
+
+// POST /auth/email-change/status  { token }
+// A POST, not a GET, so the token stays out of the URL and so out of access
+// logs. It still writes nothing.
+authRoutes.post('/email-change/status', async (c) => {
+  c.header('Referrer-Policy', 'no-referrer')
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `email-change-status:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+  const body = await c.req.json<{ token?: unknown }>().catch(() => ({} as { token?: unknown }))
+  if (typeof body.token !== 'string' || !body.token) return c.json({ status: 'invalid' })
+  return c.json(await emailChangeLinkStatus(getDb(c.env.DB), body.token))
+})
+
+// POST /auth/email-change/confirm  { token }
+authRoutes.post('/email-change/confirm', async (c) => {
+  c.header('Referrer-Policy', 'no-referrer')
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `email-change-confirm:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+  const body = await c.req.json<{ token?: unknown }>().catch(() => ({} as { token?: unknown }))
+  if (typeof body.token !== 'string' || !body.token) return c.json({ error: EMAIL_CHANGE_ERRORS.invalidLink }, 404)
+  const result = await confirmEmailChange(c.env, getDb(c.env.DB), body.token, authReqContext(c))
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  return c.json({ ok: true, email: result.email, ...(result.byAdmin ? { byAdmin: true } : {}) })
+})
+
+// "This wasn't me" in an old-address notice (web: /auth/not-me) calls these two,
+// built like the pair above and for the same reasons: no session (the old
+// inbox may be read anywhere), a POST so the token stays out of the URL, a
+// status call that writes nothing so a scanner prefetching the page changes
+// nothing, and a press that does the work. See lib/emailChangeReport.ts.
+
+// POST /auth/email-change/not-me/status  { token }
+authRoutes.post('/email-change/not-me/status', async (c) => {
+  c.header('Referrer-Policy', 'no-referrer')
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `not-me-status:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+  const body = await c.req.json<{ token?: unknown }>().catch(() => ({} as { token?: unknown }))
+  if (typeof body.token !== 'string' || !body.token) return c.json({ status: 'invalid' })
+  return c.json(await notMeLinkStatus(getDb(c.env.DB), body.token))
+})
+
+// POST /auth/email-change/not-me  { token }
+authRoutes.post('/email-change/not-me', async (c) => {
+  c.header('Referrer-Policy', 'no-referrer')
+  const ip = c.req.header('CF-Connecting-IP') || 'unknown'
+  if (!(await checkRateLimit(c.env.LOGIN_RATE_LIMITER, `not-me:${ip}`))) {
+    return c.json({ error: 'Too many requests. Please wait a moment and try again.' }, 429)
+  }
+  const body = await c.req.json<{ token?: unknown }>().catch(() => ({} as { token?: unknown }))
+  if (typeof body.token !== 'string' || !body.token) return c.json({ error: NOT_ME_ERRORS.invalidLink }, 404)
+  const result = await reportNotMe(c.env, getDb(c.env.DB), body.token, authReqContext(c))
+  if (!result.ok) return c.json({ error: result.error }, result.status)
+  return c.json({ ok: true, alerted: result.alerted, cancelled: result.cancelled })
 })
 
 // GET /auth/me
@@ -300,12 +387,20 @@ authRoutes.get('/me', async (c) => {
         const payload = await verifySuperadminJwt(jwtToken, c.env.SUPERADMIN_JWT_PUBLIC_KEY)
         if (payload) {
           const db = getDb(c.env.DB)
-          let localUser = await db.select().from(users).where(eq(users.email, payload.email)).get()
+          let localUser = await findMemberByAddress(db, payload.email)
           if (!localUser) {
             const id = crypto.randomUUID()
-            await db.insert(users).values({ id, email: payload.email, name: payload.name, role: 'admin' })
+            await db.insert(users).values({
+              id,
+              email: normalizeMemberAddress(payload.email),
+              name: payload.name,
+              role: 'admin',
+            })
             localUser = await db.select().from(users).where(eq(users.id, id)).get()!
           }
+          // Central keeps the superadmin's name and title. Each dashboard sign-in
+          // refreshes this instance's copy.
+          localUser = await applyTokenProfile(db, localUser!, payload)
           const sessionToken = await generateToken()
           const sessionHash = await hashToken(sessionToken)
           const expiresInstant = new Date(Date.now() + SESSION_DURATION_MS)
@@ -329,15 +424,18 @@ authRoutes.get('/me', async (c) => {
             email: localUser!.email,
             name: localUser!.name,
             role: localUser!.role,
-            subtitle: localUser!.subtitle,
+            title: titleOf(localUser!),
+            // `subtitle` is the old name for `title`. Remove in the release after this one.
+            subtitle: titleOf(localUser!),
             canVote: !!localUser!.canVote,
             emailDigestEnabled: localUser!.emailDigestEnabled === 1,
             emailDigestMatchesEnabled: localUser!.emailDigestMatchesEnabled === 1,
             emailWeekAheadEnabled: localUser!.emailWeekAheadEnabled === 1,
             emailRepliesEnabled: localUser!.emailRepliesEnabled === 1,
             lastSeenFeed: localUser!.lastSeenFeed ?? null,
+            isSuperadmin: true,
             isLastOwner: localUser!.role === 'owner' && (await countActiveOwners(db)) <= 1,
-            ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, localUser!.id)),
+            ...(await termsAcceptanceState(db, c.env, localUser!.id, localUser!.email)),
           })
         }
       }
@@ -356,7 +454,7 @@ authRoutes.get('/me', async (c) => {
       email: users.email,
       name: users.name,
       role: users.role,
-      subtitle: users.subtitle,
+      title: userTitleSql,
       canVote: users.canVote,
       emailDigestEnabled: users.emailDigestEnabled,
       emailDigestMatchesEnabled: users.emailDigestMatchesEnabled,
@@ -377,6 +475,12 @@ authRoutes.get('/me', async (c) => {
   if (dbTsToEpoch(sessionWithUser.sessionExpiry) < Date.now()) {
     return c.json({ error: 'Session expired' }, 401)
   }
+
+  // A superadmin coming back from the dashboard with a live instance session still
+  // gets their central profile refreshed.
+  const profiled = await refreshProfileFromRequestToken(c, db, { ...sessionWithUser, id: sessionWithUser.userId })
+  sessionWithUser.name = profiled.name
+  sessionWithUser.title = profiled.title
 
   const newExpiryInstant = new Date(Date.now() + SESSION_DURATION_MS)
   await db
@@ -410,15 +514,18 @@ authRoutes.get('/me', async (c) => {
     email: sessionWithUser.email,
     name: sessionWithUser.name,
     role: sessionWithUser.role,
-    subtitle: sessionWithUser.subtitle,
+    title: sessionWithUser.title,
+    // `subtitle` is the old name for `title`. Remove in the release after this one.
+    subtitle: sessionWithUser.title,
     canVote: !!sessionWithUser.canVote,
     emailDigestEnabled: sessionWithUser.emailDigestEnabled === 1,
     emailDigestMatchesEnabled: sessionWithUser.emailDigestMatchesEnabled === 1,
     emailWeekAheadEnabled: sessionWithUser.emailWeekAheadEnabled === 1,
     emailRepliesEnabled: sessionWithUser.emailRepliesEnabled === 1,
     lastSeenFeed: sessionWithUser.lastSeenFeed ?? null,
+    isSuperadmin: await isSuperadminUser(c, sessionWithUser.email),
     isLastOwner: sessionWithUser.role === 'owner' && (await countActiveOwners(db)) <= 1,
-    ...(await termsAcceptanceState(db, c.env.LEGAL_TERMS_UPDATED, sessionWithUser.userId)),
+    ...(await termsAcceptanceState(db, c.env, sessionWithUser.userId, sessionWithUser.email)),
   })
 })
 
@@ -438,6 +545,10 @@ authRoutes.post('/accept-terms', requireAuth, async (c) => {
 
   const db = getDb(c.env.DB)
   const user = c.get('user')
+
+  // Operator staff are not bound by the Terms, so there is nothing for them to
+  // accept and no record is written.
+  if (await isTermsExempt(c.env, user.email)) return new Response(null, { status: 204 })
 
   // Idempotent by read-then-insert rather than a unique constraint: re-acceptance
   // after a bump is a legitimate second row for the same user, so uniqueness on

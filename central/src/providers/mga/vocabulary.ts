@@ -120,4 +120,10 @@ export const vocabulary: ProviderVocabulary = {
       explainer: 'The latest step in settling differences between the House and Senate versions, such as a conference committee.',
     },
   },
+
+  // Maryland's own feed names one relationship: the cross-file, the same bill
+  // in the other chamber.
+  relationships: {
+    default: { 'Cross-filed': 'identical' },
+  },
 }

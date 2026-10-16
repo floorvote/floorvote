@@ -16,7 +16,7 @@ function makeEvent(overrides: Partial<FeedEvent>): FeedEvent {
     billMatchType: null,
     userId: 'user-1',
     userName: 'Jane Doe',
-    userSubtitle: null,
+    userTitle: null,
     metadata: {},
     createdAt: '2026-01-01T00:00:00Z',
     ...overrides,

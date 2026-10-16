@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, and, isNull, inArray, asc, desc } from 'drizzle-orm'
+import { eq, and, isNull, isNotNull, inArray, asc, desc, count, exists, sql } from 'drizzle-orm'
 import { matchesUnion, billMatchText } from '../lib/keywords'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
@@ -10,11 +10,12 @@ import { calendarBlockEvents, calendarKind, type CalendarRow } from '../lib/bill
 import { bodyEventDetails, bodyEventOptions, calendarCoverage, type BodyEventDetail, type BodyEventOptions } from '../lib/bodyEvents'
 import { coverageCapabilities } from '../lib/capabilities'
 import { coverageAttribution } from '../lib/attribution'
+import { httpUrl } from '../../../shared/httpUrl'
 import { listStateOwnership } from '../lib/stateProviders'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
 import { getTenantQueue, tenantQueueBindingName } from '../lib/tenantQueue'
-import { deliverBatchToTenant } from '../lib/tenantDelivery'
+import { deliverBatchToTenant, deliverToTenant } from '../lib/tenantDelivery'
 import { ensureQueue, resolveQueueId, queuesRestEnabled } from '../lib/queuesRest'
 import { resolveTenantRpc } from '../lib/tenantRpc'
 import { mergeCoverage } from '../lib/coverage'
@@ -486,8 +487,9 @@ tenantsRoutes.post('/promote-bill/:tenantId/:billId', guardCallerTenantParam(), 
 tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const tenantId = c.req.param('tenantId')
-  const body = await c.req.json<{ billIds?: number[] }>().catch(() => ({} as { billIds?: number[] }))
-  const billIds = (body.billIds ?? []).filter(n => Number.isInteger(n) && n > 0)
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const billIds = (body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0)
   if (billIds.length > REPROCESS_LIMIT) {
     return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
   }
@@ -507,6 +509,69 @@ tenantsRoutes.post('/promote-bills/:tenantId', guardCallerTenantParam(), async (
   }
 
   return c.json({ ok: true, tenantId, promoted: billIds.length })
+})
+
+// POST /tenants/fetch-bills/:tenantId — fetch bills from their provider and send them on to
+// the tenant, with no change to what the tenant has matched. Body: { billIds: number[] }.
+// For a bill the tenant wants the text of without tracking it, such as a companion that
+// didn't match its keywords (promote-bills would track it). Queues the ingestor with no
+// forceAI, so every tenant linked to a bill gets the usual notification and none is told
+// to run AI. Only bills the tenant is linked to are queued.
+//
+// Bounded, since a tenant asks on every delivery of a tracked bill and the fetch's own
+// notification can make another tenant ask for the first bill back:
+// - A bill fetched within FETCH_COOLDOWN_HOURS is skipped, since that fetch already notified
+//   every tenant linked to it. texts_fetched_at is the ingest's, stamped once a fetch succeeds.
+// - A bill asked for within REQUEST_COOLDOWN_HOURS is skipped too. Queuing stamps
+//   texts_requested_at (after the send), a lock on asking again and nothing more: stamping
+//   texts_fetched_at here would read a fetch that failed, or hasn't run yet, as "central looked and
+//   found no texts" for a day. So a fetch that never completes is asked for again after an hour, and
+//   two tenants asking for each other's bills end after one round, because the first fetch's ingest
+//   stamps texts_fetched_at.
+// - A bill whose texts central already holds is queued with skipFetch, which needs no
+//   provider call. Only a bill with no texts costs a getBill against the shared monthly quota.
+// The count is capped at REPROCESS_LIMIT, as promote-bills is.
+const FETCH_COOLDOWN_HOURS = 24
+const REQUEST_COOLDOWN_HOURS = 1
+
+tenantsRoutes.post('/fetch-bills/:tenantId', guardCallerTenantParam(), async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ billIds?: unknown }>().catch(() => ({} as { billIds?: unknown }))
+  if (body.billIds !== undefined && !Array.isArray(body.billIds)) return c.json({ error: 'billIds must be a list' }, 400)
+  const requested = [...new Set((body.billIds ?? []).filter((n: unknown): n is number => Number.isInteger(n) && (n as number) > 0))]
+  if (requested.length > REPROCESS_LIMIT) {
+    return c.json({ error: `too many billIds (max ${REPROCESS_LIMIT})` }, 400)
+  }
+
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+  const fetchedCutoff = hoursAgo(FETCH_COOLDOWN_HOURS)
+  const requestedCutoff = hoursAgo(REQUEST_COOLDOWN_HOURS)
+  const due: number[] = []
+  const held = new Set<number>()
+  for (let i = 0; i < requested.length; i += 90) {
+    const part = requested.slice(i, i + 90)
+    const rows = await db.select({ billId: schema.billTenants.billId, fetchedAt: schema.bills.textsFetchedAt, requestedAt: schema.bills.textsRequestedAt })
+      .from(schema.billTenants)
+      .leftJoin(schema.bills, eq(schema.bills.billId, schema.billTenants.billId))
+      .where(and(eq(schema.billTenants.tenantId, tenantId), inArray(schema.billTenants.billId, part)))
+      .all()
+    due.push(...rows.filter(r => (!r.fetchedAt || r.fetchedAt <= fetchedCutoff) && (!r.requestedAt || r.requestedAt <= requestedCutoff)).map(r => r.billId))
+    const withTexts = await db.selectDistinct({ billId: schema.billTexts.billId }).from(schema.billTexts)
+      .where(inArray(schema.billTexts.billId, part)).all()
+    for (const r of withTexts) held.add(r.billId)
+  }
+  due.sort((a, b) => a - b)
+
+  // Each batch is stamped only once its send succeeds, so a queue outage blocks no bill from the next ask.
+  const now = nowDb()
+  for (let i = 0; i < due.length; i += 90) {
+    const batch = due.slice(i, i + 90)
+    await c.env.INGESTOR_QUEUE.sendBatch(batch.map(billId => ({ body: held.has(billId) ? { billId, skipFetch: true } : { billId } })))
+    await db.update(schema.bills).set({ textsRequestedAt: now }).where(inArray(schema.bills.billId, batch))
+  }
+
+  return c.json({ ok: true, tenantId, queued: due.length })
 })
 
 tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), async (c) => {
@@ -573,8 +638,11 @@ tenantsRoutes.get('/:tenantId/upcoming-hearings', guardCallerTenantParam(), asyn
 // covers. Also the capabilities of the states the tenant covers (a state left
 // out has none), so the instance can gate features on them, and the
 // attribution of the providers those states come from (lib/attribution.ts),
-// so its footer credits them. Each state's events come from the provider that
-// owns it. Cancelled events come too, marked, so the instance cancels its copy.
+// so its footer credits them, and where central's admin dashboard lives
+// (ADMIN_APP_URL, already set for the dashboard's sign-in emails), so a
+// superadmin's Profile page can link there. Each state's events come from the
+// provider that owns it. Cancelled events come too, marked, so the instance
+// cancels its copy.
 tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) => {
   const tenantId = c.req.param('tenantId')
   const from = c.req.query('from') ?? ''
@@ -595,7 +663,10 @@ tenantsRoutes.get('/:tenantId/body-events', guardCallerTenantParam(), async (c) 
     const provider = findProvider(owners.get(state))
     if (provider) events.push(...await bodyEventDetails(db, provider, state, from, to))
   }
-  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), events })
+  // null, not a missing key, when central has no usable dashboard address: the instance forgets the
+  // address on null, and keeps what it has on a missing key (an older central).
+  const dashboardUrl = httpUrl(c.env.ADMIN_APP_URL)?.replace(/\/+$/, '') ?? null
+  return c.json({ capabilities, attribution: coverageAttribution(owners, coverage), dashboardUrl, events })
 })
 
 // What the instance's event rules can choose from (#298), for each state it
@@ -755,6 +826,144 @@ tenantsRoutes.post('/:tenantId/send-sample-email', async (c) => {
   try {
     const r = await rpc.sendSampleEmail(body.to, body.type)
     return c.json(r, r.ok ? 200 : 502)
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : 'tenant call failed' }, 502)
+  }
+})
+
+// ── Post-provisioning verification (scripts/verify-instance.sh) ─────────────────
+// Operator-only reads and probes that answer "does this instance work end to
+// end?". None calls LegiScan, changes which bills a tenant tracks, or feeds the
+// ingestor: every bill they use is one central already stores, and the sample
+// email route above covers the email check.
+
+type TenantRow = typeof schema.tenants.$inferSelect
+
+function parseCoverage(row: TenantRow): string[] {
+  try {
+    const parsed: unknown = JSON.parse(row.stateCoverage)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === 'string') : []
+  } catch { return [] }
+}
+
+/**
+ * One stored bill to send or analyze: the newest bill with downloaded text in
+ * the tenant's states, else the newest in them, else the newest at all. Null
+ * only when central stores no bills.
+ *
+ * Read cost matters here (central's D1 rows-read budget). Joining bill_texts to
+ * bills across every state at once reads every in-state bill and text, then
+ * sorts. So the text search is one query per state, each walking that state's
+ * bills newest-first and stopping at the first one with a stored text.
+ */
+async function pickVerificationBill(db: Db, coverage: string[]): Promise<number | null> {
+  const anyState = coverage.length === 0 || coverage.includes('*')
+  if (anyState) {
+    const withText = await db.select({ billId: schema.billTexts.billId }).from(schema.billTexts)
+      .where(isNotNull(schema.billTexts.r2Key)).orderBy(desc(schema.billTexts.docId)).limit(1).get()
+    if (withText) return withText.billId
+  } else {
+    let newest: number | null = null
+    for (const state of coverage) {
+      const hit = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+        .where(and(
+          eq(schema.bills.state, state),
+          exists(db.select({ one: sql`1` }).from(schema.billTexts)
+            .where(and(eq(schema.billTexts.billId, schema.bills.billId), isNotNull(schema.billTexts.r2Key)))),
+        ))
+        .orderBy(desc(schema.bills.billId)).limit(1).get()
+      if (hit && (newest === null || hit.billId > newest)) newest = hit.billId
+    }
+    if (newest !== null) return newest
+    const inStates = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+      .where(inArray(schema.bills.state, coverage)).orderBy(desc(schema.bills.billId)).limit(1).get()
+    if (inStates) return inStates.billId
+  }
+  const any = await db.select({ billId: schema.bills.billId }).from(schema.bills)
+    .orderBy(desc(schema.bills.billId)).limit(1).get()
+  return any?.billId ?? null
+}
+
+// What central holds about one instance: whether it is registered, which states
+// and how many keywords it has, whether central is bound to it (CentralApi), and
+// whether central has any way to deliver its bills.
+tenantsRoutes.get('/:tenantId/registration', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const kw = await db.select({ n: count() }).from(schema.keywordRegistry)
+    .where(eq(schema.keywordRegistry.tenantId, tenantId)).get()
+  const deliveryPath = getTenantQueue(c.env, tenantId) ? 'binding'
+    : row.queueId && queuesRestEnabled(c.env) ? 'queue'
+    : 'none'
+  return c.json({
+    tenantId: row.tenantId,
+    name: row.name,
+    active: row.active,
+    apiUrl: row.apiUrl,
+    stateCoverage: parseCoverage(row),
+    keywordCount: kw?.n ?? 0,
+    lastSeenAt: row.lastSeenAt,
+    bound: resolveTenantRpc(c.env, tenantId) !== null,
+    deliveryPath,
+  })
+})
+
+// Send the instance one probe naming a stored bill, down its real delivery path.
+// The instance's consumer records the nonce and stops (api lib/deliveryProbe.ts):
+// no bill_tenants row here, no ingestor message, no bill row there.
+tenantsRoutes.post('/:tenantId/verify-delivery', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const body = await c.req.json<{ nonce?: unknown }>().catch(() => ({} as { nonce?: unknown }))
+  const nonce = typeof body.nonce === 'string' ? body.nonce : ''
+  if (nonce.length === 0 || nonce.length > 64) return c.json({ error: 'nonce (1-64 characters) required' }, 400)
+
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const rpc = resolveTenantRpc(c.env, tenantId)
+  if (!rpc) return c.json({ error: 'tenant not bound' }, 501)
+  // An instance from before the probe existed would treat it as an ordinary bill
+  // notification: track the bill, spend a model call, and post a feed event its
+  // members can see. Only an instance with deliveryProbe knows to record and
+  // stop, and the poll needs the binding anyway, so ask before sending anything.
+  try {
+    await rpc.deliveryProbe()
+  } catch (err) {
+    return c.json({
+      error: `the instance predates the delivery check (${err instanceof Error ? err.message : 'deliveryProbe failed'}); redeploy it first`,
+      predates: true,
+    }, 409)
+  }
+  const billId = await pickVerificationBill(db, parseCoverage(row))
+  if (billId === null) return c.json({ error: 'central has no stored bill to send' }, 404)
+
+  const handle = toHandle(billId)
+  const via = await deliverToTenant(c.env, tenantId, row.queueId ?? null, { tenantId, billId: handle, probe: nonce })
+  if (via === 'dropped') {
+    return c.json({ error: `no delivery path for tenant ${tenantId} (no queue binding or queue_id)` }, 409)
+  }
+  return c.json({ ok: true, nonce, billId: handle, via })
+})
+
+// What the instance recorded for the latest probe (see verify-delivery).
+tenantsRoutes.get('/:tenantId/delivery-probe', (c) =>
+  tenantRpcCall(c, (rpc) => rpc.deliveryProbe()))
+
+// Have the instance analyze one stored bill and report what came back. Costs
+// one model call; the instance writes nothing (api lib/verifyAi.ts).
+tenantsRoutes.post('/:tenantId/verify-ai', async (c) => {
+  const tenantId = c.req.param('tenantId')
+  const db = drizzle(c.env.DB, { schema })
+  const row = await db.select().from(schema.tenants).where(eq(schema.tenants.tenantId, tenantId)).get()
+  if (!row) return c.json({ error: 'tenant not registered' }, 404)
+  const rpc = resolveTenantRpc(c.env, tenantId)
+  if (!rpc) return c.json({ error: 'tenant not bound' }, 501)
+  const billId = await pickVerificationBill(db, parseCoverage(row))
+  if (billId === null) return c.json({ error: 'central has no stored bill to analyze' }, 404)
+  try {
+    return c.json(await rpc.verifyAi(toHandle(billId)))
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : 'tenant call failed' }, 502)
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -12,7 +12,7 @@ async function createDraft(token: string, fields: {
   // route now rejects with 400 unless a state is supplied — see the empty-state
   // guard in draftRoutes.ts. 'UT' here stands in for a single-state tenant's
   // configured STATE binding; it isn't what these tests are exercising.
-  const res = await SELF.fetch('https://x/api/bills/draft', {
+  const res = await appFetch('https://x/api/bills/draft', {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ state: 'UT', ...fields }),
@@ -26,6 +26,7 @@ describe('PATCH /api/bills/:id/draft', () => {
   let memberToken: string
 
   beforeEach(async () => {
+    stubFetch() // central lookups and background backfills are answered, never real
     await resetDb()
     await applyMigrations()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
@@ -43,7 +44,7 @@ describe('PATCH /api/bills/:id/draft', () => {
       text: 'Old text',
     })
 
-    const res = await SELF.fetch(`https://x/api/bills/${id}/draft`, {
+    const res = await appFetch(`https://x/api/bills/${id}/draft`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Title', sponsor: 'New Sponsor', summary: 'New summary', text: 'New text' }),
@@ -67,7 +68,7 @@ describe('PATCH /api/bills/:id/draft', () => {
 
   it('non-admin (member) receives 403', async () => {
     const id = await createDraft(adminToken, { title: 'Draft' })
-    const res = await SELF.fetch(`https://x/api/bills/${id}/draft`, {
+    const res = await appFetch(`https://x/api/bills/${id}/draft`, {
       method: 'PATCH',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Hacked' }),
@@ -77,7 +78,7 @@ describe('PATCH /api/bills/:id/draft', () => {
 
   it('editing a non-draft (filed) bill returns 400', async () => {
     const filedId = await seedBill({ billNumber: 'HB 1', externalId: 'legiscan:111' })
-    const res = await SELF.fetch(`https://x/api/bills/${filedId}/draft`, {
+    const res = await appFetch(`https://x/api/bills/${filedId}/draft`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Title' }),
@@ -86,7 +87,7 @@ describe('PATCH /api/bills/:id/draft', () => {
   })
 
   it('non-existent bill returns 404', async () => {
-    const res = await SELF.fetch('https://x/api/bills/no-such-id/draft', {
+    const res = await appFetch('https://x/api/bills/no-such-id/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'New Title' }),
@@ -101,7 +102,7 @@ describe('PATCH /api/bills/:id/draft', () => {
       text: 'Keep This Text',
     })
 
-    const res = await SELF.fetch(`https://x/api/bills/${id}/draft`, {
+    const res = await appFetch(`https://x/api/bills/${id}/draft`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ summary: 'Updated summary only' }),
@@ -124,7 +125,7 @@ describe('PATCH /api/bills/:id/draft', () => {
       text: 'Text',
     })
 
-    const res = await SELF.fetch(`https://x/api/bills/${id}/draft`, {
+    const res = await appFetch(`https://x/api/bills/${id}/draft`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ sponsor: '', summary: '', text: '' }),
@@ -144,7 +145,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billNumber: 'D7', year: 2027 }),
@@ -161,14 +162,14 @@ describe('PATCH /api/bills/:id/draft', () => {
       id: 'f1', billNumber: 'HB0209', title: 'Filed', state: 'UT', yearStart: 2026, yearEnd: 2026,
     })
 
-    const clash = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const clash = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billNumber: 'HB0209' }),
     })
     expect(clash.status).toBe(409)
 
-    const noop = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const noop = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billNumber: 'D1' }),
@@ -180,7 +181,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ billNumber: 'D9' }),
@@ -198,7 +199,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ year: 2028 }),
@@ -216,7 +217,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: '  tx ' }),
@@ -239,7 +240,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ state, title: 'Should not be saved' }),
@@ -260,7 +261,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: '', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: 'Renamed' }),
@@ -284,7 +285,7 @@ describe('PATCH /api/bills/:id/draft', () => {
       id: 'f1', billNumber: 'D1', title: 'Filed in TX', state: 'TX', yearStart: 2026, yearEnd: 2026,
     })
 
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: 'TX' }),
@@ -302,7 +303,7 @@ describe('PATCH /api/bills/:id/draft', () => {
     await seedBill({
       id: 'd1', billNumber: 'D1', title: 'Draft', state: 'UT', isDraft: true, yearStart: 2026, yearEnd: 2026,
     })
-    const res = await SELF.fetch('https://x/api/bills/d1/draft', {
+    const res = await appFetch('https://x/api/bills/d1/draft', {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: 'UT' }),
@@ -316,6 +317,7 @@ describe('GET /api/bills/drafts', () => {
   let memberToken: string
 
   beforeEach(async () => {
+    stubFetch() // central lookups and background backfills are answered, never real
     await resetDb()
     await applyMigrations()
     const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
@@ -332,7 +334,7 @@ describe('GET /api/bills/drafts', () => {
     await createDraft(adminToken, { title: 'Draft One', billNumber: 'LCO 1' })
     await createDraft(adminToken, { title: 'Draft Two', billNumber: 'LCO 2' })
 
-    const res = await SELF.fetch('https://x/api/bills/drafts', {
+    const res = await appFetch('https://x/api/bills/drafts', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -351,7 +353,7 @@ describe('GET /api/bills/drafts', () => {
   })
 
   it('non-admin (member) receives 403', async () => {
-    const res = await SELF.fetch('https://x/api/bills/drafts', {
+    const res = await appFetch('https://x/api/bills/drafts', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(403)
@@ -359,7 +361,7 @@ describe('GET /api/bills/drafts', () => {
 
   it('returns empty array when no drafts exist', async () => {
     await seedBill({ billNumber: 'HB 1', externalId: 'legiscan:1' })
-    const res = await SELF.fetch('https://x/api/bills/drafts', {
+    const res = await appFetch('https://x/api/bills/drafts', {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)

@@ -3,11 +3,12 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { app } from '../../src/index'
-import { billSubjects, officialPositions, associationConfig } from '../../src/db/schema'
+import { inArray } from 'drizzle-orm'
+import { billSubjects, officialPositions, associationConfig, bills } from '../../src/db/schema'
 
 // The six selectable, operator-participating dimensions. myBills/newMatches/unvoted
 // are viewer-scope filters that ALWAYS narrow (they AND on top unconditionally — see
-// buildBillsWhere in query.ts) and are deliberately excluded: asserting the OR/AND
+// buildBillsFilter in query.ts) and are deliberately excluded: asserting the OR/AND
 // laws for them would assert something that is intentionally false. minRelevance is
 // a bill fact and does participate in the operator, but it's a threshold rather than
 // a discrete value set, which doesn't fit the pairwise union/intersection sweep below
@@ -28,7 +29,11 @@ const DIM_KEYS = DIMENSIONS.map(d => d.key) as DimKey[]
 
 const ids = (r: { bills: Array<{ id: string }> }) => new Set(r.bills.map(b => b.id))
 
-describe('filter algebra', () => {
+// Run once on single bills, then again with every bill given an identical companion (#380): the two share
+// their provider facts and the team's values are stored on the original only, so the group reads them
+// through it. A group is then in a filter's result exactly when its original bill is, and the laws, and the
+// facets' counts of groups, must hold for groups as they do for bills.
+for (const grouped of [false, true]) describe(`filter algebra${grouped ? ' on companion groups' : ''}`, () => {
   let token: string
 
   // Seed a fixture with deliberate cross-dimension overlap, then assert the laws
@@ -73,6 +78,16 @@ describe('filter algebra', () => {
         position: 'Support',
         setBy: userId,
       })
+    }
+    if (grouped) {
+      const twin = await seedBill({
+        billNumber: `${billNumber}-twin`,
+        title: `Fixture companion ${billNumber}`,
+        status: on.has('status') ? 'Passed' : 'Introduced',
+        session: on.has('session') ? '2026' : '2025',
+      })
+      if (on.has('subjects')) await db.insert(billSubjects).values({ billId: twin, subjectName: 'Elections', state: 'UT' })
+      await db.update(bills).set({ groupKey: [id, twin].sort()[0] }).where(inArray(bills.id, [id, twin]))
     }
     return id
   }

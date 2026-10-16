@@ -1,5 +1,6 @@
 import { and, eq, isNull, isNotNull, lt, sql } from 'drizzle-orm'
 import { bills } from '../db/schema'
+import { isPulledByGroup } from './companionAnalysis'
 import type { AppDb, Env } from '../types'
 
 /** Attempts after which a bill is left for a human rather than re-queued. */
@@ -157,7 +158,9 @@ export async function healStalledAiBills(
       .where(eq(bills.id, row.id))
       .run()
     try {
-      await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: row.externalId, forceAI: true })
+      // A bill pulled in by its companion group keeps the match type central gave it (lib/companionAnalysis.ts).
+      const groupAnalysis = await isPulledByGroup(db, row.id)
+      await env.BILL_QUEUE.send({ tenantId: env.TENANT_ID, billId: row.externalId, forceAI: true, ...(groupAnalysis ? { groupAnalysis: true as const } : {}) })
     } catch (err) {
       // Stop the run, don't skip the row. Retrying the rest of this batch
       // against a queue that is down would spend up to 49 more attempts on zero

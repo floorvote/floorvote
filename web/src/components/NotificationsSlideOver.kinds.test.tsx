@@ -19,7 +19,7 @@ const row = (over: Record<string, unknown>) => ({
   commentId: 'c1', billId: 'b1',
   billNumber: 'SB123', billTitle: 'A test bill', billState: 'NJ', billIsDraft: false,
   sessionSlug: 'session-1',
-  authorId: 'u1', authorName: 'Alice Author', authorSubtitle: null,
+  authorId: 'u1', authorName: 'Alice Author', authorTitle: null,
   commentPreview: 'preview', commentHtml: '<p>Please review.</p>',
   sourceType: 'user', sourceLabel: null,
   createdAt: new Date().toISOString(), isUnread: true,

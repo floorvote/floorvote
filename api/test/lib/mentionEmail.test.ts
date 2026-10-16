@@ -5,7 +5,7 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 const base: MentionEmailInput = {
   appUrl: 'https://x.test',
   instanceName: 'Rhode Island Association',
-  author: { name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston' },
+  author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
   bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote.' },
   comment: { id: 'c9', createdAt: '2026-06-10 16:45:00', html: '<p>Hey <span data-type="mention" data-id="user:u2" data-label="@Dana">@Dana</span> — testify?</p>' },
   via: 'user',
@@ -20,7 +20,7 @@ describe('renderMentionEmail', () => {
     expect(html).toContain('Requires photo identification to vote.')
     expect(html).toContain('Source Serif')
   })
-  it('renders the comment row: purple icon, author name + subtitle, absolute date', () => {
+  it('renders the comment row: purple icon, author name + title, absolute date', () => {
     const html = renderMentionEmail(base)
     expect(html).toContain('/email-icons/chat__7c3aed.png')
     expect(html).toContain('Sam Ortiz')
@@ -43,6 +43,9 @@ describe('renderMentionEmail', () => {
     expect(role).toContain('mentioned <strong')
     expect(role).toContain('@Hearing Team')
     expect(renderMentionEmail({ ...base, via: 'everyone' })).toContain('notified everyone')
+    const admins = renderMentionEmail({ ...base, via: 'admins' })
+    expect(admins).toContain('@admins')
+    expect(admins).toContain("because you're an admin")
   })
   it('wraps in the gray shell (full document)', () => {
     expect(renderMentionEmail(base)).toContain('<!DOCTYPE html>')
@@ -53,9 +56,10 @@ describe('renderMentionEmail', () => {
   describe('mention pills match the app (shared MENTION_STYLE)', () => {
     const roleHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="role:r1" data-label="@Team">@Team</span></p>')
     const everyoneHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="everyone:all" data-label="@everyone">@everyone</span></p>')
+    const adminsHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="admins:all" data-label="@admins">@admins</span></p>')
     const userHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="user:u1" data-label="@Sam">@Sam</span></p>')
     it('role / @everyone mentions render in the shared indigo', () => {
-      for (const html of [roleHtml, everyoneHtml]) {
+      for (const html of [roleHtml, everyoneHtml, adminsHtml]) {
         expect(html).toContain(`background:${MENTION_STYLE.role.bg}`)
         expect(html).toContain(`color:${MENTION_STYLE.role.text}`)
       }
@@ -70,9 +74,9 @@ describe('renderMentionEmail', () => {
       expect(html).toContain(`color:${MENTION_STYLE.role.text}`)
     })
   })
-  it('truncates an overlong subtitle', () => {
+  it('truncates an overlong title', () => {
     const long = 'x'.repeat(120)
-    const html = renderMentionEmail({ ...base, author: { name: 'Sam', subtitle: long } })
+    const html = renderMentionEmail({ ...base, author: { name: 'Sam', title: long } })
     expect(html).toContain('…')
     expect(html).not.toContain(long)
   })
