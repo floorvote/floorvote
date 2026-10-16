@@ -179,7 +179,9 @@ const MAX_FUZZY_QUOTE = 2000
  *
  * Exact and normalized matches are `indexOf` scans, and always run for every
  * item, outside the budget: up to about a second on 2 million characters of
- * ordinary text, so the whole is about 4 to 6 seconds. On degenerate text (one
+ * ordinary text, so the whole is about 4 to 7 seconds (the dearest measured:
+ * English dense with symbols such as an ellipsis, a bullet, and a euro sign,
+ * heavy on `makeDiff`). On degenerate text (one
  * character repeated, with a quote that nearly matches everywhere) `indexOf`
  * is quadratic, about 0.7 seconds a quote on a million characters, which no
  * bill has. The fuzzy searches go cheapest first, by what their first call

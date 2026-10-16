@@ -413,6 +413,38 @@ describe('the document is the text the model read', () => {
     expect(r.status).toBe('fuzzy')
     expect(slice(doc, r.quoteAt)!.startsWith('Each county election office shall')).toBe(true)
   })
+
+  describe('bill text central decoded from windows-1252 bytes (#574)', () => {
+    // Invented HTML as a state's server sends it, in windows-1252: 0x93 and
+    // 0x94 are curly double quotes, 0x92 a curly apostrophe, 0xA7 the section
+    // sign, and 0x96 an en dash. Central decodes it (as `decodeStoredHtml` does
+    // for bytes that are not UTF-8), and the instance reads that string.
+    const ascii = (s: string) => [...s].map(c => c.charCodeAt(0))
+    const bytes = new Uint8Array([
+      ...ascii('<html><body><p>Section 4. The term '), 0x93, ...ascii('drop box'), 0x94,
+      ...ascii(' has the meaning given in '), 0xa7, ...ascii(' 12'), 0x96, ...ascii('3 of the clerk'), 0x92,
+      ...ascii('s rules, and applies from 2027'), 0x96, ...ascii('2029.</p></body></html>'),
+    ])
+    const doc = billHtmlToText(new TextDecoder('windows-1252').decode(bytes))
+    const passage = 'The term “drop box” has the meaning given in § 12–3 of the clerk’s rules, and applies from 2027–2029.'
+
+    it('decodes to the curly quotes, section sign, and en dashes, not U+FFFD', () => {
+      expect(doc).toContain(passage)
+      expect(doc).not.toContain('�')
+    })
+
+    it('resolves a quote copied with the same characters as exact', () => {
+      const r = one(passage, doc)
+      expect(r.status).toBe('exact')
+      expect(slice(doc, r.quoteAt)).toBe(passage)
+    })
+
+    it('resolves a quote written with straight quotes and hyphens as normalized', () => {
+      const r = one('The term "drop box" has the meaning given in § 12-3 of the clerk\'s rules, and applies from 2027-2029.', doc)
+      expect(r.status).toBe('normalized')
+      expect(slice(doc, r.quoteAt)).toBe(passage)
+    })
+  })
 })
 
 describe('pruning after a summary edit', () => {
