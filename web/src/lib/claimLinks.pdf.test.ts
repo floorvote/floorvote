@@ -73,6 +73,11 @@ describe('linkableClaims: an unverified item on an HTML document', () => {
   it('stays plain text, as in #571', () => {
     expect(linkableClaims(cs([unverified('One.', 'Quote.', 3)], HTML), true)).toEqual([])
   })
+
+  it('stays plain text even with a location, since an HTML document is linked only when resolved', () => {
+    const located: ClaimSourceItem = { ...unverified('One.', 'Quote.', 3), quoteAt: { start: 0, end: 5 }, matched: 'Each.' }
+    expect(linkableClaims(cs([located], HTML), true)).toEqual([])
+  })
 })
 
 // The summary HTML MarkdownSummary renders, which the claims are linked in.
