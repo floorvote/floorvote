@@ -17,24 +17,24 @@ interface UserData {
   id: string
   name: string
   email: string
-  subtitle: string | null
+  title: string | null
   roles?: { id: string; name: string }[]
 }
 
 interface RoleData {
   id: string
   name: string
-  members: Array<{ id: string; name: string; email?: string; subtitle: string | null }>
+  members: Array<{ id: string; name: string; email?: string; title: string | null }>
 }
 
 interface MentionTooltipData {
   anchorRect: DOMRect
   type: 'user' | 'role'
   userName?: string
-  userSubtitle?: string | null
+  userTitle?: string | null
   userRoles?: { id: string; name: string }[]
   roleFound?: boolean
-  roleMembers?: Array<{ name: string; subtitle: string | null }>
+  roleMembers?: Array<{ name: string; title: string | null }>
 }
 
 interface Props {
@@ -125,14 +125,14 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
 
     if (type === 'role') {
       const role = roles.find(r => r.id === id)
-      const roleMembers = role?.members.map(m => ({ name: displayName(m) || m.id, subtitle: m.subtitle })) ?? []
+      const roleMembers = role?.members.map(m => ({ name: displayName(m) || m.id, title: m.title })) ?? []
       setTooltip({ anchorRect, type: 'role', roleFound: role !== undefined, roleMembers })
     } else {
       const user = users.find(u => u.id === id)
       if (user) {
-        setTooltip({ anchorRect, type: 'user', userName: displayName(user), userSubtitle: user.subtitle, userRoles: user.roles ?? [] })
+        setTooltip({ anchorRect, type: 'user', userName: displayName(user), userTitle: user.title, userRoles: user.roles ?? [] })
       } else {
-        setTooltip({ anchorRect, type: 'user', userName: mention.dataset.label || id, userSubtitle: null, userRoles: [] })
+        setTooltip({ anchorRect, type: 'user', userName: mention.dataset.label || id, userTitle: null, userRoles: [] })
       }
     }
   }
@@ -203,8 +203,8 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
             <>
               <div style={{ whiteSpace: 'nowrap' }}>
                 <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{tooltip.userName}</span>
-                {tooltip.userSubtitle && (
-                  <span style={{ color: color.textMuted, marginLeft: 4 }}>{tooltip.userSubtitle}</span>
+                {tooltip.userTitle && (
+                  <span style={{ color: color.textMuted, marginLeft: 4 }}>{tooltip.userTitle}</span>
                 )}
               </div>
               {tooltip.userRoles && tooltip.userRoles.length > 0 && (
@@ -230,8 +230,8 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
                       {tooltip.roleMembers.map((m, i) => (
                         <div key={i}>
                           <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{m.name}</span>
-                          {m.subtitle && (
-                            <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.subtitle}</span>
+                          {m.title && (
+                            <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.title}</span>
                           )}
                         </div>
                       ))}

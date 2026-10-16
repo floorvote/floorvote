@@ -5,7 +5,7 @@ function ev(id: string, billId: string, createdAt: string): FeedEvent {
   return {
     id, type: 'priority_set', billId, billNumber: 'H 1', billSessionSlug: null,
     billState: null, billTitle: 't', billSummary: null, billPriority: 'high',
-    billMatchType: 'keyword', userId: 'u', userName: 'U', userSubtitle: null,
+    billMatchType: 'keyword', userId: 'u', userName: 'U', userTitle: null,
     metadata: {}, createdAt,
   }
 }

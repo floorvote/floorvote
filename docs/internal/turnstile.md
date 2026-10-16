@@ -20,6 +20,38 @@ open** if the binding is ever absent (local dev, tests) — it never locks users
 out on a limiter blip. To tune, edit the `limit` / `period` (`period` must be
 `10` or `60`) in the `[env.<id>.ratelimits.simple]` block and redeploy.
 
+## 1a. Admin email sends — different mechanism, nothing to configure
+
+The admin routes that email a member (resend invite, resend login link, change a
+pending invite's address) are limited in D1 rather than with the Workers Rate
+Limiting binding. That binding only counts over 10 or 60 seconds and fails open
+when absent, so it cannot express "a few resends an hour" for a self-hoster who
+never declared it. The limits and their 429 messages are in
+`api/src/lib/adminSendLimits.ts`: over a sliding 60 minutes, 5 per member, 5
+per recipient address, and 50 per admin, shared by all three routes. Only
+admin sends count, so a member's own sign-in requests never block a resend.
+
+The count and the record are one atomic `INSERT ... SELECT ... WHERE` (`claimSend`).
+The row it writes is the send's own `link_requested` event, with the admin as
+`actor_id`, so parallel requests cannot all read the same count. A send that
+then fails keeps its row (fail closed). Migration 0084 indexes `actor_id` for the
+per-admin count. Bulk invites go through the queue with no actor and are outside
+these limits.
+
+To limit another kind of send, call `claimSend` with its own event type and
+`SendCheck`s (column, value, window, max, message) rather than adding a counter.
+
+## 1b. Email-change requests — same controls, nothing extra to configure
+
+A signed-in member's request to change their email (`POST /api/users/me/email-change`,
+`api/src/lib/emailChange.ts`) uses the same `LOGIN_RATE_LIMITER` binding (key
+`email-change:<ip>`) and the same Turnstile gate as the sign-in form, so the
+Profile form renders the widget when `TURNSTILE_SITE_KEY` is set and sends
+`turnstileToken`. On top of that, `claimSend` caps each member at three requests
+in a rolling day, counted from `email_change_requested` rows. The confirmation
+page's status and confirm calls have their own per-IP keys
+(`email-change-status:<ip>`, `email-change-confirm:<ip>`).
+
 ## 2. Turnstile
 
 Turnstile is fully enabled on both login surfaces. The server gate

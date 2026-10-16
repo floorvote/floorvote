@@ -8,6 +8,8 @@ import { demoResetAndSeed } from './lib/demoResetAndSeed'
 import { registerWithCentral } from './cron/sync'
 import { runDigest } from './lib/digest'
 import { sendSampleEmail, isSampleEmailType, type SampleSendResult } from './lib/sampleEmails'
+import { readDeliveryProbe, type DeliveryProbeRecord } from './lib/deliveryProbe'
+import { verifyAi, type VerifyAiResult } from './lib/verifyAi'
 import type { Env } from './types'
 
 /**
@@ -41,6 +43,14 @@ export class CentralApi extends WorkerEntrypoint<Env> {
   async sendSampleEmail(to: string, type: string): Promise<SampleSendResult> {
     if (!isSampleEmailType(type)) return { ok: false, error: 'invalid type' }
     return sendSampleEmail(this.env, getDb(this.env.DB), to, type)
+  }
+
+  async deliveryProbe(): Promise<{ probe: DeliveryProbeRecord | null }> {
+    return { probe: await readDeliveryProbe(getDb(this.env.DB)) }
+  }
+
+  async verifyAi(billId: string): Promise<VerifyAiResult> {
+    return verifyAi(this.env, getDb(this.env.DB), billId)
   }
 
   async unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>> {

@@ -42,7 +42,7 @@ vi.mock('./pages/admin/Notifications', () => ({ Notifications: () => <div>notifi
 vi.mock('./lib/api', () => ({
   apiFetch: async (path: string) => {
     if (path === '/auth/me') {
-      return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', subtitle: null,
+      return { id: 'u1', email: 'a@b.c', name: 'A', role: 'owner', title: null,
         canVote: true, emailDigestEnabled: false, lastSeenFeed: null }
     }
     return {}

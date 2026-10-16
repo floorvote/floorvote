@@ -13,16 +13,16 @@
     "deploy:tenant": "bash deploy.sh"
   },
   "dependencies": {
-    "@google/genai": "^2.27.0",
-    "drizzle-orm": "^0.45.3",
-    "hono": "^4.13.12"
+    "@google/genai": "^2.28.0",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.20",
-    "@cloudflare/workers-types": "^5.20261006.1",
+    "@cloudflare/workers-types": "^5.20261011.1",
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.149.0"
   }
 }

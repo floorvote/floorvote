@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { env, createExecutionContext } from 'cloudflare:test'
-import { SELF } from 'cloudflare:test'
 import { inArray, eq } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedBillText } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { memberVotes, officialPositions, comments, notes, calendarEvents, associationConfig } from '../../src/db/schema'
 import { app } from '../../src/index'
 import { DEMO_BILL_COMMENT_CAP } from '../../src/routes/billsApi/engagementRoutes'
+
+// Setting a priority starts a central calendar backfill in the background, so every
+// test here needs central answered. A test that needs a specific response stubs its own.
+beforeEach(() => { stubFetch() })
 
 describe('GET /bills', () => {
   let memberToken: string
@@ -21,12 +24,12 @@ describe('GET /bills', () => {
   })
 
   it('returns 401 without session', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills')
+    const res = await appFetch('http://localhost/api/bills')
     expect(res.status).toBe(401)
   })
 
   it('returns all bills with vote counts', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -41,7 +44,7 @@ describe('GET /bills', () => {
   })
 
   it('filters by priority', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?priority=high', {
+    const res = await appFetch('http://localhost/api/bills?priority=high', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { total: number } }
@@ -50,7 +53,7 @@ describe('GET /bills', () => {
   })
 
   it('filters by status', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?status=Passed+House', {
+    const res = await appFetch('http://localhost/api/bills?status=Passed+House', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { total: number } }
@@ -59,7 +62,7 @@ describe('GET /bills', () => {
   })
 
   it('filters by text search (q)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?q=Voter', {
+    const res = await appFetch('http://localhost/api/bills?q=Voter', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { total: number } }
@@ -68,7 +71,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by bill number with space (q="HB 1")', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?q=HB+1', {
+    const res = await appFetch('http://localhost/api/bills?q=HB+1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -77,7 +80,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by bare bill number (q="1")', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?q=1', {
+    const res = await appFetch('http://localhost/api/bills?q=1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -86,7 +89,7 @@ describe('GET /bills', () => {
   })
 
   it('searches by compact bill number without space (q="HB1")', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?q=HB1', {
+    const res = await appFetch('http://localhost/api/bills?q=HB1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[] }
@@ -97,7 +100,7 @@ describe('GET /bills', () => {
   it('filters by year', async () => {
     await seedBill({ billNumber: 'NJ1', session: '2026-2027 Regular Session', sessionId: '2250', yearStart: 2026, yearEnd: 2027 })
     await seedBill({ billNumber: 'RI1', session: '2025 Regular Session', sessionId: '2193', yearStart: 2025, yearEnd: 2025 })
-    const res = await SELF.fetch('http://localhost/api/bills?year=2026', {
+    const res = await appFetch('http://localhost/api/bills?year=2026', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: { billNumber: string }[] }
@@ -108,7 +111,7 @@ describe('GET /bills', () => {
 
   it('returns yearStart and yearEnd in bill rows', async () => {
     await seedBill({ billNumber: 'DC1', session: '26th Council', sessionId: '2198', yearStart: 2025, yearEnd: 2026 })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: { billNumber: string; yearStart: number | null; yearEnd: number | null }[] }
@@ -120,7 +123,7 @@ describe('GET /bills', () => {
   it('default sort puts higher year_start first', async () => {
     await seedBill({ billNumber: 'OLD', session: '2024 Regular Session', sessionId: '2128', yearStart: 2024, yearEnd: 2024 })
     await seedBill({ billNumber: 'NEW', session: '2026 Regular Session', sessionId: '2253', yearStart: 2026, yearEnd: 2026 })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: { billNumber: string }[] }
@@ -135,7 +138,7 @@ describe('GET /bills', () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'STUB', state: 'UT', session: `${cy} General Session`, sessionId: '2214', yearStart: cy, yearEnd: cy })
     await seedBill({ billNumber: 'TRACKED', state: 'NJ', session: `${cy}-${cy + 1} Regular Session`, sessionId: '2250', yearStart: cy, yearEnd: cy + 1, relevanceScore: 10 })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
@@ -148,7 +151,7 @@ describe('GET /bills', () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'FUTURE', sessionId: '2200', yearStart: cy, yearEnd: cy + 1, relevanceScore: 1 })
     await seedBill({ billNumber: 'CURRENT', sessionId: '2300', yearStart: cy, yearEnd: cy, relevanceScore: 9 })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
@@ -164,7 +167,7 @@ describe('GET /bills', () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'PRIORITIZED', sessionId: '2300', yearStart: cy, yearEnd: cy, priority: 'high' })
     await seedBill({ billNumber: 'DRAFT', sessionId: '2400', yearStart: cy + 1, yearEnd: cy + 1, isDraft: true })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
@@ -179,7 +182,7 @@ describe('GET /bills', () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'FILED_BIENNIUM', sessionId: '2400', yearStart: cy, yearEnd: cy + 1, priority: 'low' })
     await seedBill({ billNumber: 'FILED_CURRENT', sessionId: '2300', yearStart: cy, yearEnd: cy, priority: 'high' })
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
@@ -190,7 +193,7 @@ describe('GET /bills', () => {
     const cy = new Date().getUTCFullYear()
     await seedBill({ billNumber: 'ENDS_LATER', sessionId: '2200', yearStart: cy, yearEnd: cy + 1 })
     await seedBill({ billNumber: 'ENDS_NOW', sessionId: '2300', yearStart: cy, yearEnd: cy })
-    const res = await SELF.fetch('http://localhost/api/bills?sort=year&dir=asc', {
+    const res = await appFetch('http://localhost/api/bills?sort=year&dir=asc', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const numbers = (await res.json() as { bills: { billNumber: string }[] }).bills.map(b => b.billNumber)
@@ -203,7 +206,7 @@ describe('GET /bills', () => {
     for (let i = 0; i < 5; i++) {
       ids.push(await seedBill({ billNumber: `TIE${i}`, sessionId: '2250', yearStart: cy, yearEnd: cy }))
     }
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: { id: string; billNumber: string }[] }
@@ -214,7 +217,7 @@ describe('GET /bills', () => {
   it('includes commentCount per bill', async () => {
     const db = getDb(env.DB)
     // Get seeded bill ids
-    const allBills = await SELF.fetch('http://localhost/api/bills', {
+    const allBills = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const allBillsBody = await allBills.json() as { bills: Array<Record<string, unknown>> }
@@ -228,7 +231,7 @@ describe('GET /bills', () => {
       createdAt: new Date().toISOString(),
     })
 
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: Array<Record<string, unknown>> }
@@ -256,7 +259,7 @@ describe('GET /bills — comma multi-search', () => {
 
   // Returns sorted bill numbers for a search query.
   async function search(q: string): Promise<string[]> {
-    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -302,7 +305,7 @@ describe('GET /bills — comma multi-search', () => {
 
   it('composes with the state filter on multi-state data', async () => {
     await seedBill({ billNumber: 'H 7377', title: 'Utah Mail Ballots', state: 'UT' })
-    const res = await SELF.fetch(`http://localhost/api/bills?q=7377&state=UT`, {
+    const res = await appFetch(`http://localhost/api/bills?q=7377&state=UT`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -313,7 +316,7 @@ describe('GET /bills — comma multi-search', () => {
 
   it('caps segments instead of erroring on absurd comma counts', async () => {
     const q = Array.from({ length: 200 }, (_, i) => String(9000 + i)).join(',')
-    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -331,7 +334,7 @@ describe('GET /bills — long search terms (D1 LIKE 50-byte limit)', () => {
     await seedBill({ billNumber: 'SB 2', title: 'Unrelated transportation act' })
   })
   const get = (q: string) =>
-    SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
+    appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, { headers: { Cookie: `session=${token}` } })
 
   it('does not 500 on a single over-long token', async () => {
     expect((await get('a'.repeat(60))).status).toBe(200)
@@ -378,7 +381,7 @@ describe('GET /bills — monitoring-only bills are visible to all roles', () => 
   })
 
   it('list includes both tracked and monitoring-only bills by default', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: Array<Record<string, unknown>> }
@@ -388,7 +391,7 @@ describe('GET /bills — monitoring-only bills are visible to all roles', () => 
   })
 
   it('detail returns monitoring-only bill for members', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${stubBillId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${stubBillId}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -397,7 +400,7 @@ describe('GET /bills — monitoring-only bills are visible to all roles', () => 
   })
 
   it('detail returns monitoring-only bill for admins', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${stubBillId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${stubBillId}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -425,7 +428,7 @@ describe('GET /bills — tag filter', () => {
   })
 
   it('returns only bills whose tags include the requested tag', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?tag=Elections', {
+    const res = await appFetch('http://localhost/api/bills?tag=Elections', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -438,7 +441,7 @@ describe('GET /bills — tag filter', () => {
   })
 
   it('returns bills matching either tag with OR semantics (?tag=A&tag=B)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?tag=Elections&tag=Budget', {
+    const res = await appFetch('http://localhost/api/bills?tag=Elections&tag=Budget', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -454,7 +457,7 @@ describe('GET /bills — tag filter', () => {
     // Seed a bill tagged Elections but with a different status
     await seedBill({ billNumber: 'HB 50', title: 'Another Election Bill', tags: ['Elections'], status: 'Passed House' })
 
-    const res = await SELF.fetch('http://localhost/api/bills?tag=Elections&status=In+Committee', {
+    const res = await appFetch('http://localhost/api/bills?tag=Elections&status=In+Committee', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -517,14 +520,14 @@ describe('GET /bills/:id', () => {
   })
 
   it('returns 404 for unknown id', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/nonexistent', {
+    const res = await appFetch('http://localhost/api/bills/nonexistent', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(404)
   })
 
   it('returns composite bill detail for member', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -540,7 +543,7 @@ describe('GET /bills/:id', () => {
   })
 
   it('includes memberVotes breakdown for admin', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     const body = await res.json() as Record<string, unknown>
@@ -565,7 +568,7 @@ describe('GET /bills/:id', () => {
       content: 'Second comment',
       createdAt: '2026-01-02T10:00:00.000Z',
     })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as Record<string, unknown>
@@ -580,12 +583,12 @@ describe('GET /bills/:id', () => {
     const noNameId = await seedUser({ role: 'member', name: '', email: 'noname@example.com' })
     const noNameToken = await seedSession(noNameId)
     // Cast the vote via the API so the vote is recorded
-    await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${noNameToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'oppose' }),
     })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     const body = await res.json() as Record<string, unknown>
@@ -603,7 +606,7 @@ describe('GET /bills/:id', () => {
     await seedBillText(billId, { docId: '999', type: 'Introduced', date: '2025-01-01' })
     await seedBillText(billId, { docId: '1001', type: 'Amended', date: '2025-03-01' })
 
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -646,6 +649,7 @@ describe('GET /bills/:id', () => {
         date: hearingDate, time: null, location: null, description: 'Custom deadline', status: 'confirmed', eventHash: null },
     ])
 
+    stubFetch(() => new Response('{}', { status: 404 })) // central's supplemental data is not under test
     const res = await app.request(`/api/bills/${demoBillId}`,
       { headers: { Cookie: `session=${token}` } },
       { ...env, DEMO_MODE: 'true' })
@@ -672,7 +676,7 @@ describe('POST /bills/:id/votes', () => {
   })
 
   it('creates a vote', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
@@ -683,12 +687,12 @@ describe('POST /bills/:id/votes', () => {
   })
 
   it('updates an existing vote', async () => {
-    await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
     })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'oppose' }),
@@ -699,7 +703,7 @@ describe('POST /bills/:id/votes', () => {
   })
 
   it('rejects invalid position', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'maybe' }),
@@ -708,7 +712,7 @@ describe('POST /bills/:id/votes', () => {
   })
 
   it('SEC-C1: returns 404 for non-existent bill', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/non-existent-id/votes', {
+    const res = await appFetch('http://localhost/api/bills/non-existent-id/votes', {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'support' }),
@@ -728,7 +732,7 @@ describe('DELETE /bills/:id/votes', () => {
     memberId = await seedUser()
     memberToken = await seedSession(memberId)
     billId = await seedBill()
-    await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'neutral' }),
@@ -736,7 +740,7 @@ describe('DELETE /bills/:id/votes', () => {
   })
 
   it('removes vote and returns 204', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'DELETE',
       headers: { Cookie: `session=${memberToken}` },
     })
@@ -760,7 +764,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('returns 403 for member', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -769,7 +773,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('sets priority for admin', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -780,7 +784,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('writes a priority_set feed event when priority is set', async () => {
-    await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -792,7 +796,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('does not write a feed event when priority is cleared', async () => {
-    await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: null }),
@@ -804,7 +808,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('clears priority when null passed', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: null }),
@@ -814,7 +818,7 @@ describe('PATCH /bills/:id/priority (admin only)', () => {
   })
 
   it('returns 400 when priority key is absent', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -847,7 +851,7 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
 
   it('promotes a null-match LegiScan stub and returns promoted:true', async () => {
     const billId = await seedBill({ externalId: 'legiscan:9001', matchType: null })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -859,7 +863,7 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
 
   it('does not promote an already-tracked bill', async () => {
     const billId = await seedBill({ externalId: 'legiscan:9002', matchType: 'manual' })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -870,7 +874,7 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
 
   it('does not promote a non-LegiScan bill', async () => {
     const billId = await seedBill({ externalId: 'ocd-bill/abc', matchType: null })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -881,7 +885,7 @@ describe('PATCH /bills/:id/priority — promotion to full analysis', () => {
 
   it('does not promote when clearing priority', async () => {
     const billId = await seedBill({ externalId: 'legiscan:9003', matchType: null })
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: null }),
@@ -905,7 +909,7 @@ describe('POST /bills/:id/position (admin only)', () => {
   })
 
   it('sets position and writes feed event', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Support' }),
@@ -921,7 +925,7 @@ describe('POST /bills/:id/position (admin only)', () => {
   })
 
   it('SEC-C1: returns 404 for non-existent bill', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/non-existent-id/position', {
+    const res = await appFetch('http://localhost/api/bills/non-existent-id/position', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'Support' }),
@@ -930,7 +934,7 @@ describe('POST /bills/:id/position (admin only)', () => {
   })
 
   it('SEC-I5: returns 400 for invalid position vocabulary', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ position: 'BOGUS' }),
@@ -941,7 +945,7 @@ describe('POST /bills/:id/position (admin only)', () => {
   it('SEC-I5: accepts all valid position values', async () => {
     const validPositions = ['Support', 'Oppose', 'Amend', 'Monitor', 'No Position']
     for (const position of validPositions) {
-      const res = await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+      const res = await appFetch(`http://localhost/api/bills/${billId}/position`, {
         method: 'POST',
         headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ position }),
@@ -977,12 +981,12 @@ describe('DELETE /bills/:id/position (admin only)', () => {
   })
 
   it('clears the official position', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'DELETE',
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(204)
-    const detail = await SELF.fetch(`http://localhost/api/bills/${billId}`, {
+    const detail = await appFetch(`http://localhost/api/bills/${billId}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     const body = await detail.json() as Record<string, unknown>
@@ -990,7 +994,7 @@ describe('DELETE /bills/:id/position (admin only)', () => {
   })
 
   it('returns 403 for non-admin', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'DELETE',
       headers: { Cookie: `session=${memberToken}` },
     })
@@ -999,7 +1003,7 @@ describe('DELETE /bills/:id/position (admin only)', () => {
 
   it('returns 204 even when no position exists (idempotent)', async () => {
     const emptyBillId = await seedBill({ billNumber: 'HB 99' })
-    const res = await SELF.fetch(`http://localhost/api/bills/${emptyBillId}/position`, {
+    const res = await appFetch(`http://localhost/api/bills/${emptyBillId}/position`, {
       method: 'DELETE',
       headers: { Cookie: `session=${adminToken}` },
     })
@@ -1007,7 +1011,7 @@ describe('DELETE /bills/:id/position (admin only)', () => {
   })
 
   it('returns 404 for non-existent bill', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/non-existent-id/position', {
+    const res = await appFetch('http://localhost/api/bills/non-existent-id/position', {
       method: 'DELETE',
       headers: { Cookie: `session=${adminToken}` },
     })
@@ -1025,7 +1029,7 @@ describe('DELETE /bills/:id/position (admin only)', () => {
       metadata: '{}',
     })
 
-    await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'DELETE',
       headers: { Cookie: `session=${adminToken}` },
     })
@@ -1048,7 +1052,7 @@ describe('POST /bills/:id/comments', () => {
   })
 
   it('creates a comment', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'Great bill!' }),
@@ -1057,7 +1061,7 @@ describe('POST /bills/:id/comments', () => {
   })
 
   it('SEC-C1: returns 404 for non-existent bill', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/non-existent-id/comments', {
+    const res = await appFetch('http://localhost/api/bills/non-existent-id/comments', {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'Hello' }),
@@ -1066,7 +1070,7 @@ describe('POST /bills/:id/comments', () => {
   })
 
   it('SEC-I4: accepts content at exactly 10 KB boundary', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'a'.repeat(10_240) }),
@@ -1075,7 +1079,7 @@ describe('POST /bills/:id/comments', () => {
   })
 
   it('SEC-I4: returns 400 when content exceeds 10 KB', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'a'.repeat(10_241) }),
@@ -1167,7 +1171,7 @@ describe('GET /bills — pagination', () => {
   })
 
   it('returns paginated response with pagination object', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?pageSize=2&page=1', {
+    const res = await appFetch('http://localhost/api/bills?pageSize=2&page=1', {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -1181,7 +1185,7 @@ describe('GET /bills — pagination', () => {
   })
 
   it('returns next page correctly', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?pageSize=2&page=2', {
+    const res = await appFetch('http://localhost/api/bills?pageSize=2&page=2', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { page: number } }
@@ -1190,7 +1194,7 @@ describe('GET /bills — pagination', () => {
   })
 
   it('filters by status via SQL', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?status=in_committee', {
+    const res = await appFetch('http://localhost/api/bills?status=in_committee', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as { bills: unknown[]; pagination: { total: number } }
@@ -1201,7 +1205,7 @@ describe('GET /bills — pagination', () => {
   })
 
   it('response shape has both bills and pagination keys', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${memberToken}` },
     })
     const body = await res.json() as Record<string, unknown>
@@ -1225,7 +1229,7 @@ describe('GET /bills — sort', () => {
   })
 
   it('sort=bill dir=asc returns bills in ascending bill number order', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?sort=bill&dir=asc', {
+    const res = await appFetch('http://localhost/api/bills?sort=bill&dir=asc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1233,7 +1237,7 @@ describe('GET /bills — sort', () => {
   })
 
   it('sort=bill dir=desc returns bills in descending bill number order', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?sort=bill&dir=desc', {
+    const res = await appFetch('http://localhost/api/bills?sort=bill&dir=desc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1244,7 +1248,7 @@ describe('GET /bills — sort', () => {
     await seedBill({ billNumber: 'HB 10', state: 'RI' })
     await seedBill({ billNumber: 'HB 9', state: 'RI' })
     await seedBill({ billNumber: 'HB 100', state: 'RI' })
-    const res = await SELF.fetch('http://localhost/api/bills?sort=bill&dir=asc&state=RI', {
+    const res = await appFetch('http://localhost/api/bills?sort=bill&dir=asc&state=RI', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1255,7 +1259,7 @@ describe('GET /bills — sort', () => {
   it('sort=bill groups by state first, then bill prefix and number', async () => {
     await seedBill({ billNumber: 'SB 5', state: 'CA' })
     await seedBill({ billNumber: 'HB 2', state: 'CA' })
-    const res = await SELF.fetch('http://localhost/api/bills?sort=bill&dir=asc', {
+    const res = await appFetch('http://localhost/api/bills?sort=bill&dir=asc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string; state: string }> }
@@ -1269,7 +1273,7 @@ describe('GET /bills — sort', () => {
   // ASC = low→medium→high. The UI's first-click default is dir=desc, which gives
   // users the most-important-first ordering they expect.
   it('sort=priority dir=desc returns high→medium→low (most important first)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?sort=priority&dir=desc', {
+    const res = await appFetch('http://localhost/api/bills?sort=priority&dir=desc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ priority: string }> }
@@ -1277,7 +1281,7 @@ describe('GET /bills — sort', () => {
   })
 
   it('sort=priority dir=asc returns low→medium→high', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?sort=priority&dir=asc', {
+    const res = await appFetch('http://localhost/api/bills?sort=priority&dir=asc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ priority: string }> }
@@ -1285,7 +1289,7 @@ describe('GET /bills — sort', () => {
   })
 
   it('sort=relevance dir=desc returns highest relevance first', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?sort=relevance&dir=desc', {
+    const res = await appFetch('http://localhost/api/bills?sort=relevance&dir=desc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ relevanceScore: number }> }
@@ -1300,7 +1304,7 @@ describe('GET /bills — sort', () => {
   it('sort=position dir=desc places bills with a position before those without', async () => {
     const db = getDb(env.DB)
     // Fetch bill IDs
-    const listRes = await SELF.fetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
+    const listRes = await appFetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
     const { bills: allBills } = await listRes.json() as { bills: Array<{ id: string; billNumber: string }> }
     const hb1Id = allBills.find(b => b.billNumber === 'HB 1')!.id
     const adminId = await seedUser({ role: 'admin' })
@@ -1313,7 +1317,7 @@ describe('GET /bills — sort', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
-    const res = await SELF.fetch('http://localhost/api/bills?sort=position&dir=desc', {
+    const res = await appFetch('http://localhost/api/bills?sort=position&dir=desc', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1323,7 +1327,7 @@ describe('GET /bills — sort', () => {
   })
 
   it('no sort param uses default multi-column order (year DESC, then priority, then relevance)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills', {
+    const res = await appFetch('http://localhost/api/bills', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string; yearStart: number }> }
@@ -1346,7 +1350,7 @@ describe('PUT /bills/:id/note', () => {
   })
 
   it('saves a note', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/note`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/note`, {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'My note' }),
@@ -1355,7 +1359,7 @@ describe('PUT /bills/:id/note', () => {
   })
 
   it('SEC-C1: returns 404 for non-existent bill', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/non-existent-id/note', {
+    const res = await appFetch('http://localhost/api/bills/non-existent-id/note', {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'Hello' }),
@@ -1364,7 +1368,7 @@ describe('PUT /bills/:id/note', () => {
   })
 
   it('SEC-I4: accepts note at exactly 50 KB boundary', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/note`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/note`, {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'a'.repeat(51_200) }),
@@ -1373,7 +1377,7 @@ describe('PUT /bills/:id/note', () => {
   })
 
   it('SEC-I4: returns 400 when content exceeds 50 KB', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/${billId}/note`, {
+    const res = await appFetch(`http://localhost/api/bills/${billId}/note`, {
       method: 'PUT',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ content: 'a'.repeat(51_201) }),
@@ -1396,7 +1400,7 @@ describe('GET /bills — multi-value filters', () => {
   })
 
   it('filters by two statuses (OR)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?status=In+Committee&status=Passed+House', {
+    const res = await appFetch('http://localhost/api/bills?status=In+Committee&status=Passed+House', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1406,7 +1410,7 @@ describe('GET /bills — multi-value filters', () => {
   })
 
   it('filters by two priorities (OR)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?priority=high&priority=low', {
+    const res = await appFetch('http://localhost/api/bills?priority=high&priority=low', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1416,7 +1420,7 @@ describe('GET /bills — multi-value filters', () => {
   })
 
   it('filters by two sessions (OR)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills?session=2025&session=2024', {
+    const res = await appFetch('http://localhost/api/bills?session=2025&session=2024', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1445,7 +1449,7 @@ describe('GET /bills — tag filter with long tag names', () => {
   })
 
   it('filters the list by a tag longer than D1 50-byte LIKE limit', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills?tag=${encodeURIComponent(LONG_TAG)}`, {
+    const res = await appFetch(`http://localhost/api/bills?tag=${encodeURIComponent(LONG_TAG)}`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1454,7 +1458,7 @@ describe('GET /bills — tag filter with long tag names', () => {
   })
 
   it('computes facets when a long tag filter is active', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/facets?tag=${encodeURIComponent(LONG_TAG)}`, {
+    const res = await appFetch(`http://localhost/api/bills/facets?tag=${encodeURIComponent(LONG_TAG)}`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1483,12 +1487,12 @@ describe('GET /bills/facets', () => {
   })
 
   it('returns 401 without session', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/facets')
+    const res = await appFetch('http://localhost/api/bills/facets')
     expect(res.status).toBe(401)
   })
 
   it('returns counts for all bills when no filters', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/facets', {
+    const res = await appFetch('http://localhost/api/bills/facets', {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1515,7 +1519,7 @@ describe('GET /bills/facets', () => {
 
   it('facet counts respect active filters', async () => {
     // Filter to session=2025; tag counts should only include 2025 bills
-    const res = await SELF.fetch('http://localhost/api/bills/facets?session=2025', {
+    const res = await appFetch('http://localhost/api/bills/facets?session=2025', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { tags: Record<string, number>; status: Record<string, number> }
@@ -1532,7 +1536,7 @@ describe('GET /bills/facets', () => {
     await seedBill({ billNumber: 'Y1', yearStart: 2026, yearEnd: 2026 })
     await seedBill({ billNumber: 'Y2', yearStart: 2025, yearEnd: 2026 })
     await seedBill({ billNumber: 'Y3', yearStart: 2025, yearEnd: 2025 })
-    const res = await SELF.fetch('http://localhost/api/bills/facets', {
+    const res = await appFetch('http://localhost/api/bills/facets', {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1545,7 +1549,7 @@ describe('GET /bills/facets', () => {
     await seedBill({ billNumber: 'Y1', yearStart: 2026, yearEnd: 2026 })
     await seedBill({ billNumber: 'Y2', yearStart: 2025, yearEnd: 2026 })
     await seedBill({ billNumber: 'Y3', yearStart: 2025, yearEnd: 2025 })
-    const res = await SELF.fetch('http://localhost/api/bills/facets?year=2026', {
+    const res = await appFetch('http://localhost/api/bills/facets?year=2026', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { year: Record<string, number> }
@@ -1555,14 +1559,14 @@ describe('GET /bills/facets', () => {
 
   it('position facet shows set position and none count', async () => {
     const db = getDb(env.DB)
-    const listRes = await SELF.fetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
+    const listRes = await appFetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
     const { bills: allBills } = await listRes.json() as { bills: Array<{ id: string; billNumber: string }> }
     const hb1Id = allBills.find(b => b.billNumber === 'HB 1')!.id
     await db.insert(officialPositions).values({
       id: crypto.randomUUID(), billId: hb1Id, position: 'Support',
       setBy: adminId, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     })
-    const res = await SELF.fetch('http://localhost/api/bills/facets', {
+    const res = await appFetch('http://localhost/api/bills/facets', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { position: Record<string, number> }
@@ -1571,7 +1575,7 @@ describe('GET /bills/facets', () => {
   })
 
   it('applies comma multi-search to facet counts', async () => {
-    const res = await SELF.fetch(`http://localhost/api/bills/facets?q=${encodeURIComponent('HB1, SB 2')}`, {
+    const res = await appFetch(`http://localhost/api/bills/facets?q=${encodeURIComponent('HB1, SB 2')}`, {
       headers: { Cookie: `session=${token}` },
     })
     expect(res.status).toBe(200)
@@ -1584,7 +1588,7 @@ describe('GET /bills/facets', () => {
   describe('hasDrafts', () => {
     it('is false when the tenant has no draft bills', async () => {
       // beforeEach seeds HB 1 / SB 2 / AB 3, none of them drafts.
-      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+      const res = await appFetch('http://localhost/api/bills/facets', {
         headers: { Cookie: `session=${token}` },
       })
       const body = await res.json() as { hasDrafts: boolean }
@@ -1593,7 +1597,7 @@ describe('GET /bills/facets', () => {
 
     it('is true when at least one draft exists', async () => {
       await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
-      const res = await SELF.fetch('http://localhost/api/bills/facets', {
+      const res = await appFetch('http://localhost/api/bills/facets', {
         headers: { Cookie: `session=${token}` },
       })
       const body = await res.json() as { hasDrafts: boolean }
@@ -1608,7 +1612,7 @@ describe('GET /bills/facets', () => {
       // carry the tenant-wide hasDrafts signal, not a hard-coded false —
       // exactly the shape of bug this feature was already bitten by once.
       await seedBill({ billNumber: 'DRAFT 1', isDraft: true })
-      const res = await SELF.fetch('http://localhost/api/bills/facets?myBills=1', {
+      const res = await appFetch('http://localhost/api/bills/facets?myBills=1', {
         headers: { Cookie: `session=${token}` },
       })
       expect(res.status).toBe(200)
@@ -1624,7 +1628,7 @@ describe('GET /bills/facets', () => {
       // not make the tenant-wide existence check disappear along with the
       // filtered draftCount.
       await seedBill({ billNumber: 'DRAFT 1', isDraft: true, status: 'Drafting' })
-      const res = await SELF.fetch('http://localhost/api/bills/facets?status=In+Committee', {
+      const res = await appFetch('http://localhost/api/bills/facets?status=In+Committee', {
         headers: { Cookie: `session=${token}` },
       })
       const body = await res.json() as { hasDrafts: boolean; draftCount: number }
@@ -1650,7 +1654,7 @@ describe('GET /bills — unvoted filter', () => {
   it('unvoted=1 returns only bills the user has not voted on', async () => {
     const db = getDb(env.DB)
     // Get bill IDs
-    const listRes = await SELF.fetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
+    const listRes = await appFetch('http://localhost/api/bills', { headers: { Cookie: `session=${token}` } })
     const { bills: allBills } = await listRes.json() as { bills: Array<{ id: string; billNumber: string }> }
     const hb1Id = allBills.find(b => b.billNumber === 'HB 1')!.id
     // Vote on HB 1
@@ -1662,7 +1666,7 @@ describe('GET /bills — unvoted filter', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     })
-    const res = await SELF.fetch('http://localhost/api/bills?unvoted=1', {
+    const res = await appFetch('http://localhost/api/bills?unvoted=1', {
       headers: { Cookie: `session=${token}` },
     })
     const body = await res.json() as { bills: Array<{ billNumber: string }> }
@@ -1691,7 +1695,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('returns 403 for member', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${memberToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1], priority: 'high' }),
@@ -1700,7 +1704,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('returns 400 when both ids and filter provided', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1], filter: {}, priority: 'high' }),
@@ -1709,7 +1713,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('returns 400 when neither ids nor filter provided', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ priority: 'high' }),
@@ -1718,7 +1722,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('returns 400 when no actions specified', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1] }),
@@ -1727,7 +1731,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('sets priority on explicit ids', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1, billId2], priority: 'high' }),
@@ -1743,7 +1747,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('sets priority using filter (status=In Committee sets HB 1 and HB 2)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { status: ['In Committee'] }, priority: 'medium' }),
@@ -1760,7 +1764,7 @@ describe('POST /bills/bulk (admin only)', () => {
 
   // CRITICAL 1 regression: a subject filter in a bulk request must narrow the
   // affected set the same way it narrows the list view. Before the fix, bulkRoutes
-  // passed subjectFilters: [] to buildBillsWhere, so a `filter.subject` the admin
+  // passed subjectFilters: [] to buildBillsFilter, so a `filter.subject` the admin
   // saw narrow the list to one bill silently applied to every bill matching the
   // rest of the filter — here, all three bills instead of just the one with the
   // matching subject.
@@ -1772,7 +1776,7 @@ describe('POST /bills/bulk (admin only)', () => {
       { billId: billId2, subjectName: 'Counties', state: 'RI' },
     ]).run()
 
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { subject: ['RI:Election Law'] }, priority: 'high' }),
@@ -1791,7 +1795,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('sets official position on explicit ids and writes feed events (≤10)', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1, billId2], position: 'Support' }),
@@ -1812,7 +1816,7 @@ describe('POST /bills/bulk (admin only)', () => {
     const adminUser = await db.select({ id: users.id }).from(users).get()
     await db.insert(op).values({ id: crypto.randomUUID(), billId: billId1, position: 'Oppose', setBy: adminUser!.id, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
 
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1], position: 'Support' }),
@@ -1829,7 +1833,7 @@ describe('POST /bills/bulk (admin only)', () => {
       extraIds.push(await seedBill({ billNumber: `HB ${i}` }))
     }
     const allIds = [billId1, billId2, billId3, ...extraIds]
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: allIds, priority: 'high' }),
@@ -1852,7 +1856,7 @@ describe('POST /bills/bulk (admin only)', () => {
       extraIds.push(await seedBill({ billNumber: `HB ${i}` }))
     }
     const allIds = [billId1, billId2, billId3, ...extraIds]
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: allIds, position: 'Support' }),
@@ -1874,7 +1878,7 @@ describe('POST /bills/bulk (admin only)', () => {
     for (let i = 0; i < 1001; i++) {
       ids.push(await seedBill({ billNumber: `SB ${i}` }))
     }
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids, priority: 'high' }),
@@ -1883,7 +1887,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('can set priority and position in one request', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1], priority: 'high', position: 'Support' }),
@@ -1898,7 +1902,7 @@ describe('POST /bills/bulk (admin only)', () => {
   })
 
   it('returns 400 when ids array is empty', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [], priority: 'high' }),
@@ -1919,7 +1923,7 @@ describe('POST /bills/bulk (admin only)', () => {
       updatedAt: new Date().toISOString(),
     })
 
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [billId1, billId2], customFields: [{ fieldId, value: '1' }] }),
@@ -1957,7 +1961,7 @@ describe('POST /bills/bulk — match=any', () => {
   })
 
   it('applies to the OR set when the filter carries match=any', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' }, priority: 'high' }),
@@ -1967,7 +1971,7 @@ describe('POST /bills/bulk — match=any', () => {
   })
 
   it('applies to the AND set without it, unchanged from today', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] }, priority: 'high' }),
@@ -1996,7 +2000,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
   })
 
   it('applies to the OR set when the filter carries match=any', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+    const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'], match: 'any' } }),
@@ -2006,7 +2010,7 @@ describe('POST /bills/bulk-dismiss — match=any', () => {
   })
 
   it('applies to the AND set without it, unchanged from today', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk-dismiss', {
+    const res = await appFetch('http://localhost/api/bills/bulk-dismiss', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filter: { subject: ['UT:Elections'], tag: ['Clerk'] } }),
@@ -2037,7 +2041,7 @@ describe('POST /bills/bulk — priority promotion', () => {
     const tracked = await seedBill({ externalId: 'legiscan:702', matchType: 'keyword' })
     const nonLs = await seedBill({ externalId: 'ocd-bill/x', matchType: null })
 
-    const res = await SELF.fetch('http://localhost/api/bills/bulk', {
+    const res = await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [stub, tracked, nonLs], priority: 'high' }),
@@ -2053,7 +2057,7 @@ describe('POST /bills/bulk — priority promotion', () => {
 
   it('does not call the promote endpoint when clearing priority', async () => {
     const stub = await seedBill({ externalId: 'legiscan:703', matchType: null })
-    await SELF.fetch('http://localhost/api/bills/bulk', {
+    await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: [stub], priority: null }),
@@ -2080,7 +2084,7 @@ describe('GET /bills/bulk-values — nullMatchCount', () => {
 
     const params = new URLSearchParams()
     for (const id of [stub, tracked, nonLs]) params.append('ids', id)
-    const res = await SELF.fetch(`http://localhost/api/bills/bulk-values?${params}`, {
+    const res = await appFetch(`http://localhost/api/bills/bulk-values?${params}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -2109,14 +2113,14 @@ describe('GET /bills/bulk-values (admin only)', () => {
   })
 
   it('returns 403 for member', async () => {
-    const res = await SELF.fetch('http://localhost/api/bills/bulk-values?ids=' + billId1, {
+    const res = await appFetch('http://localhost/api/bills/bulk-values?ids=' + billId1, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(403)
   })
 
   it('returns value distributions for explicit ids', async () => {
-    const res = await SELF.fetch(
+    const res = await appFetch(
       `http://localhost/api/bills/bulk-values?ids=${billId1}&ids=${billId2}&ids=${billId3}`,
       { headers: { Cookie: `session=${adminToken}` } }
     )
@@ -2129,7 +2133,7 @@ describe('GET /bills/bulk-values (admin only)', () => {
   })
 
   it('returns value distributions for filter mode', async () => {
-    const res = await SELF.fetch(
+    const res = await appFetch(
       'http://localhost/api/bills/bulk-values?status=In+Committee',
       { headers: { Cookie: `session=${adminToken}` } }
     )
@@ -2140,7 +2144,7 @@ describe('GET /bills/bulk-values (admin only)', () => {
   })
 
   it('returns empty when no bills match', async () => {
-    const res = await SELF.fetch(
+    const res = await appFetch(
       'http://localhost/api/bills/bulk-values?status=Signed+Into+Law',
       { headers: { Cookie: `session=${adminToken}` } }
     )
@@ -2170,7 +2174,7 @@ describe('GET /bills/bulk-values (admin only)', () => {
       updatedAt: new Date().toISOString(),
     })
 
-    const res = await SELF.fetch(
+    const res = await appFetch(
       `http://localhost/api/bills/bulk-values?ids=${billId1}&ids=${billId2}&ids=${billId3}`,
       { headers: { Cookie: `session=${adminToken}` } }
     )
@@ -2205,7 +2209,7 @@ describe('GET /bills/bulk-values — match=any', () => {
     const params = new URLSearchParams({ match: 'any' })
     params.append('subject', 'UT:Elections')
     params.append('tag', 'Clerk')
-    const res = await SELF.fetch(`http://localhost/api/bills/bulk-values?${params}`, {
+    const res = await appFetch(`http://localhost/api/bills/bulk-values?${params}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -2216,7 +2220,7 @@ describe('GET /bills/bulk-values — match=any', () => {
     const params = new URLSearchParams()
     params.append('subject', 'UT:Elections')
     params.append('tag', 'Clerk')
-    const res = await SELF.fetch(`http://localhost/api/bills/bulk-values?${params}`, {
+    const res = await appFetch(`http://localhost/api/bills/bulk-values?${params}`, {
       headers: { Cookie: `session=${adminToken}` },
     })
     expect(res.status).toBe(200)
@@ -2242,7 +2246,7 @@ describe('stored timestamps are space-format', () => {
 
   it('single priority_set writes a space-format created_at', async () => {
     const billId = await seedBill({ billNumber: 'H 1' })
-    await SELF.fetch(`http://localhost/api/bills/${billId}/priority`, {
+    await appFetch(`http://localhost/api/bills/${billId}/priority`, {
       method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ priority: 'high' }),
     })
     const db = getDb(env.DB)
@@ -2255,7 +2259,7 @@ describe('stored timestamps are space-format', () => {
 
   it('single position_set writes space-format created_at + position rows', async () => {
     const billId = await seedBill({ billNumber: 'H 2' })
-    await SELF.fetch(`http://localhost/api/bills/${billId}/position`, {
+    await appFetch(`http://localhost/api/bills/${billId}/position`, {
       method: 'POST', headers: adminHeaders(), body: JSON.stringify({ position: 'Support' }),
     })
     const db = getDb(env.DB)
@@ -2269,7 +2273,7 @@ describe('stored timestamps are space-format', () => {
 
   it('member vote writes space-format created_at/updated_at', async () => {
     const billId = await seedBill({ billNumber: 'H 5' })
-    await SELF.fetch(`http://localhost/api/bills/${billId}/votes`, {
+    await appFetch(`http://localhost/api/bills/${billId}/votes`, {
       method: 'POST', headers: adminHeaders(), body: JSON.stringify({ position: 'support' }),
     })
     const db = getDb(env.DB)
@@ -2280,10 +2284,10 @@ describe('stored timestamps are space-format', () => {
 
   it('comment + note + custom-field writes are space-format', async () => {
     const billId = await seedBill({ billNumber: 'H 6' })
-    await SELF.fetch(`http://localhost/api/bills/${billId}/comments`, {
+    await appFetch(`http://localhost/api/bills/${billId}/comments`, {
       method: 'POST', headers: adminHeaders(), body: JSON.stringify({ content: 'hello' }),
     })
-    await SELF.fetch(`http://localhost/api/bills/${billId}/note`, {
+    await appFetch(`http://localhost/api/bills/${billId}/note`, {
       method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ content: 'a note' }),
     })
     const db = getDb(env.DB)
@@ -2297,7 +2301,7 @@ describe('stored timestamps are space-format', () => {
   it('bulk priority + position write space-format timestamps', async () => {
     const b1 = await seedBill({ billNumber: 'H 3' })
     const b2 = await seedBill({ billNumber: 'H 4' })
-    await SELF.fetch('http://localhost/api/bills/bulk', {
+    await appFetch('http://localhost/api/bills/bulk', {
       method: 'POST', headers: adminHeaders(), body: JSON.stringify({ ids: [b1, b2], priority: 'low', position: 'Support' }),
     })
     const db = getDb(env.DB)
@@ -2334,7 +2338,7 @@ describe('GET /bills — broadened search fields', () => {
   })
 
   async function search(q: string): Promise<string[]> {
-    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
+    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -2375,7 +2379,7 @@ describe('GET /bills — bill-number ranking', () => {
 
   // Order-PRESERVING search helper (the comma-search helper sorts; this keeps rank order).
   async function searchOrdered(q: string, extra = ''): Promise<string[]> {
-    const res = await SELF.fetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}${extra}`, {
+    const res = await appFetch(`http://localhost/api/bills?q=${encodeURIComponent(q)}${extra}`, {
       headers: { Cookie: `session=${memberToken}` },
     })
     expect(res.status).toBe(200)
@@ -2526,10 +2530,26 @@ describe('GET /bills/:id committees', () => {
     const detail = async (id: string) => {
       const res = await app.request(`/api/bills/${id}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
       expect(res.status).toBe(200)
-      return await res.json() as { committee: string | null; referrals: unknown[] }
+      return await res.json() as { committee: unknown; referrals: unknown[] }
     }
 
-    expect(await detail(referred)).toMatchObject({ committee: 'Campaigns and Elections', referrals })
-    expect(await detail(older)).toMatchObject({ committee: 'Stored committee', referrals: [] })
+    // The page needs the pending committee's id and chamber as well as its name.
+    expect(await detail(referred)).toMatchObject({
+      committee: { committeeId: '7001', name: 'Campaigns and Elections', chamber: 'A' },
+      referrals,
+    })
+    // A stored name has no id or chamber to send.
+    expect(await detail(older)).toMatchObject({
+      committee: { committeeId: null, name: 'Stored committee', chamber: null },
+      referrals: [],
+    })
+  })
+
+  it('sends no committee when central names none and none is stored', async () => {
+    const token = await seedSession(await seedUser({ role: 'member' }))
+    const bill = await seedBill({ billNumber: 'AB 3', externalId: 'legiscan:303' })
+    const central = { fetch: vi.fn(async () => Response.json({})) }
+    const res = await app.request(`/api/bills/${bill}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+    expect((await res.json() as { committee: unknown }).committee).toBeNull()
   })
 })

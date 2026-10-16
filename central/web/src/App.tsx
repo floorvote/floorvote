@@ -12,6 +12,7 @@ import Budget from './pages/Budget'
 import OpsHealth from './pages/OpsHealth'
 import UnknownLogins from './pages/UnknownLogins'
 import DashVerify from './pages/DashVerify'
+import Profile from './pages/Profile'
 
 function Gate() {
   const { identity, loading } = useAuth()
@@ -29,6 +30,7 @@ function Gate() {
         <Route path="/budget" element={<Budget />} />
         <Route path="/ops-health" element={<OpsHealth />} />
         <Route path="/unknown-logins" element={<UnknownLogins />} />
+        <Route path="/profile" element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

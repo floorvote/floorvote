@@ -14,7 +14,7 @@ vi.mock('../lib/api', () => ({
   apiFetch: vi.fn(async (path: string) => {
     if (path === '/auth/me') {
       return {
-        id: 'u1', email: 'a@b.c', name: 'Alice Anders', role: 'member', subtitle: null,
+        id: 'u1', email: 'a@b.c', name: 'Alice Anders', role: 'member', title: null,
         canVote: true, emailDigestEnabled: false, emailWeekAheadEnabled: false,
         lastSeenFeed: null, isLastOwner: false,
       }
@@ -27,8 +27,8 @@ vi.mock('../lib/api', () => ({
     }
     if (path === '/users') {
       return [
-        { id: 'u2', name: 'Owen Owner', email: 'owen@example.org', subtitle: null, role: 'owner', roles: [{ id: 'r1', name: 'Chair' }] },
-        { id: 'u1', name: 'Alice Anders', email: 'alice@example.org', subtitle: null, role: 'member', roles: [] },
+        { id: 'u2', name: 'Owen Owner', email: 'owen@example.org', title: null, role: 'owner', roles: [{ id: 'r1', name: 'Chair' }] },
+        { id: 'u1', name: 'Alice Anders', email: 'alice@example.org', title: null, role: 'member', roles: [] },
       ]
     }
     if (path.startsWith('/feed')) return { latestEventAt: null, lastSeenFeed: null }

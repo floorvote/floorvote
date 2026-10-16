@@ -25,11 +25,11 @@ export function UserCard({ user, isActive }: { user: User; isActive?: boolean })
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, lineHeight: 1.2, marginBottom: user?.subtitle ? 2 : 0 }}>
+        <div style={{ fontSize: fontSize.sm, fontWeight: fontWeight.bold, color: color.billBadgeNavy, lineHeight: 1.2, marginBottom: user?.title ? 2 : 0 }}>
           {userDisplayName}
         </div>
-        {user?.subtitle && (
-          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.3 }}>{user.subtitle}</div>
+        {user?.title && (
+          <div style={{ fontSize: fontSize.sm, color: color.textSecondary, lineHeight: 1.3 }}>{user.title}</div>
         )}
       </div>
       <svg

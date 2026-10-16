@@ -15,7 +15,7 @@ import { Feed } from './Feed'
 
 const base = {
   billSessionSlug: null, billState: null, billSummary: null, billPriority: null, billMatchType: null as null,
-  userId: 'u2', userName: 'Ada Admin', userSubtitle: null,
+  userId: 'u2', userName: 'Ada Admin', userTitle: null,
 }
 
 // A bulk edit is one bill-less event. It sits in the same Feed as per-bill cards:
