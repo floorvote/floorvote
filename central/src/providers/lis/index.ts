@@ -1,7 +1,7 @@
-import { getLisFile, getLisFileEtag, lisSessionExists, LIS_FILES, type LisFile } from './client'
+import { getLisFile, getLisFileEtag, getLisTextList, getLisTextPdf, lisSessionExists, LIS_FILES, type LisFile } from './client'
 import {
   buildLisBill, LisAssembler, LIS_FILE_ORDER, LIS_REQUIRED_FILES, LIS_STATE, lisCarriedFromCandidates, lisCommitteeKeys,
-  lisNativeKey, lisRecordHash, lisRollCallKey, lisVoteHasTally, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisRecord,
+  lisNativeKey, lisRecordHash, lisRollCallKey, lisTextDocKey, lisVoteHasTally, parseVotes, toLisMasterListEntry, VA_STATE_ID, type LisRecord,
 } from './map'
 import { vocabulary } from './vocabulary'
 import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, ProviderSnapshot, SyncSession } from '../sdk'
@@ -9,11 +9,18 @@ import type { Provider, ProviderContext, ProviderPerson, ProviderRecord, Provide
 /**
  * Virginia's Legislative Information System public data files (client.ts,
  * map.ts): a pass reads one session's CSVs and joins them into a record per
- * bill, and the ingest builds each bill from its stored record with no
- * further calls. Ids come from central's id table. The files need no key, and
- * their requests aren't logged as API calls.
+ * bill, and the ingest builds each bill from its stored record. Ids come from
+ * central's id table. The files need no key, and their requests aren't logged
+ * as API calls.
+ *
+ * Bill text is the one thing the files lack. With the optional `LIS_API_KEY`,
+ * a pass makes one more call (the session's text list, onto each bill's
+ * record), and an ingest makes one call per text version for its PDF link.
+ * Those calls are logged as `lis:<operation>`. Without the key there are no
+ * such calls and `texts` is empty, as it was before the API was used. The
+ * provider runs, and can be claimed, either way (no `configured`).
  */
-export const lis: Provider = {
+export const lis: Provider<'LIS_API_KEY'> = {
   id: 'lis',
   // The publisher, as members know it, like "Maryland General Assembly".
   // "LIS" is the name of the system, which members don't need to know.
@@ -23,7 +30,7 @@ export const lis: Provider = {
     url: 'https://lis.virginia.gov',
   },
   coverage: { maintainers: ['anotherpanacea-eng'] },
-  envKeys: [],
+  envKeys: ['LIS_API_KEY'],
   states: [LIS_STATE],
   // A bill's record carries every vote (VOTE.CSV is read whole or the pass fails).
   replacesRollCalls: true,
@@ -67,10 +74,18 @@ export const lis: Provider = {
    * One session's files, joined into a record per bill.
    *
    * ETags: the session's stored ETag is every file's ETag, packed into one
-   * versioned string (`packEtags`). When there is one, a HEAD request per file checks
-   * them first, and if no file changed (or appeared, or went), the pass reads
-   * nothing more and reports the session unchanged. Otherwise it reads every
-   * file, since each bill's record joins all of them.
+   * versioned string (`packEtags`) with whether the pass read bill text. When
+   * there is one, a HEAD request per file checks them first, and if no file
+   * changed (or appeared, or went), and the text setting is the one the ETag
+   * was packed with, the pass reads nothing more and reports the session
+   * unchanged. Otherwise it reads every file, since each bill's record joins
+   * all of them. Adding or removing the key is a change of setting: without
+   * that, the files would stay as they were and the key would do nothing until
+   * they changed.
+   *
+   * With a key, a pass that reads the files also makes one call for the
+   * session's text list and adds each bill's full-text versions to its record
+   * (`LisAssembler.addTexts`). An error from that call fails the pass.
    *
    * Fails closed: a file the session must publish that is missing (a 404),
    * cut short, or shaped differently throws, so the pass writes nothing from
@@ -80,9 +95,10 @@ export const lis: Provider = {
    */
   async snapshot(session, ctx): Promise<ProviderSnapshot> {
     const code = session.sessionTag
+    const apiKey = ctx.env.LIS_API_KEY || undefined
     const packed = unpackEtags(session.etag)
     const stored = packed?.files ?? null
-    if (stored && await unchangedSince(code, stored)) return { records: [], unchanged: true }
+    if (stored && packed!.texts === !!apiKey && await unchangedSince(code, stored)) return { records: [], unchanged: true }
 
     // One file at a time, each folded in and let go before the next: a
     // session's files are about 16 MB of text.
@@ -102,11 +118,14 @@ export const lis: Provider = {
       else assembler!.add(file, read.text)
     }
     assembler!.check(packed?.docketed ?? false)
+    if (apiKey) {
+      assembler!.addTexts(await getLisTextList(code, apiKey, () => ctx.logCall('lis:getlegislationtextlistasync', { sessionCode: code })))
+    }
     const { records, members } = assembler!.result()
     return {
       records: await toRecords(code, records, ctx),
       people: await toPeople(members, ctx),
-      etag: packEtags(etags, assembler!.docketed),
+      etag: packEtags(etags, assembler!.docketed, !!apiKey),
     }
   },
 
@@ -115,7 +134,7 @@ export const lis: Provider = {
     return toLisMasterListEntry(record.raw as LisRecord, code, record.billId, record.hash)
   },
 
-  async fetchMeasure({ billId, sessionId, nativeKey, record, session }, ctx) {
+  async fetchMeasure({ billId, sessionId, nativeKey, record, session, texts: stored }, ctx) {
     if (!record || !nativeKey || sessionId === null) throw new Error(`bill ${billId} has no stored LIS record; the LIS sync has not seen it`)
     const rec = record.raw as LisRecord
     const code = nativeKey.split('/')[0]
@@ -129,7 +148,21 @@ export const lis: Provider = {
     const persons = await ctx.ids('person', memberIds)
     const rollKey = (refid: string) => lisRollCallKey(code, rec.bill.Bill_id, refid)
     const rollCalls = await ctx.ids('rollcall', counted.map(([refid]) => rollKey(refid)))
-    const docs = await ctx.ids('doc', rec.fiscal.map(f => f[1]))
+    // Each text version's PDF link. Without a key there are none, so no texts,
+    // and no call. A version central already stores keeps its link, which never
+    // changes for a text id, so the API is asked only for the rest.
+    const apiKey = ctx.env.LIS_API_KEY || undefined
+    const pdfs = new Map<number, string>()
+    const versions = apiKey ? rec.texts ?? [] : []
+    const storedLinks = new Map((stored ?? []).flatMap(t => t.stateLink ? [[t.docId, t.stateLink] as const] : []))
+    const docIds = storedLinks.size > 0 ? await ctx.knownIds('doc', versions.map(([textId]) => lisTextDocKey(textId))) : new Map<string, number>()
+    for (const [textId] of versions) {
+      const docId = docIds.get(lisTextDocKey(textId))
+      const link = (docId === undefined ? undefined : storedLinks.get(docId))
+        ?? await getLisTextPdf(textId, apiKey!, () => ctx.logCall('lis:getlegislationtextbyidasync', { legislationTextID: textId }))
+      if (link) pdfs.set(textId, link)
+    }
+    const docs = await ctx.ids('doc', [...rec.fiscal.map(f => f[1]), ...[...pdfs.keys()].map(lisTextDocKey)])
     const committees = await ctx.ids('committee', lisCommitteeKeys(rec))
     // The earlier session's copy of a carried-over bill, if central holds it:
     // never minted here, so a session central never synced links nothing.
@@ -148,7 +181,7 @@ export const lis: Provider = {
       doc: url => docs.get(url)!,
       committee: key => committees.get(key)!,
       carriedFrom,
-    })
+    }, pdfs)
   },
 
   vocabulary,
@@ -186,31 +219,35 @@ async function unchangedSince(code: string, stored: Record<string, string>): Pro
  * The packed ETag's format. Bump it when LisRecord's shape changes: a stored
  * ETag of another version reads as none, so the next pass reads every file
  * and rewrites every stored record, rather than taking a 304 and handing the
- * mapping records of the old shape.
+ * mapping records of the old shape. (3 added the record's `texts` and the
+ * ETag's flag for whether a pass read them.)
  */
-const ETAG_VERSION = 2
+const ETAG_VERSION = 3
 /** Marks a file the last pass read as empty (an empty file is treated as missing). */
 const EMPTY = 'empty:'
 
 /**
  * The files' ETags as the session's one stored string:
- * `{"v":2,"files":{"bills":"0x8DE...",...},"docketed":true}`. A file the
- * session lacks has no key. `docketed` records that some bill was on a
- * docket, so the next pass can tell a docket file cut to its header.
+ * `{"v":3,"files":{"bills":"0x8DE...",...},"docketed":true,"texts":false}`. A
+ * file the session lacks has no key. `docketed` records that some bill was on
+ * a docket, so the next pass can tell a docket file cut to its header. `texts`
+ * records that the pass read bill text (it had an `LIS_API_KEY`), so a pass
+ * with the other setting can't take the files being unchanged for nothing
+ * having changed.
  */
-export function packEtags(files: Record<string, string>, docketed: boolean): string {
-  return JSON.stringify({ v: ETAG_VERSION, files, docketed })
+export function packEtags(files: Record<string, string>, docketed: boolean, texts: boolean): string {
+  return JSON.stringify({ v: ETAG_VERSION, files, docketed, texts })
 }
 
 /** The stored string back, or null for none, or one of another version or shape. */
-export function unpackEtags(etag: string | null): { files: Record<string, string>; docketed: boolean } | null {
+export function unpackEtags(etag: string | null): { files: Record<string, string>; docketed: boolean; texts: boolean } | null {
   if (!etag) return null
   try {
-    const parsed = JSON.parse(etag) as { v?: unknown; files?: unknown; docketed?: unknown }
+    const parsed = JSON.parse(etag) as { v?: unknown; files?: unknown; docketed?: unknown; texts?: unknown }
     if (parsed?.v !== ETAG_VERSION || typeof parsed.files !== 'object' || parsed.files === null) return null
     const files = Object.entries(parsed.files)
     if (!files.every(([file, v]) => file in LIS_FILES && typeof v === 'string')) return null
-    return { files: Object.fromEntries(files) as Record<string, string>, docketed: parsed.docketed === true }
+    return { files: Object.fromEntries(files) as Record<string, string>, docketed: parsed.docketed === true, texts: parsed.texts === true }
   } catch {
     return null
   }

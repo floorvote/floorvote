@@ -119,3 +119,43 @@ describe('healStalledAiBills selection', () => {
     expect(await countStalledAiBills(getDb(env.DB), NOW)).toBe(1)
   })
 })
+
+// A bill pulled in by its companion group (#378) was told by central that it didn't match, and a retry
+// must not let the local keywords overrule that.
+describe('healStalledAiBills for a bill pulled in by its group', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+  })
+
+  it('marks the retry a group analysis when the bill has no match type and its group has a tracked bill', async () => {
+    await seedBill('p1', { matchType: null, groupKey: 'g1' })
+    await seedBill('p2', { matchType: 'keyword', groupKey: 'g1', aiAttemptedAt: null })
+    const sent: unknown[] = []
+    await healStalledAiBills(fakeEnv(sent), getDb(env.DB), { now: NOW })
+    expect(sent).toEqual([{ tenantId: 'nvsos', billId: 'legiscan:p1', forceAI: true, groupAnalysis: true }])
+  })
+
+  it('sends a plain retry for a bill in no group', async () => {
+    await seedBill('p3', { matchType: null })
+    const sent: unknown[] = []
+    await healStalledAiBills(fakeEnv(sent), getDb(env.DB), { now: NOW })
+    expect(sent).toEqual([{ tenantId: 'nvsos', billId: 'legiscan:p3', forceAI: true }])
+  })
+
+  it('sends a plain retry when no bill of its group is tracked', async () => {
+    await seedBill('p4', { matchType: null, groupKey: 'g2' })
+    await seedBill('p5', { matchType: null, groupKey: 'g2', aiAttemptedAt: null })
+    const sent: unknown[] = []
+    await healStalledAiBills(fakeEnv(sent), getDb(env.DB), { now: NOW })
+    expect(sent).toEqual([{ tenantId: 'nvsos', billId: 'legiscan:p4', forceAI: true }])
+  })
+
+  it('sends a plain retry for a tracked bill', async () => {
+    await seedBill('p6', { matchType: 'keyword', groupKey: 'g3' })
+    await seedBill('p7', { matchType: 'keyword', groupKey: 'g3', aiAttemptedAt: null })
+    const sent: unknown[] = []
+    await healStalledAiBills(fakeEnv(sent), getDb(env.DB), { now: NOW })
+    expect(sent).toEqual([{ tenantId: 'nvsos', billId: 'legiscan:p6', forceAI: true }])
+  })
+})

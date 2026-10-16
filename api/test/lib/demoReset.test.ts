@@ -292,6 +292,17 @@ describe('runDemoReset with the default seed', () => {
     expect(await countRows('roles')).toBe(seed.roles.length)
   })
 
+  // The previous build reads users.subtitle, so the seeded roster writes both
+  // columns until the drop migration (see titleColumns.test.ts).
+  it('seeds each persona\'s title into both users.title and users.subtitle', async () => {
+    await runDemoReset(env.DB, seed)
+    const { results } = await env.DB.prepare('SELECT id, title, subtitle FROM users').all<{ id: string; title: string | null; subtitle: string | null }>()
+    expect(results.length).toBe(seed.users.length)
+    expect(results.filter(r => r.title !== null).length).toBeGreaterThan(0)
+    for (const r of results) expect(r.subtitle, r.id).toBe(r.title)
+    expect(Object.fromEntries(results.map(r => [r.id, r.title]))).toEqual(Object.fromEntries(seed.users.map(u => [u.id, u.title])))
+  })
+
   it('derives its keep-lists from the seed, not a hardcoded id list', async () => {
     // The "delete non-seed rows" steps used to hardcode one seed's ids, which would
     // make a second seed delete its own roster on every reset. Run a variant seed
@@ -300,7 +311,7 @@ describe('runDemoReset with the default seed', () => {
       ...seed,
       users: [...seed.users, {
         id: 'other-user', email: 'other@demo.example', name: 'Other Persona',
-        role: 'member', subtitle: 'Staff · Elsewhere', createdDaysAgo: 5,
+        role: 'member', title: 'Staff · Elsewhere', createdDaysAgo: 5,
         canVote: true, lastActiveDaysAgo: 1,
       }],
       roles: [{ id: 'other-role', name: 'Other Role' }],

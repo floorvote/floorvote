@@ -21,3 +21,15 @@
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src https://challenges.cloudflare.com blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+
+# The email-change confirmation page carries a live token in its URL. It sends
+# no referrer, so no request it makes can pass the token on. Rules match the
+# request path, so this applies to the SPA shell served there. The page also
+# sets a referrer meta tag (web/src/pages/ConfirmEmailChange.tsx).
+/auth/confirm-email
+  Referrer-Policy: no-referrer
+
+# The "This wasn't me" page (web/src/pages/ConfirmEmailChange.tsx) carries a
+# live token the same way.
+/auth/not-me
+  Referrer-Policy: no-referrer

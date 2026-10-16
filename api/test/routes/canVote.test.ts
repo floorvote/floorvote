@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, seedUser, seedSession, seedBill, stubFetch } from '../helpers'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 describe('canVote', () => {
   describe('GET /auth/me', () => {

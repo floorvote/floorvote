@@ -302,6 +302,18 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
     expect(sent.map(m => m.billId).sort()).toEqual([501, 502])
   })
 
+  it('rejects a billIds that isn\'t a list', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds: '501' }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(400)
+    expect(sent).toHaveLength(0)
+  })
+
   it('empty billIds queues nothing', async () => {
     const { env2, sent } = ingestorEnv()
     const res = await app.fetch(
@@ -353,6 +365,380 @@ describe('POST /tenants/promote-bills/:tenantId — bulk promote', () => {
     expect(res.status).toBe(200)
     expect((await res.json() as any).promoted).toBe(30)
     expect(sent).toHaveLength(30)
+  })
+})
+
+describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking them', () => {
+  // An instance asks for a bill's text when it analyzes a companion that didn't match its keywords.
+  // The bill is fetched and sent on like any ingest, and stays as untracked as it was.
+  async function seedLinked() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      { billId: 601, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H601', title: 'A', changeHash: 'h1', status: 1 },
+      { billId: 602, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H602', title: 'B', changeHash: 'h2', status: 1 },
+      { billId: 603, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H603', title: 'C', changeHash: 'h3', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 601, tenantId: 'ri', matchType: null },
+      { billId: 602, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 603, tenantId: 'nj', matchType: null },
+    ])
+  }
+  function ingestorEnv() {
+    const sent: any[] = []
+    const env2: any = {
+      ...TEST_ENV,
+      INGESTOR_QUEUE: {
+        send: async (m: any) => sent.push(m),
+        sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)),
+      },
+    }
+    return { env2, sent }
+  }
+  const post = (env2: any, billIds: number[], tenant = 'ri') => app.fetch(
+    new Request(`http://central/api/tenants/fetch-bills/${tenant}`, { method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }) }),
+    env2,
+  )
+
+  it('queues the ingestor for each bill the tenant is linked to, with no AI forced', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [601, 602])
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).queued).toBe(2)
+    expect(sent).toEqual([{ billId: 601 }, { billId: 602 }])
+  })
+
+  it('leaves every match type as it was', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    expect((await post(env2, [601, 602])).status).toBe(200)
+    expect(sent).toHaveLength(2)
+    const db = drizzle(env.DB, { schema })
+    const rows = await db.select().from(schema.billTenants).all()
+    expect(rows.map(r => [r.billId, r.tenantId, r.matchType]).sort()).toEqual([[601, 'ri', null], [602, 'ri', 'keyword'], [603, 'nj', null]])
+  })
+
+  const FRESH = () => new Date().toISOString().slice(0, 19).replace('T', ' ')
+  const STALE = () => new Date(Date.now() - 25 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+
+  it('queues nothing for a bill fetched within the last day, whose fetch already notified every instance', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.update(schema.bills).set({ textsFetchedAt: FRESH() }).where(eq(schema.bills.billId, 601))
+    const { env2, sent } = ingestorEnv()
+    expect((await post(env2, [601])).status).toBe(200)
+    expect(sent).toEqual([])
+  })
+
+  it('queues a bill fetched more than a day ago', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.update(schema.bills).set({ textsFetchedAt: STALE() }).where(eq(schema.bills.billId, 601))
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601])
+    expect(sent).toEqual([{ billId: 601 }])
+  })
+
+  it('sends a bill whose texts central already holds on without a provider call', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.billTexts).values({ docId: 9001, billId: 601, date: '2026-01-01', type: 'Introduced' })
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601, 602])
+    expect(sent).toEqual([{ billId: 601, skipFetch: true }, { billId: 602 }])
+  })
+
+  it('ends the cycle of two instances each tracking one bill of a pair, after one round', async () => {
+    // ri tracks 601 and nj tracks 602, each holding the other bill as a stub, and neither has text.
+    // Each fetch notifies both instances, and the one tracking that bill asks for its companion.
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      { billId: 601, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H601', title: 'A', changeHash: 'h1', status: 1 },
+      { billId: 602, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H602', title: 'B', changeHash: 'h2', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 601, tenantId: 'ri', matchType: 'keyword' }, { billId: 602, tenantId: 'ri', matchType: null },
+      { billId: 601, tenantId: 'nj', matchType: null }, { billId: 602, tenantId: 'nj', matchType: 'keyword' },
+    ])
+    const { env2, sent } = ingestorEnv()
+    // ri is delivered 601 and asks for 602, nj is delivered 602 and asks for 601, and so on while the ingests keep notifying.
+    const asks = [['ri', 602], ['nj', 601], ['ri', 602], ['nj', 601], ['ri', 602], ['nj', 601]] as const
+    for (const [tenant, bill] of asks) await post(env2, [bill], tenant)
+    expect(sent).toEqual([{ billId: 602 }, { billId: 601 }])
+  })
+
+  it('leaves a bill unstamped when the queue send fails, so the next ask isn\'t held off', async () => {
+    await seedLinked()
+    const failing: any = { ...TEST_ENV, INGESTOR_QUEUE: { sendBatch: async () => { throw new Error('queue down') } } }
+    const res = await post(failing, [601])
+    expect(res.status).toBe(500)
+    const db = drizzle(env.DB, { schema })
+    const row = (await db.select({ requested: schema.bills.textsRequestedAt, fetched: schema.bills.textsFetchedAt }).from(schema.bills).where(eq(schema.bills.billId, 601)).get())!
+    expect(row).toEqual({ requested: null, fetched: null })
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601])
+    expect(sent).toEqual([{ billId: 601 }])
+  })
+
+  describe('a fetch that is queued but hasn\'t succeeded', () => {
+    // texts_fetched_at is the ingest's: stamped once a fetch succeeds, and read as "central looked and found no texts".
+    // Asking must not stamp it, or a fetch that fails (or hasn't run yet) reads as a bill with no texts.
+    const STAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+    const stamps = async (billId: number) => (await drizzle(env.DB, { schema }).select({ requested: schema.bills.textsRequestedAt, fetched: schema.bills.textsFetchedAt }).from(schema.bills).where(eq(schema.bills.billId, billId)).get())!
+
+    it('stamps the request, in the format every stored timestamp uses, and leaves texts_fetched_at to the ingest', async () => {
+      await seedLinked()
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601])
+      expect(sent).toEqual([{ billId: 601 }])
+      const row = await stamps(601)
+      expect(row.fetched).toBeNull()
+      expect(row.requested).toMatch(STAMP)
+    })
+
+    it('still reads as not checked, not as having no texts', async () => {
+      await seedLinked()
+      const { env2 } = ingestorEnv()
+      await post(env2, [601])
+      const res = await app.request('/api/bills/601', { headers: { 'x-admin-secret': 'sek' } }, TEST_ENV)
+      expect(res.status).toBe(200)
+      expect((await res.json() as any).textStatus).toBe('not_checked')
+    })
+
+    it('is held off for an hour, so a bill whose fetch is still running isn\'t queued again', async () => {
+      await seedLinked()
+      await drizzle(env.DB, { schema }).update(schema.bills).set({ textsRequestedAt: hoursAgo(0.5) }).where(eq(schema.bills.billId, 601))
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601])
+      expect(sent).toEqual([])
+    })
+
+    it('is asked for again after an hour, since its fetch never completed', async () => {
+      await seedLinked()
+      await drizzle(env.DB, { schema }).update(schema.bills).set({ textsRequestedAt: hoursAgo(2) }).where(eq(schema.bills.billId, 601))
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601])
+      expect(sent).toEqual([{ billId: 601 }])
+      expect((await stamps(601)).fetched).toBeNull()
+    })
+
+    it('is not asked for again within a day once the ingest has fetched it, however old the request', async () => {
+      await seedLinked()
+      await drizzle(env.DB, { schema }).update(schema.bills).set({ textsRequestedAt: hoursAgo(5), textsFetchedAt: hoursAgo(4) }).where(eq(schema.bills.billId, 601))
+      const { env2, sent } = ingestorEnv()
+      await post(env2, [601])
+      expect(sent).toEqual([])
+    })
+  })
+
+  it('rejects a billIds that isn\'t a list', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds: '501' }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(400)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('empty billIds queues nothing', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds: [] }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).promoted).toBe(0)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('rejects over-limit billIds with 400 and queues nothing (H4 quota guard)', async () => {
+    // Each promoted bill drives one getBill() in the ingestor against the shared
+    // monthly LegiScan quota — so the per-request count is capped at 1000.
+    const { env2, sent } = ingestorEnv()
+    const billIds = Array.from({ length: 1001 }, (_, i) => i + 1)
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json() as any
+    expect(body.error).toMatch(/too many billIds/i)
+    expect(sent).toHaveLength(0)
+    // Nothing written to bill_tenants either.
+    const db = drizzle(env.DB, { schema })
+    const rows = await db.select().from(schema.billTenants).all()
+    expect(rows.filter(r => r.tenantId === 'ri')).toHaveLength(0)
+  })
+
+  it('does NOT reject an under-limit batch (cap fires only above the limit)', async () => {
+    // A batch under REPROCESS_LIMIT must pass the cap and queue normally. (Kept
+    // small — well under D1's per-statement bound-parameter ceiling. The route
+    // upserts all links in a single statement, so it independently breaks for
+    // very large batches; chunking that insert is a separate latent bug, out of
+    // scope for the quota cap added here.)
+    const { env2, sent } = ingestorEnv()
+    const billIds = Array.from({ length: 30 }, (_, i) => i + 1)
+    const res = await app.fetch(
+      new Request('http://central/api/tenants/promote-bills/ri', {
+        method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }),
+      }),
+      env2,
+    )
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).promoted).toBe(30)
+    expect(sent).toHaveLength(30)
+  })
+})
+
+describe('POST /tenants/fetch-bills/:tenantId — fetch bills without tracking them', () => {
+  // An instance asks for a bill's text when it analyzes a companion that didn't match its keywords.
+  // The bill is fetched and sent on like any ingest, and stays as untracked as it was.
+  async function seedLinked() {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      { billId: 601, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H601', title: 'A', changeHash: 'h1', status: 1 },
+      { billId: 602, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H602', title: 'B', changeHash: 'h2', status: 1 },
+      { billId: 603, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H603', title: 'C', changeHash: 'h3', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 601, tenantId: 'ri', matchType: null },
+      { billId: 602, tenantId: 'ri', matchType: 'keyword' },
+      { billId: 603, tenantId: 'nj', matchType: null },
+    ])
+  }
+  function ingestorEnv() {
+    const sent: any[] = []
+    const env2: any = {
+      ...TEST_ENV,
+      INGESTOR_QUEUE: {
+        send: async (m: any) => sent.push(m),
+        sendBatch: async (ms: any[]) => sent.push(...ms.map((x: any) => x.body)),
+      },
+    }
+    return { env2, sent }
+  }
+  const post = (env2: any, billIds: number[], tenant = 'ri') => app.fetch(
+    new Request(`http://central/api/tenants/fetch-bills/${tenant}`, { method: 'POST', headers: AUTH, body: JSON.stringify({ billIds }) }),
+    env2,
+  )
+
+  it('queues the ingestor for each bill the tenant is linked to, with no AI forced', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [601, 602])
+    expect(res.status).toBe(200)
+    expect((await res.json() as any).queued).toBe(2)
+    expect(sent).toEqual([{ billId: 601 }, { billId: 602 }])
+  })
+
+  it('leaves every match type as it was', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    expect((await post(env2, [601, 602])).status).toBe(200)
+    expect(sent).toHaveLength(2)
+    const db = drizzle(env.DB, { schema })
+    const rows = await db.select().from(schema.billTenants).all()
+    expect(rows.map(r => [r.billId, r.tenantId, r.matchType]).sort()).toEqual([[601, 'ri', null], [602, 'ri', 'keyword'], [603, 'nj', null]])
+  })
+
+  const FRESH = () => new Date().toISOString().slice(0, 19).replace('T', ' ')
+  const STALE = () => new Date(Date.now() - 25 * 3600_000).toISOString().slice(0, 19).replace('T', ' ')
+
+  it('queues nothing for a bill fetched within the last day, whose fetch already notified every instance', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.update(schema.bills).set({ textsFetchedAt: FRESH() }).where(eq(schema.bills.billId, 601))
+    const { env2, sent } = ingestorEnv()
+    expect((await post(env2, [601])).status).toBe(200)
+    expect(sent).toEqual([])
+  })
+
+  it('queues a bill fetched more than a day ago', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.update(schema.bills).set({ textsFetchedAt: STALE() }).where(eq(schema.bills.billId, 601))
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601])
+    expect(sent).toEqual([{ billId: 601 }])
+  })
+
+  it('sends a bill whose texts central already holds on without a provider call', async () => {
+    await seedLinked()
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.billTexts).values({ docId: 9001, billId: 601, date: '2026-01-01', type: 'Introduced' })
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601, 602])
+    expect(sent).toEqual([{ billId: 601, skipFetch: true }, { billId: 602 }])
+  })
+
+  it('ends the cycle of two instances each tracking one bill of a pair, after one round', async () => {
+    // ri tracks 601 and nj tracks 602, each holding the other bill as a stub, and neither has text.
+    // Each fetch notifies both instances, and the one tracking that bill asks for its companion.
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.bills).values([
+      { billId: 601, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H601', title: 'A', changeHash: 'h1', status: 1 },
+      { billId: 602, sessionId: 1, state: 'RI', stateId: 44, billNumber: 'H602', title: 'B', changeHash: 'h2', status: 1 },
+    ])
+    await db.insert(schema.billTenants).values([
+      { billId: 601, tenantId: 'ri', matchType: 'keyword' }, { billId: 602, tenantId: 'ri', matchType: null },
+      { billId: 601, tenantId: 'nj', matchType: null }, { billId: 602, tenantId: 'nj', matchType: 'keyword' },
+    ])
+    const { env2, sent } = ingestorEnv()
+    // ri is delivered 601 and asks for 602, nj is delivered 602 and asks for 601, and so on while the ingests keep notifying.
+    const asks = [['ri', 602], ['nj', 601], ['ri', 602], ['nj', 601], ['ri', 602], ['nj', 601]] as const
+    for (const [tenant, bill] of asks) await post(env2, [bill], tenant)
+    expect(sent).toEqual([{ billId: 602 }, { billId: 601 }])
+  })
+
+  it('leaves a bill unstamped when the queue send fails, so the next ask isn\'t held off for a day', async () => {
+    await seedLinked()
+    const failing: any = { ...TEST_ENV, INGESTOR_QUEUE: { sendBatch: async () => { throw new Error('queue down') } } }
+    const res = await post(failing, [601])
+    expect(res.status).toBe(500)
+    const db = drizzle(env.DB, { schema })
+    expect((await db.select({ at: schema.bills.textsFetchedAt }).from(schema.bills).where(eq(schema.bills.billId, 601)).get())!.at).toBeNull()
+    const { env2, sent } = ingestorEnv()
+    await post(env2, [601])
+    expect(sent).toEqual([{ billId: 601 }])
+  })
+
+  it('rejects a billIds that isn\'t a list', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await app.fetch(new Request('http://central/api/tenants/fetch-bills/ri', { method: 'POST', headers: AUTH, body: JSON.stringify({ billIds: '601' }) }), env2)
+    expect(res.status).toBe(400)
+    expect(sent).toEqual([])
+  })
+
+  it('ignores a bill the tenant isn\'t linked to', async () => {
+    await seedLinked()
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [603, 999])
+    expect((await res.json() as any).queued).toBe(0)
+    expect(sent).toEqual([])
+  })
+
+  it('queues nothing for an empty list', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, [])
+    expect(res.status).toBe(200)
+    expect(sent).toEqual([])
+  })
+
+  it('rejects more bills than one request may ingest, since each costs a provider call', async () => {
+    const { env2, sent } = ingestorEnv()
+    const res = await post(env2, Array.from({ length: 1001 }, (_, i) => i + 1))
+    expect(res.status).toBe(400)
+    expect((await res.json() as any).error).toMatch(/too many billIds/i)
+    expect(sent).toEqual([])
   })
 })
 

@@ -22,8 +22,8 @@ export const SINGLE_STATE_SEED: DemoSeed = {
   stateCoverage: null,
 
   users: [
-    { id: 'demo-user', email: 'demo@example.com', name: 'Demo User', role: 'admin', subtitle: 'Fixture', createdDaysAgo: 30, canVote: true, lastActiveDaysAgo: 0 },
-    { id: 'fixture-member', email: 'member@example.com', name: 'Fixture Member', role: 'member', subtitle: 'Fixture', createdDaysAgo: 10, canVote: true, lastActiveDaysAgo: 1 },
+    { id: 'demo-user', email: 'demo@example.com', name: 'Demo User', role: 'admin', title: 'Fixture', createdDaysAgo: 30, canVote: true, lastActiveDaysAgo: 0 },
+    { id: 'fixture-member', email: 'member@example.com', name: 'Fixture Member', role: 'member', title: 'Fixture', createdDaysAgo: 10, canVote: true, lastActiveDaysAgo: 1 },
   ],
   roles: [{ id: 'fixture-role', name: 'Fixture Role' }],
   userRoles: [{ userId: 'fixture-member', roleId: 'fixture-role' }],

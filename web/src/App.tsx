@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar'
 import { MobileTopBar } from './components/MobileTopBar'
 import { Login } from './pages/Login'
 import { AuthVerify } from './pages/AuthVerify'
+import { ConfirmEmailChange, EmailChangeNotMe } from './pages/ConfirmEmailChange'
 import { FeedPane, feedLoader } from './pages/Feed'
 import { BillList, billListLoader } from './pages/BillList'
 import { BillDetail, billDetailLoader } from './pages/BillDetail'
@@ -174,6 +175,8 @@ export const routes = createRoutesFromElements(
   <Route HydrateFallback={RootHydrateFallback}>
     <Route path="/login" element={<Login />} />
     <Route path="/auth/verify" element={<AuthVerify />} />
+    <Route path="/auth/confirm-email" element={<ConfirmEmailChange />} />
+    <Route path="/auth/not-me" element={<EmailChangeNotMe />} />
     {hasTerms && (
       <Route path="/terms" element={
         <Suspense fallback={null}><LegalPage title="Terms of Use" content={legalDocs.terms!} /></Suspense>

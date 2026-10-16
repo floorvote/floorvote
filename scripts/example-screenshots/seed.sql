@@ -16,10 +16,10 @@ INSERT OR REPLACE INTO association_config (key, value) VALUES ('state_coverage',
 
 -- ── Users: rename the two visible in the bill-detail screenshot ─────────────
 
-UPDATE users SET name = 'Chad Mitchell',  subtitle = 'Registrar, Amity Island'
+UPDATE users SET name = 'Chad Mitchell',  title = 'Registrar, Amity Island'
   WHERE id = 'user-maria';
 
-UPDATE users SET name = 'Gerry Webb',     subtitle = 'Clerk, Emerald City'
+UPDATE users SET name = 'Gerry Webb',     title = 'Clerk, Emerald City'
   WHERE id = 'user-david';
 
 -- ── Roles: rename the one mentioned in comments ────────────────────────────

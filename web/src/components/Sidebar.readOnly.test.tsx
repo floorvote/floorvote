@@ -36,7 +36,7 @@ vi.mock('../lib/api', () => ({
   apiFetch: vi.fn(async (path: string) => {
     if (path === '/auth/me') {
       return {
-        id: 'u1', email: 'a@b.c', name: 'A', role: hoisted.role, subtitle: null,
+        id: 'u1', email: 'a@b.c', name: 'A', role: hoisted.role, title: null,
         canVote: true, emailDigestEnabled: false, emailWeekAheadEnabled: false,
         lastSeenFeed: null, isLastOwner: false,
       }
@@ -136,6 +136,13 @@ describe('Sidebar Feedback entry point in demo mode', () => {
   it('is visible when not in demo mode', async () => {
     renderSidebar()
     expect(await screen.findByRole('button', { name: /feedback/i })).toBeInTheDocument()
+  })
+
+  // Opens a form, so the label ends in an ellipsis (AGENTS.md, "Button labels").
+  it('is labelled "Feedback…" and opens the feedback form', async () => {
+    renderSidebar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Feedback…' }))
+    expect(await screen.findByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 })
 

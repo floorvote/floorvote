@@ -8,7 +8,7 @@ import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
 import { ownerOfState } from '../lib/stateProviders'
-import { statusFields, vocabularyLabels } from '../lib/vocabulary'
+import { relationshipKind, statusFields, vocabularyLabels } from '../lib/vocabulary'
 import { billExtrasDetail } from '../lib/billExtras'
 import { calendarKind } from '../lib/billCalendar'
 import { calendarCoverage } from '../lib/bodyEvents'
@@ -17,6 +17,18 @@ import { billReferralDetails, pendingCommittee } from '../lib/committees'
 import type { Env } from '../types'
 
 export const billsRoutes = new Hono<{ Bindings: Env }>()
+
+/**
+ * The newest text we hold a copy of: latest date, then highest doc id. Dates are
+ * whole days, so same-day versions tie, and providers mint doc ids in issue
+ * order. Every route that reads "the" text uses this, so the hash sent to
+ * instances and the text AI reads are the same version.
+ */
+function newestStoredText<T extends { date: string; docId: number; r2Key: string | null }>(texts: T[]): T | undefined {
+  return texts
+    .filter(t => t.r2Key)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.docId - a.docId)[0]
+}
 
 billsRoutes.use('*', async (c, next) => {
   if (!(await secretsMatch(c.req.header('x-admin-secret'), c.env.ADMIN_SECRET))) {
@@ -225,9 +237,7 @@ billsRoutes.get('/:id', async (c) => {
   }
   for (const list of legislatorVotesByRc.values()) list.sort((a, b) => a.name.localeCompare(b.name))
 
-  const textWithR2 = [...texts]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .find(t => t.r2Key)
+  const textWithR2 = newestStoredText(texts)
 
   // 'fetch_failed' means we tried to download every text we know about and none
   // of them yielded a usable document (see bill_texts.fetch_error). It ranks
@@ -335,7 +345,10 @@ billsRoutes.get('/:id', async (c) => {
       identifier: s.sastBillNumber,
       sastBillId: s.sastBillId,
       session: String(bill.sessionId),
+      // The raw label's slug, as it has always been sent.
       relationType: s.type.toLowerCase().replace(/\s+/g, '-'),
+      // What the provider's vocabulary makes of the label: identical, package, or related.
+      kind: relationshipKind(provider, bill.state, s.type),
     })),
     calendar: calendarEntries.map(e => ({
       eventHash: e.eventHash ?? '',
@@ -450,14 +463,12 @@ billsRoutes.get('/:id/text', async (c) => {
 
   const db = drizzle(c.env.DB, { schema })
 
-  const texts = await db.select({ r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId })
+  const texts = await db.select({ r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId, date: schema.billTexts.date })
     .from(schema.billTexts)
     .where(eq(schema.billTexts.billId, numeric))
     .all()
 
-  const withKey = texts
-    .sort((a, b) => b.docId - a.docId)
-    .find(t => t.r2Key)
+  const withKey = newestStoredText(texts)
 
   if (!withKey?.r2Key) return c.json({ error: 'no text available' }, 404)
 
