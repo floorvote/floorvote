@@ -22,3 +22,7 @@ export function orgRelevanceLabel(noun: string): string {
 export function orgRolesLabel(noun: string): string {
   return `${titleCase(noun)} roles`
 }
+
+export function orgNotificationsLabel(_noun?: string | null): string {
+  return ''
+}
