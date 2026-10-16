@@ -14,7 +14,7 @@ function member(overrides: Record<string, unknown>) {
     email: 'x@example.com',
     name: 'Someone',
     role: 'member' as const,
-    subtitle: null,
+    title: null,
     createdAt: '2024-01-01T00:00:00Z',
     lastActive: '2024-01-01T00:00:00Z',
     deactivatedAt: null,

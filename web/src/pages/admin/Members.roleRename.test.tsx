@@ -13,7 +13,7 @@ const OWNER = {
   email: 'owner@example.com',
   name: 'Sole Owner',
   role: 'owner' as const,
-  subtitle: null,
+  title: null,
   createdAt: '2024-01-01T00:00:00Z',
   lastActive: '2024-01-01T00:00:00Z',
   deactivatedAt: null,

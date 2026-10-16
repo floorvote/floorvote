@@ -28,7 +28,7 @@ type Member = {
   email: string
   name: string
   role: 'admin' | 'member' | 'owner'
-  subtitle: string | null
+  title: string | null
   createdAt: string
   lastActive: string
   deactivatedAt: string | null
@@ -584,7 +584,7 @@ export function Members() {
     if (!q) return true
     // Name, email, any Role name, or the permission label as displayed. An
     // Owner is an Admin with extra powers, so Owners also match queries inside
-    // "admin"; "owner" still matches only Owners. Subtitle deliberately never
+    // "admin"; "owner" still matches only Owners. Title deliberately never
     // matches, to keep Role searches from pulling in Members outside the Role.
     const fields = [displayName(m), m.email, accountRoleLabel(m.role), ...m.roles.map(r => r.name)]
     if (fields.some(f => f.toLowerCase().includes(q))) return true
@@ -1057,7 +1057,7 @@ export function Members() {
                       <MemberNameCell
                         name={member.name}
                         email={member.email}
-                        subtitle={member.subtitle}
+                        title={member.title}
                         isSelf={isSelf}
                       />
                     </td>

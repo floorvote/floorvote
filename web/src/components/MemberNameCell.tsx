@@ -3,12 +3,12 @@ import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 export interface MemberNameCellProps {
   name: string
   email: string
-  subtitle?: string | null
+  title?: string | null
   isSelf?: boolean
 }
 
 // The shared name-cell body for both member surfaces: the admin Members table
-// and the sidebar members popup. Order is always name → subtitle → email.
+// and the sidebar members popup. Order is always name → title → email.
 //
 // The email is a blue-link on both surfaces. The admin table used to render it
 // as muted gray with four inline handlers toggling text-decoration; that was
@@ -21,7 +21,7 @@ export interface MemberNameCellProps {
 //
 // A member with no name (never set, or cleared) shows by email: the email link
 // takes the name's place on the first line, and isn't repeated below.
-export function MemberNameCell({ name, email, subtitle, isSelf = false }: MemberNameCellProps) {
+export function MemberNameCell({ name, email, title, isSelf = false }: MemberNameCellProps) {
   const emailLink = (style: React.CSSProperties) => (
     <a href={`mailto:${email}`} className="blue-link" style={{ wordBreak: 'break-all', ...style }}>
       {email}
@@ -41,8 +41,8 @@ export function MemberNameCell({ name, email, subtitle, isSelf = false }: Member
           }}>ME</span>
         )}
       </div>
-      {subtitle && (
-        <div style={{ fontSize: fontSize.sm, color: color.textSlate500, marginTop: 1 }}>{subtitle}</div>
+      {title && (
+        <div style={{ fontSize: fontSize.sm, color: color.textSlate500, marginTop: 1 }}>{title}</div>
       )}
       {name && emailLink({ fontSize: fontSize.sm, display: 'block' })}
     </>
