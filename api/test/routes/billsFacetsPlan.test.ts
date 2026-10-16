@@ -125,4 +125,49 @@ describe('GET /bills/facets query plans', () => {
     expect(counts.length, 'no special counts').toBeGreaterThanOrEqual(4)
     for (const count of counts) expect(count.plan, `${count.sql}\n${count.plan}`).not.toMatch(TABLE_SCAN)
   })
+
+  // The probe behind `hasDrafts` (#551): does this tenant have any draft at all. It is the one statement
+  // of a request that reads `bills` by is_draft alone and returns a row, not a count.
+  async function draftsProbe(qs = ''): Promise<Planned> {
+    const probes: Planned[] = []
+    for (const s of await statementsFor(qs)) {
+      if (/\bfrom "bills"/i.test(s.sql) && /is_draft/.test(s.sql) && !/COUNT\(/i.test(s.sql) && /limit/i.test(s.sql)) {
+        probes.push({ sql: s.sql, plan: await plan(s) })
+      }
+    }
+    expect(probes.length, `expected one drafts probe, saw: ${probes.map(p => p.sql).join(' | ')}`).toBe(1)
+    return probes[0]
+  }
+
+  it('writes the 1 in the probe\'s SQL rather than binding it, so the partial index applies whatever the engine', async () => {
+    // A statement with `is_draft = ?` can use the partial index only where the engine re-plans with the
+    // bound value. The SQLite of the tests does and the plain one scans, so the SQL carries the literal.
+    const probe = await draftsProbe()
+    expect(probe.sql).toMatch(/"is_draft" = 1\b/)
+  })
+
+  it('probes for a draft through the partial drafts index, not a scan of the bills', async () => {
+    // The tenant of this fixture has one draft in 30,000 bills, after ANALYZE.
+    const probe = await draftsProbe()
+    expect(probe.plan, `${probe.sql}\n${probe.plan}`).toMatch(/idx_bills_drafts/)
+    expect(probe.plan, `${probe.sql}\n${probe.plan}`).not.toMatch(TABLE_SCAN)
+  })
+
+  it('probes the same way when no bill is a draft and the statistics say one value', async () => {
+    // The case that scanned: with no draft, idx_bills_is_draft has a single distinct value in sqlite_stat1,
+    // so the planner reads the whole table before it would read that index.
+    await env.DB.batch([env.DB.prepare("UPDATE bills SET is_draft = 0 WHERE is_draft = 1"), env.DB.prepare('ANALYZE')])
+    try {
+      const probe = await draftsProbe()
+      expect(probe.plan, `${probe.sql}\n${probe.plan}`).toMatch(/idx_bills_drafts/)
+      expect(probe.plan, `${probe.sql}\n${probe.plan}`).not.toMatch(TABLE_SCAN)
+    } finally {
+      await env.DB.batch([env.DB.prepare("UPDATE bills SET is_draft = 1 WHERE id = 'bill00002'"), env.DB.prepare('ANALYZE')])
+    }
+  })
+
+  it('probes the same way when the filters narrow the facets, since hasDrafts ignores them', async () => {
+    const probe = await draftsProbe('status=Passed&priority=high&drafts=1')
+    expect(probe.plan, `${probe.sql}\n${probe.plan}`).toMatch(/idx_bills_drafts/)
+  })
 })
