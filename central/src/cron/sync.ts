@@ -50,7 +50,7 @@ export async function runSync(env: Env, db: Db): Promise<void> {
   // ownership row, and any whose row names it. A state another provider owns
   // is synced by that provider (cron/sync-snapshots.ts).
   const provider = getProvider(DEFAULT_PROVIDER_ID)
-  const owners = await loadStateOwners(env, db, { reportRefusals: true })
+  const owners = await loadStateOwners(db)
   for (const state of trackedStates) if (ownerOf(owners, state) !== provider.id) trackedStates.delete(state)
 
   if (trackedStates.size === 0) return

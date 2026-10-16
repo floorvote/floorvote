@@ -25,11 +25,6 @@ export type Env = {
    */
   LIS_API_KEY?: string
   /**
-   * "DC" to seed DC's ownership row for LIMS on the first sync, when DC has no
-   * row (lib/stateProviders.ts). Kept for one release.
-   */
-  LIMS_STATES?: string
-  /**
    * Comma-separated LIMS category ids to sync (GET LegislationCategories).
    * Default "1,6,13,14,18": bills, resolutions, grant budget modifications,
    * reprogrammings, and oversight hearing/roundtable notices.

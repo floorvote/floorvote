@@ -116,9 +116,6 @@ EMAIL_PROVIDER = "cloudflare"
 # from the LIS API, and only when the optional LIS_API_KEY secret is set.
 # Without it Virginia bills have no text. The API's terms allow
 # non-commercial use only, so setting the key accepts them.
-# For one release only, this older var still seeds a state's claim on the
-# first sync, when the state has none. Remove it once the claim exists.
-# LIMS_STATES = "DC"
 
 [env.legiscan.triggers]
 crons = ["0 * * * *"]

@@ -101,7 +101,7 @@ When upstream changes a feature you extended, such as a simpler event-rules UI (
 
 ## Before You Deploy
 
-1. **Configuration.** Your gitignored `central/wrangler.toml` already names `src/index-legiscan.ts` and `migrations-legiscan`. Keep the `LIMS_API_KEY` secret (claiming DC for LIMS needs it), `LIMS_STATES = "DC"` for now (a safety net for DC's ownership row, below), the hourly cron, and `LIMS_INGESTOR_QUEUE` with its consumer at `max_concurrency = 1` (LIMS answers 429 above about two concurrent requests). Compare the rest with `central/wrangler.example.toml`. Deploy central before the instances. Each instance's footer credit comes from central now (DC's from the LIMS provider's own declaration), so the LIMS credit is there when the tenant upgrades. Each instance can then drop `DATA_SOURCES = "lims"`, and one that still sets it is unaffected. Its `PROVIDER` var is no longer read. Keep your deep analysis vars if you ported that feature.
+1. **Configuration.** Your gitignored `central/wrangler.toml` already names `src/index-legiscan.ts` and `migrations-legiscan`. Keep the `LIMS_API_KEY` secret (claiming DC for LIMS needs it), the hourly cron, and `LIMS_INGESTOR_QUEUE` with its consumer at `max_concurrency = 1` (LIMS answers 429 above about two concurrent requests). Compare the rest with `central/wrangler.example.toml`. Deploy central before the instances. Each instance's footer credit comes from central now (DC's from the LIMS provider's own declaration), so the LIMS credit is there when the tenant upgrades. Each instance can then drop `DATA_SOURCES = "lims"`, and one that still sets it is unaffected. Its `PROVIDER` var is no longer read. Keep your deep analysis vars if you ported that feature.
 2. **Rehearse on copies.** Export each database, read-only, from your production checkout (so wrangler finds the bindings), into a directory outside both checkouts: the exports hold members' emails and sign-in history, and `.gitignore` doesn't cover `*.sql`. A D1 export holds up the database's other queries while it runs, so start it away from the top of the hour. Then run the rehearsal from your upgrade branch, with absolute paths:
 
    ```bash
@@ -123,7 +123,7 @@ When upstream changes a feature you extended, such as a simpler event-rules UI (
       WHERE b.state = 'DC' AND (b.bill_id < 1000000000 OR b.bill_id >= 2000000000)"
    ```
 
-   It must be 0: no LegiScan DC bill is tracked by an instance. Otherwise upstream refuses to seed DC for LIMS, since instances would hold both providers' copies of the same bills, and DC stays on LegiScan (see "If Something Goes Wrong").
+   It must be 0: no LegiScan DC bill is tracked by an instance. Otherwise upstream refuses the claim of DC for LIMS, since instances would hold both providers' copies of the same bills, and DC stays on LegiScan (see "If Something Goes Wrong").
 
 ## Deploy
 
@@ -142,13 +142,13 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
      -H 'content-type: application/json' -d '{"provider":"lims"}'
    ```
 
-   It answers 200 when no LegiScan DC bill is tracked, which the preflight checked. Claim before the next top of the hour. A state with no ownership row is LegiScan's, so without a claim, the next LegiScan sync could link LegiScan's copies of DC bills to instances, and the claim would then be refused (409). Upstream releases from #303 until #319 also seed DC's row from `LIMS_STATES` on that first sync, which covers a late claim. From #319 on, `LIMS_STATES` isn't read, and the claim is the only way DC moves to LIMS. `central/test/cron/fork-upgrade.test.ts` covers both paths.
+   It answers 200 when no LegiScan DC bill is tracked, which the preflight checked. Claim before the next top of the hour. A state with no ownership row is LegiScan's, so without a claim, the next LegiScan sync could link LegiScan's copies of DC bills to instances, and the claim would then be refused (409). Nothing else writes DC's row. Upstream no longer reads `LIMS_STATES` (#319), and your migrations write no row, so the claim is the only way DC moves to LIMS, with no safety net for a late one. A fork on a build older than the ownership table (#303) has no row until it claims. `central/test/cron/fork-upgrade.test.ts` covers the claim, a refused claim, and `LIMS_STATES` left set or removed.
 
 3. **Each instance.** `cd api && npm run deploy:tenant -- <tenant>`. Until an instance is upgraded, its old Council mirror calls `/bills/council-events`, which upstream central doesn't have, and fails without changing the rows it holds. Its directory pages fail the same way until your ported directory route is deployed.
 
 ## After You Deploy
 
-1. **Confirm DC's ownership row.** It's written by your claim, or, in a release that still reads `LIMS_STATES`, by the first LIMS sync or Council calendar job, which logs "DC now syncs from lims, seeded from LIMS_STATES."
+1. **Confirm DC's ownership row.** Your claim writes it.
 
    ```bash
    curl "$CENTRAL/api/admin/state-providers" -H "x-admin-secret: $ADMIN_SECRET"
@@ -167,7 +167,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
 3. **Check each team's event rules** on its settings page (Calendar events) within the hour. They should match the team's #217 settings: committee names as committees, hearing types as event types, and the tracked-bills choice.
 4. **Check the LegiScan budget.** Central migration `0020_legiscan_limit_10k` lowers the dashboard's monthly budget from 30,000 to 10,000 calls (LegiScan's free tier since October 1, 2026) if you never changed it. Raise it on the dashboard if you pay for more.
-5. **Remove `LIMS_STATES`** from `central/wrangler.toml` at your next deploy, once step 1 shows DC's row. The row decides from then on: `LIMS_STATES` never changes a state that has one, and #319, one release after #303, stops reading it. After that, a state changes provider only by a claim or a cutover (`docs/internal/sync-pipeline.md`, "State ownership").
+5. **Remove `LIMS_STATES`** from `central/wrangler.toml` at your next deploy. Central doesn't read it (#319): only the row decides, and a state changes provider only by a claim or a cutover (`docs/internal/sync-pipeline.md`, "State ownership").
 6. **Drop `council_events`** once every instance is upgraded and its Council rows are body events. Upstream's `body_events` replaced it.
 
    ```bash
@@ -178,7 +178,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
 ## If Something Goes Wrong
 
-- **The claim answered 409, or DC wasn't seeded** and the LegiScan sync logs a refused seed each hour. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. Find it, give it back to LIMS, then claim DC again (or, while `LIMS_STATES` is read, let the next sync seed it). The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one:
+- **The claim answered 409,** and DC has no row, so LegiScan keeps syncing it. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. Find it, give it back to LIMS, then claim DC again. The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one:
 
   ```sql
   SELECT bill_id, bill_number FROM bills
