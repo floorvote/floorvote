@@ -3,6 +3,7 @@ import { color as lightColor, radius, fontSize, fontWeight } from '../../../shar
 import { color } from './tokens'
 import { darkColor, colorVariablesCss } from './colorModes'
 import { contrast, relLuminance } from '../test/colorTokens'
+import { PASSAGE_FRAME } from '../lib/claimLinks'
 
 describe('tokens', () => {
   it('exposes expected primitive values', () => {
@@ -65,9 +66,9 @@ describe('brand colors in both modes', () => {
 // --- Claim links (#571) ------------------------------------------------------
 // The claim link's underline is Honey in both modes, like the logo mark and the
 // settings-nav line: it reads on the light and the dark cards alike. The hover
-// wash and the highlighted passage's fill are a pale Honey in light mode and a
-// dark one in dark mode. The passage renders in a frame that always shows a
-// light page (lib/claimLinks.ts), so it uses the light pair in both modes.
+// wash is a pale Honey in light mode and a dark one in dark mode. The passage
+// highlight is not a token: it renders in a frame that always shows a light
+// page, so its colors are named constants in lib/claimLinks.ts.
 describe('claim link colors', () => {
   it('draws the claim underline in exact Honey in both modes', () => {
     expect(lightColor.claimUnderline).toBe('#e8a33d')
@@ -80,21 +81,28 @@ describe('claim link colors', () => {
     expect(darkColor.claimHoverBg).toBe('#3a3020')
   })
 
-  it('has the passage highlight in each mode', () => {
-    expect(lightColor.passageMarkBg).toBe('#fde68a')
-    expect(darkColor.passageMarkBg).toBe('#5c4512')
-    expect(darkColor.passageMarkText).toBe('#e8edf4')
-  })
-
-  it('gives the web the claim colors as CSS variables defined in both modes', () => {
+  it('defines each claim color variable once per mode in the stylesheet', () => {
+    const css = colorVariablesCss()
     expect(color.claimUnderline).toBe('var(--fv-claim-underline)')
     expect(color.claimHoverBg).toBe('var(--fv-claim-hover-bg)')
-    expect(color.passageMarkBg).toBe('var(--fv-passage-mark-bg)')
-    expect(color.passageMarkText).toBe('var(--fv-passage-mark-text)')
+    expect(css).toContain(':root{color-scheme:light;')
+    const [light, dark] = css.split(':root.dark{')
+    expect(light).toContain('--fv-claim-underline:#e8a33d;')
+    expect(light).toContain('--fv-claim-hover-bg:#fbecd5;')
+    expect(dark).toContain('--fv-claim-underline:#e8a33d;')
+    expect(dark).toContain('--fv-claim-hover-bg:#3a3020;')
   })
 
-  it('reads the dark passage text at 7:1 or better on its fill', () => {
-    expect(contrast(darkColor.passageMarkText, darkColor.passageMarkBg)).toBeGreaterThanOrEqual(7)
+  it('draws the passage in the frame in the light pair: pale fill, dark text, Honey line, navy ring', () => {
+    expect(PASSAGE_FRAME).toEqual({ fill: '#fde68a', text: '#0f172a', line: '#e8a33d', ring: '#1e3a5f' })
+  })
+
+  it('reads the passage text at 4.5:1 or better on its fill in the frame', () => {
+    expect(contrast(PASSAGE_FRAME.text, PASSAGE_FRAME.fill)).toBeGreaterThanOrEqual(AA_NORMAL)
+  })
+
+  it('shows the ring on the fill it outlines at 3:1 or better', () => {
+    expect(contrast(PASSAGE_FRAME.ring, PASSAGE_FRAME.fill)).toBeGreaterThanOrEqual(AA_GRAPHICS)
   })
 })
 
@@ -152,11 +160,10 @@ for (const [mode, c] of MODES) {
       ['wordmark Floor on the card', c.wordmarkFloor, c.white],
       ['wordmark Floor on the login page', c.wordmarkFloor, c.bgLoginPage],
       // Claim links (#571): the summary's body text keeps its color on the
-      // hover wash, and the highlighted passage's text reads on its fill.
+      // hover wash.
       ['body text on the claim hover wash', c.textPrimary, c.claimHoverBg],
       ['slate summary text on the claim hover wash', c.textSlate, c.claimHoverBg],
       ['slate-500 text on the claim hover wash', c.textSlate500, c.claimHoverBg],
-      ['highlighted passage text', c.passageMarkText, c.passageMarkBg],
       // The focus ring is drawn over the wash and must still be seen (graphics).
       ['focus ring on the claim hover wash', c.focusRing, c.claimHoverBg, AA_GRAPHICS],
     )
