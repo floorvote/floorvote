@@ -186,13 +186,25 @@ const TABLE_PARENTS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGRO
 // text color is set too, so the passage is legible even on a bill that sets its
 // own colors.
 //
+/**
+ * The passage's colors in the frame: the light palette's values, which read on
+ * the light page the frame always shows. They are not tokens, since the app's
+ * color mode never changes them. Text on the fill is checked in tokens.test.ts.
+ */
+export const PASSAGE_FRAME = {
+  fill: lightColor.borderAmber,
+  text: lightColor.textPrimary,
+  line: lightColor.claimUnderline,
+  ring: lightColor.focusRing,
+} as const
+
 // `!important`, so the bill's own CSS can't hide the highlight or its focus ring.
-const PASSAGE_CSS = `mark[data-fv-passage]{background:${lightColor.passageMarkBg} !important;color:${lightColor.passageMarkText} !important;`
-  + `box-shadow:inset 0 -2px 0 ${lightColor.claimUnderline} !important}`
+const PASSAGE_CSS = `mark[data-fv-passage]{background:${PASSAGE_FRAME.fill} !important;color:${PASSAGE_FRAME.text} !important;`
+  + `box-shadow:inset 0 -2px 0 ${PASSAGE_FRAME.line} !important}`
   + `#${PASSAGE_ID}{scroll-margin-top:40px !important}`
-  + `#${PASSAGE_ID}:focus{outline:2px solid ${lightColor.focusRing} !important;outline-offset:2px}`
+  + `#${PASSAGE_ID}:focus{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:2px}`
   // The passage can span several marks: ring them all while the first has focus.
-  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${lightColor.focusRing} !important;outline-offset:2px}`
+  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${PASSAGE_FRAME.ring} !important;outline-offset:2px}`
 
 const ENTITY = /&[A-Za-z][A-Za-z0-9]{0,31};/g
 const ENTITY_CACHE = new Map<string, string>()

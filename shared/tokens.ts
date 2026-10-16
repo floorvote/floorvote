@@ -61,8 +61,6 @@ export const color = {
   // --- Claim links (#571) ---
   claimUnderline:    '#e8a33d', // Honey: the underline of a claim in the summary, and the line under its highlighted passage. The same in both modes
   claimHoverBg:      '#fbecd5', // faint Honey wash behind a claim link on hover and keyboard focus; body text stays the same color on it
-  passageMarkBg:     '#fde68a', // fill of the highlighted passage in the bill text frame
-  passageMarkText:   '#0f172a', // text on that fill. The frame renders a light page in both modes, so the web uses this light pair there
 
   // --- Surface & background ---
   white:             '#fff',    // card / panel surface (absorbs #ffffff, #fafafa). Dark in dark mode; for text on a fill use textOnFill
