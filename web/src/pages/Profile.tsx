@@ -587,9 +587,9 @@ export function Profile() {
         )}
       </div>
 
-      {/* Email card: one section for every email a member can control, plus the always-sent line */}
+      {/* Notifications card: every email a member can control, most frequent first, plus the always-sent line */}
       <div style={SECTION_CARD}>
-        <h2 style={CARD_TITLE}>Your Email</h2>
+        <h2 style={CARD_TITLE}>Notifications</h2>
         <p style={{ ...HELPER_TEXT, marginTop: 0, marginBottom: 12 }}>
           You'll always get an email when someone mentions you, your role, @admins, or @everyone.
         </p>
@@ -841,47 +841,51 @@ export function Profile() {
               </label>
             </div>
           </div>
+        </div>
+      </div>
 
-          <div
-            id="setting-color-mode"
-            style={{
-              padding: '12px 14px',
-              border: `1px solid ${color.borderDefault}`,
-              borderRadius: radius.lg,
-              background: color.white,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                <div id="color-mode-label" style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Appearance</div>
-                <div>System follows your device. Saved in this browser.</div>
-              </div>
-              <div
-                role="group"
-                aria-labelledby="color-mode-label"
-                style={{ display: 'inline-flex', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', flexShrink: 0 }}
-              >
-                {COLOR_MODES.map(({ value, label }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={colorMode === value}
-                    onClick={() => { setColorMode(value); setColorModeState(value) }}
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: fontSize.sm,
-                      cursor: 'pointer',
-                      border: 'none',
-                      background: colorMode === value ? color.bgAmberPriority : color.white,
-                      color: colorMode === value ? color.billBadgeNavy : color.textSlate,
-                      fontWeight: colorMode === value ? fontWeight.semibold : fontWeight.normal,
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+      {/* Appearance card: display preferences, saved in this browser */}
+      <div style={SECTION_CARD}>
+        <h2 style={CARD_TITLE}>Appearance</h2>
+        <div
+          id="setting-color-mode"
+          style={{
+            padding: '12px 14px',
+            border: `1px solid ${color.borderDefault}`,
+            borderRadius: radius.lg,
+            background: color.white,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+              <div id="color-mode-label" style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Color mode</div>
+              <div>System follows your device. Saved in this browser.</div>
+            </div>
+            <div
+              role="group"
+              aria-labelledby="color-mode-label"
+              style={{ display: 'inline-flex', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', flexShrink: 0 }}
+            >
+              {COLOR_MODES.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={colorMode === value}
+                  onClick={() => { setColorMode(value); setColorModeState(value) }}
+                  style={{
+                    padding: '5px 12px',
+                    fontSize: fontSize.sm,
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: colorMode === value ? color.bgAmberPriority : color.white,
+                    color: colorMode === value ? color.billBadgeNavy : color.textSlate,
+                    fontWeight: colorMode === value ? fontWeight.semibold : fontWeight.normal,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         </div>
