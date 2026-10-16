@@ -290,6 +290,10 @@ describe('nothing renders yet', () => {
     await env.DB.prepare('UPDATE bills SET claim_sources = NULL, claim_sources_doc_id = NULL, claim_sources_text_hash = NULL WHERE id = ?').bind(id).run()
     const without = await buildBillDetail(db, id, user, testEnv)
     expect(withSources).toEqual(without)
-    expect(JSON.stringify(withSources)).not.toMatch(/claim/i)
+    // The one claim field the detail carries is the instance's setting (#570).
+    // Nothing of what is stored leaks into it before #571 and #572 render links.
+    const { claimLinksEnabled, ...rest } = withSources as Record<string, unknown>
+    expect(claimLinksEnabled).toBe(true)
+    expect(JSON.stringify(rest)).not.toMatch(/claim/i)
   })
 })

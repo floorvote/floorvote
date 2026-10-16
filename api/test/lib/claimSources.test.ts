@@ -5,8 +5,8 @@ import { getDb } from '../../src/db/client'
 import { associationConfig } from '../../src/db/schema'
 import { claimLinksEnabled } from '../../src/lib/claimSources'
 
-// The per-instance claim links setting (#570) is on by default. Until #570
-// stores it, every instance reads as on.
+// The per-instance claim links setting (#570) is on by default. Turning it off,
+// and who can, is covered in test/routes/adminClaimLinks.test.ts.
 describe('claimLinksEnabled', () => {
   beforeEach(async () => {
     await resetDb()

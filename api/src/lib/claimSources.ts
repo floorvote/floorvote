@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { billTexts, bills } from '../db/schema'
+import { associationConfig, billTexts, bills } from '../db/schema'
 import type { AppDb } from '../types'
 
 // Claim sources (#568, design in #560): for each claim in an AI summary, a
@@ -62,14 +62,30 @@ export type ResolvedClaimSource = ClaimSource & {
   matched?: string
 }
 
+/** The `association_config` key holding the setting, a JSON boolean. Absent means on. */
+export const CLAIM_LINKS_KEY = 'claim_links_enabled'
+
 /**
- * Whether this instance asks for claim sources. On by default.
- *
- * #570 makes this a per-instance setting admins can turn off. Until it does,
- * every instance reads as on. Off means new analyses don't ask, and store none.
+ * The `association_config` key recording the last change to the setting, a JSON
+ * `{ by, at }`: the admin's user id and a database timestamp. Written together
+ * with the setting by `PUT /admin/claim-links` and by nothing else.
  */
-export async function claimLinksEnabled(_db: AppDb): Promise<boolean> {
-  return true
+export const CLAIM_LINKS_CHANGED_KEY = 'claim_links_changed'
+
+/**
+ * Whether this instance asks for claim sources, and shows their links. On by
+ * default, so a new instance and an existing one with no row both read as on
+ * until an admin turns it off (#570). Only a stored `false` is off: a row that
+ * can't be read is the default rather than a silent switch-off.
+ *
+ * Off means new analyses don't ask, and store none. Links already stored are
+ * left alone, and the bill page doesn't render them (#571, #572) until it is
+ * turned back on.
+ */
+export async function claimLinksEnabled(db: AppDb): Promise<boolean> {
+  const row = await db.select().from(associationConfig).where(eq(associationConfig.key, CLAIM_LINKS_KEY)).get()
+  if (!row) return true
+  try { return JSON.parse(row.value) !== false } catch { return row.value.trim() !== 'false' }
 }
 
 /**

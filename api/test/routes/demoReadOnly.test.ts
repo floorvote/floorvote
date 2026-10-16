@@ -285,6 +285,7 @@ const DENIED = new Set([
   'POST /api/mute-link',
   'POST /api/users/me/deactivate',
   'POST /api/users/me/email-change',
+  'PUT /api/admin/claim-links',
   'PUT /api/admin/custom-fields/:id',
   'PUT /api/admin/custom-fields/reorder',
   'PUT /api/admin/deletion-policy',
@@ -335,8 +336,8 @@ describe('demo write categorisation', () => {
 
   it('pins the size of each category so a silent shift is visible', () => {
     expect(DEMO_WRITE_ALLOWLIST.size).toBe(23)
-    expect(DENIED.size).toBe(57)
-    expect(registered().length).toBe(86)
+    expect(DENIED.size).toBe(58)
+    expect(registered().length).toBe(87)
   })
 
   it('refuses every denied route with the read-only message', async () => {

@@ -21,6 +21,7 @@ import { isWildcardKeyword } from '../../../../shared/keywords'
 import { buildDefaultAiContext, buildDefaultRelevanceQuestion, isAiConfigDefault } from '../../../../shared/aiDefaults'
 import { DEFAULT_TAXONOMY, serializeTaxonomy, type TaxonomyItem } from '../../../../shared/taxonomy'
 import { useUnsavedRegistration } from '../../lib/unsavedText'
+import { absoluteTime } from '../../lib/time'
 import { MissingRequiredReason, useRequiredSubmit } from '../../components/RequiredField'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import { KeywordMatchSummary } from './KeywordMatchSummary'
@@ -36,7 +37,13 @@ type ConfigData = {
   matched_bills_count?: number
   prioritized_bills_count?: number
   new_match_min_relevance?: number
+  claim_links_enabled?: boolean
+  claim_links_changed_at?: string | null
+  claim_links_changed_by?: ClaimLinksChangedBy | null
 }
+
+/** Who last changed the claim links setting. A member who has been removed is null. */
+type ClaimLinksChangedBy = { id: string; name: string | null; email: string }
 
 type CustomFieldDef = {
   id: string
@@ -119,6 +126,13 @@ export function Config() {
   // for this: reverting the unsaved-changes guard through it would flatten a
   // multi-line description and drop a row that has one but no name yet.
   const savedTaxonomyRows = useRef<TaxonomyRow[]>([])
+
+  // The claim links setting (#570). It saves the moment it's toggled, apart from
+  // the AI instructions above it, so it never rides along with unsaved edits.
+  const [claimLinks, setClaimLinks] = useState(true)
+  const [claimLinksChanged, setClaimLinksChanged] = useState<{ at: string; by: ClaimLinksChangedBy | null } | null>(null)
+  const [savingClaimLinks, setSavingClaimLinks] = useState(false)
+  const [saveClaimLinksError, setSaveClaimLinksError] = useState<string | null>(null)
 
   const [newMatchMinRelevance, setNewMatchMinRelevance] = useState(0)
   const [savingNewMatch, setSavingNewMatch] = useState(false)
@@ -209,6 +223,11 @@ export function Config() {
         setRelevanceQuestion(relevanceQuestionValue)
         const newMatchMinRelevanceValue = typeof data.new_match_min_relevance === 'number' ? data.new_match_min_relevance : 0
         setNewMatchMinRelevance(newMatchMinRelevanceValue)
+        // On unless an admin turned it off, as the server reads it.
+        setClaimLinks(data.claim_links_enabled !== false)
+        setClaimLinksChanged(data.claim_links_changed_at
+          ? { at: data.claim_links_changed_at, by: data.claim_links_changed_by ?? null }
+          : null)
         const loadedRows = rowsFromTaxonomy(
           Array.isArray(data.tag_taxonomy) ? data.tag_taxonomy as TaxonomyItem[] : [],
         )
@@ -435,6 +454,24 @@ export function Config() {
       setSaveAiError(err instanceof ApiError ? err.message : 'Failed to save.')
     } finally {
       setSavingAi(false)
+    }
+  }
+
+  async function handleToggleClaimLinks(next: boolean) {
+    setSaveClaimLinksError(null)
+    setClaimLinks(next)
+    setSavingClaimLinks(true)
+    try {
+      const saved = await apiFetch<{ enabled: boolean; changedAt: string | null; changedBy: ClaimLinksChangedBy | null }>(
+        '/admin/claim-links',
+        { method: 'PUT', body: JSON.stringify({ enabled: next }) },
+      )
+      if (saved?.changedAt) setClaimLinksChanged({ at: saved.changedAt, by: saved.changedBy ?? null })
+    } catch (err) {
+      setClaimLinks(!next)
+      setSaveClaimLinksError(err instanceof ApiError ? err.message : 'Failed to save.')
+    } finally {
+      setSavingClaimLinks(false)
     }
   }
 
@@ -913,6 +950,29 @@ export function Config() {
                 </span>
               )}
               {saveAiError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{saveAiError}</span>}
+            </div>
+
+            <div style={{ borderTop: `1px solid ${color.borderDefault}`, marginTop: 20, paddingTop: 16 }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: fontSize.sm, fontWeight: fontWeight.medium, color: color.textSlate, cursor: savingClaimLinks || demoLocked ? 'not-allowed' : 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={claimLinks}
+                  disabled={savingClaimLinks || demoLocked}
+                  onChange={(e) => void handleToggleClaimLinks(e.target.checked)}
+                  aria-describedby="config-claim-links-copy"
+                  style={{ margin: 0, accentColor: color.accentBlue }}
+                />
+                Link summary claims to the bill text
+              </label>
+              <div id="config-claim-links-copy" data-testid="claim-links-copy" style={hintStyle}>
+                When on, each claim in a bill's AI summary can link to the passage of the bill it came from. This may increase AI costs slightly. When off, new analyses don't ask for those passages and existing links show as plain text. Turning it back on shows stored links again.
+              </div>
+              {claimLinksChanged && (
+                <div data-testid="claim-links-changed" style={hintStyle}>
+                  Last changed{claimLinksChanged.by ? ` by ${claimLinksChanged.by.name || claimLinksChanged.by.email}` : ''} on {absoluteTime(claimLinksChanged.at)}.
+                </div>
+              )}
+              {saveClaimLinksError && <div style={{ ...hintStyle, color: color.textErrorRed }}>{saveClaimLinksError}</div>}
             </div>
           </>
         )}

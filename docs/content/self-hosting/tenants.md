@@ -356,7 +356,7 @@ Each key is a row, so `INSERT OR REPLACE` also works for a key you set earlier, 
 
 To analyze every bill instead, set the keywords to a single `*`. That is a keyword, not the `["*"]` in `state_coverage`, which means every state. It works only as the sole keyword: in a longer list it is ignored, since it would make every other keyword redundant. Saving it asks for confirmation and shows how many bills it would queue, and every one of them costs AI usage, so treat it as a cost decision.
 
-While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts.
+While you're here, set **What you call your group** under **Labels** (team, association, coalition, or a word of your own) — it drives the labels on the positions section. When you later change your AI instructions, **Save AI instructions** asks whether to apply them to bills that are already analyzed: prioritized bills only, all analyzed bills, or only future bill texts. Below the instructions, **Link summary claims to the bill text** is on by default and saves as soon as you toggle it; it records who changed it and when. Turned off, new analyses don't ask the model for claim links and links already stored show as plain text, and turned back on, stored links show again. (A bill re-analyzed while it's off loses its stored links.) See [how much it costs](/overview/how-much-does-it-cost#ai-bill-summaries) for what the links add per analysis.
 
 ## Step 12: Seed the active session(s)
 

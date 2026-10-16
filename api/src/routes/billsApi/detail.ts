@@ -19,6 +19,7 @@ import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadGroupTeamValues } from '../../lib/teamFields'
+import { claimLinksEnabled } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
@@ -330,6 +331,10 @@ export async function buildBillDetail(
     analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
     analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
     analysisTextStatus: analysisBill.textStatus ?? null,
+    // Whether the instance shows claim links (#570). Off, a bill's stored claim
+    // links render as plain text (#571, #572). It's the instance's setting, the
+    // same for every bill, and the stored links are untouched either way.
+    claimLinksEnabled: await claimLinksEnabled(db),
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     // The member's notes across the group, and the one note they edit, which
