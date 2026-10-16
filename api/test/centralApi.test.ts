@@ -25,6 +25,7 @@ describe('CentralApi RPC entrypoint', () => {
     await env.DB.prepare('UPDATE bills SET claim_sources = ?, claim_sources_doc_id = ? WHERE id = ?').bind(JSON.stringify(items), '5001', id).run()
     const entry = new CentralApi(createExecutionContext(), env)
     const counts = await entry.claimSourceCounts()
+    expect(typeof counts.computedAt).toBe('string')
     expect(counts.items).toEqual({ exact: 1, normalized: 0, fuzzy: 0, anchored: 0, ungrounded: 0, unverified: 1, total: 2 })
     expect(counts.analyses).toEqual({ withClaimSources: 1, emptyList: 0, noList: 0 })
     expect(counts.cutOffRetries).toBe(0)

@@ -93,3 +93,11 @@ export async function recordClaimSourcesCutOff(db: AppDb): Promise<void> {
     INSERT INTO association_config (key, value) VALUES (${CUTOFF_KEY}, '1')
     ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`)
 }
+
+/** The counts plus when they were counted, as the operator view shows them. */
+export type ClaimSourceCountsSnapshot = ClaimSourceCounts & { computedAt: string }
+
+// Stub for the red run: no cache.
+export async function cachedClaimSourceCounts(db: AppDb, now: number = Date.now()): Promise<ClaimSourceCountsSnapshot> {
+  return { ...(await computeClaimSourceCounts(db)), computedAt: new Date(now).toISOString() } // ts-write-ok: response payload, never a DB column
+}

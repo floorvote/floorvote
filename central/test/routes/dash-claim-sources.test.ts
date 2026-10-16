@@ -18,6 +18,7 @@ const COUNTS = {
   analyses: { withClaimSources: 7, emptyList: 2, noList: 5 },
   items: { exact: 40, normalized: 6, fuzzy: 9, anchored: 3, ungrounded: 4, unverified: 12, total: 74 },
   cutOffRetries: 3,
+  computedAt: '2026-03-01T12:00:00.000Z',
 }
 
 async function seedTenants() {

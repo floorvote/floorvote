@@ -11,6 +11,7 @@ const COUNTS = {
   analyses: { withClaimSources: 7, emptyList: 2, noList: 5 },
   items: { exact: 40, normalized: 6, fuzzy: 9, anchored: 3, ungrounded: 4, unverified: 12, total: 74 },
   cutOffRetries: 3,
+  computedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
 }
 const ZEROS = {
   analyses: { withClaimSources: 0, emptyList: 0, noList: 0 },
@@ -119,6 +120,27 @@ describe('the claim links section on an instance page', () => {
     renderPage()
     const s = within(await section())
     expect(s.getByText('Cut off, retried without claim sources').parentElement).toHaveTextContent(/sources\s*3$/)
+  })
+
+  it('says how old the counts are, since they are cached', async () => {
+    renderPage()
+    const s = within(await section())
+    expect(s.getByText(/Counted 12 minutes ago/)).toBeInTheDocument()
+  })
+
+  it('says just now for counts taken under a minute ago', async () => {
+    claimResponse = () => new Response(JSON.stringify({ data: { ...COUNTS, computedAt: new Date().toISOString() }, meta: {} }))
+    renderPage()
+    expect(within(await section()).getByText(/Counted just now/)).toBeInTheDocument()
+  })
+
+  it('shows the counts without an age when the instance sent none', async () => {
+    const { computedAt: _omit, ...noAge } = COUNTS
+    claimResponse = () => new Response(JSON.stringify({ data: noAge, meta: {} }))
+    renderPage()
+    const s = within(await section())
+    expect(s.getByRole('row', { name: /^Total/ })).toBeInTheDocument()
+    expect(s.queryByText(/Counted/)).toBeNull()
   })
 
   it('shows an instance with none as zeros, with no share to divide by', async () => {

@@ -126,7 +126,8 @@ describe('bills with null and empty claim sources', () => {
     await analyzed(item('exact', 2))
     const c = await counts()
     expect(c.items).toMatchObject({ exact: 2, total: 2 })
-    expect(c.analyses).toEqual({ withClaimSources: 1, emptyList: 0, noList: 0 })
+    // An AI-processed bill whose stored value is no usable list has no list.
+    expect(c.analyses).toEqual({ withClaimSources: 1, emptyList: 0, noList: 3 })
   })
 })
 
