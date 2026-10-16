@@ -57,6 +57,7 @@ import { OtherSessionNotice, billChoicesFrom, type BillChoice } from '../compone
 import { todayIso } from '../lib/calendarGrid'
 import { safeDate, safeTime } from '../lib/dates'
 import { ExternalLinkIcon } from '../components/ExternalLinkIcon'
+import { BillNavArrow } from '../components/BillNavArrow'
 import { isEditableTarget } from '../lib/isEditableTarget'
 import { BillPicker, type BillOption } from '../components/BillPicker'
 import { editableFieldBox } from '../lib/editableFieldStyle'
@@ -1466,14 +1467,16 @@ export function BillDetail() {
                   onClick={() => prevPath && navigateToBill(prevPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! - 1 })}
                   disabled={!prevPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: prevPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: prevPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Previous bill (←)"
-                >←</button>
+                  title="Previous bill"
+                  aria-label="Previous bill"
+                ><BillNavArrow direction="up" /></button>
                 <button
                   onClick={() => nextPath && navigateToBill(nextPath, { billPaths: navState!.billPaths!, currentIndex: navState!.currentIndex! + 1 })}
                   disabled={!nextPath || billNavPending}
                   style={{ fontSize: fontSize.sm, color: nextPath ? color.linkBlue : color.borderStrong, background: 'none', border: 'none', cursor: nextPath && !billNavPending ? 'pointer' : 'default', padding: '2px 4px' }}
-                  title="Next bill (→)"
-                >→</button>
+                  title="Next bill"
+                  aria-label="Next bill"
+                ><BillNavArrow direction="down" /></button>
               </>
             )}
             <OverflowMenu rows={(() => {

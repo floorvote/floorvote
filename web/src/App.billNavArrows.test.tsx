@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 
 // The previous/next arrows must be up and down in the real app layout, both
@@ -173,10 +173,9 @@ describe.each([
     const router = renderAt('/RI/2026/HB%202', 1)
     const next = await screen.findByRole('button', { name: 'Next bill' })
     next.click()
-    await screen.findByRole('button', { name: 'Previous bill' })
-    expect(router.state.location.pathname).toBe('/RI/2026/HB 3')
-    // On the last bill the down arrow is disabled.
-    expect(screen.getByRole('button', { name: 'Next bill' })).toBeDisabled()
-    expect(within(document.body).getByRole('button', { name: 'Previous bill' })).toBeEnabled()
+    await waitFor(() => expect(router.state.location.pathname).toBe('/RI/2026/HB 3'))
+    // On the last bill the down arrow is disabled and the up arrow is not.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next bill' })).toBeDisabled())
+    expect(screen.getByRole('button', { name: 'Previous bill' })).toBeEnabled()
   })
 })
