@@ -76,6 +76,18 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
     expect(onClaimActivate).not.toHaveBeenCalled()
   })
 
+  it('reveals the quote on :hover only where the device can hover, so iOS opens a claim on the first tap', () => {
+    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
+    const css = [...container.querySelectorAll('style')].map(s => s.textContent).join('\n')
+    // The :hover rule sits inside `@media (hover: hover)`, and nowhere else.
+    const block = css.match(/@media \(hover: hover\)\s*\{([^@]*?\})\s*\}/)
+    expect(block).not.toBeNull()
+    expect(block![1]).toMatch(/:hover\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
+    expect(css.replace(block![0], '')).not.toContain(':hover')
+    // Keyboard focus still reveals it everywhere.
+    expect(css.replace(block![0], '')).toMatch(/:focus-within\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
+  })
+
   it('styles the quote as hidden until the link is hovered or has focus', () => {
     const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
     const css = [...container.querySelectorAll('style')].map(s => s.textContent).join('\n')

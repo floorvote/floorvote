@@ -252,6 +252,52 @@ describe('BillTextPanel: the PDF frame\'s type and bytes', () => {
     expect(document.querySelector('iframe')).toBeNull()
   })
 
+  it('reads the page and the quote when the caption group is focused, for every screen reader', async () => {
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    await loadedFrame()
+    const cap = caption()
+    const ids = (cap.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)
+    expect(ids).toHaveLength(2)
+    expect(ids.map(id => document.getElementById(id)?.tagName)).toEqual(['P', 'BLOCKQUOTE'])
+    expect(cap).toHaveAccessibleDescription(`Page 7 “${QUOTE}”`)
+  })
+
+  it('describes the caption by the fallback sentence too, when the page is unusable', async () => {
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 0)} />)
+    await loadedFrame()
+    expect(caption()).toHaveAccessibleDescription(`The cited page isn’t usable, so the PDF opens at page 1 “${QUOTE}”`)
+  })
+
+  it('shows the PDF, not the fallback, when a later load succeeds after a non-PDF answer', async () => {
+    let calls = 0
+    responses['/api/bills/a100/text/9101'] = () => (++calls === 1
+      ? new Response(HTML_BYTES, { status: 200, headers: { 'Content-Type': 'text/html' } })
+      : new Response(PDF_BYTES, { status: 200, headers: { 'Content-Type': 'application/pdf' } }))
+    const { rerender } = render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 7)} />)
+    expect(await screen.findByText(/isn.t a pdf/i)).toBeInTheDocument()
+    expect(screen.queryByTitle('Bill text')).toBeNull()
+    rerender(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(2, 7)} />)
+    const f = await loadedFrame()
+    expect(f.getAttribute('src')).toBe('blob:test/1#page=7')
+    expect(screen.queryByText(/isn.t a pdf/i)).toBeNull()
+    expect(calls).toBe(2)
+  })
+
+  it('frames a body that starts with the PDF header but carries HTML after it only as a PDF, never as HTML', async () => {
+    const polyglot = '%PDF-1.4\n<!DOCTYPE html><html><body><h1>Injected</h1><script>parent.document.title = "x"</script></body></html>'
+    responses['/api/bills/a100/text/9101'] = () => new Response(polyglot, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen passage={ask(1, 2)} />)
+    const f = await loadedFrame()
+    expect(blobs).toHaveLength(1)
+    expect(blobs[0].type).toBe('application/pdf')
+    expect(await blobs[0].text()).toBe(polyglot)
+    expect(f.getAttribute('src')).toBe('blob:test/1#page=2')
+    expect(f.hasAttribute('srcdoc')).toBe(false)
+    // The page never parses it: no element from the body is in the document.
+    expect(document.querySelector('h1')).toBeNull()
+    expect(document.querySelectorAll('iframe')).toHaveLength(1)
+  })
+
   it('does not render a non-PDF as a plain open either, with no claim', async () => {
     responses['/api/bills/a100/text/9101'] = () => new Response(HTML_BYTES, { status: 200, headers: { 'Content-Type': 'application/pdf' } })
     render(<BillTextPanel billId="a100" texts={[PDF_A]} externalOpen />)
