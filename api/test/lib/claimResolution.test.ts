@@ -590,6 +590,18 @@ describe('numbers must agree', () => {
     expect(one(quote, text).status).toBe('ungrounded')
   })
 
+  it('looks past an earlier passage that differs in its numbers to the later one the quote copies', () => {
+    // The earlier head is one character off at the start of the document, and
+    // the later one is exact but far in, so `match` proposes the earlier one.
+    const earlier = 'Section 3. The clerk of each district shall post the notice at every polling place within ten days of the election.'
+    const later = 'Section 39. The clerk of each district shall post the notice at every polling place within ten days of the primary.'
+    const doc = `${earlier}\n${SENTENCES.join('\n').repeat(4)}\n${withLineNumbers(later, 50)}\nThe end.`
+    const r = one(later, doc)
+    expect(r.status).toBe('fuzzy')
+    expect(r.quoteAt!.start).toBeGreaterThan(earlier.length)
+    expect(slice(doc, r.quoteAt)!.endsWith('of the primary.')).toBe(true)
+  })
+
   it('still grounds a copy broken by line numbers, which add digits the quote does not have', () => {
     const numbered = withLineNumbers('The board shall certify within ten days of that and then the secretary shall publish the totals for every drop box.', 40)
     const r = one('The board shall certify within ten days of that and then the secretary shall publish the totals for every drop box.', numbered)
@@ -624,6 +636,8 @@ describe('numbers: ordinals, fractions, and numbers split by line breaking', () 
     ['hundredth for thousandth', 'on the thousandth day', 'on the hundredth day'],
     ['twenty-first for twenty-third', 'on the twenty-third day', 'on the twenty-first day'],
     ['a word split by a plain space', 'within thir ty days', 'within thirty days'],
+    ['a number with a hyphen inside it and no line break', 'a fee of $1-0 is due', 'a fee of $10 is due'],
+    ['a digit ordinal with a hyphen inside it', 'on the 2-1st day', 'on the 21st day'],
   ])('is ungrounded for %s', (_label, d, q) => {
     expect(status(d, q)).toBe('ungrounded')
   })
@@ -750,10 +764,9 @@ describe('ceilings', () => {
       expect(Date.now() - started).toBeLessThan(15_000)
     }, 120_000)
 
-    it('carries what exact matches leave unused forward to the quotes that need a search', () => {
-      // 90 exact items and 10 that need two calls each. A hundredth of the budget
-      // is less than one call costs on a document this long, so only what the
-      // exact ones did not use lets the 10 through.
+    it('spends nothing on exact matches, so the quotes that need a search get the budget', () => {
+      // 90 exact items and 10 that need a search, on a document longer than
+      // the largest a bill is meant to have.
       const { doc } = build(10, 4700)
       expect(doc.length).toBeGreaterThan(2_800_000)
       const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
@@ -773,21 +786,159 @@ describe('ceilings', () => {
     })
   })
 
-  it('finishes a hundred absent quotes against a large document in bounded time', () => {
-    const body = Array.from({ length: 12000 }, (_, i) => `Section ${i}. ${SENTENCES[i % SENTENCES.length].replace(/^Section \d+\. /, '')} Subsection ${i * 7} applies.`).join('\n')
-    expect(body.length).toBeGreaterThan(1_400_000)
+  it('finishes a hundred absent quotes against a document of about 1.7 million characters within the work budget', () => {
+    const body = Array.from({ length: 14500 }, (_, i) => `Section ${i}. ${SENTENCES[i % SENTENCES.length].replace(/^Section \d+\. /, '')} Subsection ${i * 7} applies.`).join('\n')
+    expect(body.length).toBeGreaterThan(1_700_000)
     const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
     const items: ClaimSource[] = claims.map((c, i) => ({ claim: c, quote: `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth, at dawn.` }))
-    spies.match.mockClear()
-    const started = Date.now()
-    const out = resolveClaimSources(items, claims.join(' '), body)
+    const { out, ms, work } = timed(() => resolveClaimSources(items, claims.join(' '), body))
     expect(out.items.every(i => i.status === 'ungrounded')).toBe(true)
-    // The scan budget is what bounds it: past it, a quote is left unsearched.
+    // The budget is what bounds it: past it, a quote is left unsearched.
     expect(out.unsearched).toBeGreaterThan(0)
-    // What the budget bounds is the scanning, which the spy sees: 60 million
-    // characters, and at most one more call's worth.
-    const scanned = (spies.match.mock.calls as unknown[][]).reduce((n, c) => n + (c[1] as string).length, 0)
-    expect(scanned).toBeLessThanOrEqual(60_000_000 + body.length)
-    expect(Date.now() - started).toBeLessThan(30_000)
+    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
+    expect(ms).toBeLessThan(TIME_GUARD)
+  }, 120_000)
+})
+
+// The work budget (#569). Every `match` call is charged the characters it is
+// handed and every `makeDiff` call its two lengths multiplied, a sixteenth of a
+// unit a cell, before it runs. A call that would go past the budget is not made.
+// The spy sees what the library was handed, so it checks the bound from outside.
+// Where no head or tail is an exact copy (as in every case below that asserts
+// it), the sum is what is charged. The time guard is a backstop only: the units
+// are what bound the work, and they were measured at about 0.2 µs each at worst.
+const WORK_BUDGET = 20_000_000
+const TIME_GUARD = 15_000
+
+function timed<T>(fn: () => T): { out: T; ms: number; work: number } {
+  spies.match.mockClear()
+  spies.makeDiff.mockClear()
+  const started = Date.now()
+  const out = fn()
+  const ms = Date.now() - started
+  let work = 0
+  for (const c of spies.match.mock.calls as unknown[][]) work += (c[1] as string).length
+  for (const c of spies.makeDiff.mock.calls as unknown[][]) work += Math.ceil(((c[1] as string).length * (c[2] as string).length) / 16)
+  return { out, ms, work }
+}
+
+describe('the work budget', () => {
+  const SYLLABLES = ['ba', 'ro', 'ki', 'tu', 'me', 'la', 'sho', 'vin', 'dre', 'pol', 'gar', 'nex', 'fil', 'zon', 'cra', 'hep', 'wul', 'jod', 'qua', 'bri']
+  // Hashed, so that no two passages of a hundred share their words: passages
+  // alike but for their numbers are a different case (the first one wins).
+  const word = (i: number, k: number) => {
+    const h = (Math.imul(i + 1, 2654435761) ^ Math.imul(k + 1, 40503)) >>> 0
+    return SYLLABLES[h % 20] + SYLLABLES[Math.floor(h / 20) % 20] + SYLLABLES[Math.floor(h / 400) % 20]
+  }
+  /** Invented words of about `n` characters, different for each `i` and `salt`. */
+  const words = (i: number, salt: number, n: number) => {
+    const out: string[] = []
+    let len = 0
+    for (let k = 0; len < n; k++) { const w = word(i * 31 + salt, k * 7 + salt); out.push(w); len += w.length + 1 }
+    return out.join(' ')
+  }
+  const passage = (i: number) => `The ${word(i, 0)} ${word(i, 1)} of district ${i} shall publish the ${word(i, 2)} report about ${word(i, 3)} box ${i * 7} to every ${word(i, 4)} ${word(i, 5)} each quarter.`
+  const background = (i: number, k: number) => `Background sentence ${i}-${k} that says nothing in particular.`
+  const filler = (i: number, sentences: number) => Array.from({ length: sentences }, (_, k) => background(i, k)).join(' ')
+  /** `n` characters from `from` with every third one changed: about n/3 errors. */
+  const garble = (s: string, from: number, n: number) => [...s].map((c, k) => (k >= from && k < from + n && (k - from) % 3 === 1 && c !== ' ' ? (c === 'q' ? 'z' : 'q') : c)).join('')
+  const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
+  const summary = claims.join(' ')
+  const ABSENT = (i: number) => `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth.`
+
+  it('hands a search near a place only the text it can reach, not the whole document', () => {
+    const doc = `${filler(0, 18000)}\n${withLineNumbers(passage(3), 46)}\n${filler(1, 20)}`
+    expect(doc.length).toBeGreaterThan(1_000_000)
+    const { out } = timed(() => resolveClaimSources([{ claim: claims[0], quote: passage(3) }], summary, doc))
+    expect(out.items[0].status).toBe('fuzzy')
+    const handed = (spies.match.mock.calls as unknown[][]).map(c => (c[1] as string).length)
+    // The head is searched for in the whole document, and the tail only near
+    // where it would be after the head.
+    expect(handed.filter(n => n > 10_000)).toHaveLength(1)
+    expect(handed.length).toBeGreaterThan(1)
+    for (const n of handed.filter(n => n <= 10_000)) expect(n).toBeLessThan(4000)
+  })
+
+  it('bounds a hundred quotes whose heads and tails each differ in about nine places, in about a million characters', () => {
+    const parts: string[] = []
+    const items: ClaimSource[] = []
+    for (let i = 0; i < 100; i++) {
+      const p = passage(i)
+      parts.push(filler(i, 172), p)
+      const quote = `${p.slice(0, 40)} ${words(i, 1, 100)} ${p.slice(-40)}`
+      items.push({ claim: claims[i], quote: garble(garble(quote, 0, 27), quote.length - 27, 27) })
+    }
+    const doc = parts.join('\n')
+    expect(doc.length).toBeGreaterThan(990_000)
+    const { out, ms, work } = timed(() => resolveClaimSources(items, summary, doc))
+    expect(out.items.every(i => i.status === 'anchored' || i.status === 'ungrounded')).toBe(true)
+    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
+    expect(ms).toBeLessThan(TIME_GUARD)
+  }, 120_000)
+
+  it('bounds a hundred long quotes whose ends are found and whose middles are not, by what makeDiff is handed too', () => {
+    const parts: string[] = []
+    const items: ClaimSource[] = []
+    for (let i = 0; i < 100; i++) {
+      const head = `Passage ${i} begins ${words(i, 2, 50)}`
+      const tail = `${words(i, 3, 50)} and passage ${i} ends.`
+      parts.push(words(i, 4, 200), head, words(i, 5, 1800), tail)
+      // One changed character at each end, so neither is an exact copy.
+      items.push({ claim: claims[i], quote: `${garble(head, 20, 3)} ${words(i, 6, 1800)} ${tail.replace(/ends\.$/, 'endz.')}` })
+    }
+    const doc = parts.join(' ')
+    expect(doc.length).toBeGreaterThan(200_000)
+    expect(items.every(i => i.quote.length < 2000 && i.quote.length > 1850)).toBe(true)
+    const { out, ms, work } = timed(() => resolveClaimSources(items, summary, doc))
+    expect(out.items.every(i => i.status === 'anchored' || i.status === 'ungrounded')).toBe(true)
+    expect(work).toBeLessThanOrEqual(WORK_BUDGET)
+    expect(ms).toBeLessThan(TIME_GUARD)
+  }, 120_000)
+
+  it('searches the cheapest quotes first, so twenty absent ones ahead of eighty valid ones in 1.7 million characters take none of their links', () => {
+    const parts: string[] = []
+    for (let i = 0; i < 80; i++) parts.push(filler(i, 370), withLineNumbers(passage(i), 46))
+    const doc = parts.join('\n')
+    expect(doc.length).toBeGreaterThan(1_700_000)
+    // After the absent ones, by fours: exact, normalized (doubled spaces), and
+    // two faithful copies broken by line numbers in the document (fuzzy).
+    const kind = (i: number) => (['exact', 'normalized', 'fuzzy', 'fuzzy'] as const)[i % 4]
+    const items: ClaimSource[] = claims.map((claim, n) => {
+      if (n < 20) return { claim, quote: ABSENT(n) }
+      const i = n - 20
+      const quote = kind(i) === 'exact' ? background(i, 5) : kind(i) === 'normalized' ? background(i, 6).replace(/ /g, '  ') : passage(i)
+      return { claim, quote }
+    })
+    const { out, ms } = timed(() => resolveClaimSources(items, summary, doc))
+    expect(out.items.slice(0, 20).map(i => i.status)).toEqual(Array(20).fill('ungrounded'))
+    expect(out.items.slice(20).map(i => i.status)).toEqual(Array.from({ length: 80 }, (_, i) => kind(i)))
+    expect(out.unsearched).toBeGreaterThan(0)
+    expect(ms).toBeLessThan(TIME_GUARD)
+  }, 120_000)
+
+  it('resolves every one of a hundred findable quotes, exact, normalized, and fuzzy, in a typical document of about 90,000 characters', () => {
+    const parts: string[] = []
+    for (let i = 0; i < 100; i++) parts.push(filler(i, 13), withLineNumbers(passage(i), 46))
+    const doc = parts.join('\n')
+    expect(doc.length).toBeGreaterThan(85_000)
+    expect(doc.length).toBeLessThan(100_000)
+    // By fives: exact; normalized; fuzzy (line numbers); fuzzy with a typo too;
+    // and a longer fuzzy quote that runs from the background into the passage.
+    const kinds = ['exact', 'normalized', 'fuzzy', 'fuzzy', 'fuzzy'] as const
+    const items: ClaimSource[] = claims.map((claim, i) => {
+      const quote = [
+        background(i, 3),
+        background(i, 4).replace(/ /g, '  '),
+        passage(i),
+        passage(i).replace('publish', 'publsh'),
+        `${Array.from({ length: 7 }, (_, k) => background(i, 6 + k)).join(' ')} ${passage(i)}`,
+      ][i % 5]
+      return { claim, quote }
+    })
+    expect(items[4].quote.length).toBeGreaterThan(500)
+    const { out, ms } = timed(() => resolveClaimSources(items, summary, doc))
+    expect(out.items.map(i => i.status)).toEqual(Array.from({ length: 100 }, (_, i) => kinds[i % 5]))
+    expect(out.unsearched).toBe(0)
+    expect(ms).toBeLessThan(TIME_GUARD)
   }, 120_000)
 })

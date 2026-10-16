@@ -117,7 +117,8 @@ function findClaim(summary: string, claim: string): Span | null {
  * window, not part of the passage: it is trimmed, and isn't an error. Quote
  * text left unmatched at either end is.
  */
-function align(quote: string, region: string): { similarity: number; start: number; end: number } {
+function align(quote: string, region: string, budget: Budget): { similarity: number; start: number; end: number } {
+  charge(budget, Math.ceil((quote.length * region.length) / DIFF_CELLS_PER_UNIT))
   const diffs = makeDiff(quote, region)
   const firstEq = diffs.findIndex(d => d[0] === DIFF_EQUAL)
   if (firstEq === -1) return { similarity: 0, start: 0, end: 0 }
@@ -154,31 +155,63 @@ const MAX_ITEMS = 100
 const MAX_FUZZY_QUOTE = 2000
 
 /**
- * The fuzzy search's budget for one bill, in characters scanned. Every `match`
- * call scans the whole document, and is charged for it: a call that places its
- * pattern is charged `HIT_COST` of that, since it narrows its own search as it
- * goes (measured at about a quarter, 20 to 30 ms against 100 ms on 590,000
- * characters), and one that finds nothing is charged all of it. A quote that is
- * absent from a long document is the costly case, two calls at 0.2 s on half a
- * million characters and 0.6 s on 1.7 million. 60 million is around ten seconds
- * of scanning, well inside a Worker's CPU limit, and a hard bound on the bill.
+ * The fuzzy search's budget for one bill, in units of work, which bounds its
+ * CPU time. A Worker's clock does not move during computation, so the bound
+ * counts work rather than timing it. Every library call is charged before it
+ * runs, and a call that would go past what is left is not made: the item stops
+ * searching, stays `ungrounded`, and is counted in `unsearched`. So the total
+ * never passes the budget, whatever the quotes and the document.
  *
- * Each item gets a fair share, the budget over the number of items (at most
- * `MAX_ITEMS`), and what an item leaves unused (an exact match uses none) goes
- * forward to the next. So quotes that miss cannot starve the ones after them
- * beyond their share, and a bill whose quotes mostly resolve never runs short.
- * An item whose share and carry run out stops searching and stays ungrounded.
- * It depends only on the document and the quotes, never on a clock.
+ * A unit is one character handed to `match`, which is about what it costs. A
+ * search from the start of the document costs the same whether it finds its
+ * pattern or not (a pass over the document per error it allows, measured at
+ * 0.17 to 0.22 µs a character on 0.1 to 2 million characters, a hit with eight
+ * to eleven errors the dearest), so it is charged the whole document. The one
+ * exception is a pattern that is in the text exactly (`matchCost`). A search
+ * near a place is handed only the text it can reach (`proposeNear`), about
+ * 3,000 characters, so it costs that. A `makeDiff` costs its two lengths
+ * multiplied (measured at up to 10.6 ns a cell for unlike texts), so it is
+ * charged that over `DIFF_CELLS_PER_UNIT`. At the dearest rate measured, 20
+ * million units are about 4.4 seconds; the worst mixes built took 3.8.
+ *
+ * Exact and normalized matches are `indexOf` scans, and always run for every
+ * item, outside the budget. The fuzzy searches go cheapest first, by what their
+ * first call costs, so quotes whose head is in the document exactly go before
+ * quotes that are absent, which cost two whole scans each and would otherwise
+ * spend the budget on nothing.
+ *
+ * The tradeoff: on a typical bill (the median is about 9,000 characters of
+ * text, and 100 quotes on 100,000 characters fit) every quote that can be
+ * found is. On a document of a million characters or more, the budget runs
+ * out after a few dozen whole scans, and many quotes are left `ungrounded`
+ * though some could be found. That is the price of the bound. It depends only
+ * on the document and the quotes, never on a clock.
  */
-const SCAN_BUDGET = 60_000_000
-const HIT_COST = 1 / 4
+const WORK_BUDGET = 20_000_000
+const DIFF_CELLS_PER_UNIT = 16
 
-/** What is left for the whole bill, and how many items stopped for want of it. */
+/** What is left of the bill's budget, and how many items stopped for want of it. */
 type Budget = { left: number; skipped: number }
-/** What one item may still scan, and the bill's budget it draws on too. */
-type Spend = { item: number; shared: Budget }
 
 const OUT_OF_BUDGET = Symbol('out of budget')
+
+/** Take `units` from the budget, or refuse the call that would cost them. */
+function charge(budget: Budget, units: number): void {
+  if (units > budget.left) throw OUT_OF_BUDGET
+  budget.left -= units
+}
+
+/**
+ * What a search from the start of `text` costs. A pattern that is in the text
+ * exactly lowers `match`'s threshold to that place's score before it scans, so
+ * its passes only reach as far as the first copy: a quarter of the characters
+ * before it covers that (measured at under a fifth, 78 ms for a copy 1.9
+ * million characters in). Any other pattern costs the whole text.
+ */
+function matchCost(text: string, pattern: string): number {
+  const exact = text.indexOf(pattern)
+  return exact === -1 ? text.length : Math.ceil(exact / 4) + pattern.length
+}
 
 /** What must agree between a quote and what is found for it: digits, cardinal and ordinal words, and fractions. */
 const CARDINAL_VALUES: Record<string, number> = {
@@ -227,12 +260,24 @@ function numbersOf(text: string): Map<string, { n: number; raw: string }> {
   return found
 }
 
-/** Between two characters of a number or word that a line break can fall inside: a hyphen, or a line number between the breaks. Never a plain space. */
-const BREAK = '(?:-\\s*(?:\\d{1,3}\\s+)?|[,.]?\\s+\\d{1,3}\\s+)?'
+/**
+ * What a line break can leave inside a number. Between two letters of a word:
+ * a hyphen (and maybe a line number after it), or a line number between the
+ * breaks. Anywhere else, only the line number, since "1-0" is two numbers and
+ * not "10". Never a plain space.
+ */
+const WORD_BREAK = '(?:-\\s*(?:\\d{1,3}\\s+)?|\\s+\\d{1,3}\\s+)?'
+const NUMBER_BREAK = '(?:[,.]?\\s+\\d{1,3}\\s+)?'
+const LETTER = /[A-Za-z]/
 
 /** Whether a number is in the text, written with a line break (and its line number) inside it. */
 function brokenIn(raw: string, text: string): boolean {
-  const spelled = [...raw].map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(BREAK)
+  const chars = [...raw]
+  const spelled = chars.map((c, k) => {
+    const literal = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (k === 0) return literal
+    return (LETTER.test(chars[k - 1]) && LETTER.test(c) ? WORD_BREAK : NUMBER_BREAK) + literal
+  }).join('')
   return new RegExp(`(?<![A-Za-z0-9])${spelled}(?![A-Za-z0-9])`, 'i').test(text)
 }
 
@@ -253,40 +298,63 @@ function numbersAgree(quote: string, found: string): boolean {
   return true
 }
 
+const THRESHOLD = ERROR_BUDGET + POSITION_BUDGET
+
 /**
- * Where `match` puts a pattern, or -1. It only proposes: `makeDiff` decides. The
- * call is charged to the item and the bill, and refused when either is spent.
+ * How far from the start a search of the whole text may place a pattern and
+ * still pass the threshold: far enough that the far end costs `POSITION_BUDGET`.
  */
-function propose(text: string, pattern: string, expected: number, distance: number, spend: Spend): number {
-  if (spend.item <= 0 || spend.shared.left <= 0) throw OUT_OF_BUDGET
-  const at = match(text, pattern, expected, { threshold: ERROR_BUDGET + POSITION_BUDGET, distance })
-  const cost = at === -1 ? text.length : Math.ceil(text.length * HIT_COST)
-  spend.item -= cost
-  spend.shared.left -= cost
-  return at
+function wideDistance(text: string): number {
+  return Math.max(1000, Math.ceil(text.length / POSITION_BUDGET))
+}
+
+/**
+ * Where `match` puts a pattern, searching from the start of the text, or -1. It
+ * only proposes: `makeDiff` decides. Charged by `matchCost`, before it runs.
+ */
+function proposeFromStart(text: string, pattern: string, budget: Budget): number {
+  charge(budget, matchCost(text, pattern))
+  return match(text, pattern, 0, { threshold: THRESHOLD, distance: wideDistance(text) })
+}
+
+/**
+ * Where `match` puts a pattern near `expected`, or -1. A place further than
+ * `THRESHOLD * distance` from `expected` scores past the threshold on distance
+ * alone, so `match` is handed only that reach of the text, with two patterns'
+ * length to spare on each side for a match with insertions, and finds what it
+ * would in the whole text. It is charged the characters it is handed.
+ */
+function proposeNear(text: string, pattern: string, expected: number, distance: number, budget: Budget): number {
+  const loc = Math.max(0, Math.min(expected, text.length))
+  const reach = Math.ceil(THRESHOLD * distance) + 2 * pattern.length
+  const from = Math.max(0, loc - reach)
+  const window = text.slice(from, Math.min(text.length, loc + reach))
+  charge(budget, window.length)
+  const at = match(window, pattern, loc - from, { threshold: THRESHOLD, distance })
+  return at === -1 ? -1 : at + from
 }
 
 /**
  * A quote's end (its first or last 32 characters), which `match` placed at
  * `at`: the range it covers if it is alike enough, else null.
  */
-function anchorAt(text: string, pattern: string, at: number): Span | null {
+function anchorAt(text: string, pattern: string, at: number, budget: Budget): Span | null {
   if (at === -1) return null
-  const scored = align(pattern, text.slice(at, at + pattern.length + 8))
+  const scored = align(pattern, text.slice(at, at + pattern.length + 8), budget)
   return scored.similarity >= MIN_SIMILARITY ? { start: at + scored.start, end: at + scored.end } : null
 }
 
 /** The region `[from, to)` of the text, scored against the whole quote, or null when it is not alike enough. */
-function regionAt(text: string, quote: string, from: number, to: number): Span | null {
+function regionAt(text: string, quote: string, from: number, to: number, budget: Budget): Span | null {
   const start = Math.max(0, from)
-  const scored = align(quote, text.slice(start, to))
+  const scored = align(quote, text.slice(start, to), budget)
   return scored.similarity >= MIN_SIMILARITY ? { start: start + scored.start, end: start + scored.end } : null
 }
 
 /** The whole region from a head to a tail, or null when either is missing or the tail is not after the head. */
-function wholeAt(text: string, quote: string, head: number, tail: number): Span | null {
+function wholeAt(text: string, quote: string, head: number, tail: number, budget: Budget): Span | null {
   if (head === -1 || tail === -1 || tail <= head) return null
-  return regionAt(text, quote, head, tail + MAX_BITS + 8)
+  return regionAt(text, quote, head, tail + MAX_BITS + 8, budget)
 }
 
 /** The head of a quote through the word that holds its 32nd character, and its tail from the word that holds its 32nd from last. */
@@ -305,72 +373,82 @@ type Fuzzy = { status: 'fuzzy' | 'anchored'; at: Span }
  * after normalizing. Works on normalized text and returns a range of it. A
  * result whose numbers disagree with the quote's is none.
  */
-function findFuzzy(text: string, quote: string, spend: Spend): Fuzzy | null {
-  if (quote.length > MAX_FUZZY_QUOTE) return null
+function findFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
   try {
-    return searchFuzzy(text, quote, spend)
+    return searchFuzzy(text, quote, budget)
   } catch (err) {
     // Out of budget partway: what the search had so far is not an answer.
     if (err !== OUT_OF_BUDGET) throw err
-    spend.shared.skipped++
+    budget.skipped++
     return null
   }
 }
 
-function searchFuzzy(text: string, quote: string, spend: Spend): Fuzzy | null {
+/** The pattern a quote's search starts with: the whole of a short quote, else its head. */
+function firstPattern(quote: string): string {
+  return quote.length <= MAX_BITS ? quote : quote.slice(0, MAX_BITS)
+}
 
-  // Wide enough that a match at the far end of the text costs at most
-  // POSITION_BUDGET, so the document is searched from the start (the first of
-  // two identical passages scores a hair better, which makes it the one found).
-  const wide = Math.max(1000, Math.ceil(text.length / POSITION_BUDGET))
-
+function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
+  // Searched from the start of the document, a match at the far end costs at
+  // most POSITION_BUDGET (the first of two identical passages scores a hair
+  // better, which makes it the one found).
   if (quote.length <= MAX_BITS) {
     // No separate head and tail: the whole quote is the pattern.
-    const at = propose(text, quote, 0, wide, spend)
-    const span = anchorAt(text, quote, at)
+    const at = proposeFromStart(text, quote, budget)
+    const span = anchorAt(text, quote, at, budget)
     return span && numbersAgree(quote, text.slice(span.start, span.end)) ? { status: 'fuzzy', at: span } : null
   }
 
-  const headPattern = quote.slice(0, MAX_BITS)
+  const headPattern = firstPattern(quote)
   const tailPattern = quote.slice(-MAX_BITS)
   const near = Math.max(1000, 2 * quote.length)
-  // undefined: no whole region was alike enough, so keep looking. null: one was,
-  // but its numbers disagree, so it is not this passage.
-  const whole = (span: Span | null): Fuzzy | null | undefined =>
-    span === null ? undefined : numbersAgree(quote, text.slice(span.start, span.end)) ? { status: 'fuzzy', at: span } : null
+  // A whole region alike enough is the passage, unless its numbers disagree:
+  // then it is another passage like it (an earlier section with another number
+  // whose head `match` preferred), and the search goes on. Null: keep looking.
+  let numbersDiffered = false
+  const whole = (span: Span | null): Fuzzy | null => {
+    if (span === null) return null
+    if (numbersAgree(quote, text.slice(span.start, span.end))) return { status: 'fuzzy', at: span }
+    numbersDiffered = true
+    return null
+  }
 
   // The head from the start of the document, then the tail near where it would
   // be if the passage were whole, as the library's `applyPatches` does.
-  const head = propose(text, headPattern, 0, wide, spend)
+  const head = proposeFromStart(text, headPattern, budget)
   const tail = head !== -1
-    ? propose(text, tailPattern, head + quote.length - MAX_BITS, near, spend)
-    : propose(text, tailPattern, 0, wide, spend)
-  const headFirst = whole(wholeAt(text, quote, head, tail))
-  if (headFirst !== undefined) return headFirst
+    ? proposeNear(text, tailPattern, head + quote.length - MAX_BITS, near, budget)
+    : proposeFromStart(text, tailPattern, budget)
+  const headFirst = whole(wholeAt(text, quote, head, tail, budget))
+  if (headFirst) return headFirst
   // A tail that `match` could not place may still be there, differing more than
   // an end alone may: the whole is judged over a window the quote's length from
   // the head, not by whether its last 32 characters match.
-  const fromHead = head === -1 ? undefined : whole(regionAt(text, quote, head, head + quote.length + 16))
-  if (fromHead !== undefined) return fromHead
+  const fromHead = head === -1 ? null : whole(regionAt(text, quote, head, head + quote.length + 16, budget))
+  if (fromHead) return fromHead
 
   // The first head may be boilerplate that repeats, with the passage later. So
   // the tail from the start, and the head near where it would be before it.
-  const tailFirst = head === -1 ? tail : propose(text, tailPattern, 0, wide, spend)
-  const headNear = tailFirst === -1 ? -1 : propose(text, headPattern, tailFirst - (quote.length - MAX_BITS), near, spend)
-  const fromTail = whole(wholeAt(text, quote, headNear, tailFirst))
-  if (fromTail !== undefined) return fromTail
-  const endingAtTail = tailFirst === -1 ? undefined : whole(regionAt(text, quote, tailFirst + MAX_BITS + 8 - quote.length - 16, tailFirst + MAX_BITS + 8))
-  if (endingAtTail !== undefined) return endingAtTail
+  const tailFirst = head === -1 ? tail : proposeFromStart(text, tailPattern, budget)
+  const headNear = tailFirst === -1 ? -1 : proposeNear(text, headPattern, tailFirst - (quote.length - MAX_BITS), near, budget)
+  const fromTail = whole(wholeAt(text, quote, headNear, tailFirst, budget))
+  if (fromTail) return fromTail
+  const endingAtTail = tailFirst === -1 ? null : whole(regionAt(text, quote, tailFirst + MAX_BITS + 8 - quote.length - 16, tailFirst + MAX_BITS + 8, budget))
+  if (endingAtTail) return endingAtTail
+  // A whole that was alike but for its numbers, and nothing better: not this
+  // passage, and no anchor near it either.
+  if (numbersDiffered) return null
 
   // Only an end matched, or the whole was not alike enough: the passage is near
   // here, and no more is known. The head is the better anchor, being where a
   // reader starts. An end whose numbers differ is not this passage.
-  const headAnchor = anchorAt(text, headPattern, head)
+  const headAnchor = anchorAt(text, headPattern, head, budget)
   if (headAnchor) {
     const region = text.slice(head, head + headWords(quote).length + 12)
     return numbersAgree(headWords(quote), region) ? { status: 'anchored', at: headAnchor } : null
   }
-  const tailAnchor = anchorAt(text, tailPattern, tailFirst)
+  const tailAnchor = anchorAt(text, tailPattern, tailFirst, budget)
   if (tailAnchor) {
     const region = text.slice(Math.max(0, tailFirst - 12), tailFirst + MAX_BITS + 12)
     return numbersAgree(tailWords(quote), region) ? { status: 'anchored', at: tailAnchor } : null
@@ -378,13 +456,13 @@ function searchFuzzy(text: string, quote: string, spend: Spend): Fuzzy | null {
   return null
 }
 
-/** Resolve one quote against the document the model read. */
-function resolveQuote(
-  quote: string,
-  doc: string,
-  normDoc: () => Norm,
-  spend: Spend,
-): { status: ClaimSourceStatus; at?: Span; matched?: string } {
+type Resolution = { status: ClaimSourceStatus; at?: Span; matched?: string }
+
+/**
+ * Resolve one quote exactly or normalized, which every item gets: a resolution,
+ * or the normalized quote when it takes a fuzzy search to say.
+ */
+function resolveDirectly(quote: string, doc: string, normDoc: () => Norm): Resolution | { search: string } {
   if (quote.trim().length === 0) return { status: 'ungrounded' }
 
   const exact = doc.indexOf(quote)
@@ -396,9 +474,7 @@ function resolveQuote(
   const normalized = nd.s.indexOf(nq.s)
   if (normalized !== -1) return found('normalized', doc, original(nd, normalized, normalized + nq.s.length))
 
-  const fuzzy = findFuzzy(nd.s, nq.s, spend)
-  if (!fuzzy) return { status: 'ungrounded' }
-  return found(fuzzy.status, doc, original(nd, fuzzy.at.start, fuzzy.at.end))
+  return nq.s.length > MAX_FUZZY_QUOTE ? { status: 'ungrounded' } : { search: nq.s }
 }
 
 /** A resolved result: the range, and the passage as a reader sees it. */
@@ -416,9 +492,10 @@ function found(status: ClaimSourceStatus, doc: string, at: Span): { status: Clai
  *   link goes by the cited page. An empty quote is `ungrounded` either way.
  * - Where two passages are alike, the first is the one found, every time.
  * - At most 100 items are resolved (the rest are `ungrounded`, counted in
- *   `capped`), a quote over 2,000 characters is only searched exactly and
- *   normalized, and the fuzzy searches share one scan budget, split fairly across the items (what it left
- *   unsearched is counted in `unsearched`). See `MAX_ITEMS` and `SCAN_BUDGET`.
+ *   `capped`), and every one is searched exactly and normalized. A quote over
+ *   2,000 characters goes no further. The fuzzy searches share one work
+ *   budget, cheapest first, and an item it could not finish is `ungrounded`,
+ *   counted in `unsearched`. See `MAX_ITEMS` and `WORK_BUDGET`.
  */
 export function resolveClaimSources(
   items: readonly ClaimSource[],
@@ -429,11 +506,12 @@ export function resolveClaimSources(
   let dropped = 0
   let capped = 0
   let searched = 0
-  const budget: Budget = { left: SCAN_BUDGET, skipped: 0 }
-  const share = SCAN_BUDGET / Math.max(1, Math.min(items.length, MAX_ITEMS))
-  let carried = 0
   let normDoc: Norm | null = null
   const getNormDoc = () => (normDoc ??= normalize(docText ?? '', { tags: true, fold: true }))
+  const withResult = (item: ResolvedClaimSource, r: Resolution): ResolvedClaimSource =>
+    r.at ? { ...item, status: r.status, quoteAt: r.at, matched: r.matched } : { ...item, status: r.status }
+  /** The items a fuzzy search must settle: where each is in `out`, its normalized quote, and what its first call costs. */
+  const pending: { index: number; quote: string; cost: number }[] = []
   for (const item of items) {
     const claimAt = findClaim(summary, item.claim)
     if (!claimAt) { dropped++; continue }
@@ -447,10 +525,25 @@ export function resolveClaimSources(
       continue
     }
     searched++
-    const spend: Spend = { item: carried + share, shared: budget }
-    const r = resolveQuote(item.quote, docText, getNormDoc, spend)
-    carried = Math.max(0, spend.item)
-    out.push(r.at ? { ...item, status: r.status, claimAt, quoteAt: r.at, matched: r.matched } : { ...item, status: r.status, claimAt })
+    const r = resolveDirectly(item.quote, docText, getNormDoc)
+    if ('search' in r) {
+      out.push({ ...item, status: 'ungrounded', claimAt })
+      pending.push({ index: out.length - 1, quote: r.search, cost: matchCost(getNormDoc().s, firstPattern(r.search)) })
+    } else {
+      out.push(withResult({ ...item, status: r.status, claimAt }, r))
+    }
+  }
+
+  // Cheapest first, and in order among equals (the sort is stable): a quote
+  // whose head is in the document exactly costs a fraction of a scan and is
+  // likely found, and one that is absent costs two whole scans for nothing.
+  const budget: Budget = { left: WORK_BUDGET, skipped: 0 }
+  pending.sort((a, b) => a.cost - b.cost)
+  for (const { index, quote } of pending) {
+    // Only an item with a document has a search pending.
+    const nd = getNormDoc()
+    const fuzzy = findFuzzy(nd.s, quote, budget)
+    if (fuzzy) out[index] = withResult(out[index], found(fuzzy.status, docText ?? '', original(nd, fuzzy.at.start, fuzzy.at.end)))
   }
   return { items: out, dropped, capped, unsearched: budget.skipped }
 }

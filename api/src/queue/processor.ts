@@ -683,7 +683,7 @@ async function applyCentralBill(
             console.warn(`[processor] dropped ${resolved.dropped} claim source(s) for ${centralBill.number} whose claim is not in the summary`)
           }
           if (resolved.capped > 0 || resolved.unsearched > 0) {
-            console.warn(`[processor] ${resolved.capped} claim source(s) past the limit and ${resolved.unsearched} fuzzy search(es) past the scan budget left ungrounded for ${centralBill.number}`)
+            console.warn(`[processor] ${resolved.capped} claim source(s) past the limit and ${resolved.unsearched} fuzzy search(es) past the work budget left ungrounded for ${centralBill.number}`)
           }
         } catch (err) {
           // Extra to the analysis, so it never fails it: the summary, tags, and
