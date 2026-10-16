@@ -23,6 +23,7 @@ describe('MarkdownSummary claim links', () => {
     const none = render(<MarkdownSummary claimLinks={[]} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>).container.innerHTML
     expect(none).toBe(before)
     expect(before).not.toContain('data-claim')
+    expect(before).not.toContain('claim-link')
   })
 
   it('makes each claim\'s own text a link, a list item or a clause', () => {
@@ -68,7 +69,7 @@ describe('MarkdownSummary claim links', () => {
   it('renders a claim with markup in it as text', () => {
     const { container } = render(
       <MarkdownSummary claimLinks={[{ index: 0, claim: '<img src=x onerror=alert(1)>' }]} onClaimActivate={() => {}}>
-        {'Bans `<img src=x onerror=alert(1)>` in filings.'}
+        {'Bans &lt;img src=x onerror=alert(1)&gt; in filings.'}
       </MarkdownSummary>,
     )
     expect(screen.getByRole('link', { name: '<img src=x onerror=alert(1)>' })).toBeInTheDocument()

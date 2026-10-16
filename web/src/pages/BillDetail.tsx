@@ -24,7 +24,8 @@ import { SentimentBars } from '../components/SentimentBars'
 import { LegislativeHistory, syntheticLatestAction } from '../components/LegislativeHistory'
 import { CommitteeLine, type CommitteeRef, type ReferralRef } from '../components/CommitteeLine'
 import { TabularRow } from '../components/TabularRow'
-import { BillTextPanel } from '../components/BillTextPanel'
+import { BillTextPanel, type PassageRequest } from '../components/BillTextPanel'
+import { linkableClaims, type ClaimSourcesDetail } from '../lib/claimLinks'
 import { BillTextChip } from '../components/BillTextChip'
 import { PersonalNote } from '../components/PersonalNote'
 import { InfoTooltip } from '../components/InfoTooltip'
@@ -518,6 +519,14 @@ type BillDetailData = {
   analysisAiProcessedAt?: string | null
   analysisAiSkipReason?: 'pdf_too_large' | null
   analysisTextStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
+  /** Whether the instance shows claim links (#570). Absent from a server that predates the setting. */
+  claimLinksEnabled?: boolean
+  /**
+   * The shown analysis's claim sources (#571), pinned to its bill's document,
+   * which on a companion's page can be another member's. Null when there are
+   * none to show, and absent from a server that predates them.
+   */
+  claimSources?: ClaimSourcesDetail | null
   lastAiTextDocId: string | null
   textStatus: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   myVote: 'support' | 'oppose' | 'neutral' | null
@@ -715,6 +724,11 @@ export function BillDetail() {
   const [hoveredTag, setHoveredTag] = useState<string | null>(null)
   const [showBillText, setShowBillText] = useState(false)
   const [requestedDocId, setRequestedDocId] = useState<string | null>(null)
+  // A claim's passage to show in the bill text panel (#571), a new key for each request.
+  const [passage, setPassage] = useState<PassageRequest | null>(null)
+  const passageKeyRef = useRef(0)
+  const billIdForPassage = bill?.id
+  useLayoutEffect(() => { setPassage(null) }, [billIdForPassage])
   const [showHearings, setShowHearings] = useState(false)
   const [changeLog, setChangeLog] = useState<ChangeRecord[]>([])
   const [subjectsOpen, setSubjectsOpen] = useState(false)
@@ -1352,8 +1366,35 @@ export function BillDetail() {
   // cannot appear for a bill the menu won't offer the action on.
   const hasAnalysis = !!bill.tenantSummary || bill.tags.length > 0 || bill.relevanceScore != null
 
-  // Separators between collapsible sections — no border above the first one
-  const hasBillText = bill.texts.length > 0 && !!bill.textR2Key
+  // Claim links (#571): the shown analysis's resolved claims, each linked to its
+  // passage. The analysis's bill can be another member of the group, whose
+  // document the links open, never this bill's own text. When the analysis is
+  // this bill's, its pinned document must still be one of its texts (the server
+  // checked another member's).
+  const claimSources = bill.claimSources ?? null
+  const claimLinks = claimSources && (claimSources.billId !== bill.id || bill.texts.some(t => t.docId === claimSources.document.docId))
+    ? linkableClaims(claimSources, bill.claimLinksEnabled)
+    : []
+  const borrowedFrom = claimLinks.length > 0 && claimSources && claimSources.billId !== bill.id && bill.analysisBillNumber
+    ? { billId: claimSources.billId, billNumber: bill.analysisBillNumber }
+    : null
+  const openClaim = (index: number) => {
+    const link = claimLinks.find(c => c.index === index)
+    if (!link || !claimSources) return
+    setShowBillText(true)
+    setPassage({
+      key: ++passageKeyRef.current,
+      billId: claimSources.billId,
+      billNumber: claimSources.billId === bill.id ? bill.billNumber : (bill.analysisBillNumber ?? null),
+      document: claimSources.document,
+      matched: link.matched,
+      quoteAt: link.quoteAt,
+    })
+  }
+
+  // Separators between collapsible sections — no border above the first one.
+  // A claim's passage opens the bill text even where this bill has none of its own.
+  const hasBillText = (bill.texts.length > 0 && !!bill.textR2Key) || passage !== null
   const hasAmendments = (bill.amendments ?? []).filter(a => a.url || a.stateLink).length > 0
   const hasActions = !!bill.lastAction
   const hasHearings = (bill.calendar ?? []).length > 0
@@ -2513,8 +2554,14 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
+                {/* A borrowed summary says whose it is, since its claim links open that bill's text (#571). */}
+                {borrowedFrom && (
+                  <div style={{ fontSize: fontSize.sm, color: color.textMuted, marginBottom: 6 }}>
+                    Summary of <Link to={billUrl({ id: borrowedFrom.billId, billNumber: borrowedFrom.billNumber })} className="blue-link">{borrowedFrom.billNumber}</Link>, this bill's identical companion
+                  </div>
+                )}
                 <div style={regenerating ? DIMMED_WHILE_RUNNING : undefined}>
-                <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5}>
+                <MarkdownSummary fontSize={fontSize.base} color={color.textSlate} lineHeight={1.5} claimLinks={claimLinks} onClaimActivate={openClaim}>
                   {bill.tenantSummary}
                 </MarkdownSummary>
                 </div>
@@ -2673,14 +2720,14 @@ export function BillDetail() {
         )}
 
         {/* Bill text collapsible */}
-        {!bill.isDraft && bill.texts.length > 0 && bill.textR2Key && (
+        {!bill.isDraft && hasBillText && (
           <CollapsibleSection
             label="Bill texts"
-            count={bill.texts.length}
+            count={bill.texts.length > 0 ? bill.texts.length : 1}
             open={showBillText}
             onToggle={() => setShowBillText(v => !v)}
           >
-            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} />
+            <BillTextPanel key={bill.id} billId={bill.id} texts={bill.texts ?? []} externalOpen={showBillText} requestedDocId={requestedDocId} passage={passage} />
           </CollapsibleSection>
         )}
 

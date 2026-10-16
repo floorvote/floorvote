@@ -253,6 +253,6 @@ describe('markPassage', () => {
     const none = '<html><body><p>Section 2.</p></body></html>'
     const out = markPassage(none, passageIn(none, 'Section 2.'))
     expect(out ?? '').toMatch(/^<html/)
-    expect(parseDoc(out).compatMode).toBe('BackCompat')
+    expect(parseDoc(out ?? '').compatMode).toBe('BackCompat')
   })
 })

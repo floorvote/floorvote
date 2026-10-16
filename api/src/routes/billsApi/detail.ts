@@ -19,7 +19,7 @@ import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadGroupTeamValues } from '../../lib/teamFields'
-import { claimLinksEnabled } from '../../lib/claimSources'
+import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
 type CentralBillRich = {
@@ -262,6 +262,18 @@ export async function buildBillDetail(
         aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
       }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
 
+  const linksOn = await claimLinksEnabled(db)
+  const stored = linksOn ? await readClaimSources(db, analysisBill.id) : null
+  const claimSourcesForPage = stored && {
+    billId: stored.billId,
+    document: stored.document,
+    items: stored.items.map(i => ({
+      claim: i.claim,
+      status: i.status,
+      ...(i.quoteAt && i.matched !== undefined ? { quoteAt: i.quoteAt, matched: i.matched } : {}),
+    })),
+  }
+
   const response: Record<string, unknown> = {
     id: bill.id,
     externalId: bill.externalId,
@@ -334,7 +346,14 @@ export async function buildBillDetail(
     // Whether the instance shows claim links (#570). Off, a bill's stored claim
     // links render as plain text (#571, #572). It's the instance's setting, the
     // same for every bill, and the stored links are untouched either way.
-    claimLinksEnabled: await claimLinksEnabled(db),
+    claimLinksEnabled: linksOn,
+    // The shown analysis's claim sources, for the page to link each claim to
+    // its passage (#571). Read through the analysis's bill, so on a companion's
+    // page they are the analyzed member's, pinned to that member's document,
+    // never the page bill's own text. Null with the setting off, with none
+    // stored, or when the pinned document is no longer in the analyzed bill's
+    // texts. An item is only what a link needs.
+    claimSources: claimSourcesForPage,
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     // The member's notes across the group, and the one note they edit, which

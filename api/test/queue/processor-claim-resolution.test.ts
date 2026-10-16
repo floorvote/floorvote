@@ -360,7 +360,7 @@ describe('reading stored claim sources', () => {
 
   it('reads the items with the pin, while the pinned document is still in the bill\'s texts', async () => {
     const id = await analyzed()
-    expect(await readClaimSources(getDb(env.DB), id)).toEqual({ billId: id, docId: '5001', textHash: 'hash-5001', items: [first()] })
+    expect(await readClaimSources(getDb(env.DB), id)).toEqual({ billId: id, docId: '5001', textHash: 'hash-5001', document: expect.objectContaining({ docId: '5001', mime: 'text/html' }), items: [first()] })
   })
 
   it('reads an empty list as asked, with nothing usable returned', async () => {

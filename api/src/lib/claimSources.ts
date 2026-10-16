@@ -124,7 +124,19 @@ export type StoredClaimSources = {
   /** The document the model read and the offsets are into. */
   docId: string
   textHash: string | null
+  /** That document as the bill's text list has it, for the page to open (#571). */
+  document: PinnedDocument
   items: ResolvedClaimSource[]
+}
+
+/** A pinned document's row in the bill's text list, in the shape the bill detail lists texts. */
+export type PinnedDocument = {
+  docId: string
+  type: string
+  date: string
+  mime: string
+  stateLink: string | null
+  altStateLink: string | null
 }
 
 const STATUSES: ReadonlySet<string> = new Set<ClaimSourceStatus>(['exact', 'normalized', 'fuzzy', 'anchored', 'ungrounded', 'unverified'])
@@ -195,7 +207,10 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
   // pin as stale. If that column is ever filled with the value central serves as
   // `textHash` for the document, compare it here, so a document whose content
   // changed under the same id stops reading until a re-analysis re-pins.
-  const listed = await db.select({ id: billTexts.id }).from(billTexts)
+  const listed = await db.select({
+    docId: billTexts.docId, type: billTexts.type, date: billTexts.date, mime: billTexts.mime,
+    stateLink: billTexts.stateLink, altStateLink: billTexts.altStateLink,
+  }).from(billTexts)
     .where(and(eq(billTexts.billId, billId), eq(billTexts.docId, row.docId))).get()
   if (!listed) return null
 
@@ -203,6 +218,7 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
     billId,
     docId: row.docId,
     textHash: row.textHash,
+    document: listed,
     items,
   }
 }
