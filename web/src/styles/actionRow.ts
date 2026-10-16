@@ -15,13 +15,13 @@ export const actionRowStyleFirst: React.CSSProperties = {
 }
 
 export const actionBtnBlue = (disabled: boolean): React.CSSProperties => ({
-  background: disabled ? color.accentBlueMuted : color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md,
+  background: disabled ? color.accentBlueMuted : color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
   padding: '8px 14px', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
   width: 224, flexShrink: 0, whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.4,
 })
 
 export const actionBtnRed = (disabled: boolean): React.CSSProperties => ({
-  background: disabled ? color.bgRedDisabled : color.textErrorRed, color: color.white, border: 'none', borderRadius: radius.md,
+  background: disabled ? color.bgRedDisabled : color.textErrorRed, color: color.textOnFill, border: 'none', borderRadius: radius.md,
   padding: '8px 14px', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
   width: 224, flexShrink: 0, whiteSpace: 'normal', textAlign: 'center', lineHeight: 1.4,
 })

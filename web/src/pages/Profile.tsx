@@ -16,8 +16,15 @@ import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled 
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 import { emailChangedLabel, ownEmailChangeLabel, type EmailChangeStepFields } from '../lib/emailChangedLabel'
+import { getColorMode, setColorMode, type ColorMode } from '../lib/colorMode'
 
 const SECTION_CARD: React.CSSProperties = { ...CARD, padding: 24, marginBottom: 20 }
+
+const COLOR_MODES: { value: ColorMode; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+]
 
 type AccountAuthEvent = EmailChangeStepFields & {
   id: string
@@ -72,6 +79,7 @@ export function Profile() {
   // pattern BillDetail uses for #section-* / #comment- anchors.
   const location = useLocation()
   const [flashedSetting, setFlashedSetting] = useState<string | null>(null)
+  const [colorMode, setColorModeState] = useState<ColorMode>(getColorMode)
   useEffect(() => {
     const id = location.hash.slice(1)
     if (id !== 'setting-email-replies' && id !== 'setting-email-digest' && id !== 'setting-week-ahead') return
@@ -496,7 +504,7 @@ export function Profile() {
                 type="submit"
                 disabled={!changeEmailReady}
                 style={{
-                  background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md,
+                  background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
                   padding: '8px 20px', fontSize: fontSize.base, fontWeight: fontWeight.medium,
                   cursor: changeEmailReady ? 'pointer' : 'not-allowed', opacity: changeEmailReady ? 1 : 0.5,
                 }}
@@ -556,7 +564,7 @@ export function Profile() {
             disabled={saving || demoLocked}
             style={{
               background: color.accentBlue,
-              color: color.white,
+              color: color.textOnFill,
               border: 'none',
               borderRadius: radius.md,
               padding: '8px 20px',
@@ -831,6 +839,49 @@ export function Profile() {
                   }}
                 />
               </label>
+            </div>
+          </div>
+
+          <div
+            id="setting-color-mode"
+            style={{
+              padding: '12px 14px',
+              border: `1px solid ${color.borderDefault}`,
+              borderRadius: radius.lg,
+              background: color.white,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+                <div id="color-mode-label" style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Appearance</div>
+                <div>System follows your device. Saved in this browser.</div>
+              </div>
+              <div
+                role="group"
+                aria-labelledby="color-mode-label"
+                style={{ display: 'inline-flex', border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden', flexShrink: 0 }}
+              >
+                {COLOR_MODES.map(({ value, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={colorMode === value}
+                    onClick={() => { setColorMode(value); setColorModeState(value) }}
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: fontSize.sm,
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: colorMode === value ? color.bgAmberPriority : color.white,
+                      color: colorMode === value ? color.billBadgeNavy : color.textSlate,
+                      fontWeight: colorMode === value ? fontWeight.semibold : fontWeight.normal,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

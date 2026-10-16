@@ -66,19 +66,13 @@ describe('EventItem', () => {
   })
 
   describe('source icon', () => {
-    // jsdom serializes inline hex colors as rgb(...), so compare on that form.
-    const hexToRgb = (hex: string) => {
-      const n = parseInt(hex.slice(1), 16)
-      return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`
-    }
-
     it('custom events always get the blue calendar tile, even when linked to a bill', () => {
       const { container } = render(<MemoryRouter><EventItem event={customWithBill} isPast={false} isAdmin={false} editing={false} billOptions={[]} onEdit={vi.fn()} onEditSave={vi.fn()} onEditCancel={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} /></MemoryRouter>)
       const card = container.querySelector('#agenda-event-5') as HTMLElement
       const tile = card.querySelector('[role="img"]') as HTMLElement
       expect(tile.getAttribute('aria-label')).toBe('Custom event')
       expect(tile.textContent).toBe('calendar_today')
-      expect(tile.style.color).toBe(hexToRgb(color.accentBlue))
+      expect(tile.style.color).toBe(color.accentBlue)
       // Exactly one source icon should appear on the agenda card (tile from EventSourceIcon,
       // no duplicate inline glyph from EventLines).
       expect(card.querySelectorAll('[role="img"]').length).toBe(1)
@@ -90,7 +84,7 @@ describe('EventItem', () => {
       const tile = card.querySelector('[role="img"]') as HTMLElement
       expect(tile.getAttribute('aria-label')).toBe('Hearing')
       expect(tile.textContent).toBe('gavel')
-      expect(tile.style.color).toBe(hexToRgb(color.billBadgeNavy))
+      expect(tile.style.color).toBe(color.billBadgeNavy)
       // Exactly one source icon should appear on the agenda card (tile from EventSourceIcon,
       // no duplicate inline glyph from EventLines).
       expect(card.querySelectorAll('[role="img"]').length).toBe(1)

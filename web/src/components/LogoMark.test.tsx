@@ -15,12 +15,12 @@ describe('LogoMark', () => {
 
   it('fills in Honey by default', () => {
     render(<LogoMark />)
-    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('fill', color.accentAmber)
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveStyle({ fill: color.accentAmber })
   })
 
   it('accepts a custom fill', () => {
     render(<LogoMark fill="#1e3a5f" />)
-    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveAttribute('fill', '#1e3a5f')
+    expect(screen.getByRole('img', { name: 'FloorVote' })).toHaveStyle({ fill: '#1e3a5f' })
   })
 
   it('uses the tight inline viewBox when inline', () => {

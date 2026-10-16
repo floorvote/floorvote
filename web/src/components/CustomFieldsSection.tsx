@@ -184,7 +184,7 @@ export function CustomFieldsSection({ fields, billId, values, isAdmin, onUpdate,
                 flexShrink: 0,
                 transition: 'background 0.1s, border-color 0.1s',
               }}>
-                <span style={{ color: color.white, fontSize: fontSize.sm, lineHeight: 1, marginTop: -1, opacity: checked ? 1 : 0 }}>✓</span>
+                <span style={{ color: color.textOnFill, fontSize: fontSize.sm, lineHeight: 1, marginTop: -1, opacity: checked ? 1 : 0 }}>✓</span>
               </span>
             </label>
           </div>

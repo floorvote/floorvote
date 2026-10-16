@@ -7,7 +7,7 @@ const NO_POSITION = { bg: color.white, color: color.textMuted, border: color.bor
 function ChevronDown({ color }: { color: string }) {
   return (
     <svg width="10" height="6" viewBox="0 0 10 6" fill="none" style={{ display: 'block' }}>
-      <path d="M1 1l4 4 4-4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 1l4 4 4-4" style={{ stroke: color }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

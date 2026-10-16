@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { color } from '../../styles/tokens'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MonthGrid } from './MonthGrid'
@@ -11,13 +12,13 @@ vi.mock('../../lib/calendarGrid', async (importOriginal) => {
   return { ...actual, todayIso: () => '2026-06-15' }
 })
 
-// jsdom serializes inline colors to rgb(); these match the tokens used for edges.
-const NAVY_RGB = 'rgb(30, 58, 95)'   // color.billBadgeNavy #1e3a5f
-const BLUE_RGB = 'rgb(59, 130, 246)' // color.accentBlue   #3b82f6
+// The tokens used for edges and fills (CSS variables in the web build).
+const NAVY = color.billBadgeNavy
+const BLUE = color.accentBlue
 
-const AMBER_RGB = 'rgb(232, 163, 61)'        // color.accentAmber
-const AMBER_FILL_RGB = 'rgb(254, 243, 199)'  // color.bgAmberPriority
-const BORDER_RGB = 'rgb(226, 232, 240)'      // color.borderDefault
+const AMBER = color.accentAmber
+const AMBER_FILL = color.bgAmberPriority
+const BORDER = color.borderDefault
 
 const evs: CalendarEvent[] = [
   { id: '1', uid: 'a', source: 'custom', billId: null, bills: [], date: '2026-06-15', time: null, location: null, description: 'Board meeting', details: null, url: null, status: 'confirmed' },
@@ -46,7 +47,7 @@ describe('MonthGrid', () => {
     const icon = card?.querySelector('[role="img"]') as HTMLElement
     expect(icon.getAttribute('aria-label')).toBe('Custom event')
     expect(icon.textContent).toBe('calendar_today')
-    expect(icon.style.color).toBe(BLUE_RGB)
+    expect(icon.style.color).toBe(BLUE)
   })
 
   it('hearing event card has a navy gavel source icon, no left border edge', () => {
@@ -56,7 +57,7 @@ describe('MonthGrid', () => {
     const icon = card?.querySelector('[role="img"]') as HTMLElement
     expect(icon.getAttribute('aria-label')).toBe('Hearing')
     expect(icon.textContent).toBe('gavel')
-    expect(icon.style.color).toBe(NAVY_RGB)
+    expect(icon.style.color).toBe(NAVY)
   })
 
   it('custom event with a linked bill is STILL the custom icon (regression: source, not bill, decides the marker)', () => {
@@ -69,8 +70,8 @@ describe('MonthGrid', () => {
     const card = cardFor('Strategy call')
     const icon = card?.querySelector('[role="img"]') as HTMLElement
     expect(icon.getAttribute('aria-label')).toBe('Custom event')
-    expect(icon.style.color).toBe(BLUE_RGB)
-    expect(icon.style.color).not.toBe(NAVY_RGB)
+    expect(icon.style.color).toBe(BLUE)
+    expect(icon.style.color).not.toBe(NAVY)
   })
 
   it('renders linked bills as chips in the month tile', () => {
@@ -190,17 +191,17 @@ describe('MonthGrid', () => {
   it('fills today with the pale amber highlight (not an amber border)', () => {
     const { container } = render(<MemoryRouter><MonthGrid events={evs} initialYear={2026} initialMonth={5} onSelect={vi.fn()} /></MemoryRouter>)
     const todayCell = container.querySelector('[data-daycell="2026-06-15"]') as HTMLElement
-    expect(todayCell.style.background).toContain(AMBER_FILL_RGB)
-    expect(todayCell.style.border).toContain(BORDER_RGB)
-    expect(todayCell.style.border).not.toContain(AMBER_RGB)
+    expect(todayCell.style.background).toContain(AMBER_FILL)
+    expect(todayCell.style.border).toContain(BORDER)
+    expect(todayCell.style.border).not.toContain(AMBER)
   })
 
   it('outlines the active day with a 2px amber border', () => {
     const { container } = render(<MemoryRouter><MonthGrid events={evs} initialYear={2026} initialMonth={5} onSelect={vi.fn()} activeDateIso="2026-06-10" /></MemoryRouter>)
     const activeCell = container.querySelector('[data-daycell="2026-06-10"]') as HTMLElement
-    expect(activeCell.style.border).toBe(`2px solid ${AMBER_RGB}`)
+    expect(activeCell.style.border).toBe(`2px solid ${AMBER}`)
     const otherCell = container.querySelector('[data-daycell="2026-06-12"]') as HTMLElement
-    expect(otherCell.style.border).toBe(`1px solid ${BORDER_RGB}`)
+    expect(otherCell.style.border).toBe(`1px solid ${BORDER}`)
   })
 
   it('has no active outline when activeDateIso is null', () => {

@@ -6,9 +6,9 @@ import { color, radius, fontSize } from './tokens'
 export const CHIP_MINI_DIMS = { padding: '2px 6px', radius: radius.sm, fontSize: fontSize.xs } as const
 
 export const PRIORITY_COLORS: Record<string, { fill: string; text: string; dot: string; label: string }> = {
-  high:   { fill: color.priorityHigh,   text: color.white, dot: color.priorityHigh,   label: 'High priority' },
-  medium: { fill: color.priorityMedium, text: color.white, dot: color.priorityMedium, label: 'Medium priority' },
-  low:    { fill: color.priorityLow,    text: color.white, dot: color.priorityLow,    label: 'Low priority' },
+  high:   { fill: color.priorityHigh,   text: color.textOnFill, dot: color.priorityHigh,   label: 'High priority' },
+  medium: { fill: color.priorityMedium, text: color.textOnFill, dot: color.priorityMedium, label: 'Medium priority' },
+  low:    { fill: color.priorityLow,    text: color.textOnFill, dot: color.priorityLow,    label: 'Low priority' },
 }
 
 export const POSITION_COLORS: Record<string, { bg: string; color: string; border: string }> = {
