@@ -10,7 +10,7 @@ import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from 
 import { syncBillSubjects } from '../lib/billSubjects'
 import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
-import { loadGroupTeamValues, recordFieldChanges } from '../lib/teamFields'
+import { loadGroupTeamValues, recordFieldChanges, recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { nowDb } from '../lib/dbTime'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
@@ -397,7 +397,7 @@ async function applyCentralBill(
       subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub })
+    const { id: stubInternalId } = await upsertBill(db, msg.billId, { ...stubData, updatedAt: nowStub }, existing)
     await syncBillSubjects(db, stubInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
@@ -451,7 +451,7 @@ async function applyCentralBill(
       subjects: centralBill.subjects?.length ? JSON.stringify(centralBill.subjects) : null,
     }
 
-    const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd })
+    const { id: metadataInternalId } = await upsertBill(db, msg.billId, { ...metadataData, updatedAt: nowMd }, existing)
     await syncBillSubjects(db, metadataInternalId, centralBill.state, centralBill.subjects ?? [])
     return
   }
@@ -754,7 +754,9 @@ async function applyCentralBill(
   // Tags are a team field (lib/teamFields.ts), set only by the analysis. The
   // group's tags before this one, for the team event recording a change.
   const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
-  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
+  // An analysis records the tags it leaves the group with, including the effect of the match type it
+  // arrives with, so the upsert records a match type's effect only when no analysis runs.
+  const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData, aiResult ? undefined : existing)
   if (aiResult) {
     // The group's tags after this analysis: its own when the bill is tracked or
     // the group has no tracked analysis, the tracked bill's otherwise, so a
@@ -938,11 +940,25 @@ function resolveSessionLabel(sessionId: string | null | undefined): string {
   return sessionId
 }
 
+/**
+ * Upsert a bill from central. Pass the bill as it was just read (`existing`) to
+ * record the tags event for a match type that starts the bill matching: since
+ * #554 a group's tags come from a tracked member first, so a bill that starts
+ * matching can move them with no analysis to record it. A match type never
+ * goes back to null here, so only null to matching can change a group's tags.
+ */
 async function upsertBill(
   db: AppDb,
   externalId: string,
   data: Record<string, unknown>,
+  existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
+  const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
+  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
+  const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {
+    console.error(`[processor] reading group tags before the match type change failed for ${externalId}:`, err)
+    return null
+  }) : null
   const id = crypto.randomUUID()
   const now = nowDb()
   // Exclude externalId from the update set (it's the conflict target) and handle matchType separately
@@ -963,5 +979,10 @@ async function upsertBill(
     })
     .returning({ id: bills.id })
     .get()
+  if (tagsBefore) {
+    await recordGroupTagChanges(db, tagsBefore).catch(err => {
+      console.error(`[processor] recording group tag changes failed for ${externalId}:`, err)
+    })
+  }
   return { id: returned.id, isNew: returned.id === id }
 }
