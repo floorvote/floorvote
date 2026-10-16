@@ -599,6 +599,20 @@ So `POST /tenants/reprocess/:tenantId` (`forceMetadata: true`) gets past the ear
 
 *`roll_call_votes` are populated by the weekly vote-dataset load, the bulk-seed script, and snapshot providers' ingests (see the note under "Normal branch"), not by a LegiScan `getBill` ingest.
 
+### Bill text encoding
+
+Some states publish HTML bill text as windows-1252, not UTF-8. Central stores the bytes exactly as fetched, and decodes them when it serves them (`decodeStoredHtml` in `central/src/lib/decodeHtml.ts`), so `GET /bills/:id/text` (which the analysis path reads) and `GET /bills/:id/text/:docId` (which the bill text panel reads) both return text with curly quotes, section signs, and dashes intact. The inline endpoint re-serves HTML as UTF-8 whatever the source charset was.
+
+The decoder picks a charset in this order:
+
+1. The charset on the stored `Content-Type`, then a `<meta charset>` or `http-equiv` tag in the first 4 KB of the document. A windows-1252 or ISO-8859-1 label gives way to valid UTF-8, because servers mislabel UTF-8 files and those decoded correctly before this change.
+2. UTF-8, when the bytes are valid UTF-8. A declaration that says UTF-8 over bytes that aren't lands here too.
+3. windows-1252.
+
+PDFs are binary and never go through the decoder.
+
+There is no backfill, and none is needed: the R2 objects are unchanged. A bill that was analyzed from garbled text keeps that analysis until its next run, which reads the decoded text. That happens when the bill gets a new text version, or when an operator forces a re-analysis (`POST /admin/reprocess-bill/:externalId` for one bill, `POST /admin/reprocess-llm-all` for many), which bypasses the text-hash dedup described above. Until then the bill text panel is already correct, because it reads the same endpoint.
+
 The tenant has no per-bill relational tables — supplements, amendments, sponsors, votes, calendar, etc. are read live from central by the tenant API's bill-detail route.
 
 ---
