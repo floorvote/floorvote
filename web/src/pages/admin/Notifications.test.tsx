@@ -28,7 +28,7 @@ describe('Notifications page', () => {
     render(<MemoryRouter><Notifications /></MemoryRouter>)
     expect(await screen.findByText('Send conversation emails to members')).toBeInTheDocument()
     expect(screen.queryByText(/@-mention emails/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/mentions of a member, a role, or @everyone in comments, and replies on bills members have commented on, for the whole instance/i)).toBeInTheDocument()
+    expect(screen.getByText(/mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance/i)).toBeInTheDocument()
   })
 
   it('frames the page as settings for everyone in the instance', async () => {

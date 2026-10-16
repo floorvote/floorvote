@@ -1,0 +1,13 @@
+-- Restore the (field_id, value) index on bill_custom_field_values that 0025 dropped.
+--
+-- 0021 created idx_bill_cf_values_field_value. 0025 was the OpenStates clean break:
+-- it dropped and recreated bill_custom_field_values, and a dropped table takes its
+-- indexes with it. The recreated table kept only its primary key (bill_id, field_id).
+-- The Drizzle schema declares no indexes, so migration files are their sole
+-- definition, which is why the loss was silent. Nothing read the table by value
+-- until date custom fields became calendar events (lib/dateFieldEvents.ts), which
+-- selects a date field's values in a date range on every calendar load, dashboard
+-- stats call, and calendar feed poll.
+--
+-- IF NOT EXISTS so this is a no-op on an instance that already repaired it by hand.
+CREATE INDEX IF NOT EXISTS idx_bill_cf_values_field_value ON bill_custom_field_values(field_id, value);

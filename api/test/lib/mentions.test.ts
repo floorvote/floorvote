@@ -55,6 +55,11 @@ describe('extractMentions', () => {
     expect(extractMentions(html)).toHaveLength(1)
   })
 
+  it('extracts an admins mention', () => {
+    const html = '<p>Flagging <span data-type="mention" data-id="admins:all" data-label="admins">@admins</span></p>'
+    expect(extractMentions(html)).toEqual([{ type: 'admins', id: 'all', label: 'admins' }])
+  })
+
   it('extracts an everyone mention', () => {
     const html = '<p>Heads up <span data-type="mention" data-id="everyone:all" data-label="everyone">@everyone</span></p>'
     const mentions = extractMentions(html)

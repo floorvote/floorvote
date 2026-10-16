@@ -288,13 +288,13 @@ export async function seedComment(
  * comment_mentions table had, for tests that check who a comment reached and how.
  */
 export async function mentionRecords(commentId?: string): Promise<Array<{
-  id: string; commentId: string | null; userId: string; sourceType: 'user' | 'role' | 'everyone'; sourceId: string; readAt: string | null
+  id: string; commentId: string | null; userId: string; sourceType: 'user' | 'role' | 'admins' | 'everyone'; sourceId: string; readAt: string | null
 }>> {
   const rows = await getDb(env.DB).select().from(notifications)
     .where(commentId ? and(eq(notifications.kind, 'mention'), eq(notifications.commentId, commentId)) : eq(notifications.kind, 'mention'))
     .all()
   return rows.map(r => {
-    const data = JSON.parse(r.data) as { sourceType: 'user' | 'role' | 'everyone'; sourceId: string }
+    const data = JSON.parse(r.data) as { sourceType: 'user' | 'role' | 'admins' | 'everyone'; sourceId: string }
     return { id: r.id, commentId: r.commentId, userId: r.recipientId, sourceType: data.sourceType, sourceId: data.sourceId, readAt: r.readAt }
   })
 }
@@ -304,7 +304,7 @@ export async function seedCommentMention(
   commentId: string,
   userId: string,
   overrides?: {
-    sourceType?: 'user' | 'role'
+    sourceType?: 'user' | 'role' | 'admins'
     sourceId?: string
     readAt?: string | null
   },
