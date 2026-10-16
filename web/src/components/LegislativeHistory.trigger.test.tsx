@@ -6,7 +6,8 @@ import { LegislativeHistory } from './LegislativeHistory'
 // The header on LegislativeHistory is a disclosure, like the dotted-underline
 // toggletips of #575 and #579: click, tap, Enter, or Space opens or closes the
 // timeline, Escape closes it, it is a real button with the pointer cursor, and
-// it never sits inside a link or another button. Unlike those, it opens the
+// it never sits inside a link or another button. It carries no dotted underline,
+// which means a toggletip everywhere else; its "▼ N events" chevron is its cue. Unlike those, it opens the
 // timeline inline rather than in a floating bubble, so there is no hover or
 // focus preview: the timeline is too long for one, and hover cannot reveal what
 // a tap would not.
@@ -97,12 +98,13 @@ describe('LegislativeHistory header trigger', () => {
     expect(header()).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('is a button with the pointer cursor and a dotted underline when there is a timeline', () => {
+  it('is a button with the pointer cursor and no dotted underline, which is reserved for toggletips: the chevron is its affordance', () => {
     render(<LegislativeHistory {...props} />)
     expect(header().tagName).toBe('BUTTON')
     expect(header()).toHaveAttribute('type', 'button')
     expect(header().style.cursor).toBe('pointer')
-    expect(header().style.borderBottom).toContain('dotted')
+    expect(header().style.borderBottom).not.toContain('dotted')
+    expect(header()).toHaveTextContent('▼ 2 events')
   })
 
   it('is one tab stop, and not nested inside a link or button', () => {

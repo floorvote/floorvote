@@ -128,7 +128,7 @@ export function LegislativeHistory({ entries, votes, lastAction, lastActionDate,
             color: color.textSlate,
             background: 'none',
             border: 'none',
-            borderBottom: hasTimeline ? `1px dotted ${color.textMuted}` : 'none',
+            borderBottom: 'none',
             cursor: hasTimeline ? 'pointer' : 'default',
             padding: 0,
           }}
