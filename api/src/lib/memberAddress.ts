@@ -1,4 +1,4 @@
-import { inArray, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { users } from '../db/schema'
 import type { AppDb } from '../types'
 import { isValidEmail } from '../../../shared/email'
@@ -28,6 +28,22 @@ export function normalizeMemberAddress(raw: string | null | undefined): string {
 }
 
 /**
+ * The member whose address matches `raw` without regard to case, or undefined.
+ * Stored addresses can be mixed case (see below), so compare on lower(email).
+ */
+export async function findMemberByAddress(db: AppDb, raw: string | null | undefined) {
+  const normalized = normalizeMemberAddress(raw)
+  // The unique constraint on email is case-sensitive, so two rows can differ
+  // only in case. An exact match wins, then the oldest row, so the pick is stable.
+  return db
+    .select()
+    .from(users)
+    .where(eq(sql`lower(${users.email})`, normalized))
+    .orderBy(sql`(${users.email} = ${normalized}) desc`, users.createdAt, sql`rowid`)
+    .get()
+}
+
+/**
  * Check each raw address against the shared validity rule and every existing
  * member, deactivated included. Returns one result per input, in input order,
  * looking up all valid addresses in as few queries as D1 allows.
@@ -39,9 +55,9 @@ export async function checkMemberAddresses(
   const emails = rawEmails.map(normalizeMemberAddress)
   const candidates = [...new Set(emails.filter(isValidEmail))]
 
-  // Compared on lower(email), not the stored value: the superadmin sign-in
-  // path stores an address as the identity provider sent it, mixed case and
-  // all. Not index-backed, but the members table is small.
+  // Compared on lower(email), not the stored value: older superadmin
+  // sign-in rows were stored as the identity provider sent them, mixed case
+  // and all (new rows are lowercased). Not index-backed, but the members table is small.
   const storedLower = sql<string>`lower(${users.email})`
   const takenBy = new Map<string, string>()
   for (let i = 0; i < candidates.length; i += ADDRESS_LOOKUP_CHUNK) {

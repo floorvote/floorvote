@@ -940,7 +940,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
 
       {/* Pinned bottom: user section (does not scroll) */}
       <div style={{ flexShrink: 0, borderTop: `1px solid ${color.borderDefault}`, padding: '10px 8px' }}>
-        <UserCard user={user ? { name: user.name, email: user.email, subtitle: user.subtitle ?? undefined } : null} isActive={isOnProfile} />
+        <UserCard user={user ? { name: user.name, email: user.email, title: user.title ?? undefined } : null} isActive={isOnProfile} />
         <div ref={membersButtonRef} style={{ position: 'relative', padding: '6px 4px 2px 12px' }}>
           <button
             onClick={handleMembersClick}
@@ -967,7 +967,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
               onClick={() => setShowFeedback(true)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: fontSize.sm, color: color.textSecondary, padding: 0 }}
             >
-              Feedback
+              Feedback…
             </button>
           )}
           <button

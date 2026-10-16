@@ -24,7 +24,7 @@ function makeEvent(overrides: Partial<FeedEvent> & { billId: string | null; crea
     billMatchType: overrides.billMatchType ?? null,
     userId: overrides.userId ?? 'user-1',
     userName: overrides.userName ?? 'Alice',
-    userSubtitle: overrides.userSubtitle ?? null,
+    userTitle: overrides.userTitle ?? null,
     metadata: overrides.metadata ?? {},
     createdAt: overrides.createdAt,
   }

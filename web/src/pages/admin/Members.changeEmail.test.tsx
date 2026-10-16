@@ -11,13 +11,14 @@ const UNCHANGED = "That's already their address. Check it for a typo, or use Res
 const IN_USE = 'Another member already uses that address.'
 const SUPPRESSED = 'This address has bounced before. Check it for a typo.'
 const INVALID = 'Invalid email address'
+const RATE_LIMITED = "You've sent a lot of invites and sign-in links in the past hour. Please wait a little while before sending more."
 
 function member(overrides: Record<string, unknown>) {
   return {
     email: 'x@example.com',
     name: 'Someone',
     role: 'member' as const,
-    subtitle: null,
+    title: null,
     createdAt: '2024-01-01T00:00:00Z',
     lastActive: '2024-01-01T00:00:00Z',
     deactivatedAt: null,
@@ -85,7 +86,7 @@ describe('Members "Change email…" action', () => {
   })
 
   describe('where it appears', () => {
-    it('appears exactly where "Resend invite" does', async () => {
+    it('appears for pending invites and active members, never for deactivated ones', async () => {
       const rows = [
         OWNER,
         PENDING,
@@ -95,16 +96,44 @@ describe('Members "Change email…" action', () => {
       ]
       mockApi(rows)
       renderMembers()
-      for (const [name, expected] of [
-        ['Jane Pending', true],
-        ['Signed In', false],
-        ['Gone Pending', false],
-        ['Never Invited', false],
+      // [name, Change email…, Resend invite]: only pending invites get Resend invite.
+      for (const [name, change, resend] of [
+        ['Jane Pending', true, true],
+        ['Signed In', true, false],
+        ['Gone Pending', false, false],
+        ['Never Invited', true, false],
       ] as const) {
         const menu = await openMenuFor(name)
         const labels = within(menu).getAllByRole('menuitem').map(b => b.textContent)
-        expect(labels.includes('Change email…')).toBe(expected)
-        expect(labels.includes('Resend invite')).toBe(expected)
+        expect(labels.includes('Change email…')).toBe(change)
+        expect(labels.includes('Resend invite')).toBe(resend)
+        fireEvent.keyDown(menu, { key: 'Escape' })
+      }
+    })
+
+    it('is offered to an Admin for Standard members only, and to an Owner for anyone', async () => {
+      const rows = [
+        OWNER,
+        member({ id: 'owner-2', email: 'owner2@example.com', name: 'Second Owner', role: 'owner', invitedBy: null }),
+        member({ id: 'admin-1', email: 'admin@example.com', name: 'An Admin', role: 'admin' }),
+        member({ id: 'admin-2', email: 'admin2@example.com', name: 'Other Admin', role: 'admin' }),
+        member({ id: 'in-1', email: 'in@example.com', name: 'Signed In' }),
+      ]
+      authState.user = { id: 'admin-1', email: 'admin@example.com', name: 'An Admin', role: 'admin' }
+      mockApi(rows)
+      const view = renderMembers()
+      for (const [name, expected] of [['Second Owner', false], ['Other Admin', false], ['Signed In', true]] as const) {
+        const menu = await openMenuFor(name)
+        expect(within(menu).queryByRole('menuitem', { name: 'Change email…' }) !== null).toBe(expected)
+        fireEvent.keyDown(menu, { key: 'Escape' })
+      }
+      view.unmount()
+
+      authState.user = { id: 'owner-1', email: 'owner@example.com', name: 'Sole Owner', role: 'owner' }
+      renderMembers()
+      for (const name of ['Other Admin', 'Signed In']) {
+        const menu = await openMenuFor(name)
+        expect(within(menu).getByRole('menuitem', { name: 'Change email…' })).toBeInTheDocument()
         fireEvent.keyDown(menu, { key: 'Escape' })
       }
     })
@@ -224,6 +253,7 @@ describe('Members "Change email…" action', () => {
       [new ApiError(400, SUPPRESSED), SUPPRESSED],
       [new ApiError(400, UNCHANGED), UNCHANGED],
       [new ApiError(400, INVALID), INVALID],
+      [new ApiError(429, RATE_LIMITED), RATE_LIMITED],
       [new TypeError('network down'), "Couldn't change the address. Try again."],
     ])('shows "%s" in red inside the dialog, keeping the typed value', async (err, message) => {
       mockApi(undefined, { '/admin/members/pending-1/change-email': () => { throw err } })
@@ -314,5 +344,76 @@ describe('Members "Change email…" action', () => {
     const menu = await openMenuFor('Jane Pending')
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Login activity' }))
     expect(await screen.findByText('Email changed from jane@exmaple.com to jane@example.com by Sole Owner')).toBeInTheDocument()
+  })
+
+  describe('for an active member', () => {
+    const ACTIVE = member({ id: 'in-1', email: 'sam@oldjob.org', name: 'Sam Signed In' })
+    const SENT = "Confirmation sent to sam@newjob.org. The change takes effect once it is confirmed."
+
+    async function openActiveDialog() {
+      const menu = await openMenuFor('Sam Signed In')
+      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Change email…' }))
+      return screen.findByRole('dialog', { name: 'Change email' })
+    }
+
+    it('explains that nothing changes until the new address confirms, and offers Send confirmation', async () => {
+      mockApi([OWNER, ACTIVE])
+      renderMembers()
+      const dialog = await openActiveDialog()
+      expect((within(dialog).getByLabelText('Email address') as HTMLInputElement).value).toBe('sam@oldjob.org')
+      expect(within(dialog).getByText(/Nothing changes until it is confirmed/)).toBeInTheDocument()
+      expect(within(dialog).queryByText(/old invite link/)).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Send confirmation' })).toBeInTheDocument()
+      expect(within(dialog).queryByRole('button', { name: 'Send new invite' })).not.toBeInTheDocument()
+    })
+
+    it('keeps the pending-invite copy for a pending invite', async () => {
+      mockApi()
+      renderMembers()
+      const dialog = await openDialog()
+      expect(within(dialog).getByText(/old invite link will stop working/)).toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: 'Send new invite' })).toBeInTheDocument()
+    })
+
+    it('posts the cleaned address, then says a confirmation went out and leaves the row alone', async () => {
+      const spy = mockApi([OWNER, ACTIVE], {
+        '/admin/members/in-1/change-email': () => ({ ok: true, email: 'sam@newjob.org', pending: true }),
+      })
+      renderMembers()
+      const dialog = await openActiveDialog()
+      fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: '  Sam@NewJob.org ' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      expect(await screen.findByText(SENT)).toBeInTheDocument()
+      expect(JSON.parse(String(changeEmailCalls(spy)[0][1]?.body))).toEqual({ email: 'sam@newjob.org' })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      // Nothing has changed yet: the member is still listed at the old address.
+      expect(screen.getByText('sam@oldjob.org')).toBeInTheDocument()
+      expect(screen.queryByText('sam@newjob.org', { selector: 'td *, td' })).not.toBeInTheDocument()
+    })
+
+    it('refuses an unchanged address without a request, and does not point to Resend invite', async () => {
+      const spy = mockApi([OWNER, ACTIVE])
+      renderMembers()
+      const dialog = await openActiveDialog()
+      fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'SAM@oldjob.org' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent("That's already their address. Check it for a typo.")
+      expect(within(dialog).getByRole('alert')).not.toHaveTextContent('Resend invite')
+      expect(changeEmailCalls(spy)).toHaveLength(0)
+    })
+
+    it.each([
+      [new ApiError(403, "Only owners can change an admin's address"), "Only owners can change an admin's address"],
+      [new ApiError(403, "This account's address is managed centrally, so it can't be changed here."), "This account's address is managed centrally, so it can't be changed here."],
+      [new ApiError(429, 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'), 'A change to this member\'s email was requested three times in the past day. Please try again tomorrow.'],
+    ])('shows the refusal "%s" inside the dialog', async (err, message) => {
+      mockApi([OWNER, ACTIVE], { '/admin/members/in-1/change-email': () => { throw err } })
+      renderMembers()
+      const dialog = await openActiveDialog()
+      fireEvent.change(within(dialog).getByLabelText('Email address'), { target: { value: 'sam@newjob.org' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Send confirmation' }))
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(message)
+      expect(screen.getByRole('dialog', { name: 'Change email' })).toBeInTheDocument()
+    })
   })
 })

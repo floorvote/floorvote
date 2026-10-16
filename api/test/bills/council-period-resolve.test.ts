@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { sessionToSlug, legacySessionSlug, billUrl } from '../../../shared/sessionSlug'
 
 describe('Council Period slugs', () => {
@@ -16,11 +15,12 @@ describe('Council Period slugs', () => {
 describe('resolving DC bill URLs', () => {
   let cookie: string
   beforeEach(async () => {
+    stubFetch() // the bill lookup may ask central in the background; answer it, never reach it
     await resetDb()
     await applyMigrations()
     cookie = `session=${await seedSession(await seedUser({ email: 'm@x.com' }))}`
   })
-  const get = (path: string) => SELF.fetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })
+  const get = (path: string) => appFetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })
 
   it('tells a Council Period bill from a same-number bill in another 2025-2026 DC session', async () => {
     const lims = await seedBill({ billNumber: 'B26-0400', state: 'DC', session: '2025-2026 Council Period 26', externalId: 'legiscan:1012600400' })

@@ -41,7 +41,7 @@ vi.mock('../../lib/api', () => {
   async function apiFetch<T>(path: string): Promise<T> {
     if (path === '/auth/me') {
       return { id: 'u1', email: 'u1@example.com', name: 'U1', role: authState.role,
-        subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
+        title: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
