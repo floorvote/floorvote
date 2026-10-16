@@ -71,7 +71,7 @@ import { placeGroupingLines } from '../lib/groupingLine'
 import { GroupingLine } from '../components/GroupingLine'
 import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
-import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
+import { pollForAnalysis, analysisOutcomeMessage, regenerateOutcomeMessage, type AnalysisSnapshot } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
 
 function PartyBadge({ party }: { party: string }) {
@@ -505,6 +505,18 @@ type BillDetailData = {
   centralSyncedAt: string | null
   aiProcessedAt: string | null
   aiSkipReason: 'pdf_too_large' | null
+  /**
+   * The bill the analysis shown on this page comes from: this bill's own, or
+   * on a companion group's page a tracked member's (#554), with that bill's
+   * handle and analysis state. Regenerate re-analyzes and polls it (#563).
+   * Absent from a server that predates them, when the bill's own fields apply.
+   */
+  analysisBillId?: string
+  analysisBillExternalId?: string | null
+  analysisBillNumber?: string
+  analysisAiProcessedAt?: string | null
+  analysisAiSkipReason?: 'pdf_too_large' | null
+  analysisTextStatus?: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   lastAiTextDocId: string | null
   textStatus: 'not_checked' | 'no_texts' | 'available' | 'in_r2' | null
   myVote: 'support' | 'oppose' | 'neutral' | null
@@ -669,6 +681,11 @@ export function BillDetail() {
   const [promoteOutcomeMsg, setPromoteOutcomeMsg] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
   const [regenerateError, setRegenerateError] = useState<string | null>(null)
+  // What a run that ended without failing says: which other bill was
+  // re-analyzed, or that the group changed under it. Not an error.
+  const [regenerateNotice, setRegenerateNotice] = useState<string | null>(null)
+  // The bill being re-analyzed when it isn't this page's own, to name on the chip.
+  const [regenerateOtherBill, setRegenerateOtherBill] = useState<string | null>(null)
   const [showAmendments, setShowAmendments] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
   const [showExtras, setShowExtras] = useState(false)
@@ -1231,13 +1248,28 @@ export function BillDetail() {
     // anywhere to render its outcome — the promote box only renders under
     // !bill.aiProcessedAt. Hence the aiProcessedAt half of this guard: do not
     // widen it back to matchType alone.
-    if (bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
+    //
+    // The guard reads this page's own bill, so it applies only when this page's
+    // own bill is the one that would be re-analyzed. On a pulled companion's
+    // page that is another bill, one with an analysis to show.
+    const targetId = bill.analysisBillId ?? bill.id
+    const other = targetId !== bill.id
+    if (!other && bill.matchType === null && !bill.aiProcessedAt) return handlePromote()
+    // Regenerate re-analyzes the bill whose analysis this page shows (#563):
+    // its own, or on a pulled companion's page the tracked bill's (#554),
+    // whose analysis time is what this run moves. Without the server's
+    // analysis fields, that is this bill.
+    const hasAnalysisBill = bill.analysisBillId != null
+    const targetExternalId = other ? bill.analysisBillExternalId : bill.externalId
+    const targetNumber = other ? (bill.analysisBillNumber ?? null) : bill.billNumber
+    const prevProcessedAt = hasAnalysisBill ? (bill.analysisAiProcessedAt ?? null) : bill.aiProcessedAt
+    const prevSkipReason = hasAnalysisBill ? (bill.analysisAiSkipReason ?? null) : bill.aiSkipReason
     setRegenerateError(null)
-    const prevProcessedAt = bill.aiProcessedAt
-    const prevSkipReason = bill.aiSkipReason
+    setRegenerateNotice(null)
+    setRegenerateOtherBill(other ? targetNumber : null)
     setRegenerating(true)
     try {
-      const res = await fetch(`/api/admin/reprocess-bill/${encodeURIComponent(bill.externalId ?? bill.id)}`, {
+      const res = await fetch(`/api/admin/reprocess-bill/${encodeURIComponent(targetExternalId ?? targetId)}`, {
         method: 'POST',
         credentials: 'include',
       })
@@ -1246,18 +1278,36 @@ export function BillDetail() {
         throw new Error(data.error ?? `Regenerate failed (${res.status})`)
       }
       const outcome = await pollForAnalysis({
-        fetchSnapshot: async () => {
+        // This page's detail, read as the target's: its analysis fields are
+        // those of whichever bill the page shows, and they name it, so a group
+        // that changes under the run ends it as 'moved' instead of a timeout.
+        fetchSnapshot: async (): Promise<AnalysisSnapshot | null> => {
           const r = await fetch(`/api/bills/${bill.id}`, { credentials: 'include' })
-          return r.ok ? await r.json() : null
+          if (!r.ok) return null
+          const d = await r.json() as BillDetailData
+          if (d.analysisBillId == null) return d
+          return {
+            aiProcessedAt: d.analysisAiProcessedAt ?? null,
+            aiSkipReason: d.analysisAiSkipReason ?? null,
+            textStatus: d.analysisTextStatus ?? null,
+            analysisBillId: d.analysisBillId,
+          }
         },
         baselineProcessedAt: prevProcessedAt,
         baselineSkipReason: prevSkipReason,
+        expectedBillId: targetId,
       })
       setRegenerating(false)
-      setRegenerateError(analysisOutcomeMessage(outcome))
+      setRegenerateOtherBill(null)
+      const message = regenerateOutcomeMessage(outcome, { billNumber: targetNumber, other })
+      // A run that landed on another bill, or whose group changed under it,
+      // reports what happened. Only a run that failed is an error.
+      if (outcome === 'analyzed' || outcome === 'moved') setRegenerateNotice(message)
+      else setRegenerateError(message)
       if (outcome !== 'timeout') refetchBill()
     } catch (e) {
       setRegenerating(false)
+      setRegenerateOtherBill(null)
       setRegenerateError(e instanceof Error ? e.message : String(e))
     }
   }
@@ -2375,14 +2425,14 @@ export function BillDetail() {
 
         {/* AI summary / tags / relevance — shown when there is content to display (not for drafts) */}
         {!bill.isDraft && hasAnalysis && (
-          <AnalysisBox running={regenerating} error={regenerateError}>
+          <AnalysisBox running={regenerating} error={regenerateError} notice={regenerateNotice}>
             {/* Hoisted out of the summary block on purpose: hasAnalysis is also
                 satisfied by tags or a relevance score alone, and nesting the chip
                 under bill.tenantSummary left those bills animating and dimmed with
                 no chip and no role="status" announcement at all. */}
             {regenerating && (
               <div style={{ marginBottom: 8 }}>
-                <AnalysisProgressChip label="Regenerating…" />
+                <AnalysisProgressChip label={regenerateOtherBill ? `Regenerating ${regenerateOtherBill}…` : 'Regenerating…'} />
               </div>
             )}
             {bill.tenantSummary && (

@@ -3,7 +3,7 @@
 // and they disagreed on when to stop — the re-generate copy could only ever
 // end in a timeout when AI never started, which read as "too slow" when the
 // real cause was "no bill text to analyze".
-export type AnalysisOutcome = 'analyzed' | 'no_texts' | 'skipped' | 'timeout'
+export type AnalysisOutcome = 'analyzed' | 'no_texts' | 'skipped' | 'timeout' | 'moved'
 
 // Shared so pollForAnalysis and analysisOutcomeMessage cannot disagree about
 // how long a run was actually given before it was called a timeout.
@@ -13,6 +13,7 @@ export type AnalysisSnapshot = {
   aiProcessedAt: string | null
   aiSkipReason: string | null
   textStatus: string | null
+  analysisBillId?: string | null
 }
 
 export function pollForAnalysis(opts: {
@@ -24,6 +25,13 @@ export function pollForAnalysis(opts: {
   // the text before the queued run has had any chance to finish. Defaults to
   // null, where any non-null reason is new — the original behavior.
   baselineSkipReason?: string | null
+  // The bill being re-analyzed, when the page may show another bill's analysis
+  // (a companion group's, #554). The poll reads the page's detail, whose
+  // analysis fields belong to whichever bill the page shows. If that is no
+  // longer this bill (the group split, or another member now matches), a new
+  // analysis time is some other bill's and says nothing about this run, so the
+  // poll ends as 'moved' instead of misreading it or timing out.
+  expectedBillId?: string
   intervalMs?: number
   timeoutMs?: number
 }): Promise<AnalysisOutcome> {
@@ -41,6 +49,11 @@ export function pollForAnalysis(opts: {
       try {
         const snap = await opts.fetchSnapshot()
         if (snap) {
+          // Before every other check: they all read the shown bill's fields.
+          if (opts.expectedBillId != null && snap.analysisBillId != null && snap.analysisBillId !== opts.expectedBillId) {
+            resolve('moved')
+            return
+          }
           // Compare against the baseline rather than checking truthiness: a
           // re-generate starts from an already-analyzed bill, so "has a value"
           // is true before the run even begins.
@@ -80,7 +93,39 @@ export function analysisOutcomeMessage(
       return "AI couldn't analyze this bill's text. The full document is still available via the source link."
     case 'timeout':
       return `AI has not finished after ${formatWait(timeoutMs)}. Try refreshing the page shortly.`
+    case 'moved':
+      return "This bill's group changed while the re-analysis ran, so this page now shows a different bill's summary."
   }
+}
+
+// Copy for a re-generate, which re-analyzes the bill whose analysis the page
+// shows: this page's own bill, or on a companion group's page another bill
+// (#563). When it's another bill, every outcome names it, so an admin who
+// clicked on one bill's page knows which bill was re-analyzed. A run on this
+// page's own bill reads as it always has.
+export function regenerateOutcomeMessage(
+  outcome: AnalysisOutcome,
+  target: { billNumber: string | null; other: boolean },
+  timeoutMs: number = DEFAULT_ANALYSIS_TIMEOUT_MS,
+): string | null {
+  if (!target.other) return analysisOutcomeMessage(outcome, timeoutMs)
+  const named = target.billNumber ? `${target.billNumber}, the bill this page's summary comes from` : "the bill this page's summary comes from"
+  switch (outcome) {
+    case 'analyzed':
+      return `Re-analyzed ${named}.`
+    case 'no_texts':
+      return `${capitalize(named)}, has no published bill text yet, so AI had nothing to analyze. Analysis will run automatically once text is available.`
+    case 'skipped':
+      return `AI couldn't analyze the text of ${named}. The full document is still available from that bill's page.`
+    case 'timeout':
+      return `AI has not finished re-analyzing ${named} after ${formatWait(timeoutMs)}. Try refreshing the page shortly.`
+    case 'moved':
+      return `This bill's group changed while ${target.billNumber ?? 'the bill'} was being re-analyzed, so this page now shows a different bill's summary.`
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 // Seconds below a minute, whole minutes for exact multiples, and

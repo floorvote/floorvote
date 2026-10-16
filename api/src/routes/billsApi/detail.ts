@@ -241,6 +241,18 @@ export async function buildBillDetail(
     }
   }
 
+  // The bill the shown analysis comes from: this bill's own unless its group
+  // shows a tracked member's (#554). Regenerate re-analyzes it and polls its
+  // analysis time (#563), so the page needs its handle and where its analysis
+  // stands, which on a companion's page are not the page bill's own.
+  const analysisBillId = teamValues.analysis?.billId ?? bill.id
+  const analysisBill = analysisBillId === bill.id
+    ? bill
+    : (await db.select({
+        id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber,
+        aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
+      }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
+
   const response: Record<string, unknown> = {
     id: bill.id,
     externalId: bill.externalId,
@@ -302,6 +314,14 @@ export async function buildBillDetail(
     aiProcessedAt: bill.aiProcessedAt ?? null,
     aiSkipReason: bill.aiSkipReason ?? null,
     lastAiTextDocId: bill.lastAiTextDocId,
+    // Where the analysis shown above stands: the page bill's own fields in no
+    // group or on a tracked bill's page, the tracked bill's on a companion's.
+    analysisBillId: analysisBill.id,
+    analysisBillExternalId: analysisBill.externalId ?? null,
+    analysisBillNumber: analysisBill.billNumber,
+    analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
+    analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
+    analysisTextStatus: analysisBill.textStatus ?? null,
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     // The member's notes across the group, and the one note they edit, which
