@@ -197,15 +197,28 @@ describe('the provider extras panel on a bill page', () => {
     expect(link).toHaveAttribute('target', '_blank')
   })
 
-  it('explains an extra in a plain hover on its label, with no info button', async () => {
+  it('explains an extra on hover over its label, with no info button', async () => {
     const explainer = 'The number the act took when it became law.'
     renderBillDetail({ state: 'DC', billNumber: 'B26-0001', extras: EXTRAS })
     fireEvent.click(await screen.findByRole('button', { name: /Additional information from/ }))
     expect(screen.queryByRole('button', { name: /^About / })).toBeNull()
-    const label = screen.getByText('D.C. Law number')
+    const label = screen.getByRole('button', { name: 'D.C. Law number' })
     expect(label).toHaveAccessibleDescription(explainer)
     fireEvent.pointerEnter(label, { pointerType: 'mouse' })
     await waitFor(() => expect(screen.getAllByText(explainer).some(el => el.style.position === 'fixed')).toBe(true))
+  })
+
+  it('opens an extra\'s explainer on a click of its label, and closes it on a second click', async () => {
+    const explainer = 'The number the act took when it became law.'
+    const shown = () => screen.getAllByText(explainer).some(el => el.style.position === 'fixed')
+    renderBillDetail({ state: 'DC', billNumber: 'B26-0001', extras: EXTRAS })
+    fireEvent.click(await screen.findByRole('button', { name: /Additional information from/ }))
+    const label = screen.getByRole('button', { name: 'D.C. Law number' })
+    expect(label.style.cursor).toBe('pointer')
+    fireEvent.click(label)
+    expect(shown()).toBe(true)
+    fireEvent.click(label)
+    expect(shown()).toBe(false)
   })
 
   it('never turns a link that isn\'t http(s) into an href', async () => {

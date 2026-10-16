@@ -20,6 +20,8 @@
 
 **Role**: a named group of members that an admin defines, which can be @-mentioned together. Avoid: "group"; "team" when meaning a subset of members.
 
+**@admins**: a built-in mention, open to every member, that notifies everyone who is an Admin or Owner when the comment is posted, in the app and by email, skipping the author and deactivated members. A person also mentioned directly or through a role is notified once, attributed to the direct mention, then the role, then @admins. Unlike a role, nobody creates or maintains it. Avoid: "admin role" (a role is a named group).
+
 **Invite**: the email that brings a new member into an instance. Avoid: "invitation link" as the name of the email.
 
 **Pending invite**: a member who was invited and hasn't signed in yet.
@@ -66,9 +68,15 @@
 
 **Body event**: an event on a legislature's own calendar (a hearing, roundtable, mark-up, or meeting, with or without bills on its agenda), from a provider that publishes one, such as DC's Council calendar. Central keeps it under the provider's own event id, and a bill's calendar entry it covers is shown as the body event, so a hearing appears once. Avoid: "council event," which names one legislature's; "hearing without a bill" as the name, since a body event can have bills and can be a meeting.
 
+**Date-field event**: a calendar event for the value of a date custom field on a prioritized bill, such as "Comment deadline: HB 12". It has the calendar source `field` and no kind, is never stored (the calendar, the feed, the dashboard count, and the week-ahead email read the bill's field value as they load), and can be changed only on the bill page. Avoid: "deadline" for it, which is a calendar entry kind that central sets from a legislature's own dates in law; "custom event," which an admin makes on the calendar itself.
+
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
 
 **Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention, a reply, or a reaction). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
+
+**Muted bill**: a bill whose comments a member has muted, from the bill page or a reply email. It sends them no reply notifications, in the app or by email, but mentions on it (direct, role, @admins, or @everyone) still reach them. A member can mute a bill before ever commenting on it, unmute it from the bill page, and stays muted when a draft they muted is linked to its filed bill. A companion group is one conversation, so muting any of its bills mutes the group, and unmuting any of them unmutes it. Avoid: "unsubscribed," "unfollowed."
+
+**Mute link**: the link in a reply email, signed for one member and one bill, that mutes that bill without signing in. It is both the email's one-click List-Unsubscribe and its "Mute this bill" footer link, which opens a page that asks before muting. It can mute nothing else and does not expire. Mention emails carry none.
 
 **Keyword**: one line of an instance's keyword list, matched against a bill's title, abstract, and number. A bare word matches a whole word, `*` widens it (`election*`), and `#` stands for one digit. A list whose only entry is `*` matches every bill and sends all of them to AI, so it is a cost decision. Unrelated to `state_coverage`'s `["*"]`, which means every state. Avoid: "tag," which AI assigns from the instance's taxonomy, and "subject," which the legislature assigns.
 
