@@ -619,6 +619,11 @@ describe('numbers: ordinals, fractions, and numbers split by line breaking', () 
     ['twentieth for nineteenth', 'on the twentieth day', 'on the nineteenth day'],
     ['an ordinal word for a different digit ordinal', 'in the second year', 'in the 5th year'],
     ['a number word that is only inside another word', 'on often days', 'on ten days'],
+    ['thirtieth for thirteenth', 'on the thirteenth day', 'on the thirtieth day'],
+    ['ninetieth for nineteenth', 'on the nineteenth day', 'on the ninetieth day'],
+    ['hundredth for thousandth', 'on the thousandth day', 'on the hundredth day'],
+    ['twenty-first for twenty-third', 'on the twenty-third day', 'on the twenty-first day'],
+    ['a word split by a plain space', 'within thir ty days', 'within thirty days'],
   ])('is ungrounded for %s', (_label, d, q) => {
     expect(status(d, q)).toBe('ungrounded')
   })
@@ -634,6 +639,9 @@ describe('numbers: ordinals, fractions, and numbers split by line breaking', () 
     ['one half', 'one half of the members', 'one half of the members'],
     ['a word split by a hyphen and a line number', 'within thir-\n14 ty days', 'within thirty days'],
     ['a word split by a hyphen', 'within thir-\nty days', 'within thirty days'],
+    ['thirtieth and 30th', 'on the 30th day', 'on the thirtieth day'],
+    ['twenty-first and twenty-1st', 'on the twenty-first day', 'on the twenty-1st day'],
+    ['a long ordinal split by a hyphen and a line number', 'on the thirti-\n14 eth day', 'on the thirtieth day'],
     ['a digit group split by a comma and a line number', 'a fee of $1,\n15 000 is due', 'a fee of $1,000 is due'],
     ['a number split by a line number', 'a fee of $1\n14 0 is due', 'a fee of $10 is due'],
   ])('is not rejected for %s', (_label, d, q) => {
@@ -686,19 +694,19 @@ describe('ceilings', () => {
     const SYLLABLES = ['ba', 'ro', 'ki', 'tu', 'me', 'la', 'sho', 'vin', 'dre', 'pol', 'gar', 'nex', 'fil', 'zon', 'cra', 'hep', 'wul', 'jod', 'qua', 'bri']
     const word = (i: number, k: number) => SYLLABLES[(i * (k + 3) + k) % 20] + SYLLABLES[(i * 7 + k * 5) % 20] + SYLLABLES[(Math.floor(i / 3) + k * 11) % 20]
     const passage = (i: number) => `The ${word(i, 0)} ${word(i, 1)} of district ${i} shall publish the ${word(i, 2)} report about ${word(i, 3)} box ${i * 7} to every ${word(i, 4)} ${word(i, 5)} each quarter.`
-    const filler = (i: number) => Array.from({ length: 140 }, (_, k) => `Background sentence ${i}-${k} that says nothing in particular.`).join(' ')
+    const filler = (i: number, sentences = 140) => Array.from({ length: sentences }, (_, k) => `Background sentence ${i}-${k} that says nothing in particular.`).join(' ')
 
-    function build(count: number) {
+    function build(count: number, sentences = 140) {
       const parts: string[] = []
-      for (let i = 0; i < count; i++) parts.push(filler(i), withLineNumbers(passage(i), 46))
+      for (let i = 0; i < count; i++) parts.push(filler(i, sentences), withLineNumbers(passage(i), 46))
       const doc = parts.join('\n')
       const claims = Array.from({ length: count }, (_, i) => `Claim ${i} is made.`)
       return { doc, claims, summary: claims.join(' ') }
     }
 
-    it('resolves every valid numbered quote in a document of about half a million characters', () => {
-      const { doc, claims, summary } = build(60)
-      expect(doc.length).toBeGreaterThan(480_000)
+    it('resolves every valid numbered quote in a document of about 0.8 million characters', () => {
+      const { doc, claims, summary } = build(60, 220)
+      expect(doc.length).toBeGreaterThan(780_000)
       const out = resolveClaimSources(claims.map((claim, i) => ({ claim, quote: passage(i) })), summary, doc)
       expect(out.items.map(i => i.status)).toEqual(Array(60).fill('fuzzy'))
       expect(out.unsearched).toBe(0)
@@ -715,6 +723,49 @@ describe('ceilings', () => {
       expect(out.unsearched).toBe(0)
     })
 
+    it('resolves every valid quote after eleven absent ones, in a document of about 1.7 million characters', () => {
+      const { doc, claims, summary } = build(41, 680)
+      expect(doc.length).toBeGreaterThan(1_650_000)
+      const items: ClaimSource[] = claims.map((claim, i) => ({
+        claim, quote: i < 11 ? `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth.` : passage(i),
+      }))
+      const started = Date.now()
+      const out = resolveClaimSources(items, summary, doc)
+      expect(out.items.slice(0, 11).map(i => i.status)).toEqual(Array(11).fill('ungrounded'))
+      expect(out.items.slice(11).map(i => i.status)).toEqual(Array(30).fill('fuzzy'))
+      expect(Date.now() - started).toBeLessThan(30_000)
+    }, 120_000)
+
+    it('bounds a hundred anchored quotes in a document of about 1.7 million characters', () => {
+      const { doc, claims, summary } = build(100, 285)
+      expect(doc.length).toBeGreaterThan(1_650_000)
+      // Each starts as the passage does and then wanders off, so it can only anchor.
+      const items: ClaimSource[] = claims.map((claim, i) => ({
+        claim, quote: `${passage(i).slice(0, 60)} and then, by order of the herons, ${word(i, 6)} ${word(i, 7)} ${word(i, 8)} quarrels about ${word(i, 9)} in the ${word(i, 10)} rotunda`,
+      }))
+      const started = Date.now()
+      const out = resolveClaimSources(items, summary, doc)
+      expect(out.items.every(i => i.status === 'anchored' || i.status === 'ungrounded')).toBe(true)
+      expect(out.unsearched).toBeGreaterThan(0)
+      expect(Date.now() - started).toBeLessThan(15_000)
+    }, 120_000)
+
+    it('carries what exact matches leave unused forward to the quotes that need a search', () => {
+      // 90 exact items and 10 that need two calls each. A hundredth of the budget
+      // is less than one call costs on a document this long, so only what the
+      // exact ones did not use lets the 10 through.
+      const { doc } = build(10, 4700)
+      expect(doc.length).toBeGreaterThan(2_800_000)
+      const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
+      const items: ClaimSource[] = claims.map((claim, i) => ({
+        claim, quote: i < 90 ? `Background sentence 0-${i} that says nothing in particular.` : passage(i - 90),
+      }))
+      const out = resolveClaimSources(items, claims.join(' '), doc)
+      expect(out.items.slice(0, 90).every(i => i.status === 'exact')).toBe(true)
+      expect(out.items.slice(90).map(i => i.status)).toEqual(Array(10).fill('fuzzy'))
+      expect(out.unsearched).toBe(0)
+    }, 120_000)
+
     it('gives the same statuses on a second run', () => {
       const { doc, claims, summary } = build(30)
       const items = claims.map((claim, i) => ({ claim, quote: i % 4 === 0 ? `Nobody shall install obelisk ${i} anywhere at all, by order of herons.` : passage(i) }))
@@ -727,11 +778,16 @@ describe('ceilings', () => {
     expect(body.length).toBeGreaterThan(1_400_000)
     const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
     const items: ClaimSource[] = claims.map((c, i) => ({ claim: c, quote: `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth, at dawn.` }))
+    spies.match.mockClear()
     const started = Date.now()
     const out = resolveClaimSources(items, claims.join(' '), body)
     expect(out.items.every(i => i.status === 'ungrounded')).toBe(true)
     // The scan budget is what bounds it: past it, a quote is left unsearched.
     expect(out.unsearched).toBeGreaterThan(0)
+    // What the budget bounds is the scanning, which the spy sees: 60 million
+    // characters, and at most one more call's worth.
+    const scanned = (spies.match.mock.calls as unknown[][]).reduce((n, c) => n + (c[1] as string).length, 0)
+    expect(scanned).toBeLessThanOrEqual(60_000_000 + body.length)
     expect(Date.now() - started).toBeLessThan(30_000)
   }, 120_000)
 })

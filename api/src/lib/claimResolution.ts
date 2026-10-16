@@ -154,35 +154,62 @@ const MAX_ITEMS = 100
 const MAX_FUZZY_QUOTE = 2000
 
 /**
- * The fuzzy search's budget for one bill, in characters scanned: each `match`
- * call scans the whole document, and a quote that is absent costs two of them
- * (about 0.2 s on half a million characters, 0.6 s on 1.7 million). About 40
- * million is around ten seconds of scanning, well inside a Worker's CPU limit.
- * A quote that is found stops early and costs far less, so it is charged only
- * `FOUND_COST` of a scan (an eighth), and a bill whose quotes mostly resolve
- * never runs out. What bounds the work is quotes that are absent from a very
- * large document. A quote that needs a scan after the budget is spent stays
- * ungrounded.
+ * The fuzzy search's budget for one bill, in characters scanned. Every `match`
+ * call scans the whole document, and is charged for it: a call that places its
+ * pattern is charged `HIT_COST` of that, since it narrows its own search as it
+ * goes (measured at about a quarter, 20 to 30 ms against 100 ms on 590,000
+ * characters), and one that finds nothing is charged all of it. A quote that is
+ * absent from a long document is the costly case, two calls at 0.2 s on half a
+ * million characters and 0.6 s on 1.7 million. 60 million is around ten seconds
+ * of scanning, well inside a Worker's CPU limit, and a hard bound on the bill.
+ *
+ * Each item gets a fair share, the budget over the number of items (at most
+ * `MAX_ITEMS`), and what an item leaves unused (an exact match uses none) goes
+ * forward to the next. So quotes that miss cannot starve the ones after them
+ * beyond their share, and a bill whose quotes mostly resolve never runs short.
+ * An item whose share and carry run out stops searching and stays ungrounded.
+ * It depends only on the document and the quotes, never on a clock.
  */
-const SCAN_BUDGET = 40_000_000
-const FOUND_COST = 1 / 8
+const SCAN_BUDGET = 60_000_000
+const HIT_COST = 1 / 4
 
+/** What is left for the whole bill, and how many items stopped for want of it. */
 type Budget = { left: number; skipped: number }
+/** What one item may still scan, and the bill's budget it draws on too. */
+type Spend = { item: number; shared: Budget }
+
+const OUT_OF_BUDGET = Symbol('out of budget')
 
 /** What must agree between a quote and what is found for it: digits, cardinal and ordinal words, and fractions. */
-const CARDINALS = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion'
-const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth']
+const CARDINAL_VALUES: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  hundred: 100, thousand: 1000, million: 1e6, billion: 1e9,
+}
+const CARDINALS = Object.keys(CARDINAL_VALUES).join('|')
+
+/** "five" is "fifth", "twenty" is "twentieth", and the rest take "th": every ordinal word from first to billionth. */
+const IRREGULAR_ORDINALS: Record<string, string> = { one: 'first', two: 'second', three: 'third', five: 'fifth', eight: 'eighth', nine: 'ninth', twelve: 'twelfth' }
+const ORDINAL_VALUES = new Map<string, number>(
+  Object.entries(CARDINAL_VALUES).filter(([word]) => word !== 'zero').map(([word, value]) => [
+    IRREGULAR_ORDINALS[word] ?? (word.endsWith('y') ? `${word.slice(0, -1)}ieth` : `${word}th`),
+    value,
+  ]),
+)
+
 // "1st" is one token, so its digit isn't read as a number of its own. An ordinal
-// word takes a plural for a fraction ("two thirds").
-const NUMBER = new RegExp(`\\b\\d+(?:st|nd|rd|th)\\b|\\d+(?:[.,]\\d+)*|\\b(?:(?:${ORDINALS.join('|')})s?|${CARDINALS}|half|halves|quarters?)\\b`, 'gi')
+// word takes a plural for a fraction ("two thirds"). A compound ("twenty-first")
+// is its two words, each compared.
+const NUMBER = new RegExp(`\\b\\d+(?:st|nd|rd|th)\\b|\\d+(?:[.,]\\d+)*|\\b(?:(?:${[...ORDINAL_VALUES.keys()].join('|')})s?|${CARDINALS}|half|halves|quarters?)\\b`, 'gi')
 
 /** One number as a token that the same number written another way shares: "first" and "1st" are `1o`. */
 function numberToken(raw: string): string {
   const t = raw.toLowerCase()
   const digitOrdinal = /^(\d+)(?:st|nd|rd|th)$/.exec(t)
   if (digitOrdinal) return `${Number(digitOrdinal[1])}o`
-  const ordinal = ORDINALS.indexOf(t.endsWith('s') && ORDINALS.includes(t.slice(0, -1)) ? t.slice(0, -1) : t)
-  if (ordinal !== -1) return `${ordinal + 1}o`
+  const ordinal = ORDINAL_VALUES.get(t.endsWith('s') && ORDINAL_VALUES.has(t.slice(0, -1)) ? t.slice(0, -1) : t)
+  if (ordinal !== undefined) return `${ordinal}o`
   if (t === 'halves') return 'half'
   if (t === 'quarters') return 'quarter'
   return t.replace(/,/g, '')
@@ -200,8 +227,8 @@ function numbersOf(text: string): Map<string, { n: number; raw: string }> {
   return found
 }
 
-/** Between two characters of a number or word that a line break can fall inside: a hyphen or separator, the break, and a line number. */
-const BREAK = '(?:[-,.]?\\s+(?:\\d{1,3}\\s+)?)?'
+/** Between two characters of a number or word that a line break can fall inside: a hyphen, or a line number between the breaks. Never a plain space. */
+const BREAK = '(?:-\\s*(?:\\d{1,3}\\s+)?|[,.]?\\s+\\d{1,3}\\s+)?'
 
 /** Whether a number is in the text, written with a line break (and its line number) inside it. */
 function brokenIn(raw: string, text: string): boolean {
@@ -226,10 +253,17 @@ function numbersAgree(quote: string, found: string): boolean {
   return true
 }
 
-/** Where `match` puts a pattern, or -1. It only proposes: `makeDiff` decides. */
-function propose(text: string, pattern: string, expected: number, distance: number, budget: Budget): number {
-  budget.left -= text.length
-  return match(text, pattern, expected, { threshold: ERROR_BUDGET + POSITION_BUDGET, distance })
+/**
+ * Where `match` puts a pattern, or -1. It only proposes: `makeDiff` decides. The
+ * call is charged to the item and the bill, and refused when either is spent.
+ */
+function propose(text: string, pattern: string, expected: number, distance: number, spend: Spend): number {
+  if (spend.item <= 0 || spend.shared.left <= 0) throw OUT_OF_BUDGET
+  const at = match(text, pattern, expected, { threshold: ERROR_BUDGET + POSITION_BUDGET, distance })
+  const cost = at === -1 ? text.length : Math.ceil(text.length * HIT_COST)
+  spend.item -= cost
+  spend.shared.left -= cost
+  return at
 }
 
 /**
@@ -271,17 +305,19 @@ type Fuzzy = { status: 'fuzzy' | 'anchored'; at: Span }
  * after normalizing. Works on normalized text and returns a range of it. A
  * result whose numbers disagree with the quote's is none.
  */
-function findFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
+function findFuzzy(text: string, quote: string, spend: Spend): Fuzzy | null {
   if (quote.length > MAX_FUZZY_QUOTE) return null
-  if (budget.left <= 0) { budget.skipped++; return null }
-  const before = budget.left
-  const result = searchFuzzy(text, quote, budget)
-  // Found, it stopped early: charge for that, not for the scans a miss makes.
-  if (result) budget.left = before - Math.ceil(text.length * FOUND_COST)
-  return result
+  try {
+    return searchFuzzy(text, quote, spend)
+  } catch (err) {
+    // Out of budget partway: what the search had so far is not an answer.
+    if (err !== OUT_OF_BUDGET) throw err
+    spend.shared.skipped++
+    return null
+  }
 }
 
-function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
+function searchFuzzy(text: string, quote: string, spend: Spend): Fuzzy | null {
 
   // Wide enough that a match at the far end of the text costs at most
   // POSITION_BUDGET, so the document is searched from the start (the first of
@@ -290,7 +326,7 @@ function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null 
 
   if (quote.length <= MAX_BITS) {
     // No separate head and tail: the whole quote is the pattern.
-    const at = propose(text, quote, 0, wide, budget)
+    const at = propose(text, quote, 0, wide, spend)
     const span = anchorAt(text, quote, at)
     return span && numbersAgree(quote, text.slice(span.start, span.end)) ? { status: 'fuzzy', at: span } : null
   }
@@ -305,10 +341,10 @@ function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null 
 
   // The head from the start of the document, then the tail near where it would
   // be if the passage were whole, as the library's `applyPatches` does.
-  const head = propose(text, headPattern, 0, wide, budget)
+  const head = propose(text, headPattern, 0, wide, spend)
   const tail = head !== -1
-    ? propose(text, tailPattern, head + quote.length - MAX_BITS, near, budget)
-    : propose(text, tailPattern, 0, wide, budget)
+    ? propose(text, tailPattern, head + quote.length - MAX_BITS, near, spend)
+    : propose(text, tailPattern, 0, wide, spend)
   const headFirst = whole(wholeAt(text, quote, head, tail))
   if (headFirst !== undefined) return headFirst
   // A tail that `match` could not place may still be there, differing more than
@@ -319,8 +355,8 @@ function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null 
 
   // The first head may be boilerplate that repeats, with the passage later. So
   // the tail from the start, and the head near where it would be before it.
-  const tailFirst = head === -1 ? tail : propose(text, tailPattern, 0, wide, budget)
-  const headNear = tailFirst === -1 ? -1 : propose(text, headPattern, tailFirst - (quote.length - MAX_BITS), near, budget)
+  const tailFirst = head === -1 ? tail : propose(text, tailPattern, 0, wide, spend)
+  const headNear = tailFirst === -1 ? -1 : propose(text, headPattern, tailFirst - (quote.length - MAX_BITS), near, spend)
   const fromTail = whole(wholeAt(text, quote, headNear, tailFirst))
   if (fromTail !== undefined) return fromTail
   const endingAtTail = tailFirst === -1 ? undefined : whole(regionAt(text, quote, tailFirst + MAX_BITS + 8 - quote.length - 16, tailFirst + MAX_BITS + 8))
@@ -347,7 +383,7 @@ function resolveQuote(
   quote: string,
   doc: string,
   normDoc: () => Norm,
-  budget: Budget,
+  spend: Spend,
 ): { status: ClaimSourceStatus; at?: Span; matched?: string } {
   if (quote.trim().length === 0) return { status: 'ungrounded' }
 
@@ -360,7 +396,7 @@ function resolveQuote(
   const normalized = nd.s.indexOf(nq.s)
   if (normalized !== -1) return found('normalized', doc, original(nd, normalized, normalized + nq.s.length))
 
-  const fuzzy = findFuzzy(nd.s, nq.s, budget)
+  const fuzzy = findFuzzy(nd.s, nq.s, spend)
   if (!fuzzy) return { status: 'ungrounded' }
   return found(fuzzy.status, doc, original(nd, fuzzy.at.start, fuzzy.at.end))
 }
@@ -381,7 +417,7 @@ function found(status: ClaimSourceStatus, doc: string, at: Span): { status: Clai
  * - Where two passages are alike, the first is the one found, every time.
  * - At most 100 items are resolved (the rest are `ungrounded`, counted in
  *   `capped`), a quote over 2,000 characters is only searched exactly and
- *   normalized, and the fuzzy searches share one scan budget (what it left
+ *   normalized, and the fuzzy searches share one scan budget, split fairly across the items (what it left
  *   unsearched is counted in `unsearched`). See `MAX_ITEMS` and `SCAN_BUDGET`.
  */
 export function resolveClaimSources(
@@ -394,6 +430,8 @@ export function resolveClaimSources(
   let capped = 0
   let searched = 0
   const budget: Budget = { left: SCAN_BUDGET, skipped: 0 }
+  const share = SCAN_BUDGET / Math.max(1, Math.min(items.length, MAX_ITEMS))
+  let carried = 0
   let normDoc: Norm | null = null
   const getNormDoc = () => (normDoc ??= normalize(docText ?? '', { tags: true, fold: true }))
   for (const item of items) {
@@ -409,7 +447,9 @@ export function resolveClaimSources(
       continue
     }
     searched++
-    const r = resolveQuote(item.quote, docText, getNormDoc, budget)
+    const spend: Spend = { item: carried + share, shared: budget }
+    const r = resolveQuote(item.quote, docText, getNormDoc, spend)
+    carried = Math.max(0, spend.item)
     out.push(r.at ? { ...item, status: r.status, claimAt, quoteAt: r.at, matched: r.matched } : { ...item, status: r.status, claimAt })
   }
   return { items: out, dropped, capped, unsearched: budget.skipped }
