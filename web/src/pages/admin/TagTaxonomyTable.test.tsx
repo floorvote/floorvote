@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import TagTaxonomyTable from './TagTaxonomyTable'
 import type { TaxonomyRow } from './taxonomyRows'
-import { color } from '../../../../shared/tokens'
+import { color } from '../../styles/tokens'
 
 /** Wrapper that owns the rows, the way Config.tsx will. */
 function Harness({ initial, onRows }: { initial: TaxonomyRow[]; onRows?: (r: TaxonomyRow[]) => void }) {

@@ -5,6 +5,10 @@
  * file can be generated from this module without any runtime evaluation.
  *
  * Colors are grouped by role: text · brand/accent · surface/background · border.
+ *
+ * These are the light-mode colors. The API's emails use them as is. The web app
+ * reads every color through a CSS variable instead (web/src/styles/tokens.ts),
+ * with dark values in web/src/styles/colorModes.ts.
  * "absorbs" notes record near-duplicate values collapsed into a canonical (Operation 2).
  */
 
@@ -33,6 +37,9 @@ export const color = {
   textVioletChip:    '#5b21b6', // violet chip text
   textTealSenate:    '#0f766e', // Senate chamber chip text
   roleMentionText:   '#3a54cb', // role / @everyone mention pill text (indigo-blue ~229°, moved off the violet account-role badge; still clear of the topic-tag blue)
+  textOnFill:        '#fff',    // text and icons on a colored fill (buttons, badges, priority chips, cast pills). Dark ink in dark mode, where fills turn light
+  textOnBrand:       '#fff',    // text and icons on the navy brand chrome (brandNavy), white in both modes
+  textOnBrandMuted:  '#93c5fd', // secondary text on the brand chrome (the instance name under the wordmark)
 
   // --- Brand, link & accent (fills / named chrome colors) ---
   linkBlue:          '#2563eb',
@@ -42,6 +49,8 @@ export const color = {
   accentAmber:       '#e8a33d', // Honey — brand accent: wordmark "Vote", relevance slider, settings-nav active line
   voteSupport:       '#22c55e', // support vote bar / cast-pill fill
   billBadgeNavy:     '#1e3a5f', // bill number badge background
+  wordmarkFloor:     '#1e3a5f', // "Floor" in the wordmark on the page. White in dark mode, the brand's on-dark lockup (as on brandNavy)
+  brandNavy:         '#1e3a5f', // brand chrome: sidebar brand strip, mobile top bar, skip link. Stays navy in dark mode, unlike billBadgeNavy
   // Keyboard focus ring. Navy on light surfaces; the sidebar overrides
   // --fv-focus-ring to white. Distinct from accentBlue (chip "selected") and
   // accentBlueMuted (chip hover) so a focused chip never reads as selected.
@@ -50,7 +59,7 @@ export const color = {
   tooltipBg:         '#1e293b', // dark tooltip / popover background
 
   // --- Surface & background ---
-  white:             '#fff',    // absorbs #ffffff, #fafafa
+  white:             '#fff',    // card / panel surface (absorbs #ffffff, #fafafa). Dark in dark mode; for text on a fill use textOnFill
   surfaceSubtle:     '#f8fafc', // neutral hover / surface
   surfaceMuted:      '#f5f8fc', // lightened from #f1f5f9 (absorbs #eef2f7, #f8f8f7) — raises AA floor for text
   countChipBg:       '#ecf0f6', // count-pill fill; midpoint of surfaceMuted and borderDefault

@@ -54,10 +54,9 @@ export function Spinner({
         // Square window on the mark; overflow:visible lets the rows sweep past
         // the box while spinning without clipping.
         viewBox="17 13.6 66 66"
-        fill={fill}
         role="img"
         aria-label={ariaLabel}
-        style={{ overflow: 'visible', ...style }}
+        style={{ overflow: 'visible', fill, ...style }}
         {...rest}
       >
         {LOGO_MARK.paths.map((d, i) => (

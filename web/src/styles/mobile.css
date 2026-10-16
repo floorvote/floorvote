@@ -2,15 +2,14 @@
 
 /* Keyboard focus ring — paints only on :focus-visible, so mouse clicks never
    show it. Outline (not box-shadow) so it's never clipped by the app's many
-   overflow:hidden cards/widgets. --fv-focus-ring defaults to navy on light
-   surfaces; the sidebar body is white (inherits the navy default), so only
-   its navy surfaces — the brand strip and the mobile top bar — flip it to
-   white below. */
-:root { --fv-focus-ring: #1e3a5f; }
+   overflow:hidden cards/widgets. --fv-focus-ring (the focusRing color token,
+   defined with the other colors in index.html) is navy on light surfaces; the
+   sidebar body inherits it, so only its navy surfaces — the brand strip and the
+   mobile top bar — flip it to the brand's white below. */
 *:focus-visible { outline: 2px solid var(--fv-focus-ring); outline-offset: 2px; }
 *:focus:not(:focus-visible) { outline: none; }
-.sidebar-brand { --fv-focus-ring: #ffffff; }
-.mobile-topbar { --fv-focus-ring: #ffffff; }
+.sidebar-brand { --fv-focus-ring: var(--fv-text-on-brand); }
+.mobile-topbar { --fv-focus-ring: var(--fv-text-on-brand); }
 
 /* Stretched-link overlay for sidebar widget headers (Prioritized bills /
    Upcoming hearings — see Sidebar.tsx). The header row lays out its title
@@ -63,7 +62,7 @@
 /* Skip-to-content link: off-screen until it takes keyboard focus. */
 .skip-link {
   position: absolute; left: 8px; top: -48px; z-index: 3000;
-  background: #1e3a5f; color: #fff; padding: 8px 14px; border-radius: 6px;
+  background: var(--fv-brand-navy); color: var(--fv-text-on-brand); padding: 8px 14px; border-radius: 6px;
   font-size: 14px; text-decoration: none; transition: top 0.15s ease;
 }
 .skip-link:focus { top: 8px; }
@@ -140,7 +139,7 @@ body.nav-pending * { cursor: wait !important; }
   right: 0;
   bottom: 0;
   left: -23px;
-  background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(59,130,246,0.04) 8px, rgba(59,130,246,0.04) 16px);
+  background: repeating-linear-gradient(45deg, transparent, transparent 8px, color-mix(in srgb, var(--fv-accent-blue) 4%, transparent) 8px, color-mix(in srgb, var(--fv-accent-blue) 4%, transparent) 16px);
   pointer-events: none;
 }
 
@@ -156,7 +155,7 @@ body.nav-pending * { cursor: wait !important; }
   gap: 5px;
   font-size: 12px;
   font-weight: 600;
-  color: #3b82f6;
+  color: var(--fv-accent-blue);
 }
 .ai-progress-label__icon {
   font-size: 14px;
@@ -164,7 +163,7 @@ body.nav-pending * { cursor: wait !important; }
 }
 
 .blue-link {
-  color: #2563eb;
+  color: var(--fv-link-blue);
   text-decoration: none;
 }
 .blue-link:hover {
@@ -427,8 +426,8 @@ body.nav-pending * { cursor: wait !important; }
   .mobile-topbar {
     display: flex;
     height: 48px;
-    background: #1e3a5f;
-    color: #fff;
+    background: var(--fv-brand-navy);
+    color: var(--fv-text-on-brand);
     align-items: center;
     padding: 0 16px;
     gap: 12px;
@@ -615,7 +614,7 @@ body.nav-pending * { cursor: wait !important; }
     display: none !important;
   }
   .members-table tr {
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid var(--fv-border-default) !important;
     border-radius: 8px;
     padding: 10px 12px;
     margin-bottom: 10px;
@@ -632,7 +631,7 @@ body.nav-pending * { cursor: wait !important; }
   .members-table td[data-label]::before {
     content: attr(data-label);
     font-weight: 600;
-    color: #5e697d;
+    color: var(--fv-text-secondary);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -641,7 +640,7 @@ body.nav-pending * { cursor: wait !important; }
     display: block !important;
     padding: 0 0 8px !important;
     margin-bottom: 6px;
-    border-bottom: 1px solid #f5f8fc !important;
+    border-bottom: 1px solid var(--fv-surface-muted) !important;
   }
 }
 

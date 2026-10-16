@@ -274,7 +274,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
                 type="button"
                 onClick={onClose}
                 style={{
-                  background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md,
+                  background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium, cursor: 'pointer',
                 }}
               >
@@ -384,7 +384,7 @@ export function ImportEvents({ onClose, onImported }: Props) {
                 disabled={okCount === 0 || submitting || demoLocked}
                 style={{
                   background: (okCount === 0 || demoLocked) ? color.bgRedDisabled : color.accentBlue,
-                  color: color.white, border: 'none', borderRadius: radius.md,
+                  color: color.textOnFill, border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
                   cursor: okCount === 0 || submitting || demoLocked ? 'not-allowed' : 'pointer',
                   opacity: submitting ? 0.7 : 1,
