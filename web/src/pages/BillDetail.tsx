@@ -686,6 +686,15 @@ export function BillDetail() {
   const [regenerateNotice, setRegenerateNotice] = useState<string | null>(null)
   // The bill being re-analyzed when it isn't this page's own, to name on the chip.
   const [regenerateOtherBill, setRegenerateOtherBill] = useState<string | null>(null)
+  // A run's outcome belongs to the page it ran on. Moving to another bill's
+  // page (the normal way around a group) reuses this component, so without
+  // this "Re-analyzed A190…" would sit on A190's own page.
+  const billIdForRegenerate = bill?.id
+  useEffect(() => {
+    setRegenerateError(null)
+    setRegenerateNotice(null)
+    setRegenerateOtherBill(null)
+  }, [billIdForRegenerate])
   const [showAmendments, setShowAmendments] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
   const [showExtras, setShowExtras] = useState(false)
@@ -1299,6 +1308,8 @@ export function BillDetail() {
       })
       setRegenerating(false)
       setRegenerateOtherBill(null)
+      // Said only where the run was started: not on a page the admin has since moved to.
+      if (billRef.current?.id !== bill.id) return
       const message = regenerateOutcomeMessage(outcome, { billNumber: targetNumber, other })
       // A run that landed on another bill, or whose group changed under it,
       // reports what happened. Only a run that failed is an error.
@@ -1308,6 +1319,7 @@ export function BillDetail() {
     } catch (e) {
       setRegenerating(false)
       setRegenerateOtherBill(null)
+      if (billRef.current?.id !== bill.id) return
       setRegenerateError(e instanceof Error ? e.message : String(e))
     }
   }
@@ -2229,6 +2241,13 @@ export function BillDetail() {
             any row that breaks that (a hand-edited DB, a bad seed, a future partial write)
             would otherwise satisfy both gates and render both boxes. Checking hasAnalysis
             here makes the invariant enforced rather than merely assumed. */}
+        {/* The outcome of a run that left the page with no analysis to show it beside, such as a
+            group that split under it. With an analysis, the AI summary box carries it. */}
+        {!bill.isDraft && !hasAnalysis && regenerateNotice && (
+          <div role="status" style={{ fontSize: fontSize.sm, color: color.textSlate, marginTop: 14, padding: '10px 14px', background: color.surfaceSubtle, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md }}>
+            {regenerateNotice}
+          </div>
+        )}
         {!bill.isDraft && !bill.aiProcessedAt && !hasAnalysis && (() => {
           const isLightweight = bill.matchType === null
 

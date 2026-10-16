@@ -114,7 +114,8 @@ export function regenerateOutcomeMessage(
     case 'analyzed':
       return `Re-analyzed ${named}.`
     case 'no_texts':
-      return `${capitalize(named)}, has no published bill text yet, so AI had nothing to analyze. Analysis will run automatically once text is available.`
+      // With a number the clause is set off by commas; without, it is the subject.
+      return `${target.billNumber ? `${named},` : capitalize(named)} has no published bill text yet, so AI had nothing to analyze. Analysis will run automatically once text is available.`
     case 'skipped':
       return `AI couldn't analyze the text of ${named}. The full document is still available from that bill's page.`
     case 'timeout':

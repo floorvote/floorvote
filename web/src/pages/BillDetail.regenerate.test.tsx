@@ -179,17 +179,20 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
  * `/api/bills/42` returns the next of `polls` (the last one repeating), each
  * the page bill's detail with these overrides on it.
  */
-function setup(page: Record<string, unknown>, polls: Array<Record<string, unknown>> = []) {
+let n = 0
+function setup(page: Record<string, unknown>, polls: Array<Record<string, unknown>> = [], afterRun: Record<string, unknown> = {}) {
   const bill = { ...BILL, ...page }
+  n = 0
   routerMock.loaderData = bill
   const apiFetch = vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
-    if (path === '/bills/42') return bill as never
+    // The page reloads itself when a run ends: with `afterRun` on it, the bill as the run left it.
+    if (path === '/bills/42') return (n > 0 ? { ...bill, ...afterRun } : bill) as never
+    if (path.startsWith('/bills/')) return routerMock.loaderData as never
     if (path === '/config') return { ...CONFIG } as never
     if (path === '/config/custom-fields') return [] as never
     if (path === '/roles' || path === '/users') return [] as never
     return {} as never
   })
-  let n = 0
   const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input)
     if ((init as RequestInit | undefined)?.method === 'POST') return json({ queued: 1, ok: true })
@@ -200,11 +203,18 @@ function setup(page: Record<string, unknown>, polls: Array<Record<string, unknow
     }
     return json({})
   })
-  render(<MemoryRouter><BillDetail /></MemoryRouter>)
+  const view = render(<MemoryRouter><BillDetail /></MemoryRouter>)
+  /** Moves to another bill's page, as following a link to it does. */
+  const goTo = (billId: string, detail: Record<string, unknown>) => {
+    routerMock.params = { billId }
+    routerMock.location = { ...routerMock.location, pathname: `/bills/${billId}` }
+    routerMock.loaderData = { ...BILL, ...detail }
+    view.rerender(<MemoryRouter><BillDetail /></MemoryRouter>)
+  }
   const posts = () => fetchSpy.mock.calls.filter(c => (c[1] as RequestInit | undefined)?.method === 'POST').map(c => String(c[0]))
   const polled = () => fetchSpy.mock.calls.filter(c => (c[1] as RequestInit | undefined)?.method !== 'POST').map(c => String(c[0]))
   const refetched = () => apiFetch.mock.calls.filter(c => c[0] === '/bills/42').length
-  return { posts, polled, refetched, bill }
+  return { posts, polled, refetched, bill, goTo }
 }
 
 type User = ReturnType<typeof userEvent.setup>
@@ -464,5 +474,72 @@ describe('Regenerate on a never-analyzed stub', () => {
     const { posts } = setup(stub, [stub])
     await regenerate(user)
     await waitFor(() => expect(posts()).toEqual(['/api/admin/promote-bill/42']))
+  })
+})
+
+describe('the outcome of a run does not outlive its page', () => {
+  const TRACKED = { id: 'a190', externalId: 'legiscan:190', billNumber: 'A190', matchType: 'keyword' as const, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's summary." }
+
+  it("clears 'Re-analyzed A190' when the admin goes on to A190's own page", async () => {
+    const { goTo } = setup(COMPANION, [{ ...COMPANION, analysisAiProcessedAt: '2026-10-15 12:00:00' }])
+    await regenerate(user)
+    await tick()
+    await screen.findByText(/Re-analyzed A190/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    expect(screen.queryByText(/Re-analyzed A190/)).not.toBeInTheDocument()
+  })
+
+  it("clears a failed run's error when the admin goes to another bill's page", async () => {
+    const { goTo } = setup(COMPANION, [{ ...COMPANION, analysisAiSkipReason: 'pdf_too_large' }])
+    await regenerate(user)
+    await tick()
+    await screen.findByRole('alert')
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it("clears the group-changed notice when the admin goes to another bill's page", async () => {
+    const split = { ...COMPANION, analysisBillId: '42', analysisBillNumber: 'S1713' }
+    const { goTo } = setup(COMPANION, [split])
+    await regenerate(user)
+    await tick()
+    await screen.findByText(/group changed/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    expect(screen.queryByText(/group changed/)).not.toBeInTheDocument()
+  })
+
+  it("does not put a run's outcome on the page the admin moved to while it ran", async () => {
+    const { goTo } = setup(COMPANION, [{ ...COMPANION, analysisAiProcessedAt: '2026-10-15 12:00:00' }])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    await tick()
+    await tick()
+    expect(screen.queryByText(/Re-analyzed A190/)).not.toBeInTheDocument()
+  })
+})
+
+describe('a group change that leaves the page with no analysis', () => {
+  it("still says the group changed, where the analysis box would have been", async () => {
+    // After the split the page is an unanalyzed stub: nothing to put the notice beside.
+    const split = { ...COMPANION, analysisBillId: '42', analysisBillNumber: 'S1713' }
+    const stub = { tenantSummary: null, tags: [], relevanceScore: null, aiProcessedAt: null, matchType: null, analysisBillId: '42', analysisBillExternalId: 'legiscan:42', analysisBillNumber: 'S1713', analysisAiProcessedAt: null }
+    setup(COMPANION, [split], stub)
+    await regenerate(user)
+    await tick()
+    expect(await screen.findByText(/group changed while A190 was being re-analyzed, so this page now shows a different bill's summary/)).toBeInTheDocument()
+    expect(screen.queryByText("A190's summary.")).not.toBeInTheDocument()
+  })
+
+  it("shows it once, beside the analysis, when the page still has one", async () => {
+    const split = { ...COMPANION, analysisBillId: '42', analysisBillNumber: 'S1713' }
+    setup(COMPANION, [split])
+    await regenerate(user)
+    await tick()
+    expect(await screen.findAllByText(/group changed while A190/)).toHaveLength(1)
   })
 })

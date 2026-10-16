@@ -103,6 +103,16 @@ describe('regenerateOutcomeMessage', () => {
     expect(analysisOutcomeMessage('moved')).toMatch(/group changed/i)
   })
 
+  it('reads as a sentence with no stray comma when the other bill has no number and has no text', () => {
+    const msg = regenerateOutcomeMessage('no_texts', { billNumber: null, other: true })
+    expect(msg).toMatch(/^The bill this page's summary comes from has no published bill text yet, so AI had nothing to analyze\./)
+    expect(msg).not.toMatch(/from, has/)
+  })
+
+  it('keeps the commas around the clause when the other bill has a number and has no text', () => {
+    expect(regenerateOutcomeMessage('no_texts', other)).toMatch(/^S1713, the bill this page's summary comes from, has no published bill text yet/)
+  })
+
   it('falls back to a plain phrase when the other bill has no number', () => {
     expect(regenerateOutcomeMessage('analyzed', { billNumber: null, other: true })).toMatch(/Re-analyzed the bill this page's summary comes from/)
   })
