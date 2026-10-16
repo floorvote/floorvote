@@ -757,8 +757,11 @@ async function applyCentralBill(
   const tagsBefore = aiResult && existing ? (await loadGroupTeamValues(db, existing.id)).analysis?.tags ?? [] : []
   const { id: billInternalId, isNew } = await upsertBill(db, msg.billId, upsertData)
   if (aiResult) {
-    // This analysis is now the group's most recent, so the group reads its tags.
-    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: aiResult.tags }], null)
+    // The group's tags after this analysis: its own when the bill is tracked or
+    // the group has no tracked analysis, the tracked bill's otherwise, so a
+    // pulled companion's analysis records no change to them.
+    const tagsAfter = (await loadGroupTeamValues(db, billInternalId)).analysis?.tags ?? []
+    await recordFieldChanges(db, [{ billId: billInternalId, field: 'tags', label: 'tags', old: tagsBefore, new: tagsAfter }], null)
   }
   await syncBillSubjects(db, billInternalId, centralBill.state, centralBill.subjects ?? [])
 

@@ -23,10 +23,20 @@ import type { AppDb } from '../types'
  * `ai_processed_at`, a triage's `triaged_at`. A value with no timestamp is the
  * oldest, and a tie goes to the larger bill id, so every member's page reads
  * the same one.
+ *
+ * The analysis (team summary and tags) comes from a bill the team tracks
+ * (#554): among the members with an analysis, those with a match type come
+ * first, and the most recent of those is the group's. A pulled companion is
+ * analyzed only so its own page has a summary, so its newer analysis doesn't
+ * replace the tracked bill's. Only a group with no tracked analysis reads the
+ * most recent of any member's. Migration 0106's `group_tags` triggers apply
+ * the same rule.
  */
 
 type BillValues = {
   id: string
+  /** Whether the bill is tracked (a match type), which decides whose analysis a group shows. */
+  matchType: 'keyword' | 'manual' | null
   priority: 'high' | 'medium' | 'low' | null
   prioritySetAt: string | null
   tenantSummary: string | null
@@ -41,7 +51,7 @@ type CustomFieldValue = { billId: string; fieldId: string; value: string; setBy:
 /** Every team field value stored on some bills, as read from the database. */
 export type TeamValueRows = { bills: BillValues[]; positions: PositionValue[]; customFields: CustomFieldValue[] }
 
-/** A group's team field values, each the one set most recently on any member, or null. */
+/** A group's team field values, each the one set most recently on any member (the analysis preferring tracked members), or null. */
 export type GroupTeamValues = {
   position: PositionValue | null
   priority: { billId: string; priority: 'high' | 'medium' | 'low'; setAt: string | null } | null
@@ -52,6 +62,7 @@ export type GroupTeamValues = {
 
 const billValueColumns = {
   id: bills.id,
+  matchType: bills.matchType,
   priority: bills.priority,
   prioritySetAt: bills.prioritySetAt,
   tenantSummary: bills.tenantSummary,
@@ -93,10 +104,9 @@ export async function readTeamValueRows(db: AppDb, billIds: readonly string[]): 
 export function resolveTeamValues(rows: TeamValueRows, members: ReadonlySet<string>): GroupTeamValues {
   const memberBills = rows.bills.filter(b => members.has(b.id)).map(b => ({ ...b, billId: b.id }))
   const priority = mostRecent(memberBills.filter(b => b.priority !== null), b => b.prioritySetAt)
-  const analysis = mostRecent(
-    memberBills.filter(b => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]'),
-    b => b.aiProcessedAt,
-  )
+  const analyzed = memberBills.filter(b => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]')
+  const trackedAnalyzed = analyzed.filter(b => b.matchType !== null)
+  const analysis = mostRecent(trackedAnalyzed.length > 0 ? trackedAnalyzed : analyzed, b => b.aiProcessedAt)
   const triaged = mostRecent(memberBills.filter(b => b.triagedAt !== null), b => b.triagedAt)
   const customFields = new Map<string, CustomFieldValue>()
   const byField = new Map<string, CustomFieldValue[]>()
