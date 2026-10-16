@@ -7,12 +7,16 @@ import { useDemo } from '../context/DemoContext'
 import { useConfig, type OperatorConfig } from '../context/ConfigContext'
 import { HoverTooltip } from './HoverTooltip'
 import { SR_ONLY } from '../lib/textStyles'
+import { useIsDark } from '../lib/colorMode'
 import { color, fontSize } from '../styles/tokens'
 
 // Conventional, generic asset path (not operator-specific). A deployer drops their
 // logo at web/public/operator-logo.svg; if the file is absent the <img> errors and
-// is hidden (see logoState) — no broken-image icon.
+// is hidden (see logoState) — no broken-image icon. A deployer may also drop an
+// optional web/public/operator-logo-dark.svg: dark mode asks for it first and falls
+// back to the regular logo if it fails to load, so existing deployments are unchanged.
 const OPERATOR_LOGO_SRC = '/operator-logo.svg'
+const OPERATOR_LOGO_DARK_SRC = '/operator-logo-dark.svg'
 const EMPTY_OPERATOR: OperatorConfig = { name: '', url: '', contactEmails: [] }
 
 // One plain sentence per license, hardcoded. Both state a fact about the work and
@@ -41,7 +45,9 @@ const DEFAULT_CREDITS = [{ id: 'legiscan', ...LEGISCAN_ATTRIBUTION }]
  * ConfigContext; `operator` is an optional prop only so tests can drive it.
  *
  * Graceful absence: the logo renders hidden and is revealed only on a successful
- * onLoad; onError leaves it hidden. When there is no name and the logo did not
+ * onLoad; onError leaves it hidden. In dark mode the optional dark file is tried
+ * first; if it errors (absent), the regular logo takes its place and the dark file
+ * is not asked for again. A missing regular logo hides the image as above. When there is no name and the logo did not
  * load, the credit block collapses — only the data credits remain (those lines
  * are data-provider credits, some under a license, and always render).
  *
@@ -93,7 +99,16 @@ export function OperatorBranding({
   // An empty list never reaches the footer: a data credit always renders.
   const configured = propDataCredits ?? config?.attribution?.providers
   const dataCredits = configured && configured.length > 0 ? configured : DEFAULT_CREDITS
-  const [logoState, setLogoState] = useState<'pending' | 'loaded' | 'failed'>('pending')
+  const dark = useIsDark()
+  // Which files have errored, and which src has loaded. An img is shown only once
+  // its current src has loaded, so a missing file never paints a broken image and a
+  // swap between modes never leaves the other mode's logo up while the new one loads.
+  const [darkMissing, setDarkMissing] = useState(false)
+  const [regularMissing, setRegularMissing] = useState(false)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const logoSrc = dark && !darkMissing ? OPERATOR_LOGO_DARK_SRC : OPERATOR_LOGO_SRC
+  const logoState: 'pending' | 'loaded' | 'failed' =
+    regularMissing ? 'failed' : loadedSrc === logoSrc ? 'loaded' : 'pending'
 
   const showName = Boolean(operator.name)
   const logoVisible = logoState === 'loaded'
@@ -107,9 +122,10 @@ export function OperatorBranding({
     <>
       {logoState !== 'failed' && (
         <img
-          src={OPERATOR_LOGO_SRC}
-          onLoad={() => setLogoState('loaded')}
-          onError={() => setLogoState('failed')}
+          key={logoSrc}
+          src={logoSrc}
+          onLoad={() => setLoadedSrc(logoSrc)}
+          onError={() => (logoSrc === OPERATOR_LOGO_DARK_SRC ? setDarkMissing(true) : setRegularMissing(true))}
           alt={operator.name || PRODUCT_NAME}
           style={{
             display: logoVisible ? 'block' : 'none',

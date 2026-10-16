@@ -218,6 +218,15 @@ The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound te
 
 > [!TIP]
 > To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` before you deploy, since the deploy builds it in. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
+>
+> The app has a light and a dark color mode, so you can add a second, optional file, `web/public/operator-logo-dark.svg`, for the dark one. In dark mode the app uses the dark file when it's there and falls back to `operator-logo.svg` when it isn't, so a deployment with only the regular file keeps working. The logo follows the mode the reader is in, whether they chose Light or Dark on their profile or left it on System, and it swaps if their device switches while the app is open.
+>
+> | File | Shown on | Keep contrast against |
+> |------|----------|-----------------------|
+> | `web/public/operator-logo.svg` | Light mode (and dark mode, when there is no dark file) | A light background |
+> | `web/public/operator-logo-dark.svg` (optional) | Dark mode | A dark background |
+>
+> A logo drawn for a light page, with gray or dark text, can nearly vanish on the dark background, so check each file against the background it appears on. If you ship only the regular file, make sure it stays legible on both. A missing dark file also shows as a harmless `404` in the browser network log.
 
 `api/wrangler.toml` is gitignored because it holds your account and database IDs, so don't commit it. That also leaves it with no version history, so keep a copy somewhere safe: set `WRANGLER_BACKUP_DIR` and `npm run deploy:tenant` copies it there after each deploy.
 
