@@ -43,6 +43,9 @@ describe('renderMentionEmail', () => {
     expect(role).toContain('mentioned <strong')
     expect(role).toContain('@Hearing Team')
     expect(renderMentionEmail({ ...base, via: 'everyone' })).toContain('notified everyone')
+    const admins = renderMentionEmail({ ...base, via: 'admins' })
+    expect(admins).toContain('@admins')
+    expect(admins).toContain("because you're an admin")
   })
   it('wraps in the gray shell (full document)', () => {
     expect(renderMentionEmail(base)).toContain('<!DOCTYPE html>')
@@ -53,9 +56,10 @@ describe('renderMentionEmail', () => {
   describe('mention pills match the app (shared MENTION_STYLE)', () => {
     const roleHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="role:r1" data-label="@Team">@Team</span></p>')
     const everyoneHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="everyone:all" data-label="@everyone">@everyone</span></p>')
+    const adminsHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="admins:all" data-label="@admins">@admins</span></p>')
     const userHtml = tiptapToEmailHtml('<p><span data-type="mention" data-id="user:u1" data-label="@Sam">@Sam</span></p>')
     it('role / @everyone mentions render in the shared indigo', () => {
-      for (const html of [roleHtml, everyoneHtml]) {
+      for (const html of [roleHtml, everyoneHtml, adminsHtml]) {
         expect(html).toContain(`background:${MENTION_STYLE.role.bg}`)
         expect(html).toContain(`color:${MENTION_STYLE.role.text}`)
       }
