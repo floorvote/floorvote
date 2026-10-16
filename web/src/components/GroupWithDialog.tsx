@@ -59,10 +59,12 @@ export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, o
     }
   }
 
+  // Group bills stays focusable while it waits for a bill (to say what's missing), so
+  // it reads at AA then too: muted text on a muted fill, not white on pale blue.
   const button = (primary: boolean, disabled: boolean): React.CSSProperties => ({
-    background: primary ? (disabled ? color.accentBlueMuted : color.accentBlue) : 'none',
-    color: primary ? color.white : color.textSecondary,
-    border: primary ? 'none' : `1px solid ${color.borderDefault}`,
+    background: primary ? (disabled ? color.surfaceMuted : color.linkBlue) : 'none',
+    color: primary ? (disabled ? color.textMuted : color.textOnFill) : color.textSecondary,
+    border: primary && !disabled ? 'none' : `1px solid ${color.borderDefault}`,
     borderRadius: radius.md, padding: '8px 14px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
     cursor: disabled ? 'not-allowed' : 'pointer',
   })

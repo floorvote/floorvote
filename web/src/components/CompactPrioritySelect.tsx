@@ -8,7 +8,7 @@ function ChevronDown({ size = 10, color }: { size?: number; color: string }) {
   const h = Math.round(size * 0.6)
   return (
     <svg width={size} height={h} viewBox="0 0 10 6" fill="none" style={{ display: 'block' }}>
-      <path d="M1 1l4 4 4-4" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 1l4 4 4-4" style={{ stroke: color }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

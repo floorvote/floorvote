@@ -32,7 +32,23 @@ const GROUP_SHOWN = 2
 const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }
 const MATCHED: CSSProperties = { ...chipOutline(true, false, false), display: 'inline-flex', borderRadius: radius.sm }
 
-const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
+export const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
+
+/**
+ * Which of a group's bills a row draws, and how, so every list that shows a
+ * group row (this one and the split pane) collapses it the same way: the first
+ * bill and one other (the first that met the filter if the first didn't, so a
+ * match isn't hidden in "+N"), the rest counted as `hidden`, and the shown
+ * bills' identical statuses collapsed to one.
+ */
+export function groupDisplay(group: GroupMember[]) {
+  const [lead, ...rest] = group
+  const other = lead?.matched ? rest[0] : (rest.find(m => m.matched) ?? rest[0])
+  const shown = [lead, ...(other ? [other] : [])].slice(0, GROUP_SHOWN)
+  const hidden = rest.filter(m => m !== other)
+  const statuses = [...new Set(shown.map(m => m.status))]
+  return { shown, hidden, statuses }
+}
 
 export function formatYearChip(yearStart: number | null, yearEnd: number | null): string | null {
   if (!yearStart) return null
@@ -180,13 +196,8 @@ export const BillRow = memo(function BillRow({
   // the filter is emphasized, and only where another bill in the group didn't:
   // when every bill matched, an outline on each says nothing.
   const group = bill.group
-  // The first bill and one other: the first one that met the filter if the first didn't, so the match isn't hidden in "+N".
-  const [lead, ...rest] = group ?? []
-  const other = lead?.matched ? rest[0] : (rest.find(m => m.matched) ?? rest[0])
-  const shown = group ? [lead, ...(other ? [other] : [])].slice(0, GROUP_SHOWN) : []
-  const hidden = group ? rest.filter(m => m !== other) : []
+  const { shown, hidden, statuses: shownStatuses } = group ? groupDisplay(group) : { shown: [], hidden: [], statuses: [] }
   const emphasize = !!group && group.some(m => m.matched === true) && group.some(m => m.matched === false)
-  const shownStatuses = [...new Set(shown.map(m => m.status))] // identical statuses collapse to one
   const renderNumbers = () => !group
     ? <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
     : (

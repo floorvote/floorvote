@@ -9,11 +9,12 @@ import { color } from './tokens'
  * whose bottom edge is the legs so `vertical-align: baseline` seats them on the
  * text baseline.
  */
-export function LogoMark({ fill = color.accentAmber, inline = false, ...rest }: { fill?: string; inline?: boolean } & SVGProps<SVGSVGElement>) {
+export function LogoMark({ fill = color.accentAmber, inline = false, style, ...rest }: { fill?: string; inline?: boolean } & SVGProps<SVGSVGElement>) {
   return (
     <svg
       viewBox={inline ? LOGO_MARK.inlineViewBox : LOGO_MARK.viewBox}
-      fill={fill}
+      // fill as a style, not the presentation attribute, so a CSS variable works
+      style={{ fill, ...style }}
       role="img"
       aria-label="FloorVote"
       {...rest}

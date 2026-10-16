@@ -45,7 +45,7 @@ export function RequireAuth() {
             style={{
               padding: '8px 20px',
               background: color.linkBlue,
-              color: color.white,
+              color: color.textOnFill,
               border: 'none',
               borderRadius: radius.md,
               fontSize: fontSize.sm,

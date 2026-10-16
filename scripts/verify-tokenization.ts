@@ -20,10 +20,12 @@ import path from 'node:path'
 import { verify } from './lib/tokenize-verify'
 import type { TokenMaps } from './lib/tokenize-verify'
 
-// Import the real token objects from web/src/styles/tokens.ts.
-// These are `as const` objects; the TokenMaps interface expects
-// Record<string, string|number> for color and Record<string, number> for the rest.
-import { color, radius, fontSize, fontWeight } from '../web/src/styles/tokens'
+// Import the literal token objects from shared/tokens.ts. The web tokens'
+// colors are CSS variables (var(--fv-...)), so only the shared literals map a
+// hex value back to its token name. These are `as const` objects; the TokenMaps
+// interface expects Record<string, string|number> for color and
+// Record<string, number> for the rest.
+import { color, radius, fontSize, fontWeight } from '../shared/tokens'
 
 const maps: TokenMaps = {
   color:      color      as unknown as Record<string, string>,

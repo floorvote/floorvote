@@ -25,7 +25,7 @@ export function voteButtonStyle(voteKey: VoteKey, isActive: boolean, hovered: bo
     background: bg,
     border: `1.5px solid ${isActive ? bg : hovered ? s.hoverBorder : s.restBorder}`,
     borderRadius: radius.pill,
-    color: isActive ? color.white : s.text,
+    color: isActive ? color.textOnFill : s.text,
     fontWeight: fontWeight.semibold,
     cursor: 'pointer',
     textAlign: 'center',

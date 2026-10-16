@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { color } from '../../styles/tokens'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AgendaView } from './AgendaView'
@@ -60,6 +61,6 @@ describe('AgendaView', () => {
     expect(onFocusHandled).toHaveBeenCalled()
     const card = container.querySelector('#agenda-event-1') as HTMLElement
     expect(card).toBeTruthy()
-    expect(card.style.boxShadow).toContain('#fde68a')
+    expect(card.style.boxShadow).toContain(color.borderAmber)
   })
 })

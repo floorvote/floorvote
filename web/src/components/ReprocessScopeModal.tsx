@@ -26,7 +26,7 @@ export function ReprocessScopeModal({ matchedBillsCount, prioritizedBillsCount, 
 
   const actionBtn = (bg: string): React.CSSProperties => ({
     display: 'block', width: '100%', textAlign: 'left', padding: '12px 14px',
-    borderRadius: radius.md, border: 'none', background: bg, color: color.white,
+    borderRadius: radius.md, border: 'none', background: bg, color: color.textOnFill,
     cursor: 'pointer', fontSize: fontSize.sm, marginBottom: 10,
   })
 

@@ -39,7 +39,7 @@ export type BillCardModel = {
 }
 export const CARD_STYLE = {
   headerBg: color.surfaceSubtle, border: color.borderDefault,
-  badgeBg: color.billBadgeNavy, badgeColor: color.white,
+  badgeBg: color.billBadgeNavy, badgeColor: color.textOnFill,
   titleFontFamily: "'Source Serif 4', Georgia, serif", titleSize: fontSize.base,
   titleWeight: fontWeight.bold, titleColor: color.textPrimary,
   summaryFontFamily: "'Source Serif 4', Georgia, serif", summarySize: fontSize.sm,

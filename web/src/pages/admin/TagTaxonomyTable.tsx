@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useRef } from 'react'
-import { color, radius, fontSize, fontWeight } from '../../../../shared/tokens'
+import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { DropIndicator, REORDER_KEY_HINT, ReorderLiveRegion, useDragReorder } from '../../components/dragReorder'
 import { SR_ONLY } from '../../lib/textStyles'
 import {

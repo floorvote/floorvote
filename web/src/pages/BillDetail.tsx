@@ -155,7 +155,7 @@ function SponsorsRow({ sponsor, sponsorUrl, sponsorParty, coSponsors, flashed }:
         fontSize: fontSize.sm, color: color.textSecondary,
         display: showAll ? 'block' : 'flex', alignItems: 'baseline',
         minWidth: 0, marginBottom: 0,
-        boxShadow: flashed ? '0 0 0 3px #fde68a' : 'none',
+        boxShadow: flashed ? `0 0 0 3px ${color.borderAmber}` : 'none',
         transition: 'box-shadow 0.6s ease', borderRadius: radius.sm,
       }}
     >
@@ -627,7 +627,7 @@ function draftSaveStyle(disabled: boolean): React.CSSProperties {
   return {
     fontSize: fontSize.sm, fontWeight: fontWeight.medium, border: 'none', borderRadius: radius.md, padding: '4px 10px',
     background: disabled ? color.borderDefault : color.accentBlue,
-    color: disabled ? color.textMuted : color.white,
+    color: disabled ? color.textMuted : color.textOnFill,
     cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }
@@ -1643,7 +1643,7 @@ export function BillDetail() {
                     {...linkGate.buttonProps(handleLinkDraft)}
                     style={{
                       background: linkGate.disabled ? color.accentBlueMuted : color.accentBlue,
-                      color: color.white, border: 'none', borderRadius: radius.md,
+                      color: color.textOnFill, border: 'none', borderRadius: radius.md,
                       padding: '8px 14px', cursor: linkGate.disabled ? 'not-allowed' : 'pointer',
                       fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
                       opacity: demoLocked ? 0.5 : 1,
@@ -1701,7 +1701,7 @@ export function BillDetail() {
                   outline: 'none',
                 }}
               />
-              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
+              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
               <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px' }}>Cancel</button>
             </form>
           </div>
@@ -1912,7 +1912,7 @@ export function BillDetail() {
                     padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 220,
                   }}
                 />
-                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                 <button type="button" onClick={() => setEditingDraftField(null)} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
               </form>
             ) : (
@@ -2099,7 +2099,7 @@ export function BillDetail() {
                       />
                     )
                   })()}
-                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.white, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                   <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
                 </form>
               ) : (
@@ -2338,7 +2338,7 @@ export function BillDetail() {
                       disabled={generateDisabled}
                       style={{
                         background: generateDisabled ? color.accentBlueMuted : color.accentBlue,
-                        color: color.white,
+                        color: color.textOnFill,
                         border: 'none',
                         borderRadius: radius.md,
                         padding: '8px 14px',
@@ -2919,7 +2919,7 @@ export function BillDetail() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Comments */}
-          <div id="section-comments" style={{ ...CARD, padding: 16, boxShadow: flashedSectionId === 'section-comments' ? '0 0 0 3px #fde68a' : (CARD.boxShadow as string | undefined), transition: 'box-shadow 0.6s ease' }}>
+          <div id="section-comments" style={{ ...CARD, padding: 16, boxShadow: flashedSectionId === 'section-comments' ? `0 0 0 3px ${color.borderAmber}` : (CARD.boxShadow as string | undefined), transition: 'box-shadow 0.6s ease' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
               <div style={SECTION_LABEL}>
                 Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
@@ -2930,7 +2930,7 @@ export function BillDetail() {
             {comments.map((comment, idx) => (
               <Fragment key={comment.id}>
               {groupingLines.before.get(comment.id)?.map(e => <GroupingLine key={e.id} event={e} />)}
-              <div id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
+              <div id={`comment-${comment.id}`} className={newCommentIds.has(comment.id) ? 'comment-new' : ''} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: idx < comments.length - 1 ? `1px solid ${color.surfaceMuted}` : 'none', borderRadius: radius.md, boxShadow: flashedCommentId === comment.id ? `0 0 0 3px ${color.borderAmber}` : 'none', transition: 'box-shadow 0.6s ease' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / title / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
@@ -3035,7 +3035,7 @@ export function BillDetail() {
                         bottom: 'calc(100% + 6px)',
                         left: 0,
                         background: color.tooltipBg,
-                        color: color.white,
+                        color: color.textOnFill,
                         fontSize: fontSize.sm,
                         borderRadius: radius.sm,
                         padding: '6px 10px',
@@ -3178,7 +3178,7 @@ export function BillDetail() {
 
           <SentimentBars voteCounts={voteCounts} memberVotes={bill.memberVotes} isAdmin={isAdmin} myVote={myVote} onVote={user?.canVote === true ? handleVote : undefined} canVote={user?.canVote} />
 
-          <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? '0 0 0 3px #fde68a' : 'none', transition: 'box-shadow 0.6s ease' }}>
+          <div id="section-note" style={{ borderRadius: radius.lg, boxShadow: flashedSectionId === 'section-note' ? `0 0 0 3px ${color.borderAmber}` : 'none', transition: 'box-shadow 0.6s ease' }}>
             <PersonalNote key={bill.id} billId={bill.id} initialContent={bill.myNote} notes={bill.myNotes} />
           </div>
         </div>
@@ -3204,7 +3204,7 @@ export function BillDetail() {
           position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
           zIndex: 300,
           background: color.textSlate,
-          color: color.white,
+          color: color.textOnFill,
           padding: '10px 20px',
           borderRadius: radius.md,
           fontSize: fontSize.sm,

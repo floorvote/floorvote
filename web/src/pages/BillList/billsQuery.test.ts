@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   billsApiParams, billsFilterValuesFromSearch, billsChipSelection, prioritizedChipSelection,
+  searchFromListUrl, billsApiParamsFromSearch,
 } from './billsQuery'
 
 describe('billsApiParams', () => {
@@ -119,5 +120,30 @@ describe('prioritizedChipSelection', () => {
   it('selects neither chip away from the bills list (other pages, bill detail)', () => {
     expect(prioritizedChipSelection('/feed', PRIORITY_QS)).toEqual({ priority: false, unvoted: false })
     expect(prioritizedChipSelection('/bills/HB123', PRIORITY_QS)).toEqual({ priority: false, unvoted: false })
+  })
+})
+
+// The one URL-to-request path the loader's prefetch and the split pane share, so
+// the two can never key the same list differently.
+describe('searchFromListUrl', () => {
+  it('reads the query string of a list URL', () => {
+    expect(searchFromListUrl('/bills?status=2&sort=bill&dir=asc').toString()).toBe('status=2&sort=bill&dir=asc')
+  })
+  it('is empty for a URL with no query string', () => {
+    expect(searchFromListUrl('/bills').toString()).toBe('')
+  })
+})
+
+describe('billsApiParamsFromSearch', () => {
+  it('matches billsApiParams over the same search at the page size', () => {
+    const search = new URLSearchParams('status=2&priority=high&sort=bill&dir=desc')
+    expect(billsApiParamsFromSearch(search, 1)).toBe(billsApiParams(billsFilterValuesFromSearch(search), 1, 100))
+    expect(billsApiParamsFromSearch(search, 3)).toContain('page=3&pageSize=100')
+  })
+  it('resolves a custom-field slug to its id when given the defs', () => {
+    const search = new URLSearchParams('cf_tracked_by_team=yes')
+    const defs = [{ id: 'cf-uuid-1', slug: 'tracked_by_team' }]
+    expect(billsApiParamsFromSearch(search, 1, defs)).toBe('page=1&pageSize=100&cf_cf-uuid-1=yes')
+    expect(billsApiParamsFromSearch(search, 1)).toBe('page=1&pageSize=100&cf_tracked_by_team=yes')
   })
 })

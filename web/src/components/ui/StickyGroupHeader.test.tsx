@@ -15,7 +15,8 @@ describe('StickyGroupHeader', () => {
   it('has a non-transparent background so rows scrolling underneath are masked', () => {
     render(<StickyGroupHeader label="AZ" height={24} stuck pushOffset={0} />)
     const header = screen.getByText('AZ').closest('div') as HTMLElement
-    const bg = getComputedStyle(header).backgroundColor
+    // The inline value (a color token's CSS variable, which jsdom doesn't resolve).
+    const bg = header.style.background || header.style.backgroundColor
     expect(bg).not.toBe('')
     expect(bg).not.toBe('transparent')
     expect(bg).not.toBe('rgba(0, 0, 0, 0)')

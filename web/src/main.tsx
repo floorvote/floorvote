@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/mobile.css'
 import App from './App'
+import { watchSystemColorMode } from './lib/colorMode'
 
 // Stale-deploy recovery for lazily-loaded chunks (e.g. LegalPage, ImportEvents).
 // After a deploy rotates hashes, a page left open can request a chunk that no
@@ -19,6 +20,8 @@ window.addEventListener('vite:preloadError', () => {
   }
   window.location.reload()
 })
+
+watchSystemColorMode()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
