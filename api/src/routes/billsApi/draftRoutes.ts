@@ -16,6 +16,8 @@ import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
 import { inGroupOf } from '../../lib/companionGroups'
 import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
+import { parseStoredItems } from '../../lib/claimSources'
+import { pruneClaimSources } from '../../lib/claimResolution'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
@@ -224,7 +226,14 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
     // 400s them — so a source title can't be blanked through this endpoint.
     if ('title' in body) patch.title = typeof body.title === 'string' ? body.title.trim() : ''
     if ('sponsor' in body) patch.sponsor = body.sponsor?.trim() || null
-    if ('summary' in body) patch.tenantSummary = body.summary?.trim() || null
+    if ('summary' in body) {
+      patch.tenantSummary = body.summary?.trim() || null
+      // Claim sources are quotes behind claims in the summary, so an edit keeps
+      // only those whose claim is still in it.
+      if (existing.claimSources !== null) {
+        patch.claimSources = JSON.stringify(pruneClaimSources(parseStoredItems(existing.claimSources) ?? [], patch.tenantSummary))
+      }
+    }
     if ('text' in body) patch.draftText = body.text?.trim() || null
 
     // An omitted state leaves the row alone — including a legacy '', which
