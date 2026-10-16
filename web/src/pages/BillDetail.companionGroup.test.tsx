@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -606,5 +606,61 @@ describe('a comment posted on a companion', () => {
     })
     await screen.findByText('c7 text')
     expect(within(commentEl('c7')).queryByRole('link')).toBeNull()
+  })
+})
+
+// The commenter's name opens a roles bubble on hover; the badge beside it has its own.
+describe("a companion comment's badge and the commenter's roles bubble", () => {
+  const COMMENTS = {
+    ...GROUPED,
+    groupBills: [THIS, COMPANION],
+    comments: [comment('c2', 'b1713', 'S1713', '2026-10-10 13:00:00', 'Ben')],
+    commentsTotal: 1,
+    groupingEvents: [],
+  }
+  const renderWithRoles = () => {
+    const bill = { ...BILL, ...COMMENTS }
+    routerMock.loaderData = bill
+    vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
+      if (path === '/bills/42') return bill as never
+      if (path === '/config') return { ...CONFIG } as never
+      if (path === '/config/custom-fields') return [] as never
+      if (path === '/roles') return [] as never
+      if (path === '/users') return [{ id: 'u-Ben', name: 'Ben', email: 'ben@example.com', title: null, roles: [{ id: 'r1', name: 'Policy lead' }] }] as never
+      return {} as never
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+  }
+  const bubbles = (text: string) => screen.queryAllByText(text).filter(el => el.getAttribute('aria-hidden') === 'true')
+
+  it('shows only "Posted on S1713" when the pointer hovers the badge, not the commenter\'s roles', async () => {
+    const user = userEvent.setup()
+    renderWithRoles()
+    await screen.findByText('c2 text')
+    await user.hover(within(document.getElementById('comment-c2')!).getByRole('link', { name: 'S1713' }))
+    expect(bubbles('Posted on S1713')).toHaveLength(1)
+    expect(screen.queryByText('Roles')).toBeNull()
+    expect(screen.queryByText('Policy lead')).toBeNull()
+  })
+
+  it('still shows the roles, and not "Posted on", when the pointer hovers the name', async () => {
+    const user = userEvent.setup()
+    renderWithRoles()
+    await screen.findByText('c2 text')
+    await waitFor(() => expect(api.apiFetch).toHaveBeenCalledWith('/users'))
+    await user.hover(within(document.getElementById('comment-c2')!).getByText('Ben'))
+    expect(await screen.findByText('Policy lead')).toBeInTheDocument()
+    expect(bubbles('Posted on S1713')).toHaveLength(0)
+  })
+
+  it('closes the "Posted on" bubble when Escape is pressed on the focused badge', async () => {
+    const user = userEvent.setup()
+    renderWithRoles()
+    await screen.findByText('c2 text')
+    const badge = within(document.getElementById('comment-c2')!).getByRole('link', { name: 'S1713' })
+    for (let i = 0; i < 80 && document.activeElement !== badge; i++) await user.tab()
+    expect(bubbles('Posted on S1713')).toHaveLength(1)
+    await user.keyboard('{Escape}')
+    expect(bubbles('Posted on S1713')).toHaveLength(0)
   })
 })

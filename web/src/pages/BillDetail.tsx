@@ -2918,6 +2918,7 @@ export function BillDetail() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   {/* Comment header (name / title / date) — shared with the
                       @-mention email's card row via COMMENT_STYLE; keep both in sync there. */}
+                  <span>
                   <span
                     style={{ fontSize: COMMENT_STYLE.nameSize, fontWeight: COMMENT_STYLE.nameWeight, color: COMMENT_STYLE.nameColor, position: 'relative', cursor: 'default' }}
                     onMouseEnter={() => setHoveredCommentUser(comment.id)}
@@ -2927,26 +2928,6 @@ export function BillDetail() {
                     {comment.userTitle && (
                       <span style={{ fontSize: COMMENT_STYLE.titleSize, fontWeight: COMMENT_STYLE.titleWeight, color: COMMENT_STYLE.titleColor, marginLeft: 4 }}>{comment.userTitle}</span>
                     )}
-                    {/* A comment posted on a companion in this bill's group: that bill's
-                        badge. One from a bill no longer in the group (split off since the
-                        page loaded) has no state or session here, so it links by id. */}
-                    {comment.billId && comment.billId !== bill.id && comment.billNumber && (() => {
-                      const posted = (bill.groupBills ?? []).find(g => g.billId === comment.billId)
-                      const describeId = `posted-on-${comment.id}`
-                      return (
-                        <span style={{ marginLeft: 6 }}>
-                          <HoverTooltip text={`Posted on ${comment.billNumber}`} describe={{ id: describeId, interactive: true }}>
-                            <BillBadge
-                              mini
-                              billNumber={comment.billNumber}
-                              state={posted?.state}
-                              to={billUrl({ id: comment.billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber: comment.billNumber })}
-                              describedBy={describeId}
-                            />
-                          </HoverTooltip>
-                        </span>
-                      )
-                    })()}
                     {hoveredCommentUser === comment.id && (() => {
                       const commenter = usersData.find(u => u.id === comment.userId)
                       const userRoles = commenter?.roles ?? []
@@ -2969,6 +2950,27 @@ export function BillDetail() {
                         </div>
                       )
                     })()}
+                  </span>
+                  {/* A comment posted on a companion in this bill's group: that bill's
+                      badge. One from a bill no longer in the group (split off since the
+                      page loaded) has no state or session here, so it links by id. */}
+                  {comment.billId && comment.billId !== bill.id && comment.billNumber && (() => {
+                    const posted = (bill.groupBills ?? []).find(g => g.billId === comment.billId)
+                    const describeId = `posted-on-${comment.id}`
+                    return (
+                      <span style={{ marginLeft: 6 }}>
+                        <HoverTooltip text={`Posted on ${comment.billNumber}`} describe={{ id: describeId, interactive: true }}>
+                          <BillBadge
+                            mini
+                            billNumber={comment.billNumber}
+                            state={posted?.state}
+                            to={billUrl({ id: comment.billId, state: posted?.state, sessionSlug: posted?.sessionSlug, billNumber: comment.billNumber })}
+                            describedBy={describeId}
+                          />
+                        </HoverTooltip>
+                      </span>
+                    )
+                  })()}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span title={absoluteTime(comment.createdAt)} style={{ fontSize: COMMENT_STYLE.dateSize, color: COMMENT_STYLE.dateColor, cursor: 'default' }}>{relativeTime(comment.createdAt)}</span>
