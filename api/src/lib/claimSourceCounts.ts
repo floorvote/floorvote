@@ -20,9 +20,10 @@ export type ClaimSourceCounts = {
    * Bills by what their analysis stored for claim sources.
    * - `withClaimSources`: a list with at least one item.
    * - `emptyList`: asked for claim sources, and nothing usable came back (`[]`).
-   * - `noList`: an AI-processed bill with none stored (null): analyzed before
-   *   claim links, or with the setting off, or on its title and abstract alone,
-   *   or retried without them after a cut-off response.
+   * - `noList`: an AI-processed bill with no usable list stored (null, or a value
+   *   that is not a JSON list): analyzed before claim links, or with the setting
+   *   off, or on its title and abstract alone, or retried without them after a
+   *   cut-off response.
    */
   analyses: { withClaimSources: number; emptyList: number; noList: number }
   /** Stored items by how their quote resolved. `total` is their sum. */
@@ -59,7 +60,8 @@ export async function computeClaimSourceCounts(db: AppDb): Promise<ClaimSourceCo
                  WHEN json_array_length(claim_sources) > 0 THEN 1 ELSE 0 END) AS withClaimSources,
         SUM(CASE WHEN claim_sources IS NULL THEN 0 WHEN NOT json_valid(claim_sources) THEN 0 WHEN json_type(claim_sources) <> 'array' THEN 0
                  WHEN json_array_length(claim_sources) = 0 THEN 1 ELSE 0 END) AS emptyList,
-        SUM(CASE WHEN claim_sources IS NULL AND ai_processed_at IS NOT NULL THEN 1 ELSE 0 END) AS noList
+        SUM(CASE WHEN ai_processed_at IS NULL THEN 0 WHEN claim_sources IS NULL THEN 1 WHEN NOT json_valid(claim_sources) THEN 1
+                 WHEN json_type(claim_sources) <> 'array' THEN 1 ELSE 0 END) AS noList
       FROM bills`),
     db.get<{ value: string }>(sql`SELECT value FROM association_config WHERE key = ${CUTOFF_KEY}`),
   ])
@@ -97,7 +99,54 @@ export async function recordClaimSourcesCutOff(db: AppDb): Promise<void> {
 /** The counts plus when they were counted, as the operator view shows them. */
 export type ClaimSourceCountsSnapshot = ClaimSourceCounts & { computedAt: string }
 
-// Stub for the red run: no cache.
+/**
+ * How long counts are reused. The scan reads every bill's stored claim sources
+ * (seconds on tens of thousands of bills), and D1 runs one query at a time per
+ * database, so a scan can hold up the instance's own requests. Operators reload
+ * the page freely, so the answer is kept and its age shown.
+ */
+export const CLAIM_SOURCE_COUNTS_CACHE_MS = 30 * 60 * 1000
+
+/** The `association_config` key holding the cached scan. Counts only, and not served by any config endpoint or export. */
+const CACHE_KEY = 'claim_source_counts_cache'
+
+type CachedScan = { computedAtMs: number; analyses: ClaimSourceCounts['analyses']; items: ClaimSourceCounts['items'] }
+
+const parseCache = (raw: string | undefined, now: number): CachedScan | null => {
+  if (raw === undefined) return null
+  try {
+    const c = JSON.parse(raw) as CachedScan
+    if (!c || typeof c.computedAtMs !== 'number' || !c.analyses || !c.items || typeof c.items.total !== 'number') return null
+    // A cache from the future (the clock moved) can't be aged, so it isn't trusted.
+    const age = now - c.computedAtMs
+    return age >= 0 && age < CLAIM_SOURCE_COUNTS_CACHE_MS ? c : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The counts for the operator view: the scan at most once per
+ * `CLAIM_SOURCE_COUNTS_CACHE_MS`, with when it ran. The cut-off count is one
+ * primary-key lookup, so it is always read fresh.
+ */
 export async function cachedClaimSourceCounts(db: AppDb, now: number = Date.now()): Promise<ClaimSourceCountsSnapshot> {
-  return { ...(await computeClaimSourceCounts(db)), computedAt: new Date(now).toISOString() } // ts-write-ok: response payload, never a DB column
+  const [row, cutOff] = await Promise.all([
+    db.get<{ value: string }>(sql`SELECT value FROM association_config WHERE key = ${CACHE_KEY}`),
+    db.get<{ value: string }>(sql`SELECT value FROM association_config WHERE key = ${CUTOFF_KEY}`),
+  ])
+  let scan = parseCache(row?.value, now)
+  if (!scan) {
+    const fresh = await computeClaimSourceCounts(db)
+    scan = { computedAtMs: now, analyses: fresh.analyses, items: fresh.items }
+    await db.run(sql`
+      INSERT INTO association_config (key, value) VALUES (${CACHE_KEY}, ${JSON.stringify(scan)})
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+  }
+  return {
+    analyses: scan.analyses,
+    items: scan.items,
+    cutOffRetries: asCount(cutOff?.value),
+    computedAt: new Date(scan.computedAtMs).toISOString(), // ts-write-ok: response payload, never a DB column
+  }
 }

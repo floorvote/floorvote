@@ -12,6 +12,7 @@ type Counts = {
   analyses: { withClaimSources: number; emptyList: number; noList: number }
   items: { exact: number; normalized: number; fuzzy: number; anchored: number; ungrounded: number; unverified: number; total: number }
   cutOffRetries: number
+  computedAt?: string
 }
 
 type State = { kind: 'loading' } | { kind: 'ok'; counts: Counts } | { kind: 'unavailable'; reason: string }
@@ -73,8 +74,20 @@ export function ClaimLinkCounts({ tenantId }: { tenantId: string }) {
   )
 }
 
+/** "just now" or "N minutes ago" and up, or null when the instance gave no usable time. */
+function ageOf(iso: string | undefined): string | null {
+  const t = iso ? Date.parse(iso) : NaN
+  if (Number.isNaN(t)) return null
+  const minutes = Math.max(0, Math.floor((Date.now() - t) / 60_000))
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  const hours = Math.floor(minutes / 60)
+  return `${hours} hour${hours === 1 ? '' : 's'} ago`
+}
+
 function Loaded({ counts }: { counts: Counts }) {
   const { items, analyses } = counts
+  const age = ageOf(counts.computedAt)
   const rows: Row[] = STATUSES.map(s => ({
     label: s.label,
     meaning: s.meaning,
@@ -93,6 +106,7 @@ function Loaded({ counts }: { counts: Counts }) {
 
   return (
     <>
+      {age && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }} title={counts.computedAt}>Counted {age}. The instance reuses a count for up to 30 minutes.</div>}
       {items.total === 0 && (
         <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>No claim sources stored yet.</div>
       )}
@@ -108,7 +122,7 @@ function Loaded({ counts }: { counts: Counts }) {
         ))}
       </dl>
       <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, maxWidth: 720 }}>
-        Counted from each bill's stored claim sources. An analysis that asked for claim sources and got nothing usable back
+        Read from each bill's stored claim sources. An analysis that asked for claim sources and got nothing usable back
         is counted under Asked, none stored. An AI-processed bill with no list at all is counted under No list stored: it was
         analyzed before claim links, with the setting off, on its title and abstract alone, or retried without claim sources
         after a cut-off response. The cut-off count starts from when the instance began counting them.

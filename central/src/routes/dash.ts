@@ -661,8 +661,9 @@ dashRoutes.get('/tenants/:id', async (c) => {
 
 // How well one instance's claim links resolve (#573): counts of its stored claim
 // sources by status, and two signals about analyses that stored none. Asked of
-// the instance live over its service binding, as the unknown-login list is, so
-// central stores nothing and the instance's members have no way to read it.
+// the instance over its service binding, as the unknown-login list is, so
+// central stores nothing and the instance's members have no way to read it. The
+// instance reuses its scan for a while and returns when it ran (`computedAt`).
 dashRoutes.get('/tenants/:id/claim-sources', async (c) => {
   const id = c.req.param('id')
   const db = drizzle(c.env.DB, { schema })

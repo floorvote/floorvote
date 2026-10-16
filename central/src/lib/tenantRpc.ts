@@ -12,6 +12,8 @@ export type ClaimSourceCountsData = {
   analyses: { withClaimSources: number; emptyList: number; noList: number }
   items: { exact: number; normalized: number; fuzzy: number; anchored: number; ungrounded: number; unverified: number; total: number }
   cutOffRetries: number
+  /** When the instance last scanned its bills (it reuses the scan for a while), as an ISO time. */
+  computedAt?: string
 }
 
 /** RPC surface exposed by the tenant's CentralApi WorkerEntrypoint. */

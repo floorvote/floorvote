@@ -122,7 +122,7 @@ Any change to the analysis call moves relevance scores slightly, and this one do
 
 ### Reading the counts
 
-Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links**, beside the instance's AI instructions status. Central asks the instance live, so the counts are current, and the section says when it can't: an instance that central has no binding for, or one that hasn't been upgraded to this release, shows "unavailable."
+Central's dashboard shows, for each instance, how its stored claim sources resolved. Open **Tenants**, choose the instance, and find **Claim links**, beside the instance's AI instructions status. Central asks the instance, which scans its bills at most every 30 minutes and reuses the answer in between. The section says how old the counts are, and the cut-off count is always current. When central can't ask, because it has no binding for the instance or the instance hasn't been upgraded to this release, the section says "unavailable" with the reason.
 
 Each claim source is counted once, by how its quote matched:
 
@@ -140,13 +140,13 @@ Two more signals sit beside the table:
 - **Asked, none stored** counts analyses that asked for claim sources and got nothing usable back. Each stored `[]`.
 - **Cut off, retried without claim sources** counts analyses whose response ran out of output inside the claim sources. The instance asks once more without them and stores the summary, so the bill is fine but has no links. These retries also leave no list on the bill, so they are counted under **No list stored** along with bills analyzed before claim links, bills analyzed with the setting off, and bills analyzed on their title and abstract alone. The retry count starts from the release that added it. Each retry also logs `did not parse with claim sources asked; retrying without them`.
 
-For a healthy HTML instance, most quotes resolve as exact, normalized, or fuzzy. The research behind the feature located 91 to 93 percent of quotes in the bill text. A much lower share, with a large ungrounded count, is worth a look. Very long bills, over about a million characters, resolve fewer quotes because the instance limits how much matching it will do on one bill.
+For a healthy HTML instance, most quotes resolve as exact, normalized, or fuzzy. The research behind the feature located 91 to 93 percent of quotes in the bill text. A much lower share, with a large ungrounded count, is worth a look. Very long bills resolve fewer quotes, because the instance caps the matching work it spends on one bill. A quote that matches exactly or after normalizing is never affected, so the quotes that go ungrounded first are the ones that would have needed a close match.
 
 The counts are read from the bills, so you can also query them directly:
 
 ```bash
 npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \
-  --command "SELECT json_extract(j.value, '$.status') AS status, COUNT(*) AS n FROM bills b, json_each(b.claim_sources) j GROUP BY status"
+  --command "SELECT json_extract(j.value, '$.status') AS status, COUNT(*) AS n FROM bills b, json_each(b.claim_sources) j WHERE json_valid(b.claim_sources) GROUP BY status"
 
 # Responses cut off inside claim sources and retried without them
 npx wrangler d1 execute floorvote-[slug] --remote --env [slug] \

@@ -10,7 +10,7 @@ import { runDigest } from './lib/digest'
 import { sendSampleEmail, isSampleEmailType, type SampleSendResult } from './lib/sampleEmails'
 import { readDeliveryProbe, type DeliveryProbeRecord } from './lib/deliveryProbe'
 import { verifyAi, type VerifyAiResult } from './lib/verifyAi'
-import { computeClaimSourceCounts, type ClaimSourceCounts } from './lib/claimSourceCounts'
+import { cachedClaimSourceCounts, type ClaimSourceCountsSnapshot } from './lib/claimSourceCounts'
 import type { Env } from './types'
 
 /**
@@ -54,8 +54,8 @@ export class CentralApi extends WorkerEntrypoint<Env> {
     return verifyAi(this.env, getDb(this.env.DB), billId)
   }
 
-  async claimSourceCounts(): Promise<ClaimSourceCounts> {
-    return computeClaimSourceCounts(getDb(this.env.DB))
+  async claimSourceCounts(): Promise<ClaimSourceCountsSnapshot> {
+    return cachedClaimSourceCounts(getDb(this.env.DB))
   }
 
   async unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>> {
