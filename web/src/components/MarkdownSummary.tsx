@@ -38,6 +38,9 @@ interface Props {
   color?: string
   lineHeight?: number | string
   fontFamily?: string
+  /** Stub for red tests (#571). */
+  claimLinks?: readonly { index: number; claim: string }[]
+  onClaimActivate?: (index: number) => void
 }
 
 export function MarkdownSummary({ children, fontSize, color: textColor = color.textSlate, lineHeight = 1.5, fontFamily = "'Source Serif 4', serif" }: Props) {

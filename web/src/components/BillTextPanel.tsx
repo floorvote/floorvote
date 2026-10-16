@@ -5,6 +5,7 @@ import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
+import type { ClaimDocument, Span } from '../lib/claimLinks'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
@@ -24,11 +25,15 @@ interface TextVersion {
   altStateLink: string | null
 }
 
+/** Stub for red tests (#571). */
+export type PassageRequest = { key: number; billId: string; billNumber: string | null; document: ClaimDocument; matched: string; quoteAt: Span }
+
 interface BillTextPanelProps {
   billId: string
   texts: TextVersion[]
   externalOpen?: boolean
   requestedDocId?: string | null
+  passage?: PassageRequest | null
 }
 
 export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: BillTextPanelProps) {
