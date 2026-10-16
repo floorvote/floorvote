@@ -12,10 +12,15 @@ import { color, fontSize } from '../styles/tokens'
 // "unanalyzed territory". Hatching populated content would make a finished
 // summary look pending, so the AI summary section leaves it off and gets the
 // stripes only while a run is in flight.
-export function AnalysisBox({ running, hatched = false, error, children }: {
+//
+// `error` is a run that failed, announced as an alert. `notice` is a run that
+// ended without failing but has something to say, such as which other bill it
+// re-analyzed. It is announced politely and drawn in the body text color.
+export function AnalysisBox({ running, hatched = false, error, notice, children }: {
   running: boolean
   hatched?: boolean
   error?: string | null
+  notice?: string | null
   children: React.ReactNode
 }) {
   const showStripes = running || hatched
@@ -35,6 +40,11 @@ export function AnalysisBox({ running, hatched = false, error, children }: {
         {error && (
           <div role="alert" style={{ fontSize: fontSize.sm, color: color.textDanger, marginTop: 8 }}>
             {error}
+          </div>
+        )}
+        {notice && !error && (
+          <div role="status" style={{ fontSize: fontSize.sm, color: color.textSlate, marginTop: 8 }}>
+            {notice}
           </div>
         )}
       </div>
