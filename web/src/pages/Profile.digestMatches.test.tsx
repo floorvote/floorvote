@@ -16,7 +16,7 @@ vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: auth.user,
     loading: false, authError: false,
-    setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {},
+    setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {},
     setEmailDigestMatchesEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
@@ -27,7 +27,7 @@ vi.mock('../context/ConfigContext', () => ({
 
 function signIn(role: 'member' | 'admin' | 'owner', over: Record<string, unknown> = {}) {
   auth.user = {
-    id: 'u1', email: 'a@b.c', name: 'A', role, subtitle: null,
+    id: 'u1', email: 'a@b.c', name: 'A', role, title: null,
     canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true,
     lastSeenFeed: null, isLastOwner: false, ...over,
   }
