@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, act } from '@testing-library/react'
 import React from 'react'
 import userEvent from '@testing-library/user-event'
 
@@ -199,5 +199,90 @@ describe('Config: the claim links toggle', () => {
     demo.demoLocked = true
     renderConfig()
     expect(await toggle()).toBeDisabled()
+  })
+})
+
+describe('Config: the claim links toggle, for keyboard and screen reader users', () => {
+  /** A save that stays in flight until the test settles it. */
+  function pendingSave() {
+    let settle!: (v: unknown) => void
+    let fail!: (e: unknown) => void
+    const promise = new Promise((res, rej) => { settle = res; fail = rej })
+    mockConfig({}, () => promise)
+    return { settle, fail }
+  }
+
+  it('keeps focus on the checkbox through a keyboard toggle and its save', async () => {
+    const save = pendingSave()
+    renderConfig()
+    const box = await toggle()
+    box.focus()
+    await userEvent.keyboard(' ')
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    // In flight: still the focused element, and not natively disabled, which is what drops focus.
+    expect(document.activeElement).toBe(box)
+    expect(box).not.toBeDisabled()
+    expect(box).toHaveAttribute('aria-disabled', 'true')
+    await act(async () => { save.settle({ enabled: false, changedAt: '2026-10-20 14:05:09', changedBy: null }) })
+    expect(document.activeElement).toBe(box)
+    expect(box).toHaveAttribute('aria-disabled', 'false')
+  })
+
+  it('ignores a second toggle while the first save is in flight', async () => {
+    const save = pendingSave()
+    renderConfig()
+    const box = await toggle()
+    box.focus()
+    await userEvent.keyboard(' ')
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(1))
+    await userEvent.keyboard(' ')
+    await userEvent.click(box)
+    expect(putsToClaimLinks()).toHaveLength(1)
+    expect(box).not.toBeChecked()
+    await act(async () => { save.settle({ enabled: false }) })
+    expect(putsToClaimLinks()).toHaveLength(1)
+    expect(box).not.toBeChecked()
+  })
+
+  it('takes a toggle again once the save is done', async () => {
+    mockConfig({}, (body) => ({ enabled: (body as { enabled: boolean }).enabled }))
+    renderConfig()
+    const box = await toggle()
+    await userEvent.click(box)
+    await waitFor(() => expect(box).toHaveAttribute('aria-disabled', 'false'))
+    await userEvent.click(box)
+    await waitFor(() => expect(putsToClaimLinks()).toHaveLength(2))
+    expect(box).toBeChecked()
+  })
+
+  it('announces a saved change in a polite live region', async () => {
+    mockConfig({}, () => ({ enabled: false }))
+    renderConfig()
+    await userEvent.click(await toggle())
+    const status = screen.getByTestId('claim-links-status')
+    expect(status).toHaveAttribute('role', 'status')
+    expect(status).toHaveAttribute('aria-live', 'polite')
+    await waitFor(() => expect(status).toHaveTextContent(/claim links turned off/i))
+  })
+
+  it('announces that claim links are back on after turning them on', async () => {
+    mockConfig({ claim_links_enabled: false }, () => ({ enabled: true }))
+    renderConfig()
+    await userEvent.click(await toggle())
+    await waitFor(() => expect(screen.getByTestId('claim-links-status')).toHaveTextContent(/claim links turned on/i))
+  })
+
+  it('announces a failed save in the live region', async () => {
+    const { ApiError } = await import('../../lib/api')
+    mockConfig({}, () => { throw new ApiError(500, 'Could not save claim links.') })
+    renderConfig()
+    await userEvent.click(await toggle())
+    await waitFor(() => expect(screen.getByTestId('claim-links-status')).toHaveTextContent('Could not save claim links.'))
+  })
+
+  it('has the live region in place before anything is announced, empty', async () => {
+    renderConfig()
+    await toggle()
+    expect(screen.getByTestId('claim-links-status')).toBeEmptyDOMElement()
   })
 })
