@@ -443,3 +443,168 @@ describe('the line saying what a companion group shares', () => {
     expect(inLine.style.background).toBe(inHeader.style.background)
   })
 })
+
+// A comment posted on a companion names the bill it was posted on with that
+// bill's mini navy badge after the commenter's name. Queries are scoped to the
+// comment's own header: the page's header and shares line link to the companion too.
+describe('a comment posted on a companion', () => {
+  const GROUP = { ...GROUPED, groupBills: [THIS, COMPANION, THIRD] }
+  const commentEl = (id: string) => document.getElementById(`comment-${id}`)!
+  const badgeIn = (id: string) => within(commentEl(id)).getByRole('link', { name: 'S1713' })
+  // The bubble the badge shows on hover or focus is aria-hidden; its screen reader copy is not.
+  const visibleBubbles = (text: string) =>
+    screen.queryAllByText(text).filter(el => el.getAttribute('aria-hidden') === 'true')
+
+  it("shows the companion's mini navy badge, linking to its canonical bill page", async () => {
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    const badge = badgeIn('c2')
+    expect(badge).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+    expect(within(commentEl('c2')).getAllByRole('link')).toHaveLength(1)
+    // Navy fill and mini size, the same as the shares line's.
+    const inLine = within(screen.getByTestId('group-shares-line')).getByRole('link', { name: 'S1713' })
+    expect(badge.style.background).toBe(inLine.style.background)
+    expect(parseFloat(badge.style.fontSize)).toBe(parseFloat(inLine.style.fontSize))
+    const inHeader = within(screen.getByTestId('bill-group-badges')).getByRole('link', { name: 'S1713' })
+    expect(parseFloat(badge.style.fontSize)).toBeLessThan(parseFloat(inHeader.style.fontSize))
+  })
+
+  it("puts the badge after the commenter's name, inside the comment header", async () => {
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    const name = within(commentEl('c2')).getByText('Ben', { exact: false })
+    expect(name.compareDocumentPosition(badgeIn('c2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(badgeIn('c2').compareDocumentPosition(within(commentEl('c2')).getByText('c2 text')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows "Posted on S1713" when the pointer hovers the badge, and drops it when the pointer leaves', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    await user.hover(badgeIn('c2'))
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(1)
+    await user.unhover(badgeIn('c2'))
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+  })
+
+  it('shows "Posted on S1713" when the badge takes keyboard focus, and drops it when focus leaves', async () => {
+    const user = userEvent.setup()
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    const badge = badgeIn('c2')
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+    for (let i = 0; i < 80 && document.activeElement !== badge; i++) await user.tab()
+    expect(document.activeElement).toBe(badge)
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(1)
+    await user.tab()
+    expect(visibleBubbles('Posted on S1713')).toHaveLength(0)
+  })
+
+  it('gives a screen reader "Posted on S1713" as the badge\'s description, its name staying the bill number', async () => {
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    expect(badgeIn('c2')).toHaveAccessibleDescription('Posted on S1713')
+  })
+
+  it('names the bill each companion comment was posted on, and no other', async () => {
+    renderBillDetail({
+      ...GROUP,
+      comments: [
+        comment('c1', '42', 'A190', '2026-10-10 12:00:00', 'Ann'),
+        comment('c2', 'b1713', 'S1713', '2026-10-10 13:00:00', 'Ben'),
+        comment('c4', 'c2000', 'H2000', '2026-10-10 14:00:00', 'Cy'),
+      ],
+      commentsTotal: 3,
+    })
+    await screen.findByText('c4 text')
+    expect(within(commentEl('c4')).getByRole('link', { name: 'H2000' })).toHaveAttribute('href', '/NJ/2026/H2000')
+    expect(within(commentEl('c4')).queryByRole('link', { name: 'S1713' })).toBeNull()
+    expect(within(commentEl('c2')).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+    expect(within(commentEl('c2')).queryByRole('link', { name: 'H2000' })).toBeNull()
+  })
+
+  it('shows a badge on every comment the commenter posts on the companion, each its own', async () => {
+    // Comments are a flat list, with no reply to a comment: a follow-up is another comment, and gets its own badge.
+    renderBillDetail({
+      ...GROUP,
+      comments: [
+        comment('c2', 'b1713', 'S1713', '2026-10-10 13:00:00', 'Ben'),
+        comment('c5', 'b1713', 'S1713', '2026-10-10 14:00:00', 'Ann'),
+      ],
+      commentsTotal: 2,
+      groupingEvents: [],
+    })
+    await screen.findByText('c5 text')
+    expect(badgeIn('c2')).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+    expect(badgeIn('c5')).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+  })
+
+  it('shows no badge on a comment posted on the page\'s own bill', async () => {
+    renderBillDetail(GROUP)
+    await screen.findByText('c1 text')
+    for (const id of ['c1', 'c3']) {
+      expect(within(commentEl(id)).queryByRole('link')).toBeNull()
+      expect(commentEl(id).textContent).not.toContain('A190')
+    }
+  })
+
+  it('shows no badge on a comment just posted here, which carries no bill', async () => {
+    renderBillDetail({
+      ...GROUP,
+      comments: [{ id: 'c6', userId: 'u-Ann', userName: 'Ann', userTitle: null, content: '<p>c6 text</p>', createdAt: '2026-10-12 12:00:00', reactions: [] }],
+      commentsTotal: 1,
+      groupingEvents: [],
+    })
+    await screen.findByText('c6 text')
+    expect(within(commentEl('c6')).queryByRole('link')).toBeNull()
+  })
+
+  it('shows no badge on any comment of a bill in no group', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS], groupingEvents: [], comments: [comment('c1', '42', 'A190', '2026-10-10 12:00:00', 'Ann')], commentsTotal: 1 })
+    await screen.findByText('c1 text')
+    expect(within(commentEl('c1')).queryByRole('link')).toBeNull()
+  })
+
+  it('no longer renders the gray tag: the number shows once in the header, as the badge, with no title tooltip', async () => {
+    renderBillDetail(GROUP)
+    await screen.findByText('c2 text')
+    expect(within(commentEl('c2')).getAllByText('S1713')).toHaveLength(1)
+    expect(within(commentEl('c2')).getByText('S1713').closest('a')).not.toBeNull()
+    expect(document.querySelector('[title^="Posted on"]')).toBeNull()
+  })
+
+  it('links a companion with no session slug to /bills/:id', async () => {
+    renderBillDetail({ ...GROUP, groupBills: [THIS, { ...COMPANION, sessionSlug: '' }] })
+    await screen.findByText('c2 text')
+    expect(badgeIn('c2')).toHaveAttribute('href', '/bills/b1713')
+  })
+
+  it('still names the bill on a comment from a bill since split off, linking to it by id', async () => {
+    // A split gives the bill back its own discussion, so a page loaded after the split lists none of its comments.
+    // One loaded before it (open in another tab) can still carry them, with the bill gone from groupBills.
+    // The comment was posted on that bill, so the badge keeps saying so; with no state or session to build
+    // the canonical URL from, it links to /bills/:id, which redirects to the canonical page.
+    renderBillDetail({ ...GROUP, groupBills: [THIS, THIRD] })
+    await screen.findByText('c2 text')
+    expect(badgeIn('c2')).toHaveAttribute('href', '/bills/b1713')
+    expect(within(commentEl('c2')).getAllByText('S1713')).toHaveLength(1)
+  })
+
+  it('names the bill on a comment from a companion when the response carries no group bills at all', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: undefined })
+    await screen.findByText('c2 text')
+    expect(badgeIn('c2')).toHaveAttribute('href', '/bills/b1713')
+  })
+
+  it('shows no badge when the comment names no bill number to show', async () => {
+    renderBillDetail({
+      ...GROUP,
+      comments: [{ ...comment('c7', 'b9999', 'S1713', '2026-10-10 13:00:00', 'Ben'), billNumber: null }],
+      commentsTotal: 1,
+      groupingEvents: [],
+    })
+    await screen.findByText('c7 text')
+    expect(within(commentEl('c7')).queryByRole('link')).toBeNull()
+  })
+})
