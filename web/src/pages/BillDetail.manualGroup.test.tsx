@@ -397,3 +397,25 @@ describe('the header of a bill an admin grouped by hand', () => {
     expect(screen.queryByRole('link', { name: 'S1713' })).toBeNull()
   })
 })
+
+describe('the line saying what a group made by hand shares', () => {
+  it("renders the same as for a provider's group: naming the companion, linking to its page, though no relationship links them", async () => {
+    renderBillDetail({ ...GROUPED, relatedBillIds: [] })
+    const line = await screen.findByTestId('group-shares-line')
+    expect(line).toHaveTextContent("Discussion, votes, and the team's values are shared with S1713.")
+    expect(within(line).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
+    expect(within(line).queryByText('A190')).toBeNull()
+  })
+
+  it('shows no line on a bill in no group', async () => {
+    renderBillDetail()
+    await screen.findByText('Test Bill')
+    expect(screen.queryByTestId('group-shares-line')).toBeNull()
+  })
+
+  it('shows no line once the group splits and the bill stands alone again', async () => {
+    renderBillDetail({ groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }] })
+    await screen.findByText('Test Bill')
+    expect(screen.queryByText(/are shared with/)).toBeNull()
+  })
+})
