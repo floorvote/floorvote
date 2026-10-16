@@ -296,7 +296,7 @@ const styles = {
   button: {
     width: '100%',
     background: color.billBadgeNavy,
-    color: color.white,
+    color: color.textOnFill,
     border: 'none',
     borderRadius: radius.md,
     padding: '10px 0',

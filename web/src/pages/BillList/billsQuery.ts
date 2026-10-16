@@ -1,4 +1,5 @@
 import type { SortColumn, SortDir } from './types'
+import { PAGE_SIZE } from './constants'
 
 export type BillsFilterValues = {
   statuses: string[]; stages: string[]; priorities: string[]; positions: string[]; years: number[]; states: string[]
@@ -42,6 +43,24 @@ export function billsApiParams(
     values.forEach(val => params.append(`cf_${id}`, val))
   }
   return params.toString()
+}
+
+/** The query string of a list URL ("/bills?status=2"), as search params. */
+export function searchFromListUrl(listUrl: string): URLSearchParams {
+  return new URLSearchParams(listUrl.includes('?') ? listUrl.slice(listUrl.indexOf('?') + 1) : '')
+}
+
+/**
+ * A list URL's search as the GET /bills query string for one page, through
+ * billsApiParams. The loader's prefetch and the split pane both build their
+ * request here, so they key the same list the same way (and a warmed cache
+ * entry is found).
+ */
+export function billsApiParamsFromSearch(
+  search: URLSearchParams, page: number,
+  customFieldDefs: ReadonlyArray<{ id: string; slug: string | null }> = [],
+): string {
+  return billsApiParams(billsFilterValuesFromSearch(search), page, PAGE_SIZE, customFieldDefs)
 }
 
 const SORT_COLS: SortColumn[] = ['priority', 'status', 'relevance', 'position', 'year', 'session', 'lastAction', 'bill']

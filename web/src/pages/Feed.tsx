@@ -424,7 +424,7 @@ export function Feed({ preloaded }: { preloaded: FeedResponse | null }) {
               marginBottom: 12,
               padding: '10px 0',
               background: color.linkBlue,
-              color: color.white,
+              color: color.textOnFill,
               border: 'none',
               borderRadius: radius.lg,
               fontSize: fontSize.sm,

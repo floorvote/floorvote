@@ -100,7 +100,7 @@ export function FeedbackModal({ onClose }: FeedbackModalProps) {
             <button
               {...gate.buttonProps(handleSubmit)}
               style={{
-                padding: '8px 20px', background: color.billBadgeNavy, color: color.white,
+                padding: '8px 20px', background: color.billBadgeNavy, color: color.textOnFill,
                 border: 'none', borderRadius: radius.md, fontSize: fontSize.sm, fontWeight: fontWeight.semibold,
                 cursor: gate.disabled ? 'not-allowed' : 'pointer',
                 opacity: gate.disabled ? 0.5 : 1,

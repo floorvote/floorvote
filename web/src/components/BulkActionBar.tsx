@@ -616,7 +616,7 @@ export function BulkActionBar({
         transition: 'transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.14s ease',
       }}>
 
-        <style>{`.bulk-undo-btn { padding: 0 3px; border-radius: 3px; } .bulk-undo-btn:hover { opacity: 1 !important; background: #e0f2fe; }`}</style>
+        <style>{`.bulk-undo-btn { padding: 0 3px; border-radius: 3px; } .bulk-undo-btn:hover { opacity: 1 !important; background: ${color.bgBlueChip}; }`}</style>
 
         {/* Left column: label / count / apply */}
         <div style={{
@@ -648,7 +648,7 @@ export function BulkActionBar({
               borderRadius: radius.md, border: 'none', textAlign: 'left',
               cursor: applyable ? 'pointer' : 'not-allowed',
               background: applyable ? color.linkBlue : color.borderDefault,
-              color: applyable ? color.white : color.textMuted,
+              color: applyable ? color.textOnFill : color.textMuted,
               opacity: applying ? 0.7 : 1,
               transition: 'background 0.15s, color 0.15s',
               lineHeight: 1.35,

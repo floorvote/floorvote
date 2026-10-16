@@ -20,7 +20,7 @@ export function inlineEditSaveStyle(disabled = false): React.CSSProperties {
     ...base,
     border: 'none',
     background: disabled ? color.borderDefault : color.accentBlue,
-    color: disabled ? color.textMuted : color.white,
+    color: disabled ? color.textMuted : color.textOnFill,
     cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }

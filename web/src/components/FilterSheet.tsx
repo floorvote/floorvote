@@ -130,7 +130,7 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
         border: '1px solid',
         cursor: 'pointer',
         background: active ? color.linkBlue : color.white,
-        color: active ? color.white : color.textSlate,
+        color: active ? color.textOnFill : color.textSlate,
         borderColor: active ? color.linkBlue : color.borderDefault,
         fontWeight: active ? fontWeight.semibold : fontWeight.normal,
         display: 'inline-flex',
@@ -142,8 +142,8 @@ function SheetChip({ label, active, onClick, count }: { label: string; active: b
       {count !== undefined && (
         <span style={{
           fontSize: fontSize.sm,
-          color: active ? 'rgba(255,255,255,0.7)' : color.textMuted,
-          background: active ? 'rgba(255,255,255,0.15)' : color.surfaceMuted,
+          color: active ? `color-mix(in srgb, ${color.textOnFill} 70%, transparent)` : color.textMuted,
+          background: active ? `color-mix(in srgb, ${color.textOnFill} 15%, transparent)` : color.surfaceMuted,
           padding: '1px 6px',
           borderRadius: radius.lg,
         }}>
@@ -185,7 +185,7 @@ function DimensionRow({ label, selectedCount, onClick, buttonRef }: { label: str
           <span style={COUNT_BADGE}>{selectedCount.toLocaleString()}</span>
         )}
         <svg width="8" height="14" viewBox="0 0 8 14" fill="none" aria-hidden="true">
-          <path d="M1 1l6 6-6 6" stroke={color.textMuted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M1 1l6 6-6 6" style={{ stroke: color.textMuted }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
     </button>
@@ -203,7 +203,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
       }}
     >
       <svg width="8" height="14" viewBox="0 0 8 14" fill="none" aria-hidden="true">
-        <path d="M7 1L1 7l6 6" stroke={color.linkBlue} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 1L1 7l6 6" style={{ stroke: color.linkBlue }} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
   )
