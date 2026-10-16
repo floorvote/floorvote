@@ -69,12 +69,12 @@ const CommentBody = memo(function CommentBody({
 type RoleData = {
   id: string
   name: string
-  members: Array<{ id: string; name: string; subtitle: string | null }>
+  members: Array<{ id: string; name: string; title: string | null }>
 }
 
 type RoleTooltip = {
   anchorRect: DOMRect
-  members: Array<{ name: string; subtitle: string | null }>
+  members: Array<{ name: string; title: string | null }>
 } | null
 
 function relativeTime(iso: string): string {
@@ -231,7 +231,7 @@ export function NotificationsSlideOver(
     if (!role) return
     setRoleTooltip({
       anchorRect: target.getBoundingClientRect(),
-      members: role.members.map(m => ({ name: m.name, subtitle: m.subtitle })),
+      members: role.members.map(m => ({ name: m.name, title: m.title })),
     })
   }, [roles])
 
@@ -372,7 +372,7 @@ export function NotificationsSlideOver(
           {roleTooltip.members.map((mb, i) => (
             <div key={i}>
               <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{mb.name}</span>
-              {mb.subtitle && <span style={{ color: color.textMuted, marginLeft: 4 }}>{mb.subtitle}</span>}
+              {mb.title && <span style={{ color: color.textMuted, marginLeft: 4 }}>{mb.title}</span>}
             </div>
           ))}
         </div>,
@@ -469,7 +469,7 @@ function NotificationRow({
             if (!attributionRole) return
             setRoleTooltip({
               anchorRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
-              members: attributionRole.members.map(mb => ({ name: mb.name, subtitle: mb.subtitle })),
+              members: attributionRole.members.map(mb => ({ name: mb.name, title: mb.title })),
             })
           }}
           onMouseLeave={() => setRoleTooltip(null)}
@@ -536,7 +536,7 @@ function RowFrame({
           panel reads as the same message the recipient already has in
           their inbox. It replaces what used to be two separate lines: an
           author line and a standalone attribution line. The author's
-          subtitle is deliberately dropped — in a 400px panel it cost a
+          title is deliberately dropped — in a 400px panel it cost a
           line's worth of attention for a detail the name usually carries. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, minWidth: 0 }}>

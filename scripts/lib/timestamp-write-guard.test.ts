@@ -22,3 +22,13 @@ describe('findViolations', () => {
     expect(findViolations('f.ts', src)).toHaveLength(0)
   })
 })
+
+describe('central\'s fetch-bills route', () => {
+  it('writes its timestamps with nowDb(), so the stored-timestamp guard has nothing to flag', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const file = 'central/src/routes/tenants.ts'
+    const src = readFileSync(resolve(__dirname, '../..', file), 'utf8')
+    expect(findViolations(file, src)).toEqual([])
+  })
+})

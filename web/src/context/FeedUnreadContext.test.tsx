@@ -19,7 +19,7 @@ import { FeedUnreadProvider, useFeedUnread } from './FeedUnreadContext'
 // user.lastSeenFeed is BEFORE the latest event, so something is genuinely unread.
 const USER = {
   id: 'u1', email: 'a@b.com', name: 'A', role: 'member',
-  subtitle: null, canVote: true, emailDigestEnabled: true,
+  title: null, canVote: true, emailDigestEnabled: true,
   lastSeenFeed: '2020-01-01 00:00:00',
 }
 const LATEST_EVENT_AT = '2020-06-01 00:00:00' // newer than lastSeenFeed

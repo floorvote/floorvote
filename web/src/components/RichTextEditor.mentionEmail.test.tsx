@@ -8,8 +8,8 @@ import { RichTextEditor } from './RichTextEditor'
 // allowToIncludeChar is set, which made only the part before the @ matchable.
 
 const directory = [
-  { id: 'u1', name: 'Jordan Lee', email: 'jdoe@example.org', subtitle: null, role: 'member', roles: [] },
-  { id: 'u2', name: 'Sam Member', email: 'sam@example.com', subtitle: null, role: 'member', roles: [] },
+  { id: 'u1', name: 'Jordan Lee', email: 'jdoe@example.org', title: null, role: 'member', roles: [] },
+  { id: 'u2', name: 'Sam Member', email: 'sam@example.com', title: null, role: 'member', roles: [] },
 ]
 
 vi.mock('../lib/api', () => ({

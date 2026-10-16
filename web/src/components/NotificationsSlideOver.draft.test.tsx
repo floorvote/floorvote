@@ -33,7 +33,7 @@ vi.mock('../lib/api', () => ({
         billNumber: 'SB123', billTitle: state.billTitle, billState: 'NJ',
         billIsDraft: state.billIsDraft,
         sessionSlug: 'session-1',
-        authorName: 'Alice Author', authorSubtitle: null,
+        authorName: 'Alice Author', authorTitle: null,
         commentPreview: 'preview', commentHtml: '<p>Please review.</p>',
         sourceType: 'user', sourceLabel: null,
         createdAt: new Date().toISOString(), isUnread: true,

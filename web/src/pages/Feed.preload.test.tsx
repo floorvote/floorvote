@@ -79,7 +79,7 @@ const PRELOADED = {
     billMatchType: null as null,
     userId: 'u1',
     userName: 'Test User',
-    userSubtitle: null,
+    userTitle: null,
     metadata: {},
     createdAt: '2026-02-01 10:00:00',
   }],

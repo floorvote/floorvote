@@ -14,10 +14,14 @@ import { parseHandle } from '../../../../shared/billHandle'
 import { nowDb } from '../../lib/dbTime'
 import { nextDraftNumber, findNumberCollision } from '../../lib/draftNumber'
 import { resolveCustomFieldValues } from '../../lib/customFieldValues'
+import { inGroupOf } from '../../lib/companionGroups'
+import { loadGroupTeamValues, recordFieldChanges } from '../../lib/teamFields'
 
 // Latch a bill as triaged. Idempotent: the isNull guard means only the first
 // triage (dismiss or priority-set) records the actor/timestamp, so re-triaging
 // preserves the original attribution. Shared by the dismiss and priority routes.
+// Stored on this bill only: a companion group reads as triaged when any member
+// is (groupUntriaged in lib/teamFields.ts), and a split restores each bill's own.
 async function latchTriaged(db: ReturnType<typeof getDb>, id: string, userId: string): Promise<void> {
   await db.update(bills)
     .set({ triagedAt: nowDb(), triagedBy: userId })
@@ -295,12 +299,23 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       return c.json({ error: 'priority must be high, medium, low, or null' }, 400)
     }
     const priority = (body.priority ?? null) as 'high' | 'medium' | 'low' | null
-    await db.update(bills).set({ priority, updatedAt: nowDb() }).where(eq(bills.id, id))
+    const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
+    if (!bill) return c.json({ error: 'Bill not found' }, 404)
+    const userId = c.get('user').id
+    // Set on this bill, the most recent in its companion group, so the group
+    // reads it. Cleared on every member, so an older priority on a companion
+    // doesn't come back.
+    const old = (await loadGroupTeamValues(db, id)).priority?.priority ?? null
+    const now = nowDb()
+    await db.update(bills)
+      .set({ priority, prioritySetAt: now, updatedAt: now })
+      .where(priority ? eq(bills.id, id) : inGroupOf(bills.id, id))
+    await recordFieldChanges(db, [{ billId: id, field: 'priority', label: 'priority', old, new: priority }], userId)
     let promoted = false
     if (priority) {
-      const userId = c.get('user').id
       // Setting a priority is an act of triage — latch the match as triaged so
-      // clearing the priority later doesn't send it back to the New queue.
+      // clearing the priority later doesn't send it back to the New queue. The
+      // latch on this bill triages its whole companion group.
       await latchTriaged(db, id, userId)
       await db.insert(feedEvents).values({
         id: crypto.randomUUID(),

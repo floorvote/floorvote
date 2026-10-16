@@ -26,6 +26,18 @@ describe('central superadminJwt (ES256, via shared)', () => {
     expect(typeof result?.jti).toBe('string')
   })
 
+  it('carries the profile title when one is given, and reports null for a token without it', async () => {
+    const { priv, pub } = await genKeys()
+    const withProfile = await signSuperadminJwt('a@b.org', 'Ada', priv, undefined, 'Operator support')
+    const v = await verifySuperadminJwt(withProfile, pub)
+    expect(v?.name).toBe('Ada')
+    expect(v?.title).toBe('Operator support')
+    // A blank title is still a profile: it tells instances to clear their copy.
+    expect((await verifySuperadminJwt(await signSuperadminJwt('a@b.org', '', priv, undefined, ''), pub))?.title).toBe('')
+    // An older token has no title claim at all.
+    expect((await verifySuperadminJwt(await signSuperadminJwt('a@b.org', 'Ada', priv), pub))?.title).toBeNull()
+  })
+
   it('rejects expiry, wrong key, bad alg, and revoked jti', async () => {
     const { priv, pub } = await genKeys()
     const token = await signSuperadminJwt('a@b.org', 'Ada', priv)

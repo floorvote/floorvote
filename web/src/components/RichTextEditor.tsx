@@ -56,7 +56,7 @@ interface UserData {
   id: string
   name: string
   email: string
-  subtitle: string | null
+  title: string | null
   roles?: { id: string; name: string }[]
   role?: 'member' | 'admin' | 'owner'
 }
@@ -64,7 +64,7 @@ interface UserData {
 interface RoleData {
   id: string
   name: string
-  members: Array<{ id: string; name: string; subtitle: string | null }>
+  members: Array<{ id: string; name: string; title: string | null }>
 }
 
 function useMentionData(enabled: boolean) {
@@ -97,9 +97,9 @@ interface MentionTooltipData {
   anchorRect: DOMRect
   type: 'user' | 'role'
   userName?: string
-  userSubtitle?: string | null
+  userTitle?: string | null
   userRoles?: { id: string; name: string }[]
-  roleMembers?: Array<{ name: string; subtitle: string | null }>
+  roleMembers?: Array<{ name: string; title: string | null }>
 }
 
 export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false, disabled = false }: RichTextEditorProps) {
@@ -256,15 +256,15 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
     if (type === 'role') {
       const role = rolesRef.current.find(r => r.id === id)
       const roleMembers = role && role.members.length > 0
-        ? role.members.map(m => ({ name: displayName(m) || m.id, subtitle: m.subtitle }))
+        ? role.members.map(m => ({ name: displayName(m) || m.id, title: m.title }))
         : []
       setEditorTooltip({ anchorRect, type: 'role', roleMembers })
     } else {
       const user = usersRef.current.find(u => u.id === id)
       if (user) {
-        setEditorTooltip({ anchorRect, type: 'user', userName: displayName(user), userSubtitle: user.subtitle, userRoles: user.roles ?? [] })
+        setEditorTooltip({ anchorRect, type: 'user', userName: displayName(user), userTitle: user.title, userRoles: user.roles ?? [] })
       } else {
-        setEditorTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userSubtitle: null, userRoles: [] })
+        setEditorTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userTitle: null, userRoles: [] })
       }
     }
   }
@@ -387,8 +387,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               <>
                 <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{editorTooltip.userName}</span>
-                  {editorTooltip.userSubtitle && (
-                    <span style={{ color: color.textMuted, marginLeft: 4 }}>{editorTooltip.userSubtitle}</span>
+                  {editorTooltip.userTitle && (
+                    <span style={{ color: color.textMuted, marginLeft: 4 }}>{editorTooltip.userTitle}</span>
                   )}
                 </div>
                 {editorTooltip.userRoles && editorTooltip.userRoles.length > 0 && (
@@ -410,8 +410,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
                     {editorTooltip.roleMembers.map((m, i) => (
                       <div key={i}>
                         <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{m.name}</span>
-                        {m.subtitle && (
-                          <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.subtitle}</span>
+                        {m.title && (
+                          <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.title}</span>
                         )}
                       </div>
                     ))}

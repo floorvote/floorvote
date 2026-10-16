@@ -7,7 +7,7 @@ interface UserItem {
   id: string
   name: string
   email: string
-  subtitle: string | null
+  title: string | null
   type: 'user'
   /** Set when the person matched only by email, so the list shows the address. */
   matchedByEmail?: boolean
@@ -182,7 +182,7 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
               if (isMore) {
                 return (
                   <div key="more-users" style={{ padding: '4px 12px 6px', fontSize: fontSize.sm, color: color.textMuted, fontStyle: 'italic' }}>
-                    {person.subtitle}…
+                    {person.title}…
                   </div>
                 )
               }
@@ -207,8 +207,8 @@ export function MentionSuggestions({ items, command, ref }: Props & { ref?: Ref<
                   }}
                 >
                   <span style={{ color: color.tooltipBg }}>{displayName(person)}</span>
-                  {person.subtitle && (
-                    <span style={{ color: color.textMuted, marginLeft: 6 }}>{person.subtitle}</span>
+                  {person.title && (
+                    <span style={{ color: color.textMuted, marginLeft: 6 }}>{person.title}</span>
                   )}
                   {person.matchedByEmail && (
                     <span style={{ color: color.textMuted, marginLeft: 6 }}>{person.email}</span>

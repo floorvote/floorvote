@@ -6,10 +6,10 @@ import { mentionSuggestionItems, type MentionViewer } from './mentionItems'
 // @everyone only to an admin or owner.
 
 const users = [
-  { id: 'u1', name: 'Sam Member', email: 'sam@example.com', subtitle: null, role: 'member' as const },
-  { id: 'u2', name: 'Dana Admin', email: 'dana@example.com', subtitle: null, role: 'admin' as const },
-  { id: 'u3', name: 'Olive Owner', email: 'olive@example.com', subtitle: null, role: 'owner' as const },
-  { id: 'u4', name: 'Pat Member', email: 'pat@example.com', subtitle: null, role: 'member' as const },
+  { id: 'u1', name: 'Sam Member', email: 'sam@example.com', title: null, role: 'member' as const },
+  { id: 'u2', name: 'Dana Admin', email: 'dana@example.com', title: null, role: 'admin' as const },
+  { id: 'u3', name: 'Olive Owner', email: 'olive@example.com', title: null, role: 'owner' as const },
+  { id: 'u4', name: 'Pat Member', email: 'pat@example.com', title: null, role: 'member' as const },
 ]
 
 const suggest = (query: string, viewer: MentionViewer) =>
@@ -52,10 +52,10 @@ describe('mentionSuggestionItems', () => {
 // the matching is done here.
 describe('mentionSuggestionItems, matching by email', () => {
   const people = [
-    { id: 'p1', name: 'Jordan Lee', email: 'jdoe@example.org', subtitle: null, role: 'member' as const },
-    { id: 'p2', name: 'Jo Doe', email: 'jo.d@example.org', subtitle: null, role: 'member' as const },
-    { id: 'p3', name: 'Sam Member', email: 'sam@example.com', subtitle: null, role: 'member' as const },
-    { id: 'p4', name: 'Alex Smith', email: 'sam.alex@example.com', subtitle: null, role: 'member' as const },
+    { id: 'p1', name: 'Jordan Lee', email: 'jdoe@example.org', title: null, role: 'member' as const },
+    { id: 'p2', name: 'Jo Doe', email: 'jo.d@example.org', title: null, role: 'member' as const },
+    { id: 'p3', name: 'Sam Member', email: 'sam@example.com', title: null, role: 'member' as const },
+    { id: 'p4', name: 'Alex Smith', email: 'sam.alex@example.com', title: null, role: 'member' as const },
   ]
   const viewer: MentionViewer = { id: 'p3', role: 'member' }
   const found = (query: string, from = people) =>
