@@ -33,3 +33,8 @@ export function parseHandle(handle: string | null | undefined): number | null {
 export function isHandle(value: string | null | undefined): value is string {
   return parseHandle(value) !== null
 }
+
+// STUBS (red run only)
+export const NEUTRAL_HANDLE_PREFIX = 'bill:'
+export function toLegacyHandle(id: number): string { return toHandle(id) }
+export function normalizeHandle<T extends string | null | undefined>(h: T): T { return h }

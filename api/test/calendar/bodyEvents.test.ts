@@ -441,3 +441,34 @@ describe('central dashboard address', () => {
     expect(await configDashboardUrl()).toBe('https://admin.example.com')
   })
 })
+
+// Release 1 of the neutral handle rename (#305): central may name a bill by
+// either form of its handle, and the instance finds the same bill and the same
+// calendar entry. Entry UIDs keep the legacy form.
+describe('body events naming bills by a neutral handle', () => {
+  const NEUTRAL = HANDLE.replace('legiscan:', 'bill:')
+
+  it('links an agenda bill the instance holds under the legacy handle', async () => {
+    central.events = [stadiumHearing({ bills: [NEUTRAL], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    const links = await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all()
+    expect(links.map(l => l.billId)).toEqual([billId])
+  })
+
+  it('links the same bill whichever form names it', async () => {
+    central.events = [stadiumHearing({ bills: [HANDLE, NEUTRAL], covers: [] })]
+    await sync()
+    const db = getDb(env.DB)
+    const ev = await db.select().from(calendarEvents).where(eq(calendarEvents.uid, 'council-2405@lims.dccouncil.gov')).get()
+    expect((await db.select().from(calendarEventBills).where(eq(calendarEventBills.eventId, ev!.id)).all())).toHaveLength(1)
+  })
+
+  it('covers the bill\'s own entry, found by its legacy UID', async () => {
+    central.events = [stadiumHearing({ covers: [{ billId: NEUTRAL, identityKey: IDENTITY }] })]
+    await sync()
+    expect(HEARING_UID).toBe('hearing-legiscan-1012600769-hearing-2026-10-23-public-hearing-on-b26-0769@bpc-test')
+    expect((await row(HEARING_UID))?.coveredBy).toBe('council-2405@lims.dccouncil.gov')
+  })
+})
