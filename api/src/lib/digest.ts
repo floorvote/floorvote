@@ -1,9 +1,10 @@
-import { and, eq, gt, inArray, isNotNull, exists, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, exists, sql } from 'drizzle-orm'
 import { feedEvents, bills, users, sessions, associationConfig } from '../db/schema'
-import { renderDigestEmail, digestSubject, digestCadence, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
+import { renderDigestEmail, digestSubject, digestCadence, countUpdatedBills, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance, routineNewMatchWhere } from './newMatch'
+import { groupHasPriority, loadGroupPriorities, priorityWorn } from './teamFields'
 import { activeUser } from './accountDeletion'
 import type { AppDb, Env } from '../types'
 import { isModuleEnabled, getModuleSetting, type ModulesConfig } from '../../../shared/modules'
@@ -48,12 +49,12 @@ export async function runDigest(
   const since = lastRow?.value ?? new Date(Date.now() - 86400_000).toISOString().slice(0, 19).replace('T', ' ')
   const now = nowDb()
 
-  const events: DigestEvent[] = await db
+  const eventRows = await db
     .select({
       type: feedEvents.type, metadata: feedEvents.metadata, createdAt: feedEvents.createdAt,
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
       billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, priority: bills.priority,
-      summary: bills.tenantSummary, billIsDraft: bills.isDraft,
+      summary: bills.tenantSummary, billIsDraft: bills.isDraft, billGroupKey: bills.groupKey,
       userName: userDisplayNameSql,
     })
     .from(feedEvents)
@@ -61,8 +62,12 @@ export async function runDigest(
     .leftJoin(users, eq(feedEvents.userId, users.id))
     // activeUser excludes events authored by a deactivated member; events from the
     // synthetic 'system' author don't match a users row, so it's a no-op for those.
-    .where(and(isNotNull(bills.priority), inArray(feedEvents.type, DIGEST_CATEGORIES as any), sql`datetime(${feedEvents.createdAt}) > datetime(${since})`, eq(feedEvents.suppressed, false), activeUser))
+    // A companion group is one policy: a group with a priority qualifies through any member, and its events share a card.
+    .where(and(groupHasPriority(bills), inArray(feedEvents.type, DIGEST_CATEGORIES as any), sql`datetime(${feedEvents.createdAt}) > datetime(${since})`, eq(feedEvents.suppressed, false), activeUser))
     .all()
+  // A companion group's events wear the group's priority, whichever member holds it.
+  const groupPriorities = await loadGroupPriorities(db, eventRows.map(e => e.billGroupKey))
+  const events: DigestEvent[] = eventRows.map(e => ({ ...e, priority: priorityWorn({ priority: e.priority, groupKey: e.billGroupKey }, groupPriorities) }))
 
   // New keyword matches awaiting triage — the section admins always get and
   // members get unless they turned off "Include newly matched bills". Bill-based
@@ -100,7 +105,8 @@ export async function runDigest(
   if (nameRow?.value) { try { assocName = JSON.parse(nameRow.value) } catch { assocName = nameRow.value } }
 
   const headers = unsubscribeHeaders(env.APP_URL, 'setting-email-digest')
-  const billCount = new Set(events.map(e => e.billId)).size
+  // One per card, so a companion group counts once however many of its bills changed.
+  const billCount = countUpdatedBills(events)
 
   // Updates lead; the new-match section follows. A recipient who gets the section
   // is every admin/owner and each member who hasn't turned off "Include newly

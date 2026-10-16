@@ -507,9 +507,10 @@ describe('groupEventsByBillAndDay: companion groups', () => {
   })
 
   it('sorts cards across groups and bills by their newest event', () => {
+    // The feed serves events newest first.
     const groups = groupEventsByBillAndDay([
+      senate('2026-04-20T13:00:00Z'), house('2026-04-20T10:00:00Z'),
       makeEvent({ billId: 'b9', billNumber: 'HB 9', createdAt: '2026-04-20T09:00:00Z' }),
-      house('2026-04-20T10:00:00Z'), senate('2026-04-20T13:00:00Z'),
     ])
     expect(groups.map(g => g.billNumber)).toEqual(['S 202', 'HB 9'])
   })

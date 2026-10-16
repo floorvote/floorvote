@@ -8,7 +8,7 @@
 import type { AppDb, Env } from '../types'
 import { sendEmail, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
-import { renderDigestEmail, digestSubject, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
+import { renderDigestEmail, digestSubject, countUpdatedBills, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
 import { renderReplyEmail, muteBillPageUrl } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
@@ -53,6 +53,9 @@ export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
   // digest QA email and the snapshot both cover a truncated comment row.
   { type: 'comment_added', metadata: j({ preview: 'Free IDs sound simple, but our office would need a second workstation and staff coverage to issue them during peak weeks' }), createdAt: '2026-06-10 17:20:00', billId: 'b1', billNumber: 'HB 1234', billTitle: 'Voter ID Act', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: 'Marguerite Okonkwo' },
   { type: 'position_set', metadata: j({ position: 'Oppose' }), createdAt: '2026-06-10 11:15:00', billId: 'b2', billNumber: 'S 0456', billTitle: 'Mail Ballot Drop Boxes', billState: 'RI', billSession: '2026', priority: 'medium', summary: 'Authorizes secure 24-hour drop boxes in every municipality and sets chain-of-custody rules.', userName: 'Dana Reed' },
+  // A companion group: identical bills in both chambers are one card, each event labeled by its bill.
+  { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Passed House committee' }] }), createdAt: '2026-06-10 10:05:00', billId: 'b8', billNumber: 'HB 1240', billTitle: 'Early Voting Site Requirements', billState: 'RI', billSession: '2026', priority: 'high', summary: 'Sets minimum hours and staffing for early voting sites in every county.', userName: null, billGroupKey: 'b8' },
+  { type: 'bill_updated', metadata: j({ changes: [{ changeType: 'action_added', newValue: 'Reported from committee' }] }), createdAt: '2026-06-10 13:40:00', billId: 'b9', billNumber: 'S 0733', billTitle: 'Early Voting Site Requirements', billState: 'RI', billSession: '2026', priority: 'high', summary: null, userName: null, billGroupKey: 'b8' },
 ]
 
 // New matches awaiting triage, the digest's second section. Relevance scores are
@@ -126,13 +129,13 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
     case 'digest':
       // Daily cadence (the default). Fixed period so the date range is deterministic (committed sample + snapshot).
       return {
-        subject: `[Sample] ${digestSubject({ updatedBills: 2, newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'daily' })}`,
+        subject: `[Sample] ${digestSubject({ updatedBills: countUpdatedBills(SAMPLE_DIGEST_EVENTS), newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'daily' })}`,
         html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-10', periodEnd: '2026-06-11' }),
       }
     case 'digest-weekly':
       // Weekly cadence: the same digest over a seven-day window.
       return {
-        subject: `[Sample] ${digestSubject({ updatedBills: 2, newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'weekly' })}`,
+        subject: `[Sample] ${digestSubject({ updatedBills: countUpdatedBills(SAMPLE_DIGEST_EVENTS), newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'weekly' })}`,
         html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-04', periodEnd: '2026-06-11' }),
       }
     case 'digest-new-only':

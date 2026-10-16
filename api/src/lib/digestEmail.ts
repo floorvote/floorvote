@@ -1,13 +1,14 @@
 import { color, fontSize, fontWeight, radius } from '../../../shared/tokens'
 // Email is rendered server-side with no per-user timezone, so dates are formatted in UTC.
 import { PRIORITY_COLORS } from '../../../shared/billChipColors'
-import { buildBillCardModel, CARD_STYLE } from '../../../shared/billCardModel'
+import { buildBillCardModel, billCardRowText, CARD_STYLE } from '../../../shared/billCardModel'
 import { prioritySquareRadius } from '../../../shared/priorityMarker'
 import { emailIconSrc } from '../../../shared/emailIcons'
 import { renderBillCardOpen, BILL_CARD_CLOSE } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink, formatDateRange } from './emailShell'
 import { billUrl } from '../../../shared/sessionSlug'
-import type { GroupedBillEvents, FeedEvent } from '../../../shared/feedUtils'
+import { dbTsToEpoch } from '../../../shared/time'
+import type { GroupedBillEvents, GroupedBill, FeedEvent } from '../../../shared/feedUtils'
 
 export type DigestEvent = {
   type: string; metadata: string; createdAt: string
@@ -18,6 +19,22 @@ export type DigestEvent = {
   summary: string | null; userName: string | null
   /** Lets the card label an untitled draft "Untitled draft". Absent = filed. */
   billIsDraft?: boolean
+  /** The key of the bill's companion group. Events on any member share a card. Absent or null = in no group. */
+  billGroupKey?: string | null
+}
+
+/**
+ * What an event's card is for: its bill, or its companion group, since a group
+ * is one policy and its members' events share one card. One card per key, so
+ * the count of keys is the count of "priority bills" the digest reports.
+ */
+export function digestCardKey(e: Pick<DigestEvent, 'billId' | 'billGroupKey'>): string {
+  return e.billGroupKey ? `group:${e.billGroupKey}` : e.billId
+}
+
+/** How many priority bills the digest reports for these events: one per card, so a group counts once however many of its bills changed. */
+export function countUpdatedBills(events: readonly Pick<DigestEvent, 'billId' | 'billGroupKey'>[]): number {
+  return new Set(events.map(digestCardKey)).size
 }
 
 export type NewMatchDigestItem = {
@@ -90,16 +107,32 @@ export function digestSubject(input: { updatedBills: number; newMatches: number;
   return parts.length ? `${lead}: ${parts.join(', ')}` : lead
 }
 
-function toGroup(events: DigestEvent[]): GroupedBillEvents {
-  const f = events[0]
+// The card's model. A bill's own card is as it always was. A companion group's card holds
+// the events of every member, in time order, each naming its bill, and is headed by the
+// bill of the newest event (as the Feed's is), with the rest listed beside it.
+function toGroup(inputEvents: DigestEvent[]): GroupedBillEvents {
+  const groupKey = inputEvents[0].billGroupKey || null
+  const events = groupKey === null
+    ? inputEvents
+    : [...inputEvents].sort((a, b) => dbTsToEpoch(a.createdAt) - dbTsToEpoch(b.createdAt))
+  const f = groupKey === null ? events[0] : events[events.length - 1]
+  const bills: GroupedBill[] = []
+  for (const e of groupKey === null ? [] : [...events].reverse()) {
+    if (!bills.some(b => b.billId === e.billId)) {
+      bills.push({ billId: e.billId, billNumber: e.billNumber, billState: e.billState, billSessionSlug: null, billIsDraft: e.billIsDraft ?? false })
+    }
+  }
   return {
-    key: f.billId, billId: f.billId, billNumber: f.billNumber, billTitle: f.billTitle,
-    billSessionSlug: null, billState: f.billState, billSummary: f.summary ?? null,
+    key: groupKey === null ? f.billId : `group:${groupKey}`, billId: f.billId, billNumber: f.billNumber, billTitle: f.billTitle,
+    billSessionSlug: null, billState: f.billState,
+    // A group's summary is its analysis's: the newest event's bill's own when it has one, else a companion's.
+    billSummary: f.summary ?? (groupKey === null ? null : ([...events].reverse().find(e => e.summary)?.summary ?? null)),
     billPriority: (f.priority as GroupedBillEvents['billPriority']) ?? null, billMatchType: null, date: '',
     billIsDraft: f.billIsDraft ?? false,
+    groupKey, ...(groupKey === null ? {} : { bills }),
     events: events.map((e, i) => ({
-      id: `${f.billId}-${i}`, type: e.type as FeedEvent['type'], billId: f.billId, billNumber: f.billNumber,
-      billSessionSlug: null, billState: f.billState, billTitle: f.billTitle, billSummary: null,
+      id: `${e.billId}-${i}`, type: e.type as FeedEvent['type'], billId: e.billId, billNumber: e.billNumber,
+      billSessionSlug: null, billState: e.billState, billTitle: e.billTitle, billSummary: null,
       billPriority: (f.priority as GroupedBillEvents['billPriority']) ?? null, billMatchType: null,
       userName: e.userName ?? '', userTitle: null, metadata: safeParse(e.metadata), createdAt: e.createdAt,
     })) as FeedEvent[],
@@ -111,10 +144,19 @@ function toGroup(events: DigestEvent[]): GroupedBillEvents {
 // PRIORITY_COLORS; this HTML layout is separate, so keep both in sync visually.
 function renderBillCard(events: DigestEvent[], appUrl: string): string {
   const model = buildBillCardModel(toGroup(events))
-  const first = events[0]
 
   // Same canonical bill URL Feed links to (/STATE/SLUG/BILL), made absolute.
-  const billHref = `${appUrl}${billUrl({ id: first.billId, state: model.state, session: first.billSession, sessionSlug: first.billSessionSlug, billNumber: model.billNumber })}`
+  const hrefOf = (e: DigestEvent) => `${appUrl}${billUrl({ id: e.billId, state: e.billState, session: e.billSession, sessionSlug: e.billSessionSlug, billNumber: e.billNumber })}`
+  const eventOfBill = (billId: string | null) => events.find(e => e.billId === billId)
+  // The card opens its header bill; a row opens the bill its event is on.
+  const first = eventOfBill(model.bills?.[0]?.billId ?? events[0].billId) ?? events[0]
+  const billHref = hrefOf(first)
+  const rowHref = (billId: string | null) => { const e = eventOfBill(billId); return e ? hrefOf(e) : billHref }
+  // A companion group's other bills, as badges beside the first.
+  const otherBadges = (model.bills ?? []).slice(1).flatMap(b => {
+    const e = eventOfBill(b.billId)
+    return e ? [{ text: e.billState ? `${e.billState} ${e.billNumber}` : e.billNumber, href: hrefOf(e) }] : []
+  })
   // Links inherit surrounding color + no underline, so the card looks identical to before but is clickable (like Feed).
   const link = (href: string, inner: string) => `<a href="${escHtml(href)}" style="color:inherit;text-decoration:none;">${inner}</a>`
 
@@ -124,7 +166,8 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
   // Date sits on the right, mirroring Feed's showTime logic — but absolute ("Jun 3"), since email has no "now" to be relative to.
   const rowBorder = `border-top:1px solid ${CARD_STYLE.rowBorder};`
   const dataRows = model.rows.map(row => {
-    const href = row.hash ? `${billHref}${row.hash}` : billHref
+    const ownHref = rowHref(row.billId)
+    const href = row.hash ? `${ownHref}${row.hash}` : ownHref
     const dateText = row.showTime ? escHtml(fmtDay(row.createdAt)) : ''
     // Leading marker, mirroring Feed's GroupedBillCard rows: a priority square
     // for priority_set rows, otherwise the row's pre-rendered icon PNG. iconName,
@@ -137,12 +180,12 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
       : `<img src="${appUrl}/email-icons/${emailIconSrc(row.iconName, row.iconColor, row.iconFill === 1)}" width="14" height="14" alt="" style="display:block;border:0;">`
     return `<tr style="background:${row.bg};">
       <td width="30" style="padding:9px 0 8px 14px;vertical-align:top;${rowBorder}">${marker}</td>
-      <td style="width:100%;padding:8px 8px 8px 6px;font-size:${CARD_STYLE.rowSize}px;color:${CARD_STYLE.rowText};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.4;${rowBorder}">${link(href, escHtml(row.text))}</td>
+      <td style="width:100%;padding:8px 8px 8px 6px;font-size:${CARD_STYLE.rowSize}px;color:${CARD_STYLE.rowText};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.4;${rowBorder}">${link(href, escHtml(billCardRowText(row)))}</td>
       <td align="right" style="padding:8px 14px 8px 0;font-size:${fontSize.sm}px;color:${color.textMuted};white-space:nowrap;vertical-align:top;${rowBorder}">${dateText}</td>
     </tr>`
   }).join('\n')
 
-  return `${renderBillCardOpen({ model, billHref, appUrl })}
+  return `${renderBillCardOpen({ model, billHref, appUrl, otherBadges })}
     ${dataRows}${BILL_CARD_CLOSE}`
 }
 
@@ -225,15 +268,16 @@ ${top.map(it => renderNewMatchCard(it, appUrl)).join('\n')}${seeAll}`
 }
 
 export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {
-  // Group events by billId, preserving first-seen order
+  // Group events by card (a bill, or its companion group), preserving first-seen order
   const billOrder: string[] = []
   const billGroups = new Map<string, DigestEvent[]>()
   for (const event of input.events) {
-    if (!billGroups.has(event.billId)) {
-      billGroups.set(event.billId, [])
-      billOrder.push(event.billId)
+    const key = digestCardKey(event)
+    if (!billGroups.has(key)) {
+      billGroups.set(key, [])
+      billOrder.push(key)
     }
-    billGroups.get(event.billId)!.push(event)
+    billGroups.get(key)!.push(event)
   }
 
   const billCount = billOrder.length

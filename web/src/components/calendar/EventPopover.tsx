@@ -82,6 +82,18 @@ export function EventPopoverContent({ event, isAdmin, expanded = false, onEdit, 
         <div style={{ flex: 1, minWidth: 0 }}>
           {dateBlock && <div style={{ marginBottom: 6 }}>{dateBlock}</div>}
           <EventLines event={event} linkChips />
+          {/* A companion group is one policy with one discussion, on either bill's page. */}
+          {(event.groups ?? []).map(g => (
+            <div key={g.key} role="group" aria-label="Companion bills" style={{ ...EVENT_META_STYLE, marginTop: 6 }}>
+              Companion bills:{' '}
+              {g.bills.map((b, i) => (
+                <span key={b.id}>
+                  {i > 0 && ', '}
+                  <Link to={billUrl({ id: b.id, state: b.state, billNumber: b.billNumber })} style={{ color: color.accentBlue, textDecoration: 'underline' }}>{b.billNumber}</Link>
+                </span>
+              ))}
+            </div>
+          ))}
           {setFrom && (
             <div style={{ ...EVENT_META_STYLE, marginTop: 6 }}>
               <Link to={billUrl(setFrom.bill)} style={{ color: color.accentBlue, textDecoration: 'underline' }}>{setFrom.text}</Link>

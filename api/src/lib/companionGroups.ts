@@ -537,7 +537,8 @@ function pairKey(a: string, b: string): string {
   return pair(a, b).join(' ')
 }
 
-function compareBillNumbers(a: { billNumber: string }, b: { billNumber: string }): number {
+/** Bills in the order a group lists them: by bill number, numbers compared as numbers. */
+export function compareBillNumbers(a: { billNumber: string }, b: { billNumber: string }): number {
   return a.billNumber.localeCompare(b.billNumber, 'en', { numeric: true })
 }
 

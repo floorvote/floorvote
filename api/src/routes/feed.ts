@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, desc, count, ne, and, or, sql, isNull, isNotNull, notInArray, inArray } from 'drizzle-orm'
+import { eq, desc, count, ne, and, or, sql, isNull, isNotNull, notInArray, inArray, type SQL } from 'drizzle-orm'
 import { filedSlug } from '../lib/sessionSlug'
 import { requireAuth } from '../middleware/auth'
 import { getDb } from '../db/client'
@@ -9,6 +9,7 @@ import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
 import { userTitleSql } from '../lib/userTitle'
+import { groupHasPriority, loadGroupPriorities, priorityWorn } from '../lib/teamFields'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -44,17 +45,28 @@ feedRouter.get('/', async (c) => {
   // that costs one more page fetch, never the short page #54 was about. Erring
   // toward a superset here is deliberate for that reason: the reverse — a server
   // stricter than the client — is unrecoverable downstream.
+  //
+  // A companion group is one policy (#381): it is prioritized when any member is
+  // (the group's priority is the one set most recently on a member), and its
+  // day-group holds the engagement events of every member, since the client
+  // rolls the members' events into one card. The group's EXISTS arm follows the
+  // plain one, and only a bill in a group reaches it.
   const passiveTypes = [...PASSIVE_EVENT_TYPES]
-  const defaultVisible = or(
-    isNotNull(bills.priority),
-    notInArray(feedEvents.type, passiveTypes),
-    sql`EXISTS (
+  const engagementOnDay = (siblingBills: SQL) => sql`EXISTS (
       SELECT 1 FROM feed_events sib
-       WHERE sib.bill_id = ${feedEvents.billId}
+       WHERE ${siblingBills}
          AND sib.suppressed != 1
          AND date(sib.created_at) = date(${feedEvents.createdAt})
          AND sib.type NOT IN (${sql.join(passiveTypes.map((t) => sql`${t}`), sql`, `)})
-    )`,
+    )`
+  const defaultVisible = or(
+    groupHasPriority(bills),
+    notInArray(feedEvents.type, passiveTypes),
+    engagementOnDay(sql`sib.bill_id = ${feedEvents.billId}`),
+    and(
+      isNotNull(bills.groupKey),
+      engagementOnDay(sql`sib.bill_id IN (SELECT g.id FROM bills g WHERE g.group_key = ${bills.groupKey})`),
+    ),
   )
 
   // activeUser is evaluated against the left-joined `users` row; events whose
@@ -87,6 +99,7 @@ feedRouter.get('/', async (c) => {
         billAbstract: bills.abstract,
         billSummary: bills.tenantSummary,
         billPriority: bills.priority,
+        billGroupKey: bills.groupKey,
         billSession: bills.session,
         billSessionSlug: bills.sessionSlug,
         billState: bills.state,
@@ -137,6 +150,9 @@ feedRouter.get('/', async (c) => {
       .get(),
   ])
 
+  // A companion group's events wear the group's priority, whichever member holds it.
+  const groupPriorities = await loadGroupPriorities(db, rows.map((r) => r.billGroupKey))
+
   return c.json({
     events: rows.map((r) => ({
       id: r.id,
@@ -147,7 +163,8 @@ feedRouter.get('/', async (c) => {
       billNumber: r.billNumber ?? '',
       billTitle: r.billTitle || r.billAbstract || '',
       billSummary: r.billSummary ?? null,
-      billPriority: r.billPriority ?? null,
+      billPriority: priorityWorn({ priority: r.billPriority ?? null, groupKey: r.billGroupKey ?? null }, groupPriorities),
+      billGroupKey: r.billGroupKey ?? null,
       billMatchType: r.billMatchType ?? null,
       billSessionSlug: filedSlug({ session: r.billSession, sessionSlug: r.billSessionSlug }),
       billState: r.billState ?? null,

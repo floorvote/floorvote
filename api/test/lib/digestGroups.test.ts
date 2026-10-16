@@ -85,8 +85,8 @@ describe('renderDigestEmail: companion groups', () => {
       senate({ metadata: action('Reported from committee'), createdAt: '2026-06-10 10:00:00' }),
     ])
     const hrefOf = (row: string) => html.match(new RegExp(`<a href="([^"]*)"[^>]*>(?:(?!</a>).)*${row}`))![1]
-    expect(hrefOf('Passed House committee')).toBe(`${APP}/RI/2026/H 101`)
-    expect(hrefOf('Reported from committee')).toBe(`${APP}/RI/2026/S 202`)
+    expect(hrefOf('Passed House committee')).toBe(`${APP}/RI/2026/H 101#section-actions`)
+    expect(hrefOf('Reported from committee')).toBe(`${APP}/RI/2026/S 202#section-actions`)
   })
 
   it('lays the card\'s events out in time order even when the members\' events arrive interleaved', () => {
