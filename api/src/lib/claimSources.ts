@@ -76,7 +76,9 @@ export const CLAIM_LINKS_CHANGED_KEY = 'claim_links_changed'
  * Whether this instance asks for claim sources, and shows their links. On by
  * default, so a new instance and an existing one with no row both read as on
  * until an admin turns it off (#570). Only a stored `false` is off: a row that
- * can't be read is the default rather than a silent switch-off.
+ * can't be read is the default rather than a silent switch-off. A bare `false`
+ * padded with whitespace JSON.parse rejects but trim strips (a BOM, a
+ * non-breaking space) still reads as off.
  *
  * Off means new analyses don't ask, and store none. Links already stored are
  * left alone, and the bill page doesn't render them (#571, #572) until it is
@@ -85,7 +87,7 @@ export const CLAIM_LINKS_CHANGED_KEY = 'claim_links_changed'
 export async function claimLinksEnabled(db: AppDb): Promise<boolean> {
   const row = await db.select().from(associationConfig).where(eq(associationConfig.key, CLAIM_LINKS_KEY)).get()
   if (!row) return true
-  try { return JSON.parse(row.value) !== false } catch { return true }
+  try { return JSON.parse(row.value) !== false } catch { return row.value.trim() !== 'false' }
 }
 
 /**
