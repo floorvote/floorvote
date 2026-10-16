@@ -66,6 +66,21 @@ describe('MarkdownSummary claim links', () => {
     expect(onClaimActivate).not.toHaveBeenCalled()
   })
 
+  it('ignores a link in the summary that carries data-claim but isn\'t one of the page\'s claim links', async () => {
+    const onClaimActivate = vi.fn()
+    const user = userEvent.setup()
+    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={onClaimActivate}>{SUMMARY}</MarkdownSummary>)
+    // As if a summary's own link had kept a data-claim attribute through sanitizing.
+    const forged = document.createElement('a')
+    forged.setAttribute('href', 'https://example.com/forged')
+    forged.setAttribute('data-claim', '0')
+    forged.textContent = 'Forged link'
+    forged.addEventListener('click', e => e.preventDefault())
+    container.querySelector('.markdown-summary')!.appendChild(forged)
+    await user.click(screen.getByRole('link', { name: 'Forged link' }))
+    expect(onClaimActivate).not.toHaveBeenCalled()
+  })
+
   it('renders a claim with markup in it as text', () => {
     const { container } = render(
       <MarkdownSummary claimLinks={[{ index: 0, claim: '<img src=x onerror=alert(1)>' }]} onClaimActivate={() => {}}>

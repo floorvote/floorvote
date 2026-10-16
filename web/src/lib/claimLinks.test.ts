@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { billHtmlToText } from '../../../shared/billHtmlToText'
-import { linkableClaims, linkClaimsInHtml, markPassage, PASSAGE_ID, type ClaimSourcesDetail, type ClaimSourceItem } from './claimLinks'
+import { focusPassage, linkableClaims, linkClaimsInHtml, markPassage, PASSAGE_ID, type ClaimSourcesDetail, type ClaimSourceItem } from './claimLinks'
 
 // Claim links on HTML bills (#571). Fixtures are invented text, not bill text.
 
@@ -168,6 +168,28 @@ describe('markPassage', () => {
     expect([...doc.body.querySelectorAll('p')].map(p => p.textContent)).toEqual(['Section 1.', 'Each county shall have a drop box.', 'Section 2.'])
   })
 
+  it('makes the first highlight focusable, so loading at its fragment moves focus to the passage, and the rest not', () => {
+    const html = '<html><body><p>Each <span>county</span> shall have a drop box.</p></body></html>'
+    const doc = parseDoc(markPassage(html, passageIn(html, 'Each county shall have a drop box.')) ?? '')
+    const marks = marksOf(doc)
+    expect(marks.length).toBeGreaterThan(1)
+    expect(marks[0].getAttribute('tabindex')).toBe('-1')
+    expect(marks.slice(1).every(m => !m.hasAttribute('tabindex'))).toBe(true)
+  })
+
+  it('shows a focus ring on the focused highlight, from its own style, which the bill\'s CSS can\'t take away', () => {
+    const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
+    const css = doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''
+    expect(css).toMatch(new RegExp(`#${PASSAGE_ID}:focus\\{outline:[^}]*!important`))
+    expect(css).toMatch(/mark\[data-fv-passage\]\{background:[^;]*!important/)
+  })
+
+  it('rings every part of the passage while its first part has focus', () => {
+    const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
+    const css = doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''
+    expect(css).toContain(`:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:`)
+  })
+
   it('styles the highlight from the document head', () => {
     const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.'))!)
     const style = doc.head.querySelector('style[data-fv-passage]')
@@ -259,5 +281,28 @@ describe('markPassage', () => {
     const out = markPassage(none, passageIn(none, 'Section 2.'))
     expect(out ?? '').toMatch(/^<html/)
     expect(parseDoc(out ?? '').compatMode).toBe('BackCompat')
+  })
+})
+
+describe('focusPassage', () => {
+  // Chromium doesn't focus a fragment's target on a document's first load, only
+  // on a fragment navigation within it. So the page focuses the frame, then
+  // goes to the passage's fragment in the document it already has.
+  it('focuses the frame, then goes to the passage\'s fragment in the same document', () => {
+    const calls: string[] = []
+    const frame = {
+      focus: vi.fn(() => { calls.push('focus') }),
+      contentWindow: { location: { replace: vi.fn((u: string) => { calls.push(`replace ${u}`) }) } },
+    }
+    focusPassage(frame as unknown as HTMLIFrameElement, 'blob:https://app.example/abc')
+    expect(calls).toEqual(['focus', `replace blob:https://app.example/abc#${PASSAGE_ID}`])
+  })
+
+  it('still focuses the frame when the frame can\'t be navigated', () => {
+    const frame = { focus: vi.fn(), contentWindow: { location: { replace: () => { throw new Error('blocked') } } } }
+    expect(() => focusPassage(frame as unknown as HTMLIFrameElement, 'blob:x')).not.toThrow()
+    expect(frame.focus).toHaveBeenCalled()
+    const detached = { focus: vi.fn(), contentWindow: null }
+    expect(() => focusPassage(detached as unknown as HTMLIFrameElement, 'blob:x')).not.toThrow()
   })
 })

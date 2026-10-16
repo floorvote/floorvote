@@ -261,17 +261,24 @@ describe('claim links on a companion\'s page showing another member\'s analysis'
     expect(await highlighted()).toBe('Each county shall have one drop box, emptied daily.')
   })
 
-  it('renders no links, and no label, when the analyzed member\'s pinned document is gone', async () => {
+  it('renders no links when the analyzed member\'s pinned document is gone, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimSources: null })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
-    expect(screen.queryByText(/Summary of/)).toBeNull()
+    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
   })
 
-  it('renders no links with the instance setting off', async () => {
+  it('labels a borrowed summary that has no claim sources at all', async () => {
+    setup({ ...BORROWED, claimSources: undefined, claimLinksEnabled: undefined })
+    await summaryBox()
+    expect(screen.getByRole('link', { name: 'S200' })).toHaveAttribute('href', '/bills/s200')
+  })
+
+  it('renders no links with the instance setting off, and still says whose summary it is', async () => {
     setup({ ...BORROWED, claimLinksEnabled: false })
     await summaryBox()
     expect(screen.queryByRole('link', { name: 'Requires a drop box in each county.' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'S200' }).parentElement!.textContent).toBe('Summary of S200, this bill\'s identical companion')
   })
 })
 
