@@ -12,7 +12,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useDemo } from '../context/DemoContext'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../styles/actionRow'
-import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
+import { digestCadenceDescription, digestMatchesLabel, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
 import { emailChangedLabel, ownEmailChangeLabel, type EmailChangeStepFields } from '../lib/emailChangedLabel'
@@ -136,7 +136,7 @@ export function Profile() {
     setDigestEnabled(user?.emailDigestEnabled ?? true)
   }, [user?.emailDigestEnabled])
 
-  // "Include newly matched bills", nested under the digest switch. Admins always
+  // "Also include newly matched bills in the digest", nested under the digest switch. Admins always
   // get the new-match section, so only members are offered it.
   const isMember = user?.role === 'member'
   const [digestMatchesEnabled, setDigestMatchesEnabled] = useState<boolean>(() => user?.emailDigestMatchesEnabled ?? true)
@@ -728,8 +728,7 @@ export function Profile() {
                 }}
               >
                 <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
-                  <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Include newly matched bills</div>
-                  <div>Also list bills your keywords newly matched, and send the digest on days with only those.</div>
+                  <div id="digest-matches-label" style={{ fontWeight: fontWeight.medium, color: color.textPrimary }}>{digestMatchesLabel(modules)}</div>
                 </div>
                 <label
                   style={{
@@ -744,7 +743,7 @@ export function Profile() {
                   <input
                     type="checkbox"
                     role="switch"
-                    aria-label="Include newly matched bills"
+                    aria-labelledby="digest-matches-label"
                     checked={digestMatchesEnabled}
                     disabled={digestMatchesSaving || demoLocked || digestAdminOff || !digestEnabled}
                     onChange={toggleDigestMatches}

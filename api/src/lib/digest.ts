@@ -65,7 +65,7 @@ export async function runDigest(
     .all()
 
   // New keyword matches awaiting triage — the section admins always get and
-  // members get unless they turned off "Include newly matched bills". Bill-based
+  // members get unless they turned off "Also include newly matched bills in the digest". Bill-based
   // (not feed events) and NOT priority-gated; scoped to the digest window. Only
   // routine matches, under the same new-match definition (and threshold) as the
   // triage list and chip: a seed's or keyword re-run's matches stay in the
