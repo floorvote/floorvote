@@ -405,5 +405,95 @@ describe('runDigest', () => {
         expect(c.html).not.toContain('OTH')
       }
     })
+
+    // #550: a companion analyzed only because of its group (a pulled companion) has no match type, so it is
+    // never a new match, whatever its group holds. The digest's new-match section is keyed on match_type = 'keyword'.
+    describe('a pulled companion', () => {
+      const pulled = (billNumber: string, more: Parameters<typeof seedBill>[0] = {}) =>
+        seedBill({ billNumber, state: 'RI', session: '2026', matchType: null, aiProcessedAt: recentMatch(), tenantSummary: 'Analyzed through its group', relevanceScore: 90, ...more })
+
+      it('is left out of the new-match section, for an admin and for a member', async () => {
+        const db = getDb(env.DB); await enableModule(db)
+        const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+        const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
+        const companion = await pulled('PUL 1')
+        await group(db, tracked, companion)
+        const calls = captureEmails()
+
+        const result = await runDigest(env as any, db)
+
+        expect(calls).toHaveLength(0)
+        expect(result.sent).toBe(0)
+      })
+
+      it('is left out beside a routine new match, which is still listed', async () => {
+        const db = getDb(env.DB); await enableModule(db)
+        const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+        const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
+        const companion = await pulled('PUL 1')
+        await group(db, tracked, companion)
+        await seedBill({ billNumber: 'SOLO 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+        const calls = captureEmails()
+
+        await runDigest(env as any, db)
+
+        expect(calls).toHaveLength(2)
+        for (const c of calls) {
+          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('SOLO 1')
+          expect(c.html).not.toContain('PUL 1')
+        }
+      })
+
+      it('is left out of a group whose tracked bill is itself a routine new match, which counts once', async () => {
+        const db = getDb(env.DB); await enableModule(db)
+        const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+        const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+        const companion = await pulled('PUL 1')
+        await group(db, tracked, companion)
+        const calls = captureEmails()
+
+        await runDigest(env as any, db)
+
+        expect(calls).toHaveLength(2)
+        for (const c of calls) {
+          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('TRK 1')
+          expect(c.html).not.toContain('PUL 1')
+        }
+      })
+
+      it('is left out even when a declaration had leaked onto its row, since it has no match type', async () => {
+        const db = getDb(env.DB); await enableModule(db)
+        const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+        const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
+        const companion = await pulled('PUL 1', { matchProvenance: 'routine', newMatchAt: recentMatch() })
+        await group(db, tracked, companion)
+        const calls = captureEmails()
+
+        const result = await runDigest(env as any, db)
+
+        expect(calls).toHaveLength(0)
+        expect(result.sent).toBe(0)
+      })
+
+      it('is listed once it matches on its own with a routine declaration', async () => {
+        const db = getDb(env.DB); await enableModule(db)
+        const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+        const tracked = await seedBill({ billNumber: 'TRK 1', state: 'RI', session: '2026', matchType: 'manual', relevanceScore: 90 })
+        const companion = await pulled('PUL 1')
+        await group(db, tracked, companion)
+        await db.update(bills).set({ matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch() }).where(eq(bills.id, companion))
+        const calls = captureEmails()
+
+        await runDigest(env as any, db)
+
+        expect(calls).toHaveLength(2)
+        for (const c of calls) {
+          expect(c.html).toContain('New matches (1)')
+          expect(c.html).toContain('PUL 1')
+        }
+      })
+    })
   })
 })
