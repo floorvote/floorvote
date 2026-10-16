@@ -13,6 +13,7 @@ import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateT
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { sanitizeCommentHtml } from './sanitizeHtml'
 import { displayName } from './displayName'
+import { userTitleSql } from './userTitle'
 
 /** @mention emails are on unless an admin explicitly disabled them. */
 export async function mentionEmailsEnabled(db: ReturnType<typeof getDb>): Promise<boolean> {
@@ -111,7 +112,7 @@ export function tiptapToEmailHtml(rawHtml: string): string {
 
 export interface MentionEmailInput {
   appUrl: string
-  author: { name: string; subtitle: string | null }
+  author: { name: string; title: string | null }
   bill: {
     id: string; billNumber: string; title: string
     /** Lets the card label an untitled draft "Untitled draft". Absent = filed. */
@@ -146,9 +147,9 @@ export function renderMentionEmail(input: MentionEmailInput): string {
   })
   const billHref = `${appUrl}${billUrl({ id: bill.id, state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}`
   const commentUrl = `${billHref}#comment-${comment.id}`
-  const subtitle = author.subtitle ? truncate(author.subtitle, 60) : null
+  const title = author.title ? truncate(author.title, 60) : null
   const commentRow = renderCommentRow({
-    appUrl, name: author.name, subtitle,
+    appUrl, name: author.name, title,
     dateText: formatEmailDateTime(comment.createdAt),
     bodyHtml: tiptapToEmailHtml(comment.html),
   })
@@ -431,7 +432,7 @@ async function sendMentionEmails(
 ): Promise<void> {
   const db = getDb(env.DB)
   const [author] = await db
-    .select({ name: users.name, email: users.email, subtitle: users.subtitle })
+    .select({ name: users.name, email: users.email, title: userTitleSql })
     .from(users)
     .where(eq(users.id, authorUserId))
     .all()
@@ -477,7 +478,7 @@ async function sendMentionEmails(
     // renderMentionEmail, which styles it via tiptapToEmailHtml.
     const rendered = renderMentionEmail({
       appUrl: env.APP_URL,
-      author: { name: displayName(author), subtitle: author.subtitle },
+      author: { name: displayName(author), title: author.title },
       bill: {
         id: bill.id, billNumber: bill.billNumber, title: bill.title, isDraft: bill.isDraft,
         state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, priority: bill.priority,

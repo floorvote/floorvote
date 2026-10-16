@@ -112,10 +112,28 @@ describe('Export API', () => {
     const keys = Object.keys(body.rows[0])
     expect(keys).toEqual(expect.arrayContaining(['id', 'email', 'name', 'role', 'createdAt']))
     // Should not have any unexpected columns beyond the safe set
-    const safeKeys = ['id', 'email', 'name', 'role', 'subtitle', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote']
+    const safeKeys = ['id', 'email', 'name', 'role', 'title', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote']
     for (const key of keys) {
       expect(safeKeys).toContain(key)
     }
+  })
+
+  // The users column is `title`, with no `subtitle` alias (release note in #547).
+  it('exports a member\'s title as `title`, with no `subtitle` column', async () => {
+    await seedUser({ email: 'titled@example.com', title: 'Registrar' })
+    const res = await app.request('/api/admin/export/users', { headers: { Cookie: adminCookie } }, env)
+    const rows = ((await res.json()) as any).rows as Array<Record<string, unknown>>
+    const row = rows.find(r => r.email === 'titled@example.com')!
+    expect(row.title).toBe('Registrar')
+    for (const r of rows) expect(r).not.toHaveProperty('subtitle')
+  })
+
+  it('exports the title of a member only the previous build wrote, from subtitle', async () => {
+    await env.DB.prepare('INSERT INTO users (id, email, name, subtitle) VALUES (?, ?, ?, ?)').bind('legacy', 'legacy@example.com', 'Legacy', 'Written by the old build').run()
+    const res = await app.request('/api/admin/export/users', { headers: { Cookie: adminCookie } }, env)
+    const row = (((await res.json()) as any).rows as Array<Record<string, unknown>>).find(r => r.email === 'legacy@example.com')!
+    expect(row.title).toBe('Written by the old build')
+    expect(row).not.toHaveProperty('subtitle')
   })
 
   it('paginates with cursor and limit', async () => {

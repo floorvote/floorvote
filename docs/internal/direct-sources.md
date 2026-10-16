@@ -36,7 +36,7 @@ That works for one source. It does not scale to fifty, and review on #206 asked 
 | Change signal | None; hash each record | ETag (`If-None-Match` returns 304); hash each record | ETag per file; hash each record |
 | Detail | `LegislationDetails`, one call per bill | None needed; everything is in the list | None needed; everything is in the CSVs |
 | History | Full, with documents | Milestones only: first reading, hearing, report, 2nd and 3rd reading for each chamber | Full, with a reference id that keys votes |
-| Text | Download URL per document | PDFs at predictable paths (`/{YYYY}RS/bills/hb/hb0001F.pdf`; F, T, E versions) | Document ids only; text needs the API |
+| Text | Download URL per document | PDFs at predictable paths (`/{YYYY}RS/bills/hb/hb0001F.pdf`; F, T, E versions) | Document codes only; text needs the API, with the optional `LIS_API_KEY` (one text-list call per session, then one call per version for its PDF link) |
 | Fiscal notes | Fiscal impact statements | One PDF per bill at a predictable path | `FiscalImpactStatements.csv`, with URLs |
 | Votes | Per member, on floor readings | PDFs only (not in this round) | Per member, floor and committee (`VOTE.CSV`) |
 | Hearings | Hearings calendar API, with bills and without | Hearing date and time per chamber in the bill record; meetings pages are HTML | Committee and subcommittee dockets (`DOCKET.CSV`, `SUBDOCKET.CSV`); meetings via the API |
@@ -201,7 +201,7 @@ Each is a draft stacked on the previous one, starting from #206.
 ## Open questions
 
 - **Carried-over Virginia bills.** Should a bill carried over from 2026 be the same FloorVote bill in 2027, or a new bill linked to the old one? This proposal follows LegiScan (new bill, linked), so a team's positions and notes don't move automatically.
-- **Virginia's API terms** say "personal and non-commercial use only". Until that is clarified with DLAS, the Virginia module reads only the public CSVs, and Virginia bills have no text.
+- **Virginia's API terms** say "personal and non-commercial use only". So bill text from the LIS API is opt-in: the Virginia module reads only the public CSVs unless a deployment sets `LIS_API_KEY`, which takes on those terms, and without it Virginia bills have no text. Whether a deployment may use the API commercially is for that deployment to settle with DLAS.
 - **Maryland votes and amendments** are published only as HTML pages and PDFs. They are left out until someone needs them.
 - **The tenant id prefix.** `legiscan:<int>` could become a neutral prefix in a later PR.
 - **The cutover tool**, for moving a state that tenants already track from LegiScan to a direct source.

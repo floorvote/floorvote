@@ -10,12 +10,12 @@ const demo = vi.hoisted(() => ({ demoLocked: false }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: {
-      id: 'u1', email: 'jane@oldjob.org', name: 'Jane', role: 'member', subtitle: null,
+      id: 'u1', email: 'jane@oldjob.org', name: 'Jane', role: 'member', title: null,
       canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null,
       isLastOwner: false,
     },
     loading: false, authError: false,
-    setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+    setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
 vi.mock('../context/DemoContext', () => ({

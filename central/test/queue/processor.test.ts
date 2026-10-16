@@ -24,6 +24,7 @@ import { getProvider } from '../../src/providers'
 import { limsBillId, limsDocId, limsSessionId } from '../../src/providers/lims/ids'
 import * as legiscan from '../../src/providers/legiscan/client'
 import { setupLsDb } from '../helpers/setupLsDb'
+import ilTooLargeRaw from '../fixtures/il/too-large-to-display.html?raw'
 
 beforeEach(async () => {
   await setupLsDb()
@@ -493,6 +494,21 @@ describe('validateTextPayload', () => {
     const doc = '<html>' + 'x'.repeat(20000) + '</html>'
     expect(validateTextPayload(abuf(doc), 'text/html', 20000)).toBeNull()
   })
+
+  // Illinois serves this page in place of any bill above a size threshold. At
+  // ~64KB it is a plausible size for a bill, so with the declared size near its
+  // own length the ratio check above cannot see it.
+  it("rejects Illinois's too-large-to-display page even when its size looks plausible", () => {
+    const page = abuf(ilTooLargeRaw)
+    expect(page.byteLength).toBeGreaterThan(50_000)
+    expect(validateTextPayload(page, 'text/html', page.byteLength)).toMatch(/too large/i)
+    expect(validateTextPayload(page, 'text/html', null)).toMatch(/too large/i)
+  })
+
+  it('accepts a document that merely uses the words "too large"', () => {
+    const doc = '<html><body>Any sum too large for the fund to absorb shall lapse.</body></html>'
+    expect(validateTextPayload(abuf(doc), 'text/html', null)).toBeNull()
+  })
 })
 
 describe('downloadTextToR2: bot-wall handling', () => {
@@ -547,6 +563,72 @@ describe('downloadTextToR2: bot-wall handling', () => {
     expect(row!.fetchError).toMatch(/expected a PDF/)
     expect(row!.fetchError).toMatch(/403/)
     expect(row!.fetchAttemptedAt).toBeTruthy()
+  })
+})
+
+describe('downloadTextToR2: Illinois too-large-to-display page', () => {
+  const realDoc = '<html><body>' + 'Be it enacted by the People of the State of Illinois. '.repeat(40) + '</body></html>'
+  const ilText = (textHash: string) => ({
+    doc_id: 1100, date: '2025-05-31', type: 'Enrolled', type_id: 5,
+    mime: 'text/html', mime_id: 1, url: 'u',
+    state_link: 'https://www.ilga.gov/Legislation/BillStatus/FullText?LegDocId=202504&DocName=10400SB2510lv&DocNum=2510&DocTypeID=SB&GAID=18&SessionID=114',
+    // Declared size near the page's own length: the size ratio must not be what catches it.
+    text_size: ilTooLargeRaw.length, text_hash: textHash,
+    alt_bill_text: 0, alt_mime: '', alt_mime_id: 0, alt_state_link: '', alt_text_size: 0, alt_text_hash: '',
+  })
+  const legiscanCopy = (body: string, hash: string) => ({
+    doc_id: 1100, bill_id: 9001, date: '2025-05-31', type: 'Enrolled', type_id: 5,
+    mime: 'text/html', mime_id: 1, text_size: body.length, text_hash: hash,
+    doc: toBase64(body),
+  } as any)
+
+  beforeEach(() => {
+    fetchMock.mockResolvedValue(new Response(ilTooLargeRaw, {
+      status: 200, headers: { 'content-type': 'text/html; charset=utf-8' },
+    }))
+    vi.mocked(legiscan.getBillText).mockReset()
+  })
+
+  it('stores the hash-verified LegiScan copy instead of the interstitial', async () => {
+    const db = drizzle(env.DB, { schema })
+    const realHash = await md5Hex(new TextEncoder().encode(realDoc))
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [ilText(realHash)] }))
+    vi.mocked(legiscan.getBillText).mockResolvedValue(legiscanCopy(realDoc, realHash))
+
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1100)).get()
+    expect(legiscan.getBillText, 'the interstitial must trigger the LegiScan fetch')
+      .toHaveBeenCalledWith(1100, 'test-key', expect.any(Function))
+    expect(row!.r2Key).toBeTruthy()
+    expect(row!.fetchError).toBeNull()
+    const stored = await env.BILLS_BUCKET.get(row!.r2Key!)
+    expect(await stored!.text(), 'the stored object must be the real document').toBe(realDoc)
+  })
+
+  it('stores nothing when the LegiScan copy fails its hash check', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [ilText('0'.repeat(32))] }))
+    vi.mocked(legiscan.getBillText).mockResolvedValue(legiscanCopy(realDoc, '0'.repeat(32)))
+
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1100)).get()
+    expect(row!.r2Key, 'neither the interstitial nor an unverified copy may be stored').toBeNull()
+    expect(row!.fetchError).toMatch(/too large/i)
+    expect(row!.fetchError).toMatch(/hash mismatch/)
+  })
+
+  it('stores nothing when the LegiScan fetch fails too', async () => {
+    const db = drizzle(env.DB, { schema })
+    vi.mocked(legiscan.getBill).mockResolvedValue(buildFixtureBill({ texts: [ilText('th')] }))
+    vi.mocked(legiscan.getBillText).mockRejectedValue(new Error('LegiScan HTTP 403'))
+
+    await processIngestorQueue(makeBatch(9001), makeEnv(), db)
+
+    const row = await db.select().from(schema.billTexts).where(eq(schema.billTexts.docId, 1100)).get()
+    expect(row!.r2Key).toBeNull()
+    expect(row!.fetchError).toMatch(/too large/i)
   })
 })
 

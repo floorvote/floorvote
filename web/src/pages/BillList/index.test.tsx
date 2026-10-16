@@ -148,7 +148,7 @@ vi.mock('../../lib/api', () => {
     }
     if (path === '/auth/me') {
       return { id: 'demo-user', email: 'demo@example.com', name: 'Demo', role: 'owner',
-        subtitle: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
+        title: null, canVote: true, emailDigestEnabled: false, lastSeenFeed: null } as T
     }
     if (path === '/config') return CONFIG as T
     if (path === '/users/me/bills') return [] as T
