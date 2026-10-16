@@ -72,7 +72,9 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
     const el = ref.current
     if (!el || !onClaimActivate) return
     const onClick = (e: MouseEvent) => {
-      const link = (e.target as Element | null)?.closest?.('a[data-claim]')
+      // The class, not data-claim alone: sanitizing keeps data-* attributes,
+      // but not class, so only the page's own claim links have it.
+      const link = (e.target as Element | null)?.closest?.('a.claim-link[data-claim]')
       if (!link || !el.contains(link)) return
       e.preventDefault()
       onClaimActivate(Number(link.getAttribute('data-claim')))

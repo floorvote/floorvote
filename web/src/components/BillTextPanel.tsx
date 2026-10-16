@@ -5,7 +5,7 @@ import { ExternalLinkIcon } from './ExternalLinkIcon'
 import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
-import { markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
+import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
@@ -384,7 +384,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
                         onLoad={e => {
                           if (focusedUrlRef.current === passageUrl) return
                           focusedUrlRef.current = passageUrl
-                          e.currentTarget.focus()
+                          focusPassage(e.currentTarget, passageUrl)
                         }}
                       />
                     ) : (

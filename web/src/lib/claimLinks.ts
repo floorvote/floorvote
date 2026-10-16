@@ -176,7 +176,12 @@ const UNMARKABLE = new Set(['HEAD', 'TITLE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'SEL
 /** Parents a highlight around whitespace would be moved out of when the document is parsed again. */
 const TABLE_PARENTS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGROUP'])
 
-const PASSAGE_CSS = `mark[data-fv-passage]{background:${color.borderAmber};color:inherit}#${PASSAGE_ID}{scroll-margin-top:40px}`
+// `!important`, so the bill's own CSS can't hide the highlight or its focus ring.
+const PASSAGE_CSS = `mark[data-fv-passage]{background:${color.borderAmber} !important;color:inherit}`
+  + `#${PASSAGE_ID}{scroll-margin-top:40px !important}`
+  + `#${PASSAGE_ID}:focus{outline:2px solid ${color.focusRing} !important;outline-offset:2px}`
+  // The passage can span several marks: ring them all while the first has focus.
+  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${color.focusRing} !important;outline-offset:2px}`
 
 const ENTITY = /&[A-Za-z][A-Za-z0-9]{0,31};/g
 const ENTITY_CACHE = new Map<string, string>()
@@ -252,7 +257,9 @@ function doctypeOf(doc: Document): string {
  * location (offsets into `billHtmlToText` of the document) says which. The
  * highlight is one `<mark>` around each text node's part of the passage, and
  * the first carries `PASSAGE_ID`, which no other element in the document is
- * left with. A style for the marks goes in the head. Nothing else changes:
+ * left with, and a fixed `tabindex="-1"`: loading the frame at that fragment
+ * runs the browser's focusing steps on it, so focus lands on the passage
+ * itself once the page focuses the frame. A style for the marks goes in the head. Nothing else changes:
  * the document is parsed inertly (`DOMParser` runs nothing and loads nothing)
  * and serialized back with its doctype, script and all, for the sandbox to
  * keep inert as it does the plain text.
@@ -317,7 +324,10 @@ export function markPassage(html: string, passage: { matched: string; quoteAt: S
     if (to - from < mid.data.length) mid.splitText(to - from)
     const mark = doc.createElement('mark')
     mark.setAttribute('data-fv-passage', '')
-    if (i === 0) mark.setAttribute('id', PASSAGE_ID)
+    if (i === 0) {
+      mark.setAttribute('id', PASSAGE_ID)
+      mark.setAttribute('tabindex', '-1')
+    }
     mid.parentNode!.insertBefore(mark, mid)
     mark.appendChild(mid)
   })
@@ -328,4 +338,23 @@ export function markPassage(html: string, passage: { matched: string; quoteAt: S
   doc.head.appendChild(style)
 
   return doctypeOf(doc) + doc.documentElement.outerHTML
+}
+
+/**
+ * Move focus to the passage in a frame showing `markPassage`'s document from
+ * `url`. Loading at the fragment scrolls to it, but Chromium runs the focusing
+ * steps for a fragment's target only on a fragment navigation within a loaded
+ * document, not on its first load. So the page focuses the frame, then goes to
+ * the same fragment of the same document, which focuses the mark (its fixed
+ * `tabindex="-1"`). The page navigates only its own frame, to the URL it made,
+ * and reads nothing from it: the frame keeps `sandbox=""`. Where that can't be
+ * done, focus stays on the frame, scrolled to the passage.
+ */
+export function focusPassage(frame: HTMLIFrameElement, url: string): void {
+  frame.focus()
+  try {
+    frame.contentWindow?.location.replace(`${url}#${PASSAGE_ID}`)
+  } catch {
+    // Focus stays on the frame.
+  }
 }

@@ -1375,8 +1375,9 @@ export function BillDetail() {
   const claimLinks = claimSources && (claimSources.billId !== bill.id || bill.texts.some(t => t.docId === claimSources.document.docId))
     ? linkableClaims(claimSources, bill.claimLinksEnabled)
     : []
-  const borrowedFrom = claimLinks.length > 0 && claimSources && claimSources.billId !== bill.id && bill.analysisBillNumber
-    ? { billId: claimSources.billId, billNumber: bill.analysisBillNumber }
+  // A summary from another member of the group says whose it is, links or not (#560).
+  const borrowedFrom = bill.analysisBillId && bill.analysisBillId !== bill.id && bill.analysisBillNumber
+    ? { billId: bill.analysisBillId, billNumber: bill.analysisBillNumber }
     : null
   const openClaim = (index: number) => {
     const link = claimLinks.find(c => c.index === index)
@@ -2554,7 +2555,7 @@ export function BillDetail() {
                     />
                   </div>
                 </div>
-                {/* A borrowed summary says whose it is, since its claim links open that bill's text (#571). */}
+                {/* A borrowed summary says whose it is, and its claim links open that bill's text (#571). */}
                 {borrowedFrom && (
                   <div style={{ fontSize: fontSize.sm, color: color.textMuted, marginBottom: 6 }}>
                     Summary of <Link to={billUrl({ id: borrowedFrom.billId, billNumber: borrowedFrom.billNumber })} className="blue-link">{borrowedFrom.billNumber}</Link>, this bill's identical companion
