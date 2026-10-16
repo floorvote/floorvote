@@ -85,7 +85,7 @@ export const CLAIM_LINKS_CHANGED_KEY = 'claim_links_changed'
 export async function claimLinksEnabled(db: AppDb): Promise<boolean> {
   const row = await db.select().from(associationConfig).where(eq(associationConfig.key, CLAIM_LINKS_KEY)).get()
   if (!row) return true
-  try { return JSON.parse(row.value) !== false } catch { return row.value.trim() !== 'false' }
+  try { return JSON.parse(row.value) !== false } catch { return true }
 }
 
 /**

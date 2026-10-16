@@ -133,6 +133,9 @@ export function Config() {
   const [claimLinksChanged, setClaimLinksChanged] = useState<{ at: string; by: ClaimLinksChangedBy | null } | null>(null)
   const [savingClaimLinks, setSavingClaimLinks] = useState(false)
   const [saveClaimLinksError, setSaveClaimLinksError] = useState<string | null>(null)
+  // What the polite live region says after a save, so a screen reader user hears
+  // the result. Empty until the first toggle.
+  const [claimLinksAnnouncement, setClaimLinksAnnouncement] = useState('')
 
   const [newMatchMinRelevance, setNewMatchMinRelevance] = useState(0)
   const [savingNewMatch, setSavingNewMatch] = useState(false)
@@ -458,7 +461,11 @@ export function Config() {
   }
 
   async function handleToggleClaimLinks(next: boolean) {
+    // The box stays focusable while saving (aria-disabled, not disabled, which
+    // would drop a keyboard user's focus), so a toggle during a save is ignored here.
+    if (savingClaimLinks) return
     setSaveClaimLinksError(null)
+    setClaimLinksAnnouncement('')
     setClaimLinks(next)
     setSavingClaimLinks(true)
     try {
@@ -467,9 +474,12 @@ export function Config() {
         { method: 'PUT', body: JSON.stringify({ enabled: next }) },
       )
       if (saved?.changedAt) setClaimLinksChanged({ at: saved.changedAt, by: saved.changedBy ?? null })
+      setClaimLinksAnnouncement(next ? 'Claim links turned on.' : 'Claim links turned off.')
     } catch (err) {
       setClaimLinks(!next)
-      setSaveClaimLinksError(err instanceof ApiError ? err.message : 'Failed to save.')
+      const message = err instanceof ApiError ? err.message : 'Failed to save.'
+      setSaveClaimLinksError(message)
+      setClaimLinksAnnouncement(message)
     } finally {
       setSavingClaimLinks(false)
     }
@@ -957,7 +967,8 @@ export function Config() {
                 <input
                   type="checkbox"
                   checked={claimLinks}
-                  disabled={savingClaimLinks || demoLocked}
+                  disabled={demoLocked}
+                  aria-disabled={savingClaimLinks || demoLocked}
                   onChange={(e) => void handleToggleClaimLinks(e.target.checked)}
                   aria-describedby="config-claim-links-copy"
                   style={{ margin: 0, accentColor: color.accentBlue }}
@@ -972,7 +983,8 @@ export function Config() {
                   Last changed{claimLinksChanged.by ? ` by ${claimLinksChanged.by.name || claimLinksChanged.by.email}` : ''} on {absoluteTime(claimLinksChanged.at)}.
                 </div>
               )}
-              {saveClaimLinksError && <div style={{ ...hintStyle, color: color.textErrorRed }}>{saveClaimLinksError}</div>}
+              {/* One polite live region for the result and any error. It's seen only when it's an error. */}
+              <div data-testid="claim-links-status" role="status" aria-live="polite" style={saveClaimLinksError ? { ...hintStyle, color: color.textErrorRed } : SR_ONLY}>{claimLinksAnnouncement}</div>
             </div>
           </>
         )}
