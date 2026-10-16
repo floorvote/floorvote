@@ -18,8 +18,11 @@ import calendarRaw from '../fixtures/lims/hearings-calendar.json?raw'
 // upstream's DC sync, LIMS re-ingest, and Council calendar sync on the same
 // fixtures. What its instances know DC by has to come through unchanged: bill
 // ids, the identities their bill calendar UIDs are built from, and the UIDs
-// of the Council's hearings. DC has to end up owned by LIMS, seeded from the
-// fork's LIMS_STATES, and the fork's own tables and columns left alone.
+// of the Council's hearings. DC has to end up owned by LIMS, by the operator's
+// claim (nothing else writes the row: the fork's LIMS_STATES, still set in its
+// config, is ignored, #319), and the fork's own tables and columns left alone.
+// An upgrade from a build older than #303 has no ownership row until that
+// claim, which docs/internal/fork-upgrade.md makes the first step after deploy.
 // api/test/migrations/forkUpgrade.test.ts does the same for its instance.
 vi.mock('../../src/lib/rateLimitedFetch', () => ({
   rateLimitedFetch: async (url: string, init: RequestInit | undefined, opts: { onRequest?: () => void }) => {
@@ -99,7 +102,7 @@ const feed: Record<string, () => Response> = {
 }
 const october = (JSON.parse(calendarRaw) as Record<string, unknown[]>)['2026-10']
 
-/** The fork's central env after the upgrade: its LIMS key and LIMS_STATES, still set. */
+/** The fork's central env after the upgrade: its LIMS key, and the LIMS_STATES it hasn't removed yet. */
 function makeEnv() {
   const limsQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn() }
   const tenantQueue = { sendBatch: vi.fn().mockResolvedValue(undefined), send: vi.fn().mockResolvedValue(undefined) }
@@ -127,6 +130,11 @@ async function app(run: Run, method: string, path: string, body: unknown) {
   return app.fetch(new Request(`http://central/api${path}`, {
     method, headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' }, body: JSON.stringify(body),
   }), run.env)
+}
+/** The operator's first step after deploying central: claim DC for LIMS. */
+async function claimDc(run: Run) {
+  const res = await app(run, 'POST', '/admin/state-providers/DC', { provider: 'lims' })
+  expect(res.status).toBe(200)
 }
 async function getJson(path: string, run = makeEnv()) {
   const res = await central('GET', path, run)
@@ -250,48 +258,58 @@ describe('a fork\'s production central, moved onto upstream', () => {
     // each keeps the identity its instances' UIDs were built from.
     expect(await rows('SELECT id, bill_id, type_id, date, description, event_hash FROM bill_calendar ORDER BY id')).toEqual(calendar)
     expect(await rows('SELECT DISTINCT identity_key, cancelled_at, missed_pulls FROM bill_calendar')).toEqual([{ identity_key: null, cancelled_at: null, missed_pulls: 0 }])
-    // No ownership row yet: the first sync seeds it.
+    // No ownership row: no migration writes one, and the operator's claim does.
     expect(await rows('SELECT * FROM state_providers')).toEqual([])
   })
 
-  it('syncs DC from LIMS on the first pass, seeding the ownership row from LIMS_STATES, under the bill ids instances have', async () => {
+  it('leaves DC unowned and unsynced by LIMS until it is claimed, though LIMS_STATES still names it', async () => {
     await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
     const before = await forkState()
+    const dcBills = await rows(`SELECT bill_id, provider FROM bills WHERE state = 'DC' ORDER BY bill_id`)
     const log = vi.spyOn(console, 'log')
 
     const first = makeEnv()
-    await runSnapshotSync(lims, first.env, db())
+    expect(await runSnapshotSync(lims, first.env, db())).toEqual([])
+    await runBodyEventSync(lims, first.env, db())
     await ingestQueued(first)
-    expect(log.mock.calls.flat().join('\n')).toMatch(/DC now syncs from lims, seeded from LIMS_STATES/)
-    expect((await getJson('/admin/state-providers')).states).toEqual([
+
+    // Nothing wrote a row, so DC is LegiScan's, and LIMS fetched nothing.
+    expect(await rows('SELECT * FROM state_providers')).toEqual([])
+    expect((await getJson('/admin/state-providers')).states).toEqual([])
+    expect(first.limsQueue.sendBatch).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(log.mock.calls.flat().join('\n')).not.toMatch(/seeded from|LIMS_STATES/)
+    expect(await rows(`SELECT bill_id, provider FROM bills WHERE state = 'DC' ORDER BY bill_id`)).toEqual(dcBills)
+    expect(await forkState()).toEqual(before)
+  })
+
+  it.each([
+    ['with LIMS_STATES still set', true],
+    ['with LIMS_STATES removed', false],
+  ])('syncs DC from LIMS once the operator claims it, %s, as the guide\'s first step after deploying, under the bill ids instances have', async (_label, keepVar) => {
+    await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
+    const before = await forkState()
+    const run = makeEnv()
+    if (!keepVar) delete (run.env as Record<string, unknown>).LIMS_STATES
+    const res = await app(run, 'POST', '/admin/state-providers/DC', { provider: 'lims' })
+    expect(res.status).toBe(200)
+    expect((await getJson('/admin/state-providers', run)).states).toEqual([
       expect.objectContaining({ state: 'DC', provider: 'lims', status: 'active', previousProvider: 'legiscan' }),
     ])
 
+    await runSnapshotSync(lims, run.env, db())
+    await ingestQueued(run)
     // Every bill the fork had keeps its id, and no DC bill is added twice.
     for (const bill of forkRows.rows.bills) {
       expect(await getJson(`/bills/legiscan:${bill.bill_id}`)).toMatchObject({ billId: `legiscan:${bill.bill_id}`, number: bill.bill_number, state: 'DC' })
     }
     expect(await rows(`SELECT bill_id FROM bills WHERE state = 'DC' ORDER BY bill_id`))
       .toEqual(forkRows.rows.bills.map(b => ({ bill_id: b.bill_id })).sort((a, b) => Number(a.bill_id) - Number(b.bill_id)))
+    expect(sentToTenant(run).map(m => m.billId)).toEqual(expect.arrayContaining(['legiscan:1012600769']))
     expect(await forkState()).toEqual(before)
   })
 
-  it('syncs DC once an operator claims it for LIMS, with LIMS_STATES gone, as the guide\'s first step after deploying', async () => {
-    await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
-    const run = makeEnv()
-    delete (run.env as Record<string, unknown>).LIMS_STATES
-    const res = await app(run, 'POST', '/admin/state-providers/DC', { provider: 'lims' })
-    expect(res.status).toBe(200)
-    expect((await getJson('/admin/state-providers', run)).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
-
-    await runSnapshotSync(lims, run.env, db())
-    await ingestQueued(run)
-    expect(await rows(`SELECT bill_id FROM bills WHERE state = 'DC' ORDER BY bill_id`))
-      .toEqual(forkRows.rows.bills.map(b => ({ bill_id: b.bill_id })).sort((a, b) => Number(a.bill_id) - Number(b.bill_id)))
-    expect(sentToTenant(run).map(m => m.billId)).toEqual(expect.arrayContaining(['legiscan:1012600769']))
-  })
-
-  it('keeps DC on LegiScan if the old code wrote a DC bill after the migrations, until the guide\'s fix relabels it', async () => {
+  it('refuses the claim and keeps DC on LegiScan if the old code wrote a DC bill after the migrations, until the guide\'s fix relabels it', async () => {
     await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
     // The fork's old LIMS sync, still deployed, writes a new bill without a
     // provider, so the column's default calls it LegiScan's, and links it.
@@ -300,12 +318,17 @@ describe('a fork\'s production central, moved onto upstream', () => {
       env.DB.prepare(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) VALUES (1012600999, 'oca', 'keyword')`),
     ])
     const refused = makeEnv()
+    // LIMS_STATES no longer seeds DC, so the sync has nothing to refuse and nothing to do.
     await runSnapshotSync(lims, refused.env, db())
-    // DC isn't seeded: LegiScan, its owner with no row, has a tracked bill there.
-    expect((await getJson('/admin/state-providers')).states).toEqual([])
     expect(refused.limsQueue.sendBatch).not.toHaveBeenCalled()
+    // The claim is refused, naming the instance that tracks the mislabeled bill.
+    const res = await app(refused, 'POST', '/admin/state-providers/DC', { provider: 'lims' })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ owner: 'legiscan', trackedBills: 1, instances: ['oca'] })
+    expect((await getJson('/admin/state-providers')).states).toEqual([])
 
     await env.DB.prepare(`UPDATE bills SET provider = 'lims' WHERE state = 'DC' AND provider = 'legiscan' AND bill_id >= 1000000000 AND bill_id < 2000000000`).run()
+    await claimDc(makeEnv())
     await runSnapshotSync(lims, makeEnv().env, db())
     expect((await getJson('/admin/state-providers')).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
   })
@@ -314,6 +337,7 @@ describe('a fork\'s production central, moved onto upstream', () => {
     const held = await heldState()
     await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
     const first = makeEnv()
+    await claimDc(first)
     await runSnapshotSync(lims, first.env, db())
     await ingestQueued(first)
 
@@ -350,8 +374,12 @@ describe('a fork\'s production central, moved onto upstream', () => {
 
   it('sends each Council hearing under the UID and hash the fork\'s instances already hold', async () => {
     await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
-    // The calendar job can run first after the deploy, before any DC bill is
-    // ingested again. It seeds DC's row too.
+    // The calendar job can run before the claim, and before any DC bill is
+    // ingested again. It writes no row: DC is claimed, and only then synced.
+    await runBodyEventSync(lims, makeEnv().env, db())
+    expect((await getJson('/admin/state-providers')).states).toEqual([])
+    expect((await getJson('/tenants/oca/body-events?from=2026-08-01&to=2026-12-31')).events).toEqual([])
+    await claimDc(makeEnv())
     await runBodyEventSync(lims, makeEnv().env, db())
     expect((await getJson('/admin/state-providers')).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
 

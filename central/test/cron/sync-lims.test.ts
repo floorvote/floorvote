@@ -52,7 +52,7 @@ function makeEnv(extra: Record<string, unknown> = {}) {
     limsQueue, tenantQueue,
     env: {
       ...(env as any),
-      LIMS_API_KEY: 'lims-key', LIMS_STATES: 'DC', LIMS_CATEGORIES: '1,18',
+      LIMS_API_KEY: 'lims-key', LIMS_CATEGORIES: '1,18',
       LIMS_INGESTOR_QUEUE: limsQueue,
       INGESTOR_QUEUE: { sendBatch: vi.fn(), send: vi.fn() },
       [tenantQueueBindingName('oca')]: tenantQueue,
@@ -72,6 +72,8 @@ beforeEach(async () => {
   vi.mocked(lims.getLegislationDetails).mockResolvedValue(JSON.parse(details0400Raw))
   fetchMock.mockImplementation(async () => new Response(PDF, { status: 200, headers: { 'content-type': 'application/pdf' } }))
   const db = drizzle(env.DB, { schema })
+  // DC is LIMS's by an ownership row, as an operator's claim writes it.
+  await db.insert(schema.stateProviders).values({ state: 'DC', provider: 'lims', previousProvider: 'legiscan' })
   await db.insert(schema.tenants).values({ tenantId: 'oca', name: 'OCA', stateCoverage: '["DC"]', active: true })
   await db.insert(schema.keywordRegistry).values([{ tenantId: 'oca', keyword: 'neglect' }, { tenantId: 'oca', keyword: 'behavioral health' }])
 })
@@ -400,11 +402,12 @@ describe('status changes, ownership, and the previous Council Period', () => {
     expect(row).toMatchObject({ lastAction: 'Codified', lastActionDate: '2026-09-01' })
   })
 
-  it('leaves DC on LegiScan while LegiScan DC bills are linked to tenants', async () => {
+  it('leaves DC on LegiScan with no ownership row, whatever LIMS_STATES says', async () => {
     const db = drizzle(env.DB, { schema })
+    await db.delete(schema.stateProviders)
     await db.insert(schema.bills).values({ billId: 1_950_000, sessionId: 2150, state: 'DC', stateId: 51, billNumber: 'B26-0400', changeHash: 'h', title: 't' } as any)
     await db.insert(schema.billTenants).values({ billId: 1_950_000, tenantId: 'oca', matchType: 'keyword' })
-    const { env: e, limsQueue } = makeEnv()
+    const { env: e, limsQueue } = makeEnv({ LIMS_STATES: 'DC' })
 
     expect(await runLimsSync(e, db)).toEqual([])
     expect(lims.getBulkData).not.toHaveBeenCalled()

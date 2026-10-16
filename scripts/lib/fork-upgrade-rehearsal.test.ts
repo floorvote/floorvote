@@ -81,13 +81,18 @@ describe('the fork upgrade rehearsal', () => {
     expect(report.forkTables).toEqual(['council_changes', 'council_committee_history', 'council_committees', 'council_directory', 'council_events'])
     expect(report.forkColumns).toEqual(['people.term_start', 'people.term_end', 'people.seated'])
     expect(report.checks.map(c => c.name)).toEqual(expect.arrayContaining([
-      'No LegiScan bill in DC is linked to an instance, so DC\'s ownership row can be seeded',
+      'No LegiScan bill in DC is linked to an instance, so a claim of DC for LIMS won\'t be refused',
       'Every DC bill keeps its id, number, and session (7)',
       'Every DC bill calendar entry keeps its row, so instances keep its UID (7)',
       'Every lims_records row is in provider_records (7)',
     ]))
     const text = formatReport(report)
     expect(text).toMatch(/GET \/api\/admin\/state-providers/)
+    // A fork older than the ownership table ends with DC's ownership by its claim, the only thing that writes the row.
+    expect(report.checks.map(c => c.name)).toContain('Upstream\'s migrations write no ownership row, so DC is LegiScan\'s until it is claimed')
+    expect(text).toMatch(/POST \/api\/admin\/state-providers\/DC/)
+    expect(text).toMatch(/before the next top of the hour/)
+    expect(text).not.toMatch(/LIMS_STATES|seed/)
     expect(text).toMatch(/council_events \(20 rows\) stays/)
     expect(text).toMatch(/reingest-tenant\/<tenant>\?provider=lims&confirm=true/)
     // The fork never changed its LegiScan budget from the old seed.
@@ -147,15 +152,37 @@ describe('the fork upgrade rehearsal', () => {
     expect(blind.forkTables).toEqual([])
   })
 
-  it('fails before upgrading when LegiScan bills in DC are tracked, since DC\'s ownership row would be refused', () => {
+  it('fails before upgrading when LegiScan bills in DC are tracked, since the claim of DC would be refused', () => {
     const db = forkCopy('central')
     db.exec(`INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, change_hash, title) VALUES (2001234, 2100, 'DC', 51, 'B26-0001', 'h', 'From LegiScan')`)
     db.exec(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) VALUES (2001234, 'oca', 'keyword')`)
     const report = rehearse(db, 'central', 'central', upstreamMigrations('central'))
     expect(report.checks.filter(c => !c.ok)).toEqual([expect.objectContaining({
-      name: 'No LegiScan bill in DC is linked to an instance, so DC\'s ownership row can be seeded',
-      detail: expect.stringMatching(/^1 are\. Upstream won't seed DC/),
+      name: 'No LegiScan bill in DC is linked to an instance, so a claim of DC for LIMS won\'t be refused',
+      detail: expect.stringMatching(/^1 are\. Upstream refuses a claim of DC for LIMS while LegiScan has tracked bills there/),
     })])
+  })
+
+  it('takes the states to check from --claim-states, and notes the rows a copy already has', () => {
+    const db = forkCopy('central')
+    db.exec(`INSERT INTO bills (bill_id, session_id, state, state_id, bill_number, change_hash, title) VALUES (2001235, 2100, 'MD', 20, 'HB1', 'h', 'From LegiScan')`)
+    db.exec(`INSERT INTO bill_tenants (bill_id, tenant_id, match_type) VALUES (2001235, 'oca', 'keyword')`)
+    // Only the states the fork will claim are checked: MD's tracked bill is no problem for DC's claim.
+    const dc = rehearse(db, 'central', 'central', upstreamMigrations('central'), { claimStates: ['DC'] })
+    expect(dc.checks.filter(c => !c.ok)).toEqual([])
+    const md = rehearse(forkCopy('central'), 'central', 'central', upstreamMigrations('central'), { claimStates: ['DC', 'MD'] })
+    expect(md.checks.map(c => c.name)).toContain('No LegiScan bill in MD is linked to an instance, so a claim of MD for LIMS won\'t be refused')
+  })
+
+  it('reports ownership rows a copy already has, which the upgrade leaves as they are', () => {
+    const db = forkCopy('central')
+    // A copy that already ran the ownership table (a fork past #303).
+    db.exec(readFileSync(join(ROOT, 'central/migrations-legiscan/0030_state_providers.sql'), 'utf8'))
+    db.exec(`INSERT INTO state_providers (state, provider, previous_provider) VALUES ('DC', 'lims', 'legiscan')`)
+    db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').run('0030_state_providers.sql')
+    const report = rehearse(db, 'central', 'central', upstreamMigrations('central'))
+    expect(report.checks.filter(c => !c.ok)).toEqual([])
+    expect(report.notes).toContain('Ownership rows already present: DC → lims.')
   })
 
   it('names the upstream migration that meets a fork\'s own column, and stops there', () => {

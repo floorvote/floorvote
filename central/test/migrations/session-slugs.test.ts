@@ -149,13 +149,14 @@ describe('session slugs on an upgraded central', () => {
     expect(await slugsIn('MD')).toEqual({ 2200: '2026', 3000000005: '2026-2', 3000000006: '2026-s1' })
   })
 
-  it('seed ownership from the old env var before the first slugs, as the cron tick does', async () => {
+  it('ignore LIMS_STATES: with no row, DC is LegiScan\'s, so its LegiScan session keeps the plain slug', async () => {
     await env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name, provider)
       VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26', 'legiscan')`).run()
     const db = drizzle(env.DB, { schema })
     await loadStateOwners({ ...(env as any), LIMS_STATES: 'DC', LIMS_API_KEY: 'k' }, db)
     await assignSessionSlugs(db)
-    expect(await slugsIn('DC')).toEqual({ 1000000026: 'cp26', 2050: 'cp26-2', 2100: '2025-2026' })
+    expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM state_providers').first<{ n: number }>()).toEqual({ n: 0 })
+    expect(await slugsIn('DC')).toEqual({ 1000000026: 'cp26-2', 2050: 'cp26', 2100: '2025-2026' })
   })
 
   it('refuse a second session with a slug its state already has', async () => {
