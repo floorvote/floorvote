@@ -62,6 +62,42 @@ describe('brand colors in both modes', () => {
   })
 })
 
+// --- Claim links (#571) ------------------------------------------------------
+// The claim link's underline is Honey in both modes, like the logo mark and the
+// settings-nav line: it reads on the light and the dark cards alike. The hover
+// wash and the highlighted passage's fill are a pale Honey in light mode and a
+// dark one in dark mode. The passage renders in a frame that always shows a
+// light page (lib/claimLinks.ts), so it uses the light pair in both modes.
+describe('claim link colors', () => {
+  it('draws the claim underline in exact Honey in both modes', () => {
+    expect(lightColor.claimUnderline).toBe('#e8a33d')
+    expect(darkColor.claimUnderline).toBe('#e8a33d')
+    expect(lightColor.claimUnderline).toBe(lightColor.accentAmber)
+  })
+
+  it('has the hover wash in each mode', () => {
+    expect(lightColor.claimHoverBg).toBe('#fbecd5')
+    expect(darkColor.claimHoverBg).toBe('#3a3020')
+  })
+
+  it('has the passage highlight in each mode', () => {
+    expect(lightColor.passageMarkBg).toBe('#fde68a')
+    expect(darkColor.passageMarkBg).toBe('#5c4512')
+    expect(darkColor.passageMarkText).toBe('#e8edf4')
+  })
+
+  it('gives the web the claim colors as CSS variables defined in both modes', () => {
+    expect(color.claimUnderline).toBe('var(--fv-claim-underline)')
+    expect(color.claimHoverBg).toBe('var(--fv-claim-hover-bg)')
+    expect(color.passageMarkBg).toBe('var(--fv-passage-mark-bg)')
+    expect(color.passageMarkText).toBe('var(--fv-passage-mark-text)')
+  })
+
+  it('reads the dark passage text at 7:1 or better on its fill', () => {
+    expect(contrast(darkColor.passageMarkText, darkColor.passageMarkBg)).toBeGreaterThanOrEqual(7)
+  })
+})
+
 // --- WCAG AA contrast guard -------------------------------------------------
 // Regression guard from the 2026-06-24 contrast audit, run against both color
 // modes. Every gray text tier must clear WCAG 2.2 AA (4.5:1 for normal text) on
@@ -115,6 +151,14 @@ for (const [mode, c] of MODES) {
       ['amend icon on the card', c.textAmberHearing, c.white],
       ['wordmark Floor on the card', c.wordmarkFloor, c.white],
       ['wordmark Floor on the login page', c.wordmarkFloor, c.bgLoginPage],
+      // Claim links (#571): the summary's body text keeps its color on the
+      // hover wash, and the highlighted passage's text reads on its fill.
+      ['body text on the claim hover wash', c.textPrimary, c.claimHoverBg],
+      ['slate summary text on the claim hover wash', c.textSlate, c.claimHoverBg],
+      ['slate-500 text on the claim hover wash', c.textSlate500, c.claimHoverBg],
+      ['highlighted passage text', c.passageMarkText, c.passageMarkBg],
+      // The focus ring is drawn over the wash and must still be seen (graphics).
+      ['focus ring on the claim hover wash', c.focusRing, c.claimHoverBg, AA_GRAPHICS],
     )
 
     for (const [label, fg, bg, min = AA_NORMAL] of PAIRS) {

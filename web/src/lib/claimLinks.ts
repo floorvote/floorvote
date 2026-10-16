@@ -1,6 +1,6 @@
 import { billHtmlToText, KEEP_TAG } from '../../../shared/billHtmlToText'
 import { stripMarkdown } from './markdown'
-import { color } from '../styles/tokens'
+import { color as lightColor } from '../../../shared/tokens'
 
 // Claim links on an HTML bill (#571, design in #560). A claim in the AI summary
 // links to the passage behind it, which opens in the bill text panel,
@@ -176,12 +176,23 @@ const UNMARKABLE = new Set(['HEAD', 'TITLE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'SEL
 /** Parents a highlight around whitespace would be moved out of when the document is parsed again. */
 const TABLE_PARENTS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'COLGROUP'])
 
+// The frame can't use the app's colors as the web has them. They are
+// `var(--fv-...)` references, and the frame defines none, so each would compute
+// to nothing. The frame also shows a light page in both of the app's modes: a
+// bill's document has its own (default) color scheme, which differs from the
+// app's in dark mode, so the browser paints it on an opaque white canvas with
+// black text (checked in Chromium). So the style carries the light palette's
+// literal values, which read on that page, whichever mode the app is in. The
+// text color is set too, so the passage is legible even on a bill that sets its
+// own colors.
+//
 // `!important`, so the bill's own CSS can't hide the highlight or its focus ring.
-const PASSAGE_CSS = `mark[data-fv-passage]{background:${color.borderAmber} !important;color:inherit}`
+const PASSAGE_CSS = `mark[data-fv-passage]{background:${lightColor.passageMarkBg} !important;color:${lightColor.passageMarkText} !important;`
+  + `box-shadow:inset 0 -2px 0 ${lightColor.claimUnderline} !important}`
   + `#${PASSAGE_ID}{scroll-margin-top:40px !important}`
-  + `#${PASSAGE_ID}:focus{outline:2px solid ${color.focusRing} !important;outline-offset:2px}`
+  + `#${PASSAGE_ID}:focus{outline:2px solid ${lightColor.focusRing} !important;outline-offset:2px}`
   // The passage can span several marks: ring them all while the first has focus.
-  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${color.focusRing} !important;outline-offset:2px}`
+  + `:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid ${lightColor.focusRing} !important;outline-offset:2px}`
 
 const ENTITY = /&[A-Za-z][A-Za-z0-9]{0,31};/g
 const ENTITY_CACHE = new Map<string, string>()

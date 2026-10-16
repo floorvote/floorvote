@@ -105,10 +105,14 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
       {hasClaimLinks && (
         <style>{`
           .markdown-summary a.claim-link {
-            color: inherit; text-decoration: underline; text-decoration-color: ${color.borderStrong};
-            text-underline-offset: 2px; cursor: pointer;
+            color: inherit; cursor: pointer; border-radius: ${radius.xs}px;
+            text-decoration: underline; text-decoration-color: ${color.claimUnderline};
+            text-decoration-thickness: 2px; text-underline-offset: 3px;
           }
-          .markdown-summary a.claim-link:hover { color: ${color.linkBlue}; text-decoration-color: currentColor; }
+          .markdown-summary a.claim-link:hover { background: ${color.claimHoverBg}; }
+          .markdown-summary a.claim-link:focus-visible {
+            background: ${color.claimHoverBg}; outline: 2px solid ${color.focusRing}; outline-offset: 2px;
+          }
         `}</style>
       )}
       <div
