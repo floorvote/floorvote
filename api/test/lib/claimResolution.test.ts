@@ -941,4 +941,40 @@ describe('the work budget', () => {
     expect(out.unsearched).toBe(0)
     expect(ms).toBeLessThan(TIME_GUARD)
   }, 120_000)
+
+  it('bounds a document in a script above U+00FF as it bounds Latin text, though each character costs about three times as much', () => {
+    // Invented words in two scripts, the same shape: 100 absent quotes against
+    // about 2 million characters. `match` costs about 2.8 times as much a
+    // character on Cyrillic text as on Latin (measured), so it must be handed
+    // at most the budget over that, and finish in about the Latin time.
+    const LATIN = ['ba', 'ro', 'ki', 'tu', 'me', 'la', 'sho', 'vin', 'dre', 'pol', 'gar', 'nex', 'fil', 'zon', 'cra', 'hep', 'wul', 'jod', 'qua', 'bri']
+    const CYRILLIC = ['ба', 'ро', 'ки', 'ту', 'ме', 'ла', 'шо', 'вин', 'дре', 'пол', 'гар', 'нех', 'фил', 'зон', 'кра', 'хеп', 'вул', 'жод', 'ква', 'бри']
+    const doc = (syl: string[]) => {
+      const out: string[] = []
+      let len = 0
+      for (let k = 0; len < 2_000_000; k++) {
+        const h = Math.imul(k + 1, 2654435761) >>> 0
+        const w = syl[h % 20] + syl[Math.floor(h / 20) % 20] + syl[Math.floor(h / 400) % 20]
+        out.push(w)
+        len += w.length + 1
+      }
+      return out.join(' ')
+    }
+    // Each word of an absent quote ends in letters no word of the document has.
+    const absent = (syl: string[], marker: string, i: number) => Array.from({ length: 14 }, (_, k) => syl[(i * 7 + k * 3) % 20] + syl[(i + k * 11) % 20] + marker).join(' ')
+    const run = (syl: string[], marker: string) => {
+      const text = doc(syl)
+      return { text, ...timed(() => resolveClaimSources(claims.map((claim, i) => ({ claim, quote: absent(syl, marker, i) })), summary, text)) }
+    }
+    const latin = run(LATIN, 'xq')
+    const cyrillic = run(CYRILLIC, 'щы')
+    for (const r of [latin, cyrillic]) {
+      expect(r.text.length).toBeGreaterThanOrEqual(1_999_999)
+      expect(r.out.items.every(i => i.status === 'ungrounded')).toBe(true)
+      expect(r.out.unsearched).toBeGreaterThan(0)
+      expect(r.ms).toBeLessThan(TIME_GUARD)
+    }
+    expect(cyrillic.work).toBeLessThanOrEqual(WORK_BUDGET / 2.8)
+    expect(cyrillic.ms).toBeLessThan(latin.ms * 1.6 + 1000)
+  }, 180_000)
 })

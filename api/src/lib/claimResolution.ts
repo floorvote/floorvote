@@ -118,7 +118,7 @@ function findClaim(summary: string, claim: string): Span | null {
  * text left unmatched at either end is.
  */
 function align(quote: string, region: string, budget: Budget): { similarity: number; start: number; end: number } {
-  charge(budget, Math.ceil((quote.length * region.length) / DIFF_CELLS_PER_UNIT))
+  charge(budget, Math.ceil(((quote.length * region.length) / DIFF_CELLS_PER_UNIT) * widthFactor(quote, region)))
   const diffs = makeDiff(quote, region)
   const firstEq = diffs.findIndex(d => d[0] === DIFF_EQUAL)
   if (firstEq === -1) return { similarity: 0, start: 0, end: 0 }
@@ -162,36 +162,74 @@ const MAX_FUZZY_QUOTE = 2000
  * searching, stays `ungrounded`, and is counted in `unsearched`. So the total
  * never passes the budget, whatever the quotes and the document.
  *
- * A unit is one character handed to `match`, which is about what it costs. A
- * search from the start of the document costs the same whether it finds its
- * pattern or not (a pass over the document per error it allows, measured at
- * 0.17 to 0.22 µs a character on 0.1 to 2 million characters, a hit with eight
- * to eleven errors the dearest), so it is charged the whole document. The one
- * exception is a pattern that is in the text exactly (`matchCost`). A search
- * near a place is handed only the text it can reach (`proposeNear`), about
- * 3,000 characters, so it costs that. A `makeDiff` costs its two lengths
- * multiplied (measured at up to 10.6 ns a cell for unlike texts), so it is
- * charged that over `DIFF_CELLS_PER_UNIT`. At the dearest rate measured, 20
- * million units are about 4.4 seconds; the worst mixes built took 3.8.
+ * A unit is one character of Latin text handed to `match`, which is about what
+ * it costs. A search from the start of the document costs the same whether it
+ * finds its pattern or not (a pass over the document per error it allows,
+ * measured at 0.17 to 0.22 µs a character on 0.1 to 2 million characters, a
+ * hit with eight to eleven errors the dearest), so it is charged the whole
+ * document. The one exception is a pattern that is in the text exactly
+ * (`matchCost`). A search near a place is handed only the text it can reach
+ * (`proposeNear`), about 3,000 characters, so it costs that. A `makeDiff`
+ * costs its two lengths multiplied (measured at up to 12 ns a cell for unlike
+ * Latin texts), so it is charged that over `DIFF_CELLS_PER_UNIT`. A character
+ * above U+00FF (Cyrillic, Greek, CJK) costs both about three times as much
+ * (`widthFactor`), so every charge is scaled by the share of them in what the
+ * call is handed. At the dearest rates measured, 20 million units are about
+ * 4.4 seconds in any script.
  *
  * Exact and normalized matches are `indexOf` scans, and always run for every
- * item, outside the budget. The fuzzy searches go cheapest first, by what their
- * first call costs, so quotes whose head is in the document exactly go before
- * quotes that are absent, which cost two whole scans each and would otherwise
- * spend the budget on nothing.
+ * item, outside the budget: up to about a second on 2 million characters of
+ * ordinary text, so the whole is about 4 to 6 seconds. On degenerate text (one
+ * character repeated, with a quote that nearly matches everywhere) `indexOf`
+ * is quadratic, about 0.7 seconds a quote on a million characters, which no
+ * bill has. The fuzzy searches go cheapest first, by what their first call
+ * costs, so quotes whose head is in the document exactly go before quotes that
+ * are absent, which cost two whole scans each and would otherwise spend the
+ * budget on nothing.
  *
  * The tradeoff: on a typical bill (the median is about 9,000 characters of
  * text, and 100 quotes on 100,000 characters fit) every quote that can be
- * found is. On a document of a million characters or more, the budget runs
- * out after a few dozen whole scans, and many quotes are left `ungrounded`
- * though some could be found. That is the price of the bound. It depends only
- * on the document and the quotes, never on a clock.
+ * found is, for quotes up to about 1,000 characters (the median quote is
+ * about 250 characters, and nine in ten are under about 530). A diff is
+ * charged as if its texts were unlike, since what it costs is only known after
+ * it runs, so a quote that is found costs about 30 times what it uses, and 100
+ * quotes of 2,000 characters do not all fit. On a document of a million
+ * characters or more, the budget runs out after a few dozen whole scans, and
+ * many quotes are left `ungrounded` though some could be found. That is the
+ * price of the bound. It depends only on the document and the quotes, never
+ * on a clock.
  */
 const WORK_BUDGET = 20_000_000
 const DIFF_CELLS_PER_UNIT = 16
 
-/** What is left of the bill's budget, and how many items stopped for want of it. */
-type Budget = { left: number; skipped: number }
+/**
+ * How much more a character above U+00FF costs than a Latin one. V8 keeps a
+ * one-character string for each code up to U+00FF and makes a new one for any
+ * other, and both `match` and `makeDiff` look characters up that way. Measured
+ * on a million characters: `match` 0.56 µs a character on Cyrillic and CJK
+ * text against 0.20 on Latin, rising in line with their share (1.5 times at a
+ * fifth of them), and `makeDiff` about twice. So a text all of them is charged
+ * 3.5 times, conservatively.
+ */
+const WIDE_CHARACTER_COST = 2.5
+
+/** The factor a call's charge is multiplied by: 1 for Latin text, more by the share of characters above U+00FF in it. */
+function widthFactor(...texts: string[]): number {
+  let wide = 0
+  let all = 0
+  for (const t of texts) {
+    all += t.length
+    for (let i = 0; i < t.length; i++) if (t.charCodeAt(i) > 0xff) wide++
+  }
+  return all === 0 ? 1 : 1 + (WIDE_CHARACTER_COST * wide) / all
+}
+
+/**
+ * What is left of the bill's budget, how many items stopped for want of it,
+ * the document's `widthFactor` (counted once), and where each pattern searched
+ * from the start was found exactly (looked up once).
+ */
+type Budget = { left: number; skipped: number; docFactor: number; exactAt: Map<string, number> }
 
 const OUT_OF_BUDGET = Symbol('out of budget')
 
@@ -206,10 +244,15 @@ function charge(budget: Budget, units: number): void {
  * exactly lowers `match`'s threshold to that place's score before it scans, so
  * its passes only reach as far as the first copy: a quarter of the characters
  * before it covers that (measured at under a fifth, 78 ms for a copy 1.9
- * million characters in). Any other pattern costs the whole text.
+ * million characters in). Any other pattern costs the whole text. In Latin
+ * units: the caller scales it by the document's `widthFactor`.
  */
-function matchCost(text: string, pattern: string): number {
-  const exact = text.indexOf(pattern)
+function matchCost(text: string, pattern: string, budget: Budget): number {
+  let exact = budget.exactAt.get(pattern)
+  if (exact === undefined) {
+    exact = text.indexOf(pattern)
+    budget.exactAt.set(pattern, exact)
+  }
   return exact === -1 ? text.length : Math.ceil(exact / 4) + pattern.length
 }
 
@@ -313,7 +356,7 @@ function wideDistance(text: string): number {
  * only proposes: `makeDiff` decides. Charged by `matchCost`, before it runs.
  */
 function proposeFromStart(text: string, pattern: string, budget: Budget): number {
-  charge(budget, matchCost(text, pattern))
+  charge(budget, Math.ceil(matchCost(text, pattern, budget) * budget.docFactor))
   return match(text, pattern, 0, { threshold: THRESHOLD, distance: wideDistance(text) })
 }
 
@@ -329,7 +372,7 @@ function proposeNear(text: string, pattern: string, expected: number, distance: 
   const reach = Math.ceil(THRESHOLD * distance) + 2 * pattern.length
   const from = Math.max(0, loc - reach)
   const window = text.slice(from, Math.min(text.length, loc + reach))
-  charge(budget, window.length)
+  charge(budget, Math.ceil(window.length * widthFactor(window)))
   const at = match(window, pattern, loc - from, { threshold: THRESHOLD, distance })
   return at === -1 ? -1 : at + from
 }
@@ -510,6 +553,7 @@ export function resolveClaimSources(
   const getNormDoc = () => (normDoc ??= normalize(docText ?? '', { tags: true, fold: true }))
   const withResult = (item: ResolvedClaimSource, r: Resolution): ResolvedClaimSource =>
     r.at ? { ...item, status: r.status, quoteAt: r.at, matched: r.matched } : { ...item, status: r.status }
+  const budget: Budget = { left: WORK_BUDGET, skipped: 0, docFactor: 1, exactAt: new Map() }
   /** The items a fuzzy search must settle: where each is in `out`, its normalized quote, and what its first call costs. */
   const pending: { index: number; quote: string; cost: number }[] = []
   for (const item of items) {
@@ -528,7 +572,7 @@ export function resolveClaimSources(
     const r = resolveDirectly(item.quote, docText, getNormDoc)
     if ('search' in r) {
       out.push({ ...item, status: 'ungrounded', claimAt })
-      pending.push({ index: out.length - 1, quote: r.search, cost: matchCost(getNormDoc().s, firstPattern(r.search)) })
+      pending.push({ index: out.length - 1, quote: r.search, cost: matchCost(getNormDoc().s, firstPattern(r.search), budget) })
     } else {
       out.push(withResult({ ...item, status: r.status, claimAt }, r))
     }
@@ -537,8 +581,9 @@ export function resolveClaimSources(
   // Cheapest first, and in order among equals (the sort is stable): a quote
   // whose head is in the document exactly costs a fraction of a scan and is
   // likely found, and one that is absent costs two whole scans for nothing.
-  const budget: Budget = { left: WORK_BUDGET, skipped: 0 }
+  // The document's width scales every cost alike, so it is counted once, after.
   pending.sort((a, b) => a.cost - b.cost)
+  if (pending.length > 0) budget.docFactor = widthFactor(getNormDoc().s)
   for (const { index, quote } of pending) {
     // Only an item with a document has a search pending.
     const nd = getNormDoc()
