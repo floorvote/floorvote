@@ -200,15 +200,18 @@ describe('sample digest emails render the wording for their cadence', () => {
   it('the weekly sample says "in the last week"', () => {
     expect(renderSampleEmail('digest-weekly' as any, 'https://x').html).toContain('priority bills were updated in the last week')
   })
-  it('the daily sample leads with updates, then a counted new-match section', () => {
+  it('the daily sample previews both kinds up top, then leads with updates and follows with new-match cards', () => {
     const html = renderSampleEmail('digest', 'https://x').html
-    expect(html).toContain('New matches (3)')
-    expect(html.indexOf('Voter ID Act')).toBeLessThan(html.indexOf('New matches (3)'))
+    expect(html).toContain('Your digest for the last day')
+    expect(html).toContain('In this digest')
+    expect(html.indexOf('Voter ID Act')).toBeLessThan(html.indexOf('id="digest-new-matches"'))
+    expect(html).toContain('3 new matches')
   })
-  it('the new-matches-only sample shows a heavy day: the count, ten listed, and the link to the rest', () => {
+  it('the new-matches-only sample shows a heavy day: the count, ten cards, and the link to the rest', () => {
     const html = renderSampleEmail('digest-new-only', 'https://x').html
-    expect(html).toContain('New matches (14)')
-    expect(html).toContain('…and 4 more')
+    expect(html).toContain('14 new matches')
+    expect(html).toContain('See all 14 new matches')
+    expect((html.match(/box-shadow:/g) || []).length).toBe(10)
     expect(html).toContain('href="https://x/bills?newMatches=1"')
   })
 })
@@ -229,8 +232,8 @@ describe('renderDigestEmail — updates lead, new matches follow with a count an
     expect(html.indexOf('H 5174')).toBeGreaterThan(-1)
     expect(html.indexOf('H 5174')).toBeLessThan(html.indexOf('Matched bill 3'))
   })
-  it('shows the total count of new matches in the heading, not the number listed', () => {
-    expect(render(matches(37))).toContain('New matches (37)')
+  it('shows the total count of new matches in the section header, not the number listed', () => {
+    expect(render(matches(37))).toMatch(/>\s*37 new matches\s*</)
   })
   it('lists at most 10 new matches, highest relevance first', () => {
     const html = render(matches(12))
@@ -240,29 +243,30 @@ describe('renderDigestEmail — updates lead, new matches follow with a count an
     const html = render([match(1, null), match(2, 3), match(3, 8)])
     expect(listed(html)).toEqual([3, 2, 1])
   })
-  it('with more than 10, adds an "…and N more" line linking to the bill list filtered to new matches', () => {
+  it('with more than 10, adds a "See all N new matches" line linking to the bill list filtered to new matches', () => {
     const html = render(matches(37))
     expect(listed(html)).toHaveLength(10)
-    expect(html).toContain('…and 27 more')
+    expect(html).toContain('See all 37 new matches')
     expect(html).toContain('href="https://x/bills?newMatches=1"')
-    // The more-line sits after the last listed row (HB 1028 is the 28th of 37, the 10th most relevant).
-    expect(html.indexOf('…and 27 more')).toBeGreaterThan(html.indexOf('HB 1028'))
+    // The link sits after the last listed card (HB 1028 is the 28th of 37, the 10th most relevant).
+    expect(html.indexOf('See all 37 new matches')).toBeGreaterThan(html.indexOf('HB 1028'))
   })
-  it('with exactly 10, lists them all and adds no "and more" line', () => {
+  it('with exactly 10, lists them all and adds no "See all" line', () => {
     const html = render(matches(10))
-    expect(html).toContain('New matches (10)')
+    expect(html).toMatch(/>\s*10 new matches\s*</)
     expect(listed(html)).toHaveLength(10)
-    expect(html).not.toContain('…and')
+    expect(html).not.toContain('See all')
   })
   it('a digest with only new matches renders the section with its count, and no update cards', () => {
     const html = render(matches(3), [])
-    expect(html).toContain('New matches (3)')
+    expect(html).toMatch(/>\s*3 new matches\s*</)
     expect(listed(html)).toEqual([3, 2, 1])
-    expect((html.match(/box-shadow:/g) || []).length).toBe(0)
-    expect(html).toContain('3 new keyword matches')
+    // Three new-match cards; no updated-bill card.
+    expect((html.match(/box-shadow:/g) || []).length).toBe(3)
+    expect(html).toContain('3 new matches in the last day')
   })
   it('the only-new-matches summary line counts every match, not just the ten listed', () => {
-    expect(render(matches(37), [])).toContain('37 new keyword matches')
+    expect(render(matches(37), [])).toContain('37 new matches in the last day')
   })
 })
 

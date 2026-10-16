@@ -25,7 +25,14 @@ export type NewMatchDigestItem = {
   billState: string | null; billSession: string; relevanceScore: number | null
   /** The slug central assigned the bill's session. Absent = computed from billSession. */
   billSessionSlug?: string | null
+  /** The bill's tenant summary, for the card's preview. Absent or empty = no preview. */
+  summary?: string | null
 }
+
+// Stubs: the subject line and cadence arrive with the implementation (#586).
+export type DigestCadence = 'daily' | 'weekly'
+export function digestCadence(_periodStart: string, _periodEnd: string): DigestCadence | null { return null }
+export function digestSubject(_input: { updatedBills: number; newMatches: number; cadence: DigestCadence | null }): string { return '' }
 
 function escHtml(s: string): string {
   return s
