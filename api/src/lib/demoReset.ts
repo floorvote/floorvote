@@ -188,7 +188,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // Bill priorities. Also clear the triage latch: PATCH /bills/:id/triage-dismiss
   // is an allowed demo write, and it is the only allowed write that is otherwise
   // irreversible — bills.triaged_at is what takes a bill OUT of the "New matches"
-  // worklist (newMatchWhere in billsApi/query.ts is `triaged_at IS NULL`), and
+  // worklist (newMatchWhere in lib/newMatch.ts is `triaged_at IS NULL`), and
   // demoResetAndSeed only re-seeds bills when the table is empty. Without this,
   // one visitor dismissing each new match removes the triage experience from the
   // demo permanently. NULL is the right baseline: no seed writes triagedAt, so a

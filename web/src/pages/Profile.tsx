@@ -61,7 +61,7 @@ function accountEventLabel(e: AccountAuthEvent, selfId: string): string {
 
 export function Profile() {
   usePageTitle('Account')
-  const { user, setTitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled } = useAuth()
+  const { user, setTitle, setName, setEmailDigestEnabled, setEmailDigestMatchesEnabled, setEmailRepliesEnabled } = useAuth()
   const { demoLocked } = useDemo()
   const { config } = useConfig()
   const orgNoun = config?.orgNoun ?? DEFAULT_ORG_NOUN
@@ -128,6 +128,16 @@ export function Profile() {
     setDigestEnabled(user?.emailDigestEnabled ?? true)
   }, [user?.emailDigestEnabled])
 
+  // "Include newly matched bills", nested under the digest switch. Admins always
+  // get the new-match section, so only members are offered it.
+  const isMember = user?.role === 'member'
+  const [digestMatchesEnabled, setDigestMatchesEnabled] = useState<boolean>(() => user?.emailDigestMatchesEnabled ?? true)
+  const [digestMatchesSaving, setDigestMatchesSaving] = useState(false)
+
+  useEffect(() => {
+    setDigestMatchesEnabled(user?.emailDigestMatchesEnabled ?? true)
+  }, [user?.emailDigestMatchesEnabled])
+
   // Reply emails are a per-member switch only: the instance's "Conversation
   // emails" switch lives on the admin page, and the in-app replies stay on
   // whatever this says.
@@ -161,6 +171,24 @@ export function Profile() {
       setDigestEnabled(!next)
     } finally {
       setDigestSaving(false)
+    }
+  }
+
+  async function toggleDigestMatches() {
+    if (demoLocked || digestAdminOff || !digestEnabled || digestMatchesSaving) return
+    const next = !digestMatchesEnabled
+    setDigestMatchesEnabled(next)
+    setDigestMatchesSaving(true)
+    try {
+      await apiFetch('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ emailDigestMatchesEnabled: next }),
+      })
+      setEmailDigestMatchesEnabled(next)
+    } catch {
+      setDigestMatchesEnabled(!next)
+    } finally {
+      setDigestMatchesSaving(false)
     }
   }
 
@@ -683,6 +711,62 @@ export function Profile() {
                 />
               </label>
             </div>
+            {isMember && (
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+                  marginTop: 10, paddingTop: 10, borderTop: `1px solid ${color.borderDefault}`,
+                  opacity: digestEnabled ? 1 : 0.55,
+                }}
+              >
+                <div style={{ fontSize: fontSize.sm, color: color.textSlate, lineHeight: 1.5 }}>
+                  <div style={{ fontWeight: fontWeight.bold, color: color.textPrimary }}>Include newly matched bills</div>
+                  <div>Also list bills your keywords newly matched, and send the digest on days with only those.</div>
+                </div>
+                <label
+                  style={{
+                    position: 'relative',
+                    display: 'inline-block',
+                    width: 38,
+                    height: 22,
+                    flexShrink: 0,
+                    cursor: demoLocked || digestAdminOff || !digestEnabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Include newly matched bills"
+                    checked={digestMatchesEnabled}
+                    disabled={digestMatchesSaving || demoLocked || digestAdminOff || !digestEnabled}
+                    onChange={toggleDigestMatches}
+                    style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: digestMatchesEnabled ? color.accentBlue : color.borderStrong,
+                      borderRadius: radius.pill,
+                      transition: 'background 0.18s ease',
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 2,
+                      left: digestMatchesEnabled ? 18 : 2,
+                      width: 18,
+                      height: 18,
+                      background: color.white,
+                      borderRadius: '50%',
+                      transition: 'left 0.18s ease',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                    }}
+                  />
+                </label>
+              </div>
+            )}
           </div>
 
           <div

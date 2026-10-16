@@ -61,7 +61,7 @@ Admins can also restrict voting on a per-member basis, for cases where someone s
 
 Members get notified whenever anyone @-mentions them (or a role they have) in a comment, and they always get an email for it. Any member can also mention @admins to reach everyone who is an admin or owner, such as to flag a newly matched bill that needs a priority. Who counts as an admin is worked out when the comment is posted. Commenting on a bill also makes you a participant in its comments: when someone else comments on it, you get a notification in the app and an email right away. Replies to one bill group into a single conversation in your mail client. Voting on a bill, writing a note, or being mentioned doesn't make you a participant, and editing a comment never sends new notifications. To stop hearing about a bill's comments, mute it from the bill page or from the link in any reply email. Muting works before you've commented, quiets the bill in the app and by email, and never hides a mention. When someone reacts to your comment, you get a notification in the app (never an email), and the panel groups everyone who reacted to that comment into one row. Reacting to your own comment doesn't notify you, and taking a reaction back doesn't remove the notification it already sent. Admins can turn conversation emails (mentions and replies) off for the whole instance on the Notifications settings page. In-app notifications aren't affected.
 
-Weekly or daily email digests round up what's changed on prioritized bills, and a week-ahead email flags upcoming hearings. Each member controls both, and whether to get reply emails, from the "Your Email" section of their profile.
+Weekly or daily email digests round up what's changed on prioritized bills, then list the most relevant newly matched bills with a count and a link to the rest. Admins always get that list. Members get it unless they turn off "Include newly matched bills" under their digest switch. A week-ahead email flags upcoming hearings. Each member controls both emails, and whether to get reply emails, from the "Your Email" section of their profile.
 
 ## Feed
 
@@ -94,6 +94,8 @@ Admins can select bills and edit them together—set a priority, record the team
 ### Triage new matches
 
 When a bill newly matches your keywords, it needs a quick decision: assign it a priority, or dismiss it if it's not actually relevant. Admins get a New matches filter that shows which bills are still waiting on that decision, and can set a minimum relevance score under Settings → Config to keep low-relevance matches out of it.
+
+Everyone else sees them too. Bills that newly match as the legislature files them (not ones brought in by seeding a session or re-running keywords) appear in everyone's feed as one row a day, such as "5 new bills matched your keywords," that opens to the bills. The admin's minimum relevance for new matches applies, and a bill that already has a priority keeps its usual card.
 
 ## Shared calendar
 

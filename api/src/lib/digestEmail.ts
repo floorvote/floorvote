@@ -45,6 +45,22 @@ function fmtDay(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
+const DAY_MS = 86_400_000
+
+/**
+ * "in the last day" / "in the last week" / "in the last N days": names the window
+ * the digest really covers (last digest → now), so a daily digest says day, a weekly
+ * one says week, and a digest that skipped runs says how long it actually spans.
+ * Stored timestamps are space-format UTC ("2026-06-02 11:00:00"); read them as UTC.
+ */
+function describeWindow(startIso: string, endIso: string): string {
+  const utc = (s: string) => new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(s) ? `${s.replace(' ', 'T')}Z` : s).getTime()
+  const days = (utc(endIso) - utc(startIso)) / DAY_MS
+  if (days <= 1.5) return 'in the last day'
+  if (days >= 5.5 && days <= 8.5) return 'in the last week'
+  return `in the last ${Math.round(days)} days`
+}
+
 function toGroup(events: DigestEvent[]): GroupedBillEvents {
   const f = events[0]
   return {
@@ -101,11 +117,29 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
     ${dataRows}${BILL_CARD_CLOSE}`
 }
 
-// New keyword-match section (admin/owner digests only). Not priority-gated and
-// rendered from bills (not feed events), so it lists matches awaiting triage.
-function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): string {
+/** The digest lists this many new matches, most relevant first; the rest sit behind "…and N more". */
+const NEW_MATCH_LIMIT = 10
+
+// New keyword-match section (admins always, members who haven't opted out). Not
+// priority-gated and rendered from bills (not feed events), so it lists matches
+// awaiting triage. The heading counts every match; only the top NEW_MATCH_LIMIT
+// by relevance are listed (unscored last), with a link to the full list for the
+// rest. A member can't triage, so their copy leaves off the line telling an
+// admin how.
+function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forMember: boolean): string {
   if (items.length === 0) return ''
-  const rows = items.map(it => {
+  const top = [...items]
+    .sort((a, b) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1))
+    .slice(0, NEW_MATCH_LIMIT)
+  const hidden = items.length - top.length
+  const moreRow = hidden > 0
+    ? `<tr>
+      <td style="padding:8px 0;border-top:1px solid ${color.borderDefault};font-size:${fontSize.sm}px;">
+        <a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};text-decoration:none;">…and ${hidden} more</a>
+      </td>
+    </tr>`
+    : ''
+  const rows = top.map(it => {
     const href = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
     const badgeText = it.billState ? `${escHtml(it.billState)} ${escHtml(it.billNumber)}` : escHtml(it.billNumber)
     return `<tr>
@@ -120,16 +154,16 @@ function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string): str
   return `
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;border:1px solid ${color.borderDefault};border-radius:${radius.lg}px;overflow:hidden;">
   <tbody>
-    <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New bills matching your keywords</td></tr>
-    <tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>
+    <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New matches (${items.length})</td></tr>
+    ${forMember ? '' : `<tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>`}
     <tr><td style="padding:0 14px 8px 14px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}</tbody></table>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}${moreRow}</tbody></table>
     </td></tr>
   </tbody>
 </table>`
 }
 
-export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[] }): string {
+export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {
   // Group events by billId, preserving first-seen order
   const billOrder: string[] = []
   const billGroups = new Map<string, DigestEvent[]>()
@@ -143,14 +177,14 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
 
   const billCount = billOrder.length
   // Date range the digest covers: last digest → now (falls back to a 24h window if not supplied).
-  const start = fmtDay(input.periodStart ?? new Date(Date.now() - 86400_000).toISOString())
-  const end = fmtDay(input.periodEnd ?? new Date().toISOString()) // ts-write-ok: formatted for email display, not a DB column
-  const range = formatDateRange(start, end)
+  const periodStart = input.periodStart ?? new Date(Date.now() - DAY_MS).toISOString()
+  const periodEnd = input.periodEnd ?? new Date().toISOString() // ts-write-ok: formatted for email display, not a DB column
+  const range = formatDateRange(fmtDay(periodStart), fmtDay(periodEnd))
   const newMatches = input.newMatches ?? []
   const signal = billCount > 0
-    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated in the last week`
+    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated ${describeWindow(periodStart, periodEnd)}`
     : `${newMatches.length} new keyword ${newMatches.length === 1 ? 'match' : 'matches'}`
-  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl)
+  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl, input.forMember ?? false)
   const cards = billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')
   const ctaHtml = billCount > 0
     ? emailButton(`${input.appUrl}/bills`, 'View bill updates')
@@ -161,7 +195,7 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
     appUrl: input.appUrl,
     signalHtml: escHtml(signal),
     dateLabel: range,
-    bodyHtml: `${newMatchSection}\n${cards}`,
+    bodyHtml: `${cards}\n${newMatchSection}`,
     ctaHtml,
     footerHtml: emailFooterLink(`${input.appUrl}/profile#setting-email-digest`, 'Manage email settings'),
   })

@@ -202,11 +202,11 @@ export function BillList() {
   const searchWarn = searchWarnings(f.search)
 
   // Shared with the mobile FilterSheet — see lib/filterDimensions.ts. Both
-  // surfaces gate State (multi-state) and New matches (admin-only) through
+  // surfaces gate State (multi-state) and New matches (admin-only, or while its filter is on) through
   // this same context so they can't drift on which dimensions appear.
   const stageUseful = useStageFilterUseful()
   const { config } = useConfig()
-  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, stageUseful, stageActive: f.filterStages.length > 0 }
+  const filterDimensionCtx = { uniqueStates: f.uniqueStates, isAdmin, isMultiState: f.isMultiState, hasDrafts: facetCounts.hasDrafts, draftsActive: f.drafts, newMatchesActive: f.newMatches, stageUseful, stageActive: f.filterStages.length > 0 }
 
   // Relevance slider: track the thumb locally so it moves instantly while
   // dragging, but only commit the value (which drives the URL + bill query) on
@@ -835,7 +835,7 @@ export function BillList() {
                 label={filterDimensionLabel('newMatches')}
                 active={f.newMatches}
                 onToggle={() => f.setNewMatches(v => !v)}
-                count={filterCounts.newMatchesCount}
+                count={isAdmin ? filterCounts.newMatchesCount : undefined}
               />
             </HoverTooltip>
           )}

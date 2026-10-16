@@ -63,6 +63,25 @@ export const SAMPLE_NEW_MATCHES: NewMatchDigestItem[] = [
   { billId: 'b7', billNumber: 'HB 1455', billTitle: 'Poll worker compensation increase', billState: 'RI', billSession: '2026', relevanceScore: 5 },
 ]
 
+// A heavy filing day: more matches than the digest lists, so the sample shows the
+// cap (top 10 by relevance) and the "…and N more" link.
+const heavyDayMatch = (n: number, billNumber: string, billTitle: string, relevanceScore: number): NewMatchDigestItem =>
+  ({ billId: `b${n}`, billNumber, billTitle, billState: 'RI', billSession: '2026', relevanceScore })
+export const SAMPLE_NEW_MATCHES_HEAVY_DAY: NewMatchDigestItem[] = [
+  ...SAMPLE_NEW_MATCHES,
+  heavyDayMatch(10, 'HB 1710', 'Early voting site requirements', 8),
+  heavyDayMatch(11, 'S 0804', 'Election audit procedures', 8),
+  heavyDayMatch(12, 'HB 1233', 'Provisional ballot cure period', 6),
+  heavyDayMatch(13, 'HB 1890', 'Voter list maintenance standards', 6),
+  heavyDayMatch(14, 'S 0911', 'Mail ballot signature verification', 4),
+  heavyDayMatch(15, 'HB 1347', 'Campaign finance reporting deadlines', 3),
+  heavyDayMatch(16, 'S 0377', 'Municipal election date alignment', 3),
+  heavyDayMatch(17, 'HB 1521', 'Voting machine certification', 2),
+  heavyDayMatch(18, 'S 0688', 'Candidate filing fee changes', 2),
+  heavyDayMatch(19, 'HB 1099', 'Redistricting commission membership', 1),
+  heavyDayMatch(20, 'S 0540', 'Election day holiday designation', 1),
+]
+
 // Bounced invites from one hourly check: a typo the receiving server rejected,
 // and a full mailbox whose retries ran out.
 export const SAMPLE_INVITE_BOUNCES: BouncedAddress[] = [
@@ -73,7 +92,7 @@ export const SAMPLE_INVITE_BOUNCES: BouncedAddress[] = [
 // The new address in the email-change samples. The notices to the old address show it masked.
 export const SAMPLE_NEW_EMAIL = 'dana.reed@newcounty.gov'
 
-export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-new-only' | 'mention' | 'reply' | 'invite-bounced'
+export type SampleEmailType = 'login' | 'invite' | 'week-ahead' | 'digest' | 'digest-weekly' | 'digest-new-only' | 'mention' | 'reply' | 'invite-bounced'
   | 'email-change-confirm' | 'email-change-requested' | 'email-change-changed' | 'email-change-reported'
 
 export function isSampleEmailType(t: string): t is SampleEmailType {
@@ -105,16 +124,23 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
         }),
       }
     case 'digest':
-      // Fixed period so the date range is deterministic (committed sample + snapshot).
+      // Daily cadence (the default). Fixed period so the date range is deterministic (committed sample + snapshot).
       return {
         subject: '[Sample] Priority bill updates',
-        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-10', periodEnd: '2026-06-11' }),
+      }
+    case 'digest-weekly':
+      // Weekly cadence: the same digest over a seven-day window.
+      return {
+        subject: '[Sample] Priority bill updates (weekly)',
+        html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-04', periodEnd: '2026-06-11' }),
       }
     case 'digest-new-only':
-      // Admin digest when there are NO priority-bill updates — only new keyword matches.
+      // Admin digest when there are NO priority-bill updates — only new keyword matches,
+      // on a heavy day so it shows the cap and the "…and N more" link.
       return {
         subject: '[Sample] New bills matching your keywords',
-        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES_HEAVY_DAY, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
       }
     case 'mention':
       return {
@@ -180,5 +206,5 @@ export async function sendSampleEmail(env: Env, _db: AppDb, to: string, type: Sa
 }
 
 /** Every sample email type — drives the conformance test's iteration. */
-export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-new-only', 'mention', 'reply', 'invite-bounced',
+export const ALL_SAMPLE_EMAIL_TYPES: SampleEmailType[] = ['login', 'invite', 'week-ahead', 'digest', 'digest-weekly', 'digest-new-only', 'mention', 'reply', 'invite-bounced',
   'email-change-confirm', 'email-change-requested', 'email-change-changed', 'email-change-reported']

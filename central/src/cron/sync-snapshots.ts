@@ -407,7 +407,7 @@ export async function importProviderMeasures(
     const records = withCarriedBillIds(listedRecords, await carriedBillIds(db, provider.id, state))
     const entries = await storeRecords(provider, session, records, db, ctx)
     const ids = records.map(r => r.billId)
-    const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue, { deferQueuedUpdates: true }))
+    const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue, { deferQueuedUpdates: true, bulk: true }))
     for (const billId of ids) {
       await db.insert(billTenants).values({ billId, tenantId, matchType: 'manual' })
         .onConflictDoUpdate({ target: [billTenants.billId, billTenants.tenantId], set: { matchType: 'manual' } })
