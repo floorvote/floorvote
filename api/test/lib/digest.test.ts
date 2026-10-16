@@ -341,10 +341,13 @@ describe('runDigest', () => {
 
       await runDigest(env as any, db)
 
-      expect(calls).toHaveLength(1)
-      expect(calls[0].html).toContain('New matches (1)')
-      expect(calls[0].html).toContain('SOLO 1')
-      expect(calls[0].html).not.toContain('GRP 1')
+      // The admin and the member (option on by default) each get one digest.
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('SOLO 1')
+        expect(c.html).not.toContain('GRP 1')
+      }
     })
 
     it('lists a routine new match in a group where no member is triaged', async () => {
@@ -358,9 +361,11 @@ describe('runDigest', () => {
 
       await runDigest(env as any, db)
 
-      expect(calls).toHaveLength(1)
-      expect(calls[0].html).toContain('New matches (1)')
-      expect(calls[0].html).toContain('GRP 1')
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('GRP 1')
+      }
     })
 
     it('lists every routine new match of an untriaged group', async () => {
@@ -373,10 +378,12 @@ describe('runDigest', () => {
 
       await runDigest(env as any, db)
 
-      expect(calls).toHaveLength(1)
-      expect(calls[0].html).toContain('New matches (2)')
-      expect(calls[0].html).toContain('GRP 1')
-      expect(calls[0].html).toContain('GRP 2')
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (2)')
+        expect(c.html).toContain('GRP 1')
+        expect(c.html).toContain('GRP 2')
+      }
     })
 
     it('does not let a triaged bill in another group affect a new match', async () => {
@@ -392,8 +399,11 @@ describe('runDigest', () => {
 
       await runDigest(env as any, db)
 
-      expect(calls).toHaveLength(1)
-      expect(calls[0].html).toContain('GRP 1')
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('GRP 1')
+        expect(c.html).not.toContain('OTH')
+      }
     })
   })
 })
