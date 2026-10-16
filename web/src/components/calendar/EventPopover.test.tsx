@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { EventPopover, EventPopoverContent, computeEventPopoverPosition } from './EventPopover'
 import type { CalendarEvent } from '../../lib/calendarGrid'
+import { eventSourceIcon } from '../../../../shared/eventLineModel'
 import { ConfigContext, type AppConfig } from '../../context/ConfigContext'
 
 const hearing: CalendarEvent = {
@@ -12,6 +13,13 @@ const hearing: CalendarEvent = {
 }
 const custom: CalendarEvent = {
   ...hearing, id: '2', source: 'custom', billId: null, bills: [], description: 'Board meeting',
+}
+
+const fieldEvent: CalendarEvent = {
+  id: 'cf-f1-b1', uid: 'cf-f1-b1', source: 'field', kind: null, billId: 'b1',
+  bills: [{ id: 'b1', billNumber: 'HB 12', billTitle: 'Title', state: 'DC', priority: 'high', isDraft: false }],
+  date: '2999-01-01', time: null, location: null, description: 'Comment deadline: HB 12', details: null, url: null,
+  status: 'confirmed', fieldName: 'Comment deadline',
 }
 
 function wrap(ui: React.ReactNode, states: string[] = ['RI']) {
@@ -84,6 +92,47 @@ describe('EventPopoverContent', () => {
     expect(restoreBtn).toBeInTheDocument()
     fireEvent.click(restoreBtn)
     expect(onRestore).toHaveBeenCalledWith(cancelled)
+  })
+})
+
+describe('EventPopoverContent for a date-field event', () => {
+  it('shows no edit, cancel, or delete controls, even for an admin', () => {
+    wrap(<EventPopoverContent event={fieldEvent} isAdmin onEdit={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /edit|delete|cancel|restore/i })).toBeNull()
+  })
+  it('says where the date is set, linking to the bill', () => {
+    const { container } = wrap(<EventPopoverContent event={fieldEvent} isAdmin onEdit={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} />)
+    expect(container.textContent).toContain('Set from the Comment deadline field on HB 12')
+    const link = screen.getByRole('link', { name: 'Set from the Comment deadline field on HB 12' })
+    expect(link).toHaveAttribute('href', '/bills/b1')
+  })
+  it('labels its marker with the field name', () => {
+    wrap(<EventPopoverContent event={fieldEvent} isAdmin={false} onEdit={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} />)
+    expect(screen.getAllByRole('img', { name: 'Comment deadline' }).length).toBeGreaterThan(0)
+  })
+  it('does not add the line to other events', () => {
+    wrap(<EventPopoverContent event={custom} isAdmin onEdit={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} />)
+    expect(screen.queryByText(/Set from the/)).toBeNull()
+  })
+})
+
+describe('EventPopover tint', () => {
+  const expandedPanel = (event: CalendarEvent) => {
+    wrap(
+      <EventPopover
+        event={event} isAdmin={false} onEdit={vi.fn()} onDelete={vi.fn()} onRestore={vi.fn()} onClose={vi.fn()}
+        position={computeEventPopoverPosition(new DOMRect(100, 100, 120, 46))}
+        expandFrom={new DOMRect(100, 100, 120, 46)}
+        computeTarget={() => ({ left: 100, top: 100, width: 300, height: 150 })}
+      />,
+    )
+    return document.querySelector('[role="dialog"]') as HTMLElement
+  }
+  it('comes from the shared source marker, not a comparison of its own', () => {
+    expect(expandedPanel({ ...hearing, kind: 'deadline' }).style.background).toBe(
+      // jsdom normalizes the token's hex to rgb
+      (() => { const el = document.createElement('div'); el.style.background = eventSourceIcon({ source: 'hearing', kind: 'deadline' }).tint; return el.style.background })(),
+    )
   })
 })
 
