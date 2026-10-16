@@ -165,6 +165,22 @@ describe('resolving each claim source as it is stored', () => {
     expect(counts.results).toEqual([{ status: 'exact', n: 1 }, { status: 'normalized', n: 1 }, { status: 'ungrounded', n: 1 }])
   })
 
+  it('resolves 100 items, marks the rest ungrounded, and logs the cap once', async () => {
+    central(html)
+    const claims = Array.from({ length: 103 }, (_, i) => `Claim ${i} is made.`)
+    model({ ...analysis, summary: claims.join(' '), claimSources: claims.map(claim => ({ claim, quote: QUOTE })) })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await processCentralNotification(msg, testEnv, getDb(env.DB))
+      const capWarnings = warn.mock.calls.filter(c => String(c[0]).includes('claim source') && String(c[0]).includes('3'))
+      expect(capWarnings).toHaveLength(1)
+    } finally { warn.mockRestore() }
+    const items = await stored()
+    expect(items).toHaveLength(103)
+    expect(items.slice(0, 100).every(i => i.status === 'exact')).toBe(true)
+    expect(items.slice(100).map(i => i.status)).toEqual(['ungrounded', 'ungrounded', 'ungrounded'])
+  })
+
   it('stores nothing when claim links are off for the analysis', async () => {
     central(html)
     claimLinksEnabledMock.mockResolvedValue(false)
@@ -386,6 +402,32 @@ describe('reading stored claim sources', () => {
       await env.DB.prepare('UPDATE bills SET claim_sources = ? WHERE id = ?').bind(bad, id).run()
       expect(await readClaimSources(getDb(env.DB), id)).toBeNull()
     }
+  })
+
+  it('reads nothing when the listed document\'s stored hash differs from the pinned one', async () => {
+    const id = await analyzed()
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('hash-of-newer-content', '5001').run()
+    expect(await readClaimSources(getDb(env.DB), id)).toBeNull()
+  })
+
+  it('reads when the listed document\'s stored hash is the pinned one', async () => {
+    const id = await analyzed()
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('hash-5001', '5001').run()
+    expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
+  })
+
+  it('reads when the listed document has no stored hash, which is what instances store today', async () => {
+    const id = await analyzed()
+    const listed = await env.DB.prepare('SELECT text_hash FROM bill_texts WHERE doc_id = ?').bind('5001').first<{ text_hash: string }>()
+    expect(listed!.text_hash).toBe('')
+    expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
+  })
+
+  it('reads when the pin has no hash, whatever the listed document stores', async () => {
+    const id = await analyzed()
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('anything', '5001').run()
+    await env.DB.prepare('UPDATE bills SET claim_sources_text_hash = NULL WHERE id = ?').bind(id).run()
+    expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
   })
 
   it('reads nothing when a pin has no document id', async () => {

@@ -145,22 +145,98 @@ function align(quote: string, region: string): { similarity: number; start: numb
   return { similarity: longest === 0 ? 1 : 1 - distance / longest, start, end }
 }
 
-type Found = { start: number; end: number }
+/**
+ * The most items resolved for one bill, and the longest quote searched fuzzily.
+ * A model answer past either is not a real claim list, and the cost of matching
+ * is linear in both, so a degenerate answer must not use up the analysis.
+ */
+const MAX_ITEMS = 100
+const MAX_FUZZY_QUOTE = 2000
 
-/** Where in `text` a quote of at most 32 characters, or the head or tail of a longer one, is found. */
-function findWindow(text: string, pattern: string, expected: number, distance: number, slack: number): Found | null {
-  const at = match(text, pattern, expected, { threshold: ERROR_BUDGET + POSITION_BUDGET, distance })
-  if (at === -1) return null
-  const region = text.slice(at, at + pattern.length + slack)
-  const scored = align(pattern, region)
-  return scored.similarity >= MIN_SIMILARITY ? { start: at + scored.start, end: at + scored.end } : null
+/**
+ * The fuzzy search's budget for one bill, in characters scanned: each `match`
+ * call scans the whole document. About 40 million is around ten seconds of
+ * scanning, well inside a Worker's CPU limit, and a typical bill (a few hundred
+ * thousand characters, a handful of quotes that miss exact) uses a few percent.
+ * A quote that would need a scan after it is spent stays ungrounded.
+ */
+const SCAN_BUDGET = 40_000_000
+
+type Budget = { left: number; skipped: number }
+
+/** Number words that must agree between a quote and what is found for it. */
+const NUMBER_WORDS = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion'
+const NUMBER = new RegExp(`\\d+(?:[.,]\\d+)*|\\b(?:${NUMBER_WORDS})\\b`, 'gi')
+
+function numbersOf(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const m of text.match(NUMBER) ?? []) {
+    const token = m.toLowerCase().replace(/,/g, '')
+    counts.set(token, (counts.get(token) ?? 0) + 1)
+  }
+  return counts
 }
 
 /**
- * Fuzzy, anchored-only, or neither, for a quote that isn't there exactly or
- * after normalizing. Works on normalized text and returns a range of it.
+ * Whether every number in the quote is in what was found for it. "ten" is not
+ * "thirty" and 10 is not 15, which a similarity score alone would let through.
+ * Numbers only in the found text are fine: that is a line number.
  */
-function findFuzzy(text: string, quote: string): { status: 'fuzzy' | 'anchored'; at: Found } | null {
+function numbersAgree(quote: string, found: string): boolean {
+  const have = numbersOf(found)
+  for (const [token, n] of numbersOf(quote)) if ((have.get(token) ?? 0) < n) return false
+  return true
+}
+
+/** Where `match` puts a pattern, or -1. It only proposes: `makeDiff` decides. */
+function propose(text: string, pattern: string, expected: number, distance: number, budget: Budget): number {
+  budget.left -= text.length
+  return match(text, pattern, expected, { threshold: ERROR_BUDGET + POSITION_BUDGET, distance })
+}
+
+/**
+ * A quote's end (its first or last 32 characters), which `match` placed at
+ * `at`: the range it covers if it is alike enough, else null.
+ */
+function anchorAt(text: string, pattern: string, at: number): Span | null {
+  if (at === -1) return null
+  const scored = align(pattern, text.slice(at, at + pattern.length + 8))
+  return scored.similarity >= MIN_SIMILARITY ? { start: at + scored.start, end: at + scored.end } : null
+}
+
+/** The region `[from, to)` of the text, scored against the whole quote, or null when it is not alike enough. */
+function regionAt(text: string, quote: string, from: number, to: number): Span | null {
+  const start = Math.max(0, from)
+  const scored = align(quote, text.slice(start, to))
+  return scored.similarity >= MIN_SIMILARITY ? { start: start + scored.start, end: start + scored.end } : null
+}
+
+/** The whole region from a head to a tail, or null when either is missing or the tail is not after the head. */
+function wholeAt(text: string, quote: string, head: number, tail: number): Span | null {
+  if (head === -1 || tail === -1 || tail <= head) return null
+  return regionAt(text, quote, head, tail + MAX_BITS + 8)
+}
+
+/** The head of a quote through the word that holds its 32nd character, and its tail from the word that holds its 32nd from last. */
+function headWords(quote: string): string {
+  const space = quote.indexOf(' ', MAX_BITS)
+  return space === -1 ? quote : quote.slice(0, space)
+}
+function tailWords(quote: string): string {
+  return quote.slice(quote.lastIndexOf(' ', quote.length - MAX_BITS) + 1)
+}
+
+type Fuzzy = { status: 'fuzzy' | 'anchored'; at: Span }
+
+/**
+ * Fuzzy, anchored-only, or neither, for a quote that isn't there exactly or
+ * after normalizing. Works on normalized text and returns a range of it. A
+ * result whose numbers disagree with the quote's is none.
+ */
+function findFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
+  if (quote.length > MAX_FUZZY_QUOTE) return null
+  if (budget.left <= 0) { budget.skipped++; return null }
+
   // Wide enough that a match at the far end of the text costs at most
   // POSITION_BUDGET, so the document is searched from the start (the first of
   // two identical passages scores a hair better, which makes it the one found).
@@ -168,30 +244,56 @@ function findFuzzy(text: string, quote: string): { status: 'fuzzy' | 'anchored';
 
   if (quote.length <= MAX_BITS) {
     // No separate head and tail: the whole quote is the pattern.
-    const at = findWindow(text, quote, 0, wide, 12)
-    return at ? { status: 'fuzzy', at } : null
+    const at = propose(text, quote, 0, wide, budget)
+    const span = anchorAt(text, quote, at)
+    return span && numbersAgree(quote, text.slice(span.start, span.end)) ? { status: 'fuzzy', at: span } : null
   }
 
-  const head = findWindow(text, quote.slice(0, MAX_BITS), 0, wide, 8)
-  // The tail, near where it would be if the passage were whole, then scored
-  // with the head as the library's `applyPatches` does: the tail has to come
-  // after the head.
+  const headPattern = quote.slice(0, MAX_BITS)
   const tailPattern = quote.slice(-MAX_BITS)
-  const tail = head
-    ? findWindow(text, tailPattern, head.start + quote.length - MAX_BITS, Math.max(1000, 2 * quote.length), 8)
-    : findWindow(text, tailPattern, 0, wide, 8)
+  const near = Math.max(1000, 2 * quote.length)
+  // undefined: no whole region was alike enough, so keep looking. null: one was,
+  // but its numbers disagree, so it is not this passage.
+  const whole = (span: Span | null): Fuzzy | null | undefined =>
+    span === null ? undefined : numbersAgree(quote, text.slice(span.start, span.end)) ? { status: 'fuzzy', at: span } : null
 
-  if (head && tail && tail.end > head.end) {
-    const region = text.slice(head.start, tail.end + 8)
-    const scored = align(quote, region)
-    if (scored.similarity >= MIN_SIMILARITY) {
-      return { status: 'fuzzy', at: { start: head.start + scored.start, end: head.start + scored.end } }
-    }
+  // The head from the start of the document, then the tail near where it would
+  // be if the passage were whole, as the library's `applyPatches` does.
+  const head = propose(text, headPattern, 0, wide, budget)
+  const tail = head !== -1
+    ? propose(text, tailPattern, head + quote.length - MAX_BITS, near, budget)
+    : propose(text, tailPattern, 0, wide, budget)
+  const headFirst = whole(wholeAt(text, quote, head, tail))
+  if (headFirst !== undefined) return headFirst
+  // A tail that `match` could not place may still be there, differing more than
+  // an end alone may: the whole is judged over a window the quote's length from
+  // the head, not by whether its last 32 characters match.
+  const fromHead = head === -1 ? undefined : whole(regionAt(text, quote, head, head + quote.length + 16))
+  if (fromHead !== undefined) return fromHead
+
+  // The first head may be boilerplate that repeats, with the passage later. So
+  // the tail from the start, and the head near where it would be before it.
+  const tailFirst = head === -1 ? tail : propose(text, tailPattern, 0, wide, budget)
+  const headNear = tailFirst === -1 ? -1 : propose(text, headPattern, tailFirst - (quote.length - MAX_BITS), near, budget)
+  const fromTail = whole(wholeAt(text, quote, headNear, tailFirst))
+  if (fromTail !== undefined) return fromTail
+  const endingAtTail = tailFirst === -1 ? undefined : whole(regionAt(text, quote, tailFirst + MAX_BITS + 8 - quote.length - 16, tailFirst + MAX_BITS + 8))
+  if (endingAtTail !== undefined) return endingAtTail
+
+  // Only an end matched, or the whole was not alike enough: the passage is near
+  // here, and no more is known. The head is the better anchor, being where a
+  // reader starts. An end whose numbers differ is not this passage.
+  const headAnchor = anchorAt(text, headPattern, head)
+  if (headAnchor) {
+    const region = text.slice(head, head + headWords(quote).length + 12)
+    return numbersAgree(headWords(quote), region) ? { status: 'anchored', at: headAnchor } : null
   }
-  // Only an end matched, or the whole didn't: the passage is near here, and no
-  // more is known. The head is the better anchor, being where a reader starts.
-  const anchor = head ?? tail
-  return anchor ? { status: 'anchored', at: anchor } : null
+  const tailAnchor = anchorAt(text, tailPattern, tailFirst)
+  if (tailAnchor) {
+    const region = text.slice(Math.max(0, tailFirst - 12), tailFirst + MAX_BITS + 12)
+    return numbersAgree(tailWords(quote), region) ? { status: 'anchored', at: tailAnchor } : null
+  }
+  return null
 }
 
 /** Resolve one quote against the document the model read. */
@@ -199,6 +301,7 @@ function resolveQuote(
   quote: string,
   doc: string,
   normDoc: () => Norm,
+  budget: Budget,
 ): { status: ClaimSourceStatus; at?: Span; matched?: string } {
   if (quote.trim().length === 0) return { status: 'ungrounded' }
 
@@ -211,7 +314,7 @@ function resolveQuote(
   const normalized = nd.s.indexOf(nq.s)
   if (normalized !== -1) return found('normalized', doc, original(nd, normalized, normalized + nq.s.length))
 
-  const fuzzy = findFuzzy(nd.s, nq.s)
+  const fuzzy = findFuzzy(nd.s, nq.s, budget)
   if (!fuzzy) return { status: 'ungrounded' }
   return found(fuzzy.status, doc, original(nd, fuzzy.at.start, fuzzy.at.end))
 }
@@ -230,14 +333,21 @@ function found(status: ClaimSourceStatus, doc: string, at: Span): { status: Clai
  * - A PDF's quote is `unverified`: the instance extracts no PDF text, so the
  *   link goes by the cited page. An empty quote is `ungrounded` either way.
  * - Where two passages are alike, the first is the one found, every time.
+ * - At most 100 items are resolved (the rest are `ungrounded`, counted in
+ *   `capped`), a quote over 2,000 characters is only searched exactly and
+ *   normalized, and the fuzzy searches share one scan budget (what it left
+ *   unsearched is counted in `unsearched`). See `MAX_ITEMS` and `SCAN_BUDGET`.
  */
 export function resolveClaimSources(
   items: readonly ClaimSource[],
   summary: string,
   docText: string | null,
-): { items: ResolvedClaimSource[]; dropped: number } {
+): { items: ResolvedClaimSource[]; dropped: number; capped: number; unsearched: number } {
   const out: ResolvedClaimSource[] = []
   let dropped = 0
+  let capped = 0
+  let searched = 0
+  const budget: Budget = { left: SCAN_BUDGET, skipped: 0 }
   let normDoc: Norm | null = null
   const getNormDoc = () => (normDoc ??= normalize(docText ?? '', { tags: true, fold: true }))
   for (const item of items) {
@@ -247,10 +357,16 @@ export function resolveClaimSources(
       out.push({ ...item, status: item.quote.trim().length === 0 ? 'ungrounded' : 'unverified', claimAt })
       continue
     }
-    const r = resolveQuote(item.quote, docText, getNormDoc)
+    if (searched >= MAX_ITEMS) {
+      capped++
+      out.push({ ...item, status: 'ungrounded', claimAt })
+      continue
+    }
+    searched++
+    const r = resolveQuote(item.quote, docText, getNormDoc, budget)
     out.push(r.at ? { ...item, status: r.status, claimAt, quoteAt: r.at, matched: r.matched } : { ...item, status: r.status, claimAt })
   }
-  return { items: out, dropped }
+  return { items: out, dropped, capped, unsearched: budget.skipped }
 }
 
 /**

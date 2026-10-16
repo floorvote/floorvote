@@ -149,6 +149,7 @@ export const bills = sqliteTable('bills', {
   stateUrl: text('state_url'),
   providerUpdatedAt: text('provider_updated_at'),
   textR2Key: text('text_r2_key'),
+  // Anything that edits this by hand must also run pruneClaimSources (lib/claimResolution.ts) on claim_sources.
   tenantSummary: text('tenant_summary'),
   tags: text('tags').notNull().default('[]'),
   // Statutory citations the bill affects, verbatim as printed. See

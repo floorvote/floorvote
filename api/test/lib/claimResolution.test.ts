@@ -216,13 +216,18 @@ describe('fuzzy', () => {
     expect(b).toEqual(a)
   })
 
-  it('does not call a quote fuzzy when it is only 79 percent alike', () => {
-    // 100 characters, with 21 of them changed.
+  it('does not call a quote fuzzy when it is only about 70 percent alike', () => {
     const base = 'Each county election office shall provide at least one secure drop box for the return of voted ballots'
     const doc = `${DOC}\n${base}`
-    const garbled = base.split('').map((c, i) => (i % 5 === 0 && c !== ' ' ? 'Q' : c)).join('')
-    const r = one(garbled, doc)
-    expect(r.status).not.toBe('fuzzy')
+    const garbled = base.split('').map((c, i) => (i % 3 === 0 && c !== ' ' ? 'Q' : c)).join('')
+    expect(one(garbled, doc).status).not.toBe('fuzzy')
+  })
+
+  it('calls a quote fuzzy when about 90 percent alike', () => {
+    const base = 'Each county election office shall provide at least one secure drop box for the return of voted ballots'
+    const doc = `${DOC}\n${base}`
+    const garbled = base.split('').map((c, i) => (i % 11 === 0 && c !== ' ' ? 'Q' : c)).join('')
+    expect(one(garbled, doc).status).toBe('fuzzy')
   })
 })
 
@@ -368,7 +373,7 @@ describe('the claim in the summary', () => {
   })
 
   it('returns nothing for no items', () => {
-    expect(resolveClaimSources([], 'Summary.', DOC)).toEqual({ items: [], dropped: 0 })
+    expect(resolveClaimSources([], 'Summary.', DOC)).toEqual({ items: [], dropped: 0, capped: 0, unsearched: 0 })
   })
 
   it('drops every item against an empty summary', () => {
@@ -396,7 +401,7 @@ describe('a PDF', () => {
 
   it('drops a claim that is not in the summary', () => {
     const out = resolveClaimSources([{ claim: 'Other.', quote: 'a misdemeanor', page: 4 }], 'Sets penalties.', null)
-    expect(out).toEqual({ items: [], dropped: 1 })
+    expect(out).toEqual({ items: [], dropped: 1, capped: 0, unsearched: 0 })
   })
 })
 
@@ -506,5 +511,143 @@ describe('a large document', () => {
     const out = resolveClaimSources(items, 'C.', doc)
     expect(out.items.filter(i => i.status === 'fuzzy')).toHaveLength(12)
     expect(out.items.filter(i => i.status === 'ungrounded')).toHaveLength(12)
+    expect(out.unsearched).toBe(0)
   }, 60_000)
+})
+
+describe('a head that repeats in the document', () => {
+  const boiler = 'Section 5. The secretary of state shall adopt rules, '
+  const first = `${boiler}governing the location of each drop box and the lighting of its surroundings.`
+  const secondProse = `${boiler}for the return of voted ballots to the county election office within a stated period.`
+  const filler = Array.from({ length: 6 }, (_, i) => `Filler sentence ${i} about nothing in particular.`).join(' ')
+
+  it('lands on the passage whose tail is where it should be, not the first head', () => {
+    const doc = `${first} ${filler} ${withLineNumbers(secondProse, 50)} Trailing sentence.`
+    const quote = secondProse
+    expect(boiler).toHaveLength(53)
+    const r = one(quote, doc)
+    expect(r.status).toBe('fuzzy')
+    expect(r.quoteAt!.start).toBeGreaterThan(doc.indexOf(filler))
+    expect(slice(doc, r.quoteAt)!.endsWith('stated period.')).toBe(true)
+  })
+
+  it('finds the later passage whole when a header inside it is too long for a window the quote\'s length', () => {
+    const header = '\nHB 77 -- Page 14 of 52 -- Printed\n'
+    const cut = secondProse.indexOf('county election office')
+    const later = `${secondProse.slice(0, cut)}${header}${secondProse.slice(cut)}`
+    const doc = `${first} ${filler} ${later} Trailing sentence.`
+    expect(header.length + secondProse.length).toBeGreaterThan(secondProse.length + 16)
+    const r = one(secondProse, doc)
+    expect(r.status).toBe('fuzzy')
+    expect(r.quoteAt!.start).toBe(doc.indexOf(later))
+    expect(slice(doc, r.quoteAt)!.endsWith('stated period.')).toBe(true)
+  })
+
+  it('still takes the first when its tail is there', () => {
+    const doc = `${withLineNumbers(secondProse, 50)} ${filler} ${withLineNumbers(secondProse, 50)}`
+    const r = one(secondProse, doc)
+    expect(r.status).toBe('fuzzy')
+    expect(r.quoteAt!.start).toBeLessThan(doc.indexOf(filler))
+  })
+
+  it('falls back to the first head when no occurrence has its tail', () => {
+    const doc = `${first} ${filler} ${boiler}and something else entirely unrelated to the quote at all.`
+    const r = one(secondProse, doc)
+    expect(r.status).toBe('anchored')
+    expect(r.quoteAt!.start).toBe(0)
+  })
+})
+
+describe('a whole that is alike though one end differs', () => {
+  it('is fuzzy, not anchored, when only the tail window falls below the bar', () => {
+    const lead = 'Each county election office shall report the ballots collected from each drop box to the secretary after every election and '
+    const doc = `Intro text. ${lead}then publish the roster of each drop box on the web page of the office. More text follows.`
+    const quote = `${lead}then publish the list of every drop box on the office website.`
+    const r = one(quote, doc)
+    expect(r.status).toBe('fuzzy')
+    expect(slice(doc, r.quoteAt)!.startsWith('Each county election office')).toBe(true)
+    expect(slice(doc, r.quoteAt)).toContain('roster of each drop box on the')
+  })
+})
+
+describe('numbers must agree', () => {
+  const doc = 'The clerk shall post the results to the public website within 10 days after an election, and the board shall certify within ten days of that. A fine of $500 may apply.'
+
+  it.each([
+    ['digits, a long quote', 'The clerk shall post the results to the public website within 15 days after an election'],
+    ['digits, a short quote', 'website within 15 days after'],
+    ['a number word, a long quote', 'the board shall certify within thirty days of that. A fine of $500 may apply.'],
+    ['a number word, a short quote', 'certify within thirty days'],
+    ['a digit sequence that only gains a digit', 'A fine of $5000 may apply, said the clerk'],
+  ])('is ungrounded when %s differs', (_label, quote) => {
+    expect(one(quote, doc).status).toBe('ungrounded')
+  })
+
+  it('is ungrounded for an anchor whose number differs', () => {
+    const header = '\nHB 77 -- 2026 Regular Session -- Page 14 of 52 -- Printed by the legislative service\n'
+    const text = `The board shall certify within ten days of that and then the secretary shall publish the totals${header}for every drop box in every county across the state.`
+    const quote = 'The board shall certify within thirty days of that and then the secretary shall publish the totals for every drop box in every county across the state.'
+    expect(one(quote, text).status).toBe('ungrounded')
+  })
+
+  it('still grounds a copy broken by line numbers, which add digits the quote does not have', () => {
+    const numbered = withLineNumbers('The board shall certify within ten days of that and then the secretary shall publish the totals for every drop box.', 40)
+    const r = one('The board shall certify within ten days of that and then the secretary shall publish the totals for every drop box.', numbered)
+    expect(r.status).toBe('fuzzy')
+  })
+
+  it('does not count digits in a hyphenated word or a thousands separator as different', () => {
+    const d = 'The fee is $1,000 for a twenty-one day permit issued under Rule 4.2 of the board, with a stray ltter.'
+    const r = one('The fee is $1,000 for a twenty-one day permit issued under Rule 4.2 of the board, with a stray letter.', d)
+    expect(r.status).toBe('fuzzy')
+  })
+})
+
+describe('ceilings', () => {
+  it('resolves at most 100 items, marks the rest ungrounded, and counts them', () => {
+    const claims = Array.from({ length: 105 }, (_, i) => `Claim ${i} is made.`)
+    const items: ClaimSource[] = claims.map(c => ({ claim: c, quote: 'two employees' }))
+    const out = resolveClaimSources(items, claims.join(' '), DOC)
+    expect(out.items).toHaveLength(105)
+    expect(out.items.slice(0, 100).every(i => i.status === 'exact')).toBe(true)
+    expect(out.items.slice(100).map(i => i.status)).toEqual(Array(5).fill('ungrounded'))
+    expect(out.items[104].quoteAt).toBeUndefined()
+    expect(out.capped).toBe(5)
+  })
+
+  it('does not count an item dropped for its claim against the 100', () => {
+    const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
+    const items: ClaimSource[] = [{ claim: 'Not in the summary at all.', quote: 'two employees' }, ...claims.map(c => ({ claim: c, quote: 'two employees' }))]
+    const out = resolveClaimSources(items, claims.join(' '), DOC)
+    expect(out.dropped).toBe(1)
+    expect(out.capped).toBe(0)
+    expect(out.items.every(i => i.status === 'exact')).toBe(true)
+  })
+
+  it('searches a long quote exactly and normalized, but not fuzzily, above 2,000 characters', () => {
+    const long = (n: number) => Array.from({ length: n }, (_, i) => `Word${i % 97} filler${i % 31}`).join(' ')
+    const big = long(130)
+    expect(big.length).toBeGreaterThan(2000)
+    const doc = `${DOC}\n${big}\n${DOC}`
+    expect(one(big, doc).status).toBe('exact')
+    expect(one(big.replace(/ /g, '  '), doc).status).toBe('normalized')
+    const numbered = withLineNumbers(big, 60)
+    expect(one(big, `${DOC}\n${numbered}\n${DOC}`).status).toBe('ungrounded')
+    const under = long(90)
+    expect(under.length).toBeLessThan(2000)
+    expect(one(under, `${DOC}\n${withLineNumbers(under, 60)}\n${DOC}`).status).toBe('fuzzy')
+  })
+
+  it('finishes a hundred absent quotes against a large document in bounded time', () => {
+    const body = Array.from({ length: 12000 }, (_, i) => `Section ${i}. ${SENTENCES[i % SENTENCES.length].replace(/^Section \d+\. /, '')} Subsection ${i * 7} applies.`).join('\n')
+    expect(body.length).toBeGreaterThan(1_400_000)
+    const claims = Array.from({ length: 100 }, (_, i) => `Claim ${i} is made.`)
+    const items: ClaimSource[] = claims.map((c, i) => ({ claim: c, quote: `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth, at dawn.` }))
+    const started = Date.now()
+    const out = resolveClaimSources(items, claims.join(' '), body)
+    expect(out.items.every(i => i.status === 'ungrounded')).toBe(true)
+    // The scan budget is what bounds it: past it, a quote is left unsearched.
+    expect(out.unsearched).toBeGreaterThan(0)
+    expect(Date.now() - started).toBeLessThan(30_000)
+  }, 120_000)
 })
