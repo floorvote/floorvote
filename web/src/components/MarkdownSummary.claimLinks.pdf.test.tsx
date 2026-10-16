@@ -154,4 +154,18 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
     expect(none).toBe(before)
     expect(before).not.toContain('claim-ref')
   })
+
+  // The restyle in #571 (Honey underline, hover wash, focus ring) is one rule on
+  // `a.claim-link`, which a PDF claim's link carries too. The quote beside it
+  // keeps its own look: a card with a border, not an underline or a wash.
+  it('gives a PDF claim link the same look as an HTML one, and the quote its own', () => {
+    const { container } = render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>)
+    expect(screen.getByRole('link', { name: 'Requires a drop box in each county.' })).toHaveClass('claim-link')
+    const css = [...container.parentElement!.querySelectorAll('style')].map(el => el.textContent ?? '').join('\n')
+    expect(css).toMatch(/\.markdown-summary a\.claim-link \{[^}]*text-decoration-color: var\(--fv-claim-underline\)/)
+    expect(css).toMatch(/\.markdown-summary a\.claim-link:hover \{ background: var\(--fv-claim-hover-bg\)/)
+    const quote = css.match(/\.markdown-summary \.claim-quote \{([^}]*)\}/)?.[1] ?? ''
+    expect(quote).toContain('border: 1px solid var(--fv-border-default)')
+    expect(quote).not.toMatch(/claim-underline|claim-hover-bg|text-decoration/)
+  })
 })
