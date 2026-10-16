@@ -7,6 +7,7 @@ import { EventLines } from './EventLines'
 import { EventSourceIcon } from './EventSourceIcon'
 import { HoverTooltip } from '../HoverTooltip'
 import { EVENT_CARD_BASE, eventSourceIcon } from '../../../../shared/eventLineModel'
+import { canEditEventSource } from '../../../../shared/eventSource'
 import { useDemo } from '../../context/DemoContext'
 
 // ⚠️ Email twin: api/src/lib/weekAheadEmail.ts (renderEventCard) re-implements
@@ -29,7 +30,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
 }) {
   const { demoLocked } = useDemo()
   const cancelled = event.status === 'cancelled'
-  const isCustom = event.source === 'custom'
+  const canManage = canEditEventSource(event.source)
   const cardStyle: CSSProperties = {
     ...EVENT_CARD_BASE,
     padding: editing ? 0 : '8px 10px',
@@ -80,7 +81,7 @@ export function EventItem({ event, isPast, isAdmin, editing, flashing, billOptio
           <div style={{ flex: 1, minWidth: 0 }}>
             <EventLines event={event} linkChips clampDetails />
           </div>
-          {isCustom && isAdmin && (
+          {canManage && isAdmin && (
             <div style={{ display: 'flex', gap: 2, flexShrink: 0, alignSelf: 'center' }}>
               {cancelled
                 ? (

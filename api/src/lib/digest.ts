@@ -77,6 +77,7 @@ export async function runDigest(
     })
     .from(bills)
     .where(and(
+      // Triaging any bill in a companion group triages the group (newMatchWhere).
       routineNewMatchWhere(threshold),
       sql`datetime(${bills.newMatchAt}) > datetime(${since})`,
       sql`datetime(${bills.newMatchAt}) <= datetime(${now})`,

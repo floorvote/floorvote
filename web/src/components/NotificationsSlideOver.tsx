@@ -69,12 +69,12 @@ const CommentBody = memo(function CommentBody({
 type RoleData = {
   id: string
   name: string
-  members: Array<{ id: string; name: string; subtitle: string | null }>
+  members: Array<{ id: string; name: string; title: string | null }>
 }
 
 type RoleTooltip = {
   anchorRect: DOMRect
-  members: Array<{ name: string; subtitle: string | null }>
+  members: Array<{ name: string; title: string | null }>
 } | null
 
 function relativeTime(iso: string): string {
@@ -231,7 +231,7 @@ export function NotificationsSlideOver(
     if (!role) return
     setRoleTooltip({
       anchorRect: target.getBoundingClientRect(),
-      members: role.members.map(m => ({ name: m.name, subtitle: m.subtitle })),
+      members: role.members.map(m => ({ name: m.name, title: m.title })),
     })
   }, [roles])
 
@@ -274,6 +274,7 @@ export function NotificationsSlideOver(
              gray) — in lockstep with ROLE_CHIP, CommentContent.tsx,
              RichTextEditor.tsx, and the emails; padding stays compact here. */
           .notif-comment span[data-type="mention"][data-id^="role:"],
+          .notif-comment span[data-type="mention"][data-id^="admins:"],
           .notif-comment span[data-type="mention"][data-id^="everyone:"] {
             background: ${MENTION_STYLE.role.bg};
             color: ${MENTION_STYLE.role.text};
@@ -371,7 +372,7 @@ export function NotificationsSlideOver(
           {roleTooltip.members.map((mb, i) => (
             <div key={i}>
               <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{mb.name}</span>
-              {mb.subtitle && <span style={{ color: color.textMuted, marginLeft: 4 }}>{mb.subtitle}</span>}
+              {mb.title && <span style={{ color: color.textMuted, marginLeft: 4 }}>{mb.title}</span>}
             </div>
           ))}
         </div>,
@@ -414,6 +415,27 @@ function NotificationRow({
     ? "commented on a bill you've commented on"
     : m.sourceType === 'everyone'
     ? 'notified everyone'
+    : m.sourceType === 'admins'
+    ? (
+      <>
+        mentioned{' '}
+        <span
+          // The same indigo pill as a role mention, so @admins reads as a group.
+          style={{
+            display: 'inline-block',
+            background: MENTION_STYLE.role.bg,
+            color: MENTION_STYLE.role.text,
+            borderRadius: radius.pill,
+            padding: '1px 7px',
+            fontWeight: MENTION_STYLE.weight,
+            cursor: 'default',
+          }}
+        >
+          @admins
+        </span>
+        {" (you're an admin)"}
+      </>
+    )
     : m.sourceType === 'role' && m.sourceLabel
     ? (
       <>
@@ -447,7 +469,7 @@ function NotificationRow({
             if (!attributionRole) return
             setRoleTooltip({
               anchorRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
-              members: attributionRole.members.map(mb => ({ name: mb.name, subtitle: mb.subtitle })),
+              members: attributionRole.members.map(mb => ({ name: mb.name, title: mb.title })),
             })
           }}
           onMouseLeave={() => setRoleTooltip(null)}
@@ -514,7 +536,7 @@ function RowFrame({
           panel reads as the same message the recipient already has in
           their inbox. It replaces what used to be two separate lines: an
           author line and a standalone attribution line. The author's
-          subtitle is deliberately dropped — in a 400px panel it cost a
+          title is deliberately dropped — in a 400px panel it cost a
           line's worth of attention for a detail the name usually carries. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
         <div style={{ fontSize: fontSize.sm, color: color.textSecondary, minWidth: 0 }}>

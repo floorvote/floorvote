@@ -13,6 +13,7 @@ import { isMac } from '../lib/tiptap-utils'
 import { TOOLTIP_STYLE, ROLE_CHIP, tooltipPositionBelow, displayName, sortRoles } from '../lib/chipStyles'
 import { MENTION_STYLE } from '../../../shared/mentionStyle'
 import { useUnsavedRegistration } from '../lib/unsavedText'
+import { mentionSuggestionItems } from '../lib/mentionItems'
 import { useAuth } from '../hooks/useAuth'
 
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from '@/components/tiptap-ui-primitive/toolbar'
@@ -55,14 +56,15 @@ interface UserData {
   id: string
   name: string
   email: string
-  subtitle: string | null
+  title: string | null
   roles?: { id: string; name: string }[]
+  role?: 'member' | 'admin' | 'owner'
 }
 
 interface RoleData {
   id: string
   name: string
-  members: Array<{ id: string; name: string; subtitle: string | null }>
+  members: Array<{ id: string; name: string; title: string | null }>
 }
 
 function useMentionData(enabled: boolean) {
@@ -95,9 +97,9 @@ interface MentionTooltipData {
   anchorRect: DOMRect
   type: 'user' | 'role'
   userName?: string
-  userSubtitle?: string | null
+  userTitle?: string | null
   userRoles?: { id: string; name: string }[]
-  roleMembers?: Array<{ name: string; subtitle: string | null }>
+  roleMembers?: Array<{ name: string; title: string | null }>
 }
 
 export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a comment…', initialContent, submitLabel = 'Post', onCancel, autoFocus, enableMentions = true, allowEmpty = false, disabled = false }: RichTextEditorProps) {
@@ -112,12 +114,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
   rolesRef.current = roles
 
   const { user } = useAuth()
-  const canMentionEveryone = user?.role === 'admin' || user?.role === 'owner'
-  const currentUserId = user?.id
-  const canMentionEveryoneRef = useRef(canMentionEveryone)
-  const currentUserIdRef = useRef(currentUserId)
-  canMentionEveryoneRef.current = canMentionEveryone
-  currentUserIdRef.current = currentUserId
+  const viewer = user ? { id: user.id, role: user.role } : null
+  const viewerRef = useRef(viewer)
+  viewerRef.current = viewer
 
   const editor = useEditor({
     immediatelyRender: true,
@@ -148,30 +147,12 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           ]
         },
         suggestion: {
-          items: ({ query }: { query: string }) => {
-            const q = query.toLowerCase()
-            const filteredUsers = usersRef.current
-              .filter(u => displayName(u).toLowerCase().includes(q) || (u.subtitle && u.subtitle.toLowerCase().includes(q)))
-            const matchedUsers = filteredUsers
-              .slice(0, 4)
-              .map(u => ({ ...u, type: 'user' as const }))
-            if (filteredUsers.length > 4) matchedUsers.push({ id: '__more_users__', name: '', email: '', subtitle: `${filteredUsers.length - 4} more`, type: 'user' as const })
-            const filteredRoles = rolesRef.current
-              .filter(r => r.name.toLowerCase().includes(q))
-            const matchedRoles = filteredRoles
-              .slice(0, 3)
-              .map(r => ({ id: r.id, name: r.name, memberCount: r.members.length, type: 'role' as const }))
-            if (filteredRoles.length > 3) matchedRoles.push({ id: '__more_roles__', name: `${filteredRoles.length - 3} more`, memberCount: 0, type: 'role' as const })
-            const everyoneItems =
-              canMentionEveryoneRef.current && 'everyone'.includes(q)
-                ? [{
-                    id: 'all' as const,
-                    memberCount: usersRef.current.filter(u => u.id !== currentUserIdRef.current).length,
-                    type: 'everyone' as const,
-                  }]
-                : []
-            return [...everyoneItems, ...matchedUsers, ...matchedRoles]
-          },
+          // Let the typed text include an "@" so a full email address can be
+          // matched. The space-prefix rule still holds: "a@b.org" mid-word opens nothing.
+          // Note: tiptap turns off allowSpaces whenever this is on (we don't set allowSpaces).
+          allowToIncludeChar: true,
+          items: ({ query }: { query: string }) =>
+            mentionSuggestionItems({ query, users: usersRef.current, roles: rolesRef.current, viewer: viewerRef.current }),
           render: () => {
             let component: ReactRenderer<MentionSuggestionsRef> | null = null
             let popup: TippyInstance[] | null = null
@@ -275,15 +256,15 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
     if (type === 'role') {
       const role = rolesRef.current.find(r => r.id === id)
       const roleMembers = role && role.members.length > 0
-        ? role.members.map(m => ({ name: displayName(m) || m.id, subtitle: m.subtitle }))
+        ? role.members.map(m => ({ name: displayName(m) || m.id, title: m.title }))
         : []
       setEditorTooltip({ anchorRect, type: 'role', roleMembers })
     } else {
       const user = usersRef.current.find(u => u.id === id)
       if (user) {
-        setEditorTooltip({ anchorRect, type: 'user', userName: displayName(user), userSubtitle: user.subtitle, userRoles: user.roles ?? [] })
+        setEditorTooltip({ anchorRect, type: 'user', userName: displayName(user), userTitle: user.title, userRoles: user.roles ?? [] })
       } else {
-        setEditorTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userSubtitle: null, userRoles: [] })
+        setEditorTooltip({ anchorRect, type: 'user', userName: target.dataset.label || id, userTitle: null, userRoles: [] })
       }
     }
   }
@@ -406,8 +387,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               <>
                 <div style={{ whiteSpace: 'nowrap' }}>
                   <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{editorTooltip.userName}</span>
-                  {editorTooltip.userSubtitle && (
-                    <span style={{ color: color.textMuted, marginLeft: 4 }}>{editorTooltip.userSubtitle}</span>
+                  {editorTooltip.userTitle && (
+                    <span style={{ color: color.textMuted, marginLeft: 4 }}>{editorTooltip.userTitle}</span>
                   )}
                 </div>
                 {editorTooltip.userRoles && editorTooltip.userRoles.length > 0 && (
@@ -429,8 +410,8 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
                     {editorTooltip.roleMembers.map((m, i) => (
                       <div key={i}>
                         <span style={{ fontWeight: fontWeight.semibold, color: color.tooltipBg }}>{m.name}</span>
-                        {m.subtitle && (
-                          <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.subtitle}</span>
+                        {m.title && (
+                          <span style={{ color: color.textMuted, marginLeft: 4 }}>{m.title}</span>
                         )}
                       </div>
                     ))}
@@ -508,6 +489,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
            user = gray) — in lockstep with CommentContent.tsx, ROLE_CHIP, and
            the emails. */
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="role:"],
+        .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="admins:"],
         .comment-editor-wrapper .tiptap.ProseMirror .mention[data-id^="everyone:"] {
           background: ${MENTION_STYLE.role.bg};
           color: ${MENTION_STYLE.role.text};

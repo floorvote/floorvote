@@ -42,7 +42,7 @@ vi.mock('../lib/api', () => ({
 import { AuthProvider, useAuth } from './AuthContext'
 
 const USER = {
-  id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
+  id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
   canVote: true, emailDigestEnabled: false, emailWeekAheadEnabled: false,
   lastSeenFeed: null, isLastOwner: false,
 }
@@ -51,12 +51,12 @@ const USER = {
 let history: { user: unknown; loading: boolean; authError: boolean }[] = []
 
 function Probe() {
-  const { user, loading, authError, setSubtitle } = useAuth()
+  const { user, loading, authError, setTitle } = useAuth()
   history.push({ user, loading, authError })
   return (
     <div>
       <span data-testid="state">{loading ? 'loading' : authError ? 'error' : user ? 'user' : 'anon'}</span>
-      <button onClick={() => setSubtitle('nudge')}>rerender</button>
+      <button onClick={() => setTitle('nudge')}>rerender</button>
     </div>
   )
 }
@@ -166,7 +166,7 @@ describe('AuthProvider retries /auth/me', () => {
     await advance(0)
     expect(state()).toBe('user')
 
-    // setSubtitle re-renders the provider. If authProgress were rebuilt each
+    // setTitle re-renders the provider. If authProgress were rebuilt each
     // render, the effect's dep array would refire the whole fetch.
     await act(async () => { screen.getByText('rerender').click() })
     await advance(0)

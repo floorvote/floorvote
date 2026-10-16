@@ -15,6 +15,11 @@ export interface TenantRpc {
   runDigestNow(): Promise<{ ok: boolean }>
   refreshMetadata(): Promise<{ queued: number }>
   sendSampleEmail(to: string, type: string): Promise<{ ok: boolean; provider?: string; error?: string }>
+  deliveryProbe(): Promise<{ probe: { nonce: string; billId: string; receivedAt: string; readStatus: number } | null }>
+  verifyAi(billId: string): Promise<
+    | { status: 'ok'; billNumber: string; tags: number; relevanceScore: number; usedFullText: boolean }
+    | { status: 'skipped'; reason: string }
+  >
   unknownLoginAttempts(): Promise<Array<{ id: string; email: string; ipCountry: string | null; userAgent: string | null; createdAt: string }>>
 }
 

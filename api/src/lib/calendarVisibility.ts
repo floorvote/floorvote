@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm'
-import { bills, calendarEvents } from '../db/schema'
+import { bills, calendarEvents, customFieldDefinitions } from '../db/schema'
 
 /**
  * Which calendar rows the calendar page, the ICS feed, and the dashboard's
@@ -17,17 +17,50 @@ import { bills, calendarEvents } from '../db/schema'
  *   fork's 'council' rows (#217) not yet taken over as body events, so its
  *   calendar history stays.
  */
-export const visibleCalendarEvent = or(
-  and(
-    eq(calendarEvents.source, 'hearing'),
-    isNotNull(bills.priority),
-    or(
-      isNull(calendarEvents.coveredBy),
-      // A cover whose event the instance doesn't have, or hides, shows the entry after all.
-      sql`NOT EXISTS (SELECT 1 FROM calendar_events AS cover WHERE cover.uid = calendar_events.covered_by AND cover.source = 'body' AND cover.rule_match IS NOT 0)`,
-    ),
+/**
+ * A bill's own entry ('hearing' source: hearings, markups, deadlines) that
+ * qualifies for display: its bill has a priority, and no body event the
+ * instance shows covers it. The one definition the calendar, ICS feed,
+ * dashboard count, and week-ahead email share, so they can't drift apart.
+ * Needs `bills` left-joined on calendar_events.bill_id.
+ */
+export const prioritizedBillEntry = and(
+  eq(calendarEvents.source, 'hearing'),
+  isNotNull(bills.priority),
+  or(
+    isNull(calendarEvents.coveredBy),
+    // A cover whose event the instance doesn't have, or hides, shows the entry after all.
+    sql`NOT EXISTS (SELECT 1 FROM calendar_events AS cover WHERE cover.uid = calendar_events.covered_by AND cover.source = 'body' AND cover.rule_match IS NOT 0)`,
   ),
+)!
+
+/**
+ * A date custom field's value that becomes a team calendar event: a `date`
+ * field (every one, with no per-field opt-in) on a bill with a priority, the
+ * same rule a bill's own entries follow. The one definition the calendar, the
+ * ICS feed, the dashboard count, and the week-ahead email share
+ * (lib/dateFieldEvents.ts). Needs custom_field_definitions joined on the
+ * value's field and `bills` on its bill.
+ */
+export const prioritizedDateFieldValue = and(
+  eq(customFieldDefinitions.type, 'date'),
+  isNotNull(bills.priority),
+)!
+
+export const visibleCalendarEvent = or(
+  prioritizedBillEntry,
   eq(calendarEvents.source, 'custom'),
   and(eq(calendarEvents.source, 'body'), sql`${calendarEvents.ruleMatch} IS NOT 0`),
   eq(calendarEvents.source, 'council'),
 )!
+
+/**
+ * Bill entries describing the same real meeting (same date, time, description,
+ * and location) are one entry carrying every bill. A deadline never merges
+ * into a meeting. Other kinds aren't told apart: an entry central hasn't resent
+ * since kinds arrived has none, and must still merge with the same meeting on
+ * another bill.
+ */
+export function billEntryGroupKey(e: { kind: string | null; date: string | null; time: string | null; description: string | null; location: string | null }): string {
+  return `${e.kind === 'deadline' ? 'deadline' : 'event'}|${e.date}|${e.time ?? ''}|${(e.description ?? '').trim()}|${(e.location ?? '').trim()}`
+}

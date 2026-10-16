@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 
-export type User = { name?: string; email?: string; subtitle?: string } | null
+export type User = { name?: string; email?: string; title?: string } | null
 
 export interface SidebarProps {
   isOpen: boolean
@@ -86,7 +86,7 @@ export interface Member {
   id: string
   name: string
   email: string
-  subtitle: string | null
+  title: string | null
   role: 'admin' | 'member' | 'owner'
   roles: { id: string; name: string }[]
 }

@@ -8,12 +8,12 @@ import * as api from '../lib/api'
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: {
-      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
+      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
       canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null,
       isLastOwner: false,
     },
     loading: false, authError: false,
-    setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
+    setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
 
@@ -94,7 +94,7 @@ describe('Profile "Your Email" section', () => {
     expect(replies).toBeChecked()
     expect(within(section).getByRole('switch', { name: /recent bill activity/i })).toBeInTheDocument()
     expect(within(section).getByRole('switch', { name: /upcoming hearings and events/i })).toBeInTheDocument()
-    expect(within(section).getByText("You'll always get an email when someone mentions you, your role, or @everyone.")).toBeInTheDocument()
+    expect(within(section).getByText("You'll always get an email when someone mentions you, your role, @admins, or @everyone.")).toBeInTheDocument()
     expect(within(section).queryByRole('switch', { name: /mention/i })).not.toBeInTheDocument()
   })
 
@@ -124,5 +124,16 @@ describe('Profile reply-emails switch', () => {
 
     expect(fetch).toHaveBeenCalledWith('/users/me', { method: 'PATCH', body: JSON.stringify({ emailRepliesEnabled: false }) })
     expect(replies).not.toBeChecked()
+  })
+})
+
+describe('Profile title field', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('labels the line under a member\'s name "Title", never "Subtitle"', () => {
+    mockConfig({})
+    render(<MemoryRouter><Profile /></MemoryRouter>)
+    expect(screen.getByLabelText('Title')).toBeInTheDocument()
+    expect(screen.queryByText(/subtitle/i)).not.toBeInTheDocument()
   })
 })

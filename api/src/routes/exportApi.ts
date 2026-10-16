@@ -13,6 +13,7 @@ import { HANDLE_PREFIX, parseHandle } from '../../../shared/billHandle'
 import { EXPORT_TABLES, type ExportTable } from '../../../shared/exportTables'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../lib/billSubjects'
 import type { AppEnv } from '../types'
+import { titleOf } from '../lib/userTitle'
 
 const tableMap = {
   users,
@@ -40,7 +41,7 @@ void _exhaustive
 
 type TableName = keyof typeof tableMap
 
-const SAFE_USER_COLUMNS = ['id', 'email', 'name', 'role', 'subtitle', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote'] as const
+const SAFE_USER_COLUMNS = ['id', 'email', 'name', 'role', 'title', 'invitedBy', 'createdAt', 'lastActive', 'deactivatedAt', 'canVote'] as const
 
 // A tenant's `bills` table is dominated by lightweight "monitoring" stubs —
 // bills outside the keyword set the tenant doesn't actually track (on a large
@@ -246,6 +247,8 @@ exportApiRouter.get('/:table', async (c) => {
       for (const col of SAFE_USER_COLUMNS) {
         filtered[col] = row[col]
       }
+      // The column is `title`, with no `subtitle` alias. A member only the previous build wrote has just `subtitle`.
+      filtered.title = titleOf(row)
       return filtered
     }) as any
   }

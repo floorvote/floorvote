@@ -55,7 +55,7 @@ vi.mock('../context/DemoContext', () => ({
 const authState = vi.hoisted(() => ({ role: 'admin' as 'member' | 'admin' | 'owner', canVote: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, title: null, canVote: authState.canVote },
     loading: false,
   }),
 }))
@@ -226,6 +226,21 @@ describe('the status chip on a bill page', () => {
     expect(bubble.style.transform).not.toContain('translateY')
   })
 
+  it('is unaffected by the term toggle: no underline, no wrapper button, and a click does not pin the explainer', async () => {
+    renderBillDetail({ state: 'DC', billNumber: 'B26-0406', status: 'Under Mayoral Review' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Under Mayoral Review' })).toHaveAccessibleDescription(EXPLAINER))
+    const chip = screen.getByRole('button', { name: 'Under Mayoral Review' })
+    expect(chip.closest('[style*="dotted"]')).toBeNull()
+    expect(chip.parentElement?.tagName.toLowerCase()).toBe('span')
+    expect(chip.querySelector('button')).toBeNull()
+    fireEvent.click(chip)
+    expect(bubbleWith(EXPLAINER)).toBeUndefined()
+    fireEvent.pointerEnter(chip, { pointerType: 'mouse' })
+    expect(bubbleWith(EXPLAINER)).toBeDefined()
+    fireEvent.pointerLeave(chip, { pointerType: 'mouse' })
+    expect(bubbleWith(EXPLAINER)).toBeUndefined()
+  })
+
   it('has no info button; screen readers get the explainer through aria-describedby', async () => {
     renderBillDetail({ state: 'DC', billNumber: 'B26-0401', status: 'Under Mayoral Review' })
     // Re-queried each time: the chip is re-created once the labels arrive.
@@ -262,24 +277,48 @@ describe('deadlines and explainers on a bill page', () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0400', billType: 'Emergency Bill', status: 'Introduced', calendar })
     const chip = await screen.findByTestId('next-deadline')
     expect(chip).toHaveTextContent('Congressional review ends')
-    await waitFor(() => expect(within(chip).getByText('Congressional review ends')).toHaveAccessibleDescription(DEADLINE_EXPLAINER))
+    await waitFor(() => expect(within(chip).getByRole('button', { name: 'Congressional review ends' })).toHaveAccessibleDescription(DEADLINE_EXPLAINER))
     expect(screen.queryByRole('button', { name: /^About / })).toBeNull()
-    fireEvent.pointerEnter(within(chip).getByText('Congressional review ends'), { pointerType: 'mouse' })
+    fireEvent.pointerEnter(within(chip).getByRole('button', { name: 'Congressional review ends' }), { pointerType: 'mouse' })
     expect(bubbleWith(DEADLINE_EXPLAINER)).toBeDefined()
     expect(screen.getByText('Hearings and deadlines')).toBeInTheDocument()
   })
 
   it('explains the bill type and each calendar entry from the state\'s labels', async () => {
     renderBillDetail({ state: 'MD', billNumber: 'B26-0400', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
-    await waitFor(() => expect(screen.getByText('Public Hearing')).toHaveAccessibleDescription(HEARING_EXPLAINER))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Public Hearing' })).toHaveAccessibleDescription(HEARING_EXPLAINER))
     expect(screen.queryByRole('button', { name: /^About / })).toBeNull()
-    fireEvent.pointerEnter(screen.getByText('Public Hearing'), { pointerType: 'mouse' })
+    fireEvent.pointerEnter(screen.getByRole('button', { name: 'Public Hearing' }), { pointerType: 'mouse' })
     expect(bubbleWith(HEARING_EXPLAINER)).toBeDefined()
-    fireEvent.pointerLeave(screen.getByText('Public Hearing'), { pointerType: 'mouse' })
+    fireEvent.pointerLeave(screen.getByRole('button', { name: 'Public Hearing' }), { pointerType: 'mouse' })
     await waitFor(() => {
-      fireEvent.pointerEnter(screen.getByText('Council Emergency Bill'), { pointerType: 'mouse' })
+      fireEvent.pointerEnter(screen.getByRole('button', { name: 'Council Emergency Bill' }), { pointerType: 'mouse' })
       expect(bubbleWith(TYPE_EXPLAINER)).toBeDefined()
     })
+  })
+
+  it('opens and closes the bill type\'s explainer on click, with the pointer cursor', async () => {
+    renderBillDetail({ state: 'MD', billNumber: 'B26-0404', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
+    await waitFor(() => expect(document.getElementById('bill-type-explainer')).toHaveTextContent(TYPE_EXPLAINER))
+    const label = screen.getByRole('button', { name: 'Council Emergency Bill' })
+    expect(label.style.cursor).toBe('pointer')
+    fireEvent.click(label)
+    expect(bubbleWith(TYPE_EXPLAINER)).toBeDefined()
+    fireEvent.click(label)
+    expect(bubbleWith(TYPE_EXPLAINER)).toBeUndefined()
+  })
+
+  it('opens the next deadline\'s and a calendar entry\'s explainers on click, and closes on Escape', async () => {
+    renderBillDetail({ state: 'MD', billNumber: 'B26-0405', body: 'C', billType: 'Emergency Bill', status: 'Introduced', calendar })
+    const chip = await screen.findByTestId('next-deadline')
+    const deadline = await waitFor(() => within(chip).getByRole('button', { name: 'Congressional review ends' }))
+    fireEvent.click(deadline)
+    expect(bubbleWith(DEADLINE_EXPLAINER)).toBeDefined()
+    fireEvent.keyDown(deadline, { key: 'Escape' })
+    expect(bubbleWith(DEADLINE_EXPLAINER)).toBeUndefined()
+    const hearing = screen.getByRole('button', { name: 'Public Hearing' })
+    fireEvent.click(hearing)
+    expect(bubbleWith(HEARING_EXPLAINER)).toBeDefined()
   })
 
   it('opens the bill type\'s hover bubble below, with no info button and a described label', async () => {

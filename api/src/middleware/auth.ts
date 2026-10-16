@@ -4,6 +4,7 @@ import { eq, sql, getTableColumns } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { sessions, users } from '../db/schema'
 import { hashToken } from '../lib/crypto'
+import { isTermsExempt } from '../lib/termsAcceptance'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { dbTsToEpoch } from '../../../shared/time'
 import { checkRateLimit } from '../../../shared/rateLimit'
@@ -100,7 +101,7 @@ export const requireAuth = createMiddleware<{
       // Lexicographic on YYYY-MM-DD. Never datetime() -- these are dates, not
       // timestamps, and wrapping either side invites a parse that disagrees.
       const accepted = user.newestTermsAccepted
-      if (!accepted || accepted < termsUpdated) {
+      if ((!accepted || accepted < termsUpdated) && !(await isTermsExempt(c.env, user.email))) {
         return c.json({ error: 'Terms not accepted', code: 'terms_not_accepted' }, 403)
       }
     }
@@ -183,6 +184,8 @@ export const DEMO_WRITE_ALLOWLIST: ReadonlySet<string> = new Set([
   'POST /api/comments/:id/reactions',
   'DELETE /api/comments/:id/reactions/:emoji',
   'PUT /api/bills/:id/note',                // personal note
+  'PUT /api/bills/:id/mute',                // muting a bill's comments for yourself
+  'DELETE /api/bills/:id/mute',
   'PATCH /api/bills/:id/priority',
   'PATCH /api/bills/:id/triage-dismiss',    // single-bill; bulk-dismiss stays denied
   'POST /api/bills/:id/position',
@@ -195,6 +198,10 @@ export const DEMO_WRITE_ALLOWLIST: ReadonlySet<string> = new Set([
   'POST /api/notifications/mark-read',
   'POST /api/notifications/mark-read/:commentId',
   'POST /api/notifications/mark-read-by-bill/:billId',
+
+  // A read, sent as a POST so the token stays out of the URL. Writes nothing.
+  'POST /api/auth/email-change/status',
+  'POST /api/auth/email-change/not-me/status',
 ])
 
 // The guard runs before route matching (mounted on /api/*), so it cannot ask

@@ -44,7 +44,7 @@ const stadiumHearing = (o: Partial<CentralBodyEvent> = {}) => bodyEvent({
 })
 
 /** What central answers next. */
-let central: { status?: number; capabilities?: Record<string, unknown>; attribution?: unknown; events?: CentralBodyEvent[] }
+let central: { status?: number; capabilities?: Record<string, unknown>; attribution?: unknown; dashboardUrl?: unknown; events?: CentralBodyEvent[] }
 const fetchMock = vi.fn()
 
 let token: string
@@ -64,7 +64,7 @@ beforeEach(async () => {
   fetchMock.mockImplementation(async (url: string) => {
     expect(String(url)).toMatch(/^https:\/\/central\.test\/api\/tenants\/bpc-test\/body-events\?from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}$/)
     if (central.status) return new Response('down', { status: central.status })
-    return new Response(JSON.stringify({ capabilities: central.capabilities, attribution: central.attribution, events: central.events }), { headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify({ capabilities: central.capabilities, attribution: central.attribution, dashboardUrl: central.dashboardUrl, events: central.events }), { headers: { 'content-type': 'application/json' } })
   })
   vi.stubGlobal('fetch', fetchMock)
 })
@@ -257,8 +257,8 @@ describe('state capabilities', () => {
 describe('data attribution', () => {
   const configAttribution = async () => (await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any).attribution
 
-  it('credits LegiScan on GET /config until central has answered', async () => {
-    expect(await configAttribution()).toMatchObject({ providers: [{ id: 'legiscan', name: 'LegiScan', url: 'https://legiscan.com', license: { name: 'CC BY 4.0' } }] })
+  it('leaves attribution out of GET /config until central has answered', async () => {
+    expect(await configAttribution()).toBeUndefined()
   })
 
   it('reaches GET /config from the body-event sync, as central declares it', async () => {
@@ -277,7 +277,7 @@ describe('data attribution', () => {
     expect(await configAttribution()).toEqual(DC_ATTRIBUTION)
   })
 
-  it('drops a credit that is not a name and http(s) link, and falls back to LegiScan when none is left', async () => {
+  it('drops a credit that is not a name and http(s) link, and leaves attribution out when none is left', async () => {
     central.attribution = {
       providers: [
         { ...LIMS_CREDIT, url: 'javascript:alert(1)' },
@@ -289,7 +289,7 @@ describe('data attribution', () => {
     expect((await configAttribution()).providers).toEqual([{ id: 'ok', name: 'LegiScan', url: 'https://legiscan.com', note: 'From LegiScan.' }])
     central.attribution = { providers: [{ ...LIMS_CREDIT, url: '/relative' }] }
     await sync()
-    expect((await configAttribution()).providers[0]).toMatchObject({ id: 'legiscan', license: { name: 'CC BY 4.0' } })
+    expect(await configAttribution()).toBeUndefined()
   })
 
   it('keeps a credit with no note, with or without a license, and still keeps a note when one is sent', async () => {
@@ -318,11 +318,11 @@ describe('data attribution', () => {
     expect((await configAttribution()).providers).toEqual([{ id: 'long', name: 'N'.repeat(200), url: 'http://legislature.example.test', note: 'T'.repeat(500) }])
   })
 
-  it('serves LegiScan\'s credit when the stored attribution is corrupt', async () => {
+  it('leaves attribution out when the stored attribution is corrupt', async () => {
     const db = getDb(env.DB)
     for (const value of ['not json', '{"data":"x"}', '{"data":{"providers":"x"}}', 'null']) {
       await db.insert(associationConfig).values({ key: 'data_attribution', value }).onConflictDoUpdate({ target: associationConfig.key, set: { value } })
-      expect((await configAttribution()).providers).toEqual([expect.objectContaining({ id: 'legiscan', name: 'LegiScan' })])
+      expect(await configAttribution()).toBeUndefined()
     }
   })
 
@@ -332,5 +332,112 @@ describe('data attribution', () => {
     const body = await res.json() as any
     expect(body.attribution).toEqual(DC_ATTRIBUTION)
     expect(body.dataSources).toBeUndefined()
+  })
+})
+
+describe('central dashboard address', () => {
+  const db = () => getDb(env.DB)
+  const configDashboardUrl = async () => (await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any).centralDashboardUrl
+
+  it('is unknown on GET /config until central has told the instance', async () => {
+    expect(await configDashboardUrl()).toBeUndefined()
+  })
+
+  it('reaches GET /config from the body-event sync', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('keeps what it has when central sends none, as an older central does', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = undefined
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('drops a trailing slash, so a link built from it has no double slash', async () => {
+    central.dashboardUrl = 'https://admin.example.com//'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('ignores an address that is not an http(s) URL, since the page renders it as a link', async () => {
+    central.dashboardUrl = 'javascript:alert(1)'
+    await sync()
+    expect(await configDashboardUrl()).toBeUndefined()
+  })
+
+  it('does not let a bad address overwrite a good one', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'ftp://admin.example.com', '/relative', 'not a url', '', 42, {}, ['https://other.example.com']]) {
+      central.dashboardUrl = bad
+      await sync()
+      expect(await configDashboardUrl(), JSON.stringify(bad)).toBe('https://admin.example.com')
+    }
+  })
+
+  it('takes a new good address over an old one', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = 'https://dash.example.org'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://dash.example.org')
+  })
+
+  it('forgets the address when central says, with an explicit null, that it has none', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = null
+    await sync()
+    expect(await configDashboardUrl()).toBeUndefined()
+    expect(await db().select().from(associationConfig).where(eq(associationConfig.key, 'central_dashboard_url')).get()).toBeUndefined()
+  })
+
+  it('has nothing to forget when central says null before it ever sent one', async () => {
+    central.dashboardUrl = null
+    await sync()
+    expect(await configDashboardUrl()).toBeUndefined()
+  })
+
+  it('learns the address again after forgetting it', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = null
+    await sync()
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('keeps the address across several syncs that send no key, as an older central does', async () => {
+    central.dashboardUrl = 'https://admin.example.com'
+    await sync()
+    central.dashboardUrl = undefined
+    await sync()
+    await sync()
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
+  })
+
+  it('still reconciles events when the address is cleared', async () => {
+    central.dashboardUrl = null
+    await sync()
+    expect((await calendar()).map(e => e.uid)).toEqual(['council-2408@lims.dccouncil.gov', 'council-2405@lims.dccouncil.gov'])
+  })
+
+  // Read-side validation (these pass before the change by design: they guard the
+  // existing check on read, which the sync tests above never reach).
+  it('does not serve a stored address that is not an http(s) URL', async () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'ftp://admin.example.com', '/relative', 'not a url', '']) {
+      await db().insert(associationConfig).values({ key: 'central_dashboard_url', value: bad }).onConflictDoUpdate({ target: associationConfig.key, set: { value: bad } })
+      expect(await configDashboardUrl(), bad).toBeUndefined()
+    }
+  })
+
+  it('serves a stored address without its trailing slashes', async () => {
+    await db().insert(associationConfig).values({ key: 'central_dashboard_url', value: 'https://admin.example.com/' })
+    expect(await configDashboardUrl()).toBe('https://admin.example.com')
   })
 })

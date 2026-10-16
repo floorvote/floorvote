@@ -57,22 +57,22 @@ export const BILL_CARD_CLOSE = `
 </table>`
 
 // Comment as a card row: Feed's purple chat icon + the BillDetail comment
-// header (name / subtitle / date) + the full comment body indented under the
+// header (name / title / date) + the full comment body indented under the
 // name (Feed's indented-row look). bodyHtml is already styled HTML.
 //
 // ⚠️ Web twin: web/src/pages/BillDetail.tsx renders the same comment header.
 // Both pull sizes/weights/colors from the shared COMMENT_STYLE so they can't
-// drift. Each span sets its size explicitly — without it the subtitle and the
+// drift. Each span sets its size explicitly — without it the title and the
 // tiptap <p> body would inherit the email's 16px default and look oversized.
-export function renderCommentRow({ appUrl, name, subtitle, dateText, bodyHtml }: { appUrl: string; name: string; subtitle: string | null; dateText: string; bodyHtml: string }): string {
+export function renderCommentRow({ appUrl, name, title, dateText, bodyHtml }: { appUrl: string; name: string; title: string | null; dateText: string; bodyHtml: string }): string {
   const icon = `${appUrl}/email-icons/${emailIconSrc('chat', color.brandViolet)}`
   const rowBorder = `border-top:1px solid ${CARD_STYLE.rowBorder};`
-  const subtitleHtml = subtitle
-    ? `<span style="font-size:${COMMENT_STYLE.subtitleSize}px;font-weight:${COMMENT_STYLE.subtitleWeight};color:${COMMENT_STYLE.subtitleColor};margin-left:4px;">${escHtml(subtitle)}</span>`
+  const titleHtml = title
+    ? `<span style="font-size:${COMMENT_STYLE.titleSize}px;font-weight:${COMMENT_STYLE.titleWeight};color:${COMMENT_STYLE.titleColor};margin-left:4px;">${escHtml(title)}</span>`
     : ''
   return `<tr style="background:${color.white};">
       <td width="30" style="padding:11px 0 0 14px;vertical-align:top;${rowBorder}"><img src="${icon}" width="14" height="14" alt="" style="display:block;border:0;"></td>
-      <td style="width:100%;padding:10px 8px 0 6px;vertical-align:top;${rowBorder}"><span style="font-size:${COMMENT_STYLE.nameSize}px;font-weight:${COMMENT_STYLE.nameWeight};color:${COMMENT_STYLE.nameColor};">${escHtml(name)}</span>${subtitleHtml}</td>
+      <td style="width:100%;padding:10px 8px 0 6px;vertical-align:top;${rowBorder}"><span style="font-size:${COMMENT_STYLE.nameSize}px;font-weight:${COMMENT_STYLE.nameWeight};color:${COMMENT_STYLE.nameColor};">${escHtml(name)}</span>${titleHtml}</td>
       <td align="right" style="padding:11px 14px 0 0;vertical-align:top;white-space:nowrap;${rowBorder}"><span style="font-size:${COMMENT_STYLE.dateSize}px;color:${COMMENT_STYLE.dateColor};">${escHtml(dateText)}</span></td>
     </tr>
     <tr style="background:${color.white};"><td colspan="3" style="padding:4px 14px 14px 34px;font-size:${COMMENT_STYLE.bodySize}px;color:${COMMENT_STYLE.bodyColor};line-height:${COMMENT_STYLE.bodyLineHeight};">${bodyHtml}</td></tr>`
