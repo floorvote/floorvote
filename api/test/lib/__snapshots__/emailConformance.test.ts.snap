@@ -317,6 +317,148 @@ exports[`email conformance — every sample type shares the shell contract > dig
 </html>"
 `;
 
+exports[`email conformance — every sample type shares the shell contract > email-change-changed > matches its committed snapshot 1`] = `
+"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tbody><tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+        <tbody>
+          <tr><td style="padding:0 20px 18px;">
+            
+  <div style="margin-bottom:4px;">
+    <img src="https://sample.test/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
+  </div>
+
+            <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">Your sign-in email was changed</p>
+            
+          </td></tr>
+          <tr><td style="padding:6px 20px 28px;">
+            <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">The sign-in email for your FloorVote account at Rhode Island Association of Local Election Officials is now <strong>d***@newcounty.gov</strong>. This address no longer signs you in, sign-in links already sent here have stopped working, and the account was signed out everywhere except the device that asked for the change.</p><p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">If you made this change, you don't need to do anything. If you didn't, use the link below.</p>
+            <div style="margin-top:18px;"><a href="https://sample.test/auth/not-me?token=sample-link-not-functional" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">This wasn't me</a></div>
+          </td></tr>
+          <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
+            This is an account security notice, so it's sent even if you've turned off other emails.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+          </td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`email conformance — every sample type shares the shell contract > email-change-confirm > matches its committed snapshot 1`] = `
+"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tbody><tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+        <tbody>
+          <tr><td style="padding:0 20px 18px;">
+            
+  <div style="margin-bottom:4px;">
+    <img src="https://sample.test/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
+  </div>
+
+            <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">Confirm your new email</p>
+            
+          </td></tr>
+          <tr><td style="padding:6px 20px 28px;">
+            <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">Someone asked to make this the sign-in email for their FloorVote account at Rhode Island Association of Local Election Officials. If that was you, use the button below, then press Confirm new email on the page it opens. Nothing changes until you do.</p><p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">The link expires in 24 hours and works once. Opening it doesn't sign you in.</p>
+            <div style="margin-top:18px;"><a href="https://sample.test/auth/confirm-email?token=sample-link-not-functional" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">Confirm new email</a></div>
+          </td></tr>
+          <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
+            If you didn't ask for this, you can ignore this email. Nobody can use this address to sign in unless it's confirmed.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+          </td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`email conformance — every sample type shares the shell contract > email-change-reported > matches its committed snapshot 1`] = `
+"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tbody><tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+        <tbody>
+          <tr><td style="padding:0 20px 18px;">
+            
+  <div style="margin-bottom:4px;">
+    <img src="https://sample.test/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
+  </div>
+
+            <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">Dana Reed says they didn't change their sign-in email</p>
+            
+          </td></tr>
+          <tr><td style="padding:6px 20px 28px;">
+            <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">Dana Reed pressed &quot;This wasn't me&quot; on a notice about a change to their sign-in email at Rhode Island Association of Local Election Officials. Every session they had has been signed out.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin:0 0 14px;"><tbody>
+    <tr><td style="padding:10px 16px;font-size:12px;color:#5e697d;width:110px;vertical-align:top;">Member</td><td style="padding:10px 16px;font-size:14px;color:#0f172a;word-break:break-all;">Dana Reed</td></tr>
+    <tr><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:12px;color:#5e697d;width:110px;vertical-align:top;">Old address</td><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:14px;color:#0f172a;word-break:break-all;">dana.reed@county.gov</td></tr>
+    <tr><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:12px;color:#5e697d;width:110px;vertical-align:top;">New address</td><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:14px;color:#0f172a;word-break:break-all;">dana.reed@newcounty.gov</td></tr>
+    <tr><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:12px;color:#5e697d;width:110px;vertical-align:top;">Requested by</td><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:14px;color:#0f172a;word-break:break-all;">the member</td></tr>
+    <tr><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:12px;color:#5e697d;width:110px;vertical-align:top;">Requested</td><td style="padding:10px 16px;border-top:1px solid #e2e8f0;font-size:14px;color:#0f172a;word-break:break-all;">June 15, 2026 at 2:41 p.m. UTC</td></tr>
+  </tbody></table><p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">The change had already taken effect. The new address was their sign-in email.</p><p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">FloorVote does not reverse a change that has taken effect, because the old mailbox may now belong to someone else. Reach the member another way, such as by phone, before you act. An admin can change their email back from Members.</p>
+            <div style="margin-top:18px;"><a href="https://sample.test/admin/members?search=dana.reed%40county.gov" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">Open Members</a></div>
+          </td></tr>
+          <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
+            Sent to every active owner and admin as an account security alert.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+          </td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</body>
+</html>"
+`;
+
+exports[`email conformance — every sample type shares the shell contract > email-change-requested > matches its committed snapshot 1`] = `
+"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tbody><tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+        <tbody>
+          <tr><td style="padding:0 20px 18px;">
+            
+  <div style="margin-bottom:4px;">
+    <img src="https://sample.test/email-icons/wordmark.png" alt="FloorVote" width="150" height="24" style="display:block;border:0;height:auto;">
+  </div>
+
+            <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">A change to your sign-in email was requested</p>
+            
+          </td></tr>
+          <tr><td style="padding:6px 20px 28px;">
+            <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#374151;">Someone signed in to your FloorVote account at Rhode Island Association of Local Election Officials asked to change its sign-in email to <strong>d***@newcounty.gov</strong>. The change takes effect only if it's confirmed from that address within 24 hours. Until then, this address still signs you in.</p><p style="margin:0;font-size:14px;line-height:1.6;color:#374151;">If you asked for this, you don't need to do anything. If you didn't, use the link below.</p>
+            <div style="margin-top:18px;"><a href="https://sample.test/auth/not-me?token=sample-link-not-functional" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">This wasn't me</a></div>
+          </td></tr>
+          <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
+            This is an account security notice, so it's sent even if you've turned off other emails.<br><a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+          </td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</body>
+</html>"
+`;
+
 exports[`email conformance — every sample type shares the shell contract > invite > matches its committed snapshot 1`] = `
 "<!DOCTYPE html>
 <html>
@@ -535,7 +677,7 @@ exports[`email conformance — every sample type shares the shell contract > rep
             <div style="margin-top:18px;"><a href="https://sample.test/RI/2026/HB 1234#comment-sample-comment" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View comment</a></div>
           </td></tr>
           <tr><td style="padding:22px 20px 4px;border-top:1px solid #e2e8f0;text-align:center;">
-            <a href="https://sample.test/profile#setting-email-replies" style="font-size:12px;color:#667386;text-decoration:underline;">Turn off reply emails</a> &nbsp;·&nbsp; <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
+            <a href="https://sample.test/mute-bill?token=sample" style="font-size:12px;color:#667386;text-decoration:underline;">Mute this bill</a> &nbsp;·&nbsp; <a href="https://sample.test/profile#setting-email-replies" style="font-size:12px;color:#667386;text-decoration:underline;">Turn off reply emails</a> &nbsp;·&nbsp; <a href="https://sample.test" style="font-size:12px;color:#667386;text-decoration:underline;">FloorVote</a>
           </td></tr>
         </tbody>
       </table>

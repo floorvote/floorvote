@@ -13,7 +13,7 @@ import type { FieldInventory } from '../sdk'
  * a vote's `id` and then `member` and `vote` pairs.
  */
 
-const TEXT_VERSIONS = { ignored: 'A text version\'s document id and date. Text needs the LIS API, whose terms are non-commercial, so Virginia bills have none.' }
+const TEXT_VERSIONS = { ignored: 'A text version\'s document code and date. With an optional LIS_API_KEY, the API\'s text list gives each version\'s id, code, and draft date, which the record keeps as `texts` and the ingest turns into PDF texts (the API\'s terms allow non-commercial use). These columns name no id to fetch it by.' }
 const LATEST_ACTION = { ignored: 'The latest action in one chamber, or by the conference committee or the Governor. The history has every action.' }
 const ACTION_ID = { ignored: 'The LIS\'s internal id for a latest action. Nothing links by it.' }
 

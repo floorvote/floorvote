@@ -69,6 +69,8 @@ export interface CentralBodyEvent {
 
 export const CAPABILITIES_KEY = 'state_capabilities'
 export const ATTRIBUTION_KEY = 'data_attribution'
+/** Where central's admin dashboard lives, as central last said (`GET /config` serves it as `centralDashboardUrl`). */
+export const DASHBOARD_URL_KEY = 'central_dashboard_url'
 /**
  * How long the capabilities stand when no covered state has body events. Short
  * of the hourly job's interval, so every run asks: a state claimed after the
@@ -94,6 +96,13 @@ export async function readStateCapabilities(db: AppDb): Promise<{ data: Record<s
   } catch {
     return null
   }
+}
+
+/** The address central last sent for its admin dashboard, or null before it has. */
+export async function readCentralDashboardUrl(db: AppDb): Promise<string | null> {
+  const row = await db.select().from(associationConfig).where(eq(associationConfig.key, DASHBOARD_URL_KEY)).get()
+  // Without trailing slashes, so a forked central that sends one can't make `${url}/profile` a `//profile`.
+  return httpUrl(row?.value)?.replace(/\/+$/, '') ?? null
 }
 
 /** The longest name and note an instance shows, so a bad answer can't fill the footer. */
@@ -185,7 +194,7 @@ export async function syncBodyEvents(env: Env, db: AppDb): Promise<BodyEventSync
   const to = isoDay(WINDOW_AHEAD_DAYS)
   const res = await centralFetch(env, `/tenants/${env.TENANT_ID}/body-events?from=${from}&to=${to}`)
   if (!res.ok) throw new Error(`central body-events HTTP ${res.status}`)
-  const body = await res.json() as { capabilities?: unknown; attribution?: unknown; events?: unknown }
+  const body = await res.json() as { capabilities?: unknown; attribution?: unknown; dashboardUrl?: unknown; events?: unknown }
   // An answer without both is a bad one, not an empty calendar: it changes nothing.
   if (!Array.isArray(body.events) || !body.capabilities || typeof body.capabilities !== 'object' || Array.isArray(body.capabilities)) {
     throw new Error('central body-events: the answer has no events or capabilities')
@@ -202,6 +211,20 @@ export async function syncBodyEvents(env: Env, db: AppDb): Promise<BodyEventSync
     const credit = JSON.stringify({ data: attribution, cachedAt: new Date().toISOString() }) // ts-write-ok: cache metadata inside a JSON config blob, never SQL-sorted
     await db.insert(associationConfig).values({ key: ATTRIBUTION_KEY, value: credit })
       .onConflictDoUpdate({ target: associationConfig.key, set: { value: credit } })
+  }
+
+  // Likewise for the dashboard address: only an http(s) URL is kept, since the Profile page renders it as a link.
+  // An explicit null means central has no dashboard (ADMIN_APP_URL unset), so the instance forgets the
+  // address rather than link to one that is gone. A missing key (an older central) leaves it alone, and
+  // so does any value that is neither null nor a valid URL: a bad answer never overwrites a good address.
+  if (body.dashboardUrl === null) {
+    await db.delete(associationConfig).where(eq(associationConfig.key, DASHBOARD_URL_KEY))
+  } else {
+    const dashboardUrl = typeof body.dashboardUrl === 'string' ? httpUrl(body.dashboardUrl) : null
+    if (dashboardUrl) {
+      await db.insert(associationConfig).values({ key: DASHBOARD_URL_KEY, value: dashboardUrl })
+        .onConflictDoUpdate({ target: associationConfig.key, set: { value: dashboardUrl } })
+    }
   }
 
   return reconcileBodyEvents(env, db, body.events as CentralBodyEvent[], from, to, anyBodyEvents(capabilities))
@@ -255,7 +278,7 @@ async function reconcileBodyEvents(
     // An event cancelled before the instance ever had it has nothing to tell anyone.
     if (!prior && status === 'cancelled') continue
     const values = {
-      source: 'body', billId: null, kind: e.kind, status, coveredBy: null,
+      source: 'body' as const, billId: null, kind: e.kind, status, coveredBy: null,
       date: e.date, time: e.time, location: e.location,
       description: bodyEventDescription(e), details: bodyEventDetails(e), url: e.url,
       timezone: e.timezone, eventHash: e.eventHash, ruleFacets: JSON.stringify(bodyEventFacets(e)), updatedAt: now,

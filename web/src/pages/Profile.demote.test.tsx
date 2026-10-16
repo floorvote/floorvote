@@ -9,7 +9,7 @@ import * as api from '../lib/api'
 // imports, so the mutable state must come from vi.hoisted.
 const { mockUser } = vi.hoisted(() => ({
   mockUser: {
-    id: 'u1', email: 'a@b.c', name: 'A', role: 'member' as 'member' | 'admin' | 'owner', subtitle: null,
+    id: 'u1', email: 'a@b.c', name: 'A', role: 'member' as 'member' | 'admin' | 'owner', title: null,
     canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null,
     isLastOwner: false,
   },
@@ -19,7 +19,7 @@ vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: mockUser,
     loading: false, authError: false,
-    setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+    setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
 

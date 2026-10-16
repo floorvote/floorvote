@@ -503,48 +503,307 @@ describe('HoverTooltip', () => {
 
 // Folded in from TermHover (now HoverTooltip's `describe` option).
 const bubble = (text: string) => screen.getAllByText(text).find(el => el.style.position === 'fixed')
+const EXPLAINER = 'A bill that became law.'
+const term = () => screen.getByRole('button', { name: 'Chapter' })
 
 describe('HoverTooltip describe option', () => {
-  it('shows the explainer on hover and renders no info button', () => {
-    render(<HoverTooltip text="A bill that became law." describe>Chapter</HoverTooltip>)
-    expect(screen.queryByRole('button')).toBeNull()
-    expect(bubble('A bill that became law.')).toBeUndefined()
-    fireEvent.pointerEnter(screen.getByText('Chapter'), { pointerType: 'mouse' })
-    expect(bubble('A bill that became law.')).toBeDefined()
-    fireEvent.pointerLeave(screen.getByText('Chapter'), { pointerType: 'mouse' })
-    expect(bubble('A bill that became law.')).toBeUndefined()
+  it('shows the explainer on hover, and a plain hover still closes on leave', () => {
+    render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+    expect(bubble(EXPLAINER)).toBeUndefined()
+    fireEvent.pointerEnter(term(), { pointerType: 'mouse' })
+    expect(bubble(EXPLAINER)).toBeDefined()
+    fireEvent.pointerLeave(term(), { pointerType: 'mouse' })
+    expect(bubble(EXPLAINER)).toBeUndefined()
   })
 
-  it('is keyboard focusable and described for screen readers', () => {
-    render(<HoverTooltip text="A bill that became law." describe>Chapter</HoverTooltip>)
-    const term = screen.getByText('Chapter')
-    expect(term).toHaveAttribute('tabindex', '0')
-    expect(term).toHaveAccessibleDescription('A bill that became law.')
-    fireEvent.focus(term)
-    expect(bubble('A bill that became law.')).toBeDefined()
+  it('does not preview on a touch pointerenter, so a tap cannot strand the bubble', () => {
+    render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+    fireEvent.pointerEnter(term(), { pointerType: 'touch' })
+    expect(bubble(EXPLAINER)).toBeUndefined()
+  })
+
+  it('is a single keyboard tab stop: a button, with no second focusable inside it', () => {
+    render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(term()).toHaveAttribute('type', 'button')
+    expect(term().querySelector('[tabindex]')).toBeNull()
+  })
+
+  it('previews on keyboard focus and hides on blur', async () => {
+    const user = userEvent.setup()
+    render(<><HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip><button>next</button></>)
+    await user.tab()
+    expect(term()).toHaveFocus()
+    expect(bubble(EXPLAINER)).toBeDefined()
+    await user.tab()
+    expect(bubble(EXPLAINER)).toBeUndefined()
+  })
+
+  describe('click, tap, Enter and Space toggle it, like the ⓘ', () => {
+    it('opens on a click and closes on a second click', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.click(term())
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.click(term())
+      expect(bubble(EXPLAINER)).toBeUndefined()
+    })
+
+    it('opens on a tap and closes on a second tap', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.pointer({ keys: '[TouchA]', target: term() })
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.pointer({ keys: '[TouchA]', target: term() })
+      expect(bubble(EXPLAINER)).toBeUndefined()
+    })
+
+    it('a click pins it open after the mouse leaves', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.click(term())
+      fireEvent.pointerLeave(term(), { pointerType: 'mouse' })
+      expect(bubble(EXPLAINER)).toBeDefined()
+    })
+
+    it('Enter on the focused term toggles it: the first pins the preview, the second closes', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.tab()
+      expect(bubble(EXPLAINER)).toBeDefined() // focus preview
+      await user.keyboard('{Enter}')
+      expect(bubble(EXPLAINER)).toBeDefined() // pinned
+      await user.keyboard('{Enter}')
+      expect(bubble(EXPLAINER)).toBeUndefined()
+      await user.keyboard('{Enter}')
+      expect(bubble(EXPLAINER)).toBeDefined() // and back open again
+    })
+
+    it('Space on the focused term toggles it the same way', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.tab()
+      await user.keyboard(' ')
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.keyboard(' ')
+      expect(bubble(EXPLAINER)).toBeUndefined()
+    })
+
+    it('does not submit a form it sits in', async () => {
+      const user = userEvent.setup()
+      const onSubmit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault())
+      render(<form onSubmit={onSubmit}><HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip></form>)
+      await user.click(term())
+      await user.tab()
+      await user.keyboard('{Enter}')
+      expect(onSubmit).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Escape', () => {
+    it('closes a hover or focus preview, keeping focus on the term', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.tab()
+      expect(term()).toHaveFocus()
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.keyboard('{Escape}')
+      expect(bubble(EXPLAINER)).toBeUndefined()
+      expect(term()).toHaveFocus()
+    })
+
+    it('closes a click-pinned explainer, and the next click opens it again', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.click(term())
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.keyboard('{Escape}')
+      expect(bubble(EXPLAINER)).toBeUndefined()
+      await user.click(term())
+      expect(bubble(EXPLAINER)).toBeDefined()
+    })
+
+    it('closes it when the term is an interactive child', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
+      await user.tab()
+      expect(bubble(EXPLAINER)).toBeDefined()
+      await user.keyboard('{Escape}')
+      expect(bubble(EXPLAINER)).toBeUndefined()
+    })
+  })
+
+  describe('look', () => {
+    it('marks the term with a dotted underline', () => {
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      expect(screen.getByText('Chapter').style.borderBottom).toContain('dotted')
+    })
+
+    it('shows the pointer cursor, never the help cursor', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      expect(term().style.cursor).toBe('pointer')
+      await user.click(term())
+      for (const el of Array.from(document.body.querySelectorAll<HTMLElement>('*'))) expect(el.style.cursor).not.toBe('help')
+    })
+
+    it('keeps the surrounding text styling: no button chrome, inherited font, color, case and spacing', () => {
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      const s = term().style
+      expect(s.background).toBe('none')
+      expect(s.padding).toBe('0px')
+      expect(s.font).toBe('inherit')
+      expect(s.color).toBe('inherit')
+      expect(s.textTransform).toBe('inherit')
+      expect(s.letterSpacing).toBe('inherit')
+    })
+
+    it('opens below with a wrapping bubble by default', () => {
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      fireEvent.pointerEnter(term(), { pointerType: 'mouse' })
+      const b = bubble(EXPLAINER)!
+      expect(b.style.maxWidth).toBe('320px')
+      expect(b.style.transform).toBe('translateX(-50%)')
+    })
+  })
+
+  describe('screen readers', () => {
+    it('describes the term by a hidden copy of the explainer while closed', () => {
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      expect(term()).toHaveAccessibleDescription(EXPLAINER)
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+
+    it('announces the open state the way the ⓘ does: a role=tooltip bubble the button is described by', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      await user.click(term())
+      const tip = screen.getByRole('tooltip')
+      expect(tip).toHaveTextContent(EXPLAINER)
+      expect(term().getAttribute('aria-describedby')).toBe(tip.id)
+      expect(term()).toHaveAccessibleDescription(EXPLAINER)
+      await user.click(term())
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      expect(term()).toHaveAccessibleDescription(EXPLAINER)
+    })
+
+    it('uses the given id for the hidden copy', () => {
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'type-explainer' }}>Chapter</HoverTooltip>)
+      expect(document.getElementById('type-explainer')).toHaveTextContent(EXPLAINER)
+      expect(term().getAttribute('aria-describedby')).toBe('type-explainer')
+    })
+
+    it('exposes no aria-label of its own: the visible text is the name', () => {
+      render(<HoverTooltip text={EXPLAINER} describe>Chapter</HoverTooltip>)
+      expect(term()).not.toHaveAttribute('aria-label')
+    })
+  })
+
+  describe('two explainers on one page', () => {
+    function Two() {
+      return (
+        <p>
+          <HoverTooltip text="First explainer." describe>First</HoverTooltip> and <HoverTooltip text="Second explainer." describe>Second</HoverTooltip>
+        </p>
+      )
+    }
+
+    it('opening the second by click closes the first, as two ⓘ do', async () => {
+      const user = userEvent.setup()
+      render(<Two />)
+      await user.click(screen.getByRole('button', { name: 'First' }))
+      expect(bubble('First explainer.')).toBeDefined()
+      await user.click(screen.getByRole('button', { name: 'Second' }))
+      expect(bubble('Second explainer.')).toBeDefined()
+      expect(bubble('First explainer.')).toBeUndefined()
+      expect(screen.getAllByRole('tooltip')).toHaveLength(1)
+    })
+
+    it('each toggles independently: closing one leaves the other closed, and the other still opens', async () => {
+      const user = userEvent.setup()
+      render(<Two />)
+      await user.click(screen.getByRole('button', { name: 'First' }))
+      await user.click(screen.getByRole('button', { name: 'First' }))
+      expect(screen.queryByRole('tooltip')).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Second' }))
+      expect(screen.getAllByRole('tooltip')).toHaveLength(1)
+    })
+
+    it('hovering the second previews only the second once the first is closed', () => {
+      render(<Two />)
+      fireEvent.pointerEnter(screen.getByRole('button', { name: 'First' }), { pointerType: 'mouse' })
+      fireEvent.pointerLeave(screen.getByRole('button', { name: 'First' }), { pointerType: 'mouse' })
+      fireEvent.pointerEnter(screen.getByRole('button', { name: 'Second' }), { pointerType: 'mouse' })
+      expect(bubble('Second explainer.')).toBeDefined()
+      expect(bubble('First explainer.')).toBeUndefined()
+    })
+  })
+
+  describe('interactive children (the status chip) are unchanged', () => {
+    const chip = () => screen.getByRole('button', { name: 'Chapter' })
+
+    it('adds no wrapper button and no tab stop: the child stays the only control', () => {
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
+      expect(screen.getAllByRole('button')).toHaveLength(1)
+      expect(chip()).not.toHaveAttribute('tabindex')
+      expect(chip().parentElement?.tagName.toLowerCase()).toBe('span')
+      expect(chip()).toHaveAccessibleDescription(EXPLAINER)
+      expect(document.getElementById('status-explainer')).toHaveTextContent(EXPLAINER)
+    })
+
+    it('has no dotted underline and no pointer cursor of its own', () => {
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
+      expect(chip().style.borderBottom).toBe('')
+      expect(chip().parentElement?.style.borderBottom).toBe('')
+      expect(chip().parentElement?.style.cursor).toBe('')
+    })
+
+    it('clicking the chip runs its own click and does not pin or toggle the explainer', async () => {
+      const user = userEvent.setup()
+      const onClick = vi.fn()
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer" onClick={onClick}>Chapter</button></HoverTooltip>)
+      await user.click(chip())
+      expect(onClick).toHaveBeenCalledTimes(1)
+      fireEvent.pointerLeave(chip(), { pointerType: 'mouse' }) // not pinned: leaving closes the hover preview
+      expect(bubble(EXPLAINER)).toBeUndefined()
+    })
+
+    it('still previews on hover and focus', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip text={EXPLAINER} describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
+      fireEvent.pointerEnter(chip(), { pointerType: 'mouse' })
+      expect(bubble(EXPLAINER)).toBeDefined()
+      fireEvent.pointerLeave(chip(), { pointerType: 'mouse' })
+      expect(bubble(EXPLAINER)).toBeUndefined()
+      await user.tab()
+      expect(bubble(EXPLAINER)).toBeDefined()
+    })
+  })
+
+  describe('the ⓘ (toggletip) is unchanged', () => {
+    it('describes nothing while closed, and gets the bubble id while open', async () => {
+      const user = userEvent.setup()
+      render(<HoverTooltip toggletip ariaLabel="More information" text="Scored 1–10 by AI">i</HoverTooltip>)
+      const btn = screen.getByRole('button', { name: 'More information' })
+      expect(btn).not.toHaveAttribute('aria-describedby')
+      expect(btn.style.textTransform).toBe('')
+      await user.click(btn)
+      expect(btn.getAttribute('aria-describedby')).toBe(screen.getByRole('tooltip').id)
+    })
+
+    it('ignores describe when toggletip is set, rendering no hidden copy', () => {
+      render(<HoverTooltip toggletip describe ariaLabel="More information" text="Scored 1–10 by AI">i</HoverTooltip>)
+      expect(screen.queryByText('Scored 1–10 by AI')).toBeNull()
+    })
   })
 
   it('renders plain text when there is no explainer', () => {
     render(<HoverTooltip text={null} describe>Chapter</HoverTooltip>)
-    const term = screen.getByText('Chapter')
-    expect(term).not.toHaveAttribute('tabindex')
-    expect(term).not.toHaveAttribute('aria-describedby')
-  })
-
-  it('with interactive adds no tab stop and uses the given id for the hidden copy', () => {
-    render(<HoverTooltip text="A bill that became law." describe={{ id: 'status-explainer', interactive: true }}><button aria-describedby="status-explainer">Chapter</button></HoverTooltip>)
-    const btn = screen.getByRole('button', { name: 'Chapter' })
-    expect(btn).not.toHaveAttribute('tabindex')
-    expect(btn).toHaveAccessibleDescription('A bill that became law.')
-    expect(document.getElementById('status-explainer')).toHaveTextContent('A bill that became law.')
-  })
-
-  it('opens below with a wrapping bubble by default', () => {
-    render(<HoverTooltip text="A bill that became law." describe>Chapter</HoverTooltip>)
-    fireEvent.pointerEnter(screen.getByText('Chapter'), { pointerType: 'mouse' })
-    const b = bubble('A bill that became law.')!
-    expect(b.style.maxWidth).toBe('320px')
-    expect(b.style.transform).toBe('translateX(-50%)')
+    expect(screen.queryByRole('button')).toBeNull()
+    const el = screen.getByText('Chapter')
+    expect(el).not.toHaveAttribute('tabindex')
+    expect(el).not.toHaveAttribute('aria-describedby')
+    expect(el.style.borderBottom).toBe('')
   })
 
   it('adds no tab stop or hidden copy when off', () => {

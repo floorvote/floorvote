@@ -30,12 +30,12 @@ type NotificationBase = {
 /** Mentions and replies are someone else's comment, so they name its author. */
 type AuthoredNotification = NotificationBase & {
   authorName: string
-  authorSubtitle: string | null
+  authorTitle: string | null
 }
 
 export type MentionNotification = AuthoredNotification & {
   kind: 'mention'
-  sourceType: 'user' | 'role' | 'everyone'
+  sourceType: 'user' | 'role' | 'admins' | 'everyone'
   sourceLabel: string | null
 }
 

@@ -13,7 +13,7 @@ type FieldDef = Pick<typeof customFieldDefinitions.$inferSelect, 'id' | 'type' |
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
-function isCalendarDate(s: string): boolean {
+export function isCalendarDate(s: string): boolean {
   const m = ISO_DATE.exec(s)
   if (!m) return false
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))

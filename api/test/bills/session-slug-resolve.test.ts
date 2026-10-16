@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { SELF, env } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { bills } from '../../src/db/schema'
@@ -14,13 +14,14 @@ const MD_2026 = '2026 Regular Session'
 describe('bill URLs by the session slug central assigned', () => {
   let cookie: string
   beforeEach(async () => {
+    stubFetch() // the bill lookup may ask central in the background; answer it, never reach it
     await resetDb()
     await applyMigrations()
     cookie = `session=${await seedSession(await seedUser({ email: 'm@x.com' }))}`
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  const resolve = (path: string) => SELF.fetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })
+  const resolve = (path: string) => appFetch(`https://x/api/bills/resolve/${path}`, { headers: { Cookie: cookie } })
   const idAt = async (path: string) => {
     const res = await resolve(path)
     expect(res.status).toBe(200)
@@ -37,7 +38,7 @@ describe('bill URLs by the session slug central assigned', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => centralBill(sessionSlug) }))
     await processCentralNotification({ tenantId: 'test-tenant', billId: 'legiscan:3000000101', stubOnly: true },
       { ...env, TENANT_ID: 'test-tenant', CENTRAL_API_URL: 'https://central.test' } as any, getDb(env.DB))
-    vi.unstubAllGlobals()
+    stubFetch()
   }
   const storedSlugs = () => getDb(env.DB).select({ id: bills.id, sessionSlug: bills.sessionSlug }).from(bills).all()
 
@@ -61,7 +62,7 @@ describe('bill URLs by the session slug central assigned', () => {
     expect(await idAt('MD/2026/HB1')).toBe(legiscan)
     expect(await idAt('MD/2026-2/HB1')).toBe(mga)
 
-    const list = await (await SELF.fetch('https://x/api/bills', { headers: { Cookie: cookie } })).json() as { bills: { id: string; sessionSlug: string }[] }
+    const list = await (await appFetch('https://x/api/bills', { headers: { Cookie: cookie } })).json() as { bills: { id: string; sessionSlug: string }[] }
     expect(Object.fromEntries(list.bills.map(b => [b.id, b.sessionSlug]))).toEqual({ [legiscan]: '2026', [mga]: '2026-2' })
   })
 

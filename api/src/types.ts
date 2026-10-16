@@ -45,7 +45,7 @@ export type Env = {
   INSTANCE_DOMAINS?: string
   CALENDAR_DEFAULT_TZ?: string
   DEMO_MODE?: string
-  DEMO_SEED?: string  // demoSeeds registry key; defaults to nj-county-clerks
+  DEMO_SEED?: string  // demoSeeds registry key; defaults to lake-michigan
   LIST_CACHE_TTL?: string  // GET /bills page-query cache TTL (seconds); default 0 (off), set per-tenant to enable
   EMAIL_PROVIDER?: string
   EMAIL?: import('./lib/email').CloudflareEmailBinding
@@ -78,6 +78,9 @@ export type TenantQueueMessage = {
   forceAI?: boolean // Skip text-hash dedup AND keyword gate; always run the model (Gemini)
   interactive?: true     // Set ONLY by promote-bill and reprocess-bill routes; never inferred
   stubOnly?: boolean // Update stub metadata only; skip full bill fetch and AI
+  probe?: string // A delivery check from scripts/verify-instance.sh: record arrival under this nonce and touch no bill
+  /** Sent only by lib/companionAnalysis.ts: analyze a bill that didn't match, because its companion group has a tracked bill. */
+  groupAnalysis?: true
   metadataOnly?: boolean // Refresh metadata from central; skip text fetch + AI.
   matchType?: 'keyword' | 'manual' | null // Bill's match classification for this tenant
   changes?: {

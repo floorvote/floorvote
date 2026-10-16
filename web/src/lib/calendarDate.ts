@@ -1,4 +1,5 @@
 import { todayIso } from './calendarGrid'
+import { dbTsToEpoch } from '../../../shared/time'
 
 // Day-header strings shared by the agenda date dividers and the event popovers,
 // rendered through <DateLabel> (uppercased, amber when today).
@@ -21,10 +22,27 @@ export function eventDateLabel(iso: string): { label: string; isToday: boolean }
   return { label: isToday ? formatTodayHeader(iso) : formatDateHeader(iso), isToday }
 }
 
+// "Mar 2026" — month + year, for a date-only string such as a referral date.
+export function formatMonthYear(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ''
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
+
 // "Jun 9" — month + day, for compact date stamps (e.g. change-history tooltips).
 // Accepts a date-only string or a full timestamp.
 export function formatMonthDay(iso: string): string {
   const d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(`${iso}T00:00:00`) : new Date(iso)
   if (isNaN(d.getTime())) return ''
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+// "October 11" — the full month and day of a database timestamp (either UTC
+// shape), in the viewer's time zone. For prose such as a comment thread's
+// grouping line.
+export function formatLongMonthDay(dbTs: string): string {
+  const d = new Date(dbTsToEpoch(dbTs))
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
 }

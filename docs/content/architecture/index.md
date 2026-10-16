@@ -4,7 +4,7 @@ description: "How FloorVote works inside: one central Worker holds the LegiScan 
 
 # Architecture
 
-FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to LegiScan, stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls LegiScan directly. That way all legislative-API traffic comes from one place, on a schedule you control, however many tenants you run.
+FloorVote uses a central-and-tenant design. One **central** Cloudflare Worker talks to the legislative data provider (LegiScan unless you opt a state into another), stores every bill and its text, and fans changes out to per-tenant queues. Each **tenant** is a self-contained Worker with its own database, users, votes, and positions, and it never calls a provider directly. That way all legislative-API traffic comes from one place, on a schedule you control, however many tenants you run.
 
 ```mermaid
 flowchart TB
@@ -59,10 +59,7 @@ The central-and-tenant split isn't just a diagram — each piece answers a real 
 
 ## Interactive diagrams
 
-Two standalone, explorable versions of the diagrams above, for when you want to trace a path rather than read prose:
-
-- <a href="/docs/internal/architecture.html" target="_self"><strong>Architecture dossier</strong></a> — the full component map, expandable section by section.
-- <a href="/docs/internal/sync-flow.html" target="_self"><strong>Sync flow</strong></a> — the LegiScan-to-tenant pipeline, step by step.
+Two standalone, explorable versions of the diagrams above, for when you want to trace a path rather than read prose. They are maintainer-oriented companions to [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md), which is the code-grounded source of truth.
 
 <!-- Raw anchors with target="_self", not markdown links: these two files are static
      assets in public/, not VitePress pages. A markdown link compiles to an SPA router
@@ -70,5 +67,5 @@ Two standalone, explorable versions of the diagrams above, for when you want to 
      is why they used to work on cmd-click (real navigation) but not on a plain click.
      Raw anchors skip the router. They also skip `base`, hence the explicit /docs/. -->
 
-
-These are maintainer-oriented companions to [`docs/internal/sync-pipeline.md`](https://github.com/floorvote/floorvote/blob/main/docs/internal/sync-pipeline.md), which is the code-grounded source of truth.
+- <a href="/docs/internal/architecture.html" target="_self"><strong>Architecture dossier</strong></a> — the full component map, expandable section by section.
+- <a href="/docs/internal/sync-flow.html" target="_self"><strong>Sync flow</strong></a> — the LegiScan-to-tenant pipeline, step by step.

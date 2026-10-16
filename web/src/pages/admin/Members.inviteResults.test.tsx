@@ -6,7 +6,7 @@ import { Members } from './Members'
 import * as api from '../../lib/api'
 
 const OWNER = {
-  id: 'owner-1', email: 'owner@example.com', name: 'Sole Owner', role: 'owner' as const, subtitle: null,
+  id: 'owner-1', email: 'owner@example.com', name: 'Sole Owner', role: 'owner' as const, title: null,
   createdAt: '2024-01-01T00:00:00Z', lastActive: '2024-01-01T00:00:00Z', deactivatedAt: null, roles: [],
   canVote: true, voteCount: 0, loginTrouble: false, emailBounce: null, hasLoggedIn: true, invitedBy: null,
 }

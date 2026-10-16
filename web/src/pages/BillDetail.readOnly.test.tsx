@@ -55,7 +55,7 @@ vi.mock('../context/DemoContext', () => ({
 const authState = vi.hoisted(() => ({ role: 'admin' as 'member' | 'admin' | 'owner', canVote: true }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, title: null, canVote: authState.canVote },
     loading: false,
   }),
 }))
@@ -82,10 +82,10 @@ const OWN_COMMENT = {
   id: 'c1',
   userId: 'u1',
   userName: 'Alice',
-  userSubtitle: null,
+  userTitle: null,
   content: 'My own comment',
   createdAt: '2025-01-02 00:00:00',
-  reactions: [{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Bob', subtitle: null }] }],
+  reactions: [{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Bob', title: null }] }],
 }
 
 const BILL = {
