@@ -57,3 +57,17 @@ describe('sendEmail — Resend', () => {
     expect(body.text).toBe('Hello')
   })
 })
+
+describe('sendEmail — connection errors', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it('returns ok:false instead of throwing when the resend fetch rejects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
+    const r = await sendEmail({ RESEND_API_KEY: 'k' } as never, { to: ['a@b.com'], subject: 'Hi', html: '<p>x</p>' })
+    expect(r.ok).toBe(false)
+    expect(r.provider).toBe('resend')
+    expect(r.error).toContain('fetch failed')
+    expect(r.error).toContain('network down')
+  })
+})

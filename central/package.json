@@ -17,19 +17,19 @@
     "migrate:legiscan:remote": "wrangler d1 migrations apply central-bills-ls --remote --env legiscan"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.3",
+    "drizzle-orm": "^0.45.4",
     "fflate": "^0.8.3",
-    "hono": "^4.13.12"
+    "hono": "^4.13.13"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20261006.1",
-    "@types/adm-zip": "^0.5.8",
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261011.1",
+    "@types/adm-zip": "^0.6.0",
     "adm-zip": "^0.6.1",
     "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11",
-    "wrangler": "^4.147.0"
+    "wrangler": "^4.149.0"
   },
   "overrides": {
     "undici": "^7.30.0",

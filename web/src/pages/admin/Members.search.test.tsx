@@ -5,7 +5,7 @@ import { Members } from './Members'
 import * as api from '../../lib/api'
 
 // Search on the Members page matches name, email, Role names, and the displayed
-// permission label. An Owner also matches any query inside "admin". Subtitle
+// permission label. An Owner also matches any query inside "admin". Title
 // never matches.
 
 const FINANCE = { id: 'role-fin', name: 'Finance Committee' }
@@ -15,7 +15,7 @@ type Fixture = { id: string; email: string; name: string; role?: 'owner' | 'admi
 
 function member(overrides: Fixture) {
   return {
-    subtitle: null,
+    title: null,
     createdAt: '2024-01-01T00:00:00Z',
     lastActive: '2024-01-01T00:00:00Z',
     deactivatedAt: null,
@@ -34,8 +34,8 @@ const OWNER = member({ id: 'owner-1', email: 'olivia@example.com', name: 'Olivia
 const ADMIN = member({ id: 'admin-1', email: 'avery@example.com', name: 'Avery Admin', role: 'admin', roles: [FINANCE] })
 // Multiple Roles.
 const FRAN = member({ id: 'fran-1', email: 'fran@example.com', name: 'Fran Frost', roles: [FINANCE, OUTREACH] })
-// Zero Roles; subtitle mentions finance but must not match.
-const NORA = member({ id: 'nora-1', email: 'nora@example.com', name: 'Nora North', subtitle: 'Finance Director' })
+// Zero Roles; title mentions finance but must not match.
+const NORA = member({ id: 'nora-1', email: 'nora@example.com', name: 'Nora North', title: 'Finance Director' })
 // Email contains "finance" but holds no Role.
 const ELI = member({ id: 'eli-1', email: 'finance.desk@example.com', name: 'Eli East' })
 // Login trouble, in Outreach.
@@ -143,7 +143,7 @@ describe('Members search', () => {
       expect(shownEmails()).toEqual(emails(ADMIN, FRAN, ELI))
     })
 
-    it('does not match a Member with zero Roles through their subtitle', async () => {
+    it('does not match a Member with zero Roles through their title', async () => {
       await renderPage()
       search('director')
       expect(shownEmails()).toEqual([])

@@ -16,7 +16,7 @@ type TestMember = {
   email: string
   name: string
   role: 'owner' | 'admin' | 'member'
-  subtitle: string | null
+  title: string | null
   createdAt: string
   lastActive: string
   deactivatedAt: string | null
@@ -31,7 +31,7 @@ type TestMember = {
 function member(overrides: Partial<TestMember> & Pick<TestMember, 'id' | 'email' | 'name'>): TestMember {
   return {
     role: 'member',
-    subtitle: null,
+    title: null,
     createdAt: '2024-01-01T00:00:00Z',
     lastActive: '2024-01-01T00:00:00Z',
     deactivatedAt: null,

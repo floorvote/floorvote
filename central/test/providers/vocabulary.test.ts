@@ -3,6 +3,7 @@ import { PROVIDERS, getProvider } from '../../src/providers'
 import { stagePosition } from '../../../shared/statusStages'
 import { EXTRA_DISPLAYS } from '../../../shared/providerExtras'
 import { CALENDAR_KINDS } from '../../../shared/calendarKinds'
+import { RELATIONSHIP_KINDS } from '../../../shared/relationshipKinds'
 import { limsStatusCode } from '../../src/providers/lims/map'
 import { example } from './example'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
@@ -51,6 +52,19 @@ describe.each([...PROVIDERS, example].map(p => [p.id, p] as const))('%s vocabula
       expect(EXTRA_DISPLAYS, e.label).toContain(e.display)
     }
   })
+
+  it('maps each relationship label to one of the three kinds, with state overrides keyed by state', () => {
+    const r = provider.vocabulary.relationships
+    if (!r) return
+    const maps = [r.default, ...Object.values(r.states ?? {})]
+    for (const state of Object.keys(r.states ?? {})) expect(state).toMatch(/^[A-Z]{2}$/)
+    for (const map of maps) {
+      for (const [label, kind] of Object.entries(map)) {
+        expect(label.trim(), 'a label').not.toBe('')
+        expect(RELATIONSHIP_KINDS, label).toContain(kind)
+      }
+    }
+  })
 })
 
 describe('the codes each provider writes', () => {
@@ -82,6 +96,19 @@ describe('the codes each provider writes', () => {
     limsStatusCode('Not Applicable')
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
+  })
+})
+
+describe('the relationship labels each provider maps', () => {
+  const relationships = (id: string) => getProvider(id).vocabulary.relationships
+
+  it('maps LegiScan\'s "Same As" and "Crossfiled" to identical, and Michigan\'s "Same As" to package', () => {
+    expect(relationships('legiscan')?.default).toMatchObject({ 'Same As': 'identical', 'Crossfiled': 'identical' })
+    expect(relationships('legiscan')?.states).toEqual({ MI: { 'Same As': 'package' } })
+  })
+
+  it('maps Maryland\'s "Cross-filed" to identical', () => {
+    expect(relationships('mga')?.default).toMatchObject({ 'Cross-filed': 'identical' })
   })
 })
 

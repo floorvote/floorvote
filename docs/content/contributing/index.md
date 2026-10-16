@@ -38,6 +38,8 @@ cd web && npm test       # frontend tests (vitest + jsdom)
 
 API and central tests use real D1 bindings — no mocked databases.
 
+From the repository root, `npm run test:scripts` runs the repo-tooling tests. They include a check that every internal link and anchor in these docs resolves, so run it after you rename a heading or move a page.
+
 ## Coding conventions
 
 The full rules live in the [`Developing` section of `AGENTS.md`](https://github.com/floorvote/floorvote/blob/main/AGENTS.md#developing) in the repository, which is also what coding agents read. Key points:
@@ -63,6 +65,12 @@ Bill data comes from LegiScan by default, and some legislatures also have a dire
 FloorVote is licensed under [AGPL-3.0](https://github.com/floorvote/floorvote/blob/main/LICENSE). By submitting a pull request, you agree to license your contribution under the same license, and you retain copyright in your own work.
 
 Every commit must carry a `Signed-off-by` line certifying the [Developer Certificate of Origin](https://developercertificate.org/) — a short statement that you wrote the code, or otherwise have the right to submit it. The full text is in [`DCO`](https://github.com/floorvote/floorvote/blob/main/DCO) at the repository root.
+
+Enable the repository's git hooks once per clone, and the `commit-msg` hook warns when a commit has no sign-off:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 Git adds the line for you with `-s`:
 

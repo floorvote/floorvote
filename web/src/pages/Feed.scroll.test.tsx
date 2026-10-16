@@ -19,7 +19,7 @@ function makeEvent(over: Partial<FeedEvent>): FeedEvent {
     id: 'x', type: 'bill_updated', billId: 'b', billNumber: 'HB 1',
     billSessionSlug: null, billState: 'RI', billTitle: 'Bill', billSummary: null,
     billPriority: null, billMatchType: null, userId: 'u1', userName: 'U',
-    userSubtitle: null, metadata: {}, createdAt: '2026-02-01 10:00:00', ...over,
+    userTitle: null, metadata: {}, createdAt: '2026-02-01 10:00:00', ...over,
   }
 }
 

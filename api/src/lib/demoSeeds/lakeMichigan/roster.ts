@@ -17,21 +17,21 @@ import type { DemoSeedCustomField, DemoSeedRole, DemoSeedUser } from '../types'
 // personas active within 7 days, the rest within 30 — the sidebar member
 // count and the admin active-member stats both read this field.
 export const LM_USERS: DemoSeedUser[] = [
-  { id: 'demo-user',       email: 'demo@example.com',   name: 'Josh Marsh',       role: 'admin',  subtitle: 'Policy Director',              createdDaysAgo: 90, canVote: true,  lastActiveDaysAgo: 0 },
-  { id: 'lm-user-ed',      email: 'karen@demo.example', name: 'Karen Waters',   role: 'admin',  subtitle: 'Executive Director',           createdDaysAgo: 88, canVote: true,  lastActiveDaysAgo: 0 },
-  { id: 'lm-user-dep',     email: 'varsha@demo.example', name: 'Varsha Raman',       role: 'admin',  subtitle: 'Deputy Policy Director',       createdDaysAgo: 85, canVote: true,  lastActiveDaysAgo: 1 },
-  { id: 'lm-user-la1',     email: 'devon@demo.example', name: 'Devon Brook',      role: 'member', subtitle: 'Legislative Analyst',          createdDaysAgo: 80, canVote: true,  lastActiveDaysAgo: 1 },
-  { id: 'lm-user-la2',     email: 'sofia@demo.example', name: 'Sofia Marino',   role: 'member', subtitle: 'Legislative Analyst',          createdDaysAgo: 75, canVote: true,  lastActiveDaysAgo: 2 },
-  { id: 'lm-user-wq',      email: 'trevor@demo.example', name: 'Trevor Beck',      role: 'member', subtitle: 'Water Quality Analyst',        createdDaysAgo: 70, canVote: true,  lastActiveDaysAgo: 2 },
-  { id: 'lm-user-gov',     email: 'marina@demo.example', name: 'Marina Okafor',    role: 'member', subtitle: 'Government Affairs Manager',   createdDaysAgo: 65, canVote: true,  lastActiveDaysAgo: 3 },
-  { id: 'lm-user-fed',     email: 'aaron@demo.example', name: 'Aaron Teichman',     role: 'member', subtitle: 'Federal Policy Manager',       createdDaysAgo: 60, canVote: true,  lastActiveDaysAgo: 4 },
-  { id: 'lm-user-res',     email: 'grace@demo.example', name: 'Grace Jiang',         role: 'member', subtitle: 'Research Associate',           createdDaysAgo: 55, canVote: true,  lastActiveDaysAgo: 5 },
-  { id: 'lm-user-comms',   email: 'renee@demo.example', name: 'Renee Rains',      role: 'member', subtitle: 'Communications Director',      createdDaysAgo: 50, canVote: true,  lastActiveDaysAgo: 6 },
-  { id: 'lm-user-gc',      email: 'paul@demo.example',  name: 'Paul Ford',     role: 'member', subtitle: 'General Counsel',              createdDaysAgo: 45, canVote: true,  lastActiveDaysAgo: 7 },
-  { id: 'lm-user-grants',  email: 'tanya@demo.example', name: 'Tanya Wells',      role: 'member', subtitle: 'Grants Manager',               createdDaysAgo: 40, canVote: false,  lastActiveDaysAgo: 10 },
-  { id: 'lm-user-prog',    email: 'miguel@demo.example', name: 'Miguel Rivera',     role: 'member', subtitle: 'Program Coordinator',          createdDaysAgo: 35, canVote: false,  lastActiveDaysAgo: 14 },
-  { id: 'lm-user-data',    email: 'nina@demo.example',  name: 'Nina Potocnik',        role: 'member', subtitle: 'Data Analyst',                 createdDaysAgo: 32, canVote: false,  lastActiveDaysAgo: 20 },
-  { id: 'lm-user-out',     email: 'marcus@demo.example',  name: 'Marcus Weir',     role: 'member', subtitle: 'Outreach Coordinator',         createdDaysAgo: 30, canVote: false, lastActiveDaysAgo: 28 },
+  { id: 'demo-user',       email: 'demo@example.com',   name: 'Josh Marsh',       role: 'admin',  title: 'Policy Director',              createdDaysAgo: 90, canVote: true,  lastActiveDaysAgo: 0 },
+  { id: 'lm-user-ed',      email: 'karen@demo.example', name: 'Karen Waters',   role: 'admin',  title: 'Executive Director',           createdDaysAgo: 88, canVote: true,  lastActiveDaysAgo: 0 },
+  { id: 'lm-user-dep',     email: 'varsha@demo.example', name: 'Varsha Raman',       role: 'admin',  title: 'Deputy Policy Director',       createdDaysAgo: 85, canVote: true,  lastActiveDaysAgo: 1 },
+  { id: 'lm-user-la1',     email: 'devon@demo.example', name: 'Devon Brook',      role: 'member', title: 'Legislative Analyst',          createdDaysAgo: 80, canVote: true,  lastActiveDaysAgo: 1 },
+  { id: 'lm-user-la2',     email: 'sofia@demo.example', name: 'Sofia Marino',   role: 'member', title: 'Legislative Analyst',          createdDaysAgo: 75, canVote: true,  lastActiveDaysAgo: 2 },
+  { id: 'lm-user-wq',      email: 'trevor@demo.example', name: 'Trevor Beck',      role: 'member', title: 'Water Quality Analyst',        createdDaysAgo: 70, canVote: true,  lastActiveDaysAgo: 2 },
+  { id: 'lm-user-gov',     email: 'marina@demo.example', name: 'Marina Okafor',    role: 'member', title: 'Government Affairs Manager',   createdDaysAgo: 65, canVote: true,  lastActiveDaysAgo: 3 },
+  { id: 'lm-user-fed',     email: 'aaron@demo.example', name: 'Aaron Teichman',     role: 'member', title: 'Federal Policy Manager',       createdDaysAgo: 60, canVote: true,  lastActiveDaysAgo: 4 },
+  { id: 'lm-user-res',     email: 'grace@demo.example', name: 'Grace Jiang',         role: 'member', title: 'Research Associate',           createdDaysAgo: 55, canVote: true,  lastActiveDaysAgo: 5 },
+  { id: 'lm-user-comms',   email: 'renee@demo.example', name: 'Renee Rains',      role: 'member', title: 'Communications Director',      createdDaysAgo: 50, canVote: true,  lastActiveDaysAgo: 6 },
+  { id: 'lm-user-gc',      email: 'paul@demo.example',  name: 'Paul Ford',     role: 'member', title: 'General Counsel',              createdDaysAgo: 45, canVote: true,  lastActiveDaysAgo: 7 },
+  { id: 'lm-user-grants',  email: 'tanya@demo.example', name: 'Tanya Wells',      role: 'member', title: 'Grants Manager',               createdDaysAgo: 40, canVote: false,  lastActiveDaysAgo: 10 },
+  { id: 'lm-user-prog',    email: 'miguel@demo.example', name: 'Miguel Rivera',     role: 'member', title: 'Program Coordinator',          createdDaysAgo: 35, canVote: false,  lastActiveDaysAgo: 14 },
+  { id: 'lm-user-data',    email: 'nina@demo.example',  name: 'Nina Potocnik',        role: 'member', title: 'Data Analyst',                 createdDaysAgo: 32, canVote: false,  lastActiveDaysAgo: 20 },
+  { id: 'lm-user-out',     email: 'marcus@demo.example',  name: 'Marcus Weir',     role: 'member', title: 'Outreach Coordinator',         createdDaysAgo: 30, canVote: false, lastActiveDaysAgo: 28 },
 ]
 
 // Five jurisdiction teams (one per covered legislature) plus three working

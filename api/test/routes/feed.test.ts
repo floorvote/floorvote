@@ -14,7 +14,7 @@ describe('GET /feed', () => {
   beforeEach(async () => {
     await resetDb()
     await applyMigrations()
-    memberId = await seedUser({ name: 'Alice', subtitle: 'County Clerk, Ingham County' })
+    memberId = await seedUser({ name: 'Alice', title: 'County Clerk, Ingham County' })
     memberToken = await seedSession(memberId)
     billId = await seedBill({ billNumber: 'HB 42', title: 'Election Security Act' })
     const db = getDb(env.DB)
@@ -53,7 +53,7 @@ describe('GET /feed', () => {
     expect(first.billNumber).toBe('HB 42')
     expect(first.billTitle).toBe('Election Security Act')
     expect(first.userName).toBe('Alice')
-    expect(first.userSubtitle).toBe('County Clerk, Ingham County')
+    expect(first.userTitle).toBe('County Clerk, Ingham County')
     expect(typeof first.metadata).toBe('object')
   })
 

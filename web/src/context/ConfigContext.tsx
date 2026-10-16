@@ -29,9 +29,12 @@ export interface AppConfig {
   operator?: OperatorConfig
   /**
    * The providers the covered states' data comes from, each with the credit it
-   * declares. The footer credits every one. Absent = LegiScan's.
+   * declares. The footer credits every one. Absent until central has named
+   * them: the footer then credits LegiScan, and the Stage filter stays shown.
    */
   attribution?: Attribution
+  /** Where central's admin dashboard lives, once central has said. Absent = unknown, so don't link to it. */
+  centralDashboardUrl?: string
   accountDeletionEnabled?: boolean
   /**
    * What each covered state's data can do, by state, from the provider central
