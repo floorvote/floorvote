@@ -523,6 +523,71 @@ describe('the outcome of a run does not outlive its page', () => {
   })
 })
 
+describe('a run that is still going when the admin moves to another bill', () => {
+  const TRACKED = { id: 'a190', externalId: 'legiscan:190', billNumber: 'A190', matchType: 'keyword' as const, analysisBillId: 'a190', analysisBillExternalId: 'legiscan:190', analysisBillNumber: 'A190', tenantSummary: "A190's summary." }
+  const dimmed = (text: string) => screen.getByText(text).closest('[style*="opacity"]')
+
+  async function menuItemDisabled() {
+    await tick(500) // the menu from the last click finishes closing
+    await user.click(await screen.findByRole('button', { name: 'More actions' }))
+    const item = screen.getByRole('menuitem', { name: /Re-generate/ })
+    const disabled = (item as HTMLButtonElement).disabled
+    await user.keyboard('{Escape}')
+    return disabled
+  }
+
+  it("leaves the new page with no progress chip, no dimmed summary, and Re-generate enabled", async () => {
+    const { goTo } = setup(COMPANION, [COMPANION])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    expect(dimmed("A190's summary.")).not.toBeNull() // the run is dimming this page
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    expect(screen.queryByText(/Regenerating/)).not.toBeInTheDocument()
+    expect(dimmed("A190's summary.")).toBeNull()
+    expect(await menuItemDisabled()).toBe(false)
+  })
+
+  it("lets the new page start its own run while the old one is still polling", async () => {
+    const { goTo, posts } = setup(COMPANION, [COMPANION])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    await tick(500)
+    await regenerate(user)
+    await waitFor(() => expect(posts()).toEqual(['/api/admin/reprocess-bill/legiscan%3A190', '/api/admin/reprocess-bill/legiscan%3A190']))
+    expect(await screen.findByText('Regenerating…')).toBeInTheDocument()
+  })
+
+  it("leaves no stuck chip when the admin comes back to the original bill mid-run", async () => {
+    const { goTo } = setup(COMPANION, [COMPANION])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    act(() => goTo('42', COMPANION))
+    await screen.findByText("A190's summary.")
+    expect(screen.queryByText(/Regenerating/)).not.toBeInTheDocument()
+    expect(dimmed("A190's summary.")).toBeNull()
+    expect(await menuItemDisabled()).toBe(false)
+  })
+
+  it("does not let the old run's end stop the chip of a run started since", async () => {
+    // The old run lands while the new page's own run is going: it must not clear that run's chip.
+    const { goTo } = setup(COMPANION, [{ ...COMPANION, analysisAiProcessedAt: '2026-10-15 12:00:00' }])
+    await regenerate(user)
+    await screen.findByText(/Regenerating/)
+    act(() => goTo('a190', TRACKED))
+    await screen.findByText("A190's summary.")
+    await tick(500)
+    await regenerate(user)
+    await screen.findByText('Regenerating…')
+    await tick() // the first run's poll ends here
+    expect(screen.getByText('Regenerating…')).toBeInTheDocument()
+  })
+})
+
 describe('a group change that leaves the page with no analysis', () => {
   it("still says the group changed, where the analysis box would have been", async () => {
     // After the split the page is an unanalyzed stub: nothing to put the notice beside.

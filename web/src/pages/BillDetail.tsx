@@ -689,8 +689,16 @@ export function BillDetail() {
   // A run's outcome belongs to the page it ran on. Moving to another bill's
   // page (the normal way around a group) reuses this component, so without
   // this "Re-analyzed A190…" would sit on A190's own page.
+  //
+  // So is a run's progress. Each run takes a number, and moving to another bill
+  // retires the current one: the page it was on is gone, so its chip and dimming
+  // go too, and when it ends it touches nothing (a new run's chip included).
+  // A layout effect, so the old outcome never paints on the new bill.
+  const regenerateRun = useRef(0)
   const billIdForRegenerate = bill?.id
-  useEffect(() => {
+  useLayoutEffect(() => {
+    regenerateRun.current++
+    setRegenerating(false)
     setRegenerateError(null)
     setRegenerateNotice(null)
     setRegenerateOtherBill(null)
@@ -1273,6 +1281,7 @@ export function BillDetail() {
     const targetNumber = other ? (bill.analysisBillNumber ?? null) : bill.billNumber
     const prevProcessedAt = hasAnalysisBill ? (bill.analysisAiProcessedAt ?? null) : bill.aiProcessedAt
     const prevSkipReason = hasAnalysisBill ? (bill.analysisAiSkipReason ?? null) : bill.aiSkipReason
+    const run = ++regenerateRun.current
     setRegenerateError(null)
     setRegenerateNotice(null)
     setRegenerateOtherBill(other ? targetNumber : null)
@@ -1306,10 +1315,10 @@ export function BillDetail() {
         baselineSkipReason: prevSkipReason,
         expectedBillId: targetId,
       })
+      // Ends only the run that is still this page's: not one the admin has since left.
+      if (regenerateRun.current !== run) return
       setRegenerating(false)
       setRegenerateOtherBill(null)
-      // Said only where the run was started: not on a page the admin has since moved to.
-      if (billRef.current?.id !== bill.id) return
       const message = regenerateOutcomeMessage(outcome, { billNumber: targetNumber, other })
       // A run that landed on another bill, or whose group changed under it,
       // reports what happened. Only a run that failed is an error.
@@ -1317,9 +1326,9 @@ export function BillDetail() {
       else setRegenerateError(message)
       if (outcome !== 'timeout') refetchBill()
     } catch (e) {
+      if (regenerateRun.current !== run) return
       setRegenerating(false)
       setRegenerateOtherBill(null)
-      if (billRef.current?.id !== bill.id) return
       setRegenerateError(e instanceof Error ? e.message : String(e))
     }
   }
