@@ -25,7 +25,7 @@ import type { Bill, CustomFieldDef, FacetCounts, NormalizedSession } from './typ
 import { useBillSort } from '../../hooks/useBillSort'
 import { useBillFilters } from '../../hooks/useBillFilters'
 import { useBulkActions } from '../../hooks/useBulkActions'
-import { billsApiParams, billsFilterValuesFromSearch } from './billsQuery'
+import { billsApiParams, billsApiParamsFromSearch, searchFromListUrl } from './billsQuery'
 import { searchWarnings } from '../../../../shared/searchLimits'
 import { filterDimensionLabel, isFilterDimensionVisible } from '../../lib/filterDimensions'
 import { useStageFilterUseful } from '../../lib/capabilities'
@@ -75,6 +75,15 @@ export function peekBillsListCache(): { params: string; page: BillsListPage } | 
   return billsListCache
 }
 
+/**
+ * The custom-field definitions the Bills page last loaded ([] before it has).
+ * Anything that builds a /bills request from a list URL passes them to
+ * billsApiParams so a slug in the URL becomes the field id, matching the cache key.
+ */
+export function peekCustomFieldDefs(): CustomFieldDef[] {
+  return cachedCustomFieldDefs ?? []
+}
+
 // Loader-only cache warmer (billListLoader is the sole caller — nothing renders
 // through it), so the fetch goes through apiFetchForLoader: a 10s per-attempt
 // deadline instead of inheriting the server's own 30s, which is what a stalled
@@ -82,8 +91,7 @@ export function peekBillsListCache(): { params: string; page: BillsListPage } | 
 // practice: retryFetch retries until it succeeds or aborts, so a run nobody
 // cancels outlives its navigation and keeps hitting a struggling API forever.
 export async function prefetchBills(targetUrl: string, opts?: { signal?: AbortSignal }): Promise<void> {
-  const search = new URLSearchParams(targetUrl.includes('?') ? targetUrl.slice(targetUrl.indexOf('?') + 1) : '')
-  const paramsStr = billsApiParams(billsFilterValuesFromSearch(search), 1, PAGE_SIZE, cachedCustomFieldDefs ?? [])
+  const paramsStr = billsApiParamsFromSearch(searchFromListUrl(targetUrl), 1, cachedCustomFieldDefs ?? [])
   const data = await apiFetchForLoader<{ bills: Bill[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(`/bills?${paramsStr}`, opts)
   billsListCache = { params: paramsStr, page: { bills: data.bills, total: data.pagination.total, totalPages: data.pagination.totalPages } }
 }
