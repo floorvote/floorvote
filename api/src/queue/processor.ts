@@ -4,6 +4,7 @@ import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
+import { claimLinksEnabled, type ClaimSource } from '../lib/claimSources'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -595,21 +596,28 @@ async function applyCentralBill(
   // bill the reader had just prioritized. Only forceAI forces the model.
   const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
-  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[] } | null = null
+  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[]; claimSources: ClaimSource[] | null } | null = null
+  // The document the model read, which claim sources are pinned to (#568).
+  let claimSourcesPin: { docId: string; textHash: string | null } | null = null
   let aiSkipReason: AiSkipReason | null = null
   // Transient failure text, recorded so a bill that failed is distinguishable
   // from one never attempted. Truncated — this is a diagnostic breadcrumb, not a log.
   let aiError: string | null = null
   if (shouldRunAi && !aiDedup) {
     const { aiContext, relevanceQuestion, taxonomy } = await loadAnalysisInputs(db)
-    const { billText, billPdfBase64, hasFullText } = await loadBillTextForAi(env, msg.billId, centralBill)
+    const { billText, billPdfBase64, hasFullText, textDocId, textHash } = await loadBillTextForAi(env, msg.billId, centralBill)
     if (!hasFullText) console.log(`[processor] No full text for ${centralBill.number}, AI ran on title+abstract only`)
+    // Ask for claim sources only when they can be pinned to the document read:
+    // not on the title and abstract, and not from an older central that does
+    // not name the document it served.
+    if (textDocId !== null && await claimLinksEnabled(db)) claimSourcesPin = { docId: textDocId, textHash }
+    const claimSources = claimSourcesPin !== null
 
     const tier: 'flex' | 'priority' = msg.interactive ? 'priority' : 'flex'
 
     try {
       aiResult = await processBill(
-        { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion },
+        { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion, claimSources },
         env,
         tier,
       )
@@ -619,7 +627,7 @@ async function applyCentralBill(
           console.warn(`[processor] priority shed for ${centralBill.number}, retrying at standard tier`)
           try {
             aiResult = await processBill(
-              { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion },
+              { billNumber: centralBill.number, title: centralBill.title, text: billText, pdfBase64: billPdfBase64, taxonomy, aiContext, relevanceQuestion, claimSources },
               env,
               'standard',
             )
@@ -695,6 +703,14 @@ async function applyCentralBill(
       // layer over bill text, kept verbatim so a later consumer can decide what
       // structure it needs.
       affectedCitations: JSON.stringify(aiResult.affectedCitations),
+      // Every analysis writes all three, so a re-analysis replaces the list,
+      // and one that did not ask clears it: a list never outlives its summary.
+      // Not yet surfaced anywhere.
+      ...(Array.isArray(aiResult.claimSources) && claimSourcesPin !== null ? {
+        claimSources: JSON.stringify(aiResult.claimSources),
+        claimSourcesDocId: claimSourcesPin.docId,
+        claimSourcesTextHash: claimSourcesPin.textHash,
+      } : { claimSources: null, claimSourcesDocId: null, claimSourcesTextHash: null }),
       // Clear any prior permanent skip — AI ran successfully on this text version.
       aiSkipReason: null,
       // …and any prior transient failure, for the same reason.

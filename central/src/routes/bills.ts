@@ -463,7 +463,9 @@ billsRoutes.get('/:id/text', async (c) => {
 
   const db = drizzle(c.env.DB, { schema })
 
-  const texts = await db.select({ r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId, date: schema.billTexts.date })
+  const texts = await db.select({
+    r2Key: schema.billTexts.r2Key, docId: schema.billTexts.docId, date: schema.billTexts.date, textHash: schema.billTexts.textHash,
+  })
     .from(schema.billTexts)
     .where(eq(schema.billTexts.billId, numeric))
     .all()
@@ -471,6 +473,11 @@ billsRoutes.get('/:id/text', async (c) => {
   const withKey = newestStoredText(texts)
 
   if (!withKey?.r2Key) return c.json({ error: 'no text available' }, 404)
+
+  // Names the document served, so an instance can pin what its model read to
+  // it (claim sources, #568). The doc id is a string, as in the bill route's
+  // `texts`. It is the same document whose hash the bill route sends.
+  const served = { docId: String(withKey.docId), textHash: withKey.textHash ?? null }
 
   const cacheKey = textCacheKey('json', withKey.r2Key)
   const cached = await getCachedText(c.env, cacheKey)
@@ -486,9 +493,9 @@ billsRoutes.get('/:id/text', async (c) => {
     // loop on multi-MB PDFs, and avoids ~200 MB of transient heap allocation).
     // Requires nodejs_compat — set in wrangler.toml.
     const buf = await obj.arrayBuffer()
-    res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64') })
+    res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64'), ...served })
   } else {
-    res = c.json({ type: 'html', content: await obj.text() })
+    res = c.json({ type: 'html', content: await obj.text(), ...served })
   }
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res

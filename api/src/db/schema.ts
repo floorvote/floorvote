@@ -154,6 +154,12 @@ export const bills = sqliteTable('bills', {
   // Statutory citations the bill affects, verbatim as printed. See
   // migrations/0066_affected_citations.sql for why these are not normalised.
   affectedCitations: text('affected_citations').notNull().default('[]'),
+  // Claim sources from the analysis (#568): a JSON array of {claim, quote} or,
+  // for a PDF, {claim, quote, page}, pinned to the document the model read.
+  // All three null when the bill has none. See migrations/0108_claim_sources.sql.
+  claimSources: text('claim_sources'),
+  claimSourcesDocId: text('claim_sources_doc_id'),
+  claimSourcesTextHash: text('claim_sources_text_hash'),
   priority: text('priority', { enum: ['high', 'medium', 'low'] }),
   // When the priority was last set (migration 0101). A companion group reads
   // its priority from the member where it was set most recently.

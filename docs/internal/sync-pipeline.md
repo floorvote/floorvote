@@ -554,6 +554,7 @@ Only `ai_processed_at` is ever set successfully; `ai_skip_reason` is never set i
     - **AND** text was successfully fetched
     - **AND** `aiDedup` is false: `existing.lastAiTextHash !== centralBill.textHash`, *unless* `forceAI` bypasses dedup. `forceMetadata` does **not** bypass it — see "Two AI gates, easily confused" below.
   - Writes `ai_processed_at`, `last_ai_text_hash`, `last_ai_text_doc_id` on success.
+  - Also writes `claim_sources`, `claim_sources_doc_id`, and `claim_sources_text_hash` on success (#568). The analysis asks for claim sources (a quote from the bill text behind each claim in the summary) only when the instance's claim links are on and central's `GET /bills/:id/text` named the document it served (`docId` and `textHash` beside `type` and `content`). The list is pinned to that document, which is not always `last_ai_text_doc_id`: that is the newest document by date, while the text route serves the newest one with a stored copy. An analysis that did not ask writes null to all three, so claim sources never outlive the summary they quote.
 
 ### AI service tiers
 
