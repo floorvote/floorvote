@@ -271,7 +271,7 @@ export async function buildBillDetail(
     // Central's committee when it has one. Only demo seeds fill bills.committee, and a name has no id or chamber.
     committee: centralRich?.committee ?? (bill.committee ? { committeeId: null, name: bill.committee, chamber: null } : null),
     referrals: centralRich?.referrals ?? [],
-    // The analysis of whichever member was analyzed most recently.
+    // The group's analysis: its most recently analyzed tracked member's, or any member's when none tracked has one.
     tenantSummary: teamValues.analysis ? teamValues.analysis.tenantSummary : bill.tenantSummary,
     tags: filterTagsToTaxonomy(teamValues.analysis ? teamValues.analysis.tags : JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,

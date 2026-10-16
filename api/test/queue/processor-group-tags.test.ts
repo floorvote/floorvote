@@ -6,8 +6,8 @@ import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
 
 // A tag filter tests each bill's group tags (migration 0103): the tags of its
-// companion group's current analysis, the most recently analyzed bill's, or its
-// own for a bill in no group. Stored on every bill, they must follow each
+// companion group's current analysis (the most recently analyzed tracked bill's,
+// migration 0106), or its own for a bill in no group. Stored on every bill, they must follow each
 // change to an analysis or to a group: a new analysis, a join, a split, and a
 // recompute that rekeys several bills at once.
 
