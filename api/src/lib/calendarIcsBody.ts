@@ -1,3 +1,5 @@
+import { dateFieldNote } from '../../../shared/eventSource'
+
 const trackerLink = (assoc: string, href: string) =>
   `View in ${assoc} Tracker: ${href}`
 
@@ -10,6 +12,11 @@ export function hearingBody(p: {
   if (p.priority) lines.push(`Priority: ${p.priority}`)
   lines.push('', trackerLink(p.assoc, p.billHref))
   return lines.join('\n')
+}
+
+/** A date custom field's event: says where the date is set, and links to the bill page, the only place it can change. */
+export function dateFieldBody(p: { fieldName: string; billNumber: string; billHref: string; assoc: string }): string {
+  return [dateFieldNote(p.fieldName, p.billNumber), '', trackerLink(p.assoc, p.billHref)].join('\n')
 }
 
 // Precedence A: user url → first linked bill (canonical) → calendar page.

@@ -3,7 +3,7 @@ import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
   bills, comments, users, commentReactions, feedEvents,
-  billTexts, roles, userRoles, teamEvents,
+  billTexts, roles, userRoles, teamEvents, billMutes,
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -80,10 +80,14 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, myMuteRow, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
+    // Muting any bill in the group mutes its one conversation.
+    db.select({ userId: billMutes.userId }).from(billMutes)
+      .where(and(inGroupOf(billMutes.billId, billId), eq(billMutes.userId, currentUser.id)))
+      .get(),
     // The team fields (position, priority, custom fields, analysis, triage),
     // each the one set most recently on any member (lib/teamFields.ts).
     loadGroupTeamValues(db, billId),
@@ -312,6 +316,7 @@ export async function buildBillDetail(
     // holds them all under their bill numbers until the next save merges them.
     myNote: mergeGroupNotes(myNotes),
     myNotes,
+    commentsMuted: !!myMuteRow,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,

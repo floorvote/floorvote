@@ -10,7 +10,7 @@ import { sendEmail, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
 import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
-import { renderReplyEmail } from './replies'
+import { renderReplyEmail, muteBillPageUrl } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
 import { renderEmailChangeConfirmEmail, renderEmailChangeNoticeEmail, renderEmailChangeReportedEmail } from './emailChangeEmail'
 
@@ -137,6 +137,8 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
           author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
           bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
           comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>I read the amended text. Section two still lets a clerk waive the ID check, so I don\'t think we need to oppose it after all.</p>' },
+          // A sample is not signed for anyone, so its mute link opens the page and goes no further.
+          muteUrl: muteBillPageUrl(appUrl, 'sample'),
         }),
       }
     case 'invite-bounced': {

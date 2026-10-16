@@ -73,6 +73,7 @@ import { useMultiState } from '../context/ConfigContext'
 import { AnalysisBox, AnalysisProgressChip, DIMMED_WHILE_RUNNING } from '../components/AnalysisBox'
 import { pollForAnalysis, analysisOutcomeMessage } from '../lib/analysisPoll'
 import { MissingRequiredReason, requiredName, useRequiredSubmit } from '../components/RequiredField'
+import { useCommentsMute, CommentsMuteButton, CommentsMutedNote } from '../components/CommentsMuteToggle'
 
 function PartyBadge({ party }: { party: string }) {
   const bg = party === 'D' ? color.bgBlueChip : party === 'R' ? color.bgRedPriority : color.surfaceMuted
@@ -521,6 +522,8 @@ type BillDetailData = {
   memberVotes?: { userName: string; userEmail: string; position: string; votedAt: string; roles: { id: string; name: string }[] }[]
   comments: Comment[]
   commentsTotal: number
+  /** Whether the signed-in member muted this bill's comments. */
+  commentsMuted: boolean
 }
 
 /**
@@ -652,6 +655,7 @@ export function BillDetail() {
   const [positionMeta, setPositionMeta] = useState<{ setByName: string; updatedAt: string } | null>(prefetchedBill?.position ? { setByName: prefetchedBill.position.setByName, updatedAt: prefetchedBill.position.updatedAt } : null)
   const [voteCounts, setVoteCounts] = useState(prefetchedBill?.voteCounts ?? { support: 0, oppose: 0, neutral: 0, total: 0 })
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
+  const commentsMute = useCommentsMute({ billId: bill?.id ?? '', initialMuted: bill?.commentsMuted ?? false })
   // Lines where the bill's companion group formed or split, placed among the comments by time.
   const groupingLines = useMemo(() => placeGroupingLines(comments, bill?.groupingEvents ?? []), [comments, bill?.groupingEvents])
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
@@ -2790,9 +2794,13 @@ export function BillDetail() {
 
           {/* Comments */}
           <div id="section-comments" style={{ ...CARD, padding: 16, boxShadow: flashedSectionId === 'section-comments' ? '0 0 0 3px #fde68a' : (CARD.boxShadow as string | undefined), transition: 'box-shadow 0.6s ease' }}>
-            <div style={{ ...SECTION_LABEL, marginBottom: 14 }}>
-              Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+              <div style={SECTION_LABEL}>
+                Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
+              </div>
+              <CommentsMuteButton muted={commentsMute.muted} pending={commentsMute.pending} onToggle={commentsMute.toggle} />
             </div>
+            {commentsMute.muted && <CommentsMutedNote />}
             {comments.map((comment, idx) => (
               <Fragment key={comment.id}>
               {groupingLines.before.get(comment.id)?.map(e => <GroupingLine key={e.id} event={e} />)}
