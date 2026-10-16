@@ -271,6 +271,9 @@ export async function buildBillDetail(
       claim: i.claim,
       status: i.status,
       ...(i.quoteAt && i.matched !== undefined ? { quoteAt: i.quoteAt, matched: i.matched } : {}),
+      // A PDF's item links by page, with its quote shown beside the link (#572).
+      // The instance never matched the quote, so these are the model's own.
+      ...(i.status === 'unverified' ? { quote: i.quote, page: typeof i.page === 'number' ? i.page : null } : {}),
     })),
   }
 
