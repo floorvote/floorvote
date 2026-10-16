@@ -361,7 +361,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
 
       {/* Pinned top: brand + nav (does not scroll) */}
       <div style={{ flexShrink: 0 }}>
-      <div className="sidebar-brand" style={{ background: color.billBadgeNavy, padding: '16px 20px' }}>
+      <div className="sidebar-brand" style={{ background: color.brandNavy, padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {/* The lockup navigates home, per the near-universal convention. onClose
@@ -394,7 +394,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
                   top: -3,
                   right: -3,
                   background: color.textErrorRed,
-                  color: color.white,
+                  color: color.textOnFill,
                   fontSize: fontSize.xs,
                   fontWeight: fontWeight.bold,
                   borderRadius: radius.pill,
@@ -429,7 +429,7 @@ export function Sidebar({ isOpen, onClose, containerRef }: SidebarProps) {
           </div>
         </div>
         {config?.associationName && (
-          <div style={{ fontSize: fontSize.sm, color: color.accentBlueMuted, marginTop: 5, lineHeight: 1.3 }}>
+          <div style={{ fontSize: fontSize.sm, color: color.textOnBrandMuted, marginTop: 5, lineHeight: 1.3 }}>
             {config.associationName}
           </div>
         )}

@@ -88,7 +88,7 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
   )
   const rowStyle = {
     display: 'flex', alignItems: 'flex-start', gap: 8, width: '100%', padding: '10px 14px', boxSizing: 'border-box',
-    background: hovered && expandable ? 'rgba(0,0,0,0.04)' : color.white, border: 'none', font: 'inherit',
+    background: hovered && expandable ? color.surfaceMuted : color.white, border: 'none', font: 'inherit',
   } as const
 
   return (

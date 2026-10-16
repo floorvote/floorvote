@@ -816,7 +816,7 @@ export function BillList() {
           Filters
           {f.totalActiveFilters > 0 && (
             <span style={{
-              background: color.linkBlue, color: color.white,
+              background: color.linkBlue, color: color.textOnFill,
               borderRadius: radius.lg, padding: '0 6px', fontSize: fontSize.xs, fontWeight: fontWeight.bold,
             }}>
               {f.totalActiveFilters}

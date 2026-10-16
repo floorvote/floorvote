@@ -195,7 +195,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
     <div
       ref={panelRef}
       style={{
-        boxShadow: highlight ? '0 0 0 3px #fde68a' : 'none',
+        boxShadow: highlight ? `0 0 0 3px ${color.borderAmber}` : 'none',
         transition: 'box-shadow 0.4s ease',
         borderRadius: radius.md,
       }}
@@ -234,7 +234,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId }: B
                 href={`/api/bills/${billId}/text/${selectedDocId}`}
                 target="_blank"
                 rel="noreferrer"
-                style={{ background: color.billBadgeNavy, color: color.white, fontSize: fontSize.base, fontWeight: fontWeight.semibold, padding: '10px 20px', borderRadius: radius.md, textDecoration: 'none' }}
+                style={{ background: color.billBadgeNavy, color: color.textOnFill, fontSize: fontSize.base, fontWeight: fontWeight.semibold, padding: '10px 20px', borderRadius: radius.md, textDecoration: 'none' }}
               >
                 Open PDF <ExternalLinkIcon size={14} />
               </a>

@@ -255,7 +255,7 @@ export function SentimentBars({ voteCounts, memberVotes, isAdmin, myVote, onVote
               </button>
             </div>
             {showBreakdown && (
-              <div style={{ marginTop: 6, borderLeft: '2px solid #e2e8f0', paddingLeft: 10, marginLeft: 1 }}>
+              <div style={{ marginTop: 6, borderLeft: `2px solid ${color.borderDefault}`, paddingLeft: 10, marginLeft: 1 }}>
                 {sortedRoles.length > 0 && (() => {
                   const roleCounts: Record<string, number> = {}
                   for (const v of memberVotes) {

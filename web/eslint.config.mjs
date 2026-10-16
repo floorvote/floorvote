@@ -76,10 +76,12 @@ export default [
   {
     // Intentional hex-literal exemptions — each entry has a specific reason:
     //   tokens.ts          — token source of truth; raw hex is the definition, not a usage
+    //   colorModes.ts      — the dark-mode palette; the same kind of definition
     //   tiptap-ui/**       — editor color palette; product data controlled by the Tiptap package
     //   *.test.*           — tests assert literal rendered values, not token references
     files: [
       'src/styles/tokens.ts',
+      'src/styles/colorModes.ts',
       'src/components/tiptap-ui/**/*.{ts,tsx}',
       '**/*.test.ts',
       '**/*.test.tsx',

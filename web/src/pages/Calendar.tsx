@@ -342,7 +342,7 @@ export function Calendar() {
                 onClick={openAdd}
                 style={{
                   background: color.accentBlue,
-                  color: color.white,
+                  color: color.textOnFill,
                   border: 'none',
                   borderRadius: radius.md,
                   padding: '8px 14px',

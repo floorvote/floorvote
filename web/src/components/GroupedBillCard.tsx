@@ -137,7 +137,6 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
         {rows.map(row => {
           const isMuted = row.bg === CARD_STYLE.headerBg
           const baseBg = isMuted ? CARD_STYLE.headerBg : color.white
-          const hoverBg = isMuted ? color.surfaceMuted : 'rgba(0,0,0,0.04)'
           const unread = isUnreadItem(row.createdAt, row.userId, seenAt, currentUserId)
           return (
             <div
@@ -149,7 +148,7 @@ export function GroupedBillCard({ group, seenAt = null, currentUserId = null }: 
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 8,
                 padding: '8px 14px',
-                background: hoveredRow === row.key ? hoverBg : baseBg,
+                background: hoveredRow === row.key ? color.surfaceMuted : baseBg,
                 borderTop: `1px solid ${CARD_STYLE.rowBorder}`,
                 cursor: 'pointer',
               }}
