@@ -1793,6 +1793,28 @@ describe('POST /admin/keyword-resync', () => {
       expect(await tagsEvents()).toEqual([])
     })
 
+    it('still tells central about the demotes, and returns 200, when the event can\'t be written', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await db().delete(associationConfig)
+      await db().insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+      // The advisory event is the one write that fails: its table is gone.
+      await env.DB.exec('DROP TABLE team_events')
+      const central = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true })))
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const res = await app.request('/api/admin/keyword-resync', { method: 'POST', headers: { Cookie: adminCookie } },
+        { ...env, BILL_QUEUE: { sendBatch: vi.fn().mockResolvedValue(undefined) }, CENTRAL: { fetch: central } })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ demoted: 1 })
+      expect(await matchTypeOf('a1')).toBeNull()
+      const updates = await Promise.all(central.mock.calls
+        .filter(([req]) => new URL((req as Request).url).pathname.includes('/update-bill-match-types/'))
+        .map(([req]) => (req as Request).json() as Promise<{ updates: unknown[] }>))
+      expect(updates.map(u => u.updates)).toEqual([[{ externalId: 'legiscan:a1', matchType: null }]])
+      expect(errors).toHaveBeenCalled()
+      errors.mockRestore()
+    })
+
     it('records one event per group whose tags moved, across a bulk cleanup', async () => {
       // g1 and g2 follow their demoted bill's tags. g3's demoted bill wasn't followed. g4 has two demoted bills
       // at once, which move its group's tags once. A bill in no group sits among them.
@@ -1802,8 +1824,9 @@ describe('POST /admin/keyword-resync', () => {
       await member('b2', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g2' })
       await member('a3', { tags: ['Labor'], at: '2026-09-01 00:00:00', group: 'g3' })
       await member('b3', { title: MATCHING, tags: ['Energy'], at: '2026-09-02 00:00:00', group: 'g3' })
-      await member('a4', { tags: ['Labor'], at: '2026-09-03 00:00:00', group: 'g4' })
+      // Seeded with the larger id first, so "the first one read" and "the smallest id" differ.
       await member('a4b', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g4' })
+      await member('a4', { tags: ['Labor'], at: '2026-09-03 00:00:00', group: 'g4' })
       await member('b4', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g4' })
       await member('solo', { tags: ['Labor'], at: '2026-09-02 00:00:00' })
       expect(await cleanup()).toMatchObject({ demoted: 6 })

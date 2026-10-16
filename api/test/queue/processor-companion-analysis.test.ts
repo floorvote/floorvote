@@ -515,6 +515,16 @@ describe('companions that didn\'t match are analyzed through their group', () =>
       expect(await tagsEvents()).toEqual([{ billId: 'b1713', actorUserId: null, field: 'tags', label: 'tags', old: ['Labor'], new: ['Energy'] }])
     })
 
+    it('still completes the delivery when the event can\'t be written', async () => {
+      // The advisory event is the one write that fails: its table is gone.
+      await env.DB.exec('DROP TABLE team_events')
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      await becomesMatching()
+      expect((await billRow('b1713')).matchType).toBe('keyword')
+      expect(errors).toHaveBeenCalled()
+      errors.mockRestore()
+    })
+
     it('records one event, not two, when the delivery also runs a new analysis', async () => {
       const llm = await import('../../src/lib/llm')
       vi.mocked(llm.processBill).mockResolvedValue({ summary: 'S1713 summary again', tags: ['Energy'], relevanceScore: 5, affectedCitations: [] })
