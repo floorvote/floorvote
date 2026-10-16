@@ -43,8 +43,8 @@ export function DemoBanner() {
 
   const text = config?.demoBanner
   // Render nothing (not fallback copy) until config resolves — otherwise a
-  // non-NJ tenant would flash New Jersey's banner text while GET /config is
-  // still in flight.
+  // tenant would flash the wrong banner text while GET /config is still in
+  // flight.
   if (!demoMode || dismissed || !text) return null
 
   function dismiss() {

@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
+import type { EventSource } from '../../../shared/eventSource'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -450,7 +451,9 @@ export const calendarEvents = sqliteTable('calendar_events', {
   // 'hearing': a bill's calendar entry, from central. 'custom': the instance's
   // own. 'body': an event on a legislature's own calendar, from central
   // (lib/bodyEvents.ts), which links its agenda bills in calendar_event_bills.
-  source: text('source').notNull().default('hearing'),
+  // A date custom field's event (source 'field') is never stored: it's
+  // projected from bill_custom_field_values at read time (lib/dateFieldEvents.ts).
+  source: text('source').$type<EventSource>().notNull().default('hearing'),
   // A bill calendar entry's kind, as central sent it: 'hearing', 'markup',
   // 'meeting', or 'deadline' (shared/calendarKinds.ts). Null for custom
   // events, and for an entry central hasn't sent since migration 0079.
