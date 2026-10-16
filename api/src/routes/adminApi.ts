@@ -32,6 +32,7 @@ import { isPendingInvite, pendingInviteWhere } from '../lib/pendingInvite'
 import { isPreviouslyBounced, previouslyBouncedAddresses } from '../lib/bouncedAddresses'
 import { adminSendChecks, claimSend, releaseSend } from '../lib/adminSendLimits'
 import { mayChangeEmail, refuseSuperadmin, requestEmailChange } from '../lib/emailChange'
+import { recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { centralEmail, type DeliveryStatus, type SuppressionStatus } from '../lib/centralEmail'
 import { userTitleSql } from '../lib/userTitle'
 
@@ -964,7 +965,7 @@ adminApiRouter.post('/keyword-resync', async (c) => {
 
   // ── Cleanup pass: demote or protect stale keyword matches ──
   const keywordBills = await db
-    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber, priority: bills.priority })
+    .select({ id: bills.id, externalId: bills.externalId, title: bills.title, abstract: bills.abstract, billNumber: bills.billNumber, priority: bills.priority, groupKey: bills.groupKey })
     .from(bills)
     .where(and(eq(bills.matchType, 'keyword'), isNotNull(bills.externalId)))
     .all()
@@ -996,6 +997,10 @@ adminApiRouter.post('/keyword-resync', async (c) => {
     const toManual = staleBills.filter(b => engagedIds.has(b.id) || b.priority != null)
     const toDemote = staleBills.filter(b => !engagedIds.has(b.id) && b.priority == null)
 
+    // A group's tags come from a tracked member first (#554), so demoting a bill can move them, and no
+    // analysis records it. Protecting one as manual keeps it tracked, so it can't.
+    const tagsBefore = await snapshotGroupTags(db, toDemote)
+
     const updateStmts = [
       ...toManual.map(b => db.update(bills).set({ matchType: 'manual' }).where(eq(bills.id, b.id))),
       ...toDemote.map(b => db.update(bills).set({ matchType: null }).where(eq(bills.id, b.id))),
@@ -1020,6 +1025,14 @@ adminApiRouter.post('/keyword-resync', async (c) => {
       if (!mtRes.ok) console.warn(`[keyword-resync] central update-bill-match-types returned ${mtRes.status}`)
     } catch (err) {
       console.error('[keyword-resync] central update-bill-match-types failed:', err)
+    }
+
+    // After central is told, and best-effort like it: the event is advisory history, so a failure to
+    // write it must not fail the route once the bills are demoted here.
+    try {
+      await recordGroupTagChanges(db, tagsBefore)
+    } catch (err) {
+      console.error('[keyword-resync] recording group tag changes failed:', err)
     }
   }
 
