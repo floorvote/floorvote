@@ -187,7 +187,7 @@ export type CalendarBlock = {
 
 export type NotificationMessage = {
   tenantId: string
-  billId: string   // the bill handle, "legiscan:{bill_id}" (toHandle in lib/billHandle)
+  billId: string   // the bill handle, "legiscan:{bill_id}" (toHandle in lib/billHandle; a neutral "bill:{bill_id}" is accepted too)
   forceMetadata?: boolean
   forceAI?: boolean
   interactive?: true     // only set when true; omitted for all background paths

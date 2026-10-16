@@ -15,6 +15,7 @@ import { nowDb } from '../lib/dbTime'
 import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
+import { normalizeHandle } from '../../../shared/billHandle'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
 
 class AiShedError extends Error {
@@ -178,7 +179,7 @@ export async function processQueue(
       message.ack()
     } catch (err) {
       if (err instanceof AiShedError) {
-        await recordShedAttempt(db, message.body.billId, message.attempts, err)
+        await recordShedAttempt(db, normalizeHandle(message.body.billId), message.attempts, err)
         console.warn(
           `[processor] AI gateway shed for ${message.body.billId}`
           + ` (status ${err.status ?? 'unknown'})`
@@ -272,6 +273,9 @@ export async function processCentralNotification(
   db: AppDb,
 ): Promise<void> {
   if (msg.tenantId !== env.TENANT_ID) return
+  // A handle may arrive in either form (#305). Everything below, including the
+  // bill lookup, its stored handle, and calendar UIDs, sees the stored form.
+  msg = { ...msg, billId: normalizeHandle(msg.billId) }
 
   // A delivery check (scripts/verify-instance.sh): record that it arrived and
   // stop. It must reach no bill write, no feed event, and no analysis.

@@ -5,6 +5,7 @@ import { hearingUid } from './hearingUid'
 import { nowDb } from './dbTime'
 import { applyEventRules, bodyEventFacets, centralOptions, loadEventRules, optionCommittees } from './eventRules'
 import { httpUrl } from '../../../shared/httpUrl'
+import { normalizeHandle } from '../../../shared/billHandle'
 import type { Attribution, ProviderCredit } from '../../../shared/dataAttribution'
 import type { AppDb, Env } from '../types'
 
@@ -263,7 +264,7 @@ async function reconcileBodyEvents(
   }
 
   // Agenda bills the instance holds, by handle.
-  const handles = [...new Set(events.flatMap(e => e.bills))]
+  const handles = [...new Set(events.flatMap(e => e.bills).map(normalizeHandle))]
   const billByHandle = new Map<string, string>()
   for (const chunk of chunks(handles)) {
     for (const b of await db.select({ id: bills.id, externalId: bills.externalId }).from(bills).where(inArray(bills.externalId, chunk)).all()) {
@@ -301,7 +302,7 @@ async function reconcileBodyEvents(
         else result.upserted++
       }
     }
-    await relink(db, id, e.bills.map(h => billByHandle.get(h)).filter((b): b is string => !!b))
+    await relink(db, id, e.bills.map(h => billByHandle.get(normalizeHandle(h))).filter((b): b is string => !!b))
   }
 
   // Events central no longer sends for this instance.
