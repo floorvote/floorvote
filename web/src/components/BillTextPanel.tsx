@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useId, useMemo, useRef } from 'react'
 import { useVerticalResize, ResizeHandle } from './ResizeHandle'
 import { BillTextChip } from './BillTextChip'
 import { ExternalLinkIcon } from './ExternalLinkIcon'
@@ -178,6 +178,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const pdfTarget = pdfRequest ? pdfPageTarget(pdfRequest.page) : null
   const pageFragment = pdfTarget ? `#page=${pdfTarget.page}` : ''
   const captionRef = useRef<HTMLDivElement>(null)
+  const captionId = `pdf-quote${useId()}`
   const focusedRequestRef = useRef<number | null>(null)
   const pdfRequestKey = pdfRequest?.key ?? null
   useEffect(() => {
@@ -239,6 +240,13 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
         setNotPdfDocIds(prev => new Set(prev).add(docId))
         return
       }
+      // A later load that is a PDF clears an earlier "not a PDF" (the file was re-ingested).
+      setNotPdfDocIds(prev => {
+        if (!prev.has(docId)) return prev
+        const next = new Set(prev)
+        next.delete(docId)
+        return next
+      })
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
       blobUrlsRef.current.set(docId, url)
       setPdfBlobUrls(prev => new Map(prev).set(docId, url))
@@ -321,10 +329,13 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
       tabIndex={-1}
       role="group"
       aria-label="Quote behind the claim you opened"
+      // Focus lands here, and not every screen reader reads a group's contents
+      // on focus, so the page line and the quote are its description.
+      aria-describedby={`${captionId}-page ${captionId}-quote`}
       style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: '8px 12px', marginBottom: 8 }}
     >
-      <p style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
-      <blockquote style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+      <p id={`${captionId}-page`} style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
+      <blockquote id={`${captionId}-quote`} style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
     </div>
   ) : null
 

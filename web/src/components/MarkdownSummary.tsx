@@ -157,7 +157,10 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); color: ${color.textSlate};
             font-size: 0.875em; font-weight: 400; font-style: normal; line-height: 1.4; text-align: left; white-space: normal;
           }
-          .markdown-summary .claim-ref:not([data-dismissed]):hover > .claim-quote { display: block; }
+          /* Hover only where the device can: on iOS a hover that reveals content holds the first tap. */
+          @media (hover: hover) {
+            .markdown-summary .claim-ref:not([data-dismissed]):hover > .claim-quote { display: block; }
+          }
           .markdown-summary .claim-ref:not([data-dismissed]):focus-within > .claim-quote { display: block; }
           @media (max-width: 600px) {
             .markdown-summary .claim-quote { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; width: auto; max-width: none; }

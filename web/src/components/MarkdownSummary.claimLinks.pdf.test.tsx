@@ -83,7 +83,7 @@ describe('MarkdownSummary: PDF claim links with a quote', () => {
     const block = css.match(/@media \(hover: hover\)\s*\{([^@]*?\})\s*\}/)
     expect(block).not.toBeNull()
     expect(block![1]).toMatch(/:hover\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
-    expect(css.replace(block![0], '')).not.toContain(':hover')
+    expect(css.replace(block![0], '')).not.toMatch(/:hover\s*>\s*\.claim-quote/)
     // Keyboard focus still reveals it everywhere.
     expect(css.replace(block![0], '')).toMatch(/:focus-within\s*>\s*\.claim-quote\s*\{[^}]*display:\s*block/)
   })
