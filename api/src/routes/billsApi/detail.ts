@@ -3,7 +3,7 @@ import { getDb } from '../../db/client'
 import { rowidOf } from '../../db/rowid'
 import {
   bills, comments, users, commentReactions, feedEvents,
-  billTexts, roles, userRoles, teamEvents,
+  billTexts, roles, userRoles, teamEvents, billMutes,
 } from '../../db/schema'
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -80,10 +80,14 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, myMuteRow, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
+    // Muting any bill in the group mutes its one conversation.
+    db.select({ userId: billMutes.userId }).from(billMutes)
+      .where(and(inGroupOf(billMutes.billId, billId), eq(billMutes.userId, currentUser.id)))
+      .get(),
     // The team fields (position, priority, custom fields, analysis, triage),
     // each the one set most recently on any member (lib/teamFields.ts).
     loadGroupTeamValues(db, billId),
@@ -245,6 +249,18 @@ export async function buildBillDetail(
     }
   }
 
+  // The bill the shown analysis comes from: this bill's own unless its group
+  // shows a tracked member's (#554). Regenerate re-analyzes it and polls its
+  // analysis time (#563), so the page needs its handle and where its analysis
+  // stands, which on a companion's page are not the page bill's own.
+  const analysisBillId = teamValues.analysis?.billId ?? bill.id
+  const analysisBill = analysisBillId === bill.id
+    ? bill
+    : (await db.select({
+        id: bills.id, externalId: bills.externalId, billNumber: bills.billNumber,
+        aiProcessedAt: bills.aiProcessedAt, aiSkipReason: bills.aiSkipReason, textStatus: bills.textStatus,
+      }).from(bills).where(eq(bills.id, analysisBillId)).get()) ?? bill
+
   const response: Record<string, unknown> = {
     id: bill.id,
     externalId: bill.externalId,
@@ -267,7 +283,7 @@ export async function buildBillDetail(
     // Central's committee when it has one. Only demo seeds fill bills.committee, and a name has no id or chamber.
     committee: centralRich?.committee ?? (bill.committee ? { committeeId: null, name: bill.committee, chamber: null } : null),
     referrals: centralRich?.referrals ?? [],
-    // The analysis of whichever member was analyzed most recently.
+    // The group's analysis: its most recently analyzed tracked member's, or any member's when none tracked has one.
     tenantSummary: teamValues.analysis ? teamValues.analysis.tenantSummary : bill.tenantSummary,
     tags: filterTagsToTaxonomy(teamValues.analysis ? teamValues.analysis.tags : JSON.parse(bill.tags) as string[], tagSet),
     relevanceScore: bill.relevanceScore,
@@ -306,12 +322,21 @@ export async function buildBillDetail(
     aiProcessedAt: bill.aiProcessedAt ?? null,
     aiSkipReason: bill.aiSkipReason ?? null,
     lastAiTextDocId: bill.lastAiTextDocId,
+    // Where the analysis shown above stands: the page bill's own fields in no
+    // group or on a tracked bill's page, the tracked bill's on a companion's.
+    analysisBillId: analysisBill.id,
+    analysisBillExternalId: analysisBill.externalId ?? null,
+    analysisBillNumber: analysisBill.billNumber,
+    analysisAiProcessedAt: analysisBill.aiProcessedAt ?? null,
+    analysisAiSkipReason: analysisBill.aiSkipReason ?? null,
+    analysisTextStatus: analysisBill.textStatus ?? null,
     textStatus: bill.textStatus ?? null,
     myVote: myVoteRow?.position ?? null,
     // The member's notes across the group, and the one note they edit, which
     // holds them all under their bill numbers until the next save merges them.
     myNote: mergeGroupNotes(myNotes),
     myNotes,
+    commentsMuted: !!myMuteRow,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,

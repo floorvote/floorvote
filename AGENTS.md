@@ -132,7 +132,7 @@ Tenant migrations: `api/migrations/`. Central migrations: `central/migrations-le
 
 **Keep `;` out of SQL comments in `api/migrations/`.** The api test helper (`parseMigration` in `api/test/helpers.ts`) splits a file on `;` before it strips comments, so the words after the semicolon run as SQL. Every test that calls `applyMigrations()` then fails with a syntax error that points at the prose, not the cause. A period or an em dash does the same job.
 
-**A migration with a trigger** (0103 is the first) registers in `applyMigrations` through `splitStatements`, not `parseMigration`, which would split the trigger's body apart. Wrangler ends a `CREATE TRIGGER` at the first `END` that follows a `;` and is followed by `;` (whitespace between, any case), and `splitStatements` follows the same rule. A migration that rebuilds `bills` must recreate 0103's triggers and `idx_bills_group_tags`, and nothing may write `bills` with `INSERT OR REPLACE`, which skips the delete trigger and leaves a stale group tag that matches.
+**A migration with a trigger** (0103 is the first) registers in `applyMigrations` through `splitStatements`, not `parseMigration`, which would split the trigger's body apart. Wrangler ends a `CREATE TRIGGER` at the first `END` that follows a `;` and is followed by `;` (whitespace between, any case), and `splitStatements` follows the same rule. A migration that rebuilds `bills` must recreate 0106's `bills_group_tags_*` triggers (which replaced 0103's) and `idx_bills_group_tags`, and nothing may write `bills` with `INSERT OR REPLACE`, which skips the delete trigger and leaves a stale group tag that matches.
 
 **Numbers and names a downstream fork owns.** Open-City-Advocates' fork applied its own migrations in production, and moving it onto upstream depends on these staying free (`docs/internal/fork-upgrade.md`):
 
@@ -204,7 +204,7 @@ Material Symbols icons use an explicit allowlist in `web/index.html` — add new
 
 ### Explanations
 
-`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go in a plain hover on the term, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: it makes the term focusable, adds a screen-reader copy of the text, and opens below.
+`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go on the term itself, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: the term becomes a dotted-underlined toggletip button like the ⓘ (hover and focus preview it, click, tap, Enter, or Space pins it open or closed, Escape closes it), with a screen-reader copy of the text, opening below. The cursor is the pointer, never `help`. A chip or other control that is already interactive passes `describe={{ interactive: true }}` and keeps its own click, with no underline.
 
 ### Navigation
 

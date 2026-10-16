@@ -35,7 +35,7 @@ type AuthoredNotification = NotificationBase & {
 
 export type MentionNotification = AuthoredNotification & {
   kind: 'mention'
-  sourceType: 'user' | 'role' | 'everyone'
+  sourceType: 'user' | 'role' | 'admins' | 'everyone'
   sourceLabel: string | null
 }
 
