@@ -3,8 +3,10 @@ import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedMagicLink, seedRole, seedUserRole, seedAuthEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { users, sessions, magicLinks, associationConfig, bills, comments, memberVotes, notes, feedEvents, roles, userRoles, authEvents } from '../../src/db/schema'
+import { users, sessions, magicLinks, associationConfig, bills, comments, memberVotes, notes, feedEvents, roles, userRoles, authEvents, teamEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
+import { rowidOf } from '../../src/db/rowid'
+import { centralFetch } from '../../src/lib/centralFetch'
 
 vi.mock('../../src/lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
@@ -1708,6 +1710,131 @@ describe('POST /admin/keyword-resync', () => {
       expect(res.status).toBe(200)
       const row = await db.select({ matchType: bills.matchType }).from(bills).where(eq(bills.id, billId)).get()
       expect(row?.matchType).toBe('manual') // protected, not demoted to null
+    })
+  })
+
+  describe('cleanup pass — the group tags a demote moves (#562)', () => {
+    // Since #554 a group's tags come from a tracked member first, so demoting a bill to untracked can move them
+    // with no analysis to record it. The cleanup records the change itself, as the null-actor tags event an analysis
+    // writes. Bills below match 'election' or don't ('Voting' ones are stale); the group's tags are the most
+    // recent analysis among its tracked members.
+    type TagsEvent = { billId: string; actorUserId: string | null; label: string; old: string[]; new: string[] }
+    const db = () => getDb(env.DB)
+    const STALE = 'Voting Registration Bill'
+    const MATCHING = 'Election Administration Bill'
+    const analyzed = (tags: string[], at: string) => ({ tags, tenantSummary: `${tags.join(',')} summary`, aiProcessedAt: at })
+
+    async function member(id: string, o: { title?: string; tags: string[]; at: string; matchType?: 'keyword' | 'manual' | null; group?: string; priority?: 'high' }) {
+      await seedBill({ id, externalId: `legiscan:${id}`, billNumber: id.toUpperCase(), state: 'NJ', title: o.title ?? STALE, matchType: o.matchType === undefined ? 'keyword' : o.matchType, priority: o.priority, ...analyzed(o.tags, o.at) })
+      if (o.group) await db().update(bills).set({ groupKey: o.group }).where(eq(bills.id, id))
+    }
+    async function cleanup() {
+      await db().delete(associationConfig)
+      await db().insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+      const res = await app.request('/api/admin/keyword-resync', { method: 'POST', headers: { Cookie: adminCookie } }, { ...env, BILL_QUEUE: { sendBatch: vi.fn().mockResolvedValue(undefined) } })
+      expect(res.status).toBe(200)
+      return res.json() as Promise<{ demoted: number; protectedAsManual: number }>
+    }
+    async function tagsEvents(): Promise<TagsEvent[]> {
+      const rows = await db().select().from(teamEvents).where(eq(teamEvents.type, 'field_changed')).orderBy(teamEvents.createdAt, rowidOf(teamEvents)).all()
+      return rows.map(r => ({ billId: r.billId, actorUserId: r.actorUserId, ...JSON.parse(r.metadata!) as { field: string; label: string; old: string[]; new: string[] } }))
+        .filter(e => e.field === 'tags').map(({ field: _f, ...e }) => e)
+    }
+    const matchTypeOf = async (id: string) => (await db().select({ m: bills.matchType }).from(bills).where(eq(bills.id, id)).get())!.m
+
+    it('records one tags event, with no actor, when the demoted bill held the group\'s tags', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      expect(await cleanup()).toMatchObject({ demoted: 1 })
+      expect(await matchTypeOf('a1')).toBeNull()
+      expect(await tagsEvents()).toEqual([{ billId: 'a1', actorUserId: null, label: 'tags', old: ['Labor'], new: ['Energy'] }])
+    })
+
+    it('records the change when the demoted bill was the group\'s only tracked one and a companion\'s analysis takes over', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await member('c1', { tags: ['Energy'], at: '2026-09-02 00:00:00', matchType: null, group: 'g1' })
+      await cleanup()
+      expect(await tagsEvents()).toEqual([{ billId: 'a1', actorUserId: null, label: 'tags', old: ['Labor'], new: ['Energy'] }])
+    })
+
+    it('records nothing when the group\'s tags are the same without the demoted bill', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Labor'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await cleanup()
+      expect(await matchTypeOf('a1')).toBeNull()
+      expect(await tagsEvents()).toEqual([])
+    })
+
+    it('records nothing when the demoted bill wasn\'t the one the group followed', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await cleanup()
+      expect(await tagsEvents()).toEqual([])
+    })
+
+    it('records nothing when a stale bill is protected as manual, which keeps it tracked', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1', priority: 'high' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      expect(await cleanup()).toMatchObject({ demoted: 0, protectedAsManual: 1 })
+      expect(await matchTypeOf('a1')).toBe('manual')
+      expect(await tagsEvents()).toEqual([])
+    })
+
+    it('records nothing for a bill in no group', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00' })
+      expect(await cleanup()).toMatchObject({ demoted: 1 })
+      expect(await matchTypeOf('a1')).toBeNull()
+      expect(await tagsEvents()).toEqual([])
+    })
+
+    it('records nothing when no bill is stale', async () => {
+      await member('a1', { title: MATCHING, tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      expect(await cleanup()).toMatchObject({ demoted: 0, protectedAsManual: 0 })
+      expect(await tagsEvents()).toEqual([])
+    })
+
+    it('still tells central about the demotes, and returns 200, when the event can\'t be written', async () => {
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await db().delete(associationConfig)
+      await db().insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+      // The advisory event is the one write that fails: its table is gone.
+      await env.DB.exec('DROP TABLE team_events')
+      const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(centralFetch).mockClear()
+      const res = await app.request('/api/admin/keyword-resync', { method: 'POST', headers: { Cookie: adminCookie } },
+        { ...env, BILL_QUEUE: { sendBatch: vi.fn().mockResolvedValue(undefined) } })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ demoted: 1 })
+      expect(await matchTypeOf('a1')).toBeNull()
+      const sent = vi.mocked(centralFetch).mock.calls.filter(([, path]) => path.startsWith('/admin/update-bill-match-types/'))
+      expect(sent.map(([, , init]) => JSON.parse(String(init?.body)))).toEqual([{ updates: [{ externalId: 'legiscan:a1', matchType: null }] }])
+      expect(errors).toHaveBeenCalled()
+      errors.mockRestore()
+    })
+
+    it('records one event per group whose tags moved, across a bulk cleanup', async () => {
+      // g1 and g2 follow their demoted bill's tags. g3's demoted bill wasn't followed. g4 has two demoted bills
+      // at once, which move its group's tags once. A bill in no group sits among them.
+      await member('a1', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g1' })
+      await member('b1', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g1' })
+      await member('a2', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g2' })
+      await member('b2', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g2' })
+      await member('a3', { tags: ['Labor'], at: '2026-09-01 00:00:00', group: 'g3' })
+      await member('b3', { title: MATCHING, tags: ['Energy'], at: '2026-09-02 00:00:00', group: 'g3' })
+      // Seeded with the larger id first, so "the first one read" and "the smallest id" differ.
+      await member('a4b', { tags: ['Labor'], at: '2026-09-02 00:00:00', group: 'g4' })
+      await member('a4', { tags: ['Labor'], at: '2026-09-03 00:00:00', group: 'g4' })
+      await member('b4', { title: MATCHING, tags: ['Energy'], at: '2026-09-01 00:00:00', group: 'g4' })
+      await member('solo', { tags: ['Labor'], at: '2026-09-02 00:00:00' })
+      expect(await cleanup()).toMatchObject({ demoted: 6 })
+      const events = await tagsEvents()
+      expect(events.map(e => [e.billId, e.old, e.new, e.actorUserId]).sort((x, y) => String(x[0]).localeCompare(String(y[0])))).toEqual([
+        ['a1', ['Labor'], ['Energy'], null],
+        ['a2', ['Labor'], ['Energy'], null],
+        ['a4', ['Labor'], ['Energy'], null],
+      ].sort((x, y) => String(x[0]).localeCompare(String(y[0]))))
     })
   })
 })
