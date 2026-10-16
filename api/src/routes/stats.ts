@@ -6,6 +6,7 @@ import { users, bills, memberVotes, associationConfig, calendarEvents } from '..
 import { count, eq, isNotNull, isNull, and, inArray, sql, gte, lte, or } from 'drizzle-orm'
 import type { AppEnv } from '../types'
 import { visibleCalendarEvent } from '../lib/calendarVisibility'
+import { loadDateFieldEvents } from '../lib/dateFieldEvents'
 import { filedSlug } from '../lib/sessionSlug'
 import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
@@ -25,7 +26,7 @@ statsRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const today = new Date().toISOString().slice(0, 10)
   const in30 = new Date(Date.now() + CALENDAR_UPCOMING_DAYS * 86400_000).toISOString().slice(0, 10)
-  const [billCount, memberCount, calUpcoming] = await Promise.all([
+  const [billCount, memberCount, calUpcoming, dateFieldUpcoming] = await Promise.all([
     db.select({ count: count() }).from(bills).get(),
     // Members = users who have accepted their invite (used a magic link) and are not deactivated.
     // Deliberately NOT keyed on a live `sessions` row: those are ephemeral (deleted on logout,
@@ -46,6 +47,8 @@ statsRouter.get('/', async (c) => {
         visibleCalendarEvent,
       ))
       .get(),
+    // Date custom fields on prioritized bills are calendar events too, projected rather than stored.
+    loadDateFieldEvents(db, { from: today, to: in30 }),
   ])
 
   // New keyword-match worklist size — admin/owner only (drives the sidebar "N new" chip).
@@ -62,7 +65,7 @@ statsRouter.get('/', async (c) => {
   return c.json({
     billCount: billCount?.count ?? 0,
     memberCount: memberCount?.count ?? 0,
-    calendarUpcomingCount: calUpcoming?.count ?? 0,
+    calendarUpcomingCount: (calUpcoming?.count ?? 0) + dateFieldUpcoming.length,
     calendarUpcomingDays: CALENDAR_UPCOMING_DAYS,
     newMatchesCount,
   })
