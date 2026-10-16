@@ -14,7 +14,7 @@ import { splitFromGroup } from '../../src/lib/companionGroups'
 
 const isoDay = (offsetDays: number) => new Date(Date.now() + offsetDays * 86400_000).toISOString().slice(0, 10)
 
-type Group = { key: string; bills: Array<{ id: string; billNumber: string; state: string | null }> }
+type Group = { key: string; bills: Array<{ id: string; billNumber: string; state: string | null; sessionSlug: string | null }> }
 type Entry = {
   id: string; source: string; time: string | null; location: string | null; description: string | null
   bills: Array<{ id: string; billNumber: string; priority: string | null; isDraft: boolean }>
@@ -46,8 +46,8 @@ describe('calendar: companion groups', () => {
     adminId = await seedUser({ role: 'admin', email: 'ada@example.com' })
     token = await seedSession(adminId)
     // Ids sort a < b < c, so a group's key is its first bill's id.
-    await seedBill({ id: 'a-house', billNumber: 'H 101', state: 'RI', session: '2026', priority: 'high' })
-    await seedBill({ id: 'b-senate', billNumber: 'S 202', state: 'RI', session: '2026' })
+    await seedBill({ id: 'a-house', billNumber: 'H 101', state: 'RI', session: '2026', sessionSlug: '2026rs', priority: 'high' })
+    await seedBill({ id: 'b-senate', billNumber: 'S 202', state: 'RI', session: '2026', sessionSlug: '2026rs' })
     await seedBill({ id: 'c-alone', billNumber: 'H 303', state: 'RI', session: '2026' })
   })
 
@@ -71,6 +71,24 @@ describe('calendar: companion groups', () => {
     // Members with no hearing of their own are in it too, so the popover can link to each.
     expect(entry.groups[0].bills.map(b => b.billNumber).sort()).toEqual(['H 101', 'S 202'])
     expect(entry.groups[0].bills.find(b => b.billNumber === 'S 202')).toMatchObject({ id: 'b-senate', state: 'RI' })
+  })
+
+  it('gives each member its session slug, so the popover can link to the canonical bill URL', async () => {
+    await group('a-house', 'b-senate')
+    await seedCalendarEvent('b-senate', { uid: 's-1@test', date: isoDay(3), description: 'Senate Cmte' })
+
+    const [entry] = (await events()).filter(e => e.source === 'hearing')
+    expect(entry.groups[0].bills.map(b => b.sessionSlug)).toEqual(['2026rs', '2026rs'])
+  })
+
+  it('counts a member\'s hearing in the upcoming total when only a companion has the priority', async () => {
+    await group('a-house', 'b-senate')
+    await seedCalendarEvent('b-senate', { uid: 's-1@test', date: isoDay(3), description: 'Senate Cmte' })
+    const stats = async () => (await (await SELF.fetch('http://localhost/api/stats', { headers: { Cookie: `session=${token}` } })).json() as { calendarUpcomingCount: number }).calendarUpcomingCount
+    expect(await stats()).toBe(1)
+    // An ungrouped bill with no priority is still left out.
+    await seedCalendarEvent('c-alone', { uid: 'c-1@test', date: isoDay(4), description: 'Lone Cmte' })
+    expect(await stats()).toBe(1)
   })
 
   it('shows a hearing on a member with no priority of its own when the group has one, under the group\'s priority', async () => {
