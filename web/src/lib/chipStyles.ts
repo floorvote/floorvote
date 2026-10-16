@@ -34,7 +34,7 @@ export const BILL_BADGE_BASE = {
   display: 'inline-flex' as const,
   alignItems: 'center' as const,
   background: color.billBadgeNavy,
-  color: color.white,
+  color: color.textOnFill,
   fontWeight: fontWeight.bold,
   fontSize: fontSize.sm,
   padding: '3px 10px',

@@ -16,7 +16,7 @@ export function MobileTopBar({ onHamburgerClick }: MobileTopBarProps) {
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          color: color.white,
+          color: color.textOnBrand,
           padding: '4px 6px',
           display: 'flex',
           flexDirection: 'column',
@@ -25,9 +25,9 @@ export function MobileTopBar({ onHamburgerClick }: MobileTopBarProps) {
         }}
         aria-label="Open menu"
       >
-        <span style={{ display: 'block', width: 22, height: 2, background: color.white, borderRadius: radius.xs }} />
-        <span style={{ display: 'block', width: 22, height: 2, background: color.white, borderRadius: radius.xs }} />
-        <span style={{ display: 'block', width: 22, height: 2, background: color.white, borderRadius: radius.xs }} />
+        <span style={{ display: 'block', width: 22, height: 2, background: color.textOnBrand, borderRadius: radius.xs }} />
+        <span style={{ display: 'block', width: 22, height: 2, background: color.textOnBrand, borderRadius: radius.xs }} />
+        <span style={{ display: 'block', width: 22, height: 2, background: color.textOnBrand, borderRadius: radius.xs }} />
       </button>
       {/* xxl, not base: at 14px the lockup read as subordinate to the 22px-wide
           hamburger beside it. The whole lockup scales from `size` (mark height and

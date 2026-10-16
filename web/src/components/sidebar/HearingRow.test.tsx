@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { HearingRow } from './HearingRow'
-import { fontWeight } from '../../styles/tokens'
+import { color, fontWeight } from '../../styles/tokens'
 import type { HearingGroup } from './types'
 
 // A far-future Tuesday so the date is never "TODAY" when tests run.
@@ -49,7 +49,6 @@ describe('HearingRow date/time format', () => {
     const todayIso = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD, local
     renderRow({ ...hearing, date: todayIso })
     const el = screen.getByText(/TODAY,/) // formatTodayHeader → "TODAY, JUN N"
-    // accentAmber #e8a33d → rgb(232, 163, 61) once jsdom serializes the inline color.
-    expect(getComputedStyle(el).color).toBe('rgb(232, 163, 61)')
+    expect(el.style.color).toBe(color.accentAmber)
   })
 })

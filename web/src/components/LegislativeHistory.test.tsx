@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { color } from '../styles/tokens'
 import { chamberLabel, chamberStyle, LegislativeHistory, syntheticLatestAction } from './LegislativeHistory'
 
 describe('chamberLabel', () => {
@@ -17,33 +18,33 @@ describe('chamberLabel', () => {
 describe('chamberStyle', () => {
   it('returns teal colors for Senate (S)', () => {
     const s = chamberStyle('S')
-    expect(s.color).toBe('#0f766e')
-    expect(s.background).toBe('#f0fdfa')
+    expect(s.color).toBe(color.textTealSenate)
+    expect(s.background).toBe(color.bgTeal)
   })
   it('returns teal colors for Senate (upper)', () => {
     const s = chamberStyle('upper')
-    expect(s.color).toBe('#0f766e')
-    expect(s.background).toBe('#f0fdfa')
+    expect(s.color).toBe(color.textTealSenate)
+    expect(s.background).toBe(color.bgTeal)
   })
   it('returns amber colors for House (H)', () => {
     const s = chamberStyle('H')
-    expect(s.color).toBe('#92400e')
-    expect(s.background).toBe('#fef3c7')
+    expect(s.color).toBe(color.textAmberDark)
+    expect(s.background).toBe(color.bgAmberPriority)
   })
   it('returns amber colors for Assembly (A)', () => {
     const s = chamberStyle('A')
-    expect(s.color).toBe('#92400e')
-    expect(s.background).toBe('#fef3c7')
+    expect(s.color).toBe(color.textAmberDark)
+    expect(s.background).toBe(color.bgAmberPriority)
   })
   it('returns amber colors for lower chamber code (lower)', () => {
     const s = chamberStyle('lower')
-    expect(s.color).toBe('#92400e')
-    expect(s.background).toBe('#fef3c7')
+    expect(s.color).toBe(color.textAmberDark)
+    expect(s.background).toBe(color.bgAmberPriority)
   })
   it('returns amber colors for unknown code (documents fallback)', () => {
     const s = chamberStyle('X')
-    expect(s.color).toBe('#92400e')
-    expect(s.background).toBe('#fef3c7')
+    expect(s.color).toBe(color.textAmberDark)
+    expect(s.background).toBe(color.bgAmberPriority)
   })
 })
 

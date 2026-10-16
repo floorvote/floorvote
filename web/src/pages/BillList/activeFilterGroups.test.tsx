@@ -136,10 +136,10 @@ describe('buildActiveFilterGroups', () => {
     const groups = buildActiveFilterGroups({ ...base, filterPositions: ['Support'] })
     const { container } = render(<>{groups[0].chips}</>)
     const span = container.querySelector('span')
-    expect(span).toHaveStyle({
-      background: POSITION_COLORS.Support.bg,
-      border: `1px solid ${POSITION_COLORS.Support.border}`,
-    })
+    // Inline values compared as written: the colors are CSS variables, which
+    // toHaveStyle can't parse inside the border shorthand.
+    expect(span?.style.background).toBe(POSITION_COLORS.Support.bg)
+    expect(span?.style.border).toBe(`1px solid ${POSITION_COLORS.Support.border}`)
   })
 
   it('renders a real priority value using the priority colour map with no border, unlike ActiveChip', () => {

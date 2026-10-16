@@ -359,7 +359,7 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
               fontSize: fontSize.sm,
               padding: '6px 18px',
               background: color.linkBlue,
-              color: color.white,
+              color: color.textOnFill,
               border: 'none',
               borderRadius: radius.md,
               cursor: ((hasContent || allowEmpty) && !disabled) ? 'pointer' : 'not-allowed',
@@ -428,9 +428,9 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
 
       <style>{`
         .comment-editor-wrapper {
-          border: 1px solid #e2e8f0;
+          border: 1px solid ${color.borderDefault};
           border-radius: 8px;
-          background: #fff;
+          background: ${color.white};
           overflow: hidden;
         }
         /* The shared "fixed"-variant Toolbar switches to position:absolute at
@@ -470,15 +470,15 @@ export function RichTextEditor({ onSubmit, onChange, placeholder = 'Add a commen
           padding-left: 20px;
         }
         .comment-editor-wrapper .tiptap.ProseMirror blockquote {
-          border-left: 3px solid #e2e8f0;
+          border-left: 3px solid ${color.borderDefault};
           margin: 4px 0;
           padding-left: 12px;
-          color: #64748b;
+          color: ${color.textSecondary};
         }
         .comment-editor-wrapper .tiptap.ProseMirror p.is-editor-empty:first-child::before {
           content: attr(data-placeholder);
           float: left;
-          color: #94a3b8;
+          color: ${color.textMuted};
           pointer-events: none;
           height: 0;
         }

@@ -161,7 +161,7 @@ const styles = {
   error: { fontSize: fontSize.sm, color: color.textErrorRed, marginBottom: 0, marginTop: 8 } as React.CSSProperties,
   actions: { display: 'flex', alignItems: 'center', gap: 16, marginTop: 20 } as React.CSSProperties,
   button: {
-    background: color.billBadgeNavy, color: color.white, border: 'none',
+    background: color.billBadgeNavy, color: color.textOnFill, border: 'none',
     borderRadius: radius.md, padding: '10px 24px', fontSize: fontSize.base,
     fontWeight: fontWeight.semibold,
   } as React.CSSProperties,

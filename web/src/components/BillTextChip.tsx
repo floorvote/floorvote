@@ -25,7 +25,7 @@ export function BillTextChip({ type, date, selected = false, onClick, title }: P
         border: '1px solid',
         cursor: onClick ? 'pointer' : 'default',
         background: selected ? color.linkBlue : color.white,
-        color: selected ? color.white : color.textSlate,
+        color: selected ? color.textOnFill : color.textSlate,
         borderColor: selected ? color.linkBlue : color.borderStrong,
         fontFamily: 'inherit',
       }}

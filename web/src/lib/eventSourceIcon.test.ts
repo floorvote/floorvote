@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { eventSourceIcon } from '../../../shared/eventLineModel'
-import { color } from '../../../shared/tokens'
+import { color } from '../styles/tokens'
 import { canEditEventSource } from '../../../shared/eventSource'
 
 describe('eventSourceIcon', () => {
