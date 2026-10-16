@@ -11,6 +11,7 @@ type User = {
   title: string | null
   canVote: boolean
   emailDigestEnabled: boolean
+  emailDigestMatchesEnabled: boolean
   emailWeekAheadEnabled: boolean
   emailRepliesEnabled: boolean
   lastSeenFeed: string | null
@@ -32,6 +33,7 @@ type AuthState = {
   setTitle: (title: string | null) => void
   setName: (name: string) => void
   setEmailDigestEnabled: (enabled: boolean) => void
+  setEmailDigestMatchesEnabled: (enabled: boolean) => void
   setEmailRepliesEnabled: (enabled: boolean) => void
   setLastSeenFeed: (ts: string) => void
   setTermsAccepted: () => void
@@ -40,7 +42,7 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState>({
   user: null, loading: true, authError: false, authProgress: { current: null },
-  setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
+  setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setEmailDigestMatchesEnabled: () => {}, setEmailRepliesEnabled: () => {}, setLastSeenFeed: () => {},
   setTermsAccepted: () => {}, clearUser: () => {},
 })
 
@@ -114,6 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, emailDigestEnabled: enabled } : prev)
   }
 
+  function setEmailDigestMatchesEnabled(enabled: boolean) {
+    setUser((prev) => prev ? { ...prev, emailDigestMatchesEnabled: enabled } : prev)
+  }
+
   function setEmailRepliesEnabled(enabled: boolean) {
     setUser((prev) => prev ? { ...prev, emailRepliesEnabled: enabled } : prev)
   }
@@ -145,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser((prev) => prev ? { ...prev, termsAcceptanceRequired: false } : prev)
   }
 
-  return <AuthContext value={{ user, loading, authError, authProgress, setTitle, setName, setEmailDigestEnabled, setEmailRepliesEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
+  return <AuthContext value={{ user, loading, authError, authProgress, setTitle, setName, setEmailDigestEnabled, setEmailDigestMatchesEnabled, setEmailRepliesEnabled, setLastSeenFeed, setTermsAccepted, clearUser }}>{children}</AuthContext>
 }
 
 export function useAuth(): AuthState {

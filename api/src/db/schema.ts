@@ -16,6 +16,7 @@ export const users = sqliteTable('users', {
   deactivatedAt: text('deactivated_at'),
   canVote: integer('can_vote').notNull().default(1),
   emailDigestEnabled: integer('email_digest_enabled').notNull().default(1),
+  emailDigestMatchesEnabled: integer('email_digest_matches_enabled').notNull().default(1),
   emailWeekAheadEnabled: integer('email_week_ahead_enabled').notNull().default(1),
   emailRepliesEnabled: integer('email_replies_enabled').notNull().default(1),
   lastSeenFeed: text('last_seen_feed'),
@@ -218,6 +219,11 @@ export const bills = sqliteTable('bills', {
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
+  // Where the keyword match came from, as central declared it (MatchProvenance
+  // in types.ts). NULL, for any match made before central declared one, counts
+  // as bulk. Holds the latest declaration until the match is recorded
+  // (new_match_at), then never changes.
+  matchProvenance: text('match_provenance', { enum: ['routine', 'bulk'] }),
   triagedAt: text('triaged_at'),
   triagedBy: text('triaged_by'),
   isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
@@ -341,7 +347,7 @@ export const notes = sqliteTable('notes', {
 export const feedEvents = sqliteTable('feed_events', {
   id: text('id').primaryKey(),
   type: text('type', {
-    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched'],
+    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched', 'new_matches'],
   }).notNull(),
   // Null for an event about no single bill (a bulk edit, and later instance-level
   // events). Such an event keeps what it is about in `metadata`, and survives the

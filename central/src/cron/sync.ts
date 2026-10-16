@@ -6,7 +6,7 @@ import { decideMode, getCurrentEtHour } from '../lib/sync-schedule'
 import { nowDb } from '../lib/dbTime'
 import { providerContext } from '../lib/providerContext'
 import { toHandle } from '../lib/billHandle'
-import type { Env, Db, IngestorMessage, NotificationMessage } from '../types'
+import type { Env, Db, BillMessage, IngestorMessage, MatchProvenance, NotificationMessage } from '../types'
 import { deliverBatchToTenant } from '../lib/tenantDelivery'
 import { assignSessionSlugs } from '../lib/sessionSlugs'
 import { insertLinkWhileOwner, loadStateOwners, ownerOf, ownerOfState } from '../lib/stateProviders'
@@ -214,6 +214,12 @@ export async function applyMasterList(
      * moved bills are ingested.
      */
     ingestMovedBills?: boolean
+    /**
+     * Declare every new keyword match this pass makes bulk, whatever the list
+     * holds. An operator import sets this: the bills it brings in are picks,
+     * not bills the regular sync found (BillMessage.matchProvenance).
+     */
+    bulk?: boolean
   } = {},
 ): Promise<number[]> {
   if (list.length === 0) {
@@ -246,6 +252,13 @@ export async function applyMasterList(
   const billIds = list.map(b => b.bill_id)
   const existing = new Map<number, { changeHash: string; carriedFrom: string | null }>()
   const existingLinks = new Map<string, string | null>()
+  /**
+   * Covering instances that already follow the session's state: they held a
+   * link to a bill of this list, or to any other bill of the state (an earlier
+   * session's), before this pass. A new keyword match can be routine only for
+   * them. A state an instance never followed is seeded by its first pass.
+   */
+  const seeded = new Set<string>()
   for (let i = 0; i < billIds.length; i += BATCH) {
     const chunk = billIds.slice(i, i + BATCH)
     const rows = await db.select({ billId: bills.billId, changeHash: bills.changeHash, carriedFrom: bills.carriedFrom })
@@ -257,13 +270,31 @@ export async function applyMasterList(
       tenantId: billTenants.tenantId,
       matchType: billTenants.matchType,
     }).from(billTenants).where(inArray(billTenants.billId, chunk)).all()
-    for (const r of links) existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
+    for (const r of links) {
+      existingLinks.set(`${r.billId}:${r.tenantId}`, r.matchType ?? null)
+      seeded.add(r.tenantId)
+    }
+  }
+  // An instance with no link in this list may still follow the state through
+  // a link to any bill of the state made before this pass, which makes a new
+  // session's first (prefiling) pass routine for it. One indexed EXISTS per
+  // such instance, read before this pass writes any link. The in-list check
+  // above is a shortcut the EXISTS subsumes: it would find those links too.
+  for (const tenantId of tenantIds) {
+    if (seeded.has(tenantId)) continue
+    const held = await db.select({ billId: billTenants.billId }).from(billTenants)
+      .innerJoin(bills, eq(bills.billId, billTenants.billId))
+      .where(and(eq(billTenants.tenantId, tenantId), eq(bills.state, session.state)))
+      .limit(1).get()
+    if (held) seeded.add(tenantId)
   }
 
   const now = nowDb()
   const billStmts: any[] = []
   const billTenantStmts: any[] = []
   const toQueue = new Set<number>()
+  /** The new keyword matches each queued bill brings, by tenant (BillMessage.matchProvenance). */
+  const provenanceByBill = new Map<number, Record<string, MatchProvenance>>()
   /** Bills a cutover moved here that are still waiting for their first ingest. */
   const carried = new Set<number>()
   /** Of those, the untracked ones, queued only for that ingest. */
@@ -362,6 +393,25 @@ export async function applyMasterList(
         toQueue.add(entry.bill_id)
       }
 
+      // A new keyword match is routine only when this pass links a bill
+      // central is seeing for the first time (or has only from a raw pass,
+      // which stores new bills with an empty change hash) to an instance
+      // that already follows the state (`seeded`: a link to any bill of the
+      // state made before this pass), so a new session's prefiled bills
+      // count. A bill central already had is one a seed or an earlier pass
+      // passed over, and an instance that never followed the state is being
+      // seeded by this pass, so both are bulk. As is an existing link that
+      // starts to match, a cutover's first pass and an operator import (both
+      // below the loop). Missing is bulk too, so a case this misses stays
+      // quiet rather than flooding instances (#363).
+      if (justMatched && newMatchType === 'keyword') {
+        const newToCentral = !stored || stored.changeHash === ''
+        const routine = !linkExists && newToCentral && seeded.has(t.tenantId)
+        const byTenant = provenanceByBill.get(entry.bill_id) ?? {}
+        byTenant[t.tenantId] = routine ? 'routine' : 'bulk'
+        provenanceByBill.set(entry.bill_id, byTenant)
+      }
+
       // Monitor-all: deliver a stubOnly metadata update for a null-linked bill when the
       // link is newly CREATED (a new non-match bill, or a tenant seeing this bill for the
       // first time) OR when an existing null-linked bill changed. Bypasses the ingestor
@@ -406,6 +456,19 @@ export async function applyMasterList(
     }
   }
 
+  // A pass that queues a bill a cutover moved here for its first ingest from
+  // this provider (lib/cutover.ts) is a cutover's pass: the new provider's
+  // first, or the one where a moved bill starts to match. The bills it lists
+  // that the old provider lacked are existing legislation new only to
+  // central, so none of its matches is routine. An untracked moved bill this
+  // pass doesn't queue (LegiScan's, after an undo) keeps carried_from for
+  // good, so it doesn't count. An operator import (`bulk`) is bulk throughout.
+  if (opts.bulk || [...carried].some(billId => toQueue.has(billId))) {
+    for (const byTenant of provenanceByBill.values()) {
+      for (const tenantId of Object.keys(byTenant)) byTenant[tenantId] = 'bulk'
+    }
+  }
+
   for (let i = 0; i < billStmts.length; i += FLUSH_BATCH) {
     const chunk = billStmts.slice(i, i + FLUSH_BATCH) as [any, ...any[]]
     if (chunk.length > 0) await db.batch(chunk)
@@ -434,9 +497,12 @@ export async function applyMasterList(
   for (let i = 0; i < queueIds.length; i += 100) {
     await ingestorQueue.sendBatch(
       queueIds.slice(i, i + 100)
-        .map<IngestorMessage>(billId => (untrackedFirst.has(billId) ? { billId, firstIngestFor: session.provider }
+        .map<BillMessage>(billId => (untrackedFirst.has(billId) ? { billId, firstIngestFor: session.provider }
           : carried.has(billId) ? { billId, queuedBy: session.provider } : { billId }))
-        .map(body => ({ body }))
+        .map(body => {
+          const matchProvenance = provenanceByBill.get(body.billId)
+          return { body: matchProvenance ? { ...body, matchProvenance } : body }
+        })
     )
   }
   // An unchanged bill is a second pull of its calendar (lib/billCalendar.ts).

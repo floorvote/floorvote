@@ -12,8 +12,8 @@ import { centralFetch } from '../lib/centralFetch'
 import { parseHandle, toHandle } from '../../../shared/billHandle'
 import { loadUpcomingDemoHearings } from '../lib/demoCalendar'
 import { myGroupVote } from '../lib/companionGroups'
-import { billsAs, newMatchWhere } from './billsApi/query'
-import { getNewMatchMinRelevance } from '../lib/newMatch'
+import { billsAs } from './billsApi/query'
+import { getNewMatchMinRelevance, newMatchWhere } from '../lib/newMatch'
 import { hasLoggedInWhere } from '../lib/loginHistory'
 
 const statsRouter = new Hono<AppEnv>()
