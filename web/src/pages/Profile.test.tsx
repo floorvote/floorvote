@@ -94,7 +94,7 @@ describe('Profile "Your Email" section', () => {
     expect(replies).toBeChecked()
     expect(within(section).getByRole('switch', { name: /recent bill activity/i })).toBeInTheDocument()
     expect(within(section).getByRole('switch', { name: /upcoming hearings and events/i })).toBeInTheDocument()
-    expect(within(section).getByText("You'll always get an email when someone mentions you, your role, or @everyone.")).toBeInTheDocument()
+    expect(within(section).getByText("You'll always get an email when someone mentions you, your role, @admins, or @everyone.")).toBeInTheDocument()
     expect(within(section).queryByRole('switch', { name: /mention/i })).not.toBeInTheDocument()
   })
 

@@ -278,7 +278,7 @@ async function reconcileBodyEvents(
     // An event cancelled before the instance ever had it has nothing to tell anyone.
     if (!prior && status === 'cancelled') continue
     const values = {
-      source: 'body', billId: null, kind: e.kind, status, coveredBy: null,
+      source: 'body' as const, billId: null, kind: e.kind, status, coveredBy: null,
       date: e.date, time: e.time, location: e.location,
       description: bodyEventDescription(e), details: bodyEventDetails(e), url: e.url,
       timezone: e.timezone, eventHash: e.eventHash, ruleFacets: JSON.stringify(bodyEventFacets(e)), updatedAt: now,
