@@ -53,7 +53,7 @@ describe('dateFromNow', () => {
   })
 })
 
-// The live NJ demo is the reason this matters: its seed has both past and future
+// The live demo is the reason this matters: its seed has both past and future
 // calendar events, and a snap that flipped one across today would reorder the
 // calendar on a production site.
 describe('every seed survives the snap without a past/future flip', () => {
@@ -88,12 +88,6 @@ describe('every seed survives the snap without a past/future flip', () => {
 // assertion green.) So the offsets are pinned here as literals, which is what a
 // golden value has to be. Changing a seed offset must change this table too.
 const EXPECTED_OFFSETS: Record<string, Record<string, number>> = {
-  'nj-county-clerks': {
-    'demo-hearing-1': 2, 'demo-hearing-2': 6, 'demo-hearing-3': 13,
-    'demo-hearing-4': 18, 'demo-hearing-5': 27,
-    'demo-event-1': -4, 'demo-event-2': 4, 'demo-event-3': 11,
-    'demo-event-4': 20, 'demo-event-5': 25,
-  },
   'lake-michigan': {
     'lm-hearing-1': 2, 'lm-hearing-2': 5, 'lm-hearing-3': 9,
     'lm-hearing-4': 13, 'lm-hearing-5': 18, 'lm-hearing-6': 26,
