@@ -404,29 +404,12 @@ describe('reading stored claim sources', () => {
     }
   })
 
-  it('reads nothing when the listed document\'s stored hash differs from the pinned one', async () => {
-    const id = await analyzed()
-    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('hash-of-newer-content', '5001').run()
-    expect(await readClaimSources(getDb(env.DB), id)).toBeNull()
-  })
-
-  it('reads when the listed document\'s stored hash is the pinned one', async () => {
-    const id = await analyzed()
-    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('hash-5001', '5001').run()
-    expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
-  })
-
-  it('reads when the listed document has no stored hash, which is what instances store today', async () => {
+  it('does not compare the text hash, which instances do not store, so it reads whatever is listed', async () => {
     const id = await analyzed()
     const listed = await env.DB.prepare('SELECT text_hash FROM bill_texts WHERE doc_id = ?').bind('5001').first<{ text_hash: string }>()
     expect(listed!.text_hash).toBe('')
     expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
-  })
-
-  it('reads when the pin has no hash, whatever the listed document stores', async () => {
-    const id = await analyzed()
-    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('anything', '5001').run()
-    await env.DB.prepare('UPDATE bills SET claim_sources_text_hash = NULL WHERE id = ?').bind(id).run()
+    await env.DB.prepare('UPDATE bill_texts SET text_hash = ? WHERE doc_id = ?').bind('some-other-hash', '5001').run()
     expect(await readClaimSources(getDb(env.DB), id)).not.toBeNull()
   })
 

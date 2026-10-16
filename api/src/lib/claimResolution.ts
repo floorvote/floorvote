@@ -155,36 +155,74 @@ const MAX_FUZZY_QUOTE = 2000
 
 /**
  * The fuzzy search's budget for one bill, in characters scanned: each `match`
- * call scans the whole document. About 40 million is around ten seconds of
- * scanning, well inside a Worker's CPU limit, and a typical bill (a few hundred
- * thousand characters, a handful of quotes that miss exact) uses a few percent.
- * A quote that would need a scan after it is spent stays ungrounded.
+ * call scans the whole document, and a quote that is absent costs two of them
+ * (about 0.2 s on half a million characters, 0.6 s on 1.7 million). About 40
+ * million is around ten seconds of scanning, well inside a Worker's CPU limit.
+ * A quote that is found stops early and costs far less, so it is charged only
+ * `FOUND_COST` of a scan (an eighth), and a bill whose quotes mostly resolve
+ * never runs out. What bounds the work is quotes that are absent from a very
+ * large document. A quote that needs a scan after the budget is spent stays
+ * ungrounded.
  */
 const SCAN_BUDGET = 40_000_000
+const FOUND_COST = 1 / 8
 
 type Budget = { left: number; skipped: number }
 
-/** Number words that must agree between a quote and what is found for it. */
-const NUMBER_WORDS = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion'
-const NUMBER = new RegExp(`\\d+(?:[.,]\\d+)*|\\b(?:${NUMBER_WORDS})\\b`, 'gi')
+/** What must agree between a quote and what is found for it: digits, cardinal and ordinal words, and fractions. */
+const CARDINALS = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion'
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth']
+// "1st" is one token, so its digit isn't read as a number of its own. An ordinal
+// word takes a plural for a fraction ("two thirds").
+const NUMBER = new RegExp(`\\b\\d+(?:st|nd|rd|th)\\b|\\d+(?:[.,]\\d+)*|\\b(?:(?:${ORDINALS.join('|')})s?|${CARDINALS}|half|halves|quarters?)\\b`, 'gi')
 
-function numbersOf(text: string): Map<string, number> {
-  const counts = new Map<string, number>()
+/** One number as a token that the same number written another way shares: "first" and "1st" are `1o`. */
+function numberToken(raw: string): string {
+  const t = raw.toLowerCase()
+  const digitOrdinal = /^(\d+)(?:st|nd|rd|th)$/.exec(t)
+  if (digitOrdinal) return `${Number(digitOrdinal[1])}o`
+  const ordinal = ORDINALS.indexOf(t.endsWith('s') && ORDINALS.includes(t.slice(0, -1)) ? t.slice(0, -1) : t)
+  if (ordinal !== -1) return `${ordinal + 1}o`
+  if (t === 'halves') return 'half'
+  if (t === 'quarters') return 'quarter'
+  return t.replace(/,/g, '')
+}
+
+/** The numbers in a text: each token's count, and the way the first of them was written. */
+function numbersOf(text: string): Map<string, { n: number; raw: string }> {
+  const found = new Map<string, { n: number; raw: string }>()
   for (const m of text.match(NUMBER) ?? []) {
-    const token = m.toLowerCase().replace(/,/g, '')
-    counts.set(token, (counts.get(token) ?? 0) + 1)
+    const token = numberToken(m)
+    const have = found.get(token)
+    if (have) have.n++
+    else found.set(token, { n: 1, raw: m })
   }
-  return counts
+  return found
+}
+
+/** Between two characters of a number or word that a line break can fall inside: a hyphen or separator, the break, and a line number. */
+const BREAK = '(?:[-,.]?\\s+(?:\\d{1,3}\\s+)?)?'
+
+/** Whether a number is in the text, written with a line break (and its line number) inside it. */
+function brokenIn(raw: string, text: string): boolean {
+  const spelled = [...raw].map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(BREAK)
+  return new RegExp(`(?<![A-Za-z0-9])${spelled}(?![A-Za-z0-9])`, 'i').test(text)
 }
 
 /**
  * Whether every number in the quote is in what was found for it. "ten" is not
- * "thirty" and 10 is not 15, which a similarity score alone would let through.
- * Numbers only in the found text are fine: that is a line number.
+ * "thirty", 10 is not 15, "first" is not "third", and a half is not a quarter,
+ * which a similarity score alone would let through. Numbers only in the found
+ * text are fine: that is a line number. So is a number the source's line
+ * breaking cut in two ("thir-", a line number, "ty"), which is looked for last.
  */
 function numbersAgree(quote: string, found: string): boolean {
   const have = numbersOf(found)
-  for (const [token, n] of numbersOf(quote)) if ((have.get(token) ?? 0) < n) return false
+  for (const [token, { n, raw }] of numbersOf(quote)) {
+    if ((have.get(token)?.n ?? 0) >= n) continue
+    if (n === 1 && brokenIn(raw, found)) continue
+    return false
+  }
   return true
 }
 
@@ -236,6 +274,14 @@ type Fuzzy = { status: 'fuzzy' | 'anchored'; at: Span }
 function findFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
   if (quote.length > MAX_FUZZY_QUOTE) return null
   if (budget.left <= 0) { budget.skipped++; return null }
+  const before = budget.left
+  const result = searchFuzzy(text, quote, budget)
+  // Found, it stopped early: charge for that, not for the scans a miss makes.
+  if (result) budget.left = before - Math.ceil(text.length * FOUND_COST)
+  return result
+}
+
+function searchFuzzy(text: string, quote: string, budget: Budget): Fuzzy | null {
 
   // Wide enough that a match at the far end of the text costs at most
   // POSITION_BUDGET, so the document is searched from the start (the first of

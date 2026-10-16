@@ -603,6 +603,48 @@ describe('numbers must agree', () => {
   })
 })
 
+describe('numbers: ordinals, fractions, and numbers split by line breaking', () => {
+  // A stray typo keeps the quote from matching exactly or after normalizing, so
+  // it is the fuzzy tier whose number check is under test.
+  const status = (docPart: string, quotePart: string) => {
+    const doc = `Intro text here. The board shall certify ${docPart} after polls close, with a stray ltter in it. More text.`
+    return one(`The board shall certify ${quotePart} after polls close, with a stray letter in it.`, doc).status
+  }
+
+  it.each([
+    ['first for third', 'in the first year', 'in the third year'],
+    ['1st for 3rd', 'in the 1st year', 'in the 3rd year'],
+    ['one half for one quarter', 'one half of the members', 'one quarter of the members'],
+    ['two thirds for two fourths', 'two-thirds of the members', 'two-fourths of the members'],
+    ['twentieth for nineteenth', 'on the twentieth day', 'on the nineteenth day'],
+    ['an ordinal word for a different digit ordinal', 'in the second year', 'in the 5th year'],
+    ['a number word that is only inside another word', 'on often days', 'on ten days'],
+  ])('is ungrounded for %s', (_label, d, q) => {
+    expect(status(d, q)).toBe('ungrounded')
+  })
+
+  it.each([
+    ['first and 1st', 'in the first year', 'in the 1st year'],
+    ['1st and first', 'in the 1st year', 'in the first year'],
+    ['third and 3rd', 'in the 3rd year', 'in the third year'],
+    ['the same ordinal', 'in the first year', 'in the first year'],
+    ['someone', 'if someone objects', 'if someone objects'],
+    ['anyone', 'if anyone objects', 'if anyone objects'],
+    ['first-time', 'for a first-time filer', 'for a first-time filer'],
+    ['one half', 'one half of the members', 'one half of the members'],
+    ['a word split by a hyphen and a line number', 'within thir-\n14 ty days', 'within thirty days'],
+    ['a word split by a hyphen', 'within thir-\nty days', 'within thirty days'],
+    ['a digit group split by a comma and a line number', 'a fee of $1,\n15 000 is due', 'a fee of $1,000 is due'],
+    ['a number split by a line number', 'a fee of $1\n14 0 is due', 'a fee of $10 is due'],
+  ])('is not rejected for %s', (_label, d, q) => {
+    expect(status(d, q)).toBe('fuzzy')
+  })
+
+  it('is still ungrounded when a split number is not the quote\'s', () => {
+    expect(status('a fee of $1\n14 0 is due', 'a fee of $20 is due')).toBe('ungrounded')
+  })
+})
+
 describe('ceilings', () => {
   it('resolves at most 100 items, marks the rest ungrounded, and counts them', () => {
     const claims = Array.from({ length: 105 }, (_, i) => `Claim ${i} is made.`)
@@ -636,6 +678,48 @@ describe('ceilings', () => {
     const under = long(90)
     expect(under.length).toBeLessThan(2000)
     expect(one(under, `${DOC}\n${withLineNumbers(under, 60)}\n${DOC}`).status).toBe('fuzzy')
+  })
+
+  describe('a bill whose quotes are mostly findable', () => {
+    // Each passage has words of its own, as a real section does, so that a head
+    // or a tail is not a near copy of another passage's.
+    const SYLLABLES = ['ba', 'ro', 'ki', 'tu', 'me', 'la', 'sho', 'vin', 'dre', 'pol', 'gar', 'nex', 'fil', 'zon', 'cra', 'hep', 'wul', 'jod', 'qua', 'bri']
+    const word = (i: number, k: number) => SYLLABLES[(i * (k + 3) + k) % 20] + SYLLABLES[(i * 7 + k * 5) % 20] + SYLLABLES[(Math.floor(i / 3) + k * 11) % 20]
+    const passage = (i: number) => `The ${word(i, 0)} ${word(i, 1)} of district ${i} shall publish the ${word(i, 2)} report about ${word(i, 3)} box ${i * 7} to every ${word(i, 4)} ${word(i, 5)} each quarter.`
+    const filler = (i: number) => Array.from({ length: 140 }, (_, k) => `Background sentence ${i}-${k} that says nothing in particular.`).join(' ')
+
+    function build(count: number) {
+      const parts: string[] = []
+      for (let i = 0; i < count; i++) parts.push(filler(i), withLineNumbers(passage(i), 46))
+      const doc = parts.join('\n')
+      const claims = Array.from({ length: count }, (_, i) => `Claim ${i} is made.`)
+      return { doc, claims, summary: claims.join(' ') }
+    }
+
+    it('resolves every valid numbered quote in a document of about half a million characters', () => {
+      const { doc, claims, summary } = build(60)
+      expect(doc.length).toBeGreaterThan(480_000)
+      const out = resolveClaimSources(claims.map((claim, i) => ({ claim, quote: passage(i) })), summary, doc)
+      expect(out.items.map(i => i.status)).toEqual(Array(60).fill('fuzzy'))
+      expect(out.unsearched).toBe(0)
+    })
+
+    it('does not let absent quotes ahead of them take their links', () => {
+      const { doc, claims, summary } = build(60)
+      const items: ClaimSource[] = claims.map((claim, i) => ({
+        claim, quote: i < 5 ? `Nobody shall ever install an obelisk number ${i} in any rotunda, by order of the herons of the commonwealth.` : passage(i),
+      }))
+      const out = resolveClaimSources(items, summary, doc)
+      expect(out.items.slice(0, 5).map(i => i.status)).toEqual(Array(5).fill('ungrounded'))
+      expect(out.items.slice(5).map(i => i.status)).toEqual(Array(55).fill('fuzzy'))
+      expect(out.unsearched).toBe(0)
+    })
+
+    it('gives the same statuses on a second run', () => {
+      const { doc, claims, summary } = build(30)
+      const items = claims.map((claim, i) => ({ claim, quote: i % 4 === 0 ? `Nobody shall install obelisk ${i} anywhere at all, by order of herons.` : passage(i) }))
+      expect(resolveClaimSources(items, summary, doc)).toEqual(resolveClaimSources(items, summary, doc))
+    })
   })
 
   it('finishes a hundred absent quotes against a large document in bounded time', () => {

@@ -155,8 +155,7 @@ export function parseStoredItems(json: string): ResolvedClaimSource[] | null {
  * that member's texts too.
  *
  * Null when the bill has none stored, when what is stored isn't a list, and
- * when the pinned document is no longer in the bill's texts, or is listed with
- * a different text hash than the one the model read: the offsets are
+ * when the pinned document is no longer in the bill's texts: the offsets are
  * into a document the reader can't open, so no link could land on them. The
  * stored items stay, for when the document is back.
  */
@@ -171,13 +170,16 @@ export async function readClaimSources(db: AppDb, billId: string): Promise<Store
   const items = parseStoredItems(row.claimSources)
   if (items === null) return null
 
-  const listed = await db.select({ textHash: billTexts.textHash }).from(billTexts)
+  // Only the document id is checked. The pin also holds the text hash the model
+  // read, but an instance has no hash to compare it with: it stores `''` in
+  // `bill_texts.text_hash` for every listed text, and central's text list carries
+  // no per-document hash. A comparison would be dead code, or would read every
+  // pin as stale. If that column is ever filled with the value central serves as
+  // `textHash` for the document, compare it here, so a document whose content
+  // changed under the same id stops reading until a re-analysis re-pins.
+  const listed = await db.select({ id: billTexts.id }).from(billTexts)
     .where(and(eq(billTexts.billId, billId), eq(billTexts.docId, row.docId))).get()
   if (!listed) return null
-  // The document under that id has changed since the model read it. An instance
-  // stores no hash for a listed text today (the column is empty), and an empty
-  // one, or a pin with none, can't say.
-  if (listed.textHash !== '' && row.textHash !== null && listed.textHash !== row.textHash) return null
 
   return {
     billId,
