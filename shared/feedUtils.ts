@@ -20,7 +20,7 @@ export type FeedEvent = {
   billIsDraft?: boolean
   userId: string
   userName: string
-  userSubtitle: string | null
+  userTitle: string | null
   metadata: Record<string, unknown>
   createdAt: string
 }

@@ -7,11 +7,11 @@ import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 
 function mockAdminUser() {
   vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-    user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
+    user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
     loading: false,
     authError: false,
     authProgress: { current: null },
-    setSubtitle: vi.fn(),
+    setTitle: vi.fn(),
     setName: vi.fn(),
     setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
     setLastSeenFeed: vi.fn(),
@@ -32,11 +32,11 @@ function stubScrollMetrics(nav: HTMLElement, { scrollWidth, clientWidth, scrollL
 describe('SettingsNav', () => {
   it('shows a Notifications tab and no Modules tab', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
+      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
       authError: false,
       authProgress: { current: null },
-      setSubtitle: vi.fn(),
+      setTitle: vi.fn(),
       setName: vi.fn(),
       setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),
@@ -50,11 +50,11 @@ describe('SettingsNav', () => {
 
   it('orders admin tabs Account, Config, Members, Notifications, Draft bills and drops the pipe divider', () => {
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
-      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', subtitle: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
+      user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
       loading: false,
       authError: false,
       authProgress: { current: null },
-      setSubtitle: vi.fn(),
+      setTitle: vi.fn(),
       setName: vi.fn(),
       setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
       setLastSeenFeed: vi.fn(),

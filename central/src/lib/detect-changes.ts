@@ -1,5 +1,5 @@
 import type { CentralMeasure, Provider } from '../providers'
-import { statusChangeLabel } from './vocabulary'
+import { relationshipKind, statusChangeLabel } from './vocabulary'
 
 export type ChangeRecord = {
   changeType:
@@ -171,5 +171,48 @@ export function detectChanges(
     }
   }
 
+  return changes
+}
+
+/**
+ * A bill gaining or losing an identical companion. Recorded in the change log
+ * only: instances are not told (the feed has no card for it yet), so these stay
+ * out of `detectChanges` and the changes sent to tenants.
+ */
+export type CompanionChange = {
+  changeType: 'companion_added' | 'companion_removed'
+  oldValue: string | null
+  newValue: string | null
+  /** The relationship's label as the provider published it, such as "Same As". */
+  detail: string
+}
+
+/** A relationship as central stores it (`bill_sasts`). */
+export type StoredRelationship = { sastBillId: number; sastBillNumber: string; type: string }
+
+/**
+ * The identical companions a bill gained or lost: those the provider's
+ * vocabulary calls `identical`, by the other bill's id. A relationship that
+ * only changes its label between two identical ones isn't a change, and one
+ * that moves between `identical` and another kind is. The stored relationships
+ * are read with today's vocabulary, so changing a mapping records nothing.
+ */
+export function detectCompanionChanges(
+  stored: StoredRelationship[],
+  bill: CentralMeasure,
+  provider: Provider,
+): CompanionChange[] {
+  const identical = <T extends { type: string }>(rows: T[], id: (r: T) => number) =>
+    new Map(rows.filter(r => relationshipKind(provider, bill.state, r.type) === 'identical').map(r => [id(r), r]))
+  const before = identical(stored, r => r.sastBillId)
+  const after = identical(bill.sasts ?? [], r => r.sast_bill_id)
+
+  const changes: CompanionChange[] = []
+  for (const [id, r] of after) {
+    if (!before.has(id)) changes.push({ changeType: 'companion_added', oldValue: null, newValue: r.sast_bill_number, detail: r.type })
+  }
+  for (const [id, r] of before) {
+    if (!after.has(id)) changes.push({ changeType: 'companion_removed', oldValue: r.sastBillNumber, newValue: null, detail: r.type })
+  }
   return changes
 }

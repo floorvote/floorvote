@@ -7,7 +7,7 @@ function member(over: Partial<Member> & Pick<Member, 'id'>): Member {
   return {
     name: 'Member',
     email: `${over.id}@example.org`,
-    subtitle: null,
+    title: null,
     role: 'member',
     roles: [],
     ...over,

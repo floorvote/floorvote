@@ -14,6 +14,7 @@ import { notificationsRouter } from './routes/notificationsApi'
 import { configRouter } from './routes/configApi'
 import { calendarRouter } from './routes/calendarApi'
 import { savedViewsRouter } from './routes/savedViewsApi'
+import { muteLinkRouter } from './routes/muteLink'
 import { registerWithCentral } from './cron/sync'
 import { runDemoReset } from './lib/demoReset'
 import { resolveDemoSeed } from './lib/demoSeeds'
@@ -140,6 +141,8 @@ app.route('/api/stats', statsRouter)
 app.route('/api/feedback', feedbackRouter)
 app.route('/api/notifications', notificationsRouter)
 app.route('/api/calendar', calendarRouter)
+// No session: a reply email's signed mute link (routes/muteLink.ts).
+app.route('/api/mute-link', muteLinkRouter)
 
 app.get('/api/health', (c) => c.json({ ok: true, build: BUILD_SHA }))
 
@@ -370,14 +373,25 @@ export default {
     // (forceMetadata), metadata-only refreshes (metadataOnly), and admin-triggered
     // AI re-runs (forceAI). Invite jobs carry none of these, so a pure invite batch
     // is dropped (auto-acked) here — demo never emails.
-    if (env.DEMO_MODE === 'true' && !batch.messages.some(m => {
+    //
+    // A delivery probe (scripts/verify-instance.sh) writes no bill and only records
+    // that it arrived, so it is handled on its own first, on a demo too: if it
+    // were dropped by the freeze, it would read as a missing consumer. Taking it
+    // out of the batch also means it cannot unfreeze the ordinary notifications
+    // that happen to share its batch.
+    const db = getDb(env.DB)
+    const isProbe = (m: Message<QueueMessage>) => (m.body as { probe?: string }).probe !== undefined
+    const probes = batch.messages.filter((m): m is Message<TenantQueueMessage> => isProbe(m))
+    if (probes.length > 0) await processQueue(probes, env, db)
+    const messages = batch.messages.filter(m => !isProbe(m))
+
+    if (env.DEMO_MODE === 'true' && !messages.some(m => {
       const b = m.body as { forceMetadata?: boolean; metadataOnly?: boolean; forceAI?: boolean }
       return b.forceMetadata || b.metadataOnly || b.forceAI
     })) return
 
-    const db = getDb(env.DB)
-    const invites = batch.messages.filter(isInvite)
-    const bills = batch.messages.filter((m): m is Message<TenantQueueMessage> => !isInvite(m))
+    const invites = messages.filter(isInvite)
+    const bills = messages.filter((m): m is Message<TenantQueueMessage> => !isInvite(m))
 
     if (invites.length > 0) await processInviteEmails(invites, env, db)
     if (bills.length > 0) await processQueue(bills, env, db)

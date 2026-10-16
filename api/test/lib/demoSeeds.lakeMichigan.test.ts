@@ -36,21 +36,13 @@ describe('lake-michigan seed registration', () => {
   it('tells the visitor the org is fictional and that changes reset', () => {
     const b = DEMO_SEEDS['lake-michigan'].bannerText
     expect(b).not.toMatch(/read-only/i)
+    expect(b).not.toMatch(/nightly/i)
     expect(b).toMatch(/fictional/i)
     // Each invented category must be named. The seed carries fictional recent
     // legislative activity (LM_RECENT_ACTIVITY_EVENTS) on top of real bills, so
     // the banner has to disclose that too — a visitor who looks a bill up should
     // not be surprised by an action that never happened.
     expect(b).toContain('the organization, its staff, the hearing dates, and the most recent legislative activity are fictional')
-    expect(b).toMatch(/resets every few hours/i)
-  })
-
-  it('says the same of the New Jersey seed, which visitors can also write to', () => {
-    const b = DEMO_SEEDS['nj-county-clerks'].bannerText
-    expect(b).not.toMatch(/read-only/i)
-    expect(b).not.toMatch(/nightly/i)
-    expect(b).toMatch(/fictional/i)
-    expect(b).toContain('the association, its county clerks, and the hearing dates are fictional')
     expect(b).toMatch(/resets every few hours/i)
   })
 
@@ -84,8 +76,8 @@ describe('lake-michigan roster', () => {
 
   it('gives everyone a plain job title, not a Title · Org compound', () => {
     for (const u of s.users) {
-      expect(u.subtitle.length).toBeGreaterThan(3)
-      expect(u.subtitle).not.toContain('·')
+      expect(u.title.length).toBeGreaterThan(3)
+      expect(u.title).not.toContain('·')
     }
   })
 

@@ -5,7 +5,7 @@ import {
   billSasts, billSubjects, billReferrals, billTenants,
   billChangeLog, rollCalls, people, tenants, sessions, providerRecords,
 } from '../db/schema'
-import { detectChanges, type BillSnapshot, type ChangeRecord } from '../lib/detect-changes'
+import { detectChanges, detectCompanionChanges, type BillSnapshot, type ChangeRecord, type CompanionChange } from '../lib/detect-changes'
 import {
   calendarBlockEvents, carryCalendar, logCalendarChanges, planCalendarPull, planCalendarRecheck, readCalendarRows, writeCalendarRows,
   type CalendarChange, type CalendarPlan, type CalendarRow,
@@ -134,7 +134,8 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
 
 /**
  * Fetch one bill's full record from its provider. A snapshot provider gets the
- * record core stored for the bill, and the bill's session. When the provider
+ * record core stored for the bill, the bill's session, and the texts core
+ * already stores for it. When the provider
  * also fetched a details response, store it beside the record, and when, for
  * its details refresh.
  */
@@ -145,6 +146,8 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
       .where(and(eq(providerRecords.billId, billId), eq(providerRecords.provider, provider.id))).get()
     if (!row) throw new Error(`bill ${billId} has no stored ${provider.id} record; the ${provider.id} sync has not seen it`)
     const s = await db.select().from(sessions).where(eq(sessions.sessionId, row.sessionId)).get()
+    const texts = await db.select({ docId: billTexts.docId, stateLink: billTexts.stateLink })
+      .from(billTexts).where(eq(billTexts.billId, billId)).all()
     ref = {
       billId,
       sessionId: row.sessionId,
@@ -154,6 +157,7 @@ async function fetchMeasure(billId: number, sessionId: number | null, provider: 
         sessionId: s.sessionId, state: s.state, sessionTag: s.sessionTag,
         yearStart: s.yearStart, yearEnd: s.yearEnd, sessionName: s.sessionName, prior: s.prior,
       } : undefined,
+      texts,
     }
   } else {
     ref = { billId, sessionId }
@@ -239,12 +243,14 @@ export async function ingestMeasure(
   }
 
   let detectedChanges: ChangeRecord[] = []
+  // Logged, but not sent to instances (lib/detect-changes.ts).
+  let companionChanges: CompanionChange[] = []
   let calendarChanges: CalendarChange[] = []
   let priorCalendar: CalendarRow[] = []
 
   if (existingBillRow && !carriedFrom) {
     // Read before-snapshot from child tables
-    const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows] = await Promise.all([
+    const [historyRows, textRows, supplementRows, amendmentRows, voteRows, sponsorRows, priorCalRows, priorSasts] = await Promise.all([
       db.select({ seq: billHistory.seq }).from(billHistory).where(eq(billHistory.billId, bill.bill_id)).all(),
       db.select({ docId: billTexts.docId }).from(billTexts).where(eq(billTexts.billId, bill.bill_id)).all(),
       db.select({ supplementId: billSupplements.supplementId }).from(billSupplements).where(eq(billSupplements.billId, bill.bill_id)).all(),
@@ -259,6 +265,8 @@ export async function ingestMeasure(
         .where(eq(billSponsors.billId, bill.bill_id))
         .all(),
       readCalendarRows(db, bill.bill_id),
+      db.select({ sastBillId: billSasts.sastBillId, sastBillNumber: billSasts.sastBillNumber, type: billSasts.type })
+        .from(billSasts).where(eq(billSasts.billId, bill.bill_id)).all(),
     ])
     priorCalendar = priorCalRows
 
@@ -286,6 +294,7 @@ export async function ingestMeasure(
     }
 
     detectedChanges = detectChanges(snapshot, bill, provider)
+    companionChanges = detectCompanionChanges(priorSasts, bill, provider)
   }
 
   // This pull's effect on the bill's calendar. A new bill's entries are all
@@ -370,7 +379,7 @@ export async function ingestMeasure(
     return
   }
 
-  for (const change of detectedChanges) {
+  for (const change of [...detectedChanges, ...companionChanges]) {
     await db.insert(billChangeLog).values({
       id:         crypto.randomUUID(),
       billId:     bill.bill_id,
@@ -710,8 +719,25 @@ export function validateTextPayload(
     return `body far smaller than declared size (${bytes.byteLength} vs ${declaredSize} bytes)`
   }
 
+  // Illinois serves a ~64KB page in place of any bill above a size threshold,
+  // a plausible size for a bill that the ratio above cannot catch. HTML only,
+  // and only for bodies small enough to be that page, so a multi-megabyte bill
+  // is never decoded just to look for the phrase.
+  if (!mime.includes('pdf') && bytes.byteLength <= INTERSTITIAL_SCAN_LIMIT_BYTES) {
+    const text = new TextDecoder('latin1').decode(bytes)
+    if (ILLINOIS_TOO_LARGE_MARKER.test(text)) {
+      return `a "too large to display" interstitial page instead of the document (${bytes.byteLength} bytes)`
+    }
+  }
+
   return null
 }
+
+/** ILGA's wording, specific enough that a bill discussing "too large" cannot match. */
+const ILLINOIS_TOO_LARGE_MARKER = /full text of the file you requested is too large for display/i
+
+/** The Illinois interstitial is ~64KB; anything past this is a real document. */
+const INTERSTITIAL_SCAN_LIMIT_BYTES = 256 * 1024
 
 /**
  * Can this URL name a specific document version?

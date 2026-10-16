@@ -22,6 +22,13 @@ import type { ProviderVocabulary } from '../sdk'
  * - `extras`: fields only this feed publishes, in the order the bill page
  *   shows them, each with a label, an optional explainer, and a display type
  *   (text, date, link, or identifier, from shared/providerExtras.ts).
+ * - `relationships`: if the feed links bills, a `default` map from each
+ *   relationship label the mapping writes (the `type` of a `sasts` entry) to
+ *   `identical` (the same bill filed twice), `package` (different bills moved
+ *   together), or `related` (the kind of any label left out), and optional
+ *   `states` overrides by two-letter state. Labels match by name, never by
+ *   type id, ignoring case, spacing, and hyphens. Leave it out when the feed
+ *   publishes nothing worth grouping.
  *
  * Explainers appear next to real bills, so keep them factual, and cite the
  * legislature's own guide to its process here.

@@ -72,7 +72,7 @@ function toGroup(events: DigestEvent[]): GroupedBillEvents {
       id: `${f.billId}-${i}`, type: e.type as FeedEvent['type'], billId: f.billId, billNumber: f.billNumber,
       billSessionSlug: null, billState: f.billState, billTitle: f.billTitle, billSummary: null,
       billPriority: (f.priority as GroupedBillEvents['billPriority']) ?? null, billMatchType: null,
-      userName: e.userName ?? '', userSubtitle: null, metadata: safeParse(e.metadata), createdAt: e.createdAt,
+      userName: e.userName ?? '', userTitle: null, metadata: safeParse(e.metadata), createdAt: e.createdAt,
     })) as FeedEvent[],
   }
 }

@@ -1,5 +1,6 @@
-import { and, eq, isNotNull, isNull, sql, type SQL } from 'drizzle-orm'
+import { and, eq, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { associationConfig, bills } from '../db/schema'
+import { groupUntriaged, type BillsTable } from './teamFields'
 import type { AppDb } from '../types'
 
 /**
@@ -30,14 +31,16 @@ export async function getNewMatchMinRelevance(db: AppDb): Promise<number> {
  * (GET /bills?newMatches=1), its facet count, the "N new" chip, and the digest,
  * so they can't drift. COALESCE(relevance,0) means with the default threshold 0 a
  * match with no relevance score still qualifies; a positive threshold excludes it
- * until scored. Bulk and routine matches alike: the triage list shows both.
+ * until scored. Triaging any bill in a companion group triages the group, so a
+ * bill whose companion was triaged is no longer new. Bulk and routine matches
+ * alike: the triage list shows both. `t` is the bills table or an alias of it.
  */
-export function newMatchWhere(minRelevance: number): SQL {
+export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL {
   return and(
-    eq(bills.matchType, 'keyword'),
-    isNotNull(bills.newMatchAt),
-    isNull(bills.triagedAt),
-    sql`COALESCE(${bills.relevanceScore}, 0) >= ${minRelevance}`,
+    eq(t.matchType, 'keyword'),
+    isNotNull(t.newMatchAt),
+    groupUntriaged(t),
+    sql`COALESCE(${t.relevanceScore}, 0) >= ${minRelevance}`,
   )!
 }
 
@@ -45,8 +48,8 @@ export function newMatchWhere(minRelevance: number): SQL {
  * A new match that is routine (MatchProvenance in types.ts): the ones the digest
  * lists, and the feed shows. A bulk match, or one with no provenance, is left out.
  */
-export function routineNewMatchWhere(minRelevance: number): SQL {
-  return and(newMatchWhere(minRelevance), eq(bills.matchProvenance, 'routine'))!
+export function routineNewMatchWhere(minRelevance: number, t: BillsTable = bills): SQL {
+  return and(newMatchWhere(minRelevance, t), eq(t.matchProvenance, 'routine'))!
 }
 
 /**

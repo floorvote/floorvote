@@ -13,7 +13,7 @@ function makeEvent(overrides: Partial<FeedEvent> = {}): FeedEvent {
   return {
     id: 'evt-1', type: 'priority_set', billId: null, billNumber: '', billSessionSlug: null, billState: null,
     billTitle: '', billSummary: null, billPriority: null, billMatchType: null,
-    userId: 'admin-1', userName: 'Ada Admin', userSubtitle: null,
+    userId: 'admin-1', userName: 'Ada Admin', userTitle: null,
     metadata: { priority: 'high', count: 34, billIds: ['b1', 'b2', 'gone'] },
     createdAt: '2026-06-03 10:00:00', ...overrides,
   }

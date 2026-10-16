@@ -17,7 +17,7 @@ describe('ensureDemoSession — D1 demo session write amplification', () => {
       email: 'demo@demo.test',
       name: 'Demo',
       role: 'admin',
-      subtitle: null,
+      title: null,
       canVote: 1,
       emailDigestEnabled: 1,
     })

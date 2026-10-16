@@ -20,19 +20,11 @@ const TABLES = [
   'calendar_events',
 ]
 
-// The bills the NJ seed references. Seeded with deterministic ids of the form
+// The bills the seed references. Seeded with deterministic ids of the form
 // `bill-<external_id>` so every bill_id in the dump names the bill it points at —
 // a swapped bill linkage shows up as a diff, not as UUID churn.
-const NJ_BILL_EXTERNAL_IDS = [
-  'legiscan:2099974', // A1129 — ballot drop boxes
-  'legiscan:2100182', // A1195 — Voter Convenience Act
-  'legiscan:2098535', // A1680 — voter registration 14 days
-  'legiscan:2098113', // A1715 — John R. Lewis Voter Empowerment Act
-  'legiscan:2098630', // A1698 — same-day voter registration
-  'legiscan:2096183', // A251  — voting machines
-  'legiscan:2099056', // A2670 — canvassing early votes
-  'legiscan:2096553', // A548  — county clerk death filing
-]
+const SEED = DEMO_SEEDS['lake-michigan']
+const SEED_BILL_EXTERNAL_IDS = SEED.priorities.map(p => p.externalId)
 
 // Every now-relative value is normalized to a *signed whole-day offset from the
 // run date* — `<d-60>` for 60 days ago, `<d+0>` for today, `<d+27>` for 27 days
@@ -147,14 +139,14 @@ export async function dumpResetState(baseMs: number, realNowMs: number): Promise
   return out.join('\n')
 }
 
-/** A freshly migrated DB carrying every bill the NJ seed references. Without the
+/** A freshly migrated DB carrying every bill the seed references. Without the
  *  bills the INSERT ... SELECT guards no-op and the dump is empty for the tables
  *  that matter most. */
 async function freshlyMigratedWithBills() {
   await resetDb()
   await applyMigrations()
-  for (const [i, extId] of NJ_BILL_EXTERNAL_IDS.entries()) {
-    await seedBill({ id: `bill-${extId}`, externalId: extId, billNumber: `A${1000 + i}`, title: `Bill ${i}`, state: 'NJ', priority: 'high' })
+  for (const [i, extId] of SEED_BILL_EXTERNAL_IDS.entries()) {
+    await seedBill({ id: `bill-${extId}`, externalId: extId, billNumber: `B${1000 + i}`, title: `Bill ${i}`, state: 'MI', priority: 'high' })
   }
 }
 
@@ -178,7 +170,7 @@ describe('demo reset golden snapshot', () => {
       // Read before runDemoReset, not after — see dumpResetState's doc comment.
       const baseMs = Date.now()
       const realNowMs = vi.getRealSystemTime()
-      await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+      await runDemoReset(env.DB, SEED)
       dumps.push(await dumpResetState(baseMs, realNowMs))
     }
     vi.useRealTimers()
@@ -202,14 +194,14 @@ describe('demo reset golden snapshot', () => {
     vi.setSystemTime(new Date('2026-03-14T23:59:59.500Z'))
     await freshlyMigratedWithBills()
     const baseMsStraddled = Date.now() // captured before runDemoReset, per the fix
-    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    await runDemoReset(env.DB, SEED)
     vi.setSystemTime(new Date('2026-03-15T00:00:00.500Z')) // dump happens just after midnight
     const straddled = await dumpResetState(baseMsStraddled, vi.getRealSystemTime())
 
     vi.setSystemTime(new Date('2026-03-14T23:59:59.500Z')) // no midnight crossing at all
     await freshlyMigratedWithBills()
     const baseMsClean = Date.now()
-    await runDemoReset(env.DB, DEMO_SEEDS['nj-county-clerks'])
+    await runDemoReset(env.DB, SEED)
     const clean = await dumpResetState(baseMsClean, vi.getRealSystemTime())
 
     expect(straddled).toBe(clean)
@@ -223,7 +215,7 @@ describe('demo reset golden snapshot', () => {
 // it pins the seed's declared offset AND demoReset's snapping arithmetic, and it
 // is stable across run dates because it recomputes rather than remembering.
 describe('demo reset calendar dates', () => {
-  const seed = DEMO_SEEDS['nj-county-clerks']
+  const seed = SEED
 
   it('writes the date the seed asks for, snapped off the weekend', async () => {
     await freshlyMigratedWithBills()

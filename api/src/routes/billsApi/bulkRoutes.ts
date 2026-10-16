@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { eq, and, inArray, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNull, sql, type SQL } from 'drizzle-orm'
 import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import { bills, officialPositions, feedEvents, billCustomFieldValues, customFieldDefinitions } from '../../db/schema'
@@ -8,10 +8,13 @@ import { centralFetch } from '../../lib/centralFetch'
 import { backfillCalendar } from '../../lib/calendarBackfill'
 import { isHandle, parseHandle } from '../../../../shared/billHandle'
 import { nowDb } from '../../lib/dbTime'
-import { buildBillsWhere } from './query'
-import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
+import { billsAs, buildBillsFilter } from './query'
+import { countGroups, matchingGroupKeys, newMatchGroupKeys, newMatchGroupsAmong } from './groupList'
+import { getNewMatchMinRelevance } from '../../lib/newMatch'
 import { decodeSubjectFilters } from '../../lib/billSubjects'
 import { parseStoredMulti } from '../../../../shared/customFieldValues'
+import { inGroupOf, inGroupsOf } from '../../lib/companionGroups'
+import { loadTeamValuesOf, recordFieldChanges, type FieldChange } from '../../lib/teamFields'
 
 // Cloudflare D1 rejects queries with >100 bound parameters. Chunk bulk operations
 // below 100 to leave headroom for the extra SET/predicate params some queries add
@@ -76,13 +79,16 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       return c.json({ error: 'priority must be high, medium, low, or null' }, 400)
     }
 
-    // Resolve bill IDs
+    // Resolve the bills to edit: one per companion group, named by its key bill.
+    // The 1,000 cap counts groups. An edit of any bill in a group is the group's
+    // (see lib/teamFields.ts), so the group's key bill stands for it.
     let billIds: string[]
+    let selected: SQL | undefined
     if (hasIds) {
       billIds = body.ids!
     } else {
       const f = body.filter!
-      const where = await buildBillsWhere(db, {
+      const filter = await buildBillsFilter(db, {
         statuses: f.status ?? [],
         stages: f.stage ?? [],
         priorities: f.priority ?? [],
@@ -115,13 +121,16 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         // resolve against the same set the admin sees on screen, not silently AND it.
         matchAny: f.match === 'any',
       })
-      const rows = await db.select({ id: bills.id }).from(bills).where(where).all()
-      billIds = rows.map(r => r.id)
+      selected = filter(billsAs('m'))
+      // One more than the cap tells an over-cap selection from one at it.
+      billIds = await matchingGroupKeys(db, selected, 1001)
     }
 
     if (billIds.length === 0) return c.json({ updated: 0 })
     if (billIds.length > 1000) {
-      return c.json({ error: `Too many bills (${billIds.length}). Apply more filters to narrow down to 1,000 or fewer.` }, 400)
+      // The count is only for the message, so it is read only when the selection is refused.
+      const n = hasIds ? billIds.length : await countGroups(db, selected)
+      return c.json({ error: `Too many bills (${n}). Apply more filters to narrow down to 1,000 or fewer.` }, 400)
     }
 
     const now = nowDb()
@@ -130,13 +139,25 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     // event names them all instead (metadata.billIds), so it belongs to no single bill.
     const isBulk = count > 10
 
+    // Team fields (lib/teamFields.ts): each value is set on the selected bill,
+    // the most recent in its companion group, so the whole group reads it. A
+    // clear clears every member, so an older value on a companion doesn't come
+    // back. `before` is what each selected bill's group read until now, for
+    // the team events this edit records and for multi-select additions.
+    const before = await loadTeamValuesOf(db, billIds)
+    const changes: FieldChange[] = []
+
     // Apply priority
     if (hasPriority) {
       const priority = (body.priority ?? null) as 'high' | 'medium' | 'low' | null
       for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+        const part = billIds.slice(i, i + BULK_CHUNK)
         await db.update(bills)
-          .set({ priority, updatedAt: now })
-          .where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)))
+          .set({ priority, prioritySetAt: now, updatedAt: now })
+          .where(priority ? inArray(bills.id, part) : inGroupsOf(bills.id, part))
+      }
+      for (const billId of billIds) {
+        changes.push({ billId, field: 'priority', label: 'priority', old: before.get(billId)?.priority?.priority ?? null, new: priority })
       }
       if (priority) {
         // Latch each newly-prioritized match as triaged (idempotent — first actor wins).
@@ -200,9 +221,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     // Apply position
     if (hasPosition) {
+      for (const billId of billIds) {
+        changes.push({ billId, field: 'position', label: 'position', old: before.get(billId)?.position?.position ?? null, new: body.position ?? null })
+      }
       if (body.position === null) {
         for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-          await db.delete(officialPositions).where(inArray(officialPositions.billId, billIds.slice(i, i + BULK_CHUNK)))
+          await db.delete(officialPositions).where(inGroupsOf(officialPositions.billId, billIds.slice(i, i + BULK_CHUNK)))
         }
       } else {
         const position = body.position!
@@ -242,30 +266,26 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
 
     // Apply custom fields
     if (hasCf) {
+      const labelOf = new Map((await db.select({ id: customFieldDefinitions.id, name: customFieldDefinitions.name })
+        .from(customFieldDefinitions).all()).map(d => [d.id, d.name]))
       for (const entry of body.customFields!) {
         const fieldId = entry.fieldId
         const isMultiOp = 'additions' in entry || 'removals' in entry
+        const oldOf = (billId: string) => before.get(billId)?.customFields.get(fieldId)?.value ?? null
+        const change = (billId: string, value: string | null) =>
+          changes.push({ billId, field: 'customField', fieldId, label: labelOf.get(fieldId) ?? fieldId, old: oldOf(billId), new: value })
 
         if (isMultiOp) {
           const additions = ('additions' in entry ? entry.additions : undefined) ?? []
           const removals = ('removals' in entry ? entry.removals : undefined) ?? []
           if (additions.length === 0 && removals.length === 0) continue
 
-          // Read existing values for all affected bills. Chunked — billIds can be up to
-          // 1000, well over D1's 100-bound-param cap (plus the fieldId eq param).
-          const existingRows: { billId: string; value: string }[] = []
-          for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-            const rows = await db
-              .select({ billId: billCustomFieldValues.billId, value: billCustomFieldValues.value })
-              .from(billCustomFieldValues)
-              .where(and(
-                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
-                eq(billCustomFieldValues.fieldId, fieldId),
-              ))
-              .all()
-            existingRows.push(...rows)
-          }
-          const existingByBill = new Map(existingRows.map(r => [r.billId, r.value]))
+          // Each bill's current value is its group's, so an addition keeps the
+          // options a companion's value holds.
+          const existingByBill = new Map(billIds.flatMap(billId => {
+            const value = oldOf(billId)
+            return value === null ? [] : [[billId, value] as const]
+          }))
 
           const additionsSet = new Set(additions)
           const removalsSet = new Set(removals)
@@ -293,12 +313,14 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
               for (const v of additions) if (!ordered.includes(v) && next.includes(v)) ordered.push(v)
 
               if (ordered.length === 0) {
+                change(billId, null)
                 ops.push(db.delete(billCustomFieldValues).where(and(
-                  eq(billCustomFieldValues.billId, billId),
+                  inGroupOf(billCustomFieldValues.billId, billId),
                   eq(billCustomFieldValues.fieldId, fieldId),
                 )))
               } else {
                 const stored = JSON.stringify(ordered)
+                change(billId, stored)
                 ops.push(db.insert(billCustomFieldValues)
                   .values({ billId, fieldId, value: stored, setBy: currentUser.id, updatedAt: now })
                   .onConflictDoUpdate({
@@ -315,11 +337,12 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         }
 
         const value = 'value' in entry ? entry.value : null
+        for (const billId of billIds) change(billId, value)
         if (value === null) {
           for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
             await db.delete(billCustomFieldValues).where(
               and(
-                inArray(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
+                inGroupsOf(billCustomFieldValues.billId, billIds.slice(i, i + BULK_CHUNK)),
                 eq(billCustomFieldValues.fieldId, fieldId),
               )
             )
@@ -340,6 +363,9 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         }
       }
     }
+
+    // Only bills that exist: a selection by id may name one deleted since.
+    await recordFieldChanges(db, changes.filter(ch => before.has(ch.billId)), currentUser.id)
 
     return c.json({ updated: count })
   })
@@ -367,17 +393,18 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
     const hasFilter = body.filter != null
     if (hasIds === hasFilter) return c.json({ error: 'Provide exactly one of: ids or filter' }, 400)
 
-    // Computed up front — the filter-mode resolve below intersects with newMatchWhere(min)
-    // so it never loads more than the new-match queue, even when the "New matches" chip
-    // (f.newMatches) is off but the dismiss action is still available.
+    // Computed up front — the groups to dismiss are only those on the new-match queue,
+    // even when the "New matches" chip (f.newMatches) is off but the dismiss action is
+    // still available.
     const min = await getNewMatchMinRelevance(db)
 
-    let billIds: string[]
+    let toDismiss: string[]
     if (hasIds) {
-      billIds = body.ids!
+      // The groups of the bills named that are on the new-match queue.
+      toDismiss = await newMatchGroupsAmong(db, body.ids!, min)
     } else {
       const f = body.filter!
-      const where = await buildBillsWhere(db, {
+      const filter = await buildBillsFilter(db, {
         statuses: f.status ?? [], stages: f.stage ?? [], priorities: f.priority ?? [], positionValues: f.position ?? [],
         sessions: f.session ?? [], years: f.year ?? [], states: f.state ?? [], tagFilters: f.tag ?? [],
         // Same truncation tradeoff as the other bulk call site above: it can widen the
@@ -395,26 +422,18 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         // route above, so the three surfaces cannot drift on what the param means.
         matchAny: f.match === 'any',
       })
-      const rows = await db.select({ id: bills.id }).from(bills).where(and(where, newMatchWhere(min))).all()
-      billIds = rows.map(r => r.id)
+      // One bill per group, named by its key bill: a group is dismissed as one. One statement, so the
+      // groups the filter names (every group on a broad filter) never travel as a parameter.
+      toDismiss = await newMatchGroupKeys(db, filter(billsAs('m')), min)
     }
 
-    if (billIds.length === 0) return c.json({ dismissed: 0 })
+    if (toDismiss.length === 0) return c.json({ dismissed: 0 })
 
     const now = nowDb()
-
-    // Both statements below add a few params on top of the inArray list (SELECT:
-    // newMatchWhere's matchType + threshold; UPDATE: triagedAt + triagedBy), which is why
-    // they're chunked at the shared BULK_CHUNK rather than the raw 100-param cap.
-
-    // Restrict to the un-triaged keyword new-matches within the selection (same predicate as the worklist).
-    const toDismiss: string[] = []
-    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-      const chunk = billIds.slice(i, i + BULK_CHUNK)
-      const rows = await db.select({ id: bills.id }).from(bills)
-        .where(and(inArray(bills.id, chunk), newMatchWhere(min))).all()
-      toDismiss.push(...rows.map(r => r.id))
-    }
+    // Triaging any bill in a group triages the group (lib/teamFields.ts), so the
+    // key bill is stamped. The UPDATE adds a few params on top of the inArray
+    // list (triagedAt + triagedBy), which is why it's chunked at the shared
+    // BULK_CHUNK rather than the raw 100-param cap.
     for (let i = 0; i < toDismiss.length; i += BULK_CHUNK) {
       await db.update(bills)
         .set({ triagedAt: now, triagedBy: currentUser.id })
@@ -466,7 +485,7 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         }
       }
 
-      const where = await buildBillsWhere(db, {
+      const filter = await buildBillsFilter(db, {
         statuses, stages, priorities, positionValues, sessions, years, states, tagFilters,
         subjectFilters,
         q, minRelevance, myBillsParam, unvoted,
@@ -481,59 +500,41 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
         matchAny: params.get('match') === 'any',
       })
 
-      const rows = await db
-        .select({ id: bills.id })
-        .from(bills)
-        .where(where)
-        .limit(1000)
-        .all()
-      billIds = rows.map(r => r.id)
+      // One bill per companion group, named by its key bill.
+      billIds = await matchingGroupKeys(db, filter(billsAs('m')), 1000)
     }
 
     if (billIds.length === 0) {
       return c.json({ count: 0, priorities: {}, positions: {}, customFields: {}, multiCustomFields: {}, nullMatchCount: 0, newMatchCount: 0 })
     }
 
-    // Fetch priority + position in chunks for inArray safety
+    // Each bill's team values are its group's, as the bulk-edit form edits them
+    // (lib/teamFields.ts), so a group counts once with the values it reads.
+    const teamValues = await loadTeamValuesOf(db, billIds)
     const priorityCounts: Record<string, number> = {}
     const positionCounts: Record<string, number> = {}
-    let nullMatchCount = 0
-    const newMatchMin = await getNewMatchMinRelevance(db)
-    let newMatchCount = 0
-
-    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-      const chunk = billIds.slice(i, i + BULK_CHUNK)
-
-      const billRows = await db
-        .select({ id: bills.id, priority: bills.priority, externalId: bills.externalId, matchType: bills.matchType, newMatchAt: bills.newMatchAt, triagedAt: bills.triagedAt, relevanceScore: bills.relevanceScore })
-        .from(bills)
-        .where(inArray(bills.id, chunk))
-        .all()
-
-      for (const row of billRows) {
-        const key = row.priority ?? 'null'
-        priorityCounts[key] = (priorityCounts[key] ?? 0) + 1
-        if (row.matchType === null && isHandle(row.externalId)) nullMatchCount++
-        if (row.matchType === 'keyword' && row.newMatchAt && !row.triagedAt && (row.relevanceScore ?? 0) >= newMatchMin) newMatchCount++
-      }
-
-      const posRows = await db
-        .select({ billId: officialPositions.billId, position: officialPositions.position })
-        .from(officialPositions)
-        .where(inArray(officialPositions.billId, chunk))
-        .all()
-
-      // Bills without a position row count as null
-      const positionedBillIds = new Set(posRows.map(r => r.billId))
-      for (const id of chunk) {
-        if (!positionedBillIds.has(id)) {
-          positionCounts['null'] = (positionCounts['null'] ?? 0) + 1
-        }
-      }
-      for (const row of posRows) {
-        positionCounts[row.position] = (positionCounts[row.position] ?? 0) + 1
-      }
+    for (const id of billIds) {
+      const values = teamValues.get(id)
+      if (!values) continue // a bill selected by id that no longer exists
+      const priorityKey = values.priority?.priority ?? 'null'
+      priorityCounts[priorityKey] = (priorityCounts[priorityKey] ?? 0) + 1
+      // Bills without a position count as null
+      const positionKey = values.position?.position ?? 'null'
+      positionCounts[positionKey] = (positionCounts[positionKey] ?? 0) + 1
     }
+
+    // Untracked stubs a bulk priority would promote, among the bills named (chunked for inArray safety).
+    let nullMatchCount = 0
+    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
+      const rows = await db
+        .select({ matchType: bills.matchType, externalId: bills.externalId })
+        .from(bills)
+        .where(inArray(bills.id, billIds.slice(i, i + BULK_CHUNK)))
+        .all()
+      for (const row of rows) if (row.matchType === null && isHandle(row.externalId)) nullMatchCount++
+    }
+    // New matches among the groups: a group is one when any bill in it is, and no bill in it is triaged.
+    const newMatchCount = (await newMatchGroupsAmong(db, billIds, await getNewMatchMinRelevance(db))).length
 
     // Multi-select fields store a JSON array per bill, so their counts are tallied
     // per option (a bill can contribute to several options) and reported separately
@@ -547,50 +548,26 @@ export function registerBulkRoutes(router: Hono<AppEnv>) {
       ).map(r => r.id)
     )
 
-    // Fetch custom field values
+    // Custom field values, each the group's current one
     const cfCounts: Record<string, Record<string, number>> = {}
     const multiCfCounts: Record<string, Record<string, number>> = {}
-    for (let i = 0; i < billIds.length; i += BULK_CHUNK) {
-      const chunk = billIds.slice(i, i + BULK_CHUNK)
-      const cfRows = await db
-        .select({
-          billId: billCustomFieldValues.billId,
-          fieldId: billCustomFieldValues.fieldId,
-          value: billCustomFieldValues.value,
-        })
-        .from(billCustomFieldValues)
-        .where(inArray(billCustomFieldValues.billId, chunk))
-        .all()
-
-      // Track which fields have a value for each bill in this chunk
-      const fieldBillsSeen: Record<string, Set<string>> = {}
-      for (const row of cfRows) {
-        if (multiFieldIds.has(row.fieldId)) {
-          if (!multiCfCounts[row.fieldId]) multiCfCounts[row.fieldId] = {}
+    for (const id of billIds) {
+      for (const [fieldId, row] of teamValues.get(id)?.customFields ?? []) {
+        if (multiFieldIds.has(fieldId)) {
+          if (!multiCfCounts[fieldId]) multiCfCounts[fieldId] = {}
           for (const opt of parseStoredMulti(row.value)) {
-            multiCfCounts[row.fieldId][opt] = (multiCfCounts[row.fieldId][opt] ?? 0) + 1
+            multiCfCounts[fieldId][opt] = (multiCfCounts[fieldId][opt] ?? 0) + 1
           }
           continue
         }
-        if (!cfCounts[row.fieldId]) cfCounts[row.fieldId] = {}
-        if (!fieldBillsSeen[row.fieldId]) fieldBillsSeen[row.fieldId] = new Set()
-        fieldBillsSeen[row.fieldId].add(row.billId)
-        cfCounts[row.fieldId][row.value] = (cfCounts[row.fieldId][row.value] ?? 0) + 1
-      }
-
-      // Bills with no value for a field count as null — only for fields seen in this chunk
-      for (const fieldId of Object.keys(fieldBillsSeen)) {
-        const missing = chunk.length - fieldBillsSeen[fieldId].size
-        if (missing > 0) {
-          cfCounts[fieldId]['null'] = (cfCounts[fieldId]['null'] ?? 0) + missing
-        }
+        if (!cfCounts[fieldId]) cfCounts[fieldId] = {}
+        cfCounts[fieldId][row.value] = (cfCounts[fieldId][row.value] ?? 0) + 1
       }
     }
 
-    // Back-fill null counts for chunks where a field had no rows at all:
-    // sum of all value counts per field must equal billIds.length; any gap = unset bills.
-    // Multi-select fields are exempt — their per-option counts overlap, so the client
-    // compares each option's count against `count` instead.
+    // Back-fill null counts: the value counts of a field must sum to billIds.length, and any gap
+    // is bills with no value for it. Multi-select fields are exempt — their per-option counts
+    // overlap, so the client compares each option's count against `count` instead.
     for (const fieldId of Object.keys(cfCounts)) {
       const counted = Object.values(cfCounts[fieldId]).reduce((sum, n) => sum + n, 0)
       const missing = billIds.length - counted

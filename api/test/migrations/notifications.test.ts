@@ -57,7 +57,10 @@ describe('migration 0085_notifications', () => {
     janeId = await seedUser({ name: 'Jane', email: 'jane@example.com' })
     janeCookie = `session=${await seedSession(janeId)}`
     bobId = await seedUser({ name: 'Bob', email: 'bob@example.com' })
-    billId = await seedBill({ billNumber: 'HB 1', state: 'RI', session: '2026 Regular Session' })
+    // Raw SQL: seedBill writes every column the app's schema names, and later
+    // migrations add bills columns a pre-0085 database doesn't have.
+    billId = crypto.randomUUID()
+    await env.DB.prepare("INSERT INTO bills (id, bill_number, title, state, session) VALUES (?, 'HB 1', 'Test Bill', 'RI', '2026 Regular Session')").bind(billId).run()
     roleId = await seedRole('Elections Committee')
   })
 

@@ -82,6 +82,8 @@ export const bills = sqliteTable('bills', {
   createdAt:       text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt:       text('updated_at').notNull().default(sql`(datetime('now'))`),
   textsFetchedAt:  text('texts_fetched_at'),
+  /** When a tenant last asked for the bill to be fetched without tracking it (0040). A lock on asking again, never read as a fetch. */
+  textsRequestedAt: text('texts_requested_at'),
   /** The id of the provider that wrote the row (src/providers): 'legiscan' unless another provider did. */
   provider:        text('provider').notNull().default('legiscan'),
   /**
@@ -393,16 +395,24 @@ export const magicLinks = sqliteTable('magic_links', {
   index('idx_magic_links_token').on(t.tokenHash),
 ])
 
+// The table still has a `name` column from migration 0008 (NOT NULL DEFAULT ''). Nothing
+// reads or writes it, and it is left out here until a later migration drops it.
 export const adminSessions = sqliteTable('admin_sessions', {
   id:         text('id').primaryKey(),
   email:      text('email').notNull(),
-  name:       text('name').notNull().default(''),
   tokenHash:  text('token_hash').notNull().unique(),
   expiresAt:  text('expires_at').notNull(),
   createdAt:  text('created_at').notNull().default(sql`(datetime('now'))`),
 }, (t) => [
   index('idx_admin_sessions_token').on(t.tokenHash),
 ])
+
+export const superadminProfiles = sqliteTable('superadmin_profiles', {
+  email:     text('email').primaryKey(),
+  name:      text('name').notNull().default(''),
+  title:     text('title').notNull().default(''),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+})
 
 export const settings = sqliteTable('settings', {
   key:       text('key').primaryKey(),

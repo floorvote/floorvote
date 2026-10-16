@@ -2,6 +2,7 @@ import { useId, useState, useRef, useEffect, useLayoutEffect, type ReactNode, ty
 import { createPortal } from 'react-dom'
 import { SR_ONLY } from '../lib/textStyles'
 import { TOOLTIP_STYLE, tooltipPosition, tooltipPositionBelow, tooltipPositionRight } from '../lib/chipStyles'
+import { color } from '../styles/tokens'
 
 export type Placement = 'top' | 'top-start' | 'top-end' | 'bottom' | 'bottom-start' | 'right'
 
@@ -70,24 +71,36 @@ interface HoverTooltipProps {
   // with the bubble's aria-describedby, a screen reader announces "<ariaLabel>,
   // button" followed by the tooltip text on reveal.
   ariaLabel?: string
-  // Default mode only: explain a term (a status, an event type, a field label)
-  // rather than a control. Makes the hover reachable and readable without a
-  // pointer:
-  //  - the term gets a tab stop (a focusable span wraps `children`), so
-  //    keyboard users reach the explainer by focusing it;
+  // Explain a term (a status, an event type, a field label) rather than a
+  // control. The term is a toggletip, like the ⓘ, so it works without hover:
+  //  - the term is a real <button> (the toggletip archetype above), so it is a
+  //    tab stop; click, tap, Enter, or Space pins the explainer open or closed,
+  //    Escape closes it, and hover and focus still preview it;
+  //  - the term gets a dotted underline, so it reads as having an explainer
+  //    without an ⓘ, and the pointer cursor, because clicking does something.
+  //    FloorVote never uses the help cursor;
   //  - `text` is also rendered in a visually hidden span the term points to
-  //    through aria-describedby, so screen readers get it persistently;
+  //    through aria-describedby while closed, so screen readers get it
+  //    persistently; while open the button points at the role="tooltip" bubble
+  //    instead, the same announcement the ⓘ gives;
   //  - placement defaults to 'bottom' and maxWidth to 320 (both overridable);
   //  - empty `text` renders `children` unchanged.
   // Pass an object for the two variations: `id` names the hidden copy, and
-  // `interactive: true` says `children` is already focusable (a button), so no
-  // extra tab stop is added — give that child `aria-describedby={id}` itself.
+  // `interactive: true` says `children` is already a control (a chip button
+  // with its own click), which keeps the non-toggle behavior: no wrapper
+  // button, no underline, hover and focus preview only. Give that child
+  // `aria-describedby={id}` itself.
   // Ignored when `toggletip` is set.
   describe?: boolean | { id?: string; interactive?: boolean }
 }
 
 export function HoverTooltip({ text, children, placement: placementProp, maxWidth: maxWidthProp, portal = true, block = false, boundaryRef, toggletip = false, ariaLabel, describe = false }: HoverTooltipProps) {
   const describing = !!describe && !toggletip
+  // A plain-text term: the explainer toggles like the ⓘ. An interactive child
+  // (describe.interactive) keeps its own click, so it stays on the default path.
+  const termToggle = describing && !(typeof describe === 'object' && describe.interactive)
+  // Renders as the button + role="tooltip" archetype: the ⓘ, or a plain-text term.
+  const asToggletip = toggletip || termToggle
   const placement = placementProp ?? (describing ? 'bottom' : 'top')
   const maxWidth = maxWidthProp ?? (describing ? 320 : undefined)
   const describeOpts = typeof describe === 'object' ? describe : {}
@@ -200,9 +213,9 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
     ? (
       <span
         ref={bubbleRef}
-        id={toggletip ? bubbleId : undefined}
-        role={toggletip ? 'tooltip' : undefined}
-        aria-hidden={toggletip ? undefined : true}
+        id={asToggletip ? bubbleId : undefined}
+        role={asToggletip ? 'tooltip' : undefined}
+        aria-hidden={asToggletip ? undefined : true}
         style={{
           ...position(anchor),
           ...TOOLTIP_STYLE,
@@ -275,17 +288,20 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
   const handlePointerLeave = () => { if (!pinnedRef.current) hide() }
   const handleFocus = () => show()
   const handleBlur = () => hide()
+  const handleKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === 'Escape') hide()
+  }
 
   if (describing && !text) return <>{children}</>
 
-  const trigger = describing && !describeOpts.interactive
-    // Focusable on purpose: keyboard users reach the explainer by focusing the term.
-    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-    ? <span tabIndex={0} aria-describedby={describeId}>{children}</span>
+  // A term's tab stop is the toggletip button around it, so the underlined
+  // span inside is not focusable.
+  const trigger = termToggle
+    ? <span style={{ borderBottom: `1px dotted ${color.textMuted}` }}>{children}</span>
     : children
   const inner = <>{trigger}{portal && bubble ? createPortal(bubble, document.body) : bubble}</>
 
-  if (toggletip) {
+  if (asToggletip) {
     const handleClick = () => {
       if (pinnedRef.current) {
         pinnedRef.current = false
@@ -295,10 +311,7 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
         show()
       }
     }
-    const handleKeyDown = (e: ReactKeyboardEvent) => {
-      if (e.key === 'Escape') hide()
-    }
-    return (
+    const button = (
       <button
         type="button"
         ref={setRef}
@@ -315,6 +328,9 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
           color: 'inherit',
           textAlign: 'inherit',
           cursor: 'pointer',
+          // A term sits in running text, which a button's UA styles would
+          // otherwise restyle (uppercase labels, tracked-out headings).
+          ...(termToggle ? { textTransform: 'inherit' as const, letterSpacing: 'inherit' } : {}),
         }}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
@@ -322,21 +338,32 @@ export function HoverTooltip({ text, children, placement: placementProp, maxWidt
         onBlur={handleBlur}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        aria-describedby={anchor ? bubbleId : undefined}
+        aria-describedby={anchor ? bubbleId : termToggle ? describeId : undefined}
       >
         {inner}
       </button>
     )
+    if (!termToggle) return button
+    return (
+      <>
+        {button}
+        <span id={describeId} style={SR_ONLY}>{text}</span>
+      </>
+    )
   }
 
+  // onKeyDown only catches Escape bubbling up from the focusable child, as
+  // onFocus/onBlur catch its focus; the wrapper is not a control of its own.
   const wrapper = block
     ? (
-      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+      <div ref={setRef} style={{ display: 'block', width: '100%' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur} onKeyDown={handleKeyDown}>
         {inner}
       </div>
     )
     : (
-      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur}>
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+      <span ref={setRef} style={{ display: 'inline-flex', alignItems: 'center' }} onPointerEnter={handlePointerEnter} onPointerLeave={handlePointerLeave} onFocus={handleFocus} onBlur={handleBlur} onKeyDown={handleKeyDown}>
         {inner}
       </span>
     )

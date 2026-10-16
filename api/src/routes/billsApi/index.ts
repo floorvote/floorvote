@@ -8,6 +8,7 @@ import { registerLookupRoutes } from './lookupRoutes'
 import { registerEngagementRoutes } from './engagementRoutes'
 import { registerDraftRoutes } from './draftRoutes'
 import { registerTextRoutes } from './textRoutes'
+import { registerGroupRoutes } from './groupRoutes'
 
 export const billsApiRouter = new Hono<AppEnv>()
 
@@ -25,6 +26,7 @@ registerBulkRoutes(billsApiRouter)        // POST /bulk, GET /bulk-values
 registerListRoutes(billsApiRouter)        // GET / (list), GET /facets
 registerLabelRoutes(billsApiRouter)       // GET /labels
 registerLookupRoutes(billsApiRouter)      // GET /:id, GET /resolve/*, GET /drafts, GET /draft-defaults, GET /:id/changes
-registerEngagementRoutes(billsApiRouter)  // votes, position, comments, note, custom-fields
+registerEngagementRoutes(billsApiRouter)  // votes, position, comments, mute, note, custom-fields
 registerDraftRoutes(billsApiRouter)       // DELETE /:id, POST /draft, POST /:id/link, PATCH /:id/{draft,priority}
 registerTextRoutes(billsApiRouter)        // GET /:id/text/:docId
+registerGroupRoutes(billsApiRouter)       // POST /:id/group, POST /:id/split, GET /:id/split-preview (admins)
