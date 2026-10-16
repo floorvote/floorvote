@@ -184,6 +184,61 @@ describe('markPassage', () => {
     expect(css).toMatch(/mark\[data-fv-passage\]\{background:[^;]*!important/)
   })
 
+  // The frame is a `sandbox=""` blob: the app's CSS variables aren't defined in
+  // it, so a `var(--fv-...)` color there computes to nothing. And a bill's page
+  // renders light there in both of the app's modes (an opaque white canvas with
+  // black text, since the frame's color-scheme isn't the app's). So the style
+  // carries literal light-mode colors, whichever mode the app is in.
+  describe('the passage style in the frame', () => {
+    const cssOf = () => {
+      const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
+      return doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''
+    }
+    const rule = (css: string, selector: string) => css.split('}').map(r => r.trim()).find(r => r.startsWith(selector + '{')) ?? ''
+
+    it('fills the passage pale amber with a 2px Honey line along the bottom, whichever the mode', () => {
+      for (const dark of [false, true]) {
+        document.documentElement.classList.toggle('dark', dark)
+        const mark = rule(cssOf(), 'mark[data-fv-passage]')
+        expect(mark, dark ? 'dark' : 'light').toContain('background:#fde68a !important')
+        expect(mark).toContain('box-shadow:inset 0 -2px 0 #e8a33d !important')
+      }
+      document.documentElement.classList.remove('dark')
+    })
+
+    it('sets the passage text dark on its pale fill, not inherited from the bill', () => {
+      const mark = rule(cssOf(), 'mark[data-fv-passage]')
+      expect(mark).toMatch(/(^|[{;])color:#0f172a !important/)
+    })
+
+    it('rings the focused passage in the light focus ring color, in both modes', () => {
+      for (const dark of [false, true]) {
+        document.documentElement.classList.toggle('dark', dark)
+        const css = cssOf()
+        expect(css, dark ? 'dark' : 'light').toContain(`#${PASSAGE_ID}:focus{outline:2px solid #1e3a5f !important;outline-offset:2px}`)
+        expect(css).toContain(`:root:has(#${PASSAGE_ID}:focus) mark[data-fv-passage]{outline:2px solid #1e3a5f !important;outline-offset:2px}`)
+      }
+      document.documentElement.classList.remove('dark')
+    })
+
+    it('has no CSS variable in it, since none is defined in the frame', () => {
+      for (const dark of [false, true]) {
+        document.documentElement.classList.toggle('dark', dark)
+        expect(cssOf(), dark ? 'dark' : 'light').not.toContain('var(')
+      }
+      document.documentElement.classList.remove('dark')
+    })
+
+    it('is the same style in both modes', () => {
+      document.documentElement.classList.remove('dark')
+      const light = cssOf()
+      document.documentElement.classList.add('dark')
+      const dark = cssOf()
+      document.documentElement.classList.remove('dark')
+      expect(dark).toBe(light)
+    })
+  })
+
   it('rings every part of the passage while its first part has focus', () => {
     const doc = parseDoc(markPassage(BILL, passageIn(BILL, 'Section 2.')) ?? '')
     const css = doc.head.querySelector('style[data-fv-passage]')?.textContent ?? ''

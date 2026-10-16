@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'path'
 import { PRODUCT_NAME } from '../shared/brand'
+import { colorVariablesCss } from './src/styles/colorModes'
+
+const sharedDir = path.resolve(__dirname, '../shared') + path.sep
+const sharedTokens = path.resolve(__dirname, '../shared/tokens.ts')
+const webTokens = path.resolve(__dirname, 'src/styles/tokens.ts')
 
 export default defineConfig({
   plugins: [
@@ -11,6 +16,29 @@ export default defineConfig({
       // Keep the static <title> single-sourced from shared/brand.ts.
       name: 'inject-product-name',
       transformIndexHtml: (html) => html.replaceAll('%PRODUCT_NAME%', PRODUCT_NAME),
+    },
+    {
+      // Both color modes as CSS variables, inline in the HTML shell so they
+      // apply before the first paint (see src/styles/colorModes.ts). 'pre', so
+      // the placeholder is replaced before the build minifies inline CSS.
+      name: 'color-variables',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: (html) => html.replace('/* %COLOR_VARIABLES% */', colorVariablesCss()),
+      },
+    },
+    {
+      // Shared modules (chip colors, event lines, mention pills, the wordmark)
+      // import the literal palette from shared/tokens.ts because the API's emails
+      // use them too. In the web build they get the CSS-variable tokens instead,
+      // so they follow the color mode like everything else.
+      name: 'shared-tokens-as-variables',
+      enforce: 'pre',
+      async resolveId(source, importer) {
+        if (!importer?.startsWith(sharedDir) || !/(^|\/)tokens(\.ts)?$/.test(source)) return null
+        const resolved = await this.resolve(source, importer, { skipSelf: true })
+        return resolved?.id === sharedTokens ? webTokens : null
+      },
     },
     {
       // Expose the operator's legal docs as `virtual:legal-docs`, read with Node

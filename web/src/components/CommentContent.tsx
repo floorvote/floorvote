@@ -158,12 +158,12 @@ export function CommentContent({ content, users = [], roles = [], fontSize: font
         .comment-html blockquote {
           margin: 4px 0;
           padding-left: 12px;
-          border-left: 3px solid #cbd5e1;
-          color: #6b7280;
+          border-left: 3px solid ${color.borderStrong};
+          color: ${color.textMuted};
         }
         .comment-html ul, .comment-html ol { margin: 4px 0 4px 18px; padding: 0; }
         .comment-html li { margin: 2px 0; }
-        .comment-html a { color: #2563eb; text-decoration: none; }
+        .comment-html a { color: ${color.linkBlue}; text-decoration: none; }
         .comment-html a:hover { text-decoration: underline; }
         .comment-html span[data-type="mention"] {
           font-weight: ${MENTION_STYLE.weight};

@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { color, radius, fontSize, fontWeight } from './tokens'
+import { color as lightColor, radius, fontSize, fontWeight } from '../../../shared/tokens'
+import { color } from './tokens'
+import { darkColor, colorVariablesCss } from './colorModes'
+import { contrast, relLuminance } from '../test/colorTokens'
 
 describe('tokens', () => {
   it('exposes expected primitive values', () => {
-    expect(color.textMuted).toBe('#667386')
-    expect(color.borderDefault).toBe('#e2e8f0')
-    expect(color.white).toBe('#fff')
+    expect(lightColor.textMuted).toBe('#667386')
+    expect(lightColor.borderDefault).toBe('#e2e8f0')
+    expect(lightColor.white).toBe('#fff')
     expect(radius.md).toBe(6)
     expect(radius.pill).toBe(999)
     expect(fontSize.sm).toBe(12)   // 11/12/13 collapsed here
@@ -16,7 +19,7 @@ describe('tokens', () => {
   })
 
   it('all token values are serializable primitives (string|number)', () => {
-    for (const group of [color, radius, fontSize, fontWeight]) {
+    for (const group of [lightColor, radius, fontSize, fontWeight]) {
       for (const v of Object.values(group)) {
         expect(['string', 'number']).toContain(typeof v)
       }
@@ -24,93 +27,151 @@ describe('tokens', () => {
   })
 
   it('exposes a focusRing color token (navy, for the focus-visible ring)', () => {
-    expect(color.focusRing).toBe('#1e3a5f')
+    expect(lightColor.focusRing).toBe('#1e3a5f')
+  })
+
+  it('gives the web every color as a CSS variable defined in both modes', () => {
+    expect(color.textPrimary).toBe('var(--fv-text-primary)')
+    expect(color.textSlate500).toBe('var(--fv-text-slate-500)')
+    expect(color.focusRing).toBe('var(--fv-focus-ring)') // mobile.css overrides this one by name
+    const css = colorVariablesCss()
+    for (const v of Object.values(color)) {
+      const name = v.slice(4, -1)
+      expect(css.split(`${name}:`).length - 1, name).toBe(2)
+    }
+  })
+})
+
+// --- Brand colors in dark mode ----------------------------------------------
+// Honey is the brand accent and the logo mark's fill, so it never changes with
+// the mode (the mark is never recolored). It already reads on the dark surfaces.
+// The legacy amber #f59e0b is being retired toward Honey and may not come back
+// in either palette.
+describe('brand colors in both modes', () => {
+  it('keeps Honey (accentAmber) at #e8a33d in dark mode, as in light', () => {
+    expect(lightColor.accentAmber).toBe('#e8a33d')
+    expect(darkColor.accentAmber).toBe('#e8a33d')
+  })
+
+  it('uses the legacy amber #f59e0b nowhere, in either palette', () => {
+    for (const [mode, palette] of [['light', lightColor], ['dark', darkColor]] as const) {
+      for (const [token, value] of Object.entries(palette)) {
+        expect(value.toLowerCase(), `${mode} ${token}`).not.toBe('#f59e0b')
+      }
+    }
+  })
+})
+
+// --- Claim links (#571) ------------------------------------------------------
+// The claim link's underline is Honey in both modes, like the logo mark and the
+// settings-nav line: it reads on the light and the dark cards alike. The hover
+// wash and the highlighted passage's fill are a pale Honey in light mode and a
+// dark one in dark mode. The passage renders in a frame that always shows a
+// light page (lib/claimLinks.ts), so it uses the light pair in both modes.
+describe('claim link colors', () => {
+  it('draws the claim underline in exact Honey in both modes', () => {
+    expect(lightColor.claimUnderline).toBe('#e8a33d')
+    expect(darkColor.claimUnderline).toBe('#e8a33d')
+    expect(lightColor.claimUnderline).toBe(lightColor.accentAmber)
+  })
+
+  it('has the hover wash in each mode', () => {
+    expect(lightColor.claimHoverBg).toBe('#fbecd5')
+    expect(darkColor.claimHoverBg).toBe('#3a3020')
+  })
+
+  it('has the passage highlight in each mode', () => {
+    expect(lightColor.passageMarkBg).toBe('#fde68a')
+    expect(darkColor.passageMarkBg).toBe('#5c4512')
+    expect(darkColor.passageMarkText).toBe('#e8edf4')
+  })
+
+  it('gives the web the claim colors as CSS variables defined in both modes', () => {
+    expect(color.claimUnderline).toBe('var(--fv-claim-underline)')
+    expect(color.claimHoverBg).toBe('var(--fv-claim-hover-bg)')
+    expect(color.passageMarkBg).toBe('var(--fv-passage-mark-bg)')
+    expect(color.passageMarkText).toBe('var(--fv-passage-mark-text)')
+  })
+
+  it('reads the dark passage text at 7:1 or better on its fill', () => {
+    expect(contrast(darkColor.passageMarkText, darkColor.passageMarkBg)).toBeGreaterThanOrEqual(7)
   })
 })
 
 // --- WCAG AA contrast guard -------------------------------------------------
-// Regression guard from the 2026-06-24 contrast audit. Every gray text tier
-// must clear WCAG 2.2 AA (4.5:1 for normal text) on every neutral surface it
-// renders on, and each colored chip's text must clear AA on its own fill.
-// textMuted/textSecondary were darkened and surfaceMuted lightened to satisfy
-// this; if a gray or surface is later changed below the line, this fails in CI
-// before it can ship. (textMuted on bgLoginPage/bgInfo is intentionally not
-// asserted — muted text there sits on a white card, not the tinted page fill.)
-
-function relLuminance(hex: string): number {
-  let h = hex.replace('#', '')
-  if (h.length === 3)
-    h = h
-      .split('')
-      .map((c) => c + c)
-      .join('')
-  const [r, g, b] = [0, 2, 4]
-    .map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
-    .map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)))
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-function contrast(fg: string, bg: string): number {
-  const a = relLuminance(fg)
-  const b = relLuminance(bg)
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-}
+// Regression guard from the 2026-06-24 contrast audit, run against both color
+// modes. Every gray text tier must clear WCAG 2.2 AA (4.5:1 for normal text) on
+// every neutral surface it renders on, and each colored chip's text must clear
+// AA on its own fill. textMuted/textSecondary were darkened and surfaceMuted
+// lightened to satisfy this; if a gray or surface is later changed below the
+// line, this fails in CI before it can ship. (textMuted on bgLoginPage/bgInfo is
+// intentionally not asserted — muted text there sits on a white card, not the
+// tinted page fill.)
 
 const AA_NORMAL = 4.5
+const AA_GRAPHICS = 3
 
-describe('WCAG AA contrast', () => {
-  const NEUTRAL_SURFACES: Record<string, string> = {
-    white: color.white,
-    surfaceSubtle: color.surfaceSubtle,
-    surfaceMuted: color.surfaceMuted,
-  }
-  const GRAY_TEXT: Record<string, string> = {
-    textPrimary: color.textPrimary,
-    textSlate: color.textSlate,
-    textSlate500: color.textSlate500,
-    textSecondary: color.textSecondary,
-    textMuted: color.textMuted,
-  }
+const MODES: [string, Record<keyof typeof lightColor, string>][] = [
+  ['light', lightColor],
+  ['dark', darkColor],
+]
 
-  for (const [tName, tHex] of Object.entries(GRAY_TEXT)) {
-    for (const [sName, sHex] of Object.entries(NEUTRAL_SURFACES)) {
-      it(`${tName} on ${sName} clears AA`, () => {
-        const ratio = contrast(tHex, sHex)
-        expect(
-          ratio,
-          `${tName} ${tHex} on ${sName} ${sHex} = ${ratio.toFixed(2)}:1 (need ${AA_NORMAL})`,
-        ).toBeGreaterThanOrEqual(AA_NORMAL)
+for (const [mode, c] of MODES) {
+  describe(`WCAG AA contrast (${mode})`, () => {
+    const SURFACES = ['white', 'surfaceSubtle', 'surfaceMuted'] as const
+    // Gray text tiers and links on every neutral surface. The priority colors
+    // are markers (squares and dots), so they need WCAG's 3:1 for graphics.
+    const TEXT = ['textPrimary', 'textSlate', 'textSlate500', 'textSecondary', 'textMuted', 'linkBlue'] as const
+    const MARKERS = ['priorityHigh', 'priorityMedium', 'priorityLow'] as const
+    const PAIRS: [string, string, string, number?][] = []
+    for (const s of SURFACES) {
+      for (const t of TEXT) PAIRS.push([`${t} on ${s}`, c[t], c[s]])
+      for (const m of MARKERS) PAIRS.push([`${m} on ${s}`, c[m], c[s], AA_GRAPHICS])
+    }
+
+    // Colored chip text on its own fill, active nav, and text on colored fills.
+    PAIRS.push(
+      ['success chip', c.textSuccessDark, c.bgSuccessChip],
+      ['danger chip', c.textDanger, c.bgRedPriority],
+      ['amber chip', c.textAmberDark, c.bgAmberPriority],
+      ['violet chip', c.textVioletChip, c.bgVioletChip],
+      ['teal chip', c.textTealSenate, c.bgTeal],
+      ['tag chip', c.tagTextBlue, c.bgBlueChip],
+      ['role mention', c.roleMentionText, c.roleMentionBg],
+      ['user mention', c.textSlate500, c.borderDefault],
+      ['hearing chip', c.billBadgeNavy, c.bgInfo],
+      ['neutral fallback chip', c.textSlate500, c.surfaceMuted],
+      ['count chip', c.countChipText, c.countChipBg],
+      ['active nav', c.billBadgeNavy, c.bgAmberPriority],
+      ['warning banner', c.textAmberWarning, c.bgWarnSoft],
+      ['bill badge', c.textOnFill, c.billBadgeNavy],
+      ['brand strip', c.textOnBrand, c.brandNavy],
+      ['blue button', c.textOnFill, c.linkBlue],
+      ['high priority chip', c.textOnFill, c.priorityHigh],
+      ['amend icon on the card', c.textAmberHearing, c.white],
+      ['wordmark Floor on the card', c.wordmarkFloor, c.white],
+      ['wordmark Floor on the login page', c.wordmarkFloor, c.bgLoginPage],
+      // Claim links (#571): the summary's body text keeps its color on the
+      // hover wash, and the highlighted passage's text reads on its fill.
+      ['body text on the claim hover wash', c.textPrimary, c.claimHoverBg],
+      ['slate summary text on the claim hover wash', c.textSlate, c.claimHoverBg],
+      ['slate-500 text on the claim hover wash', c.textSlate500, c.claimHoverBg],
+      ['highlighted passage text', c.passageMarkText, c.passageMarkBg],
+      // The focus ring is drawn over the wash and must still be seen (graphics).
+      ['focus ring on the claim hover wash', c.focusRing, c.claimHoverBg, AA_GRAPHICS],
+    )
+
+    for (const [label, fg, bg, min = AA_NORMAL] of PAIRS) {
+      it(`${label} clears AA`, () => {
+        const ratio = contrast(fg, bg)
+        expect(ratio, `${label}: ${fg} on ${bg} = ${ratio.toFixed(2)}:1 (need ${min})`).toBeGreaterThanOrEqual(min)
       })
     }
-  }
 
-  // Colored chip text must clear AA on its own fill.
-  const CHIP_PAIRS: [string, string, string][] = [
-    ['success chip', color.textSuccessDark, color.bgSuccessChip],
-    ['danger chip', color.textDanger, color.bgRedPriority],
-    ['amber chip', color.textAmberDark, color.bgAmberPriority],
-    ['purple chip', color.textVioletChip, color.bgVioletChip],
-    ['violet chip', color.textVioletChip, color.bgVioletChip],
-    ['teal chip', color.textTealSenate, color.bgTeal],
-    ['tag chip', color.tagTextBlue, color.bgBlueChip],
-    ['role mention', color.roleMentionText, color.roleMentionBg],
-    ['user mention', color.textSlate500, color.borderDefault],
-    ['hearing chip', color.billBadgeNavy, color.bgInfo],
-    ['neutral fallback chip', color.textSlate500, color.surfaceMuted],
-    ['count chip', color.countChipText, color.countChipBg],
-  ]
-  for (const [label, fg, bg] of CHIP_PAIRS) {
-    it(`${label} text clears AA`, () => {
-      const ratio = contrast(fg, bg)
-      expect(
-        ratio,
-        `${label} ${fg} on ${bg} = ${ratio.toFixed(2)}:1 (need ${AA_NORMAL})`,
-      ).toBeGreaterThanOrEqual(AA_NORMAL)
+    it('keeps the gray tiers in order: muted fainter than secondary, fainter than slate500', () => {
+      const sign = mode === 'light' ? 1 : -1
+      expect(sign * (relLuminance(c.textMuted) - relLuminance(c.textSecondary))).toBeGreaterThan(0)
+      expect(sign * (relLuminance(c.textSecondary) - relLuminance(c.textSlate500))).toBeGreaterThan(0)
     })
-  }
-
-  it('preserves the gray tier order: muted lighter than secondary lighter than slate500', () => {
-    expect(relLuminance(color.textMuted)).toBeGreaterThan(relLuminance(color.textSecondary))
-    expect(relLuminance(color.textSecondary)).toBeGreaterThan(relLuminance(color.textSlate500))
   })
-})
+}

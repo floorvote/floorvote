@@ -90,4 +90,56 @@ describe('MarkdownSummary claim links', () => {
     expect(screen.getByRole('link', { name: '<img src=x onerror=alert(1)>' })).toBeInTheDocument()
     expect(container.querySelector('img')).toBeNull()
   })
+
+  // The look of a claim link (#571, restyled): Honey underline at rest, a faint
+  // Honey wash on hover, the app's focus ring plus the wash on keyboard focus.
+  // jsdom doesn't cascade, so these read the rules the component writes.
+  describe('claim link style', () => {
+    const rules = (container: HTMLElement) => {
+      const css = [...container.parentElement!.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
+      const out = new Map<string, string>()
+      for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) out.set(m[1].trim().replace(/\s+/g, ' '), m[2].replace(/\s+/g, ' ').trim())
+      return out
+    }
+    const styled = () => rules(render(<MarkdownSummary claimLinks={CLAIMS} onClaimActivate={() => {}}>{SUMMARY}</MarkdownSummary>).container)
+
+    it('underlines at rest in Honey, 2px thick, 3px off the text, keeping the text color', () => {
+      const rest = styled().get('.markdown-summary a.claim-link') ?? ''
+      expect(rest).toMatch(/color:\s*inherit/)
+      expect(rest).toMatch(/text-decoration-line:\s*underline|text-decoration:\s*underline/)
+      expect(rest).toContain('text-decoration-color: var(--fv-claim-underline)')
+      expect(rest).toContain('text-decoration-thickness: 2px')
+      expect(rest).toContain('text-underline-offset: 3px')
+      expect(rest).toMatch(/border-radius:\s*\d+px/)
+    })
+
+    it('no longer uses the light gray underline', () => {
+      expect(styled().get('.markdown-summary a.claim-link')).not.toContain('--fv-border-strong')
+    })
+
+    it('washes the background in faint Honey on hover, and leaves the text color and the underline alone', () => {
+      const hover = styled().get('.markdown-summary a.claim-link:hover') ?? ''
+      expect(hover).toContain('background: var(--fv-claim-hover-bg)')
+      expect(hover).not.toMatch(/(^|[;\s])color:/)
+      expect(hover).not.toContain('--fv-link-blue')
+      expect(hover).not.toContain('currentColor')
+    })
+
+    it('shows the app focus ring and the same wash on keyboard focus', () => {
+      const focus = styled().get('.markdown-summary a.claim-link:focus-visible') ?? ''
+      expect(focus).toContain('outline: 2px solid var(--fv-focus-ring)')
+      expect(focus).toContain('outline-offset: 2px')
+      expect(focus).toContain('background: var(--fv-claim-hover-bg)')
+    })
+
+    it('writes no color literals, so the look follows the color mode', () => {
+      const all = [...styled().entries()].filter(([sel]) => sel.includes('claim-link')).map(([, body]) => body).join(' ')
+      expect(all).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    })
+
+    it('writes the claim link rules only when a claim is linked', () => {
+      const { container } = render(<MarkdownSummary>{SUMMARY}</MarkdownSummary>)
+      expect([...rules(container).keys()].some(sel => sel.includes('claim-link'))).toBe(false)
+    })
+  })
 })

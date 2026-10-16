@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EMAIL_ICON_NEEDS, parseIconAllowlist, emailIconSrc, EMAIL_ICONS_DIR } from '../../../shared/emailIcons'
+import { EMAIL_ICON_NEEDS, parseIconAllowlist, emailIconSrc, EMAIL_ICONS_DIR } from '../../shared/emailIcons'
 
-// Repo root from this test file (web/src/lib/emailIcons.test.ts).
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+// Repo root from this test file (scripts/lib/emailIcons.test.ts). It runs here,
+// not in the web suite, because the web build swaps shared/tokens.ts for CSS
+// variables and the email icons are named after the literal colors.
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const allowlist = new Set(parseIconAllowlist(readFileSync(join(ROOT, 'web/index.html'), 'utf8')))
 
 describe('email icon set stays in sync', () => {

@@ -263,12 +263,12 @@ export function NotificationsSlideOver(
           .notif-comment blockquote {
             margin: 3px 0;
             padding-left: 10px;
-            border-left: 2px solid #cbd5e1;
-            color: #6b7280;
+            border-left: 2px solid ${color.borderStrong};
+            color: ${color.textMuted};
           }
           .notif-comment ul, .notif-comment ol { margin: 3px 0 3px 16px; padding: 0; }
           .notif-comment li { margin: 1px 0; }
-          .notif-comment a { color: #2563eb; }
+          .notif-comment a { color: ${color.linkBlue}; }
           .notif-comment span[data-type="mention"] { font-weight: ${MENTION_STYLE.weight}; cursor: default; }
           /* Mention pills from the shared MENTION_STYLE (role = indigo, user =
              gray) — in lockstep with ROLE_CHIP, CommentContent.tsx,

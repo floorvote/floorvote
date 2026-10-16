@@ -37,6 +37,13 @@ describe('email conformance — every sample type shares the shell contract', ()
         expect(html).not.toContain('→</a>')
       })
 
+      // The web app's colors are CSS variables that follow the color mode; email
+      // clients don't support them, and emails stay light. They get the literals.
+      it('uses literal colors, never CSS variables', () => {
+        expect(html).not.toContain('var(')
+        expect(subject).not.toContain('var(')
+      })
+
       it('matches its committed snapshot', () => {
         expect(html).toMatchSnapshot()
       })

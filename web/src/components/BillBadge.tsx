@@ -78,7 +78,7 @@ export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, pr
     ? <>{billNumber}</>
     : stateUrl
       ? (<><a href={stateUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-          style={{ color: isDraft ? color.billBadgeNavy : color.white, textDecoration: 'underline', textUnderlineOffset: 2, marginRight: 4 }}>{state}</a>{billNumber}</>)
+          style={{ color: isDraft ? color.billBadgeNavy : color.textOnFill, textDecoration: 'underline', textUnderlineOffset: 2, marginRight: 4 }}>{state}</a>{billNumber}</>)
       : <>{state}&nbsp;{billNumber}</>
 
   const inner = to

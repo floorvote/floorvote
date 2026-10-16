@@ -1309,7 +1309,7 @@ export function Config() {
           )}
           <button
             {...cfGate.buttonProps(handleAddCustomField)}
-            style={{ background: !cfGate.disabled ? color.accentBlue : color.borderDefault, color: !cfGate.disabled ? color.white : color.textMuted, border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
+            style={{ background: !cfGate.disabled ? color.accentBlue : color.borderDefault, color: !cfGate.disabled ? color.textOnFill : color.textMuted, border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
           >
             {cfAdding ? 'Adding…' : 'Add field'}
           </button>
@@ -1407,7 +1407,7 @@ export function Config() {
             style={{
               width: 224, flexShrink: 0, borderRadius: radius.md, padding: '8px 14px',
               background: demoLocked ? color.borderDefault : exporting ? color.accentBlueMuted : color.accentBlue,
-              color: demoLocked ? color.textMuted : color.white,
+              color: demoLocked ? color.textMuted : color.textOnFill,
               cursor: exporting || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -1423,8 +1423,8 @@ export function Config() {
                   onKeyDown={e => e.stopPropagation()}
                   onChange={e => { e.stopPropagation(); setExportFormat(e.target.value as 'csv' | 'json') }}
                   style={{
-                    background: 'transparent', color: color.white, border: 'none',
-                    borderBottom: '1px solid rgba(255,255,255,0.6)',
+                    background: 'transparent', color: color.textOnFill, border: 'none',
+                    borderBottom: '1px solid color-mix(in srgb, currentColor 60%, transparent)',
                     fontSize: fontSize.sm, fontWeight: fontWeight.semibold, cursor: 'pointer',
                     padding: 0, outline: 'none', fontFamily: 'inherit',
                   }}
