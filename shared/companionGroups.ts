@@ -7,6 +7,12 @@
 /** A bill in a group, as an event or a comment names it. */
 export type GroupBill = { billId: string; billNumber: string }
 
+/**
+ * A bill in the group a bill page shows: what a badge's link needs, with the
+ * state and session slug that make the bill's canonical URL.
+ */
+export type GroupBillLink = GroupBill & { state: string; sessionSlug: string }
+
 /** The `team_events.type` of a group forming around a bill, or splitting from it. */
 export type GroupingEventType = 'grouped' | 'split'
 

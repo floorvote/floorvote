@@ -64,7 +64,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection'
 import { ProviderExtrasList } from '../components/ProviderExtras'
 import type { BillExtras } from '../../../shared/providerExtras'
 import { RELATIONSHIP_KINDS, RELATIONSHIP_KIND_LABELS, isRelationshipKind, type RelationshipKind } from '../../../shared/relationshipKinds'
-import type { GroupBill, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
+import type { GroupBill, GroupBillLink, GroupingEvent, GroupNote } from '../../../shared/companionGroups'
 import { GroupWithDialog } from '../components/GroupWithDialog'
 import { splitConfirmText } from '../lib/splitConfirm'
 import { placeGroupingLines } from '../lib/groupingLine'
@@ -447,7 +447,6 @@ type BillDetailData = {
   voteSummary?: VoteSummaryEntry[]
   subjects: string[]
   relatedBillIds: RelatedBill[]
-  companionBillIds: string[]
   texts: {
     docId: string
     type: string
@@ -527,7 +526,7 @@ type BillDetailData = {
   /** Where the bill's companion group formed or split, for the lines in its comment thread. */
   groupingEvents?: GroupingEvent[]
   /** The bills in its companion group, this one first: just this one in no group. */
-  groupBills?: GroupBill[]
+  groupBills?: GroupBillLink[]
   priorityMeta: { setByName: string; updatedAt: string } | null
   position: { position: string; setByName: string; updatedAt: string } | null
   voteCounts: { support: number; oppose: number; neutral: number; total: number }
@@ -1374,18 +1373,30 @@ export function BillDetail() {
 
         {/* Chip strip */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: (priorityMeta || (isAdmin && bill.matchType === 'keyword' && !!bill.newMatchAt && !priority && !bill.triagedAt && !triageDismissed)) ? 20 : 12 }}>
-          <BillBadge
-            billNumber={bill.billNumber}
-            state={bill.state}
-            isDraft={bill.isDraft}
-            stateUrl={(() => {
-              if (!config || !multiState) return undefined
-              const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
-              const instanceDomain = config.instanceDomains[bill.state]
-              if (!isHub || !instanceDomain) return undefined
-              return `https://${instanceDomain}${window.location.pathname}`
-            })()}
-          />
+          {/* A badge for each bill in the group, this page's bill first, as the
+              bill list's group row shows them. Each companion links to its page. */}
+          <div data-testid="bill-group-badges" style={{ display: 'contents' }}>
+            <BillBadge
+              billNumber={bill.billNumber}
+              state={bill.state}
+              isDraft={bill.isDraft}
+              stateUrl={(() => {
+                if (!config || !multiState) return undefined
+                const isHub = window.location.hostname === 'staging.example.com' || window.location.hostname === 'staging.example.org' || window.location.hostname === 'localhost'
+                const instanceDomain = config.instanceDomains[bill.state]
+                if (!isHub || !instanceDomain) return undefined
+                return `https://${instanceDomain}${window.location.pathname}`
+              })()}
+            />
+            {(bill.groupBills ?? []).filter(g => g.billId !== bill.id).map(g => (
+              <BillBadge
+                key={g.billId}
+                billNumber={g.billNumber}
+                state={g.state}
+                to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+              />
+            ))}
+          </div>
           {bill.isDraft ? <DraftChip /> : (() => {
             const chip = <StatusChip status={decodeStatus(bill.status)} describedBy={statusExplainer ? 'bill-status-explainer' : undefined} onClick={() => navigate(`/bills?status=${encodeURIComponent(bill.status)}`)} />
             // The chip is already a focusable button, so HoverTooltip adds no tab stop; the chip points at its hidden copy.
@@ -1719,12 +1730,16 @@ export function BillDetail() {
           const bodyLabel = chamberLabel ? `${chamberLabel} ${typeNoun}` : null
           const typeLabel = null
           // One line for each kind, identical companions first, whatever labels the legislature used.
+          // The header's badges already name the identical bills in the group, so
+          // this line lists only the identical bills outside it.
+          const groupIds = new Set((bill.groupBills ?? []).map(g => g.billId))
+          const listedRelated = bill.relatedBillIds.filter(r => !(r.kind === 'identical' && r.route && groupIds.has(r.route.id)))
           const grouped = new Map<RelationshipKind, RelatedBill[]>()
           for (const kind of RELATIONSHIP_KINDS) {
-            const ofKind = bill.relatedBillIds.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
+            const ofKind = listedRelated.filter(r => (isRelationshipKind(r.kind) ? r.kind : 'related') === kind)
             if (ofKind.length > 0) grouped.set(kind, ofKind)
           }
-          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || bill.relatedBillIds.length > 0 || bill.companionBillIds.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
+          const hasAny = bodyLabel || typeLabel || (bill.calendar ?? []).some(e => e.kind === 'deadline') || listedRelated.length > 0 || bill.stateUrl || bill.stateLink || bill.legiscanUrl || (bill.subjects ?? []).length > 0
           if (!hasAny) return null
 
           // Collect all display items, then render with · separators only between items
@@ -1772,12 +1787,6 @@ export function BillDetail() {
               </span>
             )
           })
-          bill.companionBillIds.forEach((cid, i) => metaItems.push(
-            <span key={`comp-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ color: color.textMuted }}>Companion:</span>
-              <span>{String(cid)}</span>
-            </span>
-          ))
           if ((bill.subjects ?? []).length > 0) metaItems.push(
             <SubjectsTrigger
               key="subjects"

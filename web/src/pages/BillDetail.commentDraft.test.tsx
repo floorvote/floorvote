@@ -57,7 +57,7 @@ function makeBill(id: string, billNumber: string) {
     referrals: [], tenantSummary: 'Summary.', tags: [], relevanceScore: 5, priority: null,
     textR2Key: null, sponsor: null, sponsorParty: null, sponsorUrl: null, coSponsors: [],
     lastAction: null, lastActionDate: null, history: [], voteSummary: [], subjects: [],
-    relatedBillIds: [], companionBillIds: [], texts: [], calendar: [], supplements: [],
+    relatedBillIds: [], texts: [], calendar: [], supplements: [],
     amendments: [], customFieldValues: {}, matchType: 'keyword' as const, isDraft: false,
     draftText: null, createdAt: '2025-01-01 00:00:00', updatedAt: '2025-01-01 00:00:00',
     centralSyncedAt: null, aiProcessedAt: null, aiSkipReason: null, lastAiTextDocId: null,

@@ -3,9 +3,10 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import { billGroupOverrides, billIdenticalLinks, bills, memberVotes, notes, teamEvents } from '../db/schema'
 import { rowidOf } from '../db/rowid'
 import { nowDb } from './dbTime'
+import { filedSlug } from './sessionSlug'
 import { chunk } from './chunk'
 import { isHandle, parseHandle, toHandle } from '../../../shared/billHandle'
-import type { GroupBill, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
+import type { GroupBill, GroupBillLink, GroupingEventMetadata, GroupingEventType, GroupNote, ReplacedTeamValue } from '../../../shared/companionGroups'
 import { loadFieldDefs, readTeamValueRows, replacedTeamValues, teamValuesUnchanged } from './teamFields'
 import type { AppDb } from '../types'
 
@@ -57,9 +58,10 @@ export function inGroupsOf(column: SQLiteColumn, billIds: readonly string[]): SQ
  * The bills in `billId`'s group, `billId` first and the rest by bill number.
  * Just `billId` for an ungrouped bill, and empty for a bill that doesn't exist.
  */
-export async function loadGroupBills(db: AppDb, billId: string): Promise<GroupBill[]> {
-  const rows = await db.select({ billId: bills.id, billNumber: bills.billNumber })
+export async function loadGroupBills(db: AppDb, billId: string): Promise<GroupBillLink[]> {
+  const found = await db.select({ billId: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug })
     .from(bills).where(inGroupOf(bills.id, billId)).all()
+  const rows = found.map(({ session, sessionSlug, ...rest }) => ({ ...rest, sessionSlug: filedSlug({ session, sessionSlug }) ?? '' }))
   return rows.sort((a, b) => (a.billId === billId ? -1 : b.billId === billId ? 1 : compareBillNumbers(a, b)))
 }
 
