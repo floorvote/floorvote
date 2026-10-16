@@ -35,6 +35,7 @@ import { usePolling } from '../hooks/usePolling'
 import { useSidebarRefresh } from '../context/SidebarRefreshContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight, shadow } from '../styles/tokens'
+import { primaryButtonColors } from '../styles/primaryButton'
 import { TAG_CHIP, TAG_CHIP_HOVERED } from '../lib/tagChipStyle'
 import { CARD } from '../lib/cardStyle'
 import { COMPANION_TAG, COUNT_BADGE, displayName, ROLE_CHIP, TOOLTIP_STYLE, sortRoles } from '../lib/chipStyles'
@@ -617,8 +618,7 @@ export async function billDetailLoader({ params, request }: LoaderFunctionArgs) 
 function draftSaveStyle(disabled: boolean): React.CSSProperties {
   return {
     fontSize: fontSize.sm, fontWeight: fontWeight.medium, border: 'none', borderRadius: radius.md, padding: '4px 10px',
-    background: disabled ? color.borderDefault : color.accentBlue,
-    color: disabled ? color.textMuted : color.textOnFill,
+    ...primaryButtonColors(disabled),
     cursor: disabled ? 'not-allowed' : 'pointer',
   }
 }
@@ -1600,8 +1600,7 @@ export function BillDetail() {
                     type="button"
                     {...linkGate.buttonProps(handleLinkDraft)}
                     style={{
-                      background: linkGate.disabled ? color.accentBlueMuted : color.accentBlue,
-                      color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                      ...primaryButtonColors(linkGate.disabled), border: 'none', borderRadius: radius.md,
                       padding: '8px 14px', cursor: linkGate.disabled ? 'not-allowed' : 'pointer',
                       fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
                       opacity: demoLocked ? 0.5 : 1,
@@ -1659,7 +1658,7 @@ export function BillDetail() {
                   outline: 'none',
                 }}
               />
-              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
+              <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '6px 12px', cursor: 'pointer' }}>Save</button>
               <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px' }}>Cancel</button>
             </form>
           </div>
@@ -1870,7 +1869,7 @@ export function BillDetail() {
                     padding: '3px 7px', color: color.textPrimary, background: color.white, outline: 'none', minWidth: 220,
                   }}
                 />
-                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                 <button type="button" onClick={() => setEditingDraftField(null)} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
               </form>
             ) : (
@@ -2057,7 +2056,7 @@ export function BillDetail() {
                       />
                     )
                   })()}
-                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
+                  <button type="submit" style={{ fontSize: fontSize.sm, fontWeight: fontWeight.medium, ...primaryButtonColors(false), border: 'none', borderRadius: radius.md, padding: '4px 10px', cursor: 'pointer' }}>Save</button>
                   <button type="button" onClick={() => { setEditingDraftField(null); setDraftFieldError(null) }} style={{ fontSize: fontSize.sm, color: color.textMuted, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>Cancel</button>
                 </form>
               ) : (
@@ -2295,8 +2294,7 @@ export function BillDetail() {
                       onClick={handlePromote}
                       disabled={generateDisabled}
                       style={{
-                        background: generateDisabled ? color.accentBlueMuted : color.accentBlue,
-                        color: color.textOnFill,
+                        ...primaryButtonColors(generateDisabled),
                         border: 'none',
                         borderRadius: radius.md,
                         padding: '8px 14px',
