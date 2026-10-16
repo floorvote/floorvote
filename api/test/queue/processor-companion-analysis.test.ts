@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env, SELF } from 'cloudflare:test'
 import { eq, inArray } from 'drizzle-orm'
-import { resetDb, applyMigrations, seedBill, seedUser, seedSession } from '../helpers'
+import { resetDb, applyMigrations, seedBill, seedUser, seedSession, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { runDigest } from '../../src/lib/digest'
@@ -385,7 +385,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         expect(rowBillIds(rows[0])).toEqual(['b1713'])
       })
 
-      it('stays without provenance when it was added by hand, since the admin who added it knows', async () => {
+      it('gets no new-match time, and joins no row, when it was added by hand, since the admin who added it knows', async () => {
         await deliver('legiscan:1713', { matchType: 'manual', matchProvenance: 'routine' })
         const companion = await billRow('b1713')
         expect(companion.matchType).toBe('manual')
@@ -430,7 +430,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         await db.insert(associationConfig).values({ key: 'modules', value: JSON.stringify({ 'email-digest': true }) })
         await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
         const sent: unknown[] = []
-        vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return new Response('{}', { status: 200 }) }))
+        stubFetch((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 }) })
         await runDigest(env as never, db)
         expect(sent).toEqual([])
       })
@@ -445,7 +445,7 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         await seedSession(await seedUser({ role: 'admin', email: 'admin@example.com' }))
         await seedSession(await seedUser({ role: 'member', email: 'member@example.com', emailDigestEnabled: true, emailDigestMatchesEnabled: true }))
         const sent: Array<{ html: string }> = []
-        vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return new Response('{}', { status: 200 }) }))
+        stubFetch((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 }) })
         await runDigest(env as never, db)
         expect(sent).toEqual([])
       })
@@ -458,10 +458,10 @@ describe('companions that didn\'t match are analyzed through their group', () =>
         const sent: Array<{ html: string }> = []
         // Mail is captured, and central's answers to the delivery below still come from the suite's own stub.
         const central = globalThis.fetch
-        vi.stubGlobal('fetch', vi.fn(async (u: string, init: RequestInit) => {
-          if (String(u).includes('central.test')) return central(u, init)
-          sent.push(JSON.parse(String(init.body))); return new Response('{}', { status: 200 })
-        }))
+        stubFetch((u, init) => {
+          if (u.includes('central.test')) return central(u, init)
+          sent.push(JSON.parse(String(init?.body))); return new Response('{}', { status: 200 })
+        })
         await runDigest(env as never, db)
         expect(sent).toEqual([])
 
