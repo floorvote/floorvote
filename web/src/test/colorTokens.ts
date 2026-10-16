@@ -37,3 +37,13 @@ export function contrast(fg: string, bg: string): number {
   const b = relLuminance(bg)
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
+
+/**
+ * A rendered primary button, checked at the call site: no `opacity` layered over
+ * its colors (that drops the label below the bar the colors were chosen for), and
+ * its text-on-fill contrast clears `min` in both color modes. `min` is 4.5 for an
+ * enabled button and 3 for a disabled one (WCAG exempts disabled controls).
+ */
+export function buttonTextContrast(btn: HTMLElement, mode: Mode): number {
+  return contrast(resolveColor(btn.style.color, mode), resolveColor(btn.style.background, mode))
+}

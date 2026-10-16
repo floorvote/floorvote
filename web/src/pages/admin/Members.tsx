@@ -785,7 +785,7 @@ export function Members() {
             </select>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <button type="submit" disabled={inviteLoading || demoLocked} style={{ ...btnPrimary, opacity: inviteLoading || demoLocked ? 0.6 : 1, cursor: demoLocked ? 'not-allowed' : 'pointer' }}>
+            <button type="submit" disabled={inviteLoading || demoLocked} style={{ ...btnPrimary, ...primaryButtonColors(inviteLoading || demoLocked), cursor: inviteLoading || demoLocked ? 'not-allowed' : 'pointer' }}>
               {inviteLoading ? 'Sending…' : 'Send invites'}
             </button>
             {inviteError && <span style={{ fontSize: fontSize.sm, color: color.textErrorRed }}>{inviteError}</span>}

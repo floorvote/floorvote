@@ -76,6 +76,7 @@ describe('no textOnFill on accentBlue or accentBlueMuted', () => {
 
   it('finds none', () => {
     const hits: string[] = []
+    const stale: string[] = []
     for (const full of files(SRC)) {
       const rel = path.relative(SRC, full)
       const lines = fs.readFileSync(full, 'utf8').split('\n')
@@ -87,7 +88,38 @@ describe('no textOnFill on accentBlue or accentBlueMuted', () => {
         const near = /actionBtn\(/.test(line) ? lines.join('\n') : lines.slice(Math.max(0, i - 3), i + 4).join('\n')
         if (/\btextOnFill\b/.test(near)) found.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`)
       })
-      hits.push(...found.slice(LEFT_FOR_FOLLOW_UP[rel] ?? 0))
+      const allowed = LEFT_FOR_FOLLOW_UP[rel] ?? 0
+      if (allowed > 0) stale.push(...(found.length < allowed ? [`${rel}: allowed ${allowed} but found ${found.length}; delete the allowance`] : []))
+      hits.push(...found.slice(allowed))
+    }
+    expect(stale, stale.join('\n')).toEqual([])
+    expect(hits, hits.join('\n')).toEqual([])
+  })
+})
+
+// A primary button's colors are only as legible as the helper makes them if
+// nothing dims them afterward, so no `opacity:` may share a style object with
+// primaryButtonColors(...) (a few lines either side).
+describe('no opacity beside primaryButtonColors', () => {
+  const SRC = path.resolve(__dirname, '..')
+  function files(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) return e.name === 'test' || e.name.startsWith('tiptap') ? [] : files(full)
+      return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [full] : []
+    })
+  }
+
+  it('finds none', () => {
+    const hits: string[] = []
+    for (const full of files(SRC)) {
+      const lines = fs.readFileSync(full, 'utf8').split('\n')
+      lines.forEach((line, i) => {
+        if (!/\.\.\.primaryButtonColors\(/.test(line)) return
+        // The enclosing style object: from the nearest `{` line above to its closing `}` below.
+        const near = lines.slice(Math.max(0, i - 3), i + 8).join('\n')
+        if (/\bopacity\s*:/.test(near)) hits.push(`${path.relative(SRC, full)}:${i + 1}  ${line.trim().slice(0, 120)}`)
+      })
     }
     expect(hits, hits.join('\n')).toEqual([])
   })

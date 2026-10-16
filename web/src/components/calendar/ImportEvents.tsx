@@ -384,10 +384,9 @@ export function ImportEvents({ onClose, onImported }: Props) {
                 onClick={handleConfirm}
                 disabled={okCount === 0 || submitting || demoLocked}
                 style={{
-                  ...primaryButtonColors(okCount === 0 || demoLocked), border: 'none', borderRadius: radius.md,
+                  ...primaryButtonColors(okCount === 0 || submitting || demoLocked), border: 'none', borderRadius: radius.md,
                   padding: '8px 16px', fontSize: fontSize.sm, fontWeight: fontWeight.medium,
                   cursor: okCount === 0 || submitting || demoLocked ? 'not-allowed' : 'pointer',
-                  opacity: submitting ? 0.7 : 1,
                 }}
               >
                 {submitting ? 'Importing…' : `Create ${okCount} event${okCount === 1 ? '' : 's'}`}

@@ -1603,7 +1603,6 @@ export function BillDetail() {
                       ...primaryButtonColors(linkGate.disabled), border: 'none', borderRadius: radius.md,
                       padding: '8px 14px', cursor: linkGate.disabled ? 'not-allowed' : 'pointer',
                       fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4, whiteSpace: 'nowrap',
-                      opacity: demoLocked ? 0.5 : 1,
                     }}
                   >
                     {linking ? 'Linking…' : 'Link & merge into filed bill'}
