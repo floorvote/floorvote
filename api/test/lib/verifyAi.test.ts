@@ -73,6 +73,14 @@ describe('verifyAi', () => {
     expect(vi.mocked(processBill).mock.calls[0][0].claimSources).toBe(true)
   })
 
+  it('does not ask for claim sources when an admin has turned claim links off, as the pipeline does not (#570)', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'claim_links_enabled', value: JSON.stringify(false) })
+    central({ text: new Response(JSON.stringify({ type: 'html', content: '<p>The full text</p>', docId: '77', textHash: 'h77' }), { status: 200 }) })
+    await verifyAi(gatewayEnv, db, 'legiscan:42')
+    expect(vi.mocked(processBill).mock.calls[0][0].claimSources).toBe(false)
+  })
+
   it('does not ask for claim sources when central sends no doc id, as the pipeline does not', async () => {
     await verifyAi(gatewayEnv, getDb(env.DB), 'legiscan:42')
     expect(vi.mocked(processBill).mock.calls[0][0].claimSources).toBe(false)
