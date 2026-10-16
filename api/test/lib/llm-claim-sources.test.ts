@@ -81,6 +81,28 @@ describe('the schema asks for claim sources', () => {
     }
   })
 
+  it('builds exactly the schema it built before claim sources existed when not asked', () => {
+    const before = {
+      type: 'object',
+      properties: {
+        affectedCitations: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Statutory citations this bill affects, exactly as printed in the bill.',
+        },
+        summary: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string', format: 'enum', enum: ['Voting', 'Local Government'] } },
+        relevanceScore: { type: 'integer', description: 'An integer from 1 to 10 inclusive.' },
+      },
+      propertyOrdering: ['affectedCitations', 'summary', 'tags', 'relevanceScore'],
+      required: ['affectedCitations', 'summary', 'tags', 'relevanceScore'],
+      additionalProperties: false,
+    }
+    const tax = [{ name: 'Voting' }, { name: 'Local Government', description: 'counties' }]
+    expect(buildAnalysisSchema(tax)).toEqual(before)
+    expect(buildAnalysisSchema(tax, null)).toEqual(before)
+  })
+
   it('builds the same schema directly, for each input kind', () => {
     const tax = [{ name: 'Voting' }]
     expect(buildAnalysisSchema(tax)).toEqual(buildAnalysisSchema(tax, null))
@@ -194,5 +216,53 @@ describe('reading claim sources from the response', () => {
   it('still fails an analysis whose summary is missing, claim sources or not', async () => {
     respond({ tags: [], relevanceScore: 5, claimSources: [{ claim: 'c', quote: 'q' }] })
     await expect(processBill({ ...html, claimSources: true }, env)).rejects.toThrow('Invalid response structure from AI provider')
+  })
+})
+
+describe('a response cut off inside claim sources', () => {
+  // claimSources is the last and only unbounded property, so a response that
+  // hits the output limit is cut off there, after a complete summary.
+  const cut = JSON.stringify({ ...good, claimSources: [{ claim: 'Moves the filing deadline.', quote: 'the deadline is moved' }] }).slice(0, -12)
+
+  it('retries once without claim sources and returns the analysis with none', async () => {
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(good) })
+    const r = await processBill({ ...html, claimSources: true }, env)
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(2)
+    const [first, second] = geminiGenerateMock.mock.calls.map(c => c[0])
+    expect(first.config.responseSchema.properties).toHaveProperty('claimSources')
+    expect(second.config.responseSchema.properties).not.toHaveProperty('claimSources')
+    expect(second.contents).toEqual(first.contents)
+    expect(second.config.serviceTier).toBe(first.config.serviceTier)
+    expect(r).toMatchObject({ summary: 'Moves the filing deadline.', tags: ['Voting'], relevanceScore: 6, claimSources: null })
+  })
+
+  it('retries a PDF call the same way', async () => {
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(good) })
+    const r = await processBill({ ...pdf, claimSources: true }, env, 'priority')
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(2)
+    expect(geminiGenerateMock.mock.calls[1][0].config.serviceTier).toBe('priority')
+    expect(r.claimSources).toBeNull()
+  })
+
+  it('retries only once, failing when the second response does not parse either', async () => {
+    geminiGenerateMock.mockResolvedValue({ text: cut })
+    await expect(processBill({ ...html, claimSources: true }, env)).rejects.toThrow()
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry an unparseable response when claim sources were not asked for', async () => {
+    geminiGenerateMock.mockResolvedValue({ text: 'not json' })
+    await expect(processBill(html, env)).rejects.toThrow()
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a parseable response with an invalid structure', async () => {
+    respond({ tags: [], relevanceScore: 5, claimSources: [] })
+    await expect(processBill({ ...html, claimSources: true }, env)).rejects.toThrow('Invalid response structure from AI provider')
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(1)
   })
 })

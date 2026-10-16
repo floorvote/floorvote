@@ -67,12 +67,16 @@ export async function loadBillTextForAi(
   try {
     const textRes = await centralFetch(env, `/bills/${billId}/text`)
     if (textRes.ok) {
-      const textData = await textRes.json() as { type: 'html' | 'pdf'; content: string; docId?: unknown; textHash?: unknown }
-      if (textData.type === 'pdf') billPdfBase64 = textData.content
-      else billText = billHtmlToText(textData.content)
-      hasFullText = true
-      textDocId = readDocId(textData.docId)
-      textHash = typeof textData.textHash === 'string' && textData.textHash.length > 0 ? textData.textHash : null
+      const textData = await textRes.json() as { type: 'html' | 'pdf'; content?: unknown; docId?: unknown; textHash?: unknown }
+      // An empty document is no document: the model reads the title and
+      // abstract, and nothing is pinned to it.
+      if (typeof textData.content === 'string' && textData.content.length > 0) {
+        if (textData.type === 'pdf') billPdfBase64 = textData.content
+        else billText = billHtmlToText(textData.content)
+        hasFullText = true
+        textDocId = readDocId(textData.docId)
+        textHash = typeof textData.textHash === 'string' && textData.textHash.length > 0 ? textData.textHash : null
+      }
     } else if (textRes.status !== 404) {
       console.error(`[processor] central text returned ${textRes.status} for ${bill.number}`)
     }

@@ -1,10 +1,10 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
-import { processBill } from '../lib/llm'
+import { processBill, type ProcessBillResult } from '../lib/llm'
 import { filterTagsToTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
 import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
-import { claimLinksEnabled, type ClaimSource } from '../lib/claimSources'
+import { claimLinksEnabled } from '../lib/claimSources'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -596,7 +596,7 @@ async function applyCentralBill(
   // bill the reader had just prioritized. Only forceAI forces the model.
   const aiDedup = !msg.forceAI && existing?.lastAiTextHash && existing.lastAiTextHash === centralBill.textHash
 
-  let aiResult: { summary: string; tags: string[]; relevanceScore: number; affectedCitations: string[]; claimSources: ClaimSource[] | null } | null = null
+  let aiResult: ProcessBillResult | null = null
   // The document the model read, which claim sources are pinned to (#568).
   let claimSourcesPin: { docId: string; textHash: string | null } | null = null
   let aiSkipReason: AiSkipReason | null = null

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { resetDb, applyMigrations, stubFetch } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
@@ -60,14 +60,14 @@ const testEnv = { ...env, TENANT_ID: 'test-org', CENTRAL_API_URL: 'https://centr
 const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
 
 function central(text: unknown, bill: Record<string, unknown> = {}) {
-  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url: string) => {
-    if (String(url).includes('/text')) {
+  stubFetch(url => {
+    if (url.includes('/text')) {
       return text === null
         ? new Response(JSON.stringify({ error: 'no text available' }), { status: 404 })
         : new Response(JSON.stringify(text), { status: 200 })
     }
     return new Response(JSON.stringify({ ...centralBill, ...bill }), { status: 200 })
-  }))
+  })
 }
 
 function model(payload: unknown) {
@@ -207,6 +207,20 @@ describe('re-analysis', () => {
     expect(r).toMatchObject({ claim_sources: null, claim_sources_doc_id: null, claim_sources_text_hash: null })
   })
 
+  it('leaves them and their pin alone when the new analysis is permanently skipped', async () => {
+    central(PDF_TEXT)
+    model({ ...analysis, claimSources: [{ ...sources[0], page: 1 }] })
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    geminiGenerateMock.mockRejectedValue(Object.assign(new Error('The document exceeds the supported page limit of 1000'), { status: 400 }))
+    central({ ...PDF_TEXT, docId: '5003', textHash: 'hash-5003' }, { textHash: 'hash-5003', updatedAt: '2026-03-01T00:00:00Z' })
+    await processCentralNotification({ ...msg, forceAI: true }, testEnv, getDb(env.DB))
+    const r = await row()
+    expect(r.ai_skip_reason).toBe('pdf_too_large')
+    expect(r.tenant_summary).toBe('Requires a drop box in each county.')
+    expect(JSON.parse(r.claim_sources as string)).toEqual([{ ...sources[0], page: 1 }])
+    expect(r).toMatchObject({ claim_sources_doc_id: '5001', claim_sources_text_hash: 'hash-5001' })
+  })
+
   it('leaves them with their summary when the new analysis fails', async () => {
     await processCentralNotification(msg, testEnv, getDb(env.DB))
     geminiGenerateMock.mockRejectedValue(new Error('upstream exploded'))
@@ -219,13 +233,44 @@ describe('re-analysis', () => {
   })
 })
 
+describe('the shed retry and a cut-off response', () => {
+  it('asks again at standard after a shed priority call, and stores what that call returns with the pin', async () => {
+    geminiGenerateMock.mockRejectedValueOnce(Object.assign(new Error('model overloaded'), { status: 503 }))
+    await processCentralNotification({ ...msg, interactive: true }, testEnv, getDb(env.DB))
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(2)
+    const [first, second] = geminiGenerateMock.mock.calls.map(c => c[0].config)
+    expect(first.serviceTier).toBe('priority')
+    expect(second.serviceTier).toBe('standard')
+    expect(first.responseSchema.properties).toHaveProperty('claimSources')
+    expect(second.responseSchema.properties).toHaveProperty('claimSources')
+    const r = await row()
+    expect(JSON.parse(r.claim_sources as string)).toEqual(sources)
+    expect(r).toMatchObject({ claim_sources_doc_id: '5001', claim_sources_text_hash: 'hash-5001' })
+  })
+
+  it('stores the summary with no claim sources when the response is cut off inside them', async () => {
+    const cut = JSON.stringify({ ...analysis, claimSources: [...sources, ...sources] }).slice(0, -25)
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(analysis) })
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(2)
+    expect(geminiGenerateMock.mock.calls[1][0].config.responseSchema.properties).not.toHaveProperty('claimSources')
+    const r = await row()
+    expect(r.tenant_summary).toBe('Requires a drop box in each county.')
+    expect(r.ai_processed_at).not.toBeNull()
+    expect(r.ai_error).toBeNull()
+    expect(r).toMatchObject({ claim_sources: null, claim_sources_doc_id: null, claim_sources_text_hash: null })
+  })
+})
+
 describe('nothing renders yet', () => {
   it('returns the same bill detail with or without stored claim sources', async () => {
     const db = getDb(env.DB)
     await processCentralNotification(msg, testEnv, db)
     const id = (await row()).id as string
     const user = { id: 'u1', role: 'admin' as const }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 404 })))
+    stubFetch(() => new Response('{}', { status: 404 }))
     const withSources = await buildBillDetail(db, id, user, testEnv)
     await env.DB.prepare('UPDATE bills SET claim_sources = NULL, claim_sources_doc_id = NULL, claim_sources_text_hash = NULL WHERE id = ?').bind(id).run()
     const without = await buildBillDetail(db, id, user, testEnv)

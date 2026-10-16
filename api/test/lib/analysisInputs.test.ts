@@ -62,6 +62,20 @@ describe('loadBillTextForAi', () => {
     expect(await loadBillTextForAi(testEnv, 'legiscan:1', bill)).toMatchObject({ textDocId: '3304', textHash: null })
   })
 
+  it.each([
+    ['HTML', 'html'],
+    ['PDF', 'pdf'],
+  ])('treats an empty %s document as no text, with no doc id', async (_label, type) => {
+    centralText({ type, content: '', docId: '3305', textHash: 'h' })
+    const r = await loadBillTextForAi(testEnv, 'legiscan:1', bill)
+    expect(r).toEqual({ billText: 'An Act. About boxes', billPdfBase64: undefined, hasFullText: false, textDocId: null, textHash: null })
+  })
+
+  it('treats a document with no content field as no text', async () => {
+    centralText({ type: 'html', docId: '3306', textHash: 'h' })
+    expect(await loadBillTextForAi(testEnv, 'legiscan:1', bill)).toMatchObject({ billText: 'An Act. About boxes', hasFullText: false, textDocId: null })
+  })
+
   it('has no doc id when central has no text, and the model reads the title and abstract', async () => {
     centralText({ error: 'no text available' }, 404)
     const r = await loadBillTextForAi(testEnv, 'legiscan:1', bill)

@@ -17,7 +17,7 @@ interface ProcessBillParams {
   claimSources?: boolean
 }
 
-interface ProcessBillResult {
+export interface ProcessBillResult {
   summary: string
   tags: string[]
   relevanceScore: number
@@ -297,21 +297,38 @@ async function callGemini(
       ]
     : [{ text: `${promptText}\n\nFull text:\n${params.text}` }]
 
-  const response = await client.models.generateContent({
-    model: resolveModel(env),
-    contents: [{ role: 'user', parts }],
-    config: {
-      systemInstruction: composeSystemInstruction(params.aiContext),
-      responseMimeType: 'application/json',
-      responseSchema: buildAnalysisSchema(params.taxonomy, claimSources),
-      thinkingConfig: { thinkingBudget: resolveThinkingBudget(env) },
-      serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
-    },
-  })
+  const generate = async (claims: ClaimSourceInput | null): Promise<string> => {
+    const response = await client.models.generateContent({
+      model: resolveModel(env),
+      contents: [{ role: 'user', parts }],
+      config: {
+        systemInstruction: composeSystemInstruction(params.aiContext),
+        responseMimeType: 'application/json',
+        responseSchema: buildAnalysisSchema(params.taxonomy, claims),
+        thinkingConfig: { thinkingBudget: resolveThinkingBudget(env) },
+        serviceTier: ({ flex: ServiceTier.FLEX, standard: ServiceTier.STANDARD, priority: ServiceTier.PRIORITY } as const)[tier],
+      },
+    })
+    const raw = response.text
+    if (!raw) throw new Error('Gemini returned an empty response')
+    return raw
+  }
 
-  const raw = response.text
-  if (!raw) throw new Error('Gemini returned an empty response')
-  return validateAndClamp(JSON.parse(raw), claimSources)
+  const raw = await generate(claimSources)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err) {
+    if (!claimSources) throw err
+    // claimSources is the last property and the only unbounded one, so a
+    // response cut off at the output limit is cut off inside it, after a
+    // complete summary. Before claim sources, that summary would have been
+    // stored. Ask once more without them rather than fail the analysis. Not
+    // capped with maxItems, which would change the schema #347 measured.
+    console.warn(`[llm] response for ${params.billNumber} did not parse with claim sources asked; retrying without them`)
+    return validateAndClamp(JSON.parse(await generate(null)), null)
+  }
+  return validateAndClamp(parsed, claimSources)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
