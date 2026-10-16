@@ -194,11 +194,24 @@ describe('renderDigestEmail — summary line follows the window the digest cover
 })
 
 describe('sample digest emails render the wording for their cadence', () => {
-  it('the daily sample says "in the last day"', () => {
-    expect(renderSampleEmail('digest', 'https://x').html).toContain('priority bills were updated in the last day')
+  it('the samples carry the real subject lines, one per cadence and mix of kinds', () => {
+    expect(renderSampleEmail('digest', 'https://x').subject).toBe('[Sample] Your daily digest: 2 updated bills, 3 new matches')
+    expect(renderSampleEmail('digest-weekly' as any, 'https://x').subject).toBe('[Sample] Your weekly digest: 2 updated bills, 3 new matches')
+    expect(renderSampleEmail('digest-new-only', 'https://x').subject).toBe('[Sample] Your daily digest: 14 new matches')
   })
-  it('the weekly sample says "in the last week"', () => {
-    expect(renderSampleEmail('digest-weekly' as any, 'https://x').html).toContain('priority bills were updated in the last week')
+  it('the new-matches-only sample is a one-day digest', () => {
+    expect(renderSampleEmail('digest-new-only', 'https://x').html).toContain('14 new matches in the last day')
+  })
+  it('the samples show a new match with a summary preview and one without', () => {
+    const html = renderSampleEmail('digest', 'https://x').html
+    expect(html).toContain('Registers eligible residents to vote automatically')
+    expect(html).toContain('Poll worker compensation increase')
+  })
+  it('the daily sample\'s headline says the last day', () => {
+    expect(renderSampleEmail('digest', 'https://x').html).toContain('Your digest for the last day')
+  })
+  it('the weekly sample\'s headline says the last week', () => {
+    expect(renderSampleEmail('digest-weekly' as any, 'https://x').html).toContain('Your digest for the last week')
   })
   it('the daily sample previews both kinds up top, then leads with updates and follows with new-match cards', () => {
     const html = renderSampleEmail('digest', 'https://x').html

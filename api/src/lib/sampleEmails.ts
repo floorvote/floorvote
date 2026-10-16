@@ -8,7 +8,7 @@
 import type { AppDb, Env } from '../types'
 import { sendEmail, renderMagicLinkEmail } from './email'
 import { renderWeekAheadEmail, type WeekAheadDay } from './weekAheadEmail'
-import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
+import { renderDigestEmail, digestSubject, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { renderMentionEmail } from './mentions'
 import { renderReplyEmail, muteBillPageUrl } from './replies'
 import { renderInviteBounceEmail, type BouncedAddress } from './inviteBounceEmail'
@@ -55,16 +55,16 @@ export const SAMPLE_DIGEST_EVENTS: DigestEvent[] = [
   { type: 'position_set', metadata: j({ position: 'Oppose' }), createdAt: '2026-06-10 11:15:00', billId: 'b2', billNumber: 'S 0456', billTitle: 'Mail Ballot Drop Boxes', billState: 'RI', billSession: '2026', priority: 'medium', summary: 'Authorizes secure 24-hour drop boxes in every municipality and sets chain-of-custody rules.', userName: 'Dana Reed' },
 ]
 
-// New keyword matches awaiting triage — the admin-only digest section. Relevance
-// scores are on the real 1-10 scale.
+// New matches awaiting triage, the digest's second section. Relevance scores are
+// on the real 1-10 scale. The last one has no summary yet, so its card has no preview.
 export const SAMPLE_NEW_MATCHES: NewMatchDigestItem[] = [
-  { billId: 'b5', billNumber: 'HB 1602', billTitle: 'Automatic voter registration at the DMV', billState: 'RI', billSession: '2026', relevanceScore: 9 },
-  { billId: 'b6', billNumber: 'S 0712', billTitle: 'Ranked-choice voting for municipal elections', billState: 'RI', billSession: '2026', relevanceScore: 7 },
+  { billId: 'b5', billNumber: 'HB 1602', billTitle: 'Automatic voter registration at the DMV', billState: 'RI', billSession: '2026', relevanceScore: 9, summary: 'Registers eligible residents to vote automatically when they get or renew a license, unless they opt out.' },
+  { billId: 'b6', billNumber: 'S 0712', billTitle: 'Ranked-choice voting for municipal elections', billState: 'RI', billSession: '2026', relevanceScore: 7, summary: 'Lets cities and towns adopt ranked-choice voting for local races, with state-funded voter education.' },
   { billId: 'b7', billNumber: 'HB 1455', billTitle: 'Poll worker compensation increase', billState: 'RI', billSession: '2026', relevanceScore: 5 },
 ]
 
 // A heavy filing day: more matches than the digest lists, so the sample shows the
-// cap (top 10 by relevance) and the "…and N more" link.
+// cap (top 10 by relevance) and the "See all N new matches" link.
 const heavyDayMatch = (n: number, billNumber: string, billTitle: string, relevanceScore: number): NewMatchDigestItem =>
   ({ billId: `b${n}`, billNumber, billTitle, billState: 'RI', billSession: '2026', relevanceScore })
 export const SAMPLE_NEW_MATCHES_HEAVY_DAY: NewMatchDigestItem[] = [
@@ -126,21 +126,21 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
     case 'digest':
       // Daily cadence (the default). Fixed period so the date range is deterministic (committed sample + snapshot).
       return {
-        subject: '[Sample] Priority bill updates',
+        subject: `[Sample] ${digestSubject({ updatedBills: 2, newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'daily' })}`,
         html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-10', periodEnd: '2026-06-11' }),
       }
     case 'digest-weekly':
       // Weekly cadence: the same digest over a seven-day window.
       return {
-        subject: '[Sample] Priority bill updates (weekly)',
+        subject: `[Sample] ${digestSubject({ updatedBills: 2, newMatches: SAMPLE_NEW_MATCHES.length, cadence: 'weekly' })}`,
         html: renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-04', periodEnd: '2026-06-11' }),
       }
     case 'digest-new-only':
-      // Admin digest when there are NO priority-bill updates — only new keyword matches,
-      // on a heavy day so it shows the cap and the "…and N more" link.
+      // Digest when there are NO priority-bill updates — only new matches, on a heavy
+      // day so it shows the cap and the "See all N new matches" link.
       return {
-        subject: '[Sample] New bills matching your keywords',
-        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES_HEAVY_DAY, periodStart: '2026-06-09', periodEnd: '2026-06-11' }),
+        subject: `[Sample] ${digestSubject({ updatedBills: 0, newMatches: SAMPLE_NEW_MATCHES_HEAVY_DAY.length, cadence: 'daily' })}`,
+        html: renderDigestEmail({ events: [], assocName: SAMPLE_ASSOC_NAME, appUrl, newMatches: SAMPLE_NEW_MATCHES_HEAVY_DAY, periodStart: '2026-06-10', periodEnd: '2026-06-11' }),
       }
     case 'mention':
       return {

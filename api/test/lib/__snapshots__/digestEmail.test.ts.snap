@@ -16,11 +16,31 @@ exports[`renderDigestEmail > renders the sample digest unchanged (extraction reg
   </div>
 
             <p style="margin:0;font-size:12px;font-weight:600;color:#5e697d;">Rhode Island Association of Local Election Officials</p>
-            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">2 priority bills were updated in the last day</p>
+            <p style="margin:18px 0 0;font-size:18px;font-weight:700;color:#0f172a;line-height:1.35;">Your digest for the last day</p>
             <p class="email-date" style="margin:2px 0 0;font-size:12px;color:#667386;">Jun 22 – Jun 23</p>
           </td></tr>
           <tr><td style="padding:6px 20px 28px;">
             
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+  <tbody>
+    <tr><td colspan="2" style="padding:12px 14px 4px 14px;font-size:12px;font-weight:600;color:#5e697d;">In this digest</td></tr>
+    <tr>
+      <td width="16" style="padding:5px 0 5px 14px;vertical-align:middle;"><span style="display:inline-block;width:8px;height:8px;background:#1e3a5f;border-radius:2px;"></span></td>
+      <td style="padding:5px 14px 5px 4px;font-size:14px;color:#0f172a;"><a href="#digest-updates" style="color:inherit;text-decoration:none;">2 priority bills updated</a></td>
+    </tr>
+<tr>
+      <td width="16" style="padding:5px 0 12px 14px;vertical-align:middle;"><span style="display:inline-block;width:8px;height:8px;background:#e8a33d;border-radius:2px;"></span></td>
+      <td style="padding:5px 14px 12px 4px;font-size:14px;color:#0f172a;"><a href="#digest-new-matches" style="color:inherit;text-decoration:none;">3 new matches</a></td>
+    </tr>
+  </tbody>
+</table>
+<table id="digest-updates" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0px 0 8px 0;border-top:2px solid #1e3a5f;">
+  <tbody>
+    <tr><td style="padding:12px 0 6px 0;font-size:16px;font-weight:700;color:#0f172a;">2 priority bills were updated</td></tr>
+    
+  </tbody>
+</table>
+
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
   <tbody>
     <tr style="background:#f8fafc;">
@@ -80,36 +100,61 @@ exports[`renderDigestEmail > renders the sample digest unchanged (extraction reg
   </tbody>
 </table>
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+<table id="digest-new-matches" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0 8px 0;border-top:2px solid #e8a33d;">
   <tbody>
-    <tr><td style="padding:12px 14px 4px 14px;background:#f8fafc;font-size:14px;font-weight:700;color:#0f172a;">New matches (3)</td></tr>
-    <tr><td style="padding:0 14px 6px 14px;background:#f8fafc;font-size:10px;color:#5e697d;">Set a priority or dismiss each from the bill list.</td></tr>
-    <tr><td style="padding:0 14px 8px 14px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
-      <td style="padding:8px 0;border-top:1px solid #e2e8f0;">
-        <a href="https://x.test/RI/2026/HB 1602" style="text-decoration:none;">
-          <span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI HB 1602</span>
-          <span style="color:#0f172a;font-size:12px;font-family:'Source Serif 4', Georgia, serif;margin-left:8px;">Automatic voter registration at the DMV</span>
-        </a>
+    <tr><td style="padding:12px 0 6px 0;font-size:16px;font-weight:700;color:#0f172a;">3 new matches</td></tr>
+    <tr><td style="padding:0 0 8px 0;font-size:10px;color:#5e697d;">Set a priority or dismiss each from the bill list.</td></tr>
+  </tbody>
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+  <tbody>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:12px 14px 8px 14px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+          <td align="left" style="vertical-align:middle;"><a href="https://x.test/RI/2026/HB 1602" style="color:inherit;text-decoration:none;"><span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI HB 1602</span></a></td>
+          <td align="right" style="vertical-align:middle;"><span style="display:inline-block;background:#fef3c7;color:#854d0e;font-size:12px;font-weight:600;padding:3px 10px;border-radius:4px;white-space:nowrap;">New match</span></td>
+        </tr></tbody></table>
       </td>
     </tr>
-<tr>
-      <td style="padding:8px 0;border-top:1px solid #e2e8f0;">
-        <a href="https://x.test/RI/2026/S 0712" style="text-decoration:none;">
-          <span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI S 0712</span>
-          <span style="color:#0f172a;font-size:12px;font-family:'Source Serif 4', Georgia, serif;margin-left:8px;">Ranked-choice voting for municipal elections</span>
-        </a>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:2px 14px 4px 14px;font-family:'Source Serif 4', Georgia, serif;font-size:14px;color:#0f172a;font-weight:700;line-height:1.35;"><a href="https://x.test/RI/2026/HB 1602" style="color:inherit;text-decoration:none;">Automatic voter registration at the DMV</a></td>
+    </tr>
+    <tr style="background:#f8fafc;"><td colspan="3" style="padding:0 14px 10px 14px;font-size:12px;color:#5e697d;font-family:'Source Serif 4', Georgia, serif;line-height:1.45;"><a href="https://x.test/RI/2026/HB 1602" style="color:inherit;text-decoration:none;">Registers eligible residents to vote automatically when they get or renew a license, unless they opt out.</a></td></tr>
+  </tbody>
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+  <tbody>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:12px 14px 8px 14px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+          <td align="left" style="vertical-align:middle;"><a href="https://x.test/RI/2026/S 0712" style="color:inherit;text-decoration:none;"><span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI S 0712</span></a></td>
+          <td align="right" style="vertical-align:middle;"><span style="display:inline-block;background:#fef3c7;color:#854d0e;font-size:12px;font-weight:600;padding:3px 10px;border-radius:4px;white-space:nowrap;">New match</span></td>
+        </tr></tbody></table>
       </td>
     </tr>
-<tr>
-      <td style="padding:8px 0;border-top:1px solid #e2e8f0;">
-        <a href="https://x.test/RI/2026/HB 1455" style="text-decoration:none;">
-          <span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI HB 1455</span>
-          <span style="color:#0f172a;font-size:12px;font-family:'Source Serif 4', Georgia, serif;margin-left:8px;">Poll worker compensation increase</span>
-        </a>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:2px 14px 4px 14px;font-family:'Source Serif 4', Georgia, serif;font-size:14px;color:#0f172a;font-weight:700;line-height:1.35;"><a href="https://x.test/RI/2026/S 0712" style="color:inherit;text-decoration:none;">Ranked-choice voting for municipal elections</a></td>
+    </tr>
+    <tr style="background:#f8fafc;"><td colspan="3" style="padding:0 14px 10px 14px;font-size:12px;color:#5e697d;font-family:'Source Serif 4', Georgia, serif;line-height:1.45;"><a href="https://x.test/RI/2026/S 0712" style="color:inherit;text-decoration:none;">Lets cities and towns adopt ranked-choice voting for local races, with state-funded voter education.</a></td></tr>
+  </tbody>
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+  <tbody>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:12px 14px 8px 14px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+          <td align="left" style="vertical-align:middle;"><a href="https://x.test/RI/2026/HB 1455" style="color:inherit;text-decoration:none;"><span style="display:inline-block;background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;letter-spacing:0.02em;">RI HB 1455</span></a></td>
+          <td align="right" style="vertical-align:middle;"><span style="display:inline-block;background:#fef3c7;color:#854d0e;font-size:12px;font-weight:600;padding:3px 10px;border-radius:4px;white-space:nowrap;">New match</span></td>
+        </tr></tbody></table>
       </td>
-    </tr></tbody></table>
-    </td></tr>
+    </tr>
+    <tr style="background:#f8fafc;">
+      <td colspan="3" style="padding:2px 14px 10px 14px;font-family:'Source Serif 4', Georgia, serif;font-size:14px;color:#0f172a;font-weight:700;line-height:1.35;"><a href="https://x.test/RI/2026/HB 1455" style="color:inherit;text-decoration:none;">Poll worker compensation increase</a></td>
+    </tr>
+    
   </tbody>
 </table>
             <div style="margin-top:18px;"><a href="https://x.test/bills" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:6px;">View bill updates</a></div>

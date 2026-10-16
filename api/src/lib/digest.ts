@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, isNotNull, exists, sql } from 'drizzle-orm'
 import { feedEvents, bills, users, sessions, associationConfig } from '../db/schema'
-import { renderDigestEmail, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
+import { renderDigestEmail, digestSubject, digestCadence, type DigestEvent, type NewMatchDigestItem } from './digestEmail'
 import { sendBatch, unsubscribeHeaders } from './email'
 import { nowDb } from './dbTime'
 import { getNewMatchMinRelevance, routineNewMatchWhere } from './newMatch'
@@ -75,6 +75,7 @@ export async function runDigest(
   const newMatches: NewMatchDigestItem[] = await db.select({
       billId: bills.id, billNumber: bills.billNumber, billTitle: bills.title,
       billState: bills.state, billSession: bills.session, billSessionSlug: bills.sessionSlug, relevanceScore: bills.relevanceScore,
+      summary: bills.tenantSummary,
     })
     .from(bills)
     .where(and(
@@ -105,16 +106,15 @@ export async function runDigest(
   // is every admin/owner and each member who hasn't turned off "Include newly
   // matched bills". The rest get the priority-event digest alone, and none at all
   // when there are no priority events.
-  const prioritySubject = `${assocName}: ${billCount} priority bill${billCount === 1 ? '' : 's'} updated`
-  const subjectWithMatches = billCount > 0
-    ? prioritySubject
-    : `${assocName}: ${newMatches.length} new bill${newMatches.length === 1 ? '' : 's'} matching your keywords`
+  const cadence = digestCadence(since, now)
+  const subjectWithMatches = digestSubject({ updatedBills: billCount, newMatches: newMatches.length, cadence })
+  const updatesOnlySubject = digestSubject({ updatedBills: billCount, newMatches: 0, cadence })
   const render = (opts: { newMatches?: NewMatchDigestItem[]; forMember?: boolean }) =>
     renderDigestEmail({ events, assocName, appUrl: env.APP_URL, periodStart: since, periodEnd: now, ...opts })
   const adminHtml = render({ newMatches })
   const memberWithMatchesHtml = render({ newMatches, forMember: true })
   const updatesOnly = events.length > 0
-    ? { subject: prioritySubject, html: render({}) }
+    ? { subject: updatesOnlySubject, html: render({}) }
     : null
 
   const messages = recipients.flatMap(r => {

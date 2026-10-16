@@ -137,7 +137,7 @@ describe('renderDigestEmail: the top of the email', () => {
     })
     it('the box reads as a plain summary: its text stands without the links', () => {
       const html = render({ events: updates(2), newMatches: matches(3) })
-      const box = html.slice(html.indexOf('In this digest'), html.indexOf('id="digest-updates"'))
+      const box = html.slice(html.indexOf('In this digest'), html.lastIndexOf('<table', html.indexOf('id="digest-updates"')))
       const text = box.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
       expect(text).toBe('In this digest 2 priority bills updated 3 new matches')
     })
@@ -261,8 +261,8 @@ describe('renderDigestEmail: new matches as full cards', () => {
     expect(html).not.toContain('**')
   })
   it('escapes the summary and the title', () => {
-    const html = render({ newMatches: [match(1, { summary: 'A <b>bold</b> claim & more', billTitle: 'Rules <script>x</script>' })] })
-    expect(html).toContain('A &lt;b&gt;bold&lt;/b&gt; claim &amp; more')
+    const html = render({ newMatches: [match(1, { summary: 'Fees & "rules" for drop boxes', billTitle: 'Rules <script>x</script>' })] })
+    expect(html).toContain('Fees &amp; &quot;rules&quot; for drop boxes')
     expect(html).toContain('Rules &lt;script&gt;x&lt;/script&gt;')
     expect(html).not.toContain('<script>')
   })

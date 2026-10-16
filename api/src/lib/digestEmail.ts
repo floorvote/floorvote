@@ -29,11 +29,6 @@ export type NewMatchDigestItem = {
   summary?: string | null
 }
 
-// Stubs: the subject line and cadence arrive with the implementation (#586).
-export type DigestCadence = 'daily' | 'weekly'
-export function digestCadence(_periodStart: string, _periodEnd: string): DigestCadence | null { return null }
-export function digestSubject(_input: { updatedBills: number; newMatches: number; cadence: DigestCadence | null }): string { return '' }
-
 function escHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -54,18 +49,45 @@ function fmtDay(iso: string): string {
 
 const DAY_MS = 86_400_000
 
+function windowDays(startIso: string, endIso: string): number {
+  const utc = (s: string) => new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(s) ? `${s.replace(' ', 'T')}Z` : s).getTime()
+  return (utc(endIso) - utc(startIso)) / DAY_MS
+}
+
 /**
- * "in the last day" / "in the last week" / "in the last N days": names the window
- * the digest really covers (last digest → now), so a daily digest says day, a weekly
+ * "the last day" / "the last week" / "the last N days": names the window the
+ * digest really covers (last digest → now), so a daily digest says day, a weekly
  * one says week, and a digest that skipped runs says how long it actually spans.
  * Stored timestamps are space-format UTC ("2026-06-02 11:00:00"); read them as UTC.
  */
 function describeWindow(startIso: string, endIso: string): string {
-  const utc = (s: string) => new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(s) ? `${s.replace(' ', 'T')}Z` : s).getTime()
-  const days = (utc(endIso) - utc(startIso)) / DAY_MS
-  if (days <= 1.5) return 'in the last day'
-  if (days >= 5.5 && days <= 8.5) return 'in the last week'
-  return `in the last ${Math.round(days)} days`
+  const days = windowDays(startIso, endIso)
+  if (days <= 1.5) return 'the last day'
+  if (days >= 5.5 && days <= 8.5) return 'the last week'
+  return `the last ${Math.round(days)} days`
+}
+
+export type DigestCadence = 'daily' | 'weekly'
+
+/** The cadence behind the period wording: a one-day window is daily, a seven-day
+ *  one weekly, and any other (a digest that skipped runs) has none. */
+export function digestCadence(startIso: string, endIso: string): DigestCadence | null {
+  const days = windowDays(startIso, endIso)
+  if (days <= 1.5) return 'daily'
+  if (days >= 5.5 && days <= 8.5) return 'weekly'
+  return null
+}
+
+const countOf = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** "Your daily digest: 2 updated bills, 3 new matches". Names only the kinds present. */
+export function digestSubject(input: { updatedBills: number; newMatches: number; cadence: DigestCadence | null }): string {
+  const lead = input.cadence ? `Your ${input.cadence} digest` : 'Your digest'
+  const parts = [
+    ...(input.updatedBills > 0 ? [countOf(input.updatedBills, 'updated bill', 'updated bills')] : []),
+    ...(input.newMatches > 0 ? [countOf(input.newMatches, 'new match', 'new matches')] : []),
+  ]
+  return parts.length ? `${lead}: ${parts.join(', ')}` : lead
 }
 
 function toGroup(events: DigestEvent[]): GroupedBillEvents {
@@ -124,50 +146,82 @@ function renderBillCard(events: DigestEvent[], appUrl: string): string {
     ${dataRows}${BILL_CARD_CLOSE}`
 }
 
-/** The digest lists this many new matches, most relevant first; the rest sit behind "…and N more". */
+/** The digest shows this many new-match cards, most relevant first; past that a link goes to the full list. */
 const NEW_MATCH_LIMIT = 10
 
-// New keyword-match section (admins always, members who haven't opted out). Not
+// Section ids the contents box anchors to.
+const UPDATES_ID = 'digest-updates'
+const NEW_MATCHES_ID = 'digest-new-matches'
+
+// Section opener: a 2px rule in the section's color, then its header (and an
+// optional line under it). The id is the contents box's anchor target.
+function renderSectionHeader(opts: { id: string; ruleColor: string; title: string; subtitle?: string; spaceAbove: boolean }): string {
+  const subtitleRow = opts.subtitle
+    ? `<tr><td style="padding:0 0 8px 0;font-size:${fontSize.xs}px;color:${color.textSecondary};">${escHtml(opts.subtitle)}</td></tr>`
+    : ''
+  return `
+<table id="${opts.id}" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:${opts.spaceAbove ? 24 : 0}px 0 8px 0;border-top:2px solid ${opts.ruleColor};">
+  <tbody>
+    <tr><td style="padding:12px 0 6px 0;font-size:${fontSize.lg}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">${escHtml(opts.title)}</td></tr>
+    ${subtitleRow}
+  </tbody>
+</table>`
+}
+
+// "In this digest": one row per kind and its count, each linking to its section.
+// Anchors don't work in every mail client, so the rows read as a plain summary.
+function renderContentsBox(rows: { href: string; ruleColor: string; text: string }[]): string {
+  const rowHtml = rows.map((r, i) => `<tr>
+      <td width="16" style="padding:5px 0 ${i === rows.length - 1 ? 12 : 5}px 14px;vertical-align:middle;"><span style="display:inline-block;width:8px;height:8px;background:${r.ruleColor};border-radius:2px;"></span></td>
+      <td style="padding:5px 14px ${i === rows.length - 1 ? 12 : 5}px 4px;font-size:${fontSize.base}px;color:${color.textPrimary};"><a href="${r.href}" style="color:inherit;text-decoration:none;">${escHtml(r.text)}</a></td>
+    </tr>`).join('\n')
+  return `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;background:${color.white};border:1px solid ${CARD_STYLE.border};border-radius:${radius.lg}px;overflow:hidden;">
+  <tbody>
+    <tr><td colspan="2" style="padding:12px 14px 4px 14px;font-size:${fontSize.sm}px;font-weight:${fontWeight.semibold};color:${color.textSecondary};">In this digest</td></tr>
+    ${rowHtml}
+  </tbody>
+</table>`
+}
+
+const NEW_MATCH_CHIP = { label: 'New match', bg: color.bgAmberPriority, text: color.textAmberWarning }
+
+// A new match as the same card an updated bill gets, minus activity rows: badge,
+// title and summary preview (none when the bill has no summary yet), with a
+// "New match" chip where the priority chip goes.
+function renderNewMatchCard(it: NewMatchDigestItem, appUrl: string): string {
+  const model = buildBillCardModel({
+    key: it.billId, billId: it.billId, billNumber: it.billNumber, billTitle: it.billTitle,
+    billSessionSlug: null, billState: it.billState, billSummary: it.summary ?? null,
+    billPriority: null, billMatchType: null, date: '', billIsDraft: false, events: [],
+  })
+  const billHref = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
+  return `${renderBillCardOpen({ model, billHref, appUrl, chip: NEW_MATCH_CHIP })}${BILL_CARD_CLOSE}`
+}
+
+// New-match section (admins always, members who haven't opted out). Not
 // priority-gated and rendered from bills (not feed events), so it lists matches
-// awaiting triage. The heading counts every match; only the top NEW_MATCH_LIMIT
-// by relevance are listed (unscored last), with a link to the full list for the
+// awaiting triage. The header counts every match; only the top NEW_MATCH_LIMIT
+// by relevance get a card (unscored last), with a link to the full list for the
 // rest. A member can't triage, so their copy leaves off the line telling an
 // admin how.
-function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forMember: boolean): string {
+function renderNewMatchSection(items: NewMatchDigestItem[], appUrl: string, forMember: boolean, spaceAbove: boolean): string {
   if (items.length === 0) return ''
   const top = [...items]
     .sort((a, b) => (b.relevanceScore ?? -1) - (a.relevanceScore ?? -1))
     .slice(0, NEW_MATCH_LIMIT)
-  const hidden = items.length - top.length
-  const moreRow = hidden > 0
-    ? `<tr>
-      <td style="padding:8px 0;border-top:1px solid ${color.borderDefault};font-size:${fontSize.sm}px;">
-        <a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};text-decoration:none;">…and ${hidden} more</a>
-      </td>
-    </tr>`
+  const seeAll = items.length > top.length
+    ? `
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>
+  <tr><td style="padding:6px 2px 0 2px;font-size:${fontSize.sm}px;"><a href="${escHtml(`${appUrl}/bills?newMatches=1`)}" style="color:${color.accentBlue};font-weight:${fontWeight.semibold};text-decoration:none;">See all ${items.length} new matches</a></td></tr>
+</tbody></table>`
     : ''
-  const rows = top.map(it => {
-    const href = `${appUrl}${billUrl({ id: it.billId, state: it.billState, session: it.billSession, sessionSlug: it.billSessionSlug, billNumber: it.billNumber })}`
-    const badgeText = it.billState ? `${escHtml(it.billState)} ${escHtml(it.billNumber)}` : escHtml(it.billNumber)
-    return `<tr>
-      <td style="padding:8px 0;border-top:1px solid ${color.borderDefault};">
-        <a href="${escHtml(href)}" style="text-decoration:none;">
-          <span style="display:inline-block;background:${CARD_STYLE.badgeBg};color:${CARD_STYLE.badgeColor};font-size:${fontSize.sm}px;font-weight:${fontWeight.bold};padding:3px 10px;border-radius:${radius.sm}px;letter-spacing:0.02em;">${badgeText}</span>
-          <span style="color:${color.textPrimary};font-size:${fontSize.sm}px;font-family:${CARD_STYLE.titleFontFamily};margin-left:8px;">${escHtml(it.billTitle)}</span>
-        </a>
-      </td>
-    </tr>`
-  }).join('\n')
-  return `
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;border:1px solid ${color.borderDefault};border-radius:${radius.lg}px;overflow:hidden;">
-  <tbody>
-    <tr><td style="padding:12px 14px 4px 14px;background:${color.surfaceSubtle};font-size:${fontSize.base}px;font-weight:${fontWeight.bold};color:${color.textPrimary};">New matches (${items.length})</td></tr>
-    ${forMember ? '' : `<tr><td style="padding:0 14px 6px 14px;background:${color.surfaceSubtle};font-size:${fontSize.xs}px;color:${color.textSecondary};">Set a priority or dismiss each from the bill list.</td></tr>`}
-    <tr><td style="padding:0 14px 8px 14px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody>${rows}${moreRow}</tbody></table>
-    </td></tr>
-  </tbody>
-</table>`
+  return `${renderSectionHeader({
+    id: NEW_MATCHES_ID, ruleColor: color.accentAmber, spaceAbove,
+    title: countOf(items.length, 'new match', 'new matches'),
+    subtitle: forMember ? undefined : 'Set a priority or dismiss each from the bill list.',
+  })}
+${top.map(it => renderNewMatchCard(it, appUrl)).join('\n')}${seeAll}`
 }
 
 export function renderDigestEmail(input: { events: DigestEvent[]; assocName: string; appUrl: string; periodStart?: string; periodEnd?: string; newMatches?: NewMatchDigestItem[]; forMember?: boolean }): string {
@@ -188,12 +242,28 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
   const periodEnd = input.periodEnd ?? new Date().toISOString() // ts-write-ok: formatted for email display, not a DB column
   const range = formatDateRange(fmtDay(periodStart), fmtDay(periodEnd))
   const newMatches = input.newMatches ?? []
-  const signal = billCount > 0
-    ? `${billCount} priority ${billCount === 1 ? 'bill' : 'bills'} ${billCount === 1 ? 'was' : 'were'} updated ${describeWindow(periodStart, periodEnd)}`
-    : `${newMatches.length} new keyword ${newMatches.length === 1 ? 'match' : 'matches'}`
-  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl, input.forMember ?? false)
-  const cards = billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')
-  const ctaHtml = billCount > 0
+  const hasUpdates = billCount > 0
+  const hasMatches = newMatches.length > 0
+  const window = describeWindow(periodStart, periodEnd)
+  // Both kinds: the headline names the digest and the contents box below names the kinds.
+  // One kind: the headline says what happened, as before.
+  const signal = hasUpdates && hasMatches
+    ? `Your digest for ${window}`
+    : hasUpdates
+      ? `${countOf(billCount, 'priority bill', 'priority bills')} ${billCount === 1 ? 'was' : 'were'} updated in ${window}`
+      : `${countOf(newMatches.length, 'new match', 'new matches')} in ${window}`
+  const contentsBox = hasUpdates && hasMatches
+    ? renderContentsBox([
+        { href: `#${UPDATES_ID}`, ruleColor: color.billBadgeNavy, text: `${countOf(billCount, 'priority bill', 'priority bills')} updated` },
+        { href: `#${NEW_MATCHES_ID}`, ruleColor: color.accentAmber, text: countOf(newMatches.length, 'new match', 'new matches') },
+      ])
+    : ''
+  const updatesSection = hasUpdates
+    ? `${renderSectionHeader({ id: UPDATES_ID, ruleColor: color.billBadgeNavy, spaceAbove: false, title: `${countOf(billCount, 'priority bill', 'priority bills')} ${billCount === 1 ? 'was' : 'were'} updated` })}
+${billOrder.map(id => renderBillCard(billGroups.get(id)!, input.appUrl)).join('\n')}`
+    : ''
+  const newMatchSection = renderNewMatchSection(newMatches, input.appUrl, input.forMember ?? false, hasUpdates)
+  const ctaHtml = hasUpdates
     ? emailButton(`${input.appUrl}/bills`, 'View bill updates')
     : emailButton(`${input.appUrl}/bills?newMatches=1`, 'View newly matched bills')
 
@@ -202,7 +272,7 @@ export function renderDigestEmail(input: { events: DigestEvent[]; assocName: str
     appUrl: input.appUrl,
     signalHtml: escHtml(signal),
     dateLabel: range,
-    bodyHtml: `${cards}\n${newMatchSection}`,
+    bodyHtml: `${contentsBox}${updatesSection}\n${newMatchSection}`,
     ctaHtml,
     footerHtml: emailFooterLink(`${input.appUrl}/profile#setting-email-digest`, 'Manage email settings'),
   })
