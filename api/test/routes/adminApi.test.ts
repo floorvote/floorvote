@@ -6,6 +6,7 @@ import { getDb } from '../../src/db/client'
 import { users, sessions, magicLinks, associationConfig, bills, comments, memberVotes, notes, feedEvents, roles, userRoles, authEvents, teamEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
 import { rowidOf } from '../../src/db/rowid'
+import { centralFetch } from '../../src/lib/centralFetch'
 
 vi.mock('../../src/lib/centralFetch', () => ({
   centralFetch: vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
@@ -1800,17 +1801,15 @@ describe('POST /admin/keyword-resync', () => {
       await db().insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
       // The advisory event is the one write that fails: its table is gone.
       await env.DB.exec('DROP TABLE team_events')
-      const central = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true })))
       const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.mocked(centralFetch).mockClear()
       const res = await app.request('/api/admin/keyword-resync', { method: 'POST', headers: { Cookie: adminCookie } },
-        { ...env, BILL_QUEUE: { sendBatch: vi.fn().mockResolvedValue(undefined) }, CENTRAL: { fetch: central } })
+        { ...env, BILL_QUEUE: { sendBatch: vi.fn().mockResolvedValue(undefined) } })
       expect(res.status).toBe(200)
       expect(await res.json()).toMatchObject({ demoted: 1 })
       expect(await matchTypeOf('a1')).toBeNull()
-      const updates = await Promise.all(central.mock.calls
-        .filter(([req]) => new URL((req as Request).url).pathname.includes('/update-bill-match-types/'))
-        .map(([req]) => (req as Request).json() as Promise<{ updates: unknown[] }>))
-      expect(updates.map(u => u.updates)).toEqual([[{ externalId: 'legiscan:a1', matchType: null }]])
+      const sent = vi.mocked(centralFetch).mock.calls.filter(([, path]) => path.startsWith('/admin/update-bill-match-types/'))
+      expect(sent.map(([, , init]) => JSON.parse(String(init?.body)))).toEqual([{ updates: [{ externalId: 'legiscan:a1', matchType: null }] }])
       expect(errors).toHaveBeenCalled()
       errors.mockRestore()
     })

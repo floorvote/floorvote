@@ -1006,8 +1006,6 @@ adminApiRouter.post('/keyword-resync', async (c) => {
       await db.batch(updateStmts.slice(i, i + 100) as [any, ...any[]])
     }
 
-    await recordGroupTagChanges(db, tagsBefore)
-
     demoted = toDemote.length
     protectedAsManual = toManual.length
 
@@ -1024,6 +1022,14 @@ adminApiRouter.post('/keyword-resync', async (c) => {
       if (!mtRes.ok) console.warn(`[keyword-resync] central update-bill-match-types returned ${mtRes.status}`)
     } catch (err) {
       console.error('[keyword-resync] central update-bill-match-types failed:', err)
+    }
+
+    // After central is told, and best-effort like it: the event is advisory history, so a failure to
+    // write it must not fail the route once the bills are demoted here.
+    try {
+      await recordGroupTagChanges(db, tagsBefore)
+    } catch (err) {
+      console.error('[keyword-resync] recording group tag changes failed:', err)
     }
   }
 

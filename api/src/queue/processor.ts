@@ -981,7 +981,11 @@ async function upsertBill(
   existing?: { id: string; matchType: 'keyword' | 'manual' | null; groupKey: string | null } | undefined,
 ): Promise<{ id: string; isNew: boolean }> {
   const startsMatching = existing?.matchType === null && data.matchType != null && existing.groupKey !== null
-  const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]) : null
+  // The event is advisory history: failing to read or write it is logged and never fails the delivery.
+  const tagsBefore = startsMatching ? await snapshotGroupTags(db, [existing]).catch(err => {
+    console.error(`[processor] reading group tags before the match type change failed for ${externalId}:`, err)
+    return null
+  }) : null
   const id = crypto.randomUUID()
   const now = nowDb()
   // Exclude externalId from the update set (it's the conflict target) and handle matchType separately
@@ -1002,6 +1006,10 @@ async function upsertBill(
     })
     .returning({ id: bills.id })
     .get()
-  if (tagsBefore) await recordGroupTagChanges(db, tagsBefore)
+  if (tagsBefore) {
+    await recordGroupTagChanges(db, tagsBefore).catch(err => {
+      console.error(`[processor] recording group tag changes failed for ${externalId}:`, err)
+    })
+  }
   return { id: returned.id, isNew: returned.id === id }
 }

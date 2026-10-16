@@ -286,14 +286,19 @@ export async function recordFieldChanges(db: AppDb, changes: readonly FieldChang
  * `recordGroupTagChanges`. A group's tags come from a tracked member first, so
  * a bill starting or stopping to match can move them with no analysis to
  * record it. Only bills in a group are read: a bill in no group reads its own
- * tags, whatever its match type. One bill stands for each group, the first
- * given, and is the one the event is recorded on.
+ * tags, whatever its match type. One bill stands for each group, the one with the
+ * smallest id among those given, and is the one the event is recorded on, so a
+ * cleanup always records on the same bill.
  */
 export type GroupTagsSnapshot = ReadonlyMap<string, string[]>
 
 export async function snapshotGroupTags(db: AppDb, members: readonly { id: string; groupKey: string | null }[]): Promise<GroupTagsSnapshot> {
   const standIn = new Map<string, string>()
-  for (const m of members) if (m.groupKey !== null && !standIn.has(m.groupKey)) standIn.set(m.groupKey, m.id)
+  for (const m of members) {
+    if (m.groupKey === null) continue
+    const held = standIn.get(m.groupKey)
+    if (held === undefined || m.id < held) standIn.set(m.groupKey, m.id)
+  }
   const values = await loadTeamValuesOf(db, [...standIn.values()])
   return new Map([...standIn.values()].map(id => [id, values.get(id)?.analysis?.tags ?? []]))
 }
@@ -301,7 +306,8 @@ export async function snapshotGroupTags(db: AppDb, members: readonly { id: strin
 /**
  * Record, as a null-actor `field_changed` event (the one an analysis writes
  * for tags), each group in `before` whose tags differ now, once per group, on
- * the bill that stood for it. A group whose tags are unchanged records none.
+ * the bill that stood for it. Each costs a few small queries per 90 members, doubled
+ * by the snapshot, which a rare admin cleanup can afford. A group whose tags are unchanged records none.
  */
 export async function recordGroupTagChanges(db: AppDb, before: GroupTagsSnapshot): Promise<void> {
   if (before.size === 0) return
