@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { feedEvents, associationConfig } from '../../src/db/schema'
+import { feedEvents, associationConfig, bills } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -182,46 +182,90 @@ describe('runDigest', () => {
     expect(result.sent).toBe(1)
   })
 
-  // ── New keyword-match section (admin/owner only) ────────────────────────────
+  it('daily: the summary line says the last day', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-06-02 11:00:00' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    expect(calls[0].html).toContain('was updated in the last day')
+  })
+
+  it('weekly: the summary line says the last week', async () => {
+    const db = getDb(env.DB)
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-06-03T11:00:00Z'))  // Wednesday
+    await enableWeekly(db, '3')
+    await db.insert(associationConfig).values({ key: 'last_digest_at', value: '2026-05-27 11:00:00' })
+    await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    expect(calls[0].html).toContain('was updated in the last week')
+  })
+
+  // ── New keyword-match section (admins always, members unless they opt out) ──
+  // Members' options are covered in digestMemberMatches.test.ts.
   const recentMatch = () => new Date(Date.now() - 3600_000).toISOString().slice(0, 19).replace('T', ' ')
 
-  it('admins get the New bills section; members get the unchanged digest', async () => {
+  it('admins and members (option on by default) get the new-match section', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // priority event so BOTH the member (a@e.com from beforeEach) and admin get a base digest
     await addEvent(db, billId, 'position_set', JSON.stringify({ position: 'Support' }))
-    await seedBill({ billNumber: 'NM 42', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 70, tenantSummary: 'New match summary' })
+    await seedBill({ billNumber: 'NM 42', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 70, tenantSummary: 'New match summary' })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     await runDigest(env as any, db)
     expect(calls).toHaveLength(2)
     const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
     const memberCall = calls.find(c => c.to[0] === 'a@e.com')
-    expect(adminCall.html).toContain('New bills matching your keywords')
+    expect(adminCall.html).toContain('New matches (1)')
     expect(adminCall.html).toContain('NM 42')
-    expect(memberCall.html).not.toContain('New bills matching your keywords')
-    expect(memberCall.html).not.toContain('NM 42')
+    expect(memberCall.html).toContain('New matches (1)')
+    expect(memberCall.html).toContain('NM 42')
   })
 
-  it('admins still get a digest when only new matches exist; members get nothing', async () => {
+  it('a window with only new matches sends a digest to the admin and to the member with the option on', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
-    await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 50 })
+    await seedBill({ billNumber: 'NM 7', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
-    expect(calls).toHaveLength(1)
-    expect(calls[0].to).toEqual(['admin@e.com'])
-    expect(calls[0].html).toContain('NM 7')
-    expect(result.sent).toBe(1)
+    expect(calls.map(c => c.to[0]).sort()).toEqual(['a@e.com', 'admin@e.com'])
+    for (const c of calls) expect(c.html).toContain('NM 7')
+    expect(result.sent).toBe(2)
+  })
+
+  it('caps the admin new-match section at the 10 most relevant, with the full count and an "and N more" link', async () => {
+    const db = getDb(env.DB); await enableModule(db)
+    const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+    for (let i = 1; i <= 12; i++) {
+      await seedBill({ billNumber: `NM ${100 + i}`, state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 50 + i })
+    }
+    const calls: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+    await runDigest(env as any, db)
+    const adminCall = calls.find(c => c.to[0] === 'admin@e.com')
+    const html: string = adminCall.html
+    expect(html).toContain('New matches (12)')
+    expect(html).toContain('NM 112')                 // most relevant is listed
+    expect(html).not.toContain('NM 101')             // the two least relevant are cut
+    expect(html).not.toContain('NM 102')
+    expect(html).toContain('NM 103')                 // the 10th most relevant is the last listed
+    expect(html).toContain('…and 2 more')
+    expect(html).toContain(`${env.APP_URL}/bills?newMatches=1`)
+    expect(adminCall.subject).toContain('12 new bills matching your keywords')
   })
 
   it('excludes prioritized and dismissed bills from the new-match section', async () => {
     const db = getDb(env.DB); await enableModule(db)
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
     // PRI 1 is prioritized, which latches triaged_at (setting a priority is an act of triage).
-    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
-    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'PRI 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), priority: 'high', triagedAt: recentMatch(), relevanceScore: 90 })
+    await seedBill({ billNumber: 'DIS 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), triagedAt: recentMatch(), relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
@@ -237,7 +281,7 @@ describe('runDigest', () => {
     const since = new Date(Date.now() - 3600_000).toISOString() // 1h ago
     await db.insert(associationConfig).values({ key: 'last_digest_at', value: since })
     const old = new Date(Date.now() - 7200_000).toISOString().slice(0, 19).replace('T', ' ') // 2h ago, before window
-    await seedBill({ billNumber: 'OLD 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: old, relevanceScore: 90 })
+    await seedBill({ billNumber: 'OLD 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: old, relevanceScore: 90 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
@@ -249,11 +293,117 @@ describe('runDigest', () => {
     const db = getDb(env.DB); await enableModule(db)
     await db.insert(associationConfig).values({ key: 'new_match_min_relevance', value: '60' })
     const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
-    await seedBill({ billNumber: 'LOW 1', state: 'RI', session: '2026', matchType: 'keyword', newMatchAt: recentMatch(), relevanceScore: 30 })
+    await seedBill({ billNumber: 'LOW 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 30 })
     const calls: any[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
     const result = await runDigest(env as any, db)
     expect(calls).toHaveLength(0) // below threshold → excluded → nothing to send
     expect(result.sent).toBe(0)
+  })
+
+  // Triaging any bill in a companion group triages the group (groupUntriaged), so a match
+  // whose companion was triaged is no longer new and stays out of the digest.
+  describe('companion groups', () => {
+    // Groups bills the way a recompute writes the key: the smallest member id.
+    async function group(db: ReturnType<typeof getDb>, ...ids: string[]) {
+      await db.update(bills).set({ groupKey: [...ids].sort()[0] }).where(inArray(bills.id, ids))
+    }
+    const captureEmails = () => {
+      const calls: any[] = []
+      vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+      return calls
+    }
+
+    it('leaves out a routine new match whose companion in the same group was triaged', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const triaged = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, triaged)
+      const calls = captureEmails()
+
+      const result = await runDigest(env as any, db)
+
+      // GRP 1 has no triage of its own, but its companion's triage triages the group.
+      expect(calls).toHaveLength(0)
+      expect(result.sent).toBe(0)
+    })
+
+    it('leaves out the match but still lists an ungrouped new match beside it', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      // The triaged companion is not itself a new match (it has no newMatchAt).
+      const triaged = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, triaged)
+      await seedBill({ billNumber: 'SOLO 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      // The admin and the member (option on by default) each get one digest.
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('SOLO 1')
+        expect(c.html).not.toContain('GRP 1')
+      }
+    })
+
+    it('lists a routine new match in a group where no member is triaged', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      // A companion that is not a new match (no newMatchAt) and not triaged either.
+      const second = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      await group(db, first, second)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (1)')
+        expect(c.html).toContain('GRP 1')
+      }
+    })
+
+    it('lists every routine new match of an untriaged group', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const second = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 80 })
+      await group(db, first, second)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('New matches (2)')
+        expect(c.html).toContain('GRP 1')
+        expect(c.html).toContain('GRP 2')
+      }
+    })
+
+    it('does not let a triaged bill in another group affect a new match', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const freshMate = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      const otherA = await seedBill({ billNumber: 'OTH 1', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      const otherB = await seedBill({ billNumber: 'OTH 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, freshMate)
+      await group(db, otherA, otherB)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(2)
+      for (const c of calls) {
+        expect(c.html).toContain('GRP 1')
+        expect(c.html).not.toContain('OTH')
+      }
+    })
   })
 })

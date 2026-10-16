@@ -71,6 +71,15 @@ export type Env = {
 
 export type AppDb = DrizzleD1Database<typeof schema>
 
+/**
+ * Where a keyword match came from (central's MatchProvenance). Routine: the
+ * regular sync found a bill new to central for this instance. Bulk: a session
+ * seed, a keyword re-run, an operator import, and any match with no
+ * declaration. Only routine matches reach the digest and the feed; the triage
+ * list and the "N new" chip show both.
+ */
+export type MatchProvenance = 'routine' | 'bulk'
+
 export type TenantQueueMessage = {
   tenantId: string
   billId: string // the bill handle, "legiscan:{bill_id}" (older data and tests may hold legacy "ocd-bill/{uuid}" ids)
@@ -83,6 +92,9 @@ export type TenantQueueMessage = {
   groupAnalysis?: true
   metadataOnly?: boolean // Refresh metadata from central; skip text fetch + AI.
   matchType?: 'keyword' | 'manual' | null // Bill's match classification for this tenant
+  // Set when the message brings this instance a new keyword match. Missing
+  // (from an older central, or a message that brings no new match) is bulk.
+  matchProvenance?: MatchProvenance
   changes?: {
     changeType: string
     oldValue: string | null

@@ -6,7 +6,8 @@ import { resolveTeamValues, type GroupTeamValues } from '../../lib/teamFields'
 import { billSlug } from '../../lib/sessionSlug'
 import { filterTagsToTaxonomy } from '../../lib/taxonomy'
 import type { AppDb } from '../../types'
-import { billsAs, buildBillNumberBoost, newMatchWhere, type BillsFilter } from './query'
+import { billsAs, buildBillNumberBoost, type BillsFilter } from './query'
+import { newMatchWhere } from '../../lib/newMatch'
 
 /**
  * The bill list's companion groups (see **Companion group** in CONTEXT.md).

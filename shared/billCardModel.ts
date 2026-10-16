@@ -187,5 +187,12 @@ export function buildActivityRowModel(event: FeedEvent): ActivityRowModel {
       text: position === null ? `${who} cleared the position${onBills}` : `${who} set position to ${position}${onBills}`,
     }
   }
+  if (type === 'new_matches') {
+    // The day's routine new keyword matches, written by the system, so no author to name.
+    return {
+      ...base, iconName: 'new_releases', iconFill: 0, iconColor: color.accentBlue,
+      text: `${count ?? 0} new ${count === 1 ? 'bill' : 'bills'} matched your keywords`,
+    }
+  }
   return { ...base, iconName: 'circle', iconFill: 0, iconColor: color.textMuted, text: 'Activity' }
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderDigestEmail } from '../../src/lib/digestEmail'
+import { renderSampleEmail } from '../../src/lib/sampleEmails'
 import { PRIORITY_COLORS } from '../../../web/src/lib/chipStyles'
 import { buildBillCardModel } from '../../../web/src/lib/billCardModel'
 import { COMMENT_PREVIEW_MAX } from '../../../web/src/lib/feedUtils'
@@ -163,6 +164,105 @@ describe('renderDigestEmail', () => {
     // falls back to Date.now() and the snapshot drifts daily).
     const html = renderDigestEmail({ events: SAMPLE_DIGEST_EVENTS, assocName: SAMPLE_ASSOC_NAME, appUrl: 'https://x.test', newMatches: SAMPLE_NEW_MATCHES, periodStart: '2026-06-22T00:00:00Z', periodEnd: '2026-06-23T00:00:00Z' })
     expect(html).toMatchSnapshot()
+  })
+})
+
+describe('renderDigestEmail — summary line follows the window the digest covers', () => {
+  const signal = (periodStart?: string, periodEnd?: string) => {
+    const html = renderDigestEmail({ events: [ev()], assocName: 'X', appUrl: 'https://x', periodStart, periodEnd })
+    return html.match(/line-height:1\.35;">([^<]*)</)![1]
+  }
+
+  it('daily cadence: a one-day window says "in the last day"', () => {
+    expect(signal('2026-06-09T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last day')
+  })
+  it('weekly cadence: a seven-day window says "in the last week"', () => {
+    expect(signal('2026-06-03T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last week')
+  })
+  it('a daily digest that skipped runs describes the real window', () => {
+    expect(signal('2026-06-07T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last 3 days')
+  })
+  it('a weekly digest that skipped a run describes the real window', () => {
+    expect(signal('2026-05-27T11:00:00Z', '2026-06-10T11:00:00Z')).toBe('1 priority bill was updated in the last 14 days')
+  })
+  it('reads the database timestamp format the digest job passes, as UTC', () => {
+    expect(signal('2026-06-09 11:00:00', '2026-06-10 11:00:00')).toBe('1 priority bill was updated in the last day')
+  })
+  it('with no window supplied, covers the default 24 hours: "in the last day"', () => {
+    expect(signal()).toBe('1 priority bill was updated in the last day')
+  })
+})
+
+describe('sample digest emails render the wording for their cadence', () => {
+  it('the daily sample says "in the last day"', () => {
+    expect(renderSampleEmail('digest', 'https://x').html).toContain('priority bills were updated in the last day')
+  })
+  it('the weekly sample says "in the last week"', () => {
+    expect(renderSampleEmail('digest-weekly' as any, 'https://x').html).toContain('priority bills were updated in the last week')
+  })
+  it('the daily sample leads with updates, then a counted new-match section', () => {
+    const html = renderSampleEmail('digest', 'https://x').html
+    expect(html).toContain('New matches (3)')
+    expect(html.indexOf('Voter ID Act')).toBeLessThan(html.indexOf('New matches (3)'))
+  })
+  it('the new-matches-only sample shows a heavy day: the count, ten listed, and the link to the rest', () => {
+    const html = renderSampleEmail('digest-new-only', 'https://x').html
+    expect(html).toContain('New matches (14)')
+    expect(html).toContain('…and 4 more')
+    expect(html).toContain('href="https://x/bills?newMatches=1"')
+  })
+})
+
+describe('renderDigestEmail — updates lead, new matches follow with a count and a cap', () => {
+  const match = (n: number, relevanceScore: number | null) => ({
+    billId: `m${n}`, billNumber: `HB ${1000 + n}`, billTitle: `Matched bill ${n}`,
+    billState: 'RI', billSession: '2026', relevanceScore,
+  })
+  // n matches, relevance ascending with n, so the caller's order is the reverse of "best first".
+  const matches = (n: number) => Array.from({ length: n }, (_, i) => match(i + 1, i + 1))
+  const render = (newMatches: ReturnType<typeof match>[], events = [ev()]) =>
+    renderDigestEmail({ events, assocName: 'X', appUrl: 'https://x', newMatches })
+  const listed = (html: string) => [...html.matchAll(/RI HB (\d{4})</g)].map(m => Number(m[1]) - 1000)
+
+  it('renders updates on prioritized bills before the new-match section', () => {
+    const html = render(matches(3))
+    expect(html.indexOf('H 5174')).toBeGreaterThan(-1)
+    expect(html.indexOf('H 5174')).toBeLessThan(html.indexOf('Matched bill 3'))
+  })
+  it('shows the total count of new matches in the heading, not the number listed', () => {
+    expect(render(matches(37))).toContain('New matches (37)')
+  })
+  it('lists at most 10 new matches, highest relevance first', () => {
+    const html = render(matches(12))
+    expect(listed(html)).toEqual([12, 11, 10, 9, 8, 7, 6, 5, 4, 3])
+  })
+  it('puts matches with no relevance score after every scored match', () => {
+    const html = render([match(1, null), match(2, 3), match(3, 8)])
+    expect(listed(html)).toEqual([3, 2, 1])
+  })
+  it('with more than 10, adds an "…and N more" line linking to the bill list filtered to new matches', () => {
+    const html = render(matches(37))
+    expect(listed(html)).toHaveLength(10)
+    expect(html).toContain('…and 27 more')
+    expect(html).toContain('href="https://x/bills?newMatches=1"')
+    // The more-line sits after the last listed row (HB 1028 is the 28th of 37, the 10th most relevant).
+    expect(html.indexOf('…and 27 more')).toBeGreaterThan(html.indexOf('HB 1028'))
+  })
+  it('with exactly 10, lists them all and adds no "and more" line', () => {
+    const html = render(matches(10))
+    expect(html).toContain('New matches (10)')
+    expect(listed(html)).toHaveLength(10)
+    expect(html).not.toContain('…and')
+  })
+  it('a digest with only new matches renders the section with its count, and no update cards', () => {
+    const html = render(matches(3), [])
+    expect(html).toContain('New matches (3)')
+    expect(listed(html)).toEqual([3, 2, 1])
+    expect((html.match(/box-shadow:/g) || []).length).toBe(0)
+    expect(html).toContain('3 new keyword matches')
+  })
+  it('the only-new-matches summary line counts every match, not just the ten listed', () => {
+    expect(render(matches(37), [])).toContain('37 new keyword matches')
   })
 })
 

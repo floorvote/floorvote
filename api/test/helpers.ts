@@ -80,6 +80,7 @@ export async function seedUser(overrides?: {
   title?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
+  emailDigestMatchesEnabled?: boolean
   emailRepliesEnabled?: boolean
   deactivatedAt?: string | null
   invitedBy?: string | null
@@ -96,6 +97,7 @@ export async function seedUser(overrides?: {
     subtitle: overrides?.title ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
+    emailDigestMatchesEnabled: overrides?.emailDigestMatchesEnabled === false ? 0 : 1,
     emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
     invitedBy: overrides?.invitedBy ?? null,
@@ -178,6 +180,8 @@ export async function seedBill(overrides?: {
   isDraft?: boolean
   draftText?: string | null
   newMatchAt?: string | null
+  /** Where the keyword match came from; null (the default) counts as bulk. */
+  matchProvenance?: 'routine' | 'bulk' | null
   triagedAt?: string | null
   /** Where central stored the bill's text, when the instance has been told. */
   textR2Key?: string | null
@@ -223,6 +227,7 @@ export async function seedBill(overrides?: {
     isDraft: overrides?.isDraft ?? false,
     draftText: overrides?.draftText ?? null,
     newMatchAt: overrides?.newMatchAt ?? null,
+    matchProvenance: overrides?.matchProvenance ?? null,
     triagedAt: overrides?.triagedAt ?? null,
     textR2Key: overrides?.textR2Key ?? null,
     createdAt: new Date().toISOString(),

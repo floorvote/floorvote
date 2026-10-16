@@ -13,6 +13,7 @@ import { syncIdenticalCompanions } from '../lib/companionGroups'
 import { pullCompanions } from '../lib/companionAnalysis'
 import { loadGroupTeamValues, recordFieldChanges, recordGroupTagChanges, snapshotGroupTags } from '../lib/teamFields'
 import { nowDb } from '../lib/dbTime'
+import { addToNewMatchesRow } from '../lib/newMatch'
 import { LEGACY_STATUS_ORDER, LEGISCAN_CODE_WORDS } from '../../../shared/legacyStatusOrder'
 import { httpUrl } from '../../../shared/httpUrl'
 import type { AppDb, Env, TenantQueueMessage } from '../types'
@@ -313,6 +314,7 @@ async function applyCentralBill(
     priority: bills.priority,
     textR2Key: bills.textR2Key,
     newMatchAt: bills.newMatchAt,
+    matchProvenance: bills.matchProvenance,
   }).from(bills).where(eq(bills.externalId, msg.billId)).get()
 
   // Stub-only path: upsert metadata, mark as stub, skip text fetch + AI entirely
@@ -689,9 +691,18 @@ async function applyCentralBill(
   const isFirstKeywordMatch = derivedMatchType === 'keyword' && !existing?.newMatchAt
     && (!!aiResult || priorMatchEvent === false)
 
+  // Where the match came from, as central declared it. The declaration rides
+  // only on the message that brings the match, which may arrive before the
+  // bill has text to analyse, so it is kept on the bill until the match is
+  // recorded and goes on the bill_matched event from there. Once the match
+  // is recorded it never changes. With no declaration it stays NULL: bulk.
+  const declaredProvenance = !existing?.newMatchAt && msg.matchProvenance ? msg.matchProvenance : undefined
+  const matchProvenance = declaredProvenance ?? existing?.matchProvenance ?? null
+
   const upsertData = {
     ...billData,
     matchType: derivedMatchType,
+    ...(declaredProvenance ? { matchProvenance: declaredProvenance } : {}),
     ...(aiResult ? {
       aiProcessedAt: now,
       lastAiTextHash: centralBill.textHash ?? null,
@@ -840,8 +851,11 @@ async function applyCentralBill(
         type:     'bill_matched',
         billId:   billInternalId,
         userId:   'system',
-        metadata: '{}',
+        metadata: JSON.stringify(matchProvenance ? { matchProvenance } : {}),
       })
+      // The feed's one row for the day's routine new matches. Judged by the same
+      // definition as the digest and the triage list, on the match just recorded.
+      await addToNewMatchesRow(db, billInternalId)
     }
   }
 

@@ -135,6 +135,9 @@ function recordedFeed(): Record<string, () => Response> {
   return routes
 }
 
+/** Bills filed since, which LegiScan's masterlist adds after its recorded three. */
+let filedLater: { billId: number; number: string; title: string }[] = []
+
 /** What LegiScan serves for DC once the state is back on it. */
 function legiscan(op: string, id: string | null): unknown {
   const entry = (billId: number, number: string, hash: string, title: string) =>
@@ -146,6 +149,7 @@ function legiscan(op: string, id: string | null): unknown {
       1: entry(B0001, 'B26-0001', 'ls-v2', 'Something else'),
       // Unchanged, since nothing moved it.
       2: entry(B9999, 'B26-9999', 'ls-v1', 'Youth rehabilitation study'),
+      ...Object.fromEntries(filedLater.map((b, i) => [3 + i, entry(b.billId, b.number, 'ls-v1', b.title)])),
     } }
   }
   if (op === 'getBill' && id === String(B0400)) {
@@ -294,6 +298,7 @@ beforeEach(async () => {
   vi.mocked(getCurrentEtHour).mockReturnValue(5)
   feed = recordedFeed()
   calls = []
+  filedLater = []
   fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input)
     calls.push(url)
@@ -389,6 +394,17 @@ describe('a cutover', () => {
     expect(res.status, JSON.stringify(body)).toBe(200)
     return { run, body }
   }
+
+  // #364: the new provider's first pass links its records the old one lacked.
+  // They are existing legislation, not newly filed bills, so a match is bulk.
+  it('declares the matches of the first pass after it bulk, for bills the old provider lacked', async () => {
+    await env.DB.prepare(`INSERT INTO keyword_registry (tenant_id, keyword) VALUES ('oca', 'soccer stadium')`).run()
+
+    const { run } = await cutOver()
+
+    const msg = queued(run.limsQueue).find(b => b.billId === limsBillId('B26-0769'))
+    expect(msg?.matchProvenance).toEqual({ oca: 'bulk' })
+  })
 
   it('keeps every matched bill\'s handle, flips ownership, and the first LIMS ingest sends no changes', async () => {
     const { run, body } = await cutOver()
@@ -864,7 +880,8 @@ describe('a moved bill no instance tracks', () => {
     const { lims } = await import('../../src/providers/lims')
     await runSnapshotSync(lims, next.env, drizzle(env.DB, { schema }), { force: true })
     const matched = queued(next.limsQueue).find(b => b.billId === B0001)
-    expect(matched).toEqual({ billId: B0001, queuedBy: 'lims' })
+    // A monitored bill that starts to match is a bulk match (#364).
+    expect(matched).toEqual({ billId: B0001, queuedBy: 'lims', matchProvenance: { oca: 'bulk' } })
 
     // The earlier first ingest runs, and clears carried_from.
     const ingest = async (body: unknown, r: Run) => {
@@ -905,6 +922,49 @@ describe('a moved bill no instance tracks', () => {
     expect(legiscanCalls('getBill').filter(u => !u.includes(`id=${B0400}`))).toEqual([])
     expect(sentToTenant(again)).toContainEqual(expect.objectContaining({ billId: toHandle(B0001), stubOnly: true }))
     expect(await getJson(`/bills/${toHandle(B0001)}`)).toMatchObject({ status: 'Introduced' })
+  })
+
+  // #364: the untracked moved bill keeps carried_from for good, since LegiScan
+  // never ingests it. That must not make the session's new matches bulk.
+  it('leaves a bill filed after the undo a routine match', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    expect((await undo(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    vi.mocked(getCurrentEtHour).mockReturnValue(13)
+    const first = makeEnv()
+    await runSync(first.env, drizzle(env.DB, { schema }))
+    await drain(first.ingestor, first)
+    expect((await row('SELECT carried_from FROM bills WHERE bill_id = ?', B0001)).carried_from).not.toBeNull()
+
+    const FILED = 1900777
+    filedLater = [{ billId: FILED, number: 'B26-0777', title: 'Child Neglect Prevention Act of 2026' }]
+    const next = makeEnv()
+    await runSync(next.env, drizzle(env.DB, { schema }))
+
+    expect(queued(next.ingestor).find(b => b.billId === FILED)?.matchProvenance).toEqual({ oca: 'routine' })
+  })
+
+  // A pass that ingests a moved bill for the first time, because the bill
+  // starts to match in that very pass, is still a cutover's pass.
+  it('declares bulk in the pass where an untracked moved bill starts to match', async () => {
+    const run = makeEnv()
+    expect((await cutover(run, '?confirm=true')).status).toBe(200)
+    expect((await undo(run, '?confirm=true')).status).toBe(200)
+    await drain(run.limsQueue, run)
+    vi.mocked(getCurrentEtHour).mockReturnValue(13)
+    const first = makeEnv()
+    await runSync(first.env, drizzle(env.DB, { schema }))
+    await drain(first.ingestor, first)
+
+    await env.DB.prepare(`INSERT INTO keyword_registry (tenant_id, keyword) VALUES ('oca', 'something else')`).run()
+    const FILED = 1900778
+    filedLater = [{ billId: FILED, number: 'B26-0778', title: 'Child Neglect Prevention Act of 2026' }]
+    const next = makeEnv()
+    await runSync(next.env, drizzle(env.DB, { schema }))
+
+    expect(queued(next.ingestor).map(b => b.billId)).toContain(B0001)
+    expect(queued(next.ingestor).find(b => b.billId === FILED)?.matchProvenance).toEqual({ oca: 'bulk' })
   })
 })
 

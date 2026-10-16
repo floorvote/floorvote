@@ -127,6 +127,82 @@ describe('the DC sync pass', () => {
   })
 })
 
+// #364: the snapshot sync declares its new keyword matches like the LegiScan
+// sync (the same applyMasterList), and an operator import declares bulk.
+describe('match provenance from the DC sync', () => {
+  const provenanceOf = (q: { sendBatch: ReturnType<typeof vi.fn> }, billId: number) =>
+    q.sendBatch.mock.calls.flatMap(c => c[0].map((m: any) => m.body)).find((b: any) => b.billId === billId)?.matchProvenance
+
+  it("declares the first pass's matches bulk, since it seeds the instance", async () => {
+    const db = drizzle(env.DB, { schema })
+    const { env: e, limsQueue } = makeEnv()
+
+    await runLimsSync(e, db)
+
+    expect(provenanceOf(limsQueue, B0400)).toEqual({ oca: 'bulk' })
+  })
+
+  it('declares a matching bill filed after the first pass routine', async () => {
+    const db = drizzle(env.DB, { schema })
+    await runLimsSync(makeEnv().env, db)
+    const filed = {
+      ...bulk['B26-0400'], legislationNumber: 'B26-0990',
+      legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B26-0990' })),
+    }
+    vi.mocked(lims.getBulkData).mockImplementation(async (categoryId: number) =>
+      categoryId === 1 ? [bulk['B26-0400'], bulk['B26-0769'], bulk['B26-0001'], filed]
+        : categoryId === 18 ? [bulk['HN26-0171']] : [])
+    const { env: e, limsQueue } = makeEnv()
+
+    await runLimsSync(e, db, { force: true })
+
+    expect(provenanceOf(limsQueue, limsBillId('B26-0990')!)).toEqual({ oca: 'routine' })
+  })
+
+  it("declares an import's matches bulk even beside a bill the instance already holds", async () => {
+    const db = drizzle(env.DB, { schema })
+    await runLimsSync(makeEnv().env, db)
+    const filed = {
+      ...bulk['B26-0400'], legislationNumber: 'B26-0991',
+      legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B26-0991' })),
+    }
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number) => c === 1 ? [bulk['B26-0400'], filed] : [])
+    const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    const { app } = await import('../../src/index-legiscan')
+
+    const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
+      method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'oca', numbers: ['B26-0400', 'B26-0991'] }),
+    }), e)
+
+    expect(res.status).toBe(200)
+    expect(provenanceOf(limsQueue, limsBillId('B26-0991')!)).toEqual({ oca: 'bulk' })
+  })
+
+  it("declares an operator import's matches bulk", async () => {
+    const db = drizzle(env.DB, { schema })
+    await db.insert(schema.keywordRegistry).values({ tenantId: 'oca', keyword: 'accountability' })
+    const CP25 = { councilPeriodId: 25, councilPeriod: '25 (2023-24)', startDate: '2023-01-02T00:00:00', endDate: '2024-12-31T00:00:00' }
+    const secureDc = {
+      ...bulk['B26-0400'], legislationNumber: 'B25-0345', title: 'Accountability and Victim Protection Amendment Act of 2023',
+      legislationHistory: bulk['B26-0400'].legislationHistory.map(h => ({ ...h, legislationNumber: 'B25-0345' })),
+    }
+    vi.mocked(lims.getCouncilPeriods).mockResolvedValue([PERIOD, CP25])
+    vi.mocked(lims.getBulkData).mockImplementation(async (c: number, cp: number) =>
+      cp === 25 && c === 1 ? [secureDc] : c === 1 ? [bulk['B26-0400']] : [])
+    const { env: e, limsQueue } = makeEnv({ ADMIN_SECRET: 'test-secret' })
+    const { app } = await import('../../src/index-legiscan')
+
+    const res = await app.fetch(new Request('http://central/api/admin/lims-import', {
+      method: 'POST', headers: { 'x-admin-secret': 'test-secret', 'content-type': 'application/json' },
+      body: JSON.stringify({ tenantId: 'oca', numbers: ['B25-0345'] }),
+    }), e)
+
+    expect(res.status).toBe(200)
+    expect(provenanceOf(limsQueue, limsBillId('B25-0345')!)).toEqual({ oca: 'bulk' })
+  })
+})
+
 describe('ingesting a LIMS bill', () => {
   it('builds the bill from the stored record plus LegislationDetails and notifies the tenant', async () => {
     const db = drizzle(env.DB, { schema })

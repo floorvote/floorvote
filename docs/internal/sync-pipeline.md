@@ -446,7 +446,7 @@ For each masterlist entry:
 1. **Bills row maintenance.** If new: `INSERT … ON CONFLICT DO NOTHING` with new `change_hash` and masterlist metadata. If existing-and-changed: `UPDATE bills SET change_hash, title, status, …`. (These writes commit *before* any queue send — see "ordering" below.)
 2. **Keyword matching.** Build the match text with `billMatchText` (`shared/keywords.ts`: title + description + number, the same text every instance-side check uses, where `description` is the instance's `abstract`), test against per-tenant keyword union, compute `newMatchType ∈ { 'keyword', 'manual', null }`. `'manual'` is never demoted by this loop. Upsert `bill_tenants` rows.
 3. **Dispatch:**
-   - **→ ingestor queue** (will trigger `getBill`): bill IDs that are `justMatched` (newMatchType ≠ prev and ≠ null) OR `alreadyMatchedAndChanged` (existing match + hash changed).
+   - **→ ingestor queue** (will trigger `getBill`): bill IDs that are `justMatched` (newMatchType ≠ prev and ≠ null) OR `alreadyMatchedAndChanged` (existing match + hash changed). A `justMatched` keyword match also goes on the message's `matchProvenance`, by tenant: `'routine'` only when the pass creates the link, the bill is new to central (no row, or only the raw pass's empty-hash row), and the tenant already follows the state: it had a link to some bill of this list, or (one indexed `EXISTS` per remaining covering tenant) to any bill of the state, linked before this pass, so a new session's prefiling pass is routine for a tenant that followed the state before. Anything else is `'bulk'`: a tenant's first pass over a state it never followed seeds it, a bill central already had was passed over by a seed or an earlier pass, an existing monitored link that starts to match is a keyword or title change, a pass that queues a bill a cutover moved here for its first ingest (`carried_from` set, and in this pass's queue, whether it was tracked already, starts to match now, has a changed hash with no title in the list, or `ingestMovedBills` queues it) is a cutover's pass (an untracked moved bill LegiScan never ingests after an undo keeps `carried_from` for good, so it doesn't count until it is queued), and an operator import passes `bulk: true`. `seed-session` and `sync-keywords` declare their matches bulk too. Instances keep the declaration with the match, treat a missing one as bulk, and list only routine matches in the digest (#364).
    - **→ ingestor queue, match or no match**: bills whose masterlist entry carries **no title** and whose hash changed (a brand-new row counts as changed). There is nothing to keyword-match against, and `getBill` is the only way to get a real title, description, sponsor, and history — so these go to the ingestor even when no tenant matches them. Self-limiting: the ingestor writes the fresh `change_hash`, so later passes see no delta and don't re-queue.
    - **→ ingestor queue, tracked or not, in a snapshot provider's pass**: bills a cutover moved there that haven't had their first ingest (`carried_from` set), after the pass's other bills. LegiScan's pass queues only tracked ones (see "Moving a state to another provider").
    - **→ tenant queue directly** (no API call): `stubOnly` messages for `match_type=null` link changes, so the tenant refreshes denormalized fields from central's `/bills/:id`.
@@ -504,7 +504,7 @@ It hands the result to `ingestMeasure`, which unconditionally:
 
 ### notifyTenants
 
-Reads `bill_tenants` rows for this bill (joined to `tenants` for `queue_id`), then sends one message per covering tenant to that tenant's queue: `{ tenantId, billId: 'legiscan:<id>', forceMetadata, forceAI, matchType, changes }`. Sets `bill_tenants.notified_at`.
+Reads `bill_tenants` rows for this bill (joined to `tenants` for `queue_id`), then sends one message per covering tenant to that tenant's queue: `{ tenantId, billId: 'legiscan:<id>', forceMetadata, forceAI, matchType, changes }`, plus that tenant's own `matchProvenance` when the ingestor message declared one for it. Sets `bill_tenants.notified_at`.
 
 Delivery goes through `deliverToTenant` ([central/src/lib/tenantDelivery.ts](../../central/src/lib/tenantDelivery.ts)): **binding-first** — if a static `TENANT_QUEUE_<ID>` producer binding exists it uses `queue.send`/`sendBatch` (unchanged) — else it **HTTP-publishes by `queue_id`** via the Queues REST API (`CF_QUEUES_TOKEN`), so a tenant onboarded without a static binding still receives bills. Only when neither exists is the message dropped (logged).
 
@@ -601,6 +601,20 @@ So `POST /tenants/reprocess/:tenantId` (`forceMetadata: true`) gets past the ear
 - **Central R2** — bill text files at `bills/legiscan-{billId}/texts/{docId}.{ext}`.
 
 *`roll_call_votes` are populated by the weekly vote-dataset load, the bulk-seed script, and snapshot providers' ingests (see the note under "Normal branch"), not by a LegiScan `getBill` ingest.
+
+### Bill text encoding
+
+Some states publish HTML bill text as windows-1252, not UTF-8. Central stores the bytes exactly as fetched, and decodes them when it serves them (`decodeStoredHtml` in `central/src/lib/decodeHtml.ts`), so `GET /bills/:id/text` (which the analysis path reads) and `GET /bills/:id/text/:docId` (which the bill text panel reads) both return text with curly quotes, section signs, and dashes intact. The inline endpoint re-serves HTML as UTF-8 whatever the source charset was.
+
+The decoder picks a charset in this order:
+
+1. The charset on the stored `Content-Type`, then a `<meta charset>` or `http-equiv` tag in the first 4 KB of the document. A windows-1252 or ISO-8859-1 label gives way to valid UTF-8, because servers mislabel UTF-8 files and those decoded correctly before this change.
+2. UTF-8, when the bytes are valid UTF-8. A declaration that says UTF-8 over bytes that aren't lands here too.
+3. windows-1252.
+
+PDFs are binary and never go through the decoder.
+
+There is no backfill, and none is needed: the R2 objects are unchanged. A bill that was analyzed from garbled text keeps that analysis until its next run, which reads the decoded text. That happens when the bill gets a new text version, or when an operator forces a re-analysis (`POST /admin/reprocess-bill/:externalId` for one bill, `POST /admin/reprocess-llm-all` for many), which bypasses the text-hash dedup described above. Until then the bill text panel is already correct, because it reads the same endpoint.
 
 The tenant has no per-bill relational tables — supplements, amendments, sponsors, votes, calendar, etc. are read live from central by the tenant API's bill-detail route.
 

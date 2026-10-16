@@ -33,8 +33,8 @@ function MaterialIcon({ name, color: c, size = 14, fill = 0 }: { name: string; c
 }
 
 /**
- * The Feed's card for an event about no single bill, such as a bulk edit: one
- * activity row, expandable to the bills it touched. A bill-less event has no bill
+ * The Feed's card for an event about no single bill, such as a bulk edit or the
+ * day's new matches: one activity row, expandable to the bills it names. A bill-less event has no bill
  * to head a card with, so this is not a GroupedBillCard. The bills load on first
  * expand (GET /feed/events/:id/bills), not with the feed, so a bulk edit that
  * names hundreds of bills costs nothing until someone asks to see them.
@@ -128,6 +128,17 @@ export function FeedActivityRow({ event, seenAt = null, currentUserId = null }: 
           {load.status === 'done' && load.bills.map((b, i) => (
             <BillLink key={b.id} bill={b} first={i === 0} />
           ))}
+          {event.type === 'new_matches' && (
+            <Link
+              to="/bills?newMatches=1"
+              style={{
+                display: 'block', padding: '8px 14px', fontSize: fontSize.sm, color: color.linkBlue, textDecoration: 'none',
+                borderTop: `1px solid ${CARD_STYLE.rowBorder}`,
+              }}
+            >
+              See all new matches
+            </Link>
+          )}
         </div>
       )}
     </div>

@@ -74,6 +74,16 @@
 
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
 
+**New match**: a bill that keyword matching brought into an instance and that no admin has triaged yet (set a priority or dismissed), at or above the instance's minimum relevance for new matches. Admins see new matches in the triage list and the "N new" chip, routine and bulk alike. A match stops being new once any bill in its companion group is triaged, because triaging one bill triages the group. Avoid: "new bill," which suggests the bill was just filed.
+
+**Match provenance**: where a new match came from, declared by central when it links the bill to the instance and sent with the bill: routine or bulk. The instance keeps it with the match and on the matched event. A match with none (any match from before provenance existed) is bulk. Avoid: "source," which already means a calendar event's source and a bill's page on the legislature's site.
+
+**Routine match**: a new match the regular sync made by finding a bill new to central, for an instance that already follows the bill's state (it holds links to bills of the state), such as a bill filed mid-session or prefiled for a new session. The only new matches that reach the digest and the feed.
+
+**Bulk match**: a new match from anything that matches bills in bulk: a session seed, a keyword re-run, an operator import or backfill, an instance's first sync of a state it never followed, a provider cutover, or an existing monitored bill that starts to match. It stays in the triage list, where bulk dismiss handles it, and out of the digest and the feed. Avoid: "bulk event," which is a bulk edit's one feed event.
+
+**New-matches row**: the feed's one summary row a day for routine new matches ("5 new bills matched your keywords"), shown to every member and expandable to the matched bills. It is a bill-less feed event of its own type, written when a routine match above the instance's minimum relevance is recorded (never for a bulk match or one with no provenance), so a match from before the row existed never appears. It lights the feed dot, and a matched bill that already has a priority keeps its normal card instead. Avoid: "new-match event," which is the per-bill matched event that only the analyzed feed scope lists.
+
 **Notification**: one stored item in a member's notifications panel, telling them about an event on a bill's comments, of a kind (a mention, a reply, or a reaction). Written when the event happens, marked read when the member opens the panel or the bill, and hidden once its comment is deleted. Avoid: "alert"; "mention" for a notification of another kind.
 
 **Muted bill**: a bill whose comments a member has muted, from the bill page or a reply email. It sends them no reply notifications, in the app or by email, but mentions on it (direct, role, @admins, or @everyone) still reach them. A member can mute a bill before ever commenting on it, unmute it from the bill page, and stays muted when a draft they muted is linked to its filed bill. A companion group is one conversation, so muting any of its bills mutes the group, and unmuting any of them unmutes it. Avoid: "unsubscribed," "unfollowed."

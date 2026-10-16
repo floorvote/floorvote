@@ -9,9 +9,10 @@ import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { newMatchWhere } from '../../lib/newMatch'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
-  groupUntriaged, groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
+  groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
   holdsGroupPriority, inGroupOfHeld, type BillsTable,
 } from '../../lib/teamFields'
 import { inGroupsOf, loadVotedInGroups } from '../../lib/companionGroups'
@@ -23,21 +24,6 @@ export function billsAs(name: string): BillsTable {
 
 /** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
 export type BillsFilter = (t: BillsTable) => SQL | undefined
-
-// "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
-// Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
-// can't drift. COALESCE(relevance,0) means with the default threshold 0 a match with
-// no relevance score still qualifies; a positive threshold excludes it until scored.
-// Triaging any bill in a companion group triages the group, so a bill whose
-// companion was triaged is no longer new.
-export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL {
-  return and(
-    eq(t.matchType, 'keyword'),
-    isNotNull(t.newMatchAt),
-    groupUntriaged(t),
-    sql`COALESCE(${t.relevanceScore}, 0) >= ${minRelevance}`,
-  )!
-}
 
 // Sentinel filter value: "has any value in this dimension" (position, custom-field
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
