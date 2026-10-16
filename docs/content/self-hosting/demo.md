@@ -6,14 +6,21 @@ description: "Run a public, no-signup FloorVote instance by deploying a tenant w
 
 Most deployments don't need this — **skip this page and every tenant is a normal, sign-in-required instance.**
 
-A "demo site" is just a regular tenant deployed with one extra var, `DEMO_MODE = "true"` (in `[env.<id>.vars]` in `api/wrangler.toml`). That one flag turns the tenant into a public, no-signup showcase:
+A "demo site" is just a regular tenant deployed with one extra var, `DEMO_MODE = "true"` (in `[env.<id>.vars]` in `api/wrangler.toml`), and a reset cron. The flag turns the tenant into a public, no-signup showcase:
 
 - **Auto-login.** Visitors without a session are silently signed in as a shared demo user — no magic link.
 - **No outbound email.** Digests and notifications are never sent from a demo tenant.
 - **Additive actions only.** Visitors can comment, vote, react, take notes, and set priorities, positions, and custom fields. Destructive and admin actions are refused. See [What a visitor can change](#what-a-visitor-can-change) below.
-- **Reset every six hours.** A cron at 00:00, 06:00, 12:00, and 18:00 UTC resets and re-seeds the tenant to a known state. You can also trigger it by hand with `POST /api/internal/demo-reset`.
+- **Reset every six hours.** A cron at 00:00, 06:00, 12:00, and 18:00 UTC resets and re-seeds the tenant to a known state. You add that cron yourself (see below). You can also trigger a reset by hand with `POST /api/internal/demo-reset`.
 
-To run one, deploy a tenant exactly as in [Adding tenants](/self-hosting/tenants), with `DEMO_MODE = "true"` added to its vars (see [Choosing the demo content](#choosing-the-demo-content) for what else the seed controls). To not run one, just leave `DEMO_MODE` out.
+To run one, deploy a tenant as in [Adding tenants](/self-hosting/tenants), with `DEMO_MODE = "true"` added to its vars (see [Choosing the demo content](#choosing-the-demo-content) for what else the seed controls). Change one thing in its config block: replace the two crons in `[env.<id>.triggers]` with the reset cron, because a demo tenant never sends digests or re-runs AI, and any cron it receives runs the reset.
+
+```toml
+[env.<id>.triggers]
+crons = ["0 0,6,12,18 * * *"]
+```
+
+To not run a demo, just leave `DEMO_MODE` out.
 
 ## What a visitor can change
 

@@ -21,7 +21,7 @@ vi.mock('../lib/api', () => ({
   apiFetch: vi.fn(async (path: string) => {
     if (path === '/auth/me') {
       return {
-        id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
+        id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
         canVote: true, emailDigestEnabled: false, emailWeekAheadEnabled: false,
         lastSeenFeed: null, isLastOwner: false,
       }

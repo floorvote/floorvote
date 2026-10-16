@@ -96,7 +96,7 @@ describe('GET /bills default-list caching', () => {
     await seedBill({ billNumber: 'SB 2', title: 'Voter ID Act', priority: 'low', status: 'Passed' })
   })
 
-  it('serves the second identical default request from cache (shared rows stale, enrichment fresh)', async () => {
+  it('serves the second identical default request from cache (page stale, rows and enrichment fresh)', async () => {
     const first = await list(token)
     expect(first.bills).toHaveLength(2)
     const hb1 = first.bills.find(b => b.billNumber === 'HB 1')!
@@ -104,7 +104,9 @@ describe('GET /bills default-list caching', () => {
     expect(hb1.voteCounts).toEqual({ support: 0, oppose: 0, neutral: 0 })
 
     const db = getDb(env.DB)
-    // Mutate the SHARED bill data directly: a cached response must NOT reflect this.
+    // A bill added after the page was cached must NOT show up: the page is the cached part.
+    await seedBill({ billNumber: 'HB 3', title: 'Third Bill', priority: 'medium', status: 'Introduced' })
+    // What the page's bills show is read fresh, so a change to one does.
     await db.update(bills).set({ title: 'CHANGED TITLE' }).where(eq(bills.id, hb1.id))
     // Cast a vote: enrichment is recomputed fresh, so this MUST show up.
     await db.insert(memberVotes).values({
@@ -112,10 +114,10 @@ describe('GET /bills default-list caching', () => {
     })
 
     const second = await list(token)
+    expect(second.bills.map(b => b.billNumber).sort()).toEqual(['HB 1', 'SB 2'])
+    expect(second.pagination.total).toBe(2)
     const hb1b = second.bills.find(b => b.billNumber === 'HB 1')!
-    // Cached shared rows: title unchanged.
-    expect(hb1b.title).toBe('Election Act')
-    // Fresh enrichment: vote count reflects the new vote.
+    expect(hb1b.title).toBe('CHANGED TITLE')
     expect(hb1b.voteCounts.support).toBe(1)
   })
 

@@ -50,7 +50,7 @@ vi.mock('../lib/api', () => ({
             billState: 'NJ',
             sessionSlug: 'session-1',
             authorName: 'Alice Author',
-            authorSubtitle: 'Research Associate',
+            authorTitle: 'Research Associate',
             commentPreview: 'preview',
             commentHtml: '<p>Please review.</p>',
             sourceType: 'role',
@@ -71,7 +71,7 @@ vi.mock('../lib/api', () => ({
             billState: 'NJ',
             sessionSlug: 'session-1',
             authorName: 'Karen Waters',
-            authorSubtitle: null,
+            authorTitle: null,
             commentPreview: 'preview',
             commentHtml: '<p><span data-type="mention" data-id="role:r2" data-label="Infrastructure">@Infrastructure</span> can someone cover the hearing?</p>',
             sourceType: 'role',
@@ -88,14 +88,14 @@ vi.mock('../lib/api', () => ({
           id: 'r1',
           name: 'Board',
           members: [
-            { id: 'u1', name: 'Alice Member', subtitle: null },
-            { id: 'u2', name: 'Bob Member', subtitle: 'Treasurer' },
+            { id: 'u1', name: 'Alice Member', title: null },
+            { id: 'u2', name: 'Bob Member', title: 'Treasurer' },
           ],
         },
         {
           id: 'r2',
           name: 'Infrastructure',
-          members: [{ id: 'u3', name: 'Carol Member', subtitle: null }],
+          members: [{ id: 'u3', name: 'Carol Member', title: null }],
         },
       ]
     }
@@ -144,10 +144,10 @@ describe('NotificationsSlideOver row layout', () => {
     expect(line.textContent).toMatch(/Alice Author\s+mentioned\s+@Board/)
   })
 
-  it('omits the author subtitle', async () => {
+  it('omits the author title', async () => {
     renderPanel()
     await screen.findByText('@Board')
-    // Deliberately dropped: in a 400px panel the subtitle cost a line's worth of
+    // Deliberately dropped: in a 400px panel the title cost a line's worth of
     // attention for a detail the name usually carries. The API still sends it.
     expect(screen.queryByText(/Research Associate/)).toBeNull()
   })
@@ -274,7 +274,7 @@ describe('NotificationsSlideOver instant open', () => {
       billState: 'NJ',
       sessionSlug: 'session-1',
       authorName: 'Late Sender',
-      authorSubtitle: null,
+      authorTitle: null,
       commentPreview: 'preview',
       commentHtml: '<p>Just landed.</p>',
       sourceType: 'user',
@@ -304,7 +304,7 @@ describe('NotificationsSlideOver instant open', () => {
       billState: 'NJ',
       sessionSlug: 'session-1',
       authorName: 'Late Sender',
-      authorSubtitle: null,
+      authorTitle: null,
       commentPreview: 'preview',
       commentHtml: '<p>Just landed.</p>',
       sourceType: 'user',

@@ -14,9 +14,10 @@ import { useConfig } from '../context/ConfigContext'
  */
 export function useStageFilterUseful(): boolean {
   const { config } = useConfig()
-  if (!config) return true
   // /config names no provider per state, but `attribution.providers` lists exactly the providers that own a covered state.
-  return (config.attribution?.providers ?? []).some(p => p.id !== 'legiscan')
+  // It is absent until central has named them, which is not yet knowing the states are LegiScan's.
+  if (!config?.attribution) return true
+  return config.attribution.providers.some(p => p.id !== 'legiscan')
 }
 
 export function useHasBodyEvents(): boolean {

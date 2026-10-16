@@ -6,6 +6,8 @@ export const users = sqliteTable('users', {
   email: text('email').notNull().unique(),
   name: text('name').notNull().default(''),
   role: text('role', { enum: ['admin', 'member', 'owner'] }).notNull().default('member'),
+  title: text('title'),
+  // The old name for `title`, kept in sync until the drop migration (follow-up issue), so the previous build still works if a deploy is rolled back.
   subtitle: text('subtitle'),
   invitedBy: text('invited_by'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
@@ -60,6 +62,39 @@ export const authEvents = sqliteTable('auth_events', {
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   // Who caused the event when it isn't the member it's about (migration 0075).
   actorId: text('actor_id'),
+})
+
+// A member's pending change of sign-in email (migration 0086). At most one per
+// member. Deleted when it is confirmed or cancelled, which makes its token
+// single use. See lib/emailChange.ts.
+export const emailChanges = sqliteTable('email_changes', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  oldEmail: text('old_email').notNull(),
+  newEmail: text('new_email').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  // The session a self-service request came from, kept signed in at commit.
+  requestingSessionId: text('requesting_session_id'),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+})
+
+// The "This wasn't me" tokens of an email change's old-address notices
+// (migration 0090). Single use: pressing one deletes every row for its change.
+// See lib/emailChangeReport.ts.
+export const emailChangeReports = sqliteTable('email_change_reports', {
+  id: text('id').primaryKey(),
+  // The email_changes row the notice was about. That row may be gone by now.
+  changeId: text('change_id').notNull(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  oldEmail: text('old_email').notNull(),
+  newEmail: text('new_email').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  requestedAt: text('requested_at').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 
 // Per-hour, per-provider send counters for the email-health job (migration 0073).
@@ -120,6 +155,9 @@ export const bills = sqliteTable('bills', {
   // migrations/0066_affected_citations.sql for why these are not normalised.
   affectedCitations: text('affected_citations').notNull().default('[]'),
   priority: text('priority', { enum: ['high', 'medium', 'low'] }),
+  // When the priority was last set (migration 0101). A companion group reads
+  // its priority from the member where it was set most recently.
+  prioritySetAt: text('priority_set_at'),
   sponsor: text('sponsor'),
   sponsorParty: text('sponsor_party'),
   sponsorUrl: text('sponsor_url'),
@@ -185,7 +223,59 @@ export const bills = sqliteTable('bills', {
   draftText: text('draft_text'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
   updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+  // The bill's companion group: the smallest id among the bills linked to it by
+  // identical relationships, or null for a bill with none in this instance
+  // (migration 0100). Written only by lib/companionGroups.ts.
+  groupKey: text('group_key'),
+  // The tags of the bill's companion group's current analysis, or its own tags
+  // when it's in no group, as a JSON array (migration 0103). A tag filter tests
+  // these. Written only by the triggers 0103 creates, never by the app.
+  groupTags: text('group_tags').notNull().default('[]'),
 })
+
+// Identical relationships, as central's vocabulary reads them, by bill handle
+// on both sides (migration 0100). One row per bill naming a companion, so a
+// companion the instance doesn't hold yet is still remembered. Companion groups
+// are computed from these in either direction. Written only by
+// lib/companionGroups.ts.
+export const billIdenticalLinks = sqliteTable('bill_identical_links', {
+  externalId: text('external_id').notNull(),
+  companionExternalId: text('companion_external_id').notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.externalId, t.companionExternalId] }),
+  index('idx_bill_identical_links_companion').on(t.companionExternalId),
+])
+
+// An admin's overrides of companion groups (migration 0104), one row per pair
+// of bills, smaller id first: `link` groups the two as an identical link would,
+// and `split` removes any identical link between them. The group recompute
+// reads them with the provider's links on every sync (lib/companionGroups.ts).
+export const billGroupOverrides = sqliteTable('bill_group_overrides', {
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  otherBillId: text('other_bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  kind: text('kind', { enum: ['link', 'split'] }).notNull(),
+  actorUserId: text('actor_user_id'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  primaryKey({ columns: [t.billId, t.otherBillId] }),
+  index('idx_bill_group_overrides_other').on(t.otherBillId),
+])
+
+// Structured events about a bill's team-level state, one row per bill (migration
+// 0100): a companion group forming or splitting so far. `type` has no CHECK
+// constraint, so a new kind of event needs no table rebuild. A null actor
+// means FloorVote did it automatically. Metadata is per type: see
+// shared/companionGroups.ts for grouping events.
+export const teamEvents = sqliteTable('team_events', {
+  id: text('id').primaryKey(),
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  actorUserId: text('actor_user_id'),
+  metadata: text('metadata').notNull().default('{}'),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  index('idx_team_events_bill').on(t.billId, t.createdAt),
+])
 
 export const billSubjects = sqliteTable('bill_subjects', {
   billId:      text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
