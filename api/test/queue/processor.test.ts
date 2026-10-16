@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { resetDb, applyMigrations } from '../helpers'
+import { resetDb, applyMigrations, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { processCentralNotification, processQueue, shedRetryDelay } from '../../src/queue/processor'
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { bills, associationConfig, billTexts, feedEvents, billSubjects } from '../../src/db/schema'
 import { parseSubjects } from '../../src/lib/billSubjects'
+import { addToNewMatchesRow } from '../../src/lib/newMatch'
 import type { TenantQueueMessage } from '../../src/types'
 
 vi.mock('../../src/lib/llm', async (importOriginal) => {
@@ -437,6 +438,88 @@ describe('processCentralNotification', () => {
     const rows = await newMatchRows(db)
     expect(rows).toHaveLength(1)
     expect(JSON.parse(rows[0].metadata).billIds).toHaveLength(1)
+  })
+
+  // Triaging any bill in a companion group triages the group, so a routine match whose
+  // companion was triaged is no longer new and never joins the row. These call
+  // addToNewMatchesRow directly: the processor recomputes group keys from the provider's
+  // relationships on each delivery, which would overwrite a group set up by hand here.
+  describe('the new-matches row and companion groups', () => {
+    const routine = (billNumber: string, more: Parameters<typeof seedBill>[0] = {}) =>
+      seedBill({ billNumber, matchType: 'keyword', matchProvenance: 'routine', newMatchAt: '2026-06-21 00:00:00', relevanceScore: 8, ...more })
+    // Groups bills the way a recompute writes the key: the smallest member id.
+    const group = (db: ReturnType<typeof getDb>, ...ids: string[]) =>
+      db.update(bills).set({ groupKey: [...ids].sort()[0] }).where(inArray(bills.id, ids))
+
+    it('leaves out a routine new match whose companion in the same group was triaged', async () => {
+      const db = getDb(env.DB)
+      const fresh = await routine('GRP 1')
+      const triaged = await routine('GRP 2', { triagedAt: '2026-06-22 00:00:00' })
+      await group(db, fresh, triaged)
+
+      await addToNewMatchesRow(db, fresh)
+
+      // GRP 1 has no triage of its own, but its companion's triage triages the group.
+      expect(await newMatchRows(db)).toHaveLength(0)
+    })
+
+    it('leaves out the match but still adds an ungrouped one beside it', async () => {
+      const db = getDb(env.DB)
+      const fresh = await routine('GRP 1')
+      // The triaged companion is not itself a new match (no newMatchAt).
+      const triaged = await seedBill({ billNumber: 'GRP 2', matchType: 'keyword', triagedAt: '2026-06-22 00:00:00' })
+      await group(db, fresh, triaged)
+      const solo = await routine('SOLO 1')
+
+      await addToNewMatchesRow(db, fresh)
+      await addToNewMatchesRow(db, solo)
+
+      const rows = await newMatchRows(db)
+      expect(rows).toHaveLength(1)
+      expect(JSON.parse(rows[0].metadata).billIds).toEqual([solo])
+    })
+
+    it('adds a routine new match in a group where no member is triaged', async () => {
+      const db = getDb(env.DB)
+      const first = await routine('GRP 1')
+      // A companion that is neither a new match nor triaged.
+      const second = await seedBill({ billNumber: 'GRP 2', matchType: 'keyword' })
+      await group(db, first, second)
+
+      await addToNewMatchesRow(db, first)
+
+      const rows = await newMatchRows(db)
+      expect(rows).toHaveLength(1)
+      expect(JSON.parse(rows[0].metadata).billIds).toEqual([first])
+    })
+
+    it('adds every routine new match of an untriaged group to the one row', async () => {
+      const db = getDb(env.DB)
+      const first = await routine('GRP 1')
+      const second = await routine('GRP 2')
+      await group(db, first, second)
+
+      await addToNewMatchesRow(db, first)
+      await addToNewMatchesRow(db, second)
+
+      const rows = await newMatchRows(db)
+      expect(rows).toHaveLength(1)
+      expect(JSON.parse(rows[0].metadata).billIds).toEqual([first, second])
+    })
+
+    it('does not let a triaged bill in another group affect a new match', async () => {
+      const db = getDb(env.DB)
+      const fresh = await routine('GRP 1')
+      const freshMate = await seedBill({ billNumber: 'GRP 2', matchType: 'keyword' })
+      const otherA = await seedBill({ billNumber: 'OTH 1', matchType: 'keyword' })
+      const otherB = await seedBill({ billNumber: 'OTH 2', matchType: 'keyword', triagedAt: '2026-06-22 00:00:00' })
+      await group(db, fresh, freshMate)
+      await group(db, otherA, otherB)
+
+      await addToNewMatchesRow(db, fresh)
+
+      expect(JSON.parse((await newMatchRows(db))[0].metadata).billIds).toEqual([fresh])
+    })
   })
 
   // ── AI must not run on a demo tenant, and must not re-run on metadata refresh ──
