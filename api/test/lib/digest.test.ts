@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { feedEvents, associationConfig } from '../../src/db/schema'
+import { feedEvents, associationConfig, bills } from '../../src/db/schema'
 import { runDigest } from '../../src/lib/digest'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -299,5 +299,101 @@ describe('runDigest', () => {
     const result = await runDigest(env as any, db)
     expect(calls).toHaveLength(0) // below threshold → excluded → nothing to send
     expect(result.sent).toBe(0)
+  })
+
+  // Triaging any bill in a companion group triages the group (groupUntriaged), so a match
+  // whose companion was triaged is no longer new and stays out of the digest.
+  describe('companion groups', () => {
+    // Groups bills the way a recompute writes the key: the smallest member id.
+    async function group(db: ReturnType<typeof getDb>, ...ids: string[]) {
+      await db.update(bills).set({ groupKey: [...ids].sort()[0] }).where(inArray(bills.id, ids))
+    }
+    const captureEmails = () => {
+      const calls: any[] = []
+      vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => { calls.push(JSON.parse(init.body)); return new Response('{}', { status: 200 }) }))
+      return calls
+    }
+
+    it('leaves out a routine new match whose companion in the same group was triaged', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const triaged = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, triaged)
+      const calls = captureEmails()
+
+      const result = await runDigest(env as any, db)
+
+      // GRP 1 has no triage of its own, but its companion's triage triages the group.
+      expect(calls).toHaveLength(0)
+      expect(result.sent).toBe(0)
+    })
+
+    it('leaves out the match but still lists an ungrouped new match beside it', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      // The triaged companion is not itself a new match (it has no newMatchAt).
+      const triaged = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, triaged)
+      await seedBill({ billNumber: 'SOLO 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].html).toContain('New matches (1)')
+      expect(calls[0].html).toContain('SOLO 1')
+      expect(calls[0].html).not.toContain('GRP 1')
+    })
+
+    it('lists a routine new match in a group where no member is triaged', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      // A companion that is not a new match (no newMatchAt) and not triaged either.
+      const second = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      await group(db, first, second)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].html).toContain('New matches (1)')
+      expect(calls[0].html).toContain('GRP 1')
+    })
+
+    it('lists every routine new match of an untriaged group', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const first = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const second = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 80 })
+      await group(db, first, second)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].html).toContain('New matches (2)')
+      expect(calls[0].html).toContain('GRP 1')
+      expect(calls[0].html).toContain('GRP 2')
+    })
+
+    it('does not let a triaged bill in another group affect a new match', async () => {
+      const db = getDb(env.DB); await enableModule(db)
+      const admin = await seedUser({ email: 'admin@e.com', role: 'admin' }); await seedSession(admin)
+      const fresh = await seedBill({ billNumber: 'GRP 1', state: 'RI', session: '2026', matchType: 'keyword', matchProvenance: 'routine', newMatchAt: recentMatch(), relevanceScore: 90 })
+      const freshMate = await seedBill({ billNumber: 'GRP 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      const otherA = await seedBill({ billNumber: 'OTH 1', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90 })
+      const otherB = await seedBill({ billNumber: 'OTH 2', state: 'RI', session: '2026', matchType: 'keyword', relevanceScore: 90, triagedAt: recentMatch() })
+      await group(db, fresh, freshMate)
+      await group(db, otherA, otherB)
+      const calls = captureEmails()
+
+      await runDigest(env as any, db)
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0].html).toContain('GRP 1')
+    })
   })
 })

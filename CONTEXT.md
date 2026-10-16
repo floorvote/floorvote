@@ -72,7 +72,7 @@
 
 **Capability**: what a state's data can do, from the provider that owns the state, such as body events or deadlines. Instances gate features on capabilities, never on a state's name.
 
-**New match**: a bill that keyword matching brought into an instance and that no admin has triaged yet (set a priority or dismissed), at or above the instance's minimum relevance for new matches. Admins see new matches in the triage list and the "N new" chip, routine and bulk alike. Avoid: "new bill," which suggests the bill was just filed.
+**New match**: a bill that keyword matching brought into an instance and that no admin has triaged yet (set a priority or dismissed), at or above the instance's minimum relevance for new matches. Admins see new matches in the triage list and the "N new" chip, routine and bulk alike. A match stops being new once any bill in its companion group is triaged, because triaging one bill triages the group. Avoid: "new bill," which suggests the bill was just filed.
 
 **Match provenance**: where a new match came from, declared by central when it links the bill to the instance and sent with the bill: routine or bulk. The instance keeps it with the match and on the matched event. A match with none (any match from before provenance existed) is bulk. Avoid: "source," which already means a calendar event's source and a bill's page on the legislature's site.
 
