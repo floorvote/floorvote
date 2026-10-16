@@ -12,7 +12,7 @@ function group(events: Partial<FeedEvent>[], over: Partial<GroupedBillEvents> = 
     events: events.map((e, i) => ({
       id: `e${i}`, type: 'bill_updated', billId: 'b1', billNumber: 'H 5174', billSessionSlug: '2026', billState: 'RI',
       billTitle: 'Mail ballot processing', billSummary: null, billPriority: 'high', billMatchType: 'keyword',
-      userId: 'user-1', userName: 'Will', userSubtitle: null, metadata: {}, createdAt: '2026-06-03T10:00:00Z', ...e,
+      userId: 'user-1', userName: 'Will', userTitle: null, metadata: {}, createdAt: '2026-06-03T10:00:00Z', ...e,
     })) as FeedEvent[],
     ...over,
   }
@@ -94,7 +94,7 @@ describe('buildActivityRowModel', () => {
   const event = (over: Partial<FeedEvent>): FeedEvent => ({
     id: 'e1', type: 'priority_set', billId: null, billNumber: '', billSessionSlug: null, billState: null,
     billTitle: '', billSummary: null, billPriority: null, billMatchType: null,
-    userId: 'user-1', userName: 'Ada Admin', userSubtitle: null,
+    userId: 'user-1', userName: 'Ada Admin', userTitle: null,
     metadata: { priority: 'high', count: 34, billIds: ['b1'] }, createdAt: '2026-06-03T10:00:00Z', ...over,
   })
 

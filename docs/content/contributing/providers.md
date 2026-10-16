@@ -29,7 +29,7 @@ A field only your feed publishes goes in **extras**: display-only values the bil
 
 ### Official feeds only
 
-Read the legislature's own API or its published data files. Parsing HTML pages is a last resort: do it only when no API or data file has the data you need. Use an undocumented endpoint only when an error, an unexpected shape, or an empty answer from it changes nothing. Check the feed's terms before you start. Virginia's LIS API has bill text and meeting schedules, for example, but its terms are non-commercial, so that provider reads the CSV files only.
+Read the legislature's own API or its published data files. Parsing HTML pages is a last resort: do it only when no API or data file has the data you need. Use an undocumented endpoint only when an error, an unexpected shape, or an empty answer from it changes nothing. Check the feed's terms before you start. Virginia's LIS API has bill text and meeting schedules, for example, but its terms allow non-commercial use only. So that provider reads the CSV files by default, and adds bill text from the API only when a deployment sets the optional `LIS_API_KEY` (the API is the only source of Virginia text). Make a key like that optional, as LIMS's is required: without it the provider still runs, with less data.
 
 ### Fail closed
 

@@ -84,8 +84,8 @@ describe('lake-michigan roster', () => {
 
   it('gives everyone a plain job title, not a Title · Org compound', () => {
     for (const u of s.users) {
-      expect(u.subtitle.length).toBeGreaterThan(3)
-      expect(u.subtitle).not.toContain('·')
+      expect(u.title.length).toBeGreaterThan(3)
+      expect(u.title).not.toContain('·')
     }
   })
 

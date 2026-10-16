@@ -33,7 +33,7 @@ function fakeFetch(input: RequestInfo | URL): Promise<Response> {
   if (url.includes('/auth/me')) {
     tag(200)
     return Promise.resolve(jsonOk({
-      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
+      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
       canVote: true, emailDigestEnabled: false, emailWeekAheadEnabled: false,
       lastSeenFeed: null, isLastOwner: false,
       termsAcceptanceRequired: !server.accepted,

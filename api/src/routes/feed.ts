@@ -8,6 +8,7 @@ import { PASSIVE_EVENT_TYPES } from '../../../shared/feedUtils'
 import { nowDb } from '../lib/dbTime'
 import { activeUser } from '../lib/accountDeletion'
 import type { AppEnv } from '../types'
+import { userTitleSql } from '../lib/userTitle'
 
 export const feedRouter = new Hono<AppEnv>()
 
@@ -87,7 +88,7 @@ feedRouter.get('/', async (c) => {
         userId: feedEvents.userId,
         userName: users.name,
         userEmail: users.email,
-        userSubtitle: users.subtitle,
+        userTitle: userTitleSql,
         metadata: feedEvents.metadata,
         createdAt: feedEvents.createdAt,
       })
@@ -146,7 +147,9 @@ feedRouter.get('/', async (c) => {
       billIsDraft: r.billIsDraft ?? false,
       userId: r.userId,
       userName: r.userName || r.userEmail,
-      userSubtitle: r.userSubtitle,
+      userTitle: r.userTitle,
+      // `subtitle` is the old name for `title`. Remove in the release after this one.
+      userSubtitle: r.userTitle,
       metadata: JSON.parse(r.metadata) as unknown,
       createdAt: r.createdAt,
     })),

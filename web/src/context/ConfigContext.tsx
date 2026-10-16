@@ -33,6 +33,8 @@ export interface AppConfig {
    * them: the footer then credits LegiScan, and the Stage filter stays shown.
    */
   attribution?: Attribution
+  /** Where central's admin dashboard lives, once central has said. Absent = unknown, so don't link to it. */
+  centralDashboardUrl?: string
   accountDeletionEnabled?: boolean
   /**
    * What each covered state's data can do, by state, from the provider central

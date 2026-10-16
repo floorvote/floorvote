@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react'
 import { MemberNameCell } from './MemberNameCell'
 
 describe('MemberNameCell', () => {
-  it('renders name, subtitle, and a mailto link in that order', () => {
+  it('renders name, title, and a mailto link in that order', () => {
     const { container } = render(
-      <MemberNameCell name="Ada Lovelace" email="ada@example.com" subtitle="Analytical Engine" />,
+      <MemberNameCell name="Ada Lovelace" email="ada@example.com" title="Analytical Engine" />,
     )
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('Analytical Engine')).toBeInTheDocument()
@@ -16,8 +16,8 @@ describe('MemberNameCell', () => {
     expect(text.indexOf('Analytical Engine')).toBeLessThan(text.indexOf('ada@example.com'))
   })
 
-  it('omits the subtitle when there is none', () => {
-    render(<MemberNameCell name="Ada Lovelace" email="ada@example.com" subtitle={null} />)
+  it('omits the title when there is none', () => {
+    render(<MemberNameCell name="Ada Lovelace" email="ada@example.com" title={null} />)
     expect(screen.getByRole('link', { name: 'ada@example.com' })).toBeInTheDocument()
   })
 
@@ -47,12 +47,12 @@ describe('MemberNameCell', () => {
 
   describe('with no name (never set, or cleared)', () => {
     it('shows the email in the name\'s place, as the mailto link', () => {
-      const { container } = render(<MemberNameCell name="" email="cleared@example.com" subtitle="Analyst" />)
+      const { container } = render(<MemberNameCell name="" email="cleared@example.com" title="Analyst" />)
       const links = screen.getAllByRole('link')
       expect(links).toHaveLength(1)
       expect(links[0]).toHaveTextContent('cleared@example.com')
       expect(links[0]).toHaveAttribute('href', 'mailto:cleared@example.com')
-      // The email leads, and isn't repeated under the subtitle.
+      // The email leads, and isn't repeated under the title.
       const text = container.textContent ?? ''
       expect(text.indexOf('cleared@example.com')).toBeLessThan(text.indexOf('Analyst'))
       expect(text.split('cleared@example.com')).toHaveLength(2)

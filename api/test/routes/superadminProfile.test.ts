@@ -35,7 +35,7 @@ const asEnv = (list: string[]) => ({ ...env, CENTRAL: centralWith(list) }) as un
 // A superadmin token the way central issues it now: carrying the saved profile.
 const tokenWith = (name: string, title: string) => signSuperadminJwt(SUPER, name, TEST_SUPERADMIN_PRIV, undefined, title)
 
-type Me = { id: string; name: string; subtitle: string | null; role: string; isSuperadmin: boolean }
+type Me = { id: string; name: string; title: string | null; role: string; isSuperadmin: boolean }
 
 async function dashboardSignIn(jwt: string, e = asEnv([SUPER])) {
   const res = await app.request('/api/auth/me', { headers: { Cookie: `superadmin_jwt=${jwt}` } }, e)
@@ -44,6 +44,10 @@ async function dashboardSignIn(jwt: string, e = asEnv([SUPER])) {
 
 const userRow = async (email: string) =>
   getDb(env.DB).select().from(users).where(eq(users.email, email)).get()
+
+// Both columns as stored. The raw query bypasses the schema, so it reads what the previous build would.
+const titleColumns = (email: string) =>
+  env.DB.prepare('SELECT title, subtitle FROM users WHERE email = ?').bind(email).first<{ title: string | null; subtitle: string | null }>()
 
 function patchMe(cookie: string, body: unknown, e = asEnv([SUPER])) {
   return app.request('/api/users/me', {
@@ -64,40 +68,72 @@ describe('dashboard sign-in applies the central profile', () => {
     const { res, body } = await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
     expect(res.status).toBe(200)
     expect(body.name).toBe('Ada Lovelace')
-    expect(body.subtitle).toBe('Operator support')
+    expect(body.title).toBe('Operator support')
     const row = await userRow(SUPER)
     expect(row?.name).toBe('Ada Lovelace')
-    expect(row?.subtitle).toBe('Operator support')
+    expect(row?.title).toBe('Operator support')
+  })
+
+  // The dashboard sign-in answers in the same shape as /auth/me, so it carries
+  // the old `subtitle` key too. Remove with the aliases (see titleAliases.test.ts).
+  it('answers with the title under both names, so a tab on the previous web bundle shows it', async () => {
+    const { res, body } = await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
+    expect(res.status).toBe(200)
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Operator support', 'Operator support'])
+  })
+
+  it('answers with a null title under both names when central has a blank one', async () => {
+    const { body } = await dashboardSignIn(await tokenWith('Ada Lovelace', ''))
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual([null, null])
+  })
+
+  it('answers a returning superadmin with the title under both names', async () => {
+    await seedUser({ email: SUPER, role: 'admin', name: 'Ada', title: 'Existing title' })
+    // A token from before profiles carries no title, so the stored one is what shows.
+    const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
+    const { body } = await dashboardSignIn(older)
+    expect([body.title, (body as Me & { subtitle: string | null }).subtitle]).toEqual(['Existing title', 'Existing title'])
+  })
+
+  // The previous build reads `users.subtitle`, so the profile apply writes both
+  // columns until the drop migration (see titleColumns.test.ts).
+  it('writes the title to both columns on a new superadmin copy and on each refresh', async () => {
+    await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
+    expect(await titleColumns(SUPER)).toEqual({ title: 'Operator support', subtitle: 'Operator support' })
+    await dashboardSignIn(await tokenWith('Ada King', 'Engineer'))
+    expect(await titleColumns(SUPER)).toEqual({ title: 'Engineer', subtitle: 'Engineer' })
+    await dashboardSignIn(await tokenWith('Ada King', ''))
+    expect(await titleColumns(SUPER)).toEqual({ title: null, subtitle: null })
   })
 
   it('overwrites an existing copy on each sign-in', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', title: 'Old title' })
     await dashboardSignIn(await tokenWith('Ada Lovelace', 'Operator support'))
     const first = await userRow(SUPER)
-    expect([first?.name, first?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    expect([first?.name, first?.title]).toEqual(['Ada Lovelace', 'Operator support'])
 
     // A later change in central reaches the instance on the next sign-in.
     const { body } = await dashboardSignIn(await tokenWith('Ada King', 'Engineer'))
-    expect([body.name, body.subtitle]).toEqual(['Ada King', 'Engineer'])
+    expect([body.name, body.title]).toEqual(['Ada King', 'Engineer'])
     const second = await userRow(SUPER)
-    expect([second?.name, second?.subtitle]).toEqual(['Ada King', 'Engineer'])
+    expect([second?.name, second?.title]).toEqual(['Ada King', 'Engineer'])
   })
 
   it('clears the title when central has a profile with a blank title', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', title: 'Old title' })
     const { body } = await dashboardSignIn(await tokenWith('Ada', ''))
     expect(body.name).toBe('Ada')
-    expect(body.subtitle).toBeNull()
+    expect(body.title).toBeNull()
   })
 
   it('leaves the existing name and title alone when the token is from before profiles', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing Name', subtitle: 'Existing title' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing Name', title: 'Existing title' })
     // No title claim: the shape central issued before this change.
     const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
     const { body } = await dashboardSignIn(older)
-    expect([body.name, body.subtitle]).toEqual(['Existing Name', 'Existing title'])
+    expect([body.name, body.title]).toEqual(['Existing Name', 'Existing title'])
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing Name', 'Existing title'])
+    expect([row?.name, row?.title]).toEqual(['Existing Name', 'Existing title'])
   })
 
   it('leaves the signed-in member their admin role', async () => {
@@ -108,7 +144,7 @@ describe('dashboard sign-in applies the central profile', () => {
 
 describe('/auth/me with a live instance session', () => {
   async function liveSession() {
-    const id = await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    const id = await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', title: 'Old title' })
     return `session=${await seedSession(id)}`
   }
   const meWith = async (cookie: string) => {
@@ -119,28 +155,28 @@ describe('/auth/me with a live instance session', () => {
   it('refreshes the profile from a token sent alongside the session', async () => {
     const cookie = await liveSession()
     const body = await meWith(`${cookie}; superadmin_jwt=${await tokenWith('Ada King', 'Engineer')}`)
-    expect([body.name, body.subtitle]).toEqual(['Ada King', 'Engineer'])
+    expect([body.name, body.title]).toEqual(['Ada King', 'Engineer'])
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Ada King', 'Engineer'])
+    expect([row?.name, row?.title]).toEqual(['Ada King', 'Engineer'])
   })
 
   it('leaves the profile alone for a token from before profiles', async () => {
     const cookie = await liveSession()
     const older = await signSuperadminJwt(SUPER, 'Token Name', TEST_SUPERADMIN_PRIV)
     const body = await meWith(`${cookie}; superadmin_jwt=${older}`)
-    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+    expect([body.name, body.title]).toEqual(['Old Name', 'Old title'])
   })
 
   it('ignores a token issued for a different address', async () => {
     const cookie = await liveSession()
     const other = await signSuperadminJwt('someone.else@example.com', 'Else', TEST_SUPERADMIN_PRIV, undefined, 'Other')
     const body = await meWith(`${cookie}; superadmin_jwt=${other}`)
-    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+    expect([body.name, body.title]).toEqual(['Old Name', 'Old title'])
   })
 
   it('does nothing without a token', async () => {
     const body = await meWith(await liveSession())
-    expect([body.name, body.subtitle]).toEqual(['Old Name', 'Old title'])
+    expect([body.name, body.title]).toEqual(['Old Name', 'Old title'])
   })
 })
 
@@ -163,7 +199,7 @@ describe('the Profile page data for a superadmin', () => {
 
 describe('PATCH /users/me for a superadmin', () => {
   async function superCookie() {
-    const id = await seedUser({ email: SUPER, role: 'admin', name: 'Ada', subtitle: 'Operator support' })
+    const id = await seedUser({ email: SUPER, role: 'admin', name: 'Ada', title: 'Operator support' })
     return `session=${await seedSession(id)}`
   }
 
@@ -175,9 +211,33 @@ describe('PATCH /users/me for a superadmin', () => {
   })
 
   it('rejects a title edit and leaves the title unchanged', async () => {
-    const res = await patchMe(await superCookie(), { subtitle: 'CEO' })
+    const res = await patchMe(await superCookie(), { title: 'CEO' })
     expect(res.status).toBe(403)
-    expect((await userRow(SUPER))?.subtitle).toBe('Operator support')
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+  })
+
+  // A tab on the previous web bundle sends `subtitle`, which a superadmin must
+  // not be able to use to get around the central-managed profile.
+  it('rejects a `subtitle` edit like a `title` one, and leaves both columns unchanged', async () => {
+    const cookie = await superCookie()
+    const before = await titleColumns(SUPER)
+    const res = await patchMe(cookie, { subtitle: 'CEO' })
+    expect(res.status).toBe(403)
+    expect(((await res.json()) as { error: string }).error).toMatch(/admin dashboard/i)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+    expect(await titleColumns(SUPER)).toEqual(before)
+  })
+
+  it('rejects a `subtitle` edit of null, which would clear the title', async () => {
+    const res = await patchMe(await superCookie(), { subtitle: null })
+    expect(res.status).toBe(403)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
+  })
+
+  it('rejects `subtitle` sent beside `title`', async () => {
+    const res = await patchMe(await superCookie(), { title: 'Operator support', subtitle: 'CEO' })
+    expect(res.status).toBe(403)
+    expect((await userRow(SUPER))?.title).toBe('Operator support')
   })
 
   it('rejects the whole request, applying none of it, when name or title is mixed with other settings', async () => {
@@ -215,7 +275,7 @@ describe('PATCH /users/me for a superadmin', () => {
   it('lets an ordinary member and an ordinary admin edit their name and title as before', async () => {
     for (const role of ['member', 'admin'] as const) {
       const id = await seedUser({ role })
-      const res = await patchMe(`session=${await seedSession(id)}`, { name: 'Pat', subtitle: 'Clerk' })
+      const res = await patchMe(`session=${await seedSession(id)}`, { name: 'Pat', title: 'Clerk' })
       expect(res.status).toBe(200)
     }
   })

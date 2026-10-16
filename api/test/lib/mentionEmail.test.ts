@@ -5,7 +5,7 @@ import { MENTION_STYLE } from '../../../shared/mentionStyle'
 const base: MentionEmailInput = {
   appUrl: 'https://x.test',
   instanceName: 'Rhode Island Association',
-  author: { name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston' },
+  author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
   bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote.' },
   comment: { id: 'c9', createdAt: '2026-06-10 16:45:00', html: '<p>Hey <span data-type="mention" data-id="user:u2" data-label="@Dana">@Dana</span> — testify?</p>' },
   via: 'user',
@@ -20,7 +20,7 @@ describe('renderMentionEmail', () => {
     expect(html).toContain('Requires photo identification to vote.')
     expect(html).toContain('Source Serif')
   })
-  it('renders the comment row: purple icon, author name + subtitle, absolute date', () => {
+  it('renders the comment row: purple icon, author name + title, absolute date', () => {
     const html = renderMentionEmail(base)
     expect(html).toContain('/email-icons/chat__7c3aed.png')
     expect(html).toContain('Sam Ortiz')
@@ -70,9 +70,9 @@ describe('renderMentionEmail', () => {
       expect(html).toContain(`color:${MENTION_STYLE.role.text}`)
     })
   })
-  it('truncates an overlong subtitle', () => {
+  it('truncates an overlong title', () => {
     const long = 'x'.repeat(120)
-    const html = renderMentionEmail({ ...base, author: { name: 'Sam', subtitle: long } })
+    const html = renderMentionEmail({ ...base, author: { name: 'Sam', title: long } })
     expect(html).toContain('…')
     expect(html).not.toContain(long)
   })

@@ -82,24 +82,24 @@ beforeEach(async () => {
 
 describe('emailed-link sign-in by a superadmin', () => {
   it('updates the instance name and title from central', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: '', subtitle: undefined })
+    await seedUser({ email: SUPER, role: 'admin', name: '', title: undefined })
     const c = central([SUPER], profileOf('Ada Lovelace', 'Operator support'))
     const { res, session } = await signInByLink(SUPER, c.env)
     expect(res.status).toBe(200)
 
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    expect([row?.name, row?.title]).toEqual(['Ada Lovelace', 'Operator support'])
     const me = await app.request('/api/auth/me', { headers: { Cookie: `session=${session}` } }, c.env)
-    const body = (await me.json()) as { name: string; subtitle: string | null }
-    expect([body.name, body.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    const body = (await me.json()) as { name: string; title: string | null }
+    expect([body.name, body.title]).toEqual(['Ada Lovelace', 'Operator support'])
   })
 
   it('overwrites a stale copy, and clears the title when central has a blank one', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Old Name', title: 'Old title' })
     const { res } = await signInByLink(SUPER, central([SUPER], profileOf('Ada King', '')).env)
     expect(res.status).toBe(200)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Ada King', null])
+    expect([row?.name, row?.title]).toEqual(['Ada King', null])
   })
 
   it('asks central for that one address, in the request body rather than the URL', async () => {
@@ -114,35 +114,35 @@ describe('emailed-link sign-in by a superadmin', () => {
   })
 
   it('keeps the existing name and title when central has no profile for them', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], noProfile)
     const { res } = await signInByLink(SUPER, c.env)
     expect(res.status).toBe(200)
     expect(c.lookups).toHaveLength(1)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 
   it('keeps the existing values when central answers with something malformed', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], () => new Response(JSON.stringify({ profile: { name: 7 } }), { status: 200 }))
     const { res } = await signInByLink(SUPER, c.env)
     expect(res.status).toBe(200)
     expect(c.lookups).toHaveLength(1)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 })
 
 describe('emailed-link sign-in when central cannot be reached', () => {
   async function expectSignedInWithValuesKept(c: ReturnType<typeof central>) {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const { res, session } = await signInByLink(SUPER, c.env)
     expect(res.status).toBe(200)
     expect(((await res.json()) as { ok: boolean }).ok).toBe(true)
     expect(session).toBeTruthy()
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   }
 
   it('signs in and keeps the values when the profile lookup errors', async () => {
@@ -173,7 +173,7 @@ describe('emailed-link sign-in when central cannot be reached', () => {
   })
 
   it('signs in and keeps the last values when central goes down after an earlier sign-in', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: '', subtitle: undefined })
+    await seedUser({ email: SUPER, role: 'admin', name: '', title: undefined })
     let down = false
     const c = central([SUPER], profileOf('Ada Lovelace', 'Operator support'))
     const flaky = { ...c.env, CENTRAL: { fetch: (req: Request) => {
@@ -188,7 +188,7 @@ describe('emailed-link sign-in when central cannot be reached', () => {
     expect(res.status).toBe(200)
     expect(session).toBeTruthy()
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    expect([row?.name, row?.title]).toEqual(['Ada Lovelace', 'Operator support'])
   })
 })
 
@@ -202,14 +202,14 @@ describe('emailed-link sign-in by an ordinary member', () => {
 
     for (const role of ['member', 'admin', 'owner'] as const) {
       const email = `${role}-${MEMBER}`
-      await seedUser({ email, role, name: 'Pat Member', subtitle: 'Clerk' })
+      await seedUser({ email, role, name: 'Pat Member', title: 'Clerk' })
       const c = central([SUPER], profileOf('Should Not', 'Apply'))
       const { res, session } = await signInByLink(email, c.env)
       expect(res.status).toBe(200)
       expect(session).toBeTruthy()
       expect(c.lookups).toHaveLength(0)
       const row = await userRow(email)
-      expect([row?.name, row?.subtitle]).toEqual(['Pat Member', 'Clerk'])
+      expect([row?.name, row?.title]).toEqual(['Pat Member', 'Clerk'])
     }
   })
 })
@@ -221,7 +221,7 @@ describe('emailed-link sign-in does not wait on central', () => {
   const PROMPT_MS = 1000
 
   it('returns a member promptly while central never answers the list, and hands the work to waitUntil', async () => {
-    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', subtitle: 'Clerk' })
+    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', title: 'Clerk' })
     const c = central([SUPER], profileOf('Should Not', 'Apply'), () => new Promise<Response>(() => {}))
     const bg = collectingCtx()
     const started = Date.now()
@@ -234,11 +234,11 @@ describe('emailed-link sign-in does not wait on central', () => {
     await bg.settled()
     expect(c.lookups).toHaveLength(0)
     const row = await userRow(MEMBER)
-    expect([row?.name, row?.subtitle]).toEqual(['Pat Member', 'Clerk'])
+    expect([row?.name, row?.title]).toEqual(['Pat Member', 'Clerk'])
   })
 
   it('returns a superadmin promptly while central never answers the profile, and hands the work to waitUntil', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], () => new Promise<Response>(() => {}))
     const bg = collectingCtx()
     const started = Date.now()
@@ -251,11 +251,11 @@ describe('emailed-link sign-in does not wait on central', () => {
     await bg.settled()
     expect(c.lookups).toHaveLength(1)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 
   it('updates a superadmin in the background when central is up, shown by the next page load', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: '', subtitle: undefined })
+    await seedUser({ email: SUPER, role: 'admin', name: '', title: undefined })
     const c = central([SUPER], profileOf('Ada Lovelace', 'Operator support'))
     const bg = collectingCtx()
     const { res, session } = await signInByLink(SUPER, c.env, bg.ctx)
@@ -264,14 +264,14 @@ describe('emailed-link sign-in does not wait on central', () => {
 
     await bg.settled()
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    expect([row?.name, row?.title]).toEqual(['Ada Lovelace', 'Operator support'])
     const me = await app.request('/api/auth/me', { headers: { Cookie: `session=${session}` } }, c.env)
-    const body = (await me.json()) as { name: string; subtitle: string | null }
-    expect([body.name, body.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    const body = (await me.json()) as { name: string; title: string | null }
+    expect([body.name, body.title]).toEqual(['Ada Lovelace', 'Operator support'])
   })
 
   it('keeps the existing values in the background when central is down', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], () => { throw new Error('network down') })
     const bg = collectingCtx()
     const { res, session } = await signInByLink(SUPER, c.env, bg.ctx)
@@ -282,11 +282,11 @@ describe('emailed-link sign-in does not wait on central', () => {
     await expect(bg.settled()).resolves.toBeDefined()
     expect(c.lookups).toHaveLength(1)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 
   it('keeps the existing values in the background when central has no profile', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], noProfile)
     const bg = collectingCtx()
     const { res } = await signInByLink(SUPER, c.env, bg.ctx)
@@ -296,11 +296,11 @@ describe('emailed-link sign-in does not wait on central', () => {
     await bg.settled()
     expect(c.lookups).toHaveLength(1)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 
   it('never looks a non-superadmin up, even in the background', async () => {
-    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', subtitle: 'Clerk' })
+    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', title: 'Clerk' })
     const c = central([SUPER], profileOf('Should Not', 'Apply'))
     const bg = collectingCtx()
     const { res } = await signInByLink(MEMBER, c.env, bg.ctx)
@@ -308,7 +308,7 @@ describe('emailed-link sign-in does not wait on central', () => {
     await bg.settled()
     expect(c.lookups).toHaveLength(0)
     const row = await userRow(MEMBER)
-    expect([row?.name, row?.subtitle]).toEqual(['Pat Member', 'Clerk'])
+    expect([row?.name, row?.title]).toEqual(['Pat Member', 'Clerk'])
   })
 })
 
@@ -324,7 +324,7 @@ describe('emailed-link sign-in when central\'s superadmin list cannot be fetched
 
   for (const [label, listAnswer] of failures) {
     it(`signs a superadmin in, looks nothing up, and writes nothing when the list fetch ${label} with nothing cached`, async () => {
-      await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+      await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
       const c = central([SUPER], profileOf('Should Not', 'Apply'), listAnswer)
       const bg = collectingCtx()
       const { res, session } = await signInByLink(SUPER, c.env, bg.ctx)
@@ -333,23 +333,23 @@ describe('emailed-link sign-in when central\'s superadmin list cannot be fetched
       await bg.settled()
       expect(c.lookups).toHaveLength(0)
       const row = await userRow(SUPER)
-      expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+      expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
     })
   }
 
   it('signs a superadmin in with no waitUntil available, looking nothing up', async () => {
-    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', subtitle: 'Kept' })
+    await seedUser({ email: SUPER, role: 'admin', name: 'Existing', title: 'Kept' })
     const c = central([SUPER], profileOf('Should Not', 'Apply'), () => new Response('boom', { status: 500 }))
     const { res, session } = await signInByLink(SUPER, c.env)
     expect(res.status).toBe(200)
     expect(session).toBeTruthy()
     expect(c.lookups).toHaveLength(0)
     const row = await userRow(SUPER)
-    expect([row?.name, row?.subtitle]).toEqual(['Existing', 'Kept'])
+    expect([row?.name, row?.title]).toEqual(['Existing', 'Kept'])
   })
 
   it('signs a member in with nothing looked up and nothing written', async () => {
-    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', subtitle: 'Clerk' })
+    await seedUser({ email: MEMBER, role: 'member', name: 'Pat Member', title: 'Clerk' })
     const c = central([SUPER], profileOf('Should Not', 'Apply'), () => new Response('boom', { status: 500 }))
     const bg = collectingCtx()
     const { res, session } = await signInByLink(MEMBER, c.env, bg.ctx)
@@ -358,7 +358,7 @@ describe('emailed-link sign-in when central\'s superadmin list cannot be fetched
     await bg.settled()
     expect(c.lookups).toHaveLength(0)
     const row = await userRow(MEMBER)
-    expect([row?.name, row?.subtitle]).toEqual(['Pat Member', 'Clerk'])
+    expect([row?.name, row?.title]).toEqual(['Pat Member', 'Clerk'])
   })
 })
 
@@ -374,7 +374,7 @@ describe('emailed-link sign-in with a mixed-case or padded stored address', () =
   const stored = ['Super@Example.COM', '  super@example.com  ', ' Super@Example.com\t']
   for (const address of stored) {
     it(`recognizes a superadmin stored as ${JSON.stringify(address)} and refreshes their profile`, async () => {
-      await seedUser({ email: address, role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+      await seedUser({ email: address, role: 'admin', name: 'Old Name', title: 'Old title' })
       const c = central([SUPER], normalizing('Ada Lovelace', 'Operator support'))
       const bg = collectingCtx()
       const { res, session } = await signInByLink(address, c.env, bg.ctx)
@@ -386,22 +386,22 @@ describe('emailed-link sign-in with a mixed-case or padded stored address', () =
       expect(String(c.lookups[0].email).toLowerCase().trim()).toBe(SUPER)
       expect(new URL(c.lookups[0].url).search).toBe('')
       const row = await userRow(address)
-      expect([row?.name, row?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+      expect([row?.name, row?.title]).toEqual(['Ada Lovelace', 'Operator support'])
     })
   }
 
   it('recognizes a mixed-case superadmin with no waitUntil available', async () => {
-    await seedUser({ email: 'Super@Example.COM', role: 'admin', name: 'Old Name', subtitle: 'Old title' })
+    await seedUser({ email: 'Super@Example.COM', role: 'admin', name: 'Old Name', title: 'Old title' })
     const c = central([SUPER], normalizing('Ada Lovelace', 'Operator support'))
     const { res } = await signInByLink('Super@Example.COM', c.env)
     expect(res.status).toBe(200)
     expect(c.lookups).toHaveLength(1)
     const row = await userRow('Super@Example.COM')
-    expect([row?.name, row?.subtitle]).toEqual(['Ada Lovelace', 'Operator support'])
+    expect([row?.name, row?.title]).toEqual(['Ada Lovelace', 'Operator support'])
   })
 
   it('does not look up a mixed-case member who is not on the list', async () => {
-    await seedUser({ email: 'Pat.Member@Example.COM', role: 'member', name: 'Pat Member', subtitle: 'Clerk' })
+    await seedUser({ email: 'Pat.Member@Example.COM', role: 'member', name: 'Pat Member', title: 'Clerk' })
     const c = central([SUPER], normalizing('Should Not', 'Apply'))
     const bg = collectingCtx()
     const { res } = await signInByLink('Pat.Member@Example.COM', c.env, bg.ctx)
@@ -409,6 +409,6 @@ describe('emailed-link sign-in with a mixed-case or padded stored address', () =
     await bg.settled()
     expect(c.lookups).toHaveLength(0)
     const row = await userRow('Pat.Member@Example.COM')
-    expect([row?.name, row?.subtitle]).toEqual(['Pat Member', 'Clerk'])
+    expect([row?.name, row?.title]).toEqual(['Pat Member', 'Clerk'])
   })
 })

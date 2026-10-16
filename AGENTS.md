@@ -117,7 +117,7 @@ See [`docs/content/self-hosting/index.md`](docs/content/self-hosting/index.md) f
 | Var | Purpose |
 |---|---|
 | `OPERATOR_NAME` | Display name for the operator |
-| `ADMIN_APP_URL` | Base URL for the admin dashboard (for magic-link emails) |
+| `ADMIN_APP_URL` | Base URL for the admin dashboard (for magic-link emails). Also sent to instances, with the body-events answer, for the superadmin Profile link |
 | `CF_ACCOUNT_ID` | Cloudflare account ID (for analytics queries) |
 | `SUPERADMIN_JWT_PUBLIC_KEY` | ES256 public JWK (same value as on tenants) |
 | `TURNSTILE_SITE_KEY` | Public Turnstile sitekey for dashboard login (optional) |
