@@ -200,8 +200,8 @@ describe('the comment thread of a grouped bill', () => {
   })
 
   it('shows the grouping line where the group formed, between the comments before and after', async () => {
-    renderBillDetail(GROUPED)
-    const line = await screen.findByText('Grouped with S1713 as identical bills on October 11. Earlier comments from both now appear together.')
+    renderBillDetail({ ...GROUPED, groupingEvents: [{ ...GROUPED.groupingEvents[0], commentBills: [{ billId: 'b1713', billNumber: 'S1713' }] }] })
+    const line = await screen.findByText('Grouped with S1713 as identical bills on October 11. Earlier comments on S1713 now appear here.')
     const before = screen.getByText('c2 text')
     const after = screen.getByText('c3 text')
     expect(before.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -222,5 +222,100 @@ describe('the personal note of a grouped bill', () => {
     expect(await screen.findByRole('heading', { name: 'S1713' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'A190' })).toBeInTheDocument()
     expect(screen.getByText('Mine on S1713')).toBeInTheDocument()
+  })
+})
+
+// Which grouping and split lines the thread shows. FloorVote's own lines appear only when they explain a
+// change to the thread: a comment posted, before the event, on a bill it joined or left. An admin's lines
+// and the lines that list replaced values or undone splits always appear.
+describe('the grouping lines of a comment thread', () => {
+  const S1713 = { billId: 'b1713', billNumber: 'S1713' }
+  const A190 = { billId: '42', billNumber: 'A190' }
+  const grouped = (over: Record<string, unknown> = {}) =>
+    ({ id: 'g1', type: 'grouped', createdAt: '2026-10-11 12:00:00', actorName: null, with: [S1713], commentBills: [], replaced: [], ...over })
+  const split = (over: Record<string, unknown> = {}) =>
+    ({ id: 's1', type: 'split', createdAt: '2026-10-13 12:00:00', actorName: null, with: [S1713], commentBills: [], replaced: [], ...over })
+  const lines = () => screen.queryAllByRole('note').map(n => n.textContent)
+  const thread = { comments: GROUPED.comments, commentsTotal: 3 }
+
+  it('shows no line for an automatic grouping that explains nothing, in a thread with comments', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped()] })
+    await screen.findByText('c3 text')
+    expect(lines()).toEqual([])
+    expect(screen.queryByText(/Grouped with/)).not.toBeInTheDocument()
+  })
+
+  it('shows no line for an automatic grouping in an empty thread', async () => {
+    renderBillDetail({ ...GROUPED, comments: [], commentsTotal: 0, groupingEvents: [grouped()] })
+    await screen.findByText('A190', { exact: false })
+    expect(lines()).toEqual([])
+    expect(screen.queryByText(/Grouped with/)).not.toBeInTheDocument()
+  })
+
+  it('shows the line, naming the bill, when an automatic grouping brought earlier comments', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ commentBills: [S1713] })] })
+    expect(await screen.findByText('Grouped with S1713 as identical bills on October 11. Earlier comments on S1713 now appear here.')).toBeInTheDocument()
+    expect(lines()).toHaveLength(1)
+  })
+
+  it('shows the line after every comment when the grouping is the latest thing in the thread', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ createdAt: '2026-10-20 12:00:00', commentBills: [S1713] })] })
+    const line = await screen.findByText('Grouped with S1713 as identical bills on October 20. Earlier comments on S1713 now appear here.')
+    expect(screen.getByText('c3 text').compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows no line for an automatic split that took no comments away', async () => {
+    renderBillDetail({ ...thread, groupingEvents: [grouped(), split()] })
+    await screen.findByText('c3 text')
+    expect(lines()).toEqual([])
+  })
+
+  it('says comments posted on the bill that left no longer appear, for an automatic split with comments on it', async () => {
+    renderBillDetail({ ...thread, groupingEvents: [grouped(), split({ commentBills: [S1713] })] })
+    expect(await screen.findByText('Separated from S1713 on October 13. Comments posted on S1713 no longer appear here.')).toBeInTheDocument()
+    expect(lines()).toHaveLength(1)
+  })
+
+  it('still shows the line naming the admin who grouped by hand, without a comments sentence', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ actorName: 'Ada' })] })
+    expect(await screen.findByText('Ada grouped this bill with S1713 on October 11.')).toBeInTheDocument()
+  })
+
+  it('still shows the line naming the admin who split by hand, without a comments sentence, even in an empty thread', async () => {
+    renderBillDetail({ ...GROUPED, comments: [], commentsTotal: 0, groupingEvents: [split({ actorName: 'Ada' })] })
+    expect(await screen.findByText('Ada separated this bill from S1713 on October 13.')).toBeInTheDocument()
+  })
+
+  it('still shows the line for an automatic grouping that replaced a team value, without a comments sentence', async () => {
+    const replaced = [{ field: 'position', label: 'position', billId: 'b1713', billNumber: 'S1713', value: 'Oppose', replacedBy: { billId: '42', billNumber: 'A190', value: 'Support' } }]
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ replaced })] })
+    expect(await screen.findByText("Grouped with S1713 as identical bills on October 11. S1713's position, Oppose, was replaced by A190's, Support.")).toBeInTheDocument()
+  })
+
+  it('still shows the line for an automatic grouping that undid splits', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ undoneSplits: [[A190, S1713]] })] })
+    expect(await screen.findByText('Grouped with S1713 as identical bills on October 11. It undid the split of A190 and S1713.')).toBeInTheDocument()
+  })
+
+  it('names only the joined bills that had earlier comments when three bills grouped at once', async () => {
+    const S1714 = { billId: 'c1714', billNumber: 'S1714' }
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped({ with: [S1713, S1714], commentBills: [S1713] })] })
+    expect(await screen.findByText('Grouped with S1713 and S1714 as identical bills on October 11. Earlier comments on S1713 now appear here.')).toBeInTheDocument()
+  })
+
+  it('shows only the lines that explain something among several events', async () => {
+    renderBillDetail({ ...GROUPED, groupingEvents: [grouped(), split({ commentBills: [S1713] }), grouped({ id: 'g2', createdAt: '2026-10-14 12:00:00', commentBills: [S1713] })] })
+    await screen.findByText('c3 text')
+    expect(lines()).toEqual([
+      'link_off' + 'Separated from S1713 on October 13. Comments posted on S1713 no longer appear here.',
+      'link_2' + 'Grouped with S1713 as identical bills on October 14. Earlier comments on S1713 now appear here.',
+    ])
+  })
+
+  it('renders an event from an older server that sends no commentBills as an automatic line with nothing to explain', async () => {
+    const { commentBills: _omit, ...old } = grouped()
+    renderBillDetail({ ...GROUPED, groupingEvents: [old] })
+    await screen.findByText('c3 text')
+    expect(lines()).toEqual([])
   })
 })

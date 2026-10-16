@@ -54,6 +54,13 @@ export type GroupingEvent = {
   createdAt: string
   actorName: string | null
   with: GroupBill[]
+  /**
+   * The subset of `with` that had a comment posted on it before the event, which is what makes the line worth
+   * showing when FloorVote grouped or split the bills itself: those comments now appear in this thread (grouped)
+   * or no longer do (split). Computed when the bill is read, from the comments table, so a split still names the
+   * bills whose comments it took away.
+   */
+  commentBills: GroupBill[]
   /** The team field values the grouping replaced. Always empty for a split. */
   replaced: ReplacedTeamValue[]
   /** The splits the grouping undid (see `GroupingEventMetadata`). Absent when it undid none. */

@@ -30,6 +30,11 @@ export function groupingLineText(event: GroupingEvent): string {
     : `Separated from ${bills} on ${date}. ${apart}`
 }
 
+/** Stub: whether the event's line appears in the thread. */
+export function showsGroupingLine(_event: GroupingEvent): boolean {
+  return true
+}
+
 /**
  * Where each grouping line goes in a comment thread ordered by time: before
  * the first comment posted after it, or after them all.
