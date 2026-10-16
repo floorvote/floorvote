@@ -1,4 +1,5 @@
 import type { Provider, StatusStage } from '../providers'
+import type { RelationshipKind } from '../../../shared/relationshipKinds'
 
 /**
  * Reading a provider's vocabulary (`Provider.vocabulary`): what core sends for
@@ -54,4 +55,28 @@ export function vocabularyLabels(provider: Provider) {
       .map(([typeId, t]) => ({ typeId: Number(typeId), label: t.label, kind: t.kind, explainer: t.explainer ?? null })),
     calendarName: v.calendarName ?? null,
   }
+}
+
+/**
+ * The kind of one relationship, from the label the provider published (the
+ * `type` of a `sasts` entry). A state's override wins over the provider's
+ * default, and a label the vocabulary doesn't list is `related`. Never read
+ * the numeric type id: ids collide across providers.
+ */
+export function relationshipKind(provider: Provider, state: string, label: string): RelationshipKind {
+  const r = provider.vocabulary.relationships
+  const key = labelKey(label)
+  return lookupKind(r?.states?.[state], key) ?? lookupKind(r?.default, key) ?? 'related'
+}
+
+// A label with case, spacing, and hyphens ignored, since LegiScan spells one
+// cross-file "Crossfiled" and the Maryland General Assembly spells it "Cross-filed".
+function labelKey(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function lookupKind(map: Readonly<Record<string, RelationshipKind>> | undefined, key: string): RelationshipKind | undefined {
+  if (!map) return undefined
+  for (const [label, kind] of Object.entries(map)) if (labelKey(label) === key) return kind
+  return undefined
 }

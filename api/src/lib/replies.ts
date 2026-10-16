@@ -9,20 +9,27 @@
 // the instance. The email goes out from the request, like mention emails, with
 // threading headers keyed to the bill so a bill's replies group into one
 // conversation in a mail client.
-import { and, eq, exists, isNull, ne } from 'drizzle-orm'
+//
+// A member who muted the bill (#355) gets neither. Each reply email carries a
+// one-click List-Unsubscribe and a footer link, both signed for that member and
+// bill, that mute it.
+import { and, eq, exists, isNull, ne, notExists } from 'drizzle-orm'
 import { getDb } from '../db/client'
-import { users, bills, sessions, comments } from '../db/schema'
+import { users, bills, sessions, comments, billMutes } from '../db/schema'
 import { writeNotifications } from './notifications'
 import { mentionEmailsEnabled, tiptapToEmailHtml } from './mentions'
 import { sendBatch, resolveAssocName, type EmailMessage } from './email'
 import { activeUser } from './accountDeletion'
+import { muteLinkTokens } from './billMutes'
 import { displayName } from './displayName'
+import { inGroupOf } from './companionGroups'
 import { billUrl } from '../../../shared/sessionSlug'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { buildBillCardModel } from '../../../shared/billCardModel'
 import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateTime } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { fontWeight } from '../../../shared/tokens'
+import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -40,9 +47,10 @@ type Participant = { id: string; email: string; emailReplies: boolean }
 
 /**
  * The members to notify about a new comment: everyone else with a live comment
- * on the bill, minus the author. Deactivated members and members without a
- * login session are skipped, as role mentions skip them. The caller removes
- * anyone the comment mentions.
+ * on the bill or another bill in its companion group, minus the author and
+ * anyone who muted any bill in the group. Deactivated members and members
+ * without a login session are skipped, as role mentions skip them. The
+ * caller removes anyone the comment mentions.
  */
 async function replyRecipients(db: Db, billId: string, authorUserId: string): Promise<Participant[]> {
   const rows = await db
@@ -50,11 +58,15 @@ async function replyRecipients(db: Db, billId: string, authorUserId: string): Pr
     .from(comments)
     .innerJoin(users, eq(comments.userId, users.id))
     .where(and(
-      eq(comments.billId, billId),
+      // A companion group is one conversation, so its participants are everyone
+      // who commented on any of its bills.
+      inGroupOf(comments.billId, billId),
       isNull(comments.deletedAt),
       ne(users.id, authorUserId),
       activeUser,
       exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id))),
+      // A mute on any bill in the group silences the whole conversation.
+      notExists(db.select({ userId: billMutes.userId }).from(billMutes).where(and(eq(billMutes.userId, users.id), inGroupOf(billMutes.billId, billId)))),
     ))
     .all()
   return rows.map(r => ({ id: r.id, email: r.email, emailReplies: r.emailReplies === 1 }))
@@ -80,8 +92,8 @@ export async function notifyParticipantsOfReply(
 
   // writeNotifications splits the rows to stay under D1's parameter limit and
   // reports who was actually written, so a retried fan-out emails nobody twice.
-  // (Per-bill mute, #355, will drop recipients who muted the bill just above
-  // this, so mute silences the app as well as the email.)
+  // Members who muted the bill were already left out of `recipients`, so mute
+  // silences the app as well as the email.
   const written = await writeNotifications(db, recipients.map(p => ({
     recipientId: p.id,
     kind: 'reply',
@@ -101,7 +113,7 @@ export async function notifyParticipantsOfReply(
 
 export interface ReplyEmailInput {
   appUrl: string
-  author: { name: string; subtitle: string | null }
+  author: { name: string; title: string | null }
   bill: {
     id: string; billNumber: string; title: string
     isDraft?: boolean
@@ -111,6 +123,8 @@ export interface ReplyEmailInput {
   }
   comment: { id: string; createdAt: string; html: string }
   instanceName: string
+  /** The recipient's signed "Mute this bill" page link (muteBillPageUrl). */
+  muteUrl: string
 }
 
 function escHtml(s: string): string {
@@ -119,7 +133,7 @@ function escHtml(s: string): string {
 
 /** Renders the reply email. Pure, like renderMentionEmail, whose card it shares. */
 export function renderReplyEmail(input: ReplyEmailInput): string {
-  const { appUrl, author, bill, comment, instanceName } = input
+  const { appUrl, author, bill, comment, instanceName, muteUrl } = input
   const model = buildBillCardModel({
     key: bill.id, billId: bill.id, billNumber: bill.billNumber, billTitle: bill.title,
     billSessionSlug: null, billState: bill.state, billSummary: bill.tenantSummary ?? null,
@@ -127,7 +141,7 @@ export function renderReplyEmail(input: ReplyEmailInput): string {
   })
   const billHref = `${appUrl}${billUrl({ id: bill.id, state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}`
   const commentRow = renderCommentRow({
-    appUrl, name: author.name, subtitle: author.subtitle,
+    appUrl, name: author.name, title: author.title,
     dateText: formatEmailDateTime(comment.createdAt),
     bodyHtml: tiptapToEmailHtml(comment.html),
   })
@@ -142,8 +156,11 @@ export function renderReplyEmail(input: ReplyEmailInput): string {
     dateLabel: formatEmailDateTime(comment.createdAt),
     bodyHtml: card,
     ctaHtml: emailButton(escHtml(`${billHref}#comment-${comment.id}`), 'View comment'),
-    // Per-bill mute (#355) adds its link here, beside this one.
-    footerHtml: `${emailFooterLink(escHtml(`${appUrl}/profile#setting-email-replies`), 'Turn off reply emails')} &nbsp;·&nbsp; ${emailFooterLink(escHtml(appUrl), PRODUCT_NAME)}`,
+    footerHtml: [
+      emailFooterLink(escHtml(muteUrl), 'Mute this bill'),
+      emailFooterLink(escHtml(`${appUrl}/profile#setting-email-replies`), 'Turn off reply emails'),
+      emailFooterLink(escHtml(appUrl), PRODUCT_NAME),
+    ].join(' &nbsp;·&nbsp; '),
   })
 }
 
@@ -161,6 +178,28 @@ export function replyThreadHeaders(appUrl: string, billId: string): Record<strin
   return { 'In-Reply-To': root, 'References': root }
 }
 
+/**
+ * The page a reply email's "Mute this bill" footer link opens. It asks before
+ * muting, so a mail scanner that follows the link mutes nothing.
+ */
+export function muteBillPageUrl(appUrl: string, token: string): string {
+  return `${appUrl}/mute-bill?token=${encodeURIComponent(token)}`
+}
+
+/**
+ * One-click unsubscribe headers (RFC 8058) that mute the bill: a mail client's
+ * Unsubscribe button posts to the URL with no session. Cloudflare Email Service
+ * rejects the whole send when List-Unsubscribe is not https, so an instance on
+ * plain http (local dev) gets none, and keeps the footer link.
+ */
+export function muteUnsubscribeHeaders(appUrl: string, token: string): Record<string, string> {
+  if (!appUrl.startsWith('https://')) return {}
+  return {
+    'List-Unsubscribe': `<${appUrl}/api/mute-link?token=${encodeURIComponent(token)}>`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  }
+}
+
 async function sendReplyEmails(
   db: Db,
   recipients: Participant[],
@@ -170,7 +209,7 @@ async function sendReplyEmails(
   env: ReplyEnv,
 ): Promise<void> {
   const [author] = await db
-    .select({ name: users.name, email: users.email, subtitle: users.subtitle })
+    .select({ name: users.name, email: users.email, title: userTitleSql })
     .from(users).where(eq(users.id, authorUserId)).all()
   const [bill] = await db
     .select({
@@ -181,18 +220,24 @@ async function sendReplyEmails(
   if (!author || !bill) return
 
   const instanceName = (await resolveAssocName(env, db)) ?? ''
-  const html = renderReplyEmail({
-    appUrl: env.APP_URL,
-    author: { name: displayName(author), subtitle: author.subtitle },
-    bill,
-    comment,
-    instanceName,
-  })
   // One subject per bill, so replies group even in clients that thread on it.
   const subject = `[${bill.billNumber}] New comment`
-  const headers = replyThreadHeaders(env.APP_URL, billId)
+  const threadHeaders = replyThreadHeaders(env.APP_URL, billId)
 
-  const messages: EmailMessage[] = recipients.map(p => ({ to: [p.email], subject, html, headers }))
+  // Each recipient's email differs only in its mute links, which are signed for them.
+  const muteLinkToken = await muteLinkTokens(db)
+  const messages: EmailMessage[] = await Promise.all(recipients.map(async (p): Promise<EmailMessage> => {
+    const token = await muteLinkToken(p.id, billId)
+    const html = renderReplyEmail({
+      appUrl: env.APP_URL,
+      author: { name: displayName(author), title: author.title },
+      bill,
+      comment,
+      instanceName,
+      muteUrl: muteBillPageUrl(env.APP_URL, token),
+    })
+    return { to: [p.email], subject, html, headers: { ...threadHeaders, ...muteUnsubscribeHeaders(env.APP_URL, token) } }
+  }))
   console.log(`[replies] sending email to ${messages.length} recipient(s) for bill ${bill.billNumber}`)
   await sendBatch(env, messages, `replies ${bill.billNumber}`, db)
 }

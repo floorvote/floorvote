@@ -250,7 +250,7 @@ export function Notifications() {
                 <div>
                   <div style={boxTitle}>Send conversation emails to members</div>
                   <div style={boxDesc}>
-                    Covers mentions of a member, a role, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply emails but not mention emails. In-app notifications are not affected.
+                    Covers mentions of a member, a role, @admins, or @everyone in comments, and replies on bills members have commented on, for the whole instance. Members can turn off their own reply emails but not mention emails. In-app notifications are not affected.
                   </div>
                 </div>
                 <IosToggle

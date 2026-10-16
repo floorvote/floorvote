@@ -3,10 +3,14 @@ import { eq } from 'drizzle-orm'
 import { env } from 'cloudflare:test'
 import { app } from '../../src/index'
 import {
-  resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole,
+  resetDb, applyMigrations, seedUser, seedSession, seedBill, seedComment, seedRole, seedUserRole, stubFetch
 } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { associationConfig, comments, memberVotes, notes, notifications } from '../../src/db/schema'
+
+// Central's superadmin allowlist is fetched in the background on a first
+// authenticated request; answer it so the network guard stays quiet.
+beforeEach(() => { stubFetch() })
 
 // A new comment notifies the bill's other commenters (its participants). Every
 // case goes through the real HTTP routes. Replies are read from GET
@@ -214,7 +218,8 @@ describe('replying to a bill notifies its other commenters', () => {
         expect(name).toMatch(/^(In-Reply-To|References|List-[A-Za-z-]+|X-[A-Za-z-]+)$/)
       }
     }
-    // Replies don't carry a List-Unsubscribe until per-bill mute exists (#355).
+    // This instance URL is http, where Cloudflare Email Service refuses a
+    // List-Unsubscribe. billMute.test.ts covers the https one-click mute.
     expect(first.headers!['List-Unsubscribe']).toBeUndefined()
   })
 

@@ -50,11 +50,18 @@ export async function sendEmail(env: SendEnv, message: EmailMessage): Promise<Em
   }
   const body: Record<string, unknown> = { from: msg.from, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, reply_to: msg.replyTo }
   if (msg.headers) body.headers = msg.headers
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  let res: Response
+  try {
+    res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) {
+    // A connection-level failure must come back as a failed result, not a throw.
+    console.error('[email:resend]', err)
+    return { ok: false, provider: 'resend', error: `fetch failed: ${err instanceof Error ? err.message : String(err)}` }
+  }
   if (!res.ok) {
     console.error(`[email:resend] ${res.status} ${await res.text()}`)
     return { ok: false, provider: 'resend', error: String(res.status) }

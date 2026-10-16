@@ -13,22 +13,29 @@ async function envWithKey(emails: string): Promise<{ env: Env; pub: string }> {
 describe('superadminIssuer', () => {
   it('mints a verifiable token for an allowlisted email', async () => {
     const { env, pub } = await envWithKey('boss@example.com, other@example.com')
-    const token = await mintSuperadminToken(env, 'BOSS@example.com', 'Boss')
+    const token = await mintSuperadminToken(env, 'BOSS@example.com', { name: 'Boss', title: 'Operator support' })
     expect(token).toBeTruthy()
     const verified = await verifySuperadminJwt(token!, pub)
     expect(verified?.email).toBe('boss@example.com')
     expect(verified?.name).toBe('Boss')
+    expect(verified?.title).toBe('Operator support')
     expect(typeof verified?.jti).toBe('string')
+  })
+
+  it('mints a token with no profile claims when the superadmin has not set a profile', async () => {
+    const { env, pub } = await envWithKey('boss@example.com')
+    const verified = await verifySuperadminJwt((await mintSuperadminToken(env, 'boss@example.com', null))!, pub)
+    expect(verified?.title).toBeNull()
   })
 
   it('returns null for a non-allowlisted email', async () => {
     const { env } = await envWithKey('boss@example.com')
-    expect(await mintSuperadminToken(env, 'nope@x.org', 'No')).toBeNull()
+    expect(await mintSuperadminToken(env, 'nope@x.org', null)).toBeNull()
   })
 
   it('returns null when no private key is configured', async () => {
     const env = { SUPERADMIN_EMAILS: 'boss@example.com' } as unknown as Env
-    expect(await mintSuperadminToken(env, 'boss@example.com', 'Boss')).toBeNull()
+    expect(await mintSuperadminToken(env, 'boss@example.com', null)).toBeNull()
   })
 
   it('isSuperadminEmail trims and lowercases', async () => {

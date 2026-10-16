@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { env, SELF } from 'cloudflare:test'
-import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
+import { env } from 'cloudflare:test'
+import { resetDb, applyMigrations, appFetch, stubFetch, seedUser, seedSession, seedBill, seedCalendarEvent } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills, calendarEvents, calendarEventBills, feedEvents } from '../../src/db/schema'
 import { eq } from 'drizzle-orm'
@@ -14,6 +14,7 @@ let adminToken: string
 let memberToken: string
 
 beforeEach(async () => {
+  stubFetch() // central lookups and background backfills are answered, never real
   await resetDb()
   await applyMigrations()
   const adminId = await seedUser({ email: 'admin@x.com', role: 'admin' })
@@ -23,7 +24,7 @@ beforeEach(async () => {
 })
 
 function post(body: unknown, token = adminToken) {
-  return SELF.fetch('https://x/api/bills/draft', {
+  return appFetch('https://x/api/bills/draft', {
     method: 'POST',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -31,7 +32,7 @@ function post(body: unknown, token = adminToken) {
 }
 
 function patch(id: string, body: unknown, token = adminToken) {
-  return SELF.fetch(`https://x/api/bills/${id}/draft`, {
+  return appFetch(`https://x/api/bills/${id}/draft`, {
     method: 'PATCH',
     headers: { Cookie: `session=${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -124,14 +125,14 @@ describe('POST /api/bills/draft — untitled drafts', () => {
 
   it('returns the untitled draft from GET /bills/drafts with its raw empty title', async () => {
     await post({ billNumber: 'D1', state: 'UT' })
-    const res = await SELF.fetch('https://x/api/bills/drafts', { headers: { Cookie: `session=${adminToken}` } })
+    const res = await appFetch('https://x/api/bills/drafts', { headers: { Cookie: `session=${adminToken}` } })
     const body = await res.json<{ drafts: Array<{ billNumber: string; title: string }> }>()
     expect(body.drafts).toEqual([expect.objectContaining({ billNumber: 'D1', title: '' })])
   })
 
   it('returns the untitled draft from GET /bills/:id with its raw empty title and isDraft', async () => {
     const { id } = await (await post({ billNumber: 'D1', state: 'UT' })).json<{ id: string }>()
-    const res = await SELF.fetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${adminToken}` } })
+    const res = await appFetch(`https://x/api/bills/${id}`, { headers: { Cookie: `session=${adminToken}` } })
     expect(res.status).toBe(200)
     const body = await res.json<{ title: string; isDraft: boolean; billNumber: string }>()
     expect(body).toMatchObject({ title: '', isDraft: true, billNumber: 'D1' })
@@ -139,7 +140,7 @@ describe('POST /api/bills/draft — untitled drafts', () => {
 
   it('lists the untitled draft in GET /bills with isDraft so the list can label it', async () => {
     await post({ billNumber: 'D1', state: 'UT' })
-    const res = await SELF.fetch('https://x/api/bills', { headers: { Cookie: `session=${adminToken}` } })
+    const res = await appFetch('https://x/api/bills', { headers: { Cookie: `session=${adminToken}` } })
     const body = await res.json<{ bills: Array<{ billNumber: string; title: string; isDraft: boolean }> }>()
     const found = body.bills.find(b => b.billNumber === 'D1')
     expect(found).toMatchObject({ title: '', isDraft: true })
@@ -225,7 +226,7 @@ describe('linking an untitled draft', () => {
   it("keeps the filed bill's own title", async () => {
     const { id: draftId } = await (await post({ billNumber: 'D1', state: 'UT' })).json<{ id: string }>()
     const filedId = await seedBill({ billNumber: 'HB 1', externalId: 'legiscan:1', title: 'Filed bill title', state: 'UT' })
-    const res = await SELF.fetch(`https://x/api/bills/${draftId}/link`, {
+    const res = await appFetch(`https://x/api/bills/${draftId}/link`, {
       method: 'POST',
       headers: { Cookie: `session=${adminToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ filedBillId: filedId }),
@@ -256,7 +257,7 @@ describe('GET /api/calendar/events — untitled draft display title', () => {
       { eventId, billId: filedBlank },
     ])
 
-    const res = await SELF.fetch('https://x/api/calendar/events', { headers: { Cookie: `session=${memberToken}` } })
+    const res = await appFetch('https://x/api/calendar/events', { headers: { Cookie: `session=${memberToken}` } })
     expect(res.status).toBe(200)
     const events = await res.json<Array<{ uid: string; bills: Array<{ billNumber: string; billTitle: string }> }>>()
     const byNumber = new Map(events.find(e => e.uid === 'custom-untitled@t')!.bills.map(b => [b.billNumber, b.billTitle]))
@@ -268,7 +269,7 @@ describe('GET /api/calendar/events — untitled draft display title', () => {
   it('labels an untitled draft on a hearing event too', async () => {
     const draft = await seedBill({ billNumber: 'D9', title: '', state: 'RI', session: '2026', priority: 'high', isDraft: true })
     await seedCalendarEvent(draft, { uid: 'h-untitled@t', date: isoDay(3), description: 'Cmte' })
-    const res = await SELF.fetch('https://x/api/calendar/events', { headers: { Cookie: `session=${memberToken}` } })
+    const res = await appFetch('https://x/api/calendar/events', { headers: { Cookie: `session=${memberToken}` } })
     const events = await res.json<Array<{ uid: string; bills: Array<{ billTitle: string }> }>>()
     expect(events.find(e => e.uid === 'h-untitled@t')!.bills[0].billTitle).toBe('Untitled draft')
   })

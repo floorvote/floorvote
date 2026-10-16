@@ -13,7 +13,7 @@ export type DemoSeedUser = {
   email: string
   name: string
   role: 'owner' | 'admin' | 'member'
-  subtitle: string
+  title: string
   createdDaysAgo: number
   canVote: boolean
   /** Drives sessions.last_active and magic_links.used_at, which the sidebar
@@ -107,6 +107,25 @@ export type DemoSeedSession = {
   endDate: string
 }
 
+/**
+ * A saved view of the bill list, the filter set a visitor sees in the view
+ * switcher. The reset deletes every view and re-inserts these, in this order.
+ *
+ * `query` is the bill list's own serialized URL search string (build it with
+ * URLSearchParams, so values like "NJ:State and Local Government" are encoded the
+ * way the app encodes them). Stored views are opaque to the API, so a view that
+ * names a tag, subject, or value the demo's bills lack saves fine and matches
+ * nothing. The seed's test runs every view through the bill list to catch that.
+ * `slug` is the human-readable id in `?view=<slug>`. Fixed here, since the demo's
+ * URLs are shared and the reset must not change them.
+ */
+export type DemoSeedSavedView = {
+  id: string
+  name: string
+  slug: string
+  query: string
+}
+
 export type DemoSeed = {
   slug: string
   /** Rendered with the `Demo — ` prefix applied by the machinery. */
@@ -143,4 +162,8 @@ export type DemoSeed = {
   customFieldValues: Array<{ externalId: string; fieldId: string; value: string; setBy: string; daysAgo: number }>
   notes: Array<{ id: string; externalId: string; content: string; daysAgo: number }>
   calendarEvents: DemoSeedCalendarEvent[]
+  /** Two or three views written for this demo's audience. At least one joins
+   *  subjects and tags with the OR group operator (`match=any`), the case saved
+   *  views were built for. */
+  savedViews: DemoSeedSavedView[]
 }

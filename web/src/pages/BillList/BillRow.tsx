@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { decodeStatus } from '../../lib/legislativeStatus'
 import { stripMarkdown } from '../../components/MarkdownSummary'
@@ -15,7 +15,7 @@ import { CompactPrioritySelect } from '../../components/CompactPrioritySelect'
 import { NewMatchTriageControl } from '../../components/NewMatchTriageControl'
 import { HoverTooltip } from '../../components/HoverTooltip'
 import { TAG_CHIP, TAG_CHIP_HOVERED, TAG_CHIP_ACTIVE } from '../../lib/tagChipStyle'
-import { TOOLTIP_STYLE } from '../../lib/chipStyles'
+import { TOOLTIP_STYLE, chipOutline } from '../../lib/chipStyles'
 import { SECTION_LABEL, CHROME_TEXT } from '../../lib/textStyles'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { billDisplayTitle } from '../../../../shared/billTitle'
@@ -23,7 +23,16 @@ import { voteButtonStyle, type VoteKey } from '../../lib/voteButtonStyle'
 import { useConfig } from '../../context/ConfigContext'
 import { DEFAULT_ORG_NOUN } from '../../lib/orgNoun'
 import { CHIP_GRID, CHIP_GRID_MULTISTATE, CHIP_GAP, OUTER_GRID } from './constants'
-import type { Bill } from './types'
+import type { Bill, GroupMember } from './types'
+
+// A companion group's bills stack in the cells the row already has (bill number
+// and status), so the pairing reads by position and no column is wider. A group
+// larger than two shows the furthest-along bill, one other, and "+N".
+const GROUP_SHOWN = 2
+const STACK: CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }
+const MATCHED: CSSProperties = { ...chipOutline(true, false, false), display: 'inline-flex', borderRadius: radius.sm }
+
+const memberPath = (m: GroupMember) => billUrl({ id: m.id, state: m.state, sessionSlug: m.sessionSlug, billNumber: m.billNumber })
 
 export function formatYearChip(yearStart: number | null, yearEnd: number | null): string | null {
   if (!yearStart) return null
@@ -154,8 +163,7 @@ export const BillRow = memo(function BillRow({
   // Navigate to the bill detail page (optionally to a #section-* anchor).
   // Honors ⌘/Ctrl open-in-new-tab and routes through the prefetch path when
   // available, mirroring the row-click behavior.
-  const goToBill = (e: { metaKey: boolean; ctrlKey: boolean }, hash = '') => {
-    const target = `${billPath}${hash}`
+  const goTo = (e: { metaKey: boolean; ctrlKey: boolean }, target: string) => {
     if (e.metaKey || e.ctrlKey) { window.open(target, '_blank'); return }
     const main = document.querySelector('main')
     if (main) history.replaceState({ ...history.state, billsScroll: main.scrollTop }, '')
@@ -166,6 +174,63 @@ export const BillRow = memo(function BillRow({
       navigate(target, { state: navState })
     }
   }
+  const goToBill = (e: { metaKey: boolean; ctrlKey: boolean }, hash = '') => goTo(e, `${billPath}${hash}`)
+
+  // A group's bills, each number a link to its own bill. Only a bill that met
+  // the filter is emphasized, and only where another bill in the group didn't:
+  // when every bill matched, an outline on each says nothing.
+  const group = bill.group
+  // The first bill and one other: the first one that met the filter if the first didn't, so the match isn't hidden in "+N".
+  const [lead, ...rest] = group ?? []
+  const other = lead?.matched ? rest[0] : (rest.find(m => m.matched) ?? rest[0])
+  const shown = group ? [lead, ...(other ? [other] : [])].slice(0, GROUP_SHOWN) : []
+  const hidden = group ? rest.filter(m => m !== other) : []
+  const emphasize = !!group && group.some(m => m.matched === true) && group.some(m => m.matched === false)
+  const shownStatuses = [...new Set(shown.map(m => m.status))] // identical statuses collapse to one
+  const renderNumbers = () => !group
+    ? <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+    : (
+      <div data-group-stack style={STACK}>
+        {shown.map(m => {
+          const path = memberPath(m)
+          const number = (
+            <BillBadge
+              billNumber={m.billNumber} state={m.state} to={path}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); goTo(e, path) }}
+            />
+          )
+          return emphasize && m.matched
+            ? <HoverTooltip key={m.id} text="Matches your filters"><span data-matched="true" style={MATCHED}>{number}</span></HoverTooltip>
+            : <span key={m.id} style={{ display: 'inline-flex' }}>{number}</span>
+        })}
+        {hidden.length > 0 && (
+          <HoverTooltip text={`Also ${hidden.map(m => m.billNumber).join(', ')}`} describe>
+            <span style={{ ...CHROME_TEXT, fontWeight: fontWeight.semibold }}>+{hidden.length}</span>
+          </HoverTooltip>
+        )}
+      </div>
+    )
+  // The status column's chips filter by their status when clicked. The phone row's don't.
+  const renderStatuses = (interactive: boolean) => !group
+    ? (bill.isDraft
+        ? <DraftChip />
+        : <StatusChip
+            status={decodeStatus(bill.status)}
+            onClick={interactive ? () => onStatusClick(bill.status) : undefined}
+            isActive={interactive ? filterStatuses.includes(bill.status) : undefined}
+          />)
+    : (
+      <div style={STACK}>
+        {shownStatuses.map(status => (
+          <StatusChip
+            key={status}
+            status={decodeStatus(status)}
+            onClick={interactive ? () => onStatusClick(status) : undefined}
+            isActive={interactive ? filterStatuses.includes(status) : undefined}
+          />
+        ))}
+      </div>
+    )
 
   return (
     <div
@@ -223,14 +288,10 @@ export const BillRow = memo(function BillRow({
       <div>
         <div className="bill-row-chips-cell" style={{ display: 'grid', gridTemplateColumns: isMultiState ? CHIP_GRID_MULTISTATE : CHIP_GRID, ['--bill-col-w' as string]: isMultiState ? '105px' : '70px', gap: CHIP_GAP, marginBottom: 8, alignItems: 'center', minWidth: 0, overflow: 'visible' } as React.CSSProperties}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
+            {renderNumbers()}
           </div>
           <span className="bill-col-status" style={{ display: 'flex', alignItems: 'center' }}>
-            {bill.isDraft ? <DraftChip /> : <StatusChip
-              status={decodeStatus(bill.status)}
-              onClick={() => onStatusClick(bill.status)}
-              isActive={filterStatuses.includes(bill.status)}
-            />}
+            {renderStatuses(true)}
           </span>
           <span className="bill-col-year" style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {(() => {
@@ -260,8 +321,8 @@ export const BillRow = memo(function BillRow({
         </div>
         {/* Mobile-only: bill number, status, relevance — priority pinned to right edge */}
         <div className="bill-row-mobile-meta">
-          <BillBadge billNumber={bill.billNumber} state={bill.state} isDraft={bill.isDraft} />
-          {bill.isDraft ? <DraftChip /> : <StatusChip status={decodeStatus(bill.status)} />}
+          {renderNumbers()}
+          {renderStatuses(false)}
           {bill.relevanceScore != null && (
             <RelevanceChip
               score={bill.relevanceScore}

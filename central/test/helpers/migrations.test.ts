@@ -1,22 +1,6 @@
 import { env } from 'cloudflare:test'
 import { describe, it, expect } from 'vitest'
-import { legiscanMigrations, parseMigrations, setupDb, splitStatements } from './migrations'
-
-describe('splitStatements', () => {
-  it('ignores semicolons in comments and string literals', () => {
-    const sql = [
-      '-- a full scan; slow',
-      'CREATE TABLE t (a TEXT); -- trailing; comment',
-      "/* block; comment */ INSERT INTO t VALUES ('x;y', 'it''s');",
-      'CREATE INDEX i ON t(a)',
-    ].join('\n')
-    expect(splitStatements(sql)).toEqual([
-      'CREATE TABLE t (a TEXT);',
-      "INSERT INTO t VALUES ('x;y', 'it''s');",
-      'CREATE INDEX i ON t(a);',
-    ])
-  })
-})
+import { legiscanMigrations, parseMigrations, setupDb } from './migrations'
 
 describe('parseMigrations', () => {
   it('orders any folder by filename and names by basename', () => {

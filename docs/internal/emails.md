@@ -15,7 +15,14 @@ api/src/lib/emailBillCard.ts  renderBillCardOpen / renderCommentRow / BILL_CARD_
 api/src/lib/digestEmail.ts    renderDigestEmail()
 api/src/lib/weekAheadEmail.ts renderWeekAheadEmail()
 api/src/lib/mentions.ts       renderMentionEmail()
-api/src/lib/replies.ts        renderReplyEmail() (sets only In-Reply-To and References, never Message-ID)
+api/src/lib/emailChangeEmail.ts
+                              renderEmailChangeConfirmEmail() (to the new address) +
+                              renderEmailChangeNoticeEmail() (account-security notices to the old address) +
+                              renderEmailChangeReportedEmail() (alert to owners and admins after "This wasn't me")
+api/src/lib/emailChangeReport.ts
+                              issues each notice's "This wasn't me" token, and reportNotMe() sends the alert
+api/src/lib/replies.ts        renderReplyEmail() (sets In-Reply-To and References, never Message-ID, plus a one-click
+                              List-Unsubscribe that mutes the bill, only when APP_URL is https)
 api/src/lib/inviteBounceEmail.ts
                               renderInviteBounceEmail() + notifyInviteBounces() (hourly, after the bounce check)
 api/src/lib/email.ts          renderMagicLinkEmail() (login/invite) + sendEmail/sendMagicLink/sendFeedback

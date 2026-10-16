@@ -286,21 +286,8 @@ describe('POST /admin/members/:id/change-email', () => {
       expect(await changeEmail(pendingId, 'jane@exmaple.com')).toEqual({ status: 400, body: { error: UNCHANGED } })
     })
 
-    it('refuses a member who has signed in', async () => {
-      await seedMagicLink(pendingId, { used: true })
-      const r = await changeEmail(pendingId, 'jane@example.com')
-      expect(r.status).toBe(400)
-      expect(r.body.error).toMatch(/pending invite/i)
-      await expectUntouched(pendingId, 'jane@exmaple.com')
-    })
-
-    it('refuses a member nobody invited (one who signed in another way)', async () => {
-      const selfMade = await seedUser({ email: 'Super.Admin@Example.com', role: 'admin' })
-      const r = await changeEmail(selfMade, 'someone@example.com')
-      expect(r.status).toBe(400)
-      expect(r.body.error).toMatch(/pending invite/i)
-      await expectUntouched(selfMade, 'Super.Admin@Example.com')
-    })
+    // A member who has signed in (or was never invited) is an active member:
+    // their change is the confirmed kind, covered in test/routes/emailChangeAdmin.test.ts.
 
     it('refuses a deactivated member', async () => {
       const gone = await seedPending('gone@exmaple.com', { deactivatedAt: '2026-01-01 00:00:00' })
