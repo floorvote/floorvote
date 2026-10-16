@@ -2873,6 +2873,29 @@ export function BillDetail() {
         )}
       </div>
 
+      {/* Why values this page never set appear here: the group's other bills share them. */}
+      {(() => {
+        const companions = (bill.groupBills ?? []).filter(g => g.billId !== bill.id)
+        if (companions.length === 0) return null
+        return (
+          <p data-testid="group-shares-line" style={{ margin: '16px 0 0', fontSize: fontSize.sm, lineHeight: 1.6, color: color.textMuted }}>
+            Discussion, votes, and the team's values are shared with{' '}
+            {companions.map((g, i) => (
+              <Fragment key={g.billId}>
+                {i === 0 ? null : companions.length === 2 ? ' and ' : i === companions.length - 1 ? ', and ' : ', '}
+                <BillBadge
+                  mini
+                  billNumber={g.billNumber}
+                  state={g.state}
+                  to={billUrl({ id: g.billId, state: g.state, sessionSlug: g.sessionSlug, billNumber: g.billNumber })}
+                />
+              </Fragment>
+            ))}
+            .
+          </p>
+        )
+      })()}
+
       {/* Two-column layout */}
       <div className="bill-detail-columns" style={{ display: 'flex', gap: 24, padding: '24px 0' }}>
 
