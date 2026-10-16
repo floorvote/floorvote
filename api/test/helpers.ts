@@ -80,6 +80,7 @@ export async function seedUser(overrides?: {
   title?: string
   canVote?: boolean
   emailDigestEnabled?: boolean
+  emailDigestMatchesEnabled?: boolean
   emailRepliesEnabled?: boolean
   deactivatedAt?: string | null
   invitedBy?: string | null
@@ -96,6 +97,7 @@ export async function seedUser(overrides?: {
     subtitle: overrides?.title ?? null,
     canVote: overrides?.canVote === false ? 0 : 1,
     emailDigestEnabled: overrides?.emailDigestEnabled === false ? 0 : 1,
+    emailDigestMatchesEnabled: overrides?.emailDigestMatchesEnabled === false ? 0 : 1,
     emailRepliesEnabled: overrides?.emailRepliesEnabled === false ? 0 : 1,
     deactivatedAt: overrides?.deactivatedAt ?? null,
     invitedBy: overrides?.invitedBy ?? null,
@@ -178,6 +180,8 @@ export async function seedBill(overrides?: {
   isDraft?: boolean
   draftText?: string | null
   newMatchAt?: string | null
+  /** Where the keyword match came from; null (the default) counts as bulk. */
+  matchProvenance?: 'routine' | 'bulk' | null
   triagedAt?: string | null
   /** Where central stored the bill's text, when the instance has been told. */
   textR2Key?: string | null
@@ -223,6 +227,7 @@ export async function seedBill(overrides?: {
     isDraft: overrides?.isDraft ?? false,
     draftText: overrides?.draftText ?? null,
     newMatchAt: overrides?.newMatchAt ?? null,
+    matchProvenance: overrides?.matchProvenance ?? null,
     triagedAt: overrides?.triagedAt ?? null,
     textR2Key: overrides?.textR2Key ?? null,
     createdAt: new Date().toISOString(),
@@ -288,13 +293,13 @@ export async function seedComment(
  * comment_mentions table had, for tests that check who a comment reached and how.
  */
 export async function mentionRecords(commentId?: string): Promise<Array<{
-  id: string; commentId: string | null; userId: string; sourceType: 'user' | 'role' | 'everyone'; sourceId: string; readAt: string | null
+  id: string; commentId: string | null; userId: string; sourceType: 'user' | 'role' | 'admins' | 'everyone'; sourceId: string; readAt: string | null
 }>> {
   const rows = await getDb(env.DB).select().from(notifications)
     .where(commentId ? and(eq(notifications.kind, 'mention'), eq(notifications.commentId, commentId)) : eq(notifications.kind, 'mention'))
     .all()
   return rows.map(r => {
-    const data = JSON.parse(r.data) as { sourceType: 'user' | 'role' | 'everyone'; sourceId: string }
+    const data = JSON.parse(r.data) as { sourceType: 'user' | 'role' | 'admins' | 'everyone'; sourceId: string }
     return { id: r.id, commentId: r.commentId, userId: r.recipientId, sourceType: data.sourceType, sourceId: data.sourceId, readAt: r.readAt }
   })
 }
@@ -304,7 +309,7 @@ export async function seedCommentMention(
   commentId: string,
   userId: string,
   overrides?: {
-    sourceType?: 'user' | 'role'
+    sourceType?: 'user' | 'role' | 'admins'
     sourceId?: string
     readAt?: string | null
   },

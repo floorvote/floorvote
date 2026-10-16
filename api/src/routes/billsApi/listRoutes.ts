@@ -4,9 +4,9 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillIds, myBillsCondition, unvotedCondition, newMatchWhere, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagMembership, hasGroupTags, type BillsFilter } from './query'
 import { billStatesForWildcard } from '../../lib/billStates'
-import { getNewMatchMinRelevance } from '../../lib/newMatch'
+import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
 import type { CachedListPage } from '../../lib/listCache'
 import { loadTaxonomyTagNameSet } from '../../lib/taxonomy'
@@ -210,7 +210,12 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
     // Threshold is only needed for the admin count or when the worklist filter is active.
-    const newMatchMinRelevance = (isAdmin || newMatchesActive) ? await getNewMatchMinRelevance(db) : 0
+    // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
+    // facets both use them, alongside the threshold's read.
+    const [newMatchMinRelevance, mine] = await Promise.all([
+      (isAdmin || newMatchesActive) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
+      loadMyBillsInGroups(db, currentUser.id),
+    ])
 
     const cfParamMap: Record<string, string[]> = {}
     for (const [key, value] of new URL(c.req.url).searchParams) {
@@ -227,6 +232,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const parts = await buildFilterParts(db, {
       statuses, stages, priorities, positionValues, sessions, years, states, tagFilters, subjectFilters, q, minRelevance,
       myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
+      myBillIds: mine,
       unvoted,
       newMatches: newMatchesActive ? '1' : undefined,
       newMatchMinRelevance,
@@ -241,10 +247,13 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // the chip-visibility signal (draftCount below stays filtered, for the
     // badge). Computed up front so the myBills early-return below — which
     // otherwise skips straight to an empty facets object — still reports it
-    // correctly instead of hard-coding false.
+    // correctly instead of hard-coding false. The 1 is written in the SQL, not bound: SQLite serves
+    // the probe from the partial index of drafts (0107) only when it sees is_draft = 1 in the
+    // statement, and without it the planner scans the table (#551). billsFacetsPlan.test.ts pins
+    // the plan.
     const [hasDraftRow] = await db.select({ id: bills.id })
       .from(bills)
-      .where(eq(bills.isDraft, true))
+      .where(sql`${bills.isDraft} = 1`)
       .limit(1)
       .all()
     const hasDrafts = hasDraftRow !== undefined
@@ -395,7 +404,6 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const tagSet = await loadTaxonomyTagNameSet(db)
     // "Any tag" = a valid (in-taxonomy) tag.
     const hasTagCond = (t: BillsTable): SQL => tagSet.size > 0 ? tagMembership([...tagSet], t) : sql`json_array_length(${t.groupTags}) > 0`
-    const mine = await loadMyBillIds(db, currentUser.id)
     const voted = await loadVotedInGroups(db, currentUser.id)
     const m = billsAs('m')
     const me = billsAs('me')

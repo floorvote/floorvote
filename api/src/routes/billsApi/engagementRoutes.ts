@@ -9,6 +9,7 @@ import {
 } from '../../db/schema'
 import { extractAndNotifyMentions } from '../../lib/mentions'
 import { notifyParticipantsOfReply } from '../../lib/replies'
+import { muteBill, unmuteBill } from '../../lib/billMutes'
 import { stripHtml } from '../../lib/stripHtml'
 import { COMMENT_PREVIEW_MAX, truncateWithEllipsis } from '../../../../shared/feedUtils'
 import { sanitizeCommentHtml } from '../../lib/sanitizeHtml'
@@ -284,6 +285,25 @@ export function registerEngagementRoutes(router: Hono<AppEnv>) {
     })
 
     return c.json({ id: commentId, content, createdAt: now }, 201)
+  })
+
+  // PUT /bills/:id/mute: mute this bill's comments for the member (#355). No
+  // reply notifications for it, in the app or by email. Mentions still arrive.
+  // Works whether or not the member has commented on the bill.
+  router.put('/:id/mute', async (c) => {
+    const db = getDb(c.env.DB)
+    const { id } = c.req.param()
+    const bill = await db.select({ id: bills.id }).from(bills).where(eq(bills.id, id)).get()
+    if (!bill) return c.json({ error: 'Not found' }, 404)
+    await muteBill(db, c.get('user').id, id)
+    return c.json({ muted: true })
+  })
+
+  // DELETE /bills/:id/mute: unmute it.
+  router.delete('/:id/mute', async (c) => {
+    const db = getDb(c.env.DB)
+    await unmuteBill(db, c.get('user').id, c.req.param('id'))
+    return c.json({ muted: false })
   })
 
   // GET /bills/:id/note

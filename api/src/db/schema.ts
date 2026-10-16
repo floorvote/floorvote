@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
+import type { EventSource } from '../../../shared/eventSource'
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
@@ -15,6 +16,7 @@ export const users = sqliteTable('users', {
   deactivatedAt: text('deactivated_at'),
   canVote: integer('can_vote').notNull().default(1),
   emailDigestEnabled: integer('email_digest_enabled').notNull().default(1),
+  emailDigestMatchesEnabled: integer('email_digest_matches_enabled').notNull().default(1),
   emailWeekAheadEnabled: integer('email_week_ahead_enabled').notNull().default(1),
   emailRepliesEnabled: integer('email_replies_enabled').notNull().default(1),
   lastSeenFeed: text('last_seen_feed'),
@@ -224,6 +226,11 @@ export const bills = sqliteTable('bills', {
   aiHealAttempts: integer('ai_heal_attempts').notNull().default(0),
   textStatus: text('text_status'),
   newMatchAt: text('new_match_at'),
+  // Where the keyword match came from, as central declared it (MatchProvenance
+  // in types.ts). NULL, for any match made before central declared one, counts
+  // as bulk. Holds the latest declaration until the match is recorded
+  // (new_match_at), then never changes.
+  matchProvenance: text('match_provenance', { enum: ['routine', 'bulk'] }),
   triagedAt: text('triaged_at'),
   triagedBy: text('triaged_by'),
   isDraft: integer('is_draft', { mode: 'boolean' }).notNull().default(false),
@@ -236,7 +243,7 @@ export const bills = sqliteTable('bills', {
   groupKey: text('group_key'),
   // The tags of the bill's companion group's current analysis, or its own tags
   // when it's in no group, as a JSON array (migration 0103). A tag filter tests
-  // these. Written only by the triggers 0103 creates, never by the app.
+  // these. Written only by the triggers 0106 recreates, never by the app.
   groupTags: text('group_tags').notNull().default('[]'),
 })
 
@@ -347,7 +354,7 @@ export const notes = sqliteTable('notes', {
 export const feedEvents = sqliteTable('feed_events', {
   id: text('id').primaryKey(),
   type: text('type', {
-    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched'],
+    enum: ['bill_added', 'priority_set', 'position_set', 'comment_added', 'vote_milestone', 'bill_updated', 'hearing_added', 'hearing_changed', 'hearing_cancelled', 'bill_matched', 'new_matches'],
   }).notNull(),
   // Null for an event about no single bill (a bulk edit, and later instance-level
   // events). Such an event keeps what it is about in `metadata`, and survives the
@@ -457,7 +464,9 @@ export const calendarEvents = sqliteTable('calendar_events', {
   // 'hearing': a bill's calendar entry, from central. 'custom': the instance's
   // own. 'body': an event on a legislature's own calendar, from central
   // (lib/bodyEvents.ts), which links its agenda bills in calendar_event_bills.
-  source: text('source').notNull().default('hearing'),
+  // A date custom field's event (source 'field') is never stored: it's
+  // projected from bill_custom_field_values at read time (lib/dateFieldEvents.ts).
+  source: text('source').$type<EventSource>().notNull().default('hearing'),
   // A bill calendar entry's kind, as central sent it: 'hearing', 'markup',
   // 'meeting', or 'deadline' (shared/calendarKinds.ts). Null for custom
   // events, and for an entry central hasn't sent since migration 0079.
@@ -497,7 +506,7 @@ export const calendarEventBills = sqliteTable('calendar_event_bills', {
 
 /** A mention notification's kind-specific data: how the mention reached the recipient. */
 export type MentionNotificationData = {
-  sourceType: 'user' | 'role' | 'everyone'
+  sourceType: 'user' | 'role' | 'admins' | 'everyone'
   /** The user, the role, or 'all' for @everyone. */
   sourceId: string
 }
@@ -531,3 +540,17 @@ export const notifications = sqliteTable('notifications', {
 })
 
 export type NotificationKind = typeof notifications.$inferSelect['kind']
+
+/**
+ * Bills whose comments a member muted (#355). A muted bill sends that member no
+ * reply notifications, in the app or by email. Mentions still reach them.
+ * Muting works whether or not the member has commented on the bill.
+ */
+export const billMutes = sqliteTable('bill_mutes', {
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  billId: text('bill_id').notNull().references(() => bills.id, { onDelete: 'cascade' }),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+}, (t) => [
+  primaryKey({ columns: [t.userId, t.billId] }),
+  index('idx_bill_mutes_bill').on(t.billId),
+])

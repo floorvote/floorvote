@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 import { seedBill } from '../helpers'
 import { associationConfig, bills, billCustomFieldValues, billSubjects, customFieldDefinitions, memberVotes, notes, officialPositions } from '../../src/db/schema'
@@ -144,6 +145,115 @@ describe('facet counts count a companion group once', () => {
       await db().insert(memberVotes).values({ id: 'v1', userId: ada, billId: 'a190', position: 'support' })
       expect((await facets()).unvotedCount).toBe(0)
       expect((await facets('unvoted=1')).status).toEqual({})
+    })
+
+    describe('my bills is group-wide (#552)', () => {
+      // A190 (Introduced) and S1713 (Passed) are a group; HB 1 and HB 2 are in none.
+      async function seed() {
+        await seedBill({ id: 'a190', billNumber: 'A190', status: 'Introduced', statusStage: 'introduced', state: 'NJ' })
+        await seedBill({ id: 'b1713', billNumber: 'S1713', status: 'Passed', statusStage: 'passed', state: 'NJ' })
+        await seedBill({ id: 'solo', billNumber: 'HB 1', status: 'Introduced', statusStage: 'introduced', state: 'TX' })
+        await seedBill({ id: 'other', billNumber: 'HB 2', status: 'Passed', statusStage: 'passed', state: 'TX' })
+        await group('a190', 'b1713')
+      }
+      const vote = (billId: string) => db().insert(memberVotes).values({ id: crypto.randomUUID(), billId, userId: ada, position: 'support' })
+
+      it('counts the group when only one of its bills is mine and the filter meets only the other', async () => {
+        await seed()
+        await vote('a190')
+        const f = await facets('status=Passed')
+        expect(f.myBillsCount).toBe(1)
+        expect(await total('myBills=1&status=Passed')).toBe(1)
+      })
+
+      it('agrees with the list under every filter, including with the group out of it', async () => {
+        await seed()
+        await vote('a190')
+        for (const [qs, groups] of [
+          ['', 1], ['status=Passed', 1], ['status=Introduced', 1], ['state=NJ', 1], ['state=TX', 0],
+          ['status=Passed&state=NJ', 1], ['status=Passed&state=TX', 0], ['unvoted=1', 0], ['status=Passed&unvoted=1', 0],
+        ] as const) {
+          expect([qs, 'count', (await facets(qs)).myBillsCount]).toEqual([qs, 'count', groups])
+          expect([qs, 'list', await total(`myBills=1&${qs}`)]).toEqual([qs, 'list', groups])
+        }
+      })
+
+      it('counts the other facets of the my bills list by its groups', async () => {
+        await seed()
+        await vote('a190')
+        const f = await facets('myBills=1')
+        expect(f.status).toEqual({ Introduced: 1, Passed: 1 })
+        expect(f.state).toEqual({ NJ: 1 })
+        expect(f.myBillsCount).toBe(1)
+      })
+
+      it('counts a group none of whose bills is mine in no facet of my bills', async () => {
+        await seed()
+        await vote('solo')
+        expect((await facets('status=Passed')).myBillsCount).toBe(0)
+        expect((await facets('')).myBillsCount).toBe(1)
+        expect((await facets('myBills=1')).status).toEqual({ Introduced: 1 })
+      })
+
+      it('counts a bill in no group as before', async () => {
+        await seed()
+        await vote('solo')
+        expect((await facets('state=TX')).myBillsCount).toBe(1)
+        expect((await facets('status=Passed&state=TX')).myBillsCount).toBe(0)
+      })
+
+      it('counts the group once, once with unvoted as well, and not at all once I have voted on it', async () => {
+        await seed()
+        await db().insert(notes).values({ id: 'n1', billId: 'a190', userId: ada, content: '<p>mine</p>' })
+        const f = await facets('status=Passed')
+        expect(f.myBillsCount).toBe(1)
+        expect(f.unvotedCount).toBe(2)
+        expect(await total('myBills=1&unvoted=1&status=Passed')).toBe(1)
+        expect((await facets('myBills=1&unvoted=1')).myBillsCount).toBe(1)
+        await vote('b1713')
+        expect(await total('myBills=1&unvoted=1&status=Passed')).toBe(0)
+        expect((await facets('myBills=1&unvoted=1')).myBillsCount).toBe(0)
+      })
+
+      it('returns each bill to its own count when the group splits', async () => {
+        await seed()
+        await vote('a190')
+        await db().update(bills).set({ groupKey: null }).where(eq(bills.id, 'a190'))
+        await db().update(bills).set({ groupKey: null }).where(eq(bills.id, 'b1713'))
+        expect((await facets('status=Passed')).myBillsCount).toBe(0)
+        expect((await facets('status=Introduced')).myBillsCount).toBe(1)
+        expect((await facets('')).myBillsCount).toBe(1)
+      })
+
+      it("reads the member's bills once per facets request, with or without the scope on", async () => {
+        await seed()
+        await vote('a190')
+        await db().insert(notes).values({ id: 'n1', billId: 'b1713', userId: ada, content: '<p>mine</p>' })
+        // loadMyBillIds reads the member's notes once, so the statements that read them count its runs.
+        const noteReads: string[] = []
+        const realPrepare = env.DB.prepare.bind(env.DB)
+        const spy = vi.spyOn(env.DB, 'prepare').mockImplementation((sql: string) => {
+          if (/from "notes"/i.test(sql)) noteReads.push(sql)
+          return realPrepare(sql)
+        })
+        try {
+          for (const qs of ['', 'myBills=1', 'myBills=1&status=Passed&unvoted=1']) {
+            noteReads.length = 0
+            await facets(qs)
+            expect([qs, noteReads.length]).toEqual([qs, 1])
+          }
+        } finally {
+          spy.mockRestore()
+        }
+      })
+
+      it('counts the my bills of an OR selection by the groups it reaches', async () => {
+        await seed()
+        await vote('a190')
+        const qs = 'status=Passed&state=TX&match=any'
+        expect((await facets(qs)).myBillsCount).toBe(await total(`myBills=1&${qs}`))
+        expect(await total(`myBills=1&${qs}`)).toBe(1)
+      })
     })
 
     it('counts the matching groups of the active filter, not the bills', async () => {

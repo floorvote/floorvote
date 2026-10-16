@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 import { resetDb, applyMigrations } from '../helpers'
 import { getDb } from '../../src/db/client'
 import { bills } from '../../src/db/schema'
-import { newMatchWhere } from '../../src/routes/billsApi/query'
+import { newMatchWhere } from '../../src/lib/newMatch'
 
 // 0101 records when each bill's priority was set, so a companion group can
 // read its priority from the member where it was set most recently. Existing

@@ -4,6 +4,7 @@ import { eq, and, desc, inArray, isNull } from 'drizzle-orm'
 import * as schema from '../db/schema'
 import { secretsMatch } from '../lib/auth'
 import { textCacheKey, getCachedText, putCachedText } from '../lib/billTextCache'
+import { decodeStoredHtml } from '../lib/decodeHtml'
 import { resolveItemDate } from '../lib/itemDate'
 import { parseHandle, toHandle } from '../lib/billHandle'
 import { DEFAULT_PROVIDER_ID, findProvider, getProvider } from '../providers'
@@ -445,13 +446,22 @@ billsRoutes.get('/:id/text/:docId', async (c) => {
   if (!obj) return c.json({ error: 'text not found in storage' }, 404)
 
   const isPdf = text.r2Key.endsWith('.pdf')
-  const contentType = isPdf ? 'application/pdf' : 'text/html; charset=utf-8'
-  const res = new Response(obj.body, {
-    headers: {
-      'Content-Type': obj.httpMetadata?.contentType ?? contentType,
-      'Content-Disposition': 'inline',
-    },
-  })
+  // PDFs stream through as bytes. HTML is decoded by its declared charset and
+  // re-served as UTF-8, so the panel (and anything else reading this endpoint)
+  // never has to guess what a state's server meant.
+  const res = isPdf
+    ? new Response(obj.body, {
+        headers: {
+          'Content-Type': obj.httpMetadata?.contentType ?? 'application/pdf',
+          'Content-Disposition': 'inline',
+        },
+      })
+    : new Response(decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Disposition': 'inline',
+        },
+      })
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res
 })
@@ -495,7 +505,7 @@ billsRoutes.get('/:id/text', async (c) => {
     const buf = await obj.arrayBuffer()
     res = c.json({ type: 'pdf', content: Buffer.from(buf).toString('base64'), ...served })
   } else {
-    res = c.json({ type: 'html', content: await obj.text(), ...served })
+    res = c.json({ type: 'html', content: decodeStoredHtml(await obj.arrayBuffer(), obj.httpMetadata?.contentType), ...served })
   }
   c.executionCtx.waitUntil(putCachedText(c.env, cacheKey, res.clone()))
   return res

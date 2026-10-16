@@ -20,7 +20,7 @@
 // cases use two states to demonstrate the multi-state case correctly.)
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
+import { render, screen, fireEvent, within, cleanup, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { FILTER_DIMENSIONS, filterDimensionLabel, type FilterDimensionContext } from '../../lib/filterDimensions'
@@ -153,10 +153,11 @@ async function renderDesktop(opts: { isAdmin: boolean; states: string[]; draftCo
 // --- Mobile harness (FilterSheet) — every dimension gets non-empty options
 // so only the two conditional dimensions vary across the matrix.
 function renderMobile(
-  ctx: Omit<FilterDimensionContext, 'hasDrafts' | 'draftsActive'> & {
+  ctx: Omit<FilterDimensionContext, 'hasDrafts' | 'draftsActive' | 'newMatchesActive'> & {
     hasDrafts?: boolean
     draftCount?: number
     drafts?: boolean
+    newMatches?: boolean
     newMatchesCount?: number
     customFieldDefs?: CustomFieldDef[]
   },
@@ -169,7 +170,7 @@ function renderMobile(
       statuses={[]} stages={[]} priorities={[]} positions={[]} tags={[]} subjects={[]} sessions={[]} states={[]}
       minRelevance={0} myBills={false}
       isAdmin={ctx.isAdmin}
-      newMatches={false}
+      newMatches={ctx.newMatches ?? false}
       newMatchesCount={ctx.newMatchesCount ?? 3}
       unvotedOnly={false}
       drafts={ctx.drafts ?? false}
@@ -248,7 +249,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'multiple known states', uniqueStates: ['RI', 'NJ'] },
   ])('State dimension — $label', ({ uniqueStates }) => {
     const isMultiState = uniqueStates.length > 1
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState, hasDrafts: false, draftsActive: false })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'state')!.isVisible({ uniqueStates, isAdmin: false, isMultiState, hasDrafts: false, draftsActive: false, newMatchesActive: false })
 
     it(`is ${expectedVisible ? 'shown' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin: false, states: uniqueStates })
@@ -267,7 +268,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'non-admin', isAdmin: false },
     { label: 'admin', isAdmin: true },
   ])('New matches dimension — $label', ({ isAdmin }) => {
-    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false, hasDrafts: false, draftsActive: false })
+    const expectedVisible = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!.isVisible({ uniqueStates: ['RI'], isAdmin, isMultiState: false, hasDrafts: false, draftsActive: false, newMatchesActive: false })
 
     it(`is ${expectedVisible ? 'shown, with a count' : 'hidden'} on desktop`, async () => {
       await renderDesktop({ isAdmin, states: ['RI'] })
@@ -289,6 +290,37 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     })
   })
 
+  // A member reaches the bill list filtered to new matches from the digest and
+  // from the feed's new-matches row, though the filter is otherwise admin-only.
+  // The chip must stay visible while that filter is on, so the member can see
+  // what is narrowing the list and turn it off. Unlike the admin worklist it
+  // shows no count: the server returns 0 to a member.
+  describe('New matches dimension — a member on /bills?newMatches=1', () => {
+    it('registry isVisible reports true only while the filter is on', () => {
+      const dim = FILTER_DIMENSIONS.find(d => d.key === 'newMatches')!
+      const ctx = { uniqueStates: ['RI'], isAdmin: false, isMultiState: false, hasDrafts: false, draftsActive: false }
+      expect(dim.isVisible({ ...ctx, newMatchesActive: true })).toBe(true)
+      expect(dim.isVisible({ ...ctx, newMatchesActive: false })).toBe(false)
+    })
+
+    it('shows the chip on desktop, pressed and with no count, and clears the filter when clicked', async () => {
+      await renderDesktop({ isAdmin: false, states: ['RI'], initialUrl: '/bills?newMatches=1' })
+      const chip = screen.getByText(filterDimensionLabel('newMatches')).closest('button')!
+      expect(chip).toHaveAttribute('aria-pressed', 'true')
+      expect(within(chip).queryByText('3')).not.toBeInTheDocument()
+      fireEvent.click(chip)
+      // Off, a member has no chip to bring it back.
+      await waitFor(() => expect(screen.queryByText(filterDimensionLabel('newMatches'))).not.toBeInTheDocument())
+    })
+
+    it('shows the chip on mobile, pressed and with no count', () => {
+      renderMobile({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, newMatches: true, newMatchesCount: 0 })
+      const chip = screen.getByRole('button', { name: /new matches/i })
+      expect(chip).toHaveAttribute('aria-pressed', 'true')
+      expect(within(chip).queryByText('0')).not.toBeInTheDocument()
+    })
+  })
+
   // Drafts hides only when the tenant has NO drafts at all (hasDrafts) —
   // UNLESS its own filter is active, in which case it must stay visible so
   // the user has a control to turn it back off (see lib/filterDimensions.ts's
@@ -302,7 +334,7 @@ describe('filter dimension parity — registry-driven visibility and labels', ()
     { label: 'no drafts at all, filter ON', hasDrafts: false, draftCount: 0, draftsActive: true, expectedVisible: true },
   ])('Drafts dimension — $label', ({ hasDrafts, draftCount, draftsActive, expectedVisible }) => {
     it(`registry isVisible reports ${expectedVisible}`, () => {
-      const actual = FILTER_DIMENSIONS.find(d => d.key === 'drafts')!.isVisible({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, hasDrafts, draftsActive })
+      const actual = FILTER_DIMENSIONS.find(d => d.key === 'drafts')!.isVisible({ uniqueStates: ['RI'], isAdmin: false, isMultiState: false, hasDrafts, draftsActive, newMatchesActive: false })
       expect(actual).toBe(expectedVisible)
     })
 

@@ -32,6 +32,14 @@ describe('migration 0085_notifications', () => {
     return id
   }
 
+  // seedBill writes every bills column too, so the same goes for a bill.
+  async function seedBill({ billNumber, state, session }: { billNumber: string; state: string; session: string }) {
+    const id = crypto.randomUUID()
+    await env.DB.prepare(`INSERT INTO bills (id, bill_number, title, state, session) VALUES (?, ?, ?, ?, ?)`)
+      .bind(id, billNumber, 'Test Bill', state, session).run()
+    return id
+  }
+
   const oldMention = (id: string, commentId: string, userId: string, sourceType: string, sourceId: string, createdAt: string, readAt: string | null) =>
     env.DB.prepare(
       `INSERT INTO comment_mentions (id, comment_id, user_id, source_type, source_id, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,

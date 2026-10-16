@@ -13,7 +13,7 @@ import {
 import { carriedPeopleIds, measureWithCarriedPeople } from '../lib/carriedIds'
 import { clearProviderData } from '../lib/cutover'
 import { calendarCoverage } from '../lib/bodyEvents'
-import type { Env, Db, IngestorMessage, BillMessage, NotificationMessage, CalendarBlock } from '../types'
+import type { Env, Db, IngestorMessage, BillMessage, MatchProvenance, NotificationMessage, CalendarBlock } from '../types'
 import { personRow } from '../lib/people'
 import { deleteOtherRollCalls, knownRollCallIds } from '../lib/billRollCalls'
 import { writeMemberVotes, type RollCallMemberVotes } from '../lib/rollCallVotes'
@@ -120,7 +120,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
       }
     }
 
-    await notifyTenants(msg.billId, env, db, nowDb(), forceMetadata, forceAI, [], undefined, interactive)
+    await notifyTenants(msg.billId, env, db, nowDb(), forceMetadata, forceAI, [], undefined, interactive, msg.matchProvenance)
     return
   }
 
@@ -128,6 +128,7 @@ async function processBill(msg: BillMessage, env: Env, db: Db): Promise<void> {
   await ingestMeasure(measure, provider, env, db, {
     forceMetadata, forceAI, interactive,
     forceTextRefetch: msg.forceTextRefetch ?? false,
+    matchProvenance: msg.matchProvenance,
   })
 }
 
@@ -180,6 +181,8 @@ export type IngestOptions = {
   interactive: boolean
   /** Re-download every text even when R2 already has it (admin refetch-fragment-texts). */
   forceTextRefetch?: boolean
+  /** The new keyword matches the ingest brings instances (BillMessage.matchProvenance). */
+  matchProvenance?: Record<string, MatchProvenance>
 }
 
 /**
@@ -195,7 +198,7 @@ export async function ingestMeasure(
   db: Db,
   opts: IngestOptions,
 ): Promise<void> {
-  const { forceMetadata, forceAI, interactive, forceTextRefetch } = opts
+  const { forceMetadata, forceAI, interactive, forceTextRefetch, matchProvenance } = opts
   const now = nowDb()
 
   // --- Change detection ---
@@ -639,7 +642,7 @@ export async function ingestMeasure(
     events: calendarBlockEvents(provider, calendarPlan.live, await calendarCoverage(db, provider, bill.bill_id, calendarPlan.live)),
     changes: calendarChanges,
   } : undefined
-  await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive)
+  await notifyTenants(bill.bill_id, env, db, now, forceMetadata, forceAI, detectedChanges, calendarBlock, interactive, matchProvenance)
 }
 
 /**
@@ -867,6 +870,7 @@ async function notifyTenants(
   changes: ChangeRecord[] = [],
   calendar?: CalendarBlock,
   interactive = false,
+  matchProvenance?: Record<string, MatchProvenance>,
 ): Promise<void> {
   const matchingTenants = await db
     .select({ tenantId: billTenants.tenantId, matchType: billTenants.matchType, queueId: tenants.queueId })
@@ -882,6 +886,9 @@ async function notifyTenants(
       forceMetadata,
       forceAI,
       matchType: (t.matchType ?? null) as 'keyword' | 'manual' | null,
+      // Each instance gets only its own declaration, and none when the
+      // message brings it no new match.
+      ...(matchProvenance?.[t.tenantId] ? { matchProvenance: matchProvenance[t.tenantId] } : {}),
       ...(interactive ? { interactive: true as const } : {}),
       ...(changes.length > 0 ? {
         changes: changes.map(c => ({ ...c, detectedAt: now })),

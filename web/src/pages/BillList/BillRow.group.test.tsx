@@ -157,6 +157,19 @@ describe('a grouped BillRow', () => {
     expect(screen.getAllByText(/S1715, A192/).length).toBeGreaterThan(0)
   })
 
+  it('opens the +N list on a click or tap instead of opening the bill, and closes it on a second click', () => {
+    const group = [S1713, A190, member('c1', 'S1715', 'Introduced'), member('c2', 'A192', 'Introduced')]
+    const { container } = renderRow({ group })
+    const more = within(billCell(container)).getByRole('button', { name: '+2' })
+    expect(more.style.cursor).toBe('pointer')
+    fireEvent.click(more)
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Also S1715, A192')
+    expect(navigateMock).not.toHaveBeenCalled()
+    fireEvent.click(more)
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    expect(navigateMock).not.toHaveBeenCalled()
+  })
+
   it('emphasizes the number of the bill that matched the filter', () => {
     const { container } = renderRow({ group: [{ ...S1713, matched: true }, { ...A190, matched: false }] })
     const [first, second] = within(billCell(container)).getAllByRole('link')

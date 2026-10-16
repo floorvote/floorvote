@@ -64,6 +64,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
     db.prepare('DELETE FROM member_votes'),
     db.prepare('DELETE FROM official_positions'),
     db.prepare('DELETE FROM notes'),
+    db.prepare('DELETE FROM bill_mutes'),
     db.prepare('DELETE FROM feed_events'),
     db.prepare('DELETE FROM bill_custom_field_values'),
     // calendar_event_bills.event_id REFERENCES calendar_events(id) with NO
@@ -187,7 +188,7 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
   // Bill priorities. Also clear the triage latch: PATCH /bills/:id/triage-dismiss
   // is an allowed demo write, and it is the only allowed write that is otherwise
   // irreversible — bills.triaged_at is what takes a bill OUT of the "New matches"
-  // worklist (newMatchWhere in billsApi/query.ts is `triaged_at IS NULL`), and
+  // worklist (newMatchWhere in lib/newMatch.ts is `triaged_at IS NULL`), and
   // demoResetAndSeed only re-seeds bills when the table is empty. Without this,
   // one visitor dismissing each new match removes the triage experience from the
   // demo permanently. NULL is the right baseline: no seed writes triagedAt, so a
@@ -296,6 +297,22 @@ export async function runDemoReset(db: D1Database, seed: DemoSeed): Promise<void
        WHERE (SELECT id FROM bills WHERE external_id = ? LIMIT 1) IS NOT NULL`
     ).bind(n.id, n.externalId, n.content, daysAgoDb(n.daysAgo), n.externalId),
   ))
+
+  // Saved views: wipe and re-insert, so a view a visitor deleted, rewrote, or added
+  // comes back as seeded. Ids and slugs are fixed in the seed, which keeps a shared
+  // ?view=<slug> link working across resets. The view switcher renders nothing when
+  // an instance has no views, so without these the demo would never show saved views
+  // or the OR group operator. display_order is the seed's array index; created_by
+  // is the demo's admin persona.
+  // The delete and the inserts are one batch (one transaction), so a failure leaves
+  // the previous views, never none.
+  await db.batch([
+    db.prepare('DELETE FROM saved_views'),
+    ...seed.savedViews.map((v, i) =>
+      db.prepare(`INSERT INTO saved_views (id, name, query, slug, created_by, display_order) VALUES (?, ?, ?, ?, 'demo-user', ?)`)
+        .bind(v.id, v.name, v.query, v.slug, i),
+    ),
+  ])
 
   // Step 5: Seed calendar events (DEMO ONLY). Dates are now-relative so the calendar and
   // hearings widget always show fresh upcoming events; the demo reset re-derives them.

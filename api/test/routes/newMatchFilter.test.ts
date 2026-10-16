@@ -70,3 +70,32 @@ describe('GET /bills?newMatches=1 — worklist predicate', () => {
     expect(body.newMatchesCount).toBe(0)
   })
 })
+
+// #364: provenance only decides what reaches the digest (and feed). The triage
+// list, its facet count, and the sidebar chip still show bulk matches.
+describe('the triage list and chip show bulk and routine matches alike', () => {
+  let adminToken: string
+
+  beforeEach(async () => {
+    await resetDb()
+    await applyMigrations()
+    const adminId = await seedUser({ role: 'admin', email: 'admin@example.com' })
+    adminToken = await seedSession(adminId)
+    await seedBill({ billNumber: 'RT 1', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 8, matchProvenance: 'routine' })
+    await seedBill({ billNumber: 'BK 2', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 8, matchProvenance: 'bulk' })
+    await seedBill({ billNumber: 'OLD 3', matchType: 'keyword', newMatchAt: MATCH, relevanceScore: 8, matchProvenance: null })
+  })
+
+  const get = async <T>(path: string) =>
+    (await SELF.fetch(`http://localhost${path}`, { headers: { Cookie: `session=${adminToken}` } })).json() as Promise<T>
+
+  it('lists every new match', async () => {
+    const body = await get<ListResp>('/api/bills?newMatches=1')
+    expect(body.bills.map(b => b.billNumber).sort()).toEqual(['BK 2', 'OLD 3', 'RT 1'])
+  })
+
+  it('counts every new match in the facets and the chip', async () => {
+    expect((await get<Facets>('/api/bills/facets')).newMatchesCount).toBe(3)
+    expect((await get<{ newMatchesCount: number }>('/api/stats')).newMatchesCount).toBe(3)
+  })
+})

@@ -105,6 +105,44 @@ describe('FeedActivityRow', () => {
     expect(mine.container.querySelector('[data-unread]')).toBeNull()
   })
 
+  describe('the new-matches row', () => {
+    const matches = () => makeEvent({
+      id: 'evt-m', type: 'new_matches', userId: 'system', userName: '', metadata: { billIds: ['b1', 'b2'] },
+    })
+
+    it('reads as one sentence, with the matched bills behind it', () => {
+      renderRow(matches())
+      expect(screen.getByText('2 new bills matched your keywords')).toBeInTheDocument()
+      expect(screen.queryByText('HB101')).not.toBeInTheDocument()
+      expect(apiFetchMock).not.toHaveBeenCalled()
+    })
+
+    it('expands to the matched bills, each linking to its page, and to the list of all new matches', async () => {
+      apiFetchMock.mockResolvedValue(BILLS)
+      renderRow(matches())
+      const toggle = screen.getByRole('button', { name: /2 new bills matched/ })
+      await userEvent.click(toggle)
+
+      expect(apiFetchMock).toHaveBeenCalledWith('/feed/events/evt-m/bills')
+      expect(await screen.findByRole('link', { name: /HB101/ })).toHaveAttribute('href', '/RI/2026/HB101')
+      expect(screen.getByRole('link', { name: /SB202/ })).toHaveAttribute('href', '/bills/b2')
+      expect(screen.getByRole('link', { name: /see all new matches/i })).toHaveAttribute('href', '/bills?newMatches=1')
+    })
+
+    it('offers no list of all new matches on any other row', async () => {
+      apiFetchMock.mockResolvedValue(BILLS)
+      renderRow(makeEvent())
+      await userEvent.click(screen.getByRole('button', { name: /34 bills/ }))
+      await screen.findByRole('link', { name: /HB101/ })
+      expect(screen.queryByRole('link', { name: /see all new matches/i })).not.toBeInTheDocument()
+    })
+
+    it('marks it unread for a member who has not seen it', () => {
+      const { container } = renderRow(matches(), { seenAt: '2026-06-03 09:00:00', currentUserId: 'member-1' })
+      expect(container.querySelector('[data-unread]')).not.toBeNull()
+    })
+  })
+
   it('renders an event with no bill list as a plain row with nothing to expand', async () => {
     renderRow(makeEvent({ type: 'bill_matched', metadata: {} }))
     expect(screen.getByText('Activity')).toBeInTheDocument()

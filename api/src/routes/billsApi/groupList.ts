@@ -6,7 +6,8 @@ import { resolveTeamValues, type GroupTeamValues } from '../../lib/teamFields'
 import { billSlug } from '../../lib/sessionSlug'
 import { filterTagsToTaxonomy } from '../../lib/taxonomy'
 import type { AppDb } from '../../types'
-import { billsAs, buildBillNumberBoost, newMatchWhere, type BillsFilter } from './query'
+import { billsAs, buildBillNumberBoost, type BillsFilter } from './query'
+import { newMatchWhere } from '../../lib/newMatch'
 
 /**
  * The bill list's companion groups (see **Companion group** in CONTEXT.md).
@@ -421,7 +422,7 @@ export async function loadGroupRows(db: AppDb, groupKeys: readonly string[], ctx
   for (const row of memberRows) membersOf.set(row.groupKey ?? row.id, [...(membersOf.get(row.groupKey ?? row.id) ?? []), row])
   const matched = ctx.filter ? new Set(memberRows.filter(r => Number(r.met) === 1).map(r => r.id)) : null
   const teamRows = {
-    bills: memberRows.map(r => ({ id: r.id, priority: r.priority, prioritySetAt: r.prioritySetAt, tenantSummary: r.tenantSummary, tags: r.tags, aiProcessedAt: r.aiProcessedAt, triagedAt: r.triagedAt, triagedBy: r.triagedBy })),
+    bills: memberRows.map(r => ({ id: r.id, matchType: r.matchType, priority: r.priority, prioritySetAt: r.prioritySetAt, tenantSummary: r.tenantSummary, tags: r.tags, aiProcessedAt: r.aiProcessedAt, triagedAt: r.triagedAt, triagedBy: r.triagedBy })),
     positions,
     customFields,
   }

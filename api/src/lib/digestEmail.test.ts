@@ -37,7 +37,7 @@ describe('renderDigestEmail', () => {
       assocName: 'Test Organization',
       appUrl: 'https://ri.example.com',
       periodStart: '2026-06-20T00:00:00.000Z',
-      periodEnd: '2026-06-26T00:00:00.000Z',
+      periodEnd: '2026-06-27T00:00:00.000Z',
     })
     expect(html).toContain('were updated in the last week')
     expect(html).toContain('Test Organization')

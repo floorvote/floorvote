@@ -9,12 +9,13 @@ import {
   MAX_SEARCH_TERM_BYTES, MAX_SEARCH_TOKENS, byteLength, truncateToBytes, splitSegments, tokenizeSegment,
 } from '../../../../shared/searchLimits'
 import { loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { newMatchWhere } from '../../lib/newMatch'
 import { LEGISCAN_CODE_WORDS } from '../../../../shared/legacyStatusOrder'
 import {
-  groupUntriaged, groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
+  groupHasNoPosition, groupHasNoPriority, heldCustomFieldOf, heldPositionOf,
   holdsGroupPriority, inGroupOfHeld, type BillsTable,
 } from '../../lib/teamFields'
-import { loadVotedInGroups } from '../../lib/companionGroups'
+import { inGroupsOf, loadVotedInGroups } from '../../lib/companionGroups'
 
 /** A second reference to `bills` in one query, with the table's own columns: `billsAs('m').status` renders `"m"."status"`. */
 export function billsAs(name: string): BillsTable {
@@ -23,21 +24,6 @@ export function billsAs(name: string): BillsTable {
 
 /** Any filter, applied to one reference to `bills` (the table, or an alias of it). */
 export type BillsFilter = (t: BillsTable) => SQL | undefined
-
-// "New matches" worklist predicate: an un-triaged, fully-analyzed keyword match.
-// Shared by the list filter (GET /bills?newMatches=1) and the facet count so they
-// can't drift. COALESCE(relevance,0) means with the default threshold 0 a match with
-// no relevance score still qualifies; a positive threshold excludes it until scored.
-// Triaging any bill in a companion group triages the group, so a bill whose
-// companion was triaged is no longer new.
-export function newMatchWhere(minRelevance: number, t: BillsTable = bills): SQL {
-  return and(
-    eq(t.matchType, 'keyword'),
-    isNotNull(t.newMatchAt),
-    groupUntriaged(t),
-    sql`COALESCE(${t.relevanceScore}, 0) >= ${minRelevance}`,
-  )!
-}
 
 // Sentinel filter value: "has any value in this dimension" (position, custom-field
 // dropdowns). Mirrors FILTER_ANY in web/src/pages/BillList/FilterPanel.tsx.
@@ -247,6 +233,8 @@ export type BillFilterParams = {
   q: string | undefined
   minRelevance: string | undefined
   myBillsParam: string | undefined
+  /** The member's bills (`loadMyBillsInGroups`) when the caller has read them already, so a request reads them once. */
+  myBillIds?: readonly string[]
   unvoted: string | undefined
   newMatches: string | undefined
   drafts: string | undefined
@@ -401,7 +389,23 @@ export async function loadMyBillIds(db: ReturnType<typeof getDb>, userId: string
   return [...new Set([...voteRows, ...noteRows, ...commentRows].map(r => r.billId))]
 }
 
-/** A bill the member's own: one of `mine`, as one JSON parameter, so a member with many bills stays under D1's parameter limit. */
+/**
+ * The bills the "my bills" scope keeps: the member's own (`loadMyBillIds`), and
+ * every bill in a companion group any of them is in. A member's engagement with
+ * a group is with all of it, as their vote is (`loadVotedInGroups`), so a group
+ * is one of their bills when any bill of it is, whichever bill the other
+ * filters meet. Read once for the request, as a list of ids, so the scope is
+ * one `IN` over it on a bill's id, with no probe of the bill's group. A bill in
+ * no group is just its own.
+ */
+export async function loadMyBillsInGroups(db: ReturnType<typeof getDb>, userId: string): Promise<string[]> {
+  const mine = await loadMyBillIds(db, userId)
+  if (mine.length === 0) return mine
+  const rows = await db.select({ id: bills.id }).from(bills).where(inGroupsOf(bills.id, mine)).all()
+  return rows.map(r => r.id)
+}
+
+/** A bill the member's own: one of `mine` (`loadMyBillsInGroups`), as one JSON parameter, so a member with many bills stays under D1's parameter limit. */
 export const myBillsCondition = (mine: readonly string[]): BillsCondition =>
   t => sql`${t.id} IN (SELECT value FROM json_each(${JSON.stringify(mine)}))`
 
@@ -499,7 +503,8 @@ export async function buildFilterParts(
 
   let noMatch = false
   if (p.myBillsParam === '1' || p.myBillsParam === 'true') {
-    const myIds = await loadMyBillIds(db, p.userId)
+    // A member's engagement is with the group, as unvoted's votes are: a group is mine when any bill of it is.
+    const myIds = p.myBillIds ?? await loadMyBillsInGroups(db, p.userId)
     // Scope, not a bill fact: an empty set means no rows regardless of the group operator.
     if (myIds.length === 0) noMatch = true
     else scopes.push(myBillsCondition(myIds))
