@@ -122,7 +122,7 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
         html: renderMentionEmail({
           appUrl,
           instanceName: SAMPLE_ASSOC_NAME,
-          author: { name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston' },
+          author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
           bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
           comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>Hey <span data-type="mention" data-id="user:u2" data-label="@Dana Reed">@Dana Reed</span> — we should testify against this at Thursday\'s hearing. Can you pull the talking points?</p>' },
           via: 'user',
@@ -134,7 +134,7 @@ export function renderSampleEmail(type: SampleEmailType, appUrl: string): { subj
         html: renderReplyEmail({
           appUrl,
           instanceName: SAMPLE_ASSOC_NAME,
-          author: { name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston' },
+          author: { name: 'Sam Ortiz', title: 'Town Clerk, Cranston' },
           bill: { id: 'b1', billNumber: 'HB 1234', title: 'Voter ID Act', state: 'RI', session: '2026 Regular Session', priority: 'high', tenantSummary: 'Requires photo identification to vote in person and by mail, with free IDs issued by the state.' },
           comment: { id: 'sample-comment', createdAt: '2026-06-10 16:45:00', html: '<p>I read the amended text. Section two still lets a clerk waive the ID check, so I don\'t think we need to oppose it after all.</p>' },
         }),

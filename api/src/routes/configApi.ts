@@ -7,7 +7,7 @@ import { ensureAssociationName } from '../lib/associationName'
 import { getAccountDeletionEnabled } from '../lib/accountDeletion'
 import { loadEffectiveTaxonomy } from '../lib/taxonomy'
 import { centralFetch } from '../lib/centralFetch'
-import { readStateAttribution, readStateCapabilities } from '../lib/bodyEvents'
+import { readCentralDashboardUrl, readStateAttribution, readStateCapabilities } from '../lib/bodyEvents'
 import { resolveOrgNoun } from '../../../shared/orgNoun'
 import { PRODUCT_NAME } from '../../../shared/brand'
 import { parseEmailList } from '../../../shared/operator'
@@ -47,7 +47,7 @@ configRouter.get('/', async (c) => {
   await ensureAssociationName(c.env, db)
   const accountDeletionEnabled = await getAccountDeletionEnabled(db)
 
-  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution] = await Promise.all([
+  const [nameRow, sessionsRow, posLabelRow, coverageRow, posVocabRow, modulesRow, orgNounRow, demoBannerRow, demoResetAtRow, taxonomyItems, knownCapabilities, knownAttribution, centralDashboardUrl] = await Promise.all([
     db.select().from(associationConfig).where(eq(associationConfig.key, 'association_name')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'sessions')).get(),
     db.select().from(associationConfig).where(eq(associationConfig.key, 'position_label')).get(),
@@ -60,6 +60,7 @@ configRouter.get('/', async (c) => {
     loadEffectiveTaxonomy(db),
     readStateCapabilities(db),
     readStateAttribution(db),
+    readCentralDashboardUrl(db),
   ])
 
   let associationName: string
@@ -224,7 +225,7 @@ configRouter.get('/', async (c) => {
   // reset, and on every non-demo tenant.
   const demoResetAt = demoResetAtRow?.value
 
-  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities })
+  return c.json({ associationName, positionVocabulary, state: c.env.STATE ?? '', states, multiState, sessions, orgNoun, instanceDomains, demoMode, demoLocked, demoResetAt, modules, operator, attribution, centralDashboardUrl: centralDashboardUrl ?? undefined, accountDeletionEnabled, tagTaxonomy, demoBanner, capabilities })
 })
 
 // GET /config/sessions?state=NJ — per-state session list, proxied from central

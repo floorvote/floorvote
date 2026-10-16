@@ -24,16 +24,16 @@ describe('deactivated members\' comment reactions are hidden', () => {
 
   it('bill detail reaction count reflects only the active reactor', async () => {
     const res = await SELF.fetch(`https://x/api/bills/${billId}`, { headers: { Cookie: `session=${adminTok}` } })
-    const body = await res.json<{ comments: Array<{ id: string; reactions: Array<{ emoji: string; count: number; reactors: { name: string; subtitle: string | null }[] }> }> }>()
+    const body = await res.json<{ comments: Array<{ id: string; reactions: Array<{ emoji: string; count: number; reactors: { name: string; title: string | null }[] }> }> }>()
     const comment = body.comments.find(c => c.id === commentId)
-    expect(comment?.reactions).toEqual([{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Test User', subtitle: null }] }])
+    expect(comment?.reactions).toEqual([{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Test User', title: null, subtitle: null }] }])
   })
 
   it('GET /bills/:id/comments reaction count reflects only the active reactor', async () => {
     const res = await SELF.fetch(`https://x/api/bills/${billId}/comments`, { headers: { Cookie: `session=${adminTok}` } })
-    const body = await res.json<Array<{ id: string; reactions: Array<{ emoji: string; count: number; reactors: { name: string; subtitle: string | null }[] }> }>>()
+    const body = await res.json<Array<{ id: string; reactions: Array<{ emoji: string; count: number; reactors: { name: string; title: string | null }[] }> }>>()
     const comment = body.find(c => c.id === commentId)
-    expect(comment?.reactions).toEqual([{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Test User', subtitle: null }] }])
+    expect(comment?.reactions).toEqual([{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Test User', title: null, subtitle: null }] }])
   })
 
   it('reactivating restores the reaction everywhere', async () => {

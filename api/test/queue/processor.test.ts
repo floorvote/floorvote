@@ -758,6 +758,28 @@ describe('processCentralNotification', () => {
     expect(row!.lastAiTextDocId).toBe('NEWER')
   })
 
+  it('writes lastAiTextDocId as the highest doc id among same-day texts, compared as numbers', async () => {
+    const db = getDb(env.DB)
+    await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/text')) {
+        return Promise.resolve({ ok: true, json: async () => ({ type: 'html', content: '<p>Bill text</p>' }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        ...fakeCentralBill,
+        // "9" sorts above "10" as a string, so a string compare picks the older text.
+        texts: [
+          { docId: '10', note: 'Reenrolled', date: '2026-05-15', links: [{ url: 'https://x/10.html', mediaType: 'text/html' }] },
+          { docId: '9', note: 'Enrolled', date: '2026-05-15', links: [{ url: 'https://x/9.html', mediaType: 'text/html' }] },
+        ],
+      }) })
+    }))
+    const msg: TenantQueueMessage = { tenantId: 'test-org', billId: BILL_ID }
+    await processCentralNotification(msg, testEnv as any, db)
+    const row = await db.select().from(bills).get()
+    expect(row!.lastAiTextDocId).toBe('10')
+  })
+
   it('skips AI when central has no texts (safety net)', async () => {
     const db = getDb(env.DB)
     await db.insert(associationConfig).values({ key: 'keywords', value: JSON.stringify(['election']) })

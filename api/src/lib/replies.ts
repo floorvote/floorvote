@@ -24,6 +24,7 @@ import { buildBillCardModel } from '../../../shared/billCardModel'
 import { renderBillCardOpen, BILL_CARD_CLOSE, renderCommentRow, formatEmailDateTime } from './emailBillCard'
 import { renderEmailShell, emailButton, emailFooterLink } from './emailShell'
 import { fontWeight } from '../../../shared/tokens'
+import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -104,7 +105,7 @@ export async function notifyParticipantsOfReply(
 
 export interface ReplyEmailInput {
   appUrl: string
-  author: { name: string; subtitle: string | null }
+  author: { name: string; title: string | null }
   bill: {
     id: string; billNumber: string; title: string
     isDraft?: boolean
@@ -130,7 +131,7 @@ export function renderReplyEmail(input: ReplyEmailInput): string {
   })
   const billHref = `${appUrl}${billUrl({ id: bill.id, state: bill.state, session: bill.session, sessionSlug: bill.sessionSlug, billNumber: bill.billNumber })}`
   const commentRow = renderCommentRow({
-    appUrl, name: author.name, subtitle: author.subtitle,
+    appUrl, name: author.name, title: author.title,
     dateText: formatEmailDateTime(comment.createdAt),
     bodyHtml: tiptapToEmailHtml(comment.html),
   })
@@ -173,7 +174,7 @@ async function sendReplyEmails(
   env: ReplyEnv,
 ): Promise<void> {
   const [author] = await db
-    .select({ name: users.name, email: users.email, subtitle: users.subtitle })
+    .select({ name: users.name, email: users.email, title: userTitleSql })
     .from(users).where(eq(users.id, authorUserId)).all()
   const [bill] = await db
     .select({
@@ -186,7 +187,7 @@ async function sendReplyEmails(
   const instanceName = (await resolveAssocName(env, db)) ?? ''
   const html = renderReplyEmail({
     appUrl: env.APP_URL,
-    author: { name: displayName(author), subtitle: author.subtitle },
+    author: { name: displayName(author), title: author.title },
     bill,
     comment,
     instanceName,

@@ -17,6 +17,7 @@ import { chunk, D1_MAX_PARAMS } from './chunk'
 import { nowDb } from './dbTime'
 import { activeUser } from './accountDeletion'
 import { userDisplayNameSql } from './displayName'
+import { userTitleSql } from './userTitle'
 
 type Db = ReturnType<typeof getDb>
 
@@ -96,6 +97,8 @@ export type MentionNotificationView = NotificationBase & {
   kind: 'mention'
   authorId: string
   authorName: string | null
+  authorTitle: string | null
+  /** The old name for `authorTitle`. Remove in the release after this one. */
   authorSubtitle: string | null
   commentPreview: string
   commentHtml: string
@@ -108,6 +111,8 @@ export type ReplyNotificationView = NotificationBase & {
   kind: 'reply'
   authorId: string
   authorName: string | null
+  authorTitle: string | null
+  /** The old name for `authorTitle`. Remove in the release after this one. */
   authorSubtitle: string | null
   commentPreview: string
   commentHtml: string
@@ -181,7 +186,7 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
       commentContent: comments.content,
       actorId: users.id,
       actorName: userDisplayNameSql,
-      actorSubtitle: users.subtitle,
+      actorTitle: userTitleSql,
       billId: bills.id,
       billNumber: bills.billNumber,
       billTitle: bills.title,
@@ -237,7 +242,9 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           kind: 'mention',
           authorId: r.actorId,
           authorName: r.actorName,
-          authorSubtitle: r.actorSubtitle,
+          authorTitle: r.actorTitle,
+          // The old name for `authorTitle`. Remove in the release after this one.
+          authorSubtitle: r.actorTitle,
           commentPreview: stripHtml(r.commentContent).slice(0, 150),
           commentHtml: r.commentContent,
           sourceType: r.mention.sourceType,
@@ -249,7 +256,9 @@ export async function listNotifications(db: Db, recipientId: string): Promise<{ 
           kind: 'reply',
           authorId: r.actorId,
           authorName: r.actorName,
-          authorSubtitle: r.actorSubtitle,
+          authorTitle: r.actorTitle,
+          // The old name for `authorTitle`. Remove in the release after this one.
+          authorSubtitle: r.actorTitle,
           commentPreview: stripHtml(r.commentContent).slice(0, 150),
           commentHtml: r.commentContent,
         }
