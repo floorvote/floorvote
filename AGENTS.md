@@ -204,7 +204,7 @@ Material Symbols icons use an explicit allowlist in `web/index.html` — add new
 
 ### Explanations
 
-`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go in a plain hover on the term, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: it makes the term focusable, adds a screen-reader copy of the text, and opens below.
+`InfoTooltip` (ⓘ) is for explaining how FloorVote works: what a field does, who can change it, where data comes from. Explanations of legislative or data terms (a status, an event type, a provider's field label) go on the term itself, opening below, with no ⓘ. Use `HoverTooltip` (`web/src/components/HoverTooltip.tsx`) with its `describe` option for those: the term becomes a dotted-underlined toggletip button like the ⓘ (hover and focus preview it, click, tap, Enter, or Space pins it open or closed, Escape closes it), with a screen-reader copy of the text, opening below. The cursor is the pointer, never `help`. A chip or other control that is already interactive passes `describe={{ interactive: true }}` and keeps its own click, with no underline.
 
 ### Navigation
 
