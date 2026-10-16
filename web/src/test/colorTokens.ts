@@ -1,5 +1,6 @@
 // Test helpers for the two color modes: resolve a web `color` token (a CSS
 // variable) to its literal value in each mode, and measure WCAG contrast.
+import { expect } from 'vitest'
 import { color as lightColor } from '../../../shared/tokens'
 import { darkColor, cssVarName, type ColorToken } from '../styles/colorModes'
 
@@ -38,12 +39,20 @@ export function contrast(fg: string, bg: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
-/**
- * A rendered primary button, checked at the call site: no `opacity` layered over
- * its colors (that drops the label below the bar the colors were chosen for), and
- * its text-on-fill contrast clears `min` in both color modes. `min` is 4.5 for an
- * enabled button and 3 for a disabled one (WCAG exempts disabled controls).
- */
+/** Text-on-fill contrast of a rendered button's inline colors, in `mode`. */
 export function buttonTextContrast(btn: HTMLElement, mode: Mode): number {
   return contrast(resolveColor(btn.style.color, mode), resolveColor(btn.style.background, mode))
+}
+
+/**
+ * A rendered primary button is legible: no `opacity` over its colors, text clears
+ * 4.5:1 (enabled) or 3:1 (disabled; WCAG exempts disabled controls) in both color
+ * modes, and a disabled one wears the muted-surface fill.
+ */
+export function expectPrimaryButtonLegible(btn: HTMLElement, { disabled }: { disabled: boolean }): void {
+  expect(btn.style.opacity).toBe('')
+  if (disabled) expect(btn.style.background).toBe('var(--fv-surface-muted)')
+  const min = disabled ? 3 : 4.5
+  expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(min)
+  expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(min)
 }

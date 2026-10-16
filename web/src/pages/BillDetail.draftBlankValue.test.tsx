@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
 import { REQUIRED_MESSAGE } from '../components/RequiredField'
-import { buttonTextContrast } from '../test/colorTokens'
+import { expectPrimaryButtonLegible } from '../test/colorTokens'
 import { itGatesQuietly, expectMessageShown, expectMessageHidden, expectQuietlyBlocked, gateMessage } from '../test/quietGate'
 
 // The draft bill-number and State inline editors refuse a blank value with the
@@ -561,7 +561,6 @@ describe('BillDetail draft editors: Save button is not dimmed', () => {
     for (let el: HTMLElement | null = save; el; el = el.parentElement) {
       expect(el.style.opacity, `${el.tagName} ancestor of Save`).toBe('')
     }
-    expect(buttonTextContrast(save, 'light')).toBeGreaterThanOrEqual(4.5)
-    expect(buttonTextContrast(save, 'dark')).toBeGreaterThanOrEqual(4.5)
+    expectPrimaryButtonLegible(save, { disabled: false })
   })
 })

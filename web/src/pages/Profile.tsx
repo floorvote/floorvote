@@ -564,15 +564,13 @@ export function Profile() {
             onClick={handleSave}
             disabled={saving || demoLocked}
             style={{
-              background: color.accentBlue,
-              color: color.textOnFill,
+              ...primaryButtonColors(saving || demoLocked),
               border: 'none',
               borderRadius: radius.md,
               padding: '8px 20px',
               cursor: saving || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.base,
               fontWeight: fontWeight.medium,
-              opacity: saving || demoLocked ? 0.5 : 1,
             }}
           >
             {saving ? 'Saving…' : 'Save'}

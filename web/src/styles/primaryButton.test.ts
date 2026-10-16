@@ -70,13 +70,8 @@ describe('no textOnFill on accentBlue or accentBlueMuted', () => {
     })
   }
 
-  // Left on purpose: Profile's Save is the one remaining pair. A sibling PR (#598)
-  // is regrouping Profile.tsx, so it moves to the helper once that merges.
-  const LEFT_FOR_FOLLOW_UP: Record<string, number> = { 'pages/Profile.tsx': 1 }
-
   it('finds none', () => {
     const hits: string[] = []
-    const stale: string[] = []
     for (const full of files(SRC)) {
       const rel = path.relative(SRC, full)
       const lines = fs.readFileSync(full, 'utf8').split('\n')
@@ -88,11 +83,8 @@ describe('no textOnFill on accentBlue or accentBlueMuted', () => {
         const near = /actionBtn\(/.test(line) ? lines.join('\n') : lines.slice(Math.max(0, i - 3), i + 4).join('\n')
         if (/\btextOnFill\b/.test(near)) found.push(`${rel}:${i + 1}  ${line.trim().slice(0, 120)}`)
       })
-      const allowed = LEFT_FOR_FOLLOW_UP[rel] ?? 0
-      if (allowed > 0) stale.push(...(found.length < allowed ? [`${rel}: allowed ${allowed} but found ${found.length}; delete the allowance`] : []))
-      hits.push(...found.slice(allowed))
+      hits.push(...found)
     }
-    expect(stale, stale.join('\n')).toEqual([])
     expect(hits, hits.join('\n')).toEqual([])
   })
 })

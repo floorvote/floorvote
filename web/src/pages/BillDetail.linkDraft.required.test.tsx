@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
-import { buttonTextContrast } from '../test/colorTokens'
+import { expectPrimaryButtonLegible } from '../test/colorTokens'
 import { itGatesQuietly, expectMessageHidden, expectMessageShown, expectQuietlyBlocked } from '../test/quietGate'
 
 // The quiet required-field gate on the "Link draft" control: a filed bill must
@@ -295,9 +295,7 @@ describe('BillDetail link draft: button colors', () => {
     const { user } = await setup()
     await pick(user, 'H 1', 'H 100')
     expect(linkButton()).toBeEnabled()
-    expect(linkButton().style.opacity).toBe('')
-    expect(buttonTextContrast(linkButton(), 'light')).toBeGreaterThanOrEqual(4.5)
-    expect(buttonTextContrast(linkButton(), 'dark')).toBeGreaterThanOrEqual(4.5)
+    expectPrimaryButtonLegible(linkButton(), { disabled: false })
   })
 
   it('demo-locked with a bill chosen: disabled colors, no opacity, 3:1 in both modes', async () => {
@@ -306,18 +304,12 @@ describe('BillDetail link draft: button colors', () => {
     const { user } = await setup()
     await pick(user, 'H 1', 'H 100')
     expect(linkButton()).toBeDisabled()
-    expect(linkButton().style.opacity).toBe('')
-    expect(linkButton().style.background).toBe('var(--fv-surface-muted)')
-    expect(buttonTextContrast(linkButton(), 'light')).toBeGreaterThanOrEqual(3)
-    expect(buttonTextContrast(linkButton(), 'dark')).toBeGreaterThanOrEqual(3)
+    expectPrimaryButtonLegible(linkButton(), { disabled: true })
   })
 
   it('no bill chosen yet: disabled colors, no opacity, 3:1 in both modes', async () => {
     mockApi()
     await setup()
-    expect(linkButton().style.opacity).toBe('')
-    expect(linkButton().style.background).toBe('var(--fv-surface-muted)')
-    expect(buttonTextContrast(linkButton(), 'light')).toBeGreaterThanOrEqual(3)
-    expect(buttonTextContrast(linkButton(), 'dark')).toBeGreaterThanOrEqual(3)
+    expectPrimaryButtonLegible(linkButton(), { disabled: true })
   })
 })

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { Members } from './Members'
 import * as api from '../../lib/api'
-import { buttonTextContrast } from '../../test/colorTokens'
+import { expectPrimaryButtonLegible } from '../../test/colorTokens'
 
 // Send invites is a primary (solid blue) button. Whatever state it is in, no
 // opacity may sit over its colors: that would drop the label below the AA bar
@@ -52,9 +52,7 @@ describe('Members Send invites button colors', () => {
     await renderMembers()
     const btn = screen.getByRole('button', { name: 'Send invites' })
     expect(btn).toBeEnabled()
-    expect(btn.style.opacity).toBe('')
-    expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(4.5)
-    expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(4.5)
+    expectPrimaryButtonLegible(btn, { disabled: false })
   })
 
   it('demo-locked: the disabled colors, no opacity, text at 3:1 or better in both modes', async () => {
@@ -63,10 +61,7 @@ describe('Members Send invites button colors', () => {
     await renderMembers()
     const btn = screen.getByRole('button', { name: 'Send invites' })
     expect(btn).toBeDisabled()
-    expect(btn.style.opacity).toBe('')
-    expect(btn.style.background).toBe('var(--fv-surface-muted)')
-    expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(3)
-    expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(3)
+    expectPrimaryButtonLegible(btn, { disabled: true })
   })
 
   it('sending: the disabled colors, no opacity, text at 3:1 or better in both modes', async () => {
@@ -76,9 +71,6 @@ describe('Members Send invites button colors', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send invites' }))
     const btn = await screen.findByRole('button', { name: 'Sending…' })
     expect(btn).toBeDisabled()
-    expect(btn.style.opacity).toBe('')
-    expect(btn.style.background).toBe('var(--fv-surface-muted)')
-    expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(3)
-    expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(3)
+    expectPrimaryButtonLegible(btn, { disabled: true })
   })
 })

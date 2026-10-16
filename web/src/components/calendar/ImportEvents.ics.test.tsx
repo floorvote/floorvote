@@ -9,7 +9,7 @@ vi.mock('../../lib/api', () => ({ apiFetch: vi.fn().mockResolvedValue({ created:
 
 import { ImportEvents } from './ImportEvents'
 import { apiFetch } from '../../lib/api'
-import { buttonTextContrast } from '../../test/colorTokens'
+import { expectPrimaryButtonLegible } from '../../test/colorTokens'
 
 const ICS = [
   'BEGIN:VCALENDAR', 'VERSION:2.0',
@@ -50,10 +50,7 @@ describe('ImportEvents — .ics', () => {
 
     const btn = await screen.findByRole('button', { name: 'Importing…' })
     expect(btn).toBeDisabled()
-    expect(btn.style.opacity).toBe('')
-    expect(btn.style.background).toBe('var(--fv-surface-muted)')
-    expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(3)
-    expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(3)
+    expectPrimaryButtonLegible(btn, { disabled: true })
   })
 
   it('before submitting, the Create button is the enabled fill with no opacity', async () => {
@@ -64,8 +61,6 @@ describe('ImportEvents — .ics', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Registration deadline')).toBeInTheDocument())
     const btn = screen.getByRole('button', { name: /^create 1 event$/i })
     expect(btn).toBeEnabled()
-    expect(btn.style.opacity).toBe('')
-    expect(buttonTextContrast(btn, 'light')).toBeGreaterThanOrEqual(4.5)
-    expect(buttonTextContrast(btn, 'dark')).toBeGreaterThanOrEqual(4.5)
+    expectPrimaryButtonLegible(btn, { disabled: false })
   })
 })
