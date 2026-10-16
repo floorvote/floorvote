@@ -380,9 +380,7 @@ function ItemDateText({ item }: { item: { date: string | null; dateResolved?: st
   if (!d) return <>—</>
   if (item.dateInferred) {
     return (
-      <HoverTooltip text="Date parsed from title">
-        <span style={{ borderBottom: `1px dotted ${color.textMuted}`, cursor: 'default' }}>{d}</span>
-      </HoverTooltip>
+      <HoverTooltip text="Date parsed from title" describe>{d}</HoverTooltip>
     )
   }
   return <>{d}</>

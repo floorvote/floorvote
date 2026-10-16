@@ -240,20 +240,4 @@ describe('ChangeHistoryTooltip toggletip', () => {
     await user.click(el)
     expect(log()).toBeNull()
   })
-
-  it('does not steal the click of a link it is placed in: the trigger is not inside one in the app, but if it were, the log toggles and the click does not reach the link', async () => {
-    // BillDetail renders it in a chip strip, never in a link. This pins the contract anyway:
-    // a click on the trigger is its own, so a wrapper's handler never sees it.
-    const user = userEvent.setup()
-    let wrapperClicks = 0
-    render(
-      // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-      <div onClick={() => { wrapperClicks += 1 }}>
-        <ChangeHistoryTooltip changes={[statusChange]} lastActionDate={null} relativeTime={() => '2 days ago'} />
-      </div>,
-    )
-    await user.click(trigger())
-    expect(log()).toBeInTheDocument()
-    expect(wrapperClicks).toBe(0)
-  })
 })

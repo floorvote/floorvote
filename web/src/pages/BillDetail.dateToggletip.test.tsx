@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
@@ -256,7 +256,7 @@ describe('the recovered date on a bill page is a toggletip', () => {
 
   it('Enter toggles it: the first pins the focus preview, the second closes', async () => {
     const { user, date } = await openDocuments()
-    date.focus()
+    act(() => date.focus())
     expect(bubble()).toBeDefined() // focus preview
     await user.keyboard('{Enter}')
     expect(bubble()).toBeDefined() // pinned
@@ -266,7 +266,7 @@ describe('the recovered date on a bill page is a toggletip', () => {
 
   it('Space toggles it the same way', async () => {
     const { user, date } = await openDocuments()
-    date.focus()
+    act(() => date.focus())
     await user.keyboard(' ')
     expect(bubble()).toBeDefined()
     await user.keyboard(' ')
@@ -293,9 +293,9 @@ describe('the recovered date on a bill page is a toggletip', () => {
 
   it('previews on focus and hides on blur', async () => {
     const { date } = await openDocuments()
-    date.focus()
+    act(() => date.focus())
     expect(bubble()).toBeDefined()
-    date.blur()
+    act(() => date.blur())
     expect(bubble()).toBeUndefined()
   })
 
