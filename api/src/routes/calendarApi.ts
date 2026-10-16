@@ -10,6 +10,7 @@ import { visibleCalendarEvent, billEntryGroupKey } from '../lib/calendarVisibili
 import { hearingBody, customBody, customUrl, dateFieldBody } from '../lib/calendarIcsBody'
 import { loadDateFieldEvents, type DateFieldEvent } from '../lib/dateFieldEvents'
 import { billUrl } from '../../../shared/sessionSlug'
+import { filedSlug } from '../lib/sessionSlug'
 import { collectPriorityLegiscanIds, backfillCalendar } from '../lib/calendarBackfill'
 import { nowDb } from '../lib/dbTime'
 import { PRODUCT_NAME } from '../../../shared/brand'
@@ -167,7 +168,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     }
   }
 
-  type EventGroup = { key: string; bills: Array<{ id: string; billNumber: string; state: string | null }> }
+  type EventGroup = { key: string; bills: Array<{ id: string; billNumber: string; state: string | null; sessionSlug: string | null }> }
   interface EventResult {
     id: string; uid: string; source: EventSource; billId: string | null
     /** A bill calendar entry's kind, from central (null for custom and date-field events, or before central sent one). */
@@ -247,9 +248,9 @@ calendarRouter.get('/events', requireAuth, async (c) => {
   const groupKeys = [...new Set(result.flatMap(e => e.bills.map(b => b.groupKey)).filter((k): k is string => k != null))]
   const membersOf = new Map<string, EventGroup['bills']>()
   for (let i = 0; i < groupKeys.length; i += LINK_CHUNK) {
-    const members = await db.select({ id: bills.id, billNumber: bills.billNumber, state: bills.state, groupKey: bills.groupKey })
+    const members = await db.select({ id: bills.id, billNumber: bills.billNumber, state: bills.state, session: bills.session, sessionSlug: bills.sessionSlug, groupKey: bills.groupKey })
       .from(bills).where(inArray(bills.groupKey, groupKeys.slice(i, i + LINK_CHUNK))).all()
-    for (const m of members) membersOf.set(m.groupKey!, [...(membersOf.get(m.groupKey!) ?? []), { id: m.id, billNumber: m.billNumber, state: m.state }])
+    for (const m of members) membersOf.set(m.groupKey!, [...(membersOf.get(m.groupKey!) ?? []), { id: m.id, billNumber: m.billNumber, state: m.state, sessionSlug: filedSlug(m) }])
   }
   // A group has one priority, so a bill's chip wears it whichever member it was set on.
   const groupPriorities = await loadGroupPriorities(db, groupKeys)
@@ -257,7 +258,7 @@ calendarRouter.get('/events', requireAuth, async (c) => {
     const keys = [...new Set(e.bills.map(b => b.groupKey).filter((k): k is string => k != null))]
     e.groups = keys.map(key => ({ key, bills: [...(membersOf.get(key) ?? [])].sort(compareBillNumbers) }))
     for (const b of e.bills) {
-      if (b.groupKey != null) b.priority = groupPriorities.get(b.groupKey) ?? null
+      b.priority = priorityWorn({ priority: b.priority as 'high' | 'medium' | 'low' | null, groupKey: b.groupKey ?? null }, groupPriorities)
     }
   }
 

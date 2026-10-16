@@ -99,7 +99,7 @@ Everyone else sees them too. Bills that newly match as the legislature files the
 
 ## Shared calendar
 
-Hearings on bills your team has prioritized are added to your team's calendar automatically as they're scheduled. You can add custom events of your own (like coalition calls) alongside them. Everyone on the team can subscribe to the calendar from their own calendar app.
+Hearings on bills your team has prioritized are added to your team's calendar automatically as they're scheduled. Identical companion bills share one priority, so a hearing on either shows once the pair is prioritized, labeled with its own bill, and its popover lists the companion bills. You can add custom events of your own (like coalition calls) alongside them. Everyone on the team can subscribe to the calendar from their own calendar app.
 
 Where a state's data includes the legislature's own calendar (DC's Council calendar, for one), its hearings, roundtables, and meetings appear too, with or without a bill on the agenda. Admins choose which ones under Settings → Calendar events, by committee, kind of event, topic keywords, or bills the team tracks. An event with a prioritized bill on its agenda always shows, and an event the choices leave out drops out of the calendar subscription too. Where a state's data includes deadlines, such as the end of the executive's time to sign or veto, a prioritized bill's deadlines go on the calendar alongside its hearings, and every bill's next deadline shows on its bill page.
 

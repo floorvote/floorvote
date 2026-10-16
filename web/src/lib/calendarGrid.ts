@@ -20,7 +20,7 @@ export interface CalendarEventBill {
 /** A companion group an event's bills belong to, with every bill in it: a member with no hearing of its own is in it too. */
 export interface CalendarEventGroup {
   key: string
-  bills: Array<{ id: string; billNumber: string; state: string | null }>
+  bills: Array<{ id: string; billNumber: string; state: string | null; sessionSlug?: string | null }>
 }
 
 export interface CalendarEvent {

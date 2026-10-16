@@ -47,6 +47,12 @@ describe('EventPopoverContent: companion groups', () => {
     ])
   })
 
+  it('links a member by its canonical bill URL when the group carries its session slug', () => {
+    show({ ...senateHearing, groups: [{ key: 'h1', bills: [{ id: 'h1', billNumber: 'H 101', state: 'RI', sessionSlug: '2026rs' }] }] })
+    const region = screen.getByRole('group', { name: 'Companion bills' })
+    expect(within(region).getByRole('link', { name: 'H 101' })).toHaveAttribute('href', '/RI/2026rs/H 101')
+  })
+
   it('names each group once when the entry\'s bills belong to two', () => {
     show({
       ...senateHearing, source: 'custom', billId: null,
