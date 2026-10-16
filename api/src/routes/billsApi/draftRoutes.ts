@@ -5,7 +5,7 @@ import { requireAdmin } from '../../middleware/auth'
 import { getDb } from '../../db/client'
 import {
   bills, memberVotes, officialPositions, comments, notes, feedEvents, billTexts,
-  billCustomFieldValues, calendarEventBills, notifications,
+  billCustomFieldValues, calendarEventBills, notifications, billMutes,
 } from '../../db/schema'
 import type { AppEnv } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
@@ -166,6 +166,8 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       .from(billCustomFieldValues).where(eq(billCustomFieldValues.billId, filedBillId)).all()).map(r => r.fieldId)
     const filedEventIds = (await db.select({ eventId: calendarEventBills.eventId })
       .from(calendarEventBills).where(eq(calendarEventBills.billId, filedBillId)).all()).map(r => r.eventId)
+    const filedMuteUserIds = (await db.select({ userId: billMutes.userId })
+      .from(billMutes).where(eq(billMutes.billId, filedBillId)).all()).map(r => r.userId)
 
     // Heterogeneous update/delete queries collected for db.batch(); type as the element array.
     const ops: Parameters<typeof db.batch>[0][number][] = []
@@ -185,6 +187,11 @@ export function registerDraftRoutes(router: Hono<AppEnv>) {
       ops.push(db.delete(memberVotes).where(and(eq(memberVotes.billId, draftId), inArray(memberVotes.userId, filedVoteUserIds))))
     }
     ops.push(db.update(memberVotes).set({ billId: filedBillId }).where(eq(memberVotes.billId, draftId)))
+    // A member who muted the draft stays muted on the filed bill. Mutes cascade-delete with the draft.
+    if (filedMuteUserIds.length) {
+      ops.push(db.delete(billMutes).where(and(eq(billMutes.billId, draftId), inArray(billMutes.userId, filedMuteUserIds))))
+    }
+    ops.push(db.update(billMutes).set({ billId: filedBillId }).where(eq(billMutes.billId, draftId)))
     // Custom field values cascade-delete with the draft, so they must move first.
     // Filed bill wins on a shared field; set_by/updated_at are kept as-is.
     if (filedFieldIds.length) {

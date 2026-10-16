@@ -23,10 +23,20 @@ import type { AppDb } from '../types'
  * `ai_processed_at`, a triage's `triaged_at`. A value with no timestamp is the
  * oldest, and a tie goes to the larger bill id, so every member's page reads
  * the same one.
+ *
+ * The analysis (team summary and tags) comes from a bill the team tracks
+ * (#554): among the members with an analysis, those with a match type come
+ * first, and the most recent of those is the group's. A pulled companion is
+ * analyzed only so its own page has a summary, so its newer analysis doesn't
+ * replace the tracked bill's. Only a group with no tracked analysis reads the
+ * most recent of any member's. Migration 0106's `group_tags` triggers apply
+ * the same rule.
  */
 
 type BillValues = {
   id: string
+  /** Whether the bill is tracked (a match type), which decides whose analysis a group shows. */
+  matchType: 'keyword' | 'manual' | null
   priority: 'high' | 'medium' | 'low' | null
   prioritySetAt: string | null
   tenantSummary: string | null
@@ -41,7 +51,7 @@ type CustomFieldValue = { billId: string; fieldId: string; value: string; setBy:
 /** Every team field value stored on some bills, as read from the database. */
 export type TeamValueRows = { bills: BillValues[]; positions: PositionValue[]; customFields: CustomFieldValue[] }
 
-/** A group's team field values, each the one set most recently on any member, or null. */
+/** A group's team field values, each the one set most recently on any member (the analysis preferring tracked members), or null. */
 export type GroupTeamValues = {
   position: PositionValue | null
   priority: { billId: string; priority: 'high' | 'medium' | 'low'; setAt: string | null } | null
@@ -52,6 +62,7 @@ export type GroupTeamValues = {
 
 const billValueColumns = {
   id: bills.id,
+  matchType: bills.matchType,
   priority: bills.priority,
   prioritySetAt: bills.prioritySetAt,
   tenantSummary: bills.tenantSummary,
@@ -93,10 +104,9 @@ export async function readTeamValueRows(db: AppDb, billIds: readonly string[]): 
 export function resolveTeamValues(rows: TeamValueRows, members: ReadonlySet<string>): GroupTeamValues {
   const memberBills = rows.bills.filter(b => members.has(b.id)).map(b => ({ ...b, billId: b.id }))
   const priority = mostRecent(memberBills.filter(b => b.priority !== null), b => b.prioritySetAt)
-  const analysis = mostRecent(
-    memberBills.filter(b => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]'),
-    b => b.aiProcessedAt,
-  )
+  const analyzed = memberBills.filter(b => b.aiProcessedAt !== null || b.tenantSummary !== null || b.tags !== '[]')
+  const trackedAnalyzed = analyzed.filter(b => b.matchType !== null)
+  const analysis = mostRecent(trackedAnalyzed.length > 0 ? trackedAnalyzed : analyzed, b => b.aiProcessedAt)
   const triaged = mostRecent(memberBills.filter(b => b.triagedAt !== null), b => b.triagedAt)
   const customFields = new Map<string, CustomFieldValue>()
   const byField = new Map<string, CustomFieldValue[]>()
@@ -269,6 +279,42 @@ export async function recordFieldChanges(db: AppDb, changes: readonly FieldChang
         json_extract(e.value, '$.actorUserId'), json_extract(e.value, '$.metadata'), json_extract(e.value, '$.createdAt')
       FROM json_each(${JSON.stringify(part)}) e ORDER BY e.key`)
   }
+}
+
+/**
+ * The tags each group reads before a write to its members' `match_type`, for
+ * `recordGroupTagChanges`. A group's tags come from a tracked member first, so
+ * a bill starting or stopping to match can move them with no analysis to
+ * record it. Only bills in a group are read: a bill in no group reads its own
+ * tags, whatever its match type. One bill stands for each group, the one with the
+ * smallest id among those given, and is the one the event is recorded on, so a
+ * cleanup always records on the same bill.
+ */
+export type GroupTagsSnapshot = ReadonlyMap<string, string[]>
+
+export async function snapshotGroupTags(db: AppDb, members: readonly { id: string; groupKey: string | null }[]): Promise<GroupTagsSnapshot> {
+  const standIn = new Map<string, string>()
+  for (const m of members) {
+    if (m.groupKey === null) continue
+    const held = standIn.get(m.groupKey)
+    if (held === undefined || m.id < held) standIn.set(m.groupKey, m.id)
+  }
+  const values = await loadTeamValuesOf(db, [...standIn.values()])
+  return new Map([...standIn.values()].map(id => [id, values.get(id)?.analysis?.tags ?? []]))
+}
+
+/**
+ * Record, as a null-actor `field_changed` event (the one an analysis writes
+ * for tags), each group in `before` whose tags differ now, once per group, on
+ * the bill that stood for it. Each costs a few small queries per 90 members, doubled
+ * by the snapshot, which a rare admin cleanup can afford. A group whose tags are unchanged records none.
+ */
+export async function recordGroupTagChanges(db: AppDb, before: GroupTagsSnapshot): Promise<void> {
+  if (before.size === 0) return
+  const after = await loadTeamValuesOf(db, [...before.keys()])
+  await recordFieldChanges(db, [...before].map(([billId, old]) => ({
+    billId, field: 'tags' as const, label: 'tags', old, new: after.get(billId)?.analysis?.tags ?? [],
+  })), null)
 }
 
 function sameValue(a: string | string[] | null, b: string | string[] | null): boolean {

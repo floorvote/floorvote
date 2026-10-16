@@ -3,6 +3,7 @@ import { priorityMarkerSpec } from '../../../shared/priorityMarker'
 import { PRIORITY_COLORS, CHIP_MINI_DIMS } from '../../../shared/billChipColors'
 import { eventSourceIcon, eventBodyModel, EVENT_SOURCE_TILE, formatEventUrl } from '../../../shared/eventLineModel'
 import { emailIconSrc } from '../../../shared/emailIcons'
+import type { EventSource } from '../../../shared/eventSource'
 import { renderEmailShell, emailButton, emailFooterLink, formatDateRange } from './emailShell'
 
 interface WeekAheadBill {
@@ -18,7 +19,9 @@ export interface WeekAheadEvent {
   /** Canonical hearing identity (null for custom events) — preferred for the
    *  agenda deep-link, since hearings may be merged under a different id there. */
   eventHash?: string | null
-  source: string
+  source: EventSource
+  /** A date-field event's field name, the hover label of its marker. */
+  fieldName?: string | null
   description?: string | null
   location?: string | null
   time?: string | null

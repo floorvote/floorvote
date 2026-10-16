@@ -117,6 +117,15 @@ describe('GET /notifications', () => {
     expect(body.notifications[0].sourceLabel).toBe('Elections Committee')
   })
 
+  it('returns an @admins mention as one, with no source label', async () => {
+    await seedCommentMention(commentId, userId, { sourceType: 'admins', sourceId: 'all' })
+
+    const body = await getNotifications(token)
+    expect(body.notifications).toHaveLength(1)
+    expect(body.notifications[0].sourceType).toBe('admins')
+    expect(body.notifications[0].sourceLabel).toBeNull()
+  })
+
   it('hides notifications for deleted comments, from the list and the count', async () => {
     const deletedCommentId = await seedComment(billId, authorId)
     await seedCommentMention(commentId, userId)
