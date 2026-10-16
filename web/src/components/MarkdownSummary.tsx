@@ -13,7 +13,7 @@
  * after them is ordinary markdown and is treated as such.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect, useId, useMemo, useRef } from 'react'
 import { marked } from 'marked'
 import { color, radius } from '../styles/tokens'
 import { sanitizeHtml } from '../lib/sanitizeHtml'
@@ -42,9 +42,11 @@ interface Props {
   /**
    * Claims whose own text becomes a link to the passage behind it (#571), by
    * their index in the bill's claim sources. None, or absent, renders the
-   * summary exactly as before.
+   * summary exactly as before. A claim with a `popover` (a PDF claim's quote,
+   * #572) shows it in a tooltip beside its link, on hover and on keyboard focus,
+   * and the link is described by it for a screen reader. Escape dismisses it.
    */
-  claimLinks?: readonly { index: number; claim: string }[]
+  claimLinks?: readonly { index: number; claim: string; popover?: string }[]
   /** Called with a claim's index when its link is activated, by click or Enter. */
   onClaimActivate?: (index: number) => void
 }
@@ -60,11 +62,13 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
   // Claims are linked after sanitizing: the links are the page's own elements,
   // made from text, and nothing of the claim becomes markup (lib/claimLinks.ts).
   const claimsKey = JSON.stringify(claimLinks ?? [])
+  const quoteIdPrefix = `claim-quote${useId()}`
   const html = useMemo(
-    () => linkClaimsInHtml(sanitized, JSON.parse(claimsKey) as { index: number; claim: string }[]),
-    [sanitized, claimsKey],
+    () => linkClaimsInHtml(sanitized, JSON.parse(claimsKey) as { index: number; claim: string; popover?: string }[], quoteIdPrefix),
+    [sanitized, claimsKey, quoteIdPrefix],
   )
   const hasClaimLinks = html !== sanitized
+  const hasQuotes = hasClaimLinks && (claimLinks ?? []).some(c => c.popover !== undefined)
 
   // One listener for every claim link, since the links are in the HTML string.
   const ref = useRef<HTMLDivElement>(null)
@@ -82,6 +86,38 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
     el.addEventListener('click', onClick)
     return () => el.removeEventListener('click', onClick)
   }, [onClaimActivate])
+
+  // A quote tooltip is dismissed with Escape (WCAG 1.4.13) and shows again once
+  // the pointer or focus has left its claim.
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !hasQuotes) return
+    const refOf = (n: EventTarget | null) => (n instanceof Element ? n.closest('.claim-ref') : null)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const open = new Set<Element>()
+      for (const n of [e.target, document.activeElement]) {
+        const r = refOf(n)
+        if (r && el.contains(r)) open.add(r)
+      }
+      for (const r of el.querySelectorAll('.claim-ref')) {
+        try { if (r.matches(':hover')) open.add(r) } catch { /* no :hover in this environment */ }
+      }
+      for (const r of open) r.setAttribute('data-dismissed', '')
+    }
+    const onLeave = (e: MouseEvent | FocusEvent) => {
+      const r = refOf(e.target)
+      if (r && !r.contains(e.relatedTarget as Node | null)) r.removeAttribute('data-dismissed')
+    }
+    document.addEventListener('keydown', onKeyDown)
+    el.addEventListener('mouseout', onLeave)
+    el.addEventListener('focusout', onLeave)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      el.removeEventListener('mouseout', onLeave)
+      el.removeEventListener('focusout', onLeave)
+    }
+  }, [hasQuotes])
 
   return (
     <>
@@ -109,6 +145,23 @@ export function MarkdownSummary({ children, fontSize, color: textColor = color.t
             text-underline-offset: 2px; cursor: pointer;
           }
           .markdown-summary a.claim-link:hover { color: ${color.linkBlue}; text-decoration-color: currentColor; }
+        `}</style>
+      )}
+      {hasQuotes && (
+        <style>{`
+          .markdown-summary .claim-ref { position: relative; }
+          .markdown-summary .claim-quote {
+            display: none; position: absolute; left: 0; top: 100%; z-index: 20;
+            width: max-content; max-width: min(26rem, 90vw); padding: 6px 8px;
+            border: 1px solid ${color.borderDefault}; border-radius: ${radius.md}px; background: ${color.white};
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); color: ${color.textSlate};
+            font-size: 0.875em; font-weight: 400; font-style: normal; line-height: 1.4; text-align: left; white-space: normal;
+          }
+          .markdown-summary .claim-ref:not([data-dismissed]):hover > .claim-quote { display: block; }
+          .markdown-summary .claim-ref:not([data-dismissed]):focus-within > .claim-quote { display: block; }
+          @media (max-width: 600px) {
+            .markdown-summary .claim-quote { position: fixed; left: 16px; right: 16px; bottom: 16px; top: auto; width: auto; max-width: none; }
+          }
         `}</style>
       )}
       <div

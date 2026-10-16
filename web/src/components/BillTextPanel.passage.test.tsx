@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { BillTextPanel, type PassageRequest } from './BillTextPanel'
+import { BillTextPanel, type HtmlPassageRequest } from './BillTextPanel'
 import { billHtmlToText } from '../../../shared/billHtmlToText'
 import { PASSAGE_ID } from '../lib/claimLinks'
 
@@ -25,8 +25,8 @@ function passageIn(html: string, text: string) {
   return { quoteAt: { start, end: start + text.length }, matched: text }
 }
 
-const own = (key = 1): PassageRequest => ({ key, billId: 'a100', billNumber: 'A100', document: TEXT_A, ...passageIn(A_HTML, 'Each county shall have a drop box.') })
-const borrowed = (key = 1): PassageRequest => ({ key, billId: 's200', billNumber: 'S200', document: DOC_S, ...passageIn(S_HTML, 'Each county shall have a drop box, emptied daily.') })
+const own = (key = 1): HtmlPassageRequest => ({ key, billId: 'a100', billNumber: 'A100', document: TEXT_A, ...passageIn(A_HTML, 'Each county shall have a drop box.') })
+const borrowed = (key = 1): HtmlPassageRequest => ({ key, billId: 's200', billNumber: 'S200', document: DOC_S, ...passageIn(S_HTML, 'Each county shall have a drop box, emptied daily.') })
 
 let fetched: string[]
 let blobs: Blob[]

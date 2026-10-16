@@ -44,16 +44,16 @@ describe('pdfPageTarget', () => {
 
 describe('describePageTarget', () => {
   it('names the page when it is the cited one', () => {
-    expect(describePageTarget(pdfPageTarget(7), 7)).toBe('Page 7')
+    expect(describePageTarget(pdfPageTarget(7))).toBe('Page 7')
   })
 
   it('says no page was cited, and that the file opens at page 1', () => {
-    expect(describePageTarget(pdfPageTarget(null), null)).toBe('No page was cited, so the PDF opens at page 1')
+    expect(describePageTarget(pdfPageTarget(null))).toBe('No page was cited, so the PDF opens at page 1')
   })
 
   it('says the cited page is not usable, and that the file opens at page 1', () => {
-    expect(describePageTarget(pdfPageTarget(0), 0)).toBe('The cited page isn’t usable, so the PDF opens at page 1')
-    expect(describePageTarget(pdfPageTarget(-3), -3)).toBe('The cited page isn’t usable, so the PDF opens at page 1')
+    expect(describePageTarget(pdfPageTarget(0))).toBe('The cited page isn’t usable, so the PDF opens at page 1')
+    expect(describePageTarget(pdfPageTarget(-3))).toBe('The cited page isn’t usable, so the PDF opens at page 1')
   })
 })
 

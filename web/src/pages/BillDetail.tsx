@@ -1383,14 +1383,16 @@ export function BillDetail() {
     const link = claimLinks.find(c => c.index === index)
     if (!link || !claimSources) return
     setShowBillText(true)
-    setPassage({
+    const base = {
       key: ++passageKeyRef.current,
       billId: claimSources.billId,
       billNumber: claimSources.billId === bill.id ? bill.billNumber : (bill.analysisBillNumber ?? null),
       document: claimSources.document,
-      matched: link.matched,
-      quoteAt: link.quoteAt,
-    })
+    }
+    // A PDF claim opens its page and shows its quote (#572), an HTML claim its highlighted passage (#571).
+    setPassage('quote' in link
+      ? { ...base, quote: link.quote, page: link.page }
+      : { ...base, matched: link.matched, quoteAt: link.quoteAt })
   }
 
   // Separators between collapsible sections — no border above the first one.

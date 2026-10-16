@@ -6,6 +6,7 @@ import { getScrollContainer } from '../lib/scrollUtils'
 import { canRenderPdfInline } from '../lib/pdfInline'
 import { parseHandle } from '../../../shared/billHandle'
 import { focusPassage, markPassage, PASSAGE_ID, type ClaimDocument, type Span } from '../lib/claimLinks'
+import { describePageTarget, looksLikePdf, pdfPageTarget } from '../lib/pdfPages'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 
 function DownloadIcon({ size = 14, style }: { size?: number; style?: React.CSSProperties }) {
@@ -32,7 +33,21 @@ interface TextVersion {
  * document then opens beside this bill's own versions. Each request has a new
  * `key`, so asking for the same passage again opens it again.
  */
-export type PassageRequest = { key: number; billId: string; billNumber: string | null; document: ClaimDocument; matched: string; quoteAt: Span }
+type RequestBase = { key: number; billId: string; billNumber: string | null; document: ClaimDocument }
+
+/** An HTML claim: the passage to highlight, as the claim's `matched` text and where it is. */
+export type HtmlPassageRequest = RequestBase & { matched: string; quoteAt: Span; quote?: undefined; page?: undefined }
+
+/**
+ * A PDF claim (#572): the page the model cited (null when it gave none, and
+ * anything that isn't a page number opens at page 1) and the quote to show
+ * beside the PDF. The quote was never matched, so nothing is highlighted.
+ */
+export type PdfPageRequest = RequestBase & { quote: string; page: number | null; matched?: undefined; quoteAt?: undefined }
+
+export type PassageRequest = HtmlPassageRequest | PdfPageRequest
+
+const isPdfRequest = (r: PassageRequest): r is PdfPageRequest => r.quote !== undefined
 
 interface BillTextPanelProps {
   billId: string
@@ -51,6 +66,8 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   const [loadedContent, setLoadedContent] = useState<Map<string, string>>(new Map())
   const [pdfBlobUrls, setPdfBlobUrls] = useState<Map<string, string>>(new Map())
   const [failedDocIds, setFailedDocIds] = useState<Set<string>>(new Set())
+  // PDF documents whose bytes aren't a PDF (an HTML error page under a PDF's key): never put in a frame.
+  const [notPdfDocIds, setNotPdfDocIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const blobUrlsRef = useRef<Map<string, string>>(new Map())
   const panelRef = useRef<HTMLDivElement>(null)
@@ -137,7 +154,8 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   // put in before it renders, and the frame loads at the mark's fragment so the
   // browser scrolls to it (lib/claimLinks.ts). A blob URL, unlike srcdoc, can
   // carry the fragment. Null when the passage isn't in the document.
-  const passageShown = activePassage && activePassage.document.docId === selectedDocId ? activePassage : null
+  const requestShown = activePassage && activePassage.document.docId === selectedDocId ? activePassage : null
+  const passageShown = requestShown && !isPdfRequest(requestShown) ? requestShown : null
   const marked = useMemo(() => (passageShown && content !== null ? markPassage(content, passageShown) : null), [passageShown, content])
   const passageMissing = passageShown !== null && content !== null && marked === null
   const [passageUrl, setPassageUrl] = useState<string | null>(null)
@@ -152,6 +170,24 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
   }, [marked, passageShown?.key])
   // Focus moves to the passage's frame once per request, when it loads.
   const focusedUrlRef = useRef<string | null>(null)
+
+  // A PDF claim (#572): the PDF opens at the cited page, and its quote shows
+  // beside it, since the page can't highlight a PDF. Focus moves to the quote,
+  // once per request, so a keyboard or screen reader user gets it.
+  const pdfRequest = requestShown && isPdfRequest(requestShown) ? requestShown : null
+  const pdfTarget = pdfRequest ? pdfPageTarget(pdfRequest.page) : null
+  const pageFragment = pdfTarget ? `#page=${pdfTarget.page}` : ''
+  const captionRef = useRef<HTMLDivElement>(null)
+  const focusedRequestRef = useRef<number | null>(null)
+  const pdfRequestKey = pdfRequest?.key ?? null
+  useEffect(() => {
+    if (!open || pdfRequestKey === null || focusedRequestRef.current === pdfRequestKey) return
+    const caption = captionRef.current
+    if (!caption) return
+    focusedRequestRef.current = pdfRequestKey
+    // The panel is scrolled into view by `reveal`; focus shouldn't jump the page first.
+    caption.focus({ preventScroll: true })
+  }, [open, pdfRequestKey, selectedDocId])
 
   /** Bring the panel into view and glow it briefly. Returns the frame request to cancel. */
   function reveal(): number {
@@ -194,8 +230,16 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
         void res.body?.cancel()
         return
       }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      // Never the response's type: the frame can't carry a `sandbox` (Chromium's
+      // PDF viewer renders in no sandboxed frame), so an HTML page served under
+      // a PDF's key must not become an HTML document of the app's origin. The
+      // blob is a PDF or it is not shown at all.
+      const bytes = await res.arrayBuffer()
+      if (!looksLikePdf(bytes)) {
+        setNotPdfDocIds(prev => new Set(prev).add(docId))
+        return
+      }
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
       blobUrlsRef.current.set(docId, url)
       setPdfBlobUrls(prev => new Map(prev).set(docId, url))
     } finally {
@@ -268,6 +312,21 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
 
   const pdfBlobUrl = selectedDocId !== null ? (pdfBlobUrls.get(selectedDocId) ?? null) : null
   const loadFailed = selectedDocId !== null && failedDocIds.has(selectedDocId)
+  const notPdf = selectedDocId !== null && notPdfDocIds.has(selectedDocId)
+
+  // The quote behind a PDF claim, above the PDF, whether or not the PDF loads.
+  const quoteCaption = pdfRequest && pdfTarget ? (
+    <div
+      ref={captionRef}
+      tabIndex={-1}
+      role="group"
+      aria-label="Quote behind the claim you opened"
+      style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: '8px 12px', marginBottom: 8 }}
+    >
+      <p style={{ fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.textSecondary, margin: 0 }}>{describePageTarget(pdfTarget)}</p>
+      <blockquote style={{ fontSize: fontSize.sm, color: color.textSlate, margin: '4px 0 0' }}>{`“${pdfRequest.quote}”`}</blockquote>
+    </div>
+  ) : null
 
   return (
     <div
@@ -305,12 +364,14 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
           )}
 
           {isPdf && !loadFailed && !inlinePdf ? (
+            <>
+            {quoteCaption}
             <div style={{ border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, background: color.surfaceSubtle, padding: 16, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
               <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: 0 }}>
                 This browser can't show the PDF inline.
               </p>
               <a
-                href={textUrl(selectedDocId)}
+                href={`${textUrl(selectedDocId)}${pageFragment}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{ background: color.billBadgeNavy, color: color.white, fontSize: fontSize.base, fontWeight: fontWeight.semibold, padding: '10px 20px', borderRadius: radius.md, textDecoration: 'none' }}
@@ -323,9 +384,16 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
                 </a>
               )}
             </div>
+            </>
           ) : isPdf ? (
             <div>
-              {!loadFailed && (
+              {quoteCaption}
+              {!loadFailed && notPdf && (
+                <p role="status" style={{ fontSize: fontSize.sm, color: color.textMuted, margin: '0 0 4px' }}>
+                  This file isn't a PDF, so it isn't shown here.
+                </p>
+              )}
+              {!loadFailed && !notPdf && (
                 <>
                   <div style={{ height: pdfHeight, border: `1px solid ${color.borderDefault}`, borderRadius: radius.md, overflow: 'hidden' }}>
                     {loading ? (
@@ -333,8 +401,14 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
                         <p style={{ fontSize: fontSize.sm, color: color.textMuted, margin: 0 }}>Loading…</p>
                       </div>
                     ) : pdfBlobUrl ? (
+                      // No `sandbox`: Chromium's PDF viewer renders in no sandboxed
+                      // frame, under any value, so the safety is the blob's forced
+                      // `application/pdf` type and the `%PDF-` check in `loadPdf`.
+                      // A new frame for each request: a loaded viewer ignores a
+                      // fragment-only change, so the page wouldn't move.
                       <iframe
-                        src={pdfBlobUrl}
+                        key={`${selectedDocId}:${pdfRequest?.key ?? 'plain'}`}
+                        src={`${pdfBlobUrl}${pageFragment}`}
                         style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                         title="Bill text"
                       />
@@ -353,7 +427,7 @@ export function BillTextPanel({ billId, texts, externalOpen, requestedDocId, pas
                   </span>
                 ) : (
                   <>
-                    {!loadFailed && <a href={textUrl(selectedDocId)} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
+                    {!loadFailed && <a href={`${textUrl(selectedDocId)}${pageFragment}`} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>Open in new tab <ExternalLinkIcon size={14} /></a>}
                     {!loadFailed && selectedVersion?.stateLink && <span style={{ color: color.borderStrong }}>·</span>}
                     {selectedVersion?.stateLink && (
                       <a href={selectedVersion.stateLink} target="_blank" rel="noreferrer" className="blue-link" style={{ fontSize: fontSize.sm }}>

@@ -1,6 +1,7 @@
 import { billHtmlToText, KEEP_TAG } from '../../../shared/billHtmlToText'
 import { stripMarkdown } from './markdown'
 import { color } from '../styles/tokens'
+import { describePageTarget, pdfPageTarget } from './pdfPages'
 
 // Claim links on an HTML bill (#571, design in #560). A claim in the AI summary
 // links to the passage behind it, which opens in the bill text panel,
@@ -23,7 +24,15 @@ export type Span = { start: number; end: number }
 export type ClaimSourceStatus = 'exact' | 'normalized' | 'fuzzy' | 'anchored' | 'ungrounded' | 'unverified'
 
 /** One claim source as the bill detail carries it: the claim, how its quote resolved, and where. */
-export type ClaimSourceItem = { claim: string; status: ClaimSourceStatus; quoteAt?: Span; matched?: string }
+export type ClaimSourceItem = {
+  claim: string
+  status: ClaimSourceStatus
+  quoteAt?: Span
+  matched?: string
+  /** A PDF item's quote and cited page (#572), as the model gave them. The page is null when it gave none. */
+  quote?: string
+  page?: number | null
+}
 
 /** The document claim sources are pinned to, as the bill's text list has it. */
 export type ClaimDocument = { docId: string; type: string; date: string; mime: string; stateLink: string | null; altStateLink: string | null }
@@ -35,23 +44,42 @@ export type ClaimDocument = { docId: string; type: string; date: string; mime: s
  */
 export type ClaimSourcesDetail = { billId: string; document: ClaimDocument; items: ClaimSourceItem[] }
 
-/** A claim that renders as a link, with the passage it opens. `index` is its place in the items. */
-export type ClaimLink = { index: number; claim: string; quoteAt: Span; matched: string }
+/** An HTML claim that renders as a link, with the passage it opens. `index` is its place in the items. */
+export type PassageLink = { index: number; claim: string; quoteAt: Span; matched: string }
+
+/**
+ * A PDF claim that renders as a link (#572): it opens the PDF at `page`, which
+ * is null when the model cited none, and shows `quote` beside the link as
+ * `popover`. The quote was never matched against the file.
+ */
+export type PageLink = { index: number; claim: string; quote: string; page: number | null; popover: string }
+
+export type ClaimLink = PassageLink | PageLink
 
 /** The id of the highlight the frame scrolls to. */
 export const PASSAGE_ID = 'fv-claim-passage'
 
-/** The statuses whose quote was found in the document. `ungrounded` wasn't, and `unverified` is a PDF's (#572). */
+/** The statuses whose quote was found in the document. `ungrounded` wasn't, and `unverified` is a PDF's, linked by page. */
 const LINKED: ReadonlySet<ClaimSourceStatus> = new Set<ClaimSourceStatus>(['exact', 'normalized', 'fuzzy', 'anchored'])
 
 /**
- * The claims that render as links: resolved ones with a location, on an HTML
- * document, with the instance's setting on (#570). None for a PDF, which links
- * by page instead (#572).
+ * The claims that render as links, with the instance's setting on (#570). On an
+ * HTML document, the resolved ones with a location, which open a highlighted
+ * passage (#571). On a PDF, the `unverified` ones with a quote, which open the
+ * cited page and show the quote (#572): the tenant extracts no PDF text, so
+ * nothing in a PDF is resolved or highlighted, and a resolved status on a PDF is
+ * plain text. An `unverified` item on an HTML document is plain text too.
  */
 export function linkableClaims(cs: ClaimSourcesDetail | null | undefined, enabled: boolean | undefined): ClaimLink[] {
-  if (enabled === false || !cs || cs.document.mime === 'application/pdf') return []
-  return cs.items.flatMap((item, index) =>
+  if (enabled === false || !cs) return []
+  if (cs.document.mime === 'application/pdf') {
+    return cs.items.flatMap((item, index): PageLink[] => {
+      if (item.status !== 'unverified' || typeof item.quote !== 'string' || item.quote.trim() === '') return []
+      const page = typeof item.page === 'number' ? item.page : null
+      return [{ index, claim: item.claim, quote: item.quote, page, popover: `${describePageTarget(pdfPageTarget(page))}: \u201c${item.quote}\u201d` }]
+    })
+  }
+  return cs.items.flatMap((item, index): PassageLink[] =>
     LINKED.has(item.status) && item.quoteAt && typeof item.matched === 'string' && item.matched.trim() !== ''
       ? [{ index, claim: item.claim, quoteAt: item.quoteAt, matched: item.matched }]
       : [])
@@ -76,15 +104,25 @@ const collapse = (s: string) => s.replace(/\s+/g, ' ').trim()
  * Each link is an `<a href>` so it's reachable from the keyboard and activates
  * with Enter. It carries a fixed href, a class, and its claim's index, nothing
  * taken from the claim.
+ *
+ * A claim with a `popover` (a PDF's quote, #572) is wrapped with it:
+ * `span.claim-ref` holds the link and a `span.claim-quote` tooltip, and the link
+ * is described by the tooltip's id (`idPrefix` and the index), so a screen reader
+ * announces the quote on focus. The quote is set as text only, and its text is
+ * never searched for a later claim.
  */
-export function linkClaimsInHtml(html: string, claims: readonly { index: number; claim: string }[]): string {
+export function linkClaimsInHtml(
+  html: string,
+  claims: readonly { index: number; claim: string; popover?: string }[],
+  idPrefix = 'claim-quote',
+): string {
   if (claims.length === 0) return html
   // A template's content is inert: nothing in it loads or runs.
   const template = document.createElement('template')
   template.innerHTML = html
   let changed = false
   for (const c of claims) {
-    if (linkOne(template.content, c)) changed = true
+    if (linkOne(template.content, c, idPrefix)) changed = true
   }
   return changed ? template.innerHTML : html
 }
@@ -103,11 +141,20 @@ function insideLink(node: Node, root: Node): boolean {
   return false
 }
 
-/** Each block's text nodes, in document order. */
+/** Whether a node is inside a claim's quote tooltip, which is not the summary's text. */
+function insideQuote(node: Node, root: Node): boolean {
+  for (let n = node.parentNode; n && n !== root; n = n.parentNode) {
+    if (n.nodeType === Node.ELEMENT_NODE && (n as Element).classList.contains('claim-quote')) return true
+  }
+  return false
+}
+
+/** Each block's text nodes, in document order, leaving out a quote tooltip's. */
 function textByBlock(root: DocumentFragment): Text[][] {
   const groups = new Map<Node, Text[]>()
   const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (insideQuote(n, root)) continue
     const block = closestBlock(n, root)
     const g = groups.get(block)
     if (g) g.push(n as Text)
@@ -134,7 +181,7 @@ function streamOf(nodes: Text[]): { s: string; at: { node: Text; offset: number 
   return { s: out.join(''), at }
 }
 
-function linkOne(root: DocumentFragment, { index, claim }: { index: number; claim: string }): boolean {
+function linkOne(root: DocumentFragment, { index, claim, popover }: { index: number; claim: string; popover?: string }, idPrefix: string): boolean {
   const needles = [...new Set([collapse(claim), collapse(stripMarkdown(claim))])].filter(n => n.length > 0)
   if (needles.length === 0) return false
   const doc = root.ownerDocument
@@ -153,7 +200,21 @@ function linkOne(root: DocumentFragment, { index, claim }: { index: number; clai
         a.setAttribute('class', 'claim-link')
         a.setAttribute('data-claim', String(index))
         a.appendChild(range.extractContents())
-        range.insertNode(a)
+        if (popover === undefined) {
+          range.insertNode(a)
+          return true
+        }
+        const tipId = `${idPrefix}-${index}`
+        a.setAttribute('aria-describedby', tipId)
+        const tip = doc.createElement('span')
+        tip.setAttribute('class', 'claim-quote')
+        tip.setAttribute('id', tipId)
+        tip.setAttribute('role', 'tooltip')
+        tip.textContent = popover
+        const ref = doc.createElement('span')
+        ref.setAttribute('class', 'claim-ref')
+        ref.append(a, tip)
+        range.insertNode(ref)
         return true
       }
     }
