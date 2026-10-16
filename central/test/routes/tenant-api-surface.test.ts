@@ -53,6 +53,8 @@ describe('TenantApi deny-by-default forwarder', () => {
       ['GET', '/api/tenants/ri/delivery-probe'],
       ['POST', '/api/tenants/ri/verify-ai'],
       ['GET', '/api/admin/dash/auth/me'],
+      // Claim link counts (#573) are for the operators who run central, never for an instance, which can read only its own.
+      ['GET', '/api/admin/dash/tenants/ri/claim-sources'],
       ['GET', '/api/totally-unknown'],
     ]
     it.each(blocked)('blocks %s %s with 403', async (method, path) => {

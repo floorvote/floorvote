@@ -238,6 +238,35 @@ describe('a response cut off inside claim sources', () => {
     expect(r).toMatchObject({ summary: 'Moves the filing deadline.', tags: ['Voting'], relevanceScore: 6, claimSources: null })
   })
 
+  it('marks the result as recovered from a cut-off, so the processor can count it (#573)', async () => {
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(good) })
+    const r = await processBill({ ...html, claimSources: true }, env)
+    expect(r.claimSourcesRetried).toBe(true)
+  })
+
+  it('does not mark a response that parsed the first time', async () => {
+    geminiGenerateMock.mockResolvedValueOnce({ text: JSON.stringify({ ...good, claimSources: [{ claim: 'c', quote: 'q' }] }) })
+    const r = await processBill({ ...html, claimSources: true }, env)
+    expect(geminiGenerateMock).toHaveBeenCalledTimes(1)
+    expect(r.claimSourcesRetried).toBeUndefined()
+  })
+
+  it('does not mark a call that never asked for claim sources', async () => {
+    geminiGenerateMock.mockResolvedValueOnce({ text: JSON.stringify(good) })
+    const r = await processBill(html, env)
+    expect(r.claimSourcesRetried).toBeUndefined()
+  })
+
+  it('marks a PDF call recovered from a cut-off the same way', async () => {
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(good) })
+    const r = await processBill({ ...pdf, claimSources: true }, env)
+    expect(r.claimSourcesRetried).toBe(true)
+  })
+
   it('retries a PDF call the same way', async () => {
     geminiGenerateMock
       .mockResolvedValueOnce({ text: cut })
