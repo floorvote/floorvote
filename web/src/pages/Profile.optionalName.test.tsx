@@ -9,16 +9,16 @@ import * as api from '../lib/api'
 // with a blank name sends it as a clear, shows "Saved", and leaves the field
 // blank. The user then shows by email wherever a name would appear.
 
-const auth = vi.hoisted(() => ({ setName: vi.fn(), setSubtitle: vi.fn() }))
+const auth = vi.hoisted(() => ({ setName: vi.fn(), setTitle: vi.fn() }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: {
-      id: 'u1', email: 'a@b.c', name: 'Current Name', role: 'member', subtitle: null,
+      id: 'u1', email: 'a@b.c', name: 'Current Name', role: 'member', title: null,
       canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null,
       isLastOwner: false,
     },
     loading: false, authError: false,
-    setSubtitle: auth.setSubtitle, setName: auth.setName, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+    setTitle: auth.setTitle, setName: auth.setName, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
 vi.mock('../context/ConfigContext', () => ({
@@ -51,10 +51,10 @@ function setup() {
 }
 
 const nameInput = () => screen.getByLabelText(/^name/i)
-const subtitleInput = (card: HTMLElement) => within(card).getAllByRole('textbox').find(el => el.id !== 'name-input') as HTMLElement
+const titleInput = (card: HTMLElement) => within(card).getAllByRole('textbox').find(el => el.id !== 'name-input') as HTMLElement
 const saveButton = (card: HTMLElement) => within(card).getByRole('button', { name: /^(save|saving…)$/i })
 
-beforeEach(() => { vi.restoreAllMocks(); auth.setName.mockReset(); auth.setSubtitle.mockReset() })
+beforeEach(() => { vi.restoreAllMocks(); auth.setName.mockReset(); auth.setTitle.mockReset() })
 afterEach(() => { demoState.demoLocked = false })
 
 describe('Profile name is optional', () => {
@@ -82,15 +82,15 @@ describe('Profile name is optional', () => {
     expect(saveButton(card)).toBeEnabled()
   })
 
-  it('saves the subtitle with a blank name and shows "Saved"', async () => {
+  it('saves the title with a blank name and shows "Saved"', async () => {
     const { patches } = mockApi()
     const { user, card } = setup()
     await user.clear(nameInput())
-    await user.type(subtitleInput(card), 'Policy lead')
+    await user.type(titleInput(card), 'Policy lead')
     await user.click(saveButton(card))
     await waitFor(() => expect(patches).toHaveLength(1))
-    expect(patches[0].subtitle).toBe('Policy lead')
-    expect(auth.setSubtitle).toHaveBeenCalledWith('Policy lead')
+    expect(patches[0].title).toBe('Policy lead')
+    expect(auth.setTitle).toHaveBeenCalledWith('Policy lead')
     expect(await within(card).findByText('Saved')).toBeInTheDocument()
   })
 
@@ -100,7 +100,7 @@ describe('Profile name is optional', () => {
     await user.clear(nameInput())
     await user.click(saveButton(card))
     expect(await within(card).findByText('Saved')).toBeInTheDocument()
-    expect(patches).toEqual([{ name: '', subtitle: null }])
+    expect(patches).toEqual([{ name: '', title: null }])
     expect(nameInput()).toHaveValue('')
     expect(auth.setName).toHaveBeenCalledWith('')
   })
@@ -127,16 +127,16 @@ describe('Profile name is optional', () => {
     expect(auth.setName).not.toHaveBeenCalledWith('Current Name')
   })
 
-  it('clears the name and saves the subtitle in the same request', async () => {
+  it('clears the name and saves the title in the same request', async () => {
     const { patches } = mockApi()
     const { user, card } = setup()
     await user.clear(nameInput())
-    await user.type(subtitleInput(card), 'Policy lead')
+    await user.type(titleInput(card), 'Policy lead')
     await user.click(saveButton(card))
     await within(card).findByText('Saved')
-    expect(patches).toEqual([{ name: '', subtitle: 'Policy lead' }])
+    expect(patches).toEqual([{ name: '', title: 'Policy lead' }])
     expect(auth.setName).toHaveBeenCalledWith('')
-    expect(auth.setSubtitle).toHaveBeenCalledWith('Policy lead')
+    expect(auth.setTitle).toHaveBeenCalledWith('Policy lead')
   })
 
   it('sends no name when only the digest setting is toggled', async () => {
@@ -146,7 +146,7 @@ describe('Profile name is optional', () => {
     await user.click(screen.getByRole('switch', { name: 'Toggle Email digest of recent bill activity' }))
     await waitFor(() => expect(patches).toHaveLength(1))
     expect(patches[0]).not.toHaveProperty('name')
-    expect(patches[0]).not.toHaveProperty('subtitle')
+    expect(patches[0]).not.toHaveProperty('title')
     expect(auth.setName).not.toHaveBeenCalled()
   })
 

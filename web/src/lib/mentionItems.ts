@@ -2,7 +2,7 @@ import { displayName } from './chipStyles'
 
 export type MentionViewer = { id: string; role: 'member' | 'admin' | 'owner' }
 
-type MentionUser = { id: string; name: string; email: string; subtitle: string | null; role?: 'member' | 'admin' | 'owner' }
+type MentionUser = { id: string; name: string; email: string; title: string | null; role?: 'member' | 'admin' | 'owner' }
 type MentionRole = { id: string; name: string; members: unknown[] }
 
 /**
@@ -21,11 +21,11 @@ export function mentionSuggestionItems({ query, users, roles, viewer }: {
   const others = users.filter(u => u.id !== viewer?.id)
 
   const filteredUsers = users
-    .filter(u => displayName(u).toLowerCase().includes(q) || (u.subtitle && u.subtitle.toLowerCase().includes(q)))
+    .filter(u => displayName(u).toLowerCase().includes(q) || (u.title && u.title.toLowerCase().includes(q)))
   const matchedUsers = filteredUsers
     .slice(0, 4)
     .map(u => ({ ...u, type: 'user' as const }))
-  if (filteredUsers.length > 4) matchedUsers.push({ id: '__more_users__', name: '', email: '', subtitle: `${filteredUsers.length - 4} more`, type: 'user' as const })
+  if (filteredUsers.length > 4) matchedUsers.push({ id: '__more_users__', name: '', email: '', title: `${filteredUsers.length - 4} more`, type: 'user' as const })
 
   const filteredRoles = roles.filter(r => r.name.toLowerCase().includes(q))
   const matchedRoles = filteredRoles

@@ -4,7 +4,7 @@ import { app } from '../../src/index'
 import { eq } from 'drizzle-orm'
 import { resetDb, applyMigrations, seedUser, seedSession, seedBill, seedRole, seedUserRole } from '../helpers'
 import { getDb } from '../../src/db/client'
-import { users } from '../../src/db/schema'
+import { bills, users } from '../../src/db/schema'
 
 // Per-bill mute (#355). A muted bill sends that member no reply notifications,
 // in the app or by email, while mentions on it still reach them. Reply emails
@@ -390,6 +390,78 @@ describe('muting comments on a bill', () => {
     expect(await mutedOnPage('ben', filed)).toBe(true)
     expect(await mutedOnPage('cara', filed)).toBe(true)
     expect(await mutedOnPage('ann', filed)).toBe(false)
+  })
+
+  describe('in a companion group, which shares one conversation', () => {
+    let companion: string
+
+    /** Puts the bills in one group, keyed by the smallest id as recomputeGroups keys it. */
+    async function group(...billIds: string[]) {
+      const key = [...billIds].sort()[0]
+      for (const id of billIds) await getDb(env.DB).update(bills).set({ groupKey: key }).where(eq(bills.id, id))
+    }
+
+    beforeEach(async () => {
+      companion = await seedBill({ billNumber: 'SB 1' })
+      await group(billId, companion)
+    })
+
+    it('silences replies on every bill in the group when the member mutes one of them', async () => {
+      await comment('ben', '<p>On the house bill</p>')
+      await comment('cara', '<p>On the senate bill</p>', companion)
+      await mute('ben')
+      send.mockClear()
+
+      const commentId = await comment('ann', '<p>On the companion</p>', companion)
+
+      expect(await inboxFor('ben', commentId)).toEqual([])
+      expect(await inboxFor('cara', commentId)).toEqual(['reply'])
+      expect(emailedTo()).toEqual(['cara@example.com'])
+    })
+
+    it('shows the conversation as muted on every bill in the group', async () => {
+      await mute('ben', companion)
+
+      expect(await mutedOnPage('ben')).toBe(true)
+      expect(await mutedOnPage('ben', companion)).toBe(true)
+      expect(await mutedOnPage('cara')).toBe(false)
+    })
+
+    it('unmutes the whole group from any of its bills', async () => {
+      await comment('ben', '<p>First</p>')
+      await mute('ben')
+      await mute('ben', companion)
+
+      await unmute('ben', companion)
+
+      expect(await mutedOnPage('ben')).toBe(false)
+      expect(await mutedOnPage('ben', companion)).toBe(false)
+      send.mockClear()
+      const commentId = await comment('ann', '<p>Back again</p>', companion)
+      expect(await inboxFor('ben', commentId)).toEqual(['reply'])
+      expect(emailedTo()).toEqual(['ben@example.com'])
+    })
+
+    it('silences the group when the member mutes from a reply email', async () => {
+      await comment('ben', '<p>First</p>')
+      const { ben } = await replyEmails()
+      expect((await oneClick(pathOf(oneClickUrl(ben)))).status).toBe(200)
+      send.mockClear()
+
+      const commentId = await comment('ann', '<p>On the companion</p>', companion)
+
+      expect(await inboxFor('ben', commentId)).toEqual([])
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('leaves a mute with the bill it was set on when the group splits', async () => {
+      await mute('ben', companion)
+      await getDb(env.DB).update(bills).set({ groupKey: null }).where(eq(bills.id, companion))
+      await getDb(env.DB).update(bills).set({ groupKey: null }).where(eq(bills.id, billId))
+
+      expect(await mutedOnPage('ben', companion)).toBe(true)
+      expect(await mutedOnPage('ben')).toBe(false)
+    })
   })
 
   it('puts no unsubscribe link on mention emails', async () => {

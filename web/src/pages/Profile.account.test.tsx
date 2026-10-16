@@ -9,12 +9,12 @@ import { ConfigContext, type AppConfig } from '../context/ConfigContext'
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     user: {
-      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', subtitle: null,
+      id: 'u1', email: 'a@b.c', name: 'A', role: 'member', title: null,
       canVote: true, emailDigestEnabled: true, emailWeekAheadEnabled: true, lastSeenFeed: null,
       isLastOwner: false,
     },
     loading: false, authError: false,
-    setSubtitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
+    setTitle: () => {}, setName: () => {}, setEmailDigestEnabled: () => {}, setLastSeenFeed: () => {},
   }),
 }))
 

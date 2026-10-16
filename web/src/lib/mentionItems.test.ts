@@ -6,10 +6,10 @@ import { mentionSuggestionItems, type MentionViewer } from './mentionItems'
 // @everyone only to an admin or owner.
 
 const users = [
-  { id: 'u1', name: 'Sam Member', email: 'sam@example.com', subtitle: null, role: 'member' as const },
-  { id: 'u2', name: 'Dana Admin', email: 'dana@example.com', subtitle: null, role: 'admin' as const },
-  { id: 'u3', name: 'Olive Owner', email: 'olive@example.com', subtitle: null, role: 'owner' as const },
-  { id: 'u4', name: 'Pat Member', email: 'pat@example.com', subtitle: null, role: 'member' as const },
+  { id: 'u1', name: 'Sam Member', email: 'sam@example.com', title: null, role: 'member' as const },
+  { id: 'u2', name: 'Dana Admin', email: 'dana@example.com', title: null, role: 'admin' as const },
+  { id: 'u3', name: 'Olive Owner', email: 'olive@example.com', title: null, role: 'owner' as const },
+  { id: 'u4', name: 'Pat Member', email: 'pat@example.com', title: null, role: 'member' as const },
 ]
 
 const suggest = (query: string, viewer: MentionViewer) =>

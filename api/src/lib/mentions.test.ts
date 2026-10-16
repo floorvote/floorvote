@@ -3,7 +3,7 @@ import { renderMentionEmail, tiptapToEmailHtml, type MentionEmailInput } from '.
 
 const sample: MentionEmailInput = {
   appUrl: 'https://ri.example.com',
-  author: { name: 'Sam Ortiz', subtitle: 'Policy Director' },
+  author: { name: 'Sam Ortiz', title: 'Policy Director' },
   bill: {
     id: 'legiscan:1001',
     billNumber: 'H 5001',

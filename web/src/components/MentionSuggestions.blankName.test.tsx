@@ -6,14 +6,14 @@ import { MentionSuggestions } from './MentionSuggestions'
 // A person with no name (never set, or cleared under #233) shows by email in
 // the @-mention suggestions, and mentioning them inserts the email as the label.
 
-const named = { id: 'u1', name: 'Named Person', email: 'named@example.com', subtitle: null, type: 'user' as const }
-const cleared = { id: 'u2', name: '', email: 'cleared@example.com', subtitle: 'Analyst', type: 'user' as const }
+const named = { id: 'u1', name: 'Named Person', email: 'named@example.com', title: null, type: 'user' as const }
+const cleared = { id: 'u2', name: '', email: 'cleared@example.com', title: 'Analyst', type: 'user' as const }
 
 // jsdom has no scrollIntoView; the component scrolls the highlighted option.
 beforeAll(() => { Element.prototype.scrollIntoView = vi.fn() })
 
 describe('MentionSuggestions, person with no name', () => {
-  it('lists the person by email, with their subtitle', () => {
+  it('lists the person by email, with their title', () => {
     render(<MentionSuggestions items={[named, cleared]} command={() => {}} />)
     const option = screen.getByRole('button', { name: /cleared@example\.com/ })
     expect(option).toHaveTextContent('cleared@example.comAnalyst')

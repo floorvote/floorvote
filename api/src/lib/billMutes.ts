@@ -1,5 +1,8 @@
 // Per-bill mute (#355): a member who mutes a bill's comments gets no reply
 // notifications for it, in the app or by email. Mentions still reach them.
+// A companion group is one conversation, so a mute on any bill in the group
+// mutes all of it. Mutes stay on the bill they were set on, like votes and
+// notes, so splitting a group leaves each mute with its own bill.
 //
 // A member mutes from the bill page (with a session) or from a reply email's
 // mute link (without one). The email link carries a token signed for one member
@@ -14,6 +17,7 @@ import { and, eq } from 'drizzle-orm'
 import type { getDb } from '../db/client'
 import { associationConfig, billMutes, bills, users } from '../db/schema'
 import { activeUser } from './accountDeletion'
+import { inGroupOf } from './companionGroups'
 import { generateToken, secretsMatch } from './crypto'
 import { billUrl } from '../../../shared/sessionSlug'
 
@@ -24,13 +28,19 @@ export async function muteBill(db: Db, userId: string, billId: string): Promise<
   await db.insert(billMutes).values({ userId, billId }).onConflictDoNothing()
 }
 
+/**
+ * Unmutes a bill's comments for a member. A companion group shares one
+ * conversation, and a mute on any of its bills mutes it, so this clears the
+ * member's mutes across the whole group.
+ */
 export async function unmuteBill(db: Db, userId: string, billId: string): Promise<void> {
-  await db.delete(billMutes).where(and(eq(billMutes.userId, userId), eq(billMutes.billId, billId)))
+  await db.delete(billMutes).where(and(eq(billMutes.userId, userId), inGroupOf(billMutes.billId, billId)))
 }
 
+/** Whether the member muted this bill or any bill in its companion group. */
 export async function isBillMuted(db: Db, userId: string, billId: string): Promise<boolean> {
   const row = await db.select({ userId: billMutes.userId }).from(billMutes)
-    .where(and(eq(billMutes.userId, userId), eq(billMutes.billId, billId))).get()
+    .where(and(eq(billMutes.userId, userId), inGroupOf(billMutes.billId, billId))).get()
   return !!row
 }
 

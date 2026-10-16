@@ -41,19 +41,19 @@ describe('renderBillCardOpen', () => {
 })
 
 describe('renderCommentRow', () => {
-  const base = { appUrl: 'https://x.test', name: 'Sam Ortiz', subtitle: 'Town Clerk, Cranston', dateText: 'June 10, 2026, 4:45 PM', bodyHtml: '<p>hello</p>' }
+  const base = { appUrl: 'https://x.test', name: 'Sam Ortiz', title: 'Town Clerk, Cranston', dateText: 'June 10, 2026, 4:45 PM', bodyHtml: '<p>hello</p>' }
   it('uses the shared purple chat icon PNG', () => {
     expect(renderCommentRow(base)).toContain('/email-icons/chat__7c3aed.png')
   })
-  it('renders name, subtitle, date, and the body html', () => {
+  it('renders name, title, date, and the body html', () => {
     const html = renderCommentRow(base)
     expect(html).toContain('Sam Ortiz')
     expect(html).toContain('Town Clerk, Cranston')
     expect(html).toContain('June 10, 2026, 4:45 PM')
     expect(html).toContain('<p>hello</p>')
   })
-  it('omits the subtitle span when subtitle is null', () => {
-    const html = renderCommentRow({ ...base, subtitle: null })
+  it('omits the title span when title is null', () => {
+    const html = renderCommentRow({ ...base, title: null })
     expect(html).not.toContain('Town Clerk')
   })
   it('escapes the name but not the body html', () => {
@@ -61,10 +61,10 @@ describe('renderCommentRow', () => {
     expect(html).toContain('A &amp; B')
     expect(html).toContain('<strong>me</strong>')
   })
-  it('styles name/subtitle/date at the shared meta size and the body one tier up (no 16px inheritance)', () => {
+  it('styles name/title/date at the shared meta size and the body one tier up (no 16px inheritance)', () => {
     const html = renderCommentRow(base)
-    // name + subtitle + date all carry the explicit COMMENT_STYLE meta size, and
-    // the body carries bodySize — so neither the subtitle span nor the tiptap <p>
+    // name + title + date all carry the explicit COMMENT_STYLE meta size, and
+    // the body carries bodySize — so neither the title span nor the tiptap <p>
     // body inherits the email default (16px). Values come from the shared spec.
     const metaCount = (html.match(new RegExp(`font-size:${COMMENT_STYLE.nameSize}px`, 'g')) ?? []).length
     expect(metaCount).toBeGreaterThanOrEqual(3)

@@ -83,9 +83,10 @@ echo "==> seeding local D1 from scripts/seed-dev.sql"
 # Ensure the demo auto-login user exists. seed-dev.sql seeds named users but
 # DEMO_MODE auto-login resolves the fixed id `demo-user`; without this row,
 # /api/* requests 401 even though the HTML page sets a session cookie.
+# The title is also written to subtitle: keep subtitle in sync until the drop migration (follow-up issue).
 echo "==> ensuring demo-user row for auto-login"
 (cd "$ROOT/api" && npx wrangler d1 execute floorvote-dev --local --env dev --yes \
-  --command "INSERT OR IGNORE INTO users (id, email, name, role, subtitle, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 1, datetime('now'));")
+  --command "INSERT OR IGNORE INTO users (id, email, name, role, title, subtitle, can_vote, created_at) VALUES ('demo-user', 'demo@example.com', 'Demo User', 'owner', 'Demo Account', 'Demo Account', 1, datetime('now'));")
 
 # --- 4. start the app (api 8787 + web 5173) ---------------------------------
 echo ""
