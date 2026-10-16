@@ -100,6 +100,11 @@ describe('linkClaimsInHtml', () => {
     expect(linkClaimsInHtml(html, [{ index: 0, claim: 'Requires a drop box. Boxes are emptied daily.' }])).toBe(html)
   })
 
+  it('does not link a claim around a nested list, which would pull the list into the link', () => {
+    const html = '<ul><li>Requires a drop box<ul><li>Nested.</li></ul> in each county.</li></ul>'
+    expect(linkClaimsInHtml(html, [{ index: 0, claim: 'Requires a drop box in each county.' }])).toBe(html)
+  })
+
   it('does not link a claim inside a link the summary already has, so links never nest', () => {
     const html = '<p>See <a href="https://example.com">the county drop box rule</a> for more.</p>'
     expect(linkClaimsInHtml(html, [{ index: 0, claim: 'the county drop box rule' }])).toBe(html)
