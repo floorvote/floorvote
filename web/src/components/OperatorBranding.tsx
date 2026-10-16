@@ -47,7 +47,8 @@ const DEFAULT_CREDITS = [{ id: 'legiscan', ...LEGISCAN_ATTRIBUTION }]
  * Graceful absence: the logo renders hidden and is revealed only on a successful
  * onLoad; onError leaves it hidden. In dark mode the optional dark file is tried
  * first; if it errors (absent), the regular logo takes its place and the dark file
- * is not asked for again. A missing regular logo hides the image as above. When there is no name and the logo did not
+ * is not asked for again. A missing regular logo hides the image as above in light
+ * mode, but never stops dark mode trying the dark file. When there is no name and the logo did not
  * load, the credit block collapses — only the data credits remain (those lines
  * are data-provider credits, some under a license, and always render).
  *
@@ -107,8 +108,10 @@ export function OperatorBranding({
   const [regularMissing, setRegularMissing] = useState(false)
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const logoSrc = dark && !darkMissing ? OPERATOR_LOGO_DARK_SRC : OPERATOR_LOGO_SRC
+  // Only the file in play can fail the logo: a regular logo known to be missing hides it in light mode
+  // (or in dark mode once the dark file is missing too), but does not stop the dark file being tried.
   const logoState: 'pending' | 'loaded' | 'failed' =
-    regularMissing ? 'failed' : loadedSrc === logoSrc ? 'loaded' : 'pending'
+    logoSrc === OPERATOR_LOGO_SRC && regularMissing ? 'failed' : loadedSrc === logoSrc ? 'loaded' : 'pending'
 
   const showName = Boolean(operator.name)
   const logoVisible = logoState === 'loaded'

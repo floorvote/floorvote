@@ -219,7 +219,7 @@ The `entrypoint = "TenantApi"` on the `CENTRAL` binding is what lets outbound te
 > [!TIP]
 > To show your organization's logo in the app, add a file named exactly `web/public/operator-logo.svg` before you deploy, since the deploy builds it in. If it's absent, no logo renders (and a harmless `404` for `/operator-logo.svg` in the browser network log is expected).
 >
-> The app has a light and a dark color mode, so you can add a second, optional file, `web/public/operator-logo-dark.svg`, for the dark one. In dark mode the app uses the dark file when it's there and falls back to `operator-logo.svg` when it isn't, so a deployment with only the regular file keeps working. The logo follows the mode the reader is in, whether they chose Light or Dark on their profile or left it on System, and it swaps if their device switches while the app is open.
+> The app has a light and a dark color mode, so you can add a second, optional file, `web/public/operator-logo-dark.svg`, for the dark one. In dark mode the app uses the dark file when it's there and falls back to `operator-logo.svg` when it isn't, so a deployment with only the regular file keeps working. Light mode needs the regular file: with only a dark file, light mode shows no logo. The logo follows the mode the reader is in, whether they chose Light or Dark on their profile or left it on System, and it swaps if their device switches while the app is open.
 >
 > | File | Shown on | Keep contrast against |
 > |------|----------|-----------------------|

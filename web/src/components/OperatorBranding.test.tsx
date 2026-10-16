@@ -385,6 +385,54 @@ describe('OperatorBranding dark-mode logo', () => {
     expect(screen.queryByAltText('FloorVote')).toBeNull()
   })
 
+  // The regular logo is not required for the dark one to show: a deployment that
+  // ships only operator-logo-dark.svg, or whose regular file 404s, still gets the
+  // dark logo in dark mode. A missing regular file only hides the logo in light mode.
+  it('shows the dark file in dark mode even after the regular logo 404ed in light mode', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo()) // regular file absent
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+    act(() => setColorMode('dark'))
+    expect(srcOf(logo())).toBe(DARK_SRC)
+    expect(logo()).not.toBeVisible()
+    fireEvent.load(logo())
+    expect(logo()).toBeVisible()
+  })
+
+  it('hides the logo again on switching back to light once the regular logo is known missing', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    act(() => setColorMode('dark'))
+    fireEvent.load(logo())
+    act(() => setColorMode('light'))
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+    expect(screen.getByText('Example Org')).toBeInTheDocument()
+  })
+
+  it('collapses the credit in light mode with no name, then shows the dark logo in dark mode', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={{ name: '', url: '', contactEmails: [] }} sourceUrl="" />)
+    fireEvent.error(screen.getByAltText('FloorVote'))
+    expect(screen.queryByAltText('FloorVote')).toBeNull()
+    act(() => setColorMode('dark'))
+    expect(srcOf(screen.getByAltText('FloorVote'))).toBe(DARK_SRC)
+  })
+
+  it('shows nothing in dark mode when the dark file and the regular logo are both missing, after starting in light', () => {
+    stubDevice(false)
+    setColorMode('light')
+    renderBranding(<OperatorBranding operator={full} />)
+    fireEvent.error(logo())
+    act(() => setColorMode('dark'))
+    fireEvent.error(logo()) // dark absent too
+    expect(screen.queryByAltText('Example Org')).toBeNull()
+  })
+
   it('lets an explicit Light choice override a dark device', () => {
     stubDevice(true)
     setColorMode('light')
