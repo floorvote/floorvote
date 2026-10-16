@@ -7,6 +7,7 @@ import { DEFAULT_FULL_HOURS_ET, DEFAULT_RAW_HOURS_ET } from '../lib/sync-schedul
 import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
+import { resolveTenantRpc } from '../lib/tenantRpc'
 
 // Other providers' calls are logged to api_call_log too (callType '<provider
 // id>:<operation>', such as 'lims:Members'), but they are not LegiScan calls.
@@ -656,6 +657,25 @@ dashRoutes.get('/tenants/:id', async (c) => {
     },
     meta: { generatedAt: new Date().toISOString() },
   })
+})
+
+// How well one instance's claim links resolve (#573): counts of its stored claim
+// sources by status, and two signals about analyses that stored none. Asked of
+// the instance live over its service binding, as the unknown-login list is, so
+// central stores nothing and the instance's members have no way to read it.
+dashRoutes.get('/tenants/:id/claim-sources', async (c) => {
+  const id = c.req.param('id')
+  const db = drizzle(c.env.DB, { schema })
+  const tenant = await db.select({ id: schema.tenants.tenantId }).from(schema.tenants).where(eq(schema.tenants.tenantId, id)).get()
+  if (!tenant) return c.json({ error: { code: 'not_found', message: 'Tenant not found' } }, 404)
+  const rpc = resolveTenantRpc(c.env, id)
+  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its claim link counts cannot be read' } }, 501)
+  try {
+    return c.json({ data: await rpc.claimSourceCounts(), meta: { generatedAt: new Date().toISOString() } })
+  } catch (err) {
+    // Includes an instance from before this feature, whose entrypoint has no such method.
+    return c.json({ error: { code: 'tenant_call_failed', message: err instanceof Error ? err.message : 'tenant call failed' } }, 502)
+  }
 })
 
 dashRoutes.get('/activity', async (c) => {

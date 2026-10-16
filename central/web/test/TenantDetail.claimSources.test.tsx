@@ -43,7 +43,10 @@ beforeEach(() => {
     if (u.includes('/admin/dash/engagement/tenants/')) {
       return new Response(JSON.stringify({ data: { tenant: { id: 'ri', name: 'Instance One' }, dates: [], metrics: {}, probe: null }, meta: {} }))
     }
-    if (u.includes('/admin/dash/tenants/ri')) return new Response(JSON.stringify(tenantBody))
+    if (u.includes('/admin/dash/tenants/')) {
+      const id = decodeURIComponent(u.split('/admin/dash/tenants/')[1])
+      return new Response(JSON.stringify({ ...tenantBody, data: { ...tenantBody.data, tenant: { ...tenantBody.data.tenant, id } } }))
+    }
     return new Response('{}')
   })
 })
@@ -58,7 +61,10 @@ function renderPage(path = '/tenants/ri') {
 
 async function section() {
   const heading = await screen.findByRole('heading', { name: 'Claim links' })
-  return heading.closest('section') as HTMLElement
+  const el = heading.closest('section') as HTMLElement
+  // The heading shows while the counts load.
+  await waitFor(() => expect(within(el).queryByText('Loading…')).toBeNull())
+  return el
 }
 
 describe('the claim links section on an instance page', () => {
@@ -104,15 +110,15 @@ describe('the claim links section on an instance page', () => {
   it('shows how many analyses asked for claim sources and stored none, and how many had no list', async () => {
     renderPage()
     const s = within(await section())
-    expect(s.getByText('Asked, none stored').parentElement).toHaveTextContent('2')
-    expect(s.getByText('No list stored').parentElement).toHaveTextContent('5')
-    expect(s.getByText('With claim sources').parentElement).toHaveTextContent('7')
+    expect(s.getByText('Asked, none stored').parentElement).toHaveTextContent(/^Asked, none stored\s*2$/)
+    expect(s.getByText('No list stored').parentElement).toHaveTextContent(/^No list stored\s*5$/)
+    expect(s.getByText('With claim sources').parentElement).toHaveTextContent(/^With claim sources\s*7$/)
   })
 
   it('shows how many responses were cut off inside claim sources and retried without them', async () => {
     renderPage()
     const s = within(await section())
-    expect(s.getByText('Cut off, retried without claim sources').parentElement).toHaveTextContent('3')
+    expect(s.getByText('Cut off, retried without claim sources').parentElement).toHaveTextContent(/sources\s*3$/)
   })
 
   it('shows an instance with none as zeros, with no share to divide by', async () => {

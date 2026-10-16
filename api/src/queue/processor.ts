@@ -6,6 +6,7 @@ import { recordDeliveryProbe } from '../lib/deliveryProbe'
 import { loadAnalysisInputs, loadBillTextForAi } from '../lib/analysisInputs'
 import { claimLinksEnabled, type ResolvedClaimSource } from '../lib/claimSources'
 import { resolveClaimSources } from '../lib/claimResolution'
+import { recordClaimSourcesCutOff } from '../lib/claimSourceCounts'
 import { hearingUid } from '../lib/hearingUid'
 import { matchesKeywords, billMatchText } from '../lib/keywords'
 import { bills, associationConfig, feedEvents, billTexts, calendarEvents } from '../db/schema'
@@ -674,6 +675,18 @@ async function applyCentralBill(
         console.warn(`[processor] dropped ${dropped.length} off-taxonomy tag(s) for ${centralBill.number}: ${JSON.stringify(dropped)}`)
       }
       aiResult.tags = filterTagsToTaxonomy(aiResult.tags, allowed)
+
+      // A response cut off inside the claim sources was retried without them
+      // (lib/llm.ts), which leaves a null list that looks like never asked. Count
+      // it so operators can see it (#573). Extra to the analysis, so a failure
+      // to count never fails it.
+      if (aiResult.claimSourcesRetried) {
+        try {
+          await recordClaimSourcesCutOff(db)
+        } catch (err) {
+          console.error(`[processor] could not count the claim sources cut-off for ${centralBill.number}:`, err)
+        }
+      }
 
       // Resolve the claim sources here, while the document the model read is in
       // hand: a PDF has no text to match, so its quotes stay unverified.
