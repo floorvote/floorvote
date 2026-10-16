@@ -20,6 +20,11 @@ export type Env = {
    */
   LIMS_API_KEY?: string
   /**
+   * Virginia LIS API key (src/providers/lis). Optional: with it, Virginia bills
+   * carry their text. Without it, they have none.
+   */
+  LIS_API_KEY?: string
+  /**
    * "DC" to seed DC's ownership row for LIMS on the first sync, when DC has no
    * row (lib/stateProviders.ts). Kept for one release.
    */

@@ -13,7 +13,7 @@ export type DemoSeedUser = {
   email: string
   name: string
   role: 'owner' | 'admin' | 'member'
-  subtitle: string
+  title: string
   createdDaysAgo: number
   canVote: boolean
   /** Drives sessions.last_active and magic_links.used_at, which the sidebar

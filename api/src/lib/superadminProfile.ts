@@ -33,21 +33,23 @@ export async function isSuperadminUser<E extends { Bindings: Env }>(c: Context<E
 
 /**
  * Copy the central profile in a superadmin token onto the instance's user row,
- * overwriting name and title (the instance's `subtitle`). A token without the
- * profile claims, from central before profiles, changes nothing. Returns the row
- * as it now stands.
+ * overwriting name and title (central's `title` maps to `users.title` as it is,
+ * and is also written to `users.subtitle` for the previous build).
+ * A token without the profile claims, from central before profiles, changes
+ * nothing. Returns the row as it now stands.
  */
-export async function applyTokenProfile<U extends Pick<UserRow, 'id' | 'name' | 'subtitle'>>(
+export async function applyTokenProfile<U extends Pick<UserRow, 'id' | 'name' | 'title'>>(
   db: Db,
   user: U,
   token: { name: string; title: string | null },
 ): Promise<U> {
   if (token.title === null) return user
   const name = token.name.trim()
-  const subtitle = token.title.trim() || null
-  if (user.name === name && user.subtitle === subtitle) return user
-  await db.update(users).set({ name, subtitle }).where(eq(users.id, user.id))
-  return { ...user, name, subtitle }
+  const title = token.title.trim() || null
+  if (user.name === name && user.title === title) return user
+  // keep subtitle in sync until the drop migration (follow-up issue)
+  await db.update(users).set({ name, title, subtitle: title }).where(eq(users.id, user.id))
+  return { ...user, name, title, subtitle: title }
 }
 
 /**
@@ -55,7 +57,7 @@ export async function applyTokenProfile<U extends Pick<UserRow, 'id' | 'name' | 
  * verified central token for their own address, refresh their profile from it.
  * Writes only when something changed. Returns the row as it now stands.
  */
-export async function refreshProfileFromRequestToken<E extends { Bindings: Env }, U extends Pick<UserRow, 'id' | 'name' | 'subtitle'> & { email: string }>(
+export async function refreshProfileFromRequestToken<E extends { Bindings: Env }, U extends Pick<UserRow, 'id' | 'name' | 'title'> & { email: string }>(
   c: Context<E, any, any>,
   db: Db,
   user: U,
@@ -81,7 +83,7 @@ const CENTRAL_PROFILE_TIMEOUT_MS = 2000
 export async function refreshProfileFromCentral(
   env: Env,
   db: Db,
-  user: Pick<UserRow, 'id' | 'email' | 'name' | 'subtitle'>,
+  user: Pick<UserRow, 'id' | 'email' | 'name' | 'title'>,
 ): Promise<void> {
   const refresh = async () => {
     if (!(await isSuperadminEmailViaCentral(env, user.email))) return

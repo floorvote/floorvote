@@ -18,6 +18,7 @@ import { verifyTurnstile } from '../../../shared/turnstile'
 import { isSuperadminRequest } from '../lib/superadminRequest'
 import { requestEmailChange, EMAIL_CHANGE_ERRORS } from '../lib/emailChange'
 import { isSuperadminUser, SUPERADMIN_PROFILE_MANAGED_ERROR } from '../lib/superadminProfile'
+import { userTitleSql } from '../lib/userTitle'
 
 export const usersRouter = new Hono<AppEnv>()
 
@@ -28,7 +29,7 @@ usersRouter.use('*', requireAuth)
 usersRouter.get('/', async (c) => {
   const db = getDb(c.env.DB)
   const rows = await db
-    .select({ id: users.id, name: users.name, email: users.email, subtitle: users.subtitle, role: users.role })
+    .select({ id: users.id, name: users.name, email: users.email, title: userTitleSql, role: users.role })
     .from(users)
     .where(activeUser)
     // By the name as shown, ignoring case: a member with no name sorts by their
@@ -51,14 +52,18 @@ usersRouter.get('/', async (c) => {
     rolesByUser.get(row.userId)!.push({ id: row.roleId, name: row.roleName })
   }
 
-  return c.json(rows.map(u => ({ ...u, roles: rolesByUser.get(u.id) ?? [] })))
+  // `subtitle` is the old name for `title`. Remove in the release after this one.
+  return c.json(rows.map(u => ({ ...u, subtitle: u.title, roles: rolesByUser.get(u.id) ?? [] })))
 })
 
-// PATCH /users/me — update subtitle, name, and/or the email settings.
+// PATCH /users/me — update title, name, and/or the email settings.
+// A tab on the previous web bundle sends the title as `subtitle`, which is
+// still accepted, and every save echoes the title under both names. Remove the
+// `subtitle` handling in the release after this one.
 // Each field changes only when its key is present: a missing key means "no
-// change", so saving only the email settings leaves the name and subtitle alone.
+// change", so saving only the email settings leaves the name and title alone.
 // A present but blank (or null) name clears it, stored as an empty string; the
-// user then shows by email wherever a name would appear. A blank subtitle
+// user then shows by email wherever a name would appear. A blank title
 // clears it to null.
 usersRouter.patch('/me', async (c) => {
   const db = getDb(c.env.DB)
@@ -66,11 +71,13 @@ usersRouter.patch('/me', async (c) => {
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>))
   const raw = body && typeof body === 'object' ? body : {}
   // A superadmin's name and title are kept in central and overwritten at each sign-in.
-  if (('name' in raw || 'subtitle' in raw) && await isSuperadminUser(c, currentUser.email)) {
+  // The previous web bundle's `subtitle` key means the title. Remove in the release after this one.
+  const titleKey = 'title' in raw ? 'title' : 'subtitle' in raw ? 'subtitle' : null
+  if (('name' in raw || titleKey) && await isSuperadminUser(c, currentUser.email)) {
     return c.json({ error: SUPERADMIN_PROFILE_MANAGED_ERROR }, 403)
   }
-  const updates: { subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
-  const echo: { subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
+  const updates: { title?: string | null; subtitle?: string | null; name?: string; emailDigestEnabled?: number; emailWeekAheadEnabled?: number; emailRepliesEnabled?: number } = {}
+  const echo: { title?: string | null; subtitle?: string | null; name?: string; emailDigestEnabled?: boolean; emailWeekAheadEnabled?: boolean; emailRepliesEnabled?: boolean } = {}
 
   if ('name' in raw) {
     if (raw.name !== null && typeof raw.name !== 'string') {
@@ -82,15 +89,18 @@ usersRouter.patch('/me', async (c) => {
     }
     updates.name = echo.name = name
   }
-  if ('subtitle' in raw) {
-    if (raw.subtitle !== null && typeof raw.subtitle !== 'string') {
-      return c.json({ error: 'Subtitle must be a string' }, 400)
+  if (titleKey) {
+    const sent = raw[titleKey]
+    if (sent !== null && typeof sent !== 'string') {
+      return c.json({ error: 'Title must be a string' }, 400)
     }
-    const subtitle = (raw.subtitle ?? '').trim() || null
-    if (subtitle && subtitle.length > 200) {
-      return c.json({ error: 'Subtitle too long (max 200 characters)' }, 400)
+    const title = (sent ?? '').trim() || null
+    if (title && title.length > 200) {
+      return c.json({ error: 'Title too long (max 200 characters)' }, 400)
     }
-    updates.subtitle = echo.subtitle = subtitle
+    // `subtitle` is the old name for `title`. Remove in the release after this one.
+    // keep subtitle in sync until the drop migration (follow-up issue)
+    updates.title = updates.subtitle = echo.title = echo.subtitle = title
   }
   if (typeof raw.emailDigestEnabled === 'boolean') {
     updates.emailDigestEnabled = raw.emailDigestEnabled ? 1 : 0
@@ -332,17 +342,18 @@ rolesRouter.get('/', async (c) => {
       userId: users.id,
       name: users.name,
       email: users.email,
-      subtitle: users.subtitle,
+      title: userTitleSql,
     })
     .from(userRoles)
     .innerJoin(users, eq(userRoles.userId, users.id))
     .where(and(inArray(userRoles.roleId, roleIds), exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id)))))
     .all()
 
-  const membersByRole = new Map<string, Array<{ id: string; name: string; email?: string; subtitle: string | null }>>()
+  const membersByRole = new Map<string, Array<{ id: string; name: string; email?: string; title: string | null; subtitle: string | null }>>()
   for (const row of memberRows) {
     if (!membersByRole.has(row.roleId)) membersByRole.set(row.roleId, [])
-    membersByRole.get(row.roleId)!.push({ id: row.userId, name: row.name, email: row.email, subtitle: row.subtitle })
+    // `subtitle` is the old name for `title`. Remove in the release after this one.
+    membersByRole.get(row.roleId)!.push({ id: row.userId, name: row.name, email: row.email, title: row.title, subtitle: row.title })
   }
 
   return c.json(allRoles.map(r => ({

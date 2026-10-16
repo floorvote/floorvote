@@ -47,6 +47,11 @@ describe('TenantApi deny-by-default forwarder', () => {
       ['POST', '/api/tenants/ri/run-digest'],
       ['POST', '/api/tenants/ri/refresh-metadata'],
       ['POST', '/api/tenants/ri/send-sample-email'],
+      // Post-provisioning verification: operator-only, and verify-ai spends a model call.
+      ['GET', '/api/tenants/ri/registration'],
+      ['POST', '/api/tenants/ri/verify-delivery'],
+      ['GET', '/api/tenants/ri/delivery-probe'],
+      ['POST', '/api/tenants/ri/verify-ai'],
       ['GET', '/api/admin/dash/auth/me'],
       ['GET', '/api/totally-unknown'],
     ]

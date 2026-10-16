@@ -55,7 +55,7 @@ vi.mock('../components/PositionBadge', () => ({
 const authState = vi.hoisted(() => ({ role: 'member' as 'member' | 'admin' | 'owner', canVote: false }))
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
-    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, subtitle: null, canVote: authState.canVote },
+    user: { id: 'u1', email: 'a@b.c', name: 'Alice', role: authState.role, title: null, canVote: authState.canVote },
     loading: false,
   }),
 }))
@@ -688,7 +688,7 @@ describe('BillDetail reaction hover name list stays in sync with the count', () 
     id: 'c1',
     userId: 'u2',
     userName: 'Carol',
-    userSubtitle: null,
+    userTitle: null,
     content: 'Nice bill',
     createdAt: '2025-01-02 00:00:00',
   }
@@ -699,7 +699,7 @@ describe('BillDetail reaction hover name list stays in sync with the count', () 
   it('adds the current user to the hover name list immediately on reacting', async () => {
     const user = userEvent.setup()
     makeMockApiFetch({
-      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Bob', subtitle: null }] }] }],
+      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 1, userReacted: false, reactors: [{ name: 'Bob', title: null }] }] }],
       commentsTotal: 1,
     })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
@@ -720,7 +720,7 @@ describe('BillDetail reaction hover name list stays in sync with the count', () 
   it('removes the current user from the hover name list immediately on un-reacting', async () => {
     const user = userEvent.setup()
     makeMockApiFetch({
-      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 2, userReacted: true, reactors: [{ name: 'Bob', subtitle: null }, { name: 'Alice', subtitle: null }] }] }],
+      comments: [{ ...COMMENT, reactions: [{ emoji: '👍', count: 2, userReacted: true, reactors: [{ name: 'Bob', title: null }, { name: 'Alice', title: null }] }] }],
       commentsTotal: 1,
     })
     render(<MemoryRouter><BillDetail /></MemoryRouter>)
