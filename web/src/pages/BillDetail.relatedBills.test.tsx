@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
@@ -211,5 +211,50 @@ describe('the related bills on a bill page', () => {
     const related = await screen.findByText('Related:')
     expect(related.parentElement).toHaveTextContent('S2')
     expect(screen.queryByText('Identical to:')).toBeNull()
+  })
+})
+
+describe('the identical bills on the page of a grouped bill', () => {
+  const inGroup = (...ids: Array<[string, string]>) => [
+    { billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026' },
+    ...ids.map(([billId, billNumber]) => ({ billId, billNumber, state: 'NJ', sessionSlug: '2026' })),
+  ]
+
+  it('lists only the identical bills outside the group', async () => {
+    renderBillDetail({ state: 'NJ', relatedBillIds: RELATED, groupBills: inGroup(['b102', 'S1713']) })
+    const identical = await screen.findByText('Identical to:')
+    expect(identical.parentElement).toHaveTextContent('S1714')
+    expect(identical.parentElement).not.toHaveTextContent('S1713')
+  })
+
+  it('lists only the bill outside the group when identical relationships name one in the group and one an admin split off', async () => {
+    const splitOff = { billId: 107, billNumber: 'S1720', type: 'same-as', kind: 'identical', route: route('b107', 'S1720') }
+    renderBillDetail({ state: 'NJ', relatedBillIds: [RELATED[0], splitOff], groupBills: inGroup(['b102', 'S1713']) })
+    const identical = await screen.findByText('Identical to:')
+    expect(identical.parentElement).toHaveTextContent('S1720')
+    expect(identical.parentElement).not.toHaveTextContent('S1713')
+    expect(within(identical.parentElement!).getByRole('link', { name: 'S1720' })).toHaveAttribute('href', expect.stringContaining('/NJ/2026/'))
+  })
+
+  it('renders no "Identical to:" entry when every identical bill is in the group, and leaves package and related entries alone', async () => {
+    renderBillDetail({ state: 'NJ', relatedBillIds: [RELATED[0], RELATED[2], RELATED[3], RELATED[4]], groupBills: inGroup(['b102', 'S1713']) })
+    const pkg = await screen.findByText('Part of a package:')
+    expect(screen.queryByText('Identical to:')).toBeNull()
+    expect(pkg.parentElement).toHaveTextContent('HB4002')
+    expect(screen.getByText('Related:').parentElement).toHaveTextContent('A77')
+    expect(screen.getByText('Related:').parentElement).toHaveTextContent('A78')
+  })
+
+  it('does not drop a package bill that is also in the group', async () => {
+    const pkgInGroup = { billId: 108, billNumber: 'S1730', type: 'same-as', kind: 'package', route: route('b108', 'S1730') }
+    renderBillDetail({ state: 'NJ', relatedBillIds: [pkgInGroup], groupBills: inGroup(['b108', 'S1730']) })
+    expect((await screen.findByText('Part of a package:')).parentElement).toHaveTextContent('S1730')
+  })
+
+  it('keeps every identical bill for a bill in no group', async () => {
+    renderBillDetail({ state: 'NJ', relatedBillIds: RELATED, groupBills: [{ billId: '42', billNumber: 'HB 1', state: 'NJ', sessionSlug: '2026' }] })
+    const identical = await screen.findByText('Identical to:')
+    expect(identical.parentElement).toHaveTextContent('S1713')
+    expect(identical.parentElement).toHaveTextContent('S1714')
   })
 })

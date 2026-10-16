@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BillDetail } from './BillDetail'
 import * as api from '../lib/api'
@@ -222,5 +222,80 @@ describe('the personal note of a grouped bill', () => {
     expect(await screen.findByRole('heading', { name: 'S1713' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'A190' })).toBeInTheDocument()
     expect(screen.getByText('Mine on S1713')).toBeInTheDocument()
+  })
+})
+
+// The header's badges, one for each bill in the group, this page's bill first.
+const link = (billId: string, billNumber: string, state = 'NJ', sessionSlug = '2026') => ({ billId, billNumber, state, sessionSlug })
+const THIS = link('42', 'A190')
+const COMPANION = link('b1713', 'S1713', 'NJ', '2025-2026')
+const THIRD = link('c2000', 'H2000', 'NJ', '2026')
+
+describe('the header of a grouped bill', () => {
+  const header = () => screen.getByTestId('bill-group-badges')
+
+  it("shows a navy badge for this bill, not a link, then the companion's, linking to its canonical bill page", async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
+    await screen.findByText('c1 text')
+    const badges = within(header())
+    expect(badges.getByText('A190').closest('a')).toBeNull()
+    expect(badges.getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/NJ/2025-2026/S1713')
+    expect(badges.getAllByRole('link')).toHaveLength(1)
+    // This bill's badge comes first.
+    expect(badges.getByText('A190').compareDocumentPosition(badges.getByText('S1713')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows a badge for every bill in a group of three or more, each companion linking to its own page', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION, THIRD] })
+    await screen.findByText('c1 text')
+    const badges = within(header())
+    expect(badges.getAllByRole('link').map(a => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['S1713', '/NJ/2025-2026/S1713'],
+      ['H2000', '/NJ/2026/H2000'],
+    ])
+    expect(badges.getByText('A190')).toBeInTheDocument()
+  })
+
+  it('keeps the order the group bills arrive in, this bill first', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, THIRD, COMPANION] })
+    await screen.findByText('c1 text')
+    expect(Array.from(header().children).map(el => el.textContent)).toEqual(['A190', 'H2000', 'S1713'])
+  })
+
+  it('shows one badge, not a link, for a bill in no group', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS], groupingEvents: [], comments: [], commentsTotal: 0 })
+    await screen.findByText('Test Bill')
+    // Unchanged from before groups showed here: one badge, no link, and no wrapper to find it by.
+    expect(screen.getAllByText('A190')).toHaveLength(1)
+    expect(screen.getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'S1713' })).toBeNull()
+  })
+
+  it('shows the one badge when the response carries no group bills at all', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: undefined, groupingEvents: [] })
+    await screen.findByText('Test Bill')
+    expect(screen.getAllByText('A190')).toHaveLength(1)
+    expect(screen.getByText('A190').closest('a')).toBeNull()
+  })
+
+  it('leaves a draft bill header as it was: its one dashed badge and the draft chip', async () => {
+    renderBillDetail({ billNumber: 'D1', isDraft: true, state: 'NJ', groupBills: [link('42', 'D1')], groupingEvents: [], comments: [], commentsTotal: 0 })
+    await screen.findByText('Test Bill')
+    expect(screen.getAllByText('D1')).toHaveLength(1)
+    expect(screen.getByText('D1').closest('a')).toBeNull()
+    expect(screen.getAllByText(/Draft/).length).toBeGreaterThan(0)
+  })
+
+  it('shows no "Companion:" line, even when the response still carries legacy companion ids', async () => {
+    renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION], companionBillIds: ['legacy-companion-7'] })
+    await screen.findByText('c1 text')
+    expect(screen.queryByText('Companion:')).toBeNull()
+    expect(screen.queryByText('legacy-companion-7')).toBeNull()
+  })
+
+  it('shows no "Companion:" line on a bill in no group either', async () => {
+    renderBillDetail({ groupBills: [THIS], companionBillIds: ['legacy-companion-7'], billNumber: 'A190' })
+    await screen.findByText('Test Bill')
+    expect(screen.queryByText('Companion:')).toBeNull()
   })
 })

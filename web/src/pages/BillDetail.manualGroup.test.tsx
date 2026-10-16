@@ -141,7 +141,7 @@ const BILL = {
   memberVotes: [],
   comments: [],
   commentsTotal: 0,
-  groupBills: [{ billId: '42', billNumber: 'A190' }],
+  groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }],
 }
 
 const CONFIG = {
@@ -164,7 +164,7 @@ const BILL_OPTIONS = [
 // What splitting A190 would leave: S1713 and S1714, which only A190 linked.
 const SPLIT_PREVIEW = { billNumber: 'A190', parts: [[{ billId: 'b1713', billNumber: 'S1713' }], [{ billId: 'c1714', billNumber: 'S1714' }]] }
 
-const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190' }, { billId: 'b1713', billNumber: 'S1713' }] }
+const GROUPED = { groupBills: [{ billId: '42', billNumber: 'A190', state: 'RI', sessionSlug: '2026' }, { billId: 'b1713', billNumber: 'S1713', state: 'RI', sessionSlug: '2026' }] }
 
 function renderBillDetail(overrides: Record<string, unknown> = {}) {
   const bill = { ...BILL, ...overrides }
@@ -378,5 +378,23 @@ describe('grouping and splitting from the overflow menu', () => {
     await openMenu(user)
     await user.click(screen.getByRole('menuitem', { name: /Split from group/ }))
     expect(await screen.findByText("Couldn't split the bill from its group. Try again.")).toBeInTheDocument()
+  })
+})
+
+describe('the header of a bill an admin grouped by hand', () => {
+  it("shows the companion's badge, linking to its page, though the bill names no relationship to it", async () => {
+    renderBillDetail({ ...GROUPED, relatedBillIds: [] })
+    const header = await screen.findByTestId('bill-group-badges')
+    expect(within(header).getByRole('link', { name: 'S1713' })).toHaveAttribute('href', '/RI/2026/S1713')
+    expect(within(header).getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByText('Identical to:')).toBeNull()
+  })
+
+  it("shows only the bill's own badge on a bill in no group", async () => {
+    renderBillDetail()
+    await screen.findByText('Test Bill')
+    expect(screen.getAllByText('A190')).toHaveLength(1)
+    expect(screen.getByText('A190').closest('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'S1713' })).toBeNull()
   })
 })
