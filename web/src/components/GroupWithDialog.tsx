@@ -13,9 +13,11 @@ import { undoSplitsConfirmText } from '../lib/splitConfirm'
  * **Group override** in CONTEXT.md). The picker offers the instance's tracked
  * bills, less drafts and the bills already in this one's group.
  */
-export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, onClose }: {
+export function GroupWithDialog({ billId, billNumber, groupBillIds, shares, onGrouped, onClose }: {
   billId: string
   billNumber: string
+  /** What grouped bills share, e.g. "comments, votes, team position, and priority" (groupSharedThings). */
+  shares: string
   /** The bills already in this bill's group, this one included. */
   groupBillIds: readonly string[]
   onGrouped: () => void
@@ -75,7 +77,7 @@ export function GroupWithDialog({ billId, billNumber, groupBillIds, onGrouped, o
         Group {billNumber} with another bill
       </div>
       <p style={{ fontSize: fontSize.sm, color: color.textSecondary, margin: '0 0 14px', lineHeight: 1.5 }}>
-        Grouped bills share one discussion, one vote per member, and the team's position, priority, and fields.
+        Grouped bills share {shares}.
         Each keeps its own page. The grouping holds through later updates from the legislature. Splitting a
         bill from its group later takes it out of the whole group, not only away from the bill picked here.
       </p>

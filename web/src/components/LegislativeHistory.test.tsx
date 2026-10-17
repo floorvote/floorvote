@@ -41,6 +41,25 @@ describe('chamberStyle', () => {
     expect(s.color).toBe(color.textAmberDark)
     expect(s.background).toBe(color.bgAmberPriority)
   })
+  it('gives Council (C) its own style, not the House style', () => {
+    const c = chamberStyle('C')
+    const h = chamberStyle('H')
+    expect(c.color).not.toBe(h.color)
+    expect(c.background).not.toBe(h.background)
+    expect(c.color).not.toBe(chamberStyle('S').color)
+    expect(c.background).not.toBe(chamberStyle('S').background)
+    expect(c.color).toBe(color.textVioletChip)
+    expect(c.background).toBe(color.bgVioletChip)
+  })
+  it('renders the Council chip with the Council style and the House chip without it', () => {
+    const council = { ...passedVote, chamber: 'C' }
+    const house = { ...passedVote, chamber: 'H' }
+    const { unmount } = render(<LegislativeHistory lastAction="x" lastActionDate="2026-04-16" defaultOpen entries={[]} votes={[council]} />)
+    expect(screen.getByText('Council').style.color).toBe(color.textVioletChip)
+    unmount()
+    render(<LegislativeHistory lastAction="x" lastActionDate="2026-04-16" defaultOpen entries={[]} votes={[house]} />)
+    expect(screen.getByText('House').style.color).toBe(color.textAmberDark)
+  })
   it('returns amber colors for unknown code (documents fallback)', () => {
     const s = chamberStyle('X')
     expect(s.color).toBe(color.textAmberDark)
@@ -69,14 +88,28 @@ const failedVote = {
 }
 
 describe('LegislativeHistory vote rows', () => {
-  it('shows VOTE: PASSED chip for a passed roll call', () => {
+  it('shows a "Passed" chip, in sentence case, for a passed roll call', () => {
     render(<LegislativeHistory {...baseProps} entries={[]} votes={[passedVote]} />)
-    expect(screen.getByText('VOTE: PASSED')).toBeInTheDocument()
+    expect(screen.getByText('Passed')).toBeInTheDocument()
+    expect(screen.queryByText(/VOTE: /)).not.toBeInTheDocument()
+    expect(screen.queryByText('PASSED')).not.toBeInTheDocument()
   })
 
-  it('shows VOTE: FAILED chip for a failed roll call', () => {
+  it('shows a "Failed" chip, in sentence case, for a failed roll call', () => {
     render(<LegislativeHistory {...baseProps} entries={[]} votes={[failedVote]} />)
-    expect(screen.getByText('VOTE: FAILED')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.queryByText(/VOTE: /)).not.toBeInTheDocument()
+    expect(screen.queryByText('FAILED')).not.toBeInTheDocument()
+  })
+
+  it('colors the result chip as before: green for Passed, red for Failed', () => {
+    const { unmount } = render(<LegislativeHistory {...baseProps} entries={[]} votes={[passedVote]} />)
+    expect(screen.getByText('Passed').style.color).toBe(color.textSuccessDark)
+    expect(screen.getByText('Passed').style.background).toBe(color.bgSuccessChip)
+    unmount()
+    render(<LegislativeHistory {...baseProps} entries={[]} votes={[failedVote]} />)
+    expect(screen.getByText('Failed').style.color).toBe(color.textDanger)
+    expect(screen.getByText('Failed').style.background).toBe(color.bgRedPriority)
   })
 
   it('shows the chamber chip for a vote row', () => {
@@ -95,10 +128,9 @@ describe('LegislativeHistory vote rows', () => {
     expect(voteTexts).toHaveLength(0)
   })
 
-  it('shows vote counts', () => {
+  it('shows vote counts in the Yea, Nay, Not voting order', () => {
     render(<LegislativeHistory {...baseProps} entries={[]} votes={[passedVote]} />)
-    expect(screen.getByText('30')).toBeInTheDocument()
-    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText(/Yea 30/).closest('div')!.textContent).toMatch(/Yea 30.*Nay 1.*Not voting 7/)
   })
 })
 

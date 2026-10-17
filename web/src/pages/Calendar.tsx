@@ -7,6 +7,7 @@ import { useDemo } from '../context/DemoContext'
 import { useAuth } from '../hooks/useAuth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
+import { primaryButtonColors } from '../styles/primaryButton'
 import type { CalendarEvent } from '../lib/calendarGrid'
 import { AgendaView } from '../components/calendar/AgendaView'
 import { MonthGrid } from '../components/calendar/MonthGrid'
@@ -341,8 +342,7 @@ export function Calendar() {
                 type="button"
                 onClick={openAdd}
                 style={{
-                  background: color.accentBlue,
-                  color: color.textOnFill,
+                  ...primaryButtonColors(false),
                   border: 'none',
                   borderRadius: radius.md,
                   padding: '8px 14px',
