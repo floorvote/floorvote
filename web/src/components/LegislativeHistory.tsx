@@ -97,12 +97,12 @@ function RollCallTally({ vote }: { vote: Pick<VoteEntry, 'yea' | 'nay' | 'nv' | 
       </button>
       {open && (
         <dl id={panelId} style={{
-          margin: '6px 0 0', display: 'grid', gridTemplateColumns: 'max-content 1fr',
+          margin: '6px 0 0', display: 'grid', gridTemplateColumns: 'fit-content(40%) 1fr',
           columnGap: 12, rowGap: 4, fontSize: fontSize.xs, color: color.textSecondary,
         }}>
           {groups.map(({ group, names }) => (
             <Fragment key={group.key}>
-              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold }}>{group.label}</dt>
+              <dt style={{ color: TONE_COLOR[group.tone], fontWeight: fontWeight.bold, minWidth: 0, overflowWrap: 'anywhere' }}>{group.label}</dt>
               <dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere' }}><VoterNames names={names} /></dd>
             </Fragment>
           ))}

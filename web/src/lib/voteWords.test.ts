@@ -48,6 +48,11 @@ describe('normalizeVoteWord: one vocabulary across providers', () => {
     expect(label('').length).toBeGreaterThan(0)
     expect(label('   ').length).toBeGreaterThan(0)
   })
+  it('treats a null or undefined vote word as a blank one, without throwing', () => {
+    expect(label(null as unknown as string)).toBe(label(''))
+    expect(label(undefined as unknown as string)).toBe(label(''))
+    expect(normalizeVoteWord(null as unknown as string).tone).toBe('neutral')
+  })
   it('gives the same group key to every word of one group', () => {
     expect(normalizeVoteWord('Yes').key).toBe(normalizeVoteWord('Aye').key)
     expect(normalizeVoteWord('Yes').key).not.toBe(normalizeVoteWord('No').key)

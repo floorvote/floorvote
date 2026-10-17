@@ -180,6 +180,24 @@ describe('one vocabulary for every provider', () => {
   })
 })
 
+describe('a vote word central did not send', () => {
+  it('renders the roll call with a null vote word, keeping the tally and the other voters', async () => {
+    const user = userEvent.setup()
+    renderVotes([{ ...legiscanVote, legislatorVotes: [...(legiscanVote.legislatorVotes ?? []), { name: 'Gus Hart', vote: null as unknown as string }] }])
+    expect(toggle()).toHaveTextContent('Yea 2')
+    await user.click(toggle())
+    expect(groupLabels().slice(0, 4)).toEqual(['Yea', 'Nay', 'Not voting', 'Absent'])
+    expect(screen.getByText('Gus Hart')).toBeInTheDocument()
+    expect(screen.getByText('Ana Diaz')).toBeInTheDocument()
+  })
+  it('does the same for an undefined vote word', async () => {
+    const user = userEvent.setup()
+    renderVotes([{ ...legiscanVote, legislatorVotes: [{ name: 'Gus Hart', vote: undefined as unknown as string }, { name: 'Ana Diaz', vote: 'Yea' }] }])
+    await user.click(toggle())
+    expect(screen.getByText('Gus Hart')).toBeInTheDocument()
+  })
+})
+
 describe('totals match the voter list', () => {
   it.each([['LegiScan', legiscanVote], ['DC', dcVote], ['lis', lisVote]] as const)('%s tally counts equal the group sizes', async (_n, vote) => {
     const user = userEvent.setup()
@@ -310,6 +328,14 @@ describe('long voter lists', () => {
     expect(screen.getAllByTestId('voter-name')).toHaveLength(140)
     expect(screen.getByText('Voter Number140')).toBeInTheDocument()
     expect(termFor('Nay').nextElementSibling!.querySelectorAll('[data-testid="voter-name"]')).toHaveLength(40)
+  })
+  it('keeps a long unknown label from squeezing the names column', async () => {
+    const user = userEvent.setup()
+    renderVotes([{ ...legiscanVote, legislatorVotes: [{ name: 'Ana Diaz', vote: 'Yea' }, { name: 'Ben Cole', vote: 'Voted present under the standing rules of the chamber' }] }])
+    await user.click(toggle())
+    const dl = termFor('Yea').parentElement as HTMLElement
+    expect(dl.style.gridTemplateColumns).toMatch(/fit-content\(\d+%\)/)
+    expect(termFor('Voted present under the standing rules of the chamber').style.overflowWrap).toBe('anywhere')
   })
   it('lets long names wrap instead of overflowing', async () => {
     const user = userEvent.setup()

@@ -38,9 +38,13 @@ const KNOWN: Record<string, VoteGroup> = {
 /** Shown for a vote with no word at all, so the voter still appears under a label. */
 const BLANK_LABEL = 'No vote recorded'
 
-/** Map a provider's vote word onto its group. A word this doesn't know is its own gray group, as given. */
-export function normalizeVoteWord(word: string): VoteGroup {
-  const trimmed = word.trim().replace(/\s+/g, ' ')
+/**
+ * Map a provider's vote word onto its group. A word this doesn't know is its own gray group, as given.
+ * Central passes `legislatorVotes` through unvalidated, so a missing word (null or undefined) is read
+ * as a blank one and shown as "No vote recorded", never thrown on.
+ */
+export function normalizeVoteWord(word: string | null | undefined): VoteGroup {
+  const trimmed = (word ?? '').trim().replace(/\s+/g, ' ')
   const known = KNOWN[trimmed.toLowerCase()]
   if (known) return known
   const label = trimmed || BLANK_LABEL
