@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { color, radius, fontSize, fontWeight } from '../../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../../styles/actionRow'
+import { primaryButtonColors } from '../../styles/primaryButton'
 import { apiFetch, ApiError } from '../../lib/api'
 import { normalizeOrgNoun, MAX_ORG_NOUN_LENGTH } from '../../lib/orgNoun'
 import { exportAllData } from '../../lib/exportData'
@@ -1237,7 +1238,7 @@ export function Config() {
           )}
           <button
             {...cfGate.buttonProps(handleAddCustomField)}
-            style={{ background: !cfGate.disabled ? color.accentBlue : color.borderDefault, color: !cfGate.disabled ? color.textOnFill : color.textMuted, border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
+            style={{ ...primaryButtonColors(cfGate.disabled), border: 'none', borderRadius: radius.md, padding: '8px 20px', cursor: !cfGate.disabled ? 'pointer' : 'not-allowed', fontSize: fontSize.sm, fontWeight: fontWeight.medium }}
           >
             {cfAdding ? 'Adding…' : 'Add field'}
           </button>
@@ -1334,8 +1335,7 @@ export function Config() {
             }}
             style={{
               width: 224, flexShrink: 0, borderRadius: radius.md, padding: '8px 14px',
-              background: demoLocked ? color.borderDefault : exporting ? color.accentBlueMuted : color.accentBlue,
-              color: demoLocked ? color.textMuted : color.textOnFill,
+              ...primaryButtonColors(exporting || demoLocked),
               cursor: exporting || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.sm, fontWeight: fontWeight.medium, lineHeight: 1.4,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,

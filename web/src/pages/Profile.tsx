@@ -12,6 +12,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useDemo } from '../context/DemoContext'
 import { color, radius, fontSize, fontWeight } from '../styles/tokens'
 import { actionRowStyle, actionRowStyleFirst, actionBtnBlue, actionBtnRed } from '../styles/actionRow'
+import { primaryButtonColors } from '../styles/primaryButton'
 import { digestCadenceDescription, weekAheadCadenceDescription, isModuleEnabled } from '../lib/modules'
 import type { ModulesConfig } from '../lib/modules'
 import { DEFAULT_ORG_NOUN } from '../lib/orgNoun'
@@ -504,9 +505,9 @@ export function Profile() {
                 type="submit"
                 disabled={!changeEmailReady}
                 style={{
-                  background: color.accentBlue, color: color.textOnFill, border: 'none', borderRadius: radius.md,
+                  ...primaryButtonColors(!changeEmailReady), border: 'none', borderRadius: radius.md,
                   padding: '8px 20px', fontSize: fontSize.base, fontWeight: fontWeight.medium,
-                  cursor: changeEmailReady ? 'pointer' : 'not-allowed', opacity: changeEmailReady ? 1 : 0.5,
+                  cursor: changeEmailReady ? 'pointer' : 'not-allowed',
                 }}
               >
                 {changeEmailSending ? 'Sending…' : 'Send confirmation'}
@@ -563,15 +564,13 @@ export function Profile() {
             onClick={handleSave}
             disabled={saving || demoLocked}
             style={{
-              background: color.accentBlue,
-              color: color.textOnFill,
+              ...primaryButtonColors(saving || demoLocked),
               border: 'none',
               borderRadius: radius.md,
               padding: '8px 20px',
               cursor: saving || demoLocked ? 'not-allowed' : 'pointer',
               fontSize: fontSize.base,
               fontWeight: fontWeight.medium,
-              opacity: saving || demoLocked ? 0.5 : 1,
             }}
           >
             {saving ? 'Saving…' : 'Save'}

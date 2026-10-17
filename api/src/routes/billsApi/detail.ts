@@ -335,7 +335,6 @@ export async function buildBillDetail(
     lastActionDate: bill.lastActionDate,
     history: bill.history ? JSON.parse(bill.history) : [],
     relatedBillIds: resolvedRelated,
-    companionBillIds: bill.companionBillIds ? JSON.parse(bill.companionBillIds) : [],
     matchType: bill.matchType,
     newMatchAt: bill.newMatchAt ?? null,
     // Triaging any member triages the group.
