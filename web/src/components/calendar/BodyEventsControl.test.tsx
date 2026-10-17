@@ -45,17 +45,23 @@ function renderControl(opts: { capabilities?: AppConfig['capabilities']; demoLoc
 /** The server's saved rules, so a second GET (a remount) reads what a PUT saved. */
 let saved: unknown
 let putFails = false
+/** Which PUTs fail, by order (1 is the first PUT made), whatever else the stub does. */
+let failPuts: number[] = []
+let putCount = 0
 let putGate: Promise<void> | null = null
 
 function mockApi(rules: unknown = null, extra: Record<string, unknown> = {}) {
   saved = rules
   putFails = false
+  failPuts = []
+  putCount = 0
   putGate = null
   return vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === '/admin/event-rules' && !init?.method) return { ...LOADED, ...extra, rules: saved } as never
     if (path === '/admin/event-rules' && init?.method === 'PUT') {
+      const mine = ++putCount
       if (putGate) await putGate
-      if (putFails) throw new api.ApiError(500, 'Could not save')
+      if (putFails || failPuts.includes(mine)) throw new api.ApiError(500, 'Could not save')
       saved = (JSON.parse(String(init.body)) as { rules: unknown }).rules
       return { rules: saved, shown: 1, hidden: 0 } as never
     }
@@ -355,6 +361,117 @@ describe('the Calendar page\'s committee events control', () => {
       await user.click(within(menu).getByRole('radio', { name: 'All events' }))
       await waitFor(() => expect(puts(spy)).toEqual([{ rules: null }]))
       expect(within(menu).queryByText(/Kept from an earlier setting/)).not.toBeInTheDocument()
+    })
+  })
+
+
+  describe('when a save fails with others queued behind it', () => {
+    it('skips the saves queued behind it, so the server and the screen agree, and shows the alert', async () => {
+      mockApi(NO_RULES)
+      let release!: () => void
+      renderControl()
+      const { user, menu } = await openMenu()
+      putGate = new Promise<void>(r => { release = r })
+      failPuts = [1]
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee on Housing' }))
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' }))
+      release()
+      expect(await within(menu).findByRole('alert')).toHaveTextContent(/could not save/i)
+      // The second save was built on a state the server never took, so it is never sent.
+      expect(saved).toEqual(NO_RULES)
+      expect(putCount).toBe(1)
+      expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).not.toBeChecked()
+      expect(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' })).not.toBeChecked()
+      expect(screen.getByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+      expect(within(menu).getByRole('status')).not.toHaveTextContent(/saved/i)
+    })
+
+    it('does the same when "All events" is picked behind a failing save: the rules are not cleared on the server', async () => {
+      mockApi(NO_RULES)
+      let release!: () => void
+      renderControl()
+      const { user, menu } = await openMenu()
+      putGate = new Promise<void>(r => { release = r })
+      failPuts = [1]
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee on Housing' }))
+      await user.click(within(menu).getByRole('radio', { name: 'All events' }))
+      release()
+      expect(await within(menu).findByRole('alert')).toHaveTextContent(/could not save/i)
+      expect(saved).toEqual(NO_RULES)
+      expect(putCount).toBe(1)
+      expect(within(menu).getByRole('radio', { name: 'Only these committees' })).toBeChecked()
+      expect(screen.getByRole('button', { name: 'Council events: No committees' })).toBeInTheDocument()
+    })
+
+    it('saves a choice made after the failure, on what the server holds', async () => {
+      mockApi({ committees: [ID(YOUTH)], kinds: [], topics: [], trackedBills: false })
+      renderControl()
+      const { user, menu } = await openMenu()
+      failPuts = [1]
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee on Housing' }))
+      expect(await within(menu).findByRole('alert')).toBeInTheDocument()
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' }))
+      await waitFor(() => expect(saved).toEqual({ committees: [ID(YOUTH), ID(COW)], kinds: [], topics: [], trackedBills: false }))
+      await waitFor(() => expect(within(menu).queryByRole('alert')).not.toBeInTheDocument())
+      expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).not.toBeChecked()
+      expect(screen.getByRole('button', { name: 'Council events: 2 committees' })).toBeInTheDocument()
+    })
+  })
+
+  describe('"All events" in the same session', () => {
+    const LEGACY = {
+      committees: [{ ...ID(HOUSING), kind: 'Roundtable' }, ID(COW)],
+      kinds: ['meeting'],
+      topics: [{ name: 'Youth detention', keywords: ['secure detention'] }],
+      trackedBills: true,
+    }
+
+    it('is undone by arrowing back to "Only these committees": the rules come back whole', async () => {
+      const spy = mockApi(LEGACY)
+      renderControl()
+      const { user, menu } = await openMenu()
+      const only = within(menu).getByRole('radio', { name: 'Only these committees' })
+      only.focus()
+      await user.keyboard('{ArrowUp}')
+      await waitFor(() => expect(puts(spy)).toEqual([{ rules: null }]))
+      expect(within(menu).queryByRole('checkbox')).not.toBeInTheDocument()
+      await user.keyboard('{ArrowDown}')
+      await waitFor(() => expect(puts(spy)).toHaveLength(2))
+      expect(puts(spy)[1]).toEqual({ rules: LEGACY })
+      expect(saved).toEqual(LEGACY)
+      expect(within(menu).getByRole('checkbox', { name: 'Committee on Housing' })).toBeChecked()
+      expect(within(menu).getByRole('checkbox', { name: 'Committee of the Whole' })).toBeChecked()
+      expect(within(menu).getByText(/^Kept from an earlier setting:/)).toBeInTheDocument()
+    })
+
+    it('restores the choices as they stood, after changes made this session', async () => {
+      const spy = mockApi({ committees: [ID(HOUSING)], kinds: [], topics: [], trackedBills: false })
+      renderControl()
+      const { user, menu } = await openMenu()
+      await user.click(within(menu).getByRole('checkbox', { name: 'Committee on Youth Affairs' }))
+      await user.click(within(menu).getByRole('radio', { name: 'All events' }))
+      await user.click(within(menu).getByRole('radio', { name: 'Only these committees' }))
+      await waitFor(() => expect(puts(spy)).toHaveLength(3))
+      expect(puts(spy)[2]).toEqual({ rules: { committees: [ID(HOUSING), ID(YOUTH)], kinds: [], topics: [], trackedBills: false } })
+    })
+
+    it('starts from no committees when there was nothing to restore', async () => {
+      const spy = mockApi(null)
+      renderControl()
+      const { user, menu } = await openMenu()
+      await user.click(within(menu).getByRole('radio', { name: 'Only these committees' }))
+      await waitFor(() => expect(puts(spy)).toEqual([{ rules: NO_RULES }]))
+    })
+
+    it('forgets nothing it was not asked to: Remove before All leaves the removed parts gone on the way back', async () => {
+      const spy = mockApi(LEGACY)
+      renderControl()
+      const { user, menu } = await openMenu()
+      await user.click(within(menu).getByRole('button', { name: /^Remove/ }))
+      await user.click(within(menu).getByRole('radio', { name: 'All events' }))
+      await user.click(within(menu).getByRole('radio', { name: 'Only these committees' }))
+      await waitFor(() => expect(puts(spy)).toHaveLength(3))
+      expect(puts(spy)[2]).toEqual({ rules: { committees: [ID(HOUSING), ID(COW)], kinds: [], topics: [], trackedBills: false } })
     })
   })
 
