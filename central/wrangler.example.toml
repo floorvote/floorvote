@@ -55,6 +55,34 @@ max_concurrency = 1
 # max_batch_timeout = 30
 # max_concurrency = 1
 
+# Optional: a separate ingestor queue for Maryland (MGA) bills, so a Maryland
+# cutover's thousands of bills never hold up LegiScan's. Without it they share
+# INGESTOR_QUEUE. Each bill's text is a download the MGA client paces at one a
+# second per isolate, so keep max_concurrency at 1 or the aggregate rate scales
+# with concurrency. Bind it before claiming Maryland for the MGA.
+# [[env.legiscan.queues.producers]]
+# binding = "MGA_INGESTOR_QUEUE"
+# queue = "central-mga-ingestor"
+# [[env.legiscan.queues.consumers]]
+# queue = "central-mga-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_concurrency = 1
+
+# Optional: a separate ingestor queue for Virginia (LIS) bills, so a Virginia
+# cutover's thousands of bills never hold up LegiScan's. Without it they share
+# INGESTOR_QUEUE. The LIS client paces itself at two requests a second per
+# isolate, so keep max_concurrency at 1 or the aggregate rate scales with
+# concurrency. Bind it before claiming Virginia for the LIS.
+# [[env.legiscan.queues.producers]]
+# binding = "LIS_INGESTOR_QUEUE"
+# queue = "central-lis-ingestor"
+# [[env.legiscan.queues.consumers]]
+# queue = "central-lis-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_concurrency = 1
+
 # Optional: drain the tenants' shared dead-letter queue.
 #
 # Tenant consumers name a dead_letter_queue so a message that exhausts its retry
