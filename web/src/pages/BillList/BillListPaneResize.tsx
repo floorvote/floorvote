@@ -17,8 +17,17 @@ export function useBillListPaneWidth() {
   const [room, setRoom] = useState(() => ({ viewport: window.innerWidth, sidebar: readSidebarWidth() }))
   useEffect(() => {
     const onResize = () => setRoom({ viewport: window.innerWidth, sidebar: readSidebarWidth() })
+    // The sidebar stores its width when its own drag ends, after this listener
+    // has run, so read it a tick later. A wider sidebar costs the pane room.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onPointerUp = () => { clearTimeout(timer); timer = setTimeout(onResize, 0) }
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    document.addEventListener('pointerup', onPointerUp)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', onResize)
+      document.removeEventListener('pointerup', onPointerUp)
+    }
   }, [])
 
   const max = paneMaxWidth(room.viewport, room.sidebar)
@@ -30,7 +39,7 @@ export function useBillListPaneWidth() {
   // The sidebar may have been dragged since the last window resize.
   const currentMax = useCallback(() => paneMaxWidth(window.innerWidth, readSidebarWidth()), [])
 
-  return { width, max, choose, reset, setChosen, currentMax }
+  return { width, max, chosen, choose, reset, setChosen, currentMax }
 }
 
 /**
@@ -52,11 +61,12 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
     e.preventDefault()
     const startX = e.clientX
     const startWidth = width
-    const limit = pane.currentMax()
+    const startChosen = pane.chosen
     let latest = startWidth
 
     const onMove = (ev: globalThis.PointerEvent) => {
-      latest = clampPaneWidth(startWidth + ev.clientX - startX, limit)
+      // The limit is read each move: the window or the sidebar may have changed.
+      latest = clampPaneWidth(startWidth + ev.clientX - startX, pane.currentMax())
       pane.setChosen(latest)
     }
     const end = () => {
@@ -68,7 +78,15 @@ export function PaneResizeHandle({ width, max, pane }: { width: number; max: num
       stopDrag.current = null
       setDragging(false)
     }
-    const onUp = () => { end(); pane.choose(latest) }
+    // Only a drag that changed the width is a choice. A bare click, or a drag
+    // back to where it began, leaves the stored preference alone (it may be
+    // wider than this window shows). What is stored is the width that was shown.
+    const onUp = () => {
+      end()
+      const shown = clampPaneWidth(latest, pane.currentMax())
+      if (shown === startWidth) pane.setChosen(startChosen)
+      else pane.choose(shown)
+    }
 
     stopDrag.current = end
     document.body.style.cursor = 'col-resize'

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, within, act } from '@testing-library/react'
+import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { color } from '../../styles/tokens'
 import { RelevanceChip } from '../../components/RelevanceChip'
@@ -740,5 +740,97 @@ describe('no layout shift when the summary row appears', () => {
     renderPane()
     await screen.findByText('Couldn’t load bills.')
     expect(widthOf()).toBe('520px')
+  })
+})
+
+describe('what a release remembers (fix round)', () => {
+  it('leaves a stored preference alone when the handle is clicked without moving', async () => {
+    setWindow(1440) // shows 510px of a stored 640px
+    localStorage.setItem(STORAGE_KEY, '640')
+    renderPane()
+    await ready()
+    expect(widthOf()).toBe('510px')
+    fireEvent.pointerDown(separator(), { clientX: 510, button: 0, pointerId: 1 })
+    drop(510)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('640')
+  })
+
+  it('stores nothing for a click with no stored width', async () => {
+    renderPane()
+    await ready()
+    fireEvent.pointerDown(separator(), { clientX: 300, button: 0, pointerId: 1 })
+    drop(300)
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+  })
+
+  it('stores nothing when the drag ends where it began', async () => {
+    localStorage.setItem(STORAGE_KEY, '420')
+    renderPane()
+    await ready()
+    drag(420, 500)
+    fireEvent.pointerMove(document, { clientX: 420, pointerId: 1 })
+    drop(420)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('420')
+  })
+
+  it('stores the width that was shown when the window shrank mid-drag', async () => {
+    renderPane()
+    await ready()
+    drag(300, 600)
+    expect(widthOf()).toBe('600px')
+    setWindow(1440)
+    expect(widthOf()).toBe('510px')
+    drop(600)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('510')
+  })
+
+  it('keeps a wide stored preference through a session on a narrower window, then restores it', async () => {
+    setWindow(2000)
+    localStorage.setItem(STORAGE_KEY, '900')
+    const wide = renderPane()
+    await ready()
+    expect(widthOf()).toBe('900px')
+    wide.unmount()
+    setWindow(1440)
+    renderPane()
+    await ready()
+    expect(widthOf()).toBe('510px')
+    fireEvent.pointerDown(separator(), { clientX: 510, button: 0, pointerId: 1 })
+    drop(510)
+    setWindow(2000)
+    expect(widthOf()).toBe('900px')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('900')
+  })
+
+  it('still stores a drag that changed the width', async () => {
+    renderPane()
+    await ready()
+    drag(300, 450)
+    drop(450)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('450')
+  })
+})
+
+describe('the sidebar widening after the pane drew (fix round)', () => {
+  it('limits a drag by the sidebar width as it is now', async () => {
+    renderPane()
+    await ready()
+    fireEvent.pointerDown(separator(), { clientX: 300, button: 0, pointerId: 1 })
+    localStorage.setItem('sidebarWidth', '400')
+    fireEvent.pointerMove(document, { clientX: 2000, pointerId: 1 })
+    expect(widthOf()).toBe('500px') // 1600 - 400 - 700
+    drop(2000)
+  })
+
+  it('narrows the pane when the sidebar is dragged wider, so the bill page keeps 700px', async () => {
+    localStorage.setItem(STORAGE_KEY, '670')
+    renderPane()
+    await ready()
+    expect(widthOf()).toBe('670px')
+    localStorage.setItem('sidebarWidth', '400') // the sidebar stores its width on release
+    act(() => { document.dispatchEvent(new Event('pointerup')) })
+    await waitFor(() => expect(widthOf()).toBe('500px'))
+    expect(separator()).toHaveAttribute('aria-valuemax', '500')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('670')
   })
 })
