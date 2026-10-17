@@ -61,7 +61,13 @@ export type SignInMessage = BaseMessage & {
   recordEvent?: (e: SignInEvent) => Promise<void>
 }
 
-export type PurposeMessage = SignInMessage
+/** An email-change email (the confirmation link, the notice to the old address) or the "this wasn't me" report. */
+export type AccountMessage = BaseMessage & { purpose: 'account' }
+
+/** A mention or reply email. A reply carries its thread and one-click mute headers in `headers`. */
+export type NotificationMessage = BaseMessage & { purpose: 'notification' }
+
+export type PurposeMessage = SignInMessage | AccountMessage | NotificationMessage
 
 export type SendResult =
   | { ok: true; provider: ProviderName; messageId?: string; attempts: Attempt[] }
@@ -145,6 +151,9 @@ const RULES: Rules = {
   // into a demo arrives by one, so they always send. (The API's invite routes
   // already refuse demo writes. This is the second lock on that door.)
   'sign-in': { fallback: true, counts: true, from: 'default', suppressedInDemo: (m) => m.link === 'invite' },
+  // STUB (red phase, #707): placeholder rules, deliberately not the real ones.
+  account: { fallback: false, counts: false, from: 'bulk', suppressedInDemo: () => false },
+  notification: { fallback: false, counts: false, from: 'bulk', suppressedInDemo: () => false },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {
