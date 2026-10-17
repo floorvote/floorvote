@@ -39,9 +39,11 @@ interface BillBadgeProps {
    *  to be in that list and is now a caller: its visible chip was dropped
    *  because the priority control shares the badge's line. */
   draftSrLabel?: boolean
+  /** Id of an element that describes the link, for a caller that wraps it in a HoverTooltip. Used only with `to`. */
+  describedBy?: string
 }
 
-export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick, isDraft, draftSrLabel }: BillBadgeProps) {
+export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, priority, onClick, isDraft, draftSrLabel, describedBy }: BillBadgeProps) {
   const base = isDraft ? (mini ? BILL_BADGE_MINI_DRAFT : BILL_BADGE_DRAFT) : (mini ? BILL_BADGE_MINI : BILL_BADGE_BASE)
   const multiState = useMultiState()
   const { onEnter, onMove, onLeave, tooltip } = useBillTooltip()
@@ -82,7 +84,7 @@ export function BillBadge({ billNumber, state, stateUrl, to, mini, hoverBill, pr
       : <>{state}&nbsp;{billNumber}</>
 
   const inner = to
-    ? <Link to={to} style={{ ...base, textDecoration: 'none' }} onClick={onClick} {...hoverProps}>{label}{srDraft}{marker}</Link>
+    ? <Link to={to} style={{ ...base, textDecoration: 'none' }} onClick={onClick} aria-describedby={describedBy} {...hoverProps}>{label}{srDraft}{marker}</Link>
     : <span style={base} {...hoverProps}>{label}{srDraft}{marker}</span>
 
   return <>{inner}{tooltip}</>

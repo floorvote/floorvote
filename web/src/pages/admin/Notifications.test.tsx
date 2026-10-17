@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { Notifications } from './Notifications'
 import * as api from '../../lib/api'
+import * as AuthContext from '../../context/AuthContext'
+import { ConfigContext } from '../../context/ConfigContext'
 
 function mockConfig(over: Record<string, unknown> = {}) {
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string, init?: RequestInit) => {
@@ -13,8 +15,28 @@ function mockConfig(over: Record<string, unknown> = {}) {
   })
 }
 
+function mockAdminUser() {
+  vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
+    user: { id: '1', email: 'a@b.com', name: 'Admin', role: 'admin', title: null, canVote: true, emailDigestEnabled: true, emailDigestMatchesEnabled: true, emailWeekAheadEnabled: true, emailRepliesEnabled: true, lastSeenFeed: null, isLastOwner: false, termsAcceptanceRequired: false, termsAcceptanceKind: 'existing_member' as const },
+    loading: false, authError: false, authProgress: { current: null },
+    setTitle: vi.fn(), setName: vi.fn(),
+    setEmailDigestEnabled: vi.fn(), setEmailDigestMatchesEnabled: vi.fn(), setEmailRepliesEnabled: vi.fn(),
+    setLastSeenFeed: vi.fn(), setTermsAccepted: vi.fn(), clearUser: vi.fn(),
+  })
+}
+
+function renderPage(orgNoun?: string) {
+  mockConfig()
+  mockAdminUser()
+  return render(
+    <ConfigContext value={{ config: { states: ['DC'], ...(orgNoun === undefined ? {} : { orgNoun }) }, multiState: false, loading: false }}>
+      <MemoryRouter initialEntries={['/admin/notifications']}><Notifications /></MemoryRouter>
+    </ConfigContext>,
+  )
+}
+
 describe('Notifications page', () => {
-  beforeEach(() => vi.restoreAllMocks())
+  beforeEach(() => { vi.restoreAllMocks(); document.title = 'FloorVote' })
 
   it('renders the bill-activity digest and mention email controls', async () => {
     mockConfig()
@@ -78,12 +100,86 @@ describe('Notifications page', () => {
     expect(confirmSpy).not.toHaveBeenCalled()
   })
 
-  it('exposes exactly one top-level heading, for the "Email notifications" title', async () => {
+  it('exposes exactly one top-level heading, for the default "Team notifications" title', async () => {
     mockConfig()
     render(<MemoryRouter><Notifications /></MemoryRouter>)
     await screen.findByText(/digest of recent bill activity/i)
     const h1s = screen.getAllByRole('heading', { level: 1 })
     expect(h1s).toHaveLength(1)
-    expect(h1s[0]).toHaveTextContent('Email notifications')
+    expect(h1s[0]).toHaveTextContent('Team notifications')
+  })
+
+  describe('named after the org noun', () => {
+    it('headline reads "Association notifications" for a configured noun', async () => {
+      renderPage('association')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Association notifications$/)
+    })
+
+    it('headline uses the default noun when none is configured', async () => {
+      renderPage(undefined)
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Team notifications$/)
+    })
+
+    it('headline no longer reads "Email notifications"', async () => {
+      renderPage('association')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.queryByRole('heading', { name: 'Email notifications' })).not.toBeInTheDocument()
+    })
+
+    it('capitalizes only the first word: a lowercase noun gains a capital and "notifications" stays lowercase', async () => {
+      renderPage('chapter')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Chapter notifications')
+    })
+
+    it('normalizes a noun with a capital in the middle to lowercase before capitalizing the first letter', async () => {
+      renderPage('cOaLiTiOn')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Coalition notifications')
+    })
+
+    it('keeps only the first word of a multi-word noun', async () => {
+      renderPage('Chapter Office')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Chapter notifications')
+    })
+
+    it('sets the page title to match, followed by the product name', async () => {
+      renderPage('association')
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(document.title).toBe('Association notifications | FloorVote')
+    })
+
+    it('uses the default noun in the page title when none is configured', async () => {
+      renderPage(undefined)
+      await screen.findByText(/digest of recent bill activity/i)
+      expect(document.title).toBe('Team notifications | FloorVote')
+    })
+
+    it('restores the previous document title on unmount', async () => {
+      const { unmount } = renderPage('association')
+      await screen.findByText(/digest of recent bill activity/i)
+      unmount()
+      expect(document.title).toBe('FloorVote')
+    })
+
+    it('shows the same name on the settings tab and the heading, with the tab current and the route unchanged', async () => {
+      renderPage('association')
+      await screen.findByText(/digest of recent bill activity/i)
+      const tab = screen.getByRole('link', { name: 'Association notifications' })
+      expect(tab).toHaveAttribute('href', '/admin/notifications')
+      expect(tab).toHaveAttribute('aria-current', 'page')
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(tab.textContent ?? '')
+    })
+
+    it('leaves the behavior unchanged: the conversation switch still PUTs mention_emails_enabled', async () => {
+      renderPage('association')
+      const spy = vi.spyOn(api, 'apiFetch')
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      fireEvent.click(await screen.findByRole('switch', { name: /conversation emails/i }))
+      await waitFor(() => expect(spy).toHaveBeenCalledWith('/admin/config', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ mention_emails_enabled: false }) })))
+    })
   })
 })

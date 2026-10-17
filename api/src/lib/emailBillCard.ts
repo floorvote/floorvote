@@ -24,12 +24,22 @@ export function formatEmailDateTime(iso: string): string {
 
 // Card chrome shared with the digest (digestEmail.renderBillCard). Renders the
 // table-open through the summary row; the caller appends rows + BILL_CARD_CLOSE.
-export function renderBillCardOpen({ model, billHref }: { model: BillCardModel; billHref: string; appUrl: string }): string {
+// `chip` replaces the priority chip in the top-right with another label (the
+// digest's "New match"); it takes the priority chip's padding and radius.
+export type BillCardChip = { label: string; bg: string; text: string }
+
+/** A bill's badge beside the first, in a companion group's card. */
+export type BillCardBadge = { text: string; href: string }
+
+export function renderBillCardOpen({ model, billHref, chip, otherBadges = [] }: { model: BillCardModel; billHref: string; appUrl: string; chip?: BillCardChip; otherBadges?: BillCardBadge[] }): string {
   const pc = model.priority ? PRIORITY_COLORS[model.priority] : null
   const badgeText = model.state ? `${escHtml(model.state)} ${escHtml(model.billNumber)}` : escHtml(model.billNumber)
   const badge = link(billHref, `<span style="display:inline-block;background:${CARD_STYLE.badgeBg};color:${CARD_STYLE.badgeColor};font-size:${fontSize.sm}px;font-weight:${fontWeight.bold};padding:3px 10px;border-radius:${radius.sm}px;letter-spacing:0.02em;">${badgeText}</span>`)
-  const priorityChip = pc
-    ? `<span style="display:inline-block;background:${pc.fill};color:${pc.text};font-size:${fontSize.sm}px;font-weight:${fontWeight.semibold};padding:3px 10px;border-radius:${radius.sm}px;white-space:nowrap;">${escHtml(pc.label)}</span>`
+  const badgeStyle = `display:inline-block;background:${CARD_STYLE.badgeBg};color:${CARD_STYLE.badgeColor};font-size:${fontSize.sm}px;font-weight:${fontWeight.bold};padding:3px 10px;border-radius:${radius.sm}px;letter-spacing:0.02em;`
+  const badges = [badge, ...otherBadges.map(b => link(b.href, `<span style="${badgeStyle}margin-left:6px;">${escHtml(b.text)}</span>`))].join('')
+  const chipSpec = chip ?? (pc ? { label: pc.label, bg: pc.fill, text: pc.text } : null)
+  const priorityChip = chipSpec
+    ? `<span style="display:inline-block;background:${chipSpec.bg};color:${chipSpec.text};font-size:${fontSize.sm}px;font-weight:${fontWeight.semibold};padding:3px 10px;border-radius:${radius.sm}px;white-space:nowrap;">${escHtml(chipSpec.label)}</span>`
     : ''
   const titlePadBottom = model.summary ? 4 : 10
   const summaryRow = model.summary
@@ -41,7 +51,7 @@ export function renderBillCardOpen({ model, billHref }: { model: BillCardModel; 
     <tr style="background:${CARD_STYLE.headerBg};">
       <td colspan="3" style="padding:12px 14px 8px 14px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
-          <td align="left" style="vertical-align:middle;">${badge}</td>
+          <td align="left" style="vertical-align:middle;">${badges}</td>
           <td align="right" style="vertical-align:middle;">${priorityChip}</td>
         </tr></tbody></table>
       </td>

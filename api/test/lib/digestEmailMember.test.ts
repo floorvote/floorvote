@@ -8,7 +8,7 @@ describe("renderDigestEmail: the new-match section in a member's digest", () => 
 
   it("doesn't tell a member to set a priority or dismiss", () => {
     const html = renderDigestEmail({ events: [], assocName: 'X', appUrl: 'https://x', newMatches: items, forMember: true })
-    expect(html).toContain('New matches (1)')
+    expect(html).toContain('1 new match')
     expect(html).toContain('HB 1001')
     expect(html).not.toContain('Set a priority or dismiss')
   })

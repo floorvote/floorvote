@@ -29,6 +29,12 @@ export const CHIP_MINI = {
   borderRadius: CHIP_MINI_DIMS.radius,
 }
 
+// The widest a status chip may be where it opts in to the cap (StatusChip's
+// `capWidth`: the bill table and the split pane). It is the width of the Bills
+// page's status track (CHIP_GRID) and the pane's status track, so a capped chip
+// fits its column; a test keeps the three in step.
+export const STATUS_CHIP_MAX_WIDTH = 100
+
 // Dark navy bill number badge
 export const BILL_BADGE_BASE = {
   display: 'inline-flex' as const,
@@ -92,13 +98,6 @@ export const COUNT_BADGE = {
   padding: '1px 6px',
   borderRadius: radius.lg,
   fontWeight: fontWeight.normal,
-}
-
-// The bill number on a comment posted on a companion in the bill's group: the
-// gray count pill, in the heavier weight a bill number reads at.
-export const COMPANION_TAG: React.CSSProperties = {
-  ...COUNT_BADGE,
-  fontWeight: fontWeight.semibold,
 }
 
 // COUNT_BADGE with an active/hover state. When `active`, the gray fill drops to
