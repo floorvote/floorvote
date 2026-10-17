@@ -1,4 +1,5 @@
 import type { Env } from '../types'
+import type { BillFilter, SubjectValue } from '../../../shared/billFilter'
 
 // ── Default-list query cache ──────────────────────────────────────────────
 // Caches ONLY the shared, expensive count+ordered-page query for GET /bills
@@ -26,18 +27,18 @@ export type CachedListPage = {
 // The query inputs that determine the shared bill set + ordering. Multi-value
 // filters are arrays; everything that affects the page must be present here.
 export type ListCacheParams = {
-  statuses: string[]
-  stages: string[]
-  priorities: string[]
-  positionValues: string[]
-  sessions: string[]
-  years: string[]
-  states: string[]
-  tagFilters: string[]
-  subjectFilters: Array<{ state: string; name: string }>
+  statuses: readonly string[]
+  stages: readonly string[]
+  priorities: readonly string[]
+  positionValues: readonly string[]
+  sessions: readonly string[]
+  years: readonly string[]
+  states: readonly string[]
+  tagFilters: readonly string[]
+  subjectFilters: readonly SubjectValue[]
   q: string | undefined
   minRelevance: string | undefined
-  cfParamMap: Record<string, string[]>
+  cfParamMap: Readonly<Record<string, readonly string[]>>
   sort: string
   dir: 'asc' | 'desc'
   page: number
@@ -69,7 +70,7 @@ export function listCacheTtl(env: { LIST_CACHE_TTL?: string }): number {
 // arrays are sorted so filter order doesn't change the key; cf_* params are
 // sorted by field id with their values sorted too.
 function serializeParams(p: ListCacheParams): string {
-  const sortedArr = (a: string[]) => [...a].sort()
+  const sortedArr = (a: readonly string[]) => [...a].sort()
   const cf = Object.keys(p.cfParamMap)
     .sort()
     .map((k) => [k, sortedArr(p.cfParamMap[k])] as const)
@@ -138,11 +139,6 @@ export async function putCachedPage(
 
 // Helper used by the route: should this request bypass the cache entirely?
 // myBills / unvoted make the bill SET per-user, so they're not cacheable.
-export function isPerUserListRequest(opts: {
-  myBills?: string
-  unvoted?: string
-}): boolean {
-  const myBills = opts.myBills === '1' || opts.myBills === 'true'
-  const unvoted = opts.unvoted === '1'
-  return myBills || unvoted
+export function isPerUserListRequest(filter: Pick<BillFilter, 'myBills' | 'unvoted'>): boolean {
+  return filter.myBills || filter.unvoted
 }

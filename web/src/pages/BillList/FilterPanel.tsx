@@ -8,10 +8,7 @@ import { filterDimensionLabel } from '../../lib/filterDimensions'
 import { useMenuAlign } from '../../hooks/useMenuAlign'
 import { isSubjectCapReached, subjectCapHint } from '../../lib/subjectCap'
 import type { SortColumn, SortDir } from './types'
-
-// Sentinel filter value: "has any value in this dimension" (sparse dimensions only —
-// position, custom-field dropdowns). Distinct from "no filter" (empty selection).
-export const FILTER_ANY = '__any__'
+import { FILTER_ANY } from '../../../../shared/billFilter'
 
 export function sortDescription(col: SortColumn, posLabel: string, relLabel: string): ReactNode {
   // Hierarchy slots in display order, matching SORT_HIERARCHY in the API

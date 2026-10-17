@@ -3,7 +3,8 @@ import { decodeStatus } from '../../lib/legislativeStatus'
 import { stageLabel } from '../../../../shared/statusStages'
 import { PRIORITY_COLORS, POSITION_COLORS, POSITION_FALLBACK } from '../../lib/chipStyles'
 import { fontSize, radius } from '../../styles/tokens'
-import { ActiveChip, FILTER_ANY } from './FilterPanel'
+import { ActiveChip } from './FilterPanel'
+import { FILTER_ANY } from '../../../../shared/billFilter'
 import type { CustomFieldDef } from './types'
 
 export type ActiveFilterGroup = { key: string; chips: ReactNode[] }

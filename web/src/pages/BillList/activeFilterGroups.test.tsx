@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { buildActiveFilterGroups, relevanceChipLabel, type ActiveFilterGroupArgs } from './activeFilterGroups'
 import { PRIORITY_COLORS, POSITION_COLORS } from '../../lib/chipStyles'
-import { FILTER_ANY } from './FilterPanel'
+import { FILTER_ANY } from '../../../../shared/billFilter'
 
 const noop = vi.fn()
 const base = {

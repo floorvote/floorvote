@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { associationConfig, billSubjects } from '../db/schema'
 import type { AppDb } from '../types'
 import { MAX_SUBJECT_FILTERS } from '../../../shared/limits'
+import { decodeSubjectFilter, encodeSubjectFilter } from '../../../shared/billFilter'
 
 /**
  * Drop non-strings, empty strings, and duplicates, preserving first-occurrence
@@ -35,24 +36,9 @@ export function parseSubjects(raw: unknown): string[] {
   return dedupeSubjectNames(parsed)
 }
 
-/**
- * Filter values are namespaced by state because the vocabularies are not
- * comparable across states — New Jersey publishes 44 coarse terms, Arizona
- * 6,449 fine-grained ones. An unnamespaced "Education" would OR across both.
- */
-export function encodeSubjectFilter(state: string, name: string): string {
-  return `${state}:${name}`
-}
-
-/** Split on the FIRST colon only — subject names legitimately contain colons. */
-export function decodeSubjectFilter(value: string): { state: string; name: string } | null {
-  const idx = value.indexOf(':')
-  if (idx <= 0) return null
-  const state = value.slice(0, idx)
-  const name = value.slice(idx + 1)
-  if (name.length === 0) return null
-  return { state, name }
-}
+// The subject filter's wire form, `STATE:name`, is read and written by the bill filter
+// (shared/billFilter), so the list, the facets, and the bulk routes decode it one way.
+export { encodeSubjectFilter, decodeSubjectFilter }
 
 // D1 rejects any statement with >100 bound params, and subjectMembership costs
 // 2 params per value. Cap well under that so a huge or bookmarked filter list
@@ -63,11 +49,12 @@ export function decodeSubjectFilter(value: string): { state: string; name: strin
 export { MAX_SUBJECT_FILTERS }
 
 /**
- * Decode a raw list of `subject` query values, dropping malformed entries, and
- * report whether the request exceeded MAX_SUBJECT_FILTERS instead of silently
- * dropping the remainder. Shared by every route that turns `subject` params into
- * subjectMembership() input (the list, the facets, and the bulk routes), so none
- * of them can independently forget the cap or the decode rules.
+ * Decode a raw list of `subject` query values, dropping malformed entries, and report whether the request
+ * exceeded MAX_SUBJECT_FILTERS instead of silently dropping the remainder.
+ *
+ * No route calls this any more: the bill filter's parse (shared/billFilter) decodes the `subject` values of
+ * every route, and `subjectCapError` (routes/billsApi/filterRequest) applies the cap. It stays, with its tests,
+ * until it is deleted.
  *
  * Silently truncating a filter is actively wrong: under AND it returns MORE
  * bills than asked for, under match=any FEWER, with nothing to indicate it.

@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
-import { FilterDropdown, ActiveChip, FILTER_ANY, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
+import { FilterDropdown, ActiveChip, SubjectFilterDropdown, type SubjectGroup } from './FilterPanel'
+import { FILTER_ANY } from '../../../../shared/billFilter'
 import { MAX_SUBJECT_FILTERS } from '../../../../shared/limits'
 
 // jsdom performs no layout, so every element's real getBoundingClientRect()

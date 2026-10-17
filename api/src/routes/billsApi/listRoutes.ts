@@ -4,7 +4,7 @@ import { eq, and, sql, SQL } from 'drizzle-orm'
 import { getDb } from '../../db/client'
 import { bills, billSubjects, customFieldDefinitions } from '../../db/schema'
 import type { AppEnv } from '../../types'
-import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, FILTER_ANY, canOptimize, tagCondition, hasGroupTags, type BillsFilter } from './query'
+import { billsAs, buildBillsFilter, buildFilterParts, composeFilter, isCheapFilter, loadMyBillsInGroups, myBillsCondition, unvotedCondition, canOptimize, tagCondition, hasGroupTags, type BillsFilter } from './query'
 import { billStatesForWildcard } from '../../lib/billStates'
 import { getNewMatchMinRelevance, newMatchWhere } from '../../lib/newMatch'
 import { cacheKeyFor, getCachedPage, putCachedPage, listCacheTtl, isPerUserListRequest } from '../../lib/listCache'
@@ -14,33 +14,19 @@ import { holdsGroupPriority, holdsGroupValue } from '../../lib/teamFields'
 import { loadVotedInGroups } from '../../lib/companionGroups'
 import { countGroups, loadGroupRows, pageOfGroups, trackedBills, type PageOptions } from './groupList'
 import { countBy, countHolders, freshOf, type Counting, type CountRow } from './facetCounts'
-import { decodeSubjectFiltersChecked, encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState, MAX_SUBJECT_FILTERS } from '../../lib/billSubjects'
+import { encodeSubjectFilter, loadSuppressedSubjectStates, isSubjectsSuppressedForState } from '../../lib/billSubjects'
+import { FILTER_ANY, FILTER_NONE, parseBillFilter } from '../../../../shared/billFilter'
+import { subjectCapError } from './filterRequest'
 
 export function registerListRoutes(router: Hono<AppEnv>) {
   // GET /bills — the list, one row per companion group, with optional filters and server-side pagination
   router.get('/', async (c) => {
     const db = getDb(c.env.DB)
-    const {
-      sort, dir: dirParam, minRelevance,
-      myBills: myBillsParam, unvoted, newMatches: newMatchesParam,
-      drafts: draftsParam,
-      page: pageParam, pageSize: pageSizeParam,
-    } = c.req.query()
-    const statuses = c.req.queries('status') ?? []
-    const stages = c.req.queries('stage') ?? []
-    const priorities = c.req.queries('priority') ?? []
-    const positionValues = c.req.queries('position') ?? []
-    const sessions = c.req.queries('session') ?? []
-    const years = c.req.queries('year') ?? []
-    const states = c.req.queries('state') ?? []
-    const tagFilters = c.req.queries('tag') ?? []
-    const subjectDecoded = decodeSubjectFiltersChecked(c.req.queries('subject') ?? [])
-    if (subjectDecoded.overflow) {
-      return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
-    }
-    const subjectFilters = subjectDecoded.filters
-    const q = c.req.query('q')
-    const matchAny = c.req.query('match') === 'any'
+    const bf = parseBillFilter(new URL(c.req.url).searchParams)
+    const capError = subjectCapError(bf)
+    if (capError) return c.json(capError, 400)
+    const { sort, dir: dirParam, page: pageParam, pageSize: pageSizeParam } = c.req.query()
+    const q = bf.q || undefined
     const sortDir = dirParam === 'asc' ? 'asc' : 'desc' as const
 
     const page = Math.max(1, parseInt(pageParam ?? '1', 10) || 1)
@@ -48,48 +34,17 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const offset = (page - 1) * pageSize
     const currentUser = c.get('user')
 
-    const cfParamMap: Record<string, string[]> = {}
-    for (const [key, value] of new URL(c.req.url).searchParams) {
-      if (key.startsWith('cf_')) {
-        const fieldId = key.slice(3)
-        ;(cfParamMap[fieldId] ??= []).push(value)
-      }
-    }
-
-    const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
-    const newMatchMinRelevance = newMatchesActive ? await getNewMatchMinRelevance(db) : 0
-    const draftsActive = draftsParam === '1' || draftsParam === 'true'
+    const newMatchMinRelevance = bf.newMatches ? await getNewMatchMinRelevance(db) : 0
 
     // A group matches when any bill in it does, so the filter stays a condition
     // on one bill, applied to whichever bill a query is testing (groupList.ts).
-    const filterParams = {
-      statuses,
-      stages,
-      priorities,
-      positionValues,
-      sessions,
-      years,
-      states,
-      tagFilters,
-      subjectFilters,
-      q,
-      minRelevance,
-      myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
-      unvoted,
-      newMatches: newMatchesActive ? '1' : undefined,
-      newMatchMinRelevance,
-      drafts: draftsActive ? '1' : undefined,
-      cfParamMap,
-      userId: currentUser.id,
-      matchAny,
-    }
-    const filter = await buildBillsFilter(db, filterParams)
+    const filter = await buildBillsFilter(db, bf, { userId: currentUser.id, newMatchMinRelevance })
     const filtered = filter(billsAs('m'))
     const hasFilter = filtered !== undefined
     // A filter is held twice in a statement when that leaves room under D1's 100 bound parameters, which lets the
     // tracked-first path test a bill with no companions directly. A cheap filter that fits twice also gets the full path's two-part form.
     const twice = hasFilter && new SQLiteSyncDialect().sqlToQuery(filtered).params.length * 2 <= 90
-    const cheapFilter = twice && isCheapFilter(filterParams)
+    const cheapFilter = twice && isCheapFilter(bf)
 
     // ── Default-list query cache ──────────────────────────────────────────
     // The count+ordered-page query is the expensive, SHARED part (full scan +
@@ -99,14 +54,16 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // cache entirely and always run fresh.
     // newMatches is org-shared but admin-only and low-volume; skip the shared page
     // cache rather than widen the cache key for it.
-    const cacheable = !isPerUserListRequest({ myBills: myBillsParam, unvoted }) && !newMatchesActive
+    const cacheable = !isPerUserListRequest(bf) && !bf.newMatches
     const ttl = listCacheTtl(c.env)
     const cacheKey = cacheable
       ? cacheKeyFor(c.env, {
-          statuses, stages, priorities, positionValues, sessions, years, states, tagFilters,
-          subjectFilters,
-          q, minRelevance, cfParamMap, sort: sort ?? 'default', dir: sortDir, page, pageSize,
-          drafts: draftsActive,
+          statuses: bf.status, stages: bf.stage, priorities: bf.priority, positionValues: bf.position, sessions: bf.session,
+          years: bf.year, states: bf.state, tagFilters: bf.tag,
+          subjectFilters: bf.subject,
+          q, minRelevance: bf.minRelevance === null ? undefined : String(bf.minRelevance), cfParamMap: bf.cf,
+          sort: sort ?? 'default', dir: sortDir, page, pageSize,
+          drafts: bf.drafts,
         })
       : null
 
@@ -134,7 +91,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
       // it as a scope filter produces wrong conclusions about the visible set.
       // Phase 1: counts — always get total; get the tracked count when optimizing
       const [totalGroups, trackedCount] = await Promise.all([
-        countGroups(db, filtered,newMatchesActive || draftsActive || filterParams.myBillsParam === '1'),
+        countGroups(db, filtered, bf.newMatches || bf.drafts || bf.myBills),
         optimize ? trackedBills(db, filtered) : 0,
       ])
       total = totalGroups
@@ -184,63 +141,24 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const db = getDb(c.env.DB)
     const currentUser = c.get('user')
 
-    // Parse filter params
-    const statuses = c.req.queries('status') ?? []
-    const stages = c.req.queries('stage') ?? []
-    const priorities = c.req.queries('priority') ?? []
-    const positionValues = c.req.queries('position') ?? []
-    const sessions = c.req.queries('session') ?? []
-    const years = c.req.queries('year') ?? []
-    const states = c.req.queries('state') ?? []
-    const tagFilters = c.req.queries('tag') ?? []
-    const subjectDecoded = decodeSubjectFiltersChecked(c.req.queries('subject') ?? [])
-    if (subjectDecoded.overflow) {
-      return c.json({ error: `Too many subject filters. The maximum is ${MAX_SUBJECT_FILTERS}.` }, 400)
-    }
-    const subjectFilters = subjectDecoded.filters
-
-    const q = c.req.query('q')
-    const minRelevance = c.req.query('minRelevance')
-    const matchAny = c.req.query('match') === 'any'
-    const myBillsParam = c.req.query('myBills')
-    const unvoted = c.req.query('unvoted')
-    const newMatchesParam = c.req.query('newMatches')
-    const draftsParam = c.req.query('drafts')
-    const draftsActive = draftsParam === '1' || draftsParam === 'true'
-    const newMatchesActive = newMatchesParam === '1' || newMatchesParam === 'true'
+    const bf = parseBillFilter(new URL(c.req.url).searchParams)
+    const capError = subjectCapError(bf)
+    if (capError) return c.json(capError, 400)
+    const matchAny = bf.match === 'any'
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'owner'
     // Threshold is only needed for the admin count or when the worklist filter is active.
     // The member's bills are read once for the request: the my bills scope (when it is on) and the count beside the
     // facets both use them, alongside the threshold's read.
     const [newMatchMinRelevance, mine] = await Promise.all([
-      (isAdmin || newMatchesActive) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
+      (isAdmin || bf.newMatches) ? getNewMatchMinRelevance(db) : Promise.resolve(0),
       loadMyBillsInGroups(db, currentUser.id),
     ])
-
-    const cfParamMap: Record<string, string[]> = {}
-    for (const [key, value] of new URL(c.req.url).searchParams) {
-      if (key.startsWith('cf_')) {
-        const fieldId = key.slice(3)
-        ;(cfParamMap[fieldId] ??= []).push(value)
-      }
-    }
 
     // The facets' filters are the list's own, built once in query.ts, so the two can't drift: each is a
     // condition on one bill, and a companion group meets it when a bill of it does (facetCounts.ts).
     // Bill facts join by the group operator, and the scopes (search, my bills, unvoted, new matches,
     // drafts) always narrow. A dimension's facet leaves its own fact out.
-    const parts = await buildFilterParts(db, {
-      statuses, stages, priorities, positionValues, sessions, years, states, tagFilters, subjectFilters, q, minRelevance,
-      myBillsParam: myBillsParam === '1' || myBillsParam === 'true' ? '1' : undefined,
-      myBillIds: mine,
-      unvoted,
-      newMatches: newMatchesActive ? '1' : undefined,
-      newMatchMinRelevance,
-      drafts: draftsActive ? '1' : undefined,
-      cfParamMap,
-      userId: currentUser.id,
-      matchAny,
-    })
+    const parts = await buildFilterParts(db, bf, { userId: currentUser.id, newMatchMinRelevance, myBillIds: mine })
 
     // hasDrafts: does this TENANT have any draft at all, completely unfiltered
     // — no dimensional filters, no myBills/unvoted/newMatches scope. This is
@@ -279,7 +197,7 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     const billStates = await billStatesForWildcard(db, c.env.TENANT_ID, c.env.STATE)
 
     if (parts.noMatch) {
-      return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { none: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
+      return c.json({ status: {}, stage: {}, priority: {}, year: {}, session: {}, state: {}, position: { [FILTER_NONE]: 0 }, tags: {}, subjects: {}, subjectStates, billStates, customFields: {}, myBillsCount: 0, newMatchesCount: 0, unvotedCount: 0, draftCount: 0, hasDrafts })
     }
 
     // The list's filter in full: the current result, which myBillsCount, newMatchesCount, unvotedCount,
@@ -480,11 +398,11 @@ export function registerListRoutes(router: Hono<AppEnv>) {
     // less those with a current value, and "any" is those with one (each group has one holder).
     const sum = (rows: CountRow[]) => rows.reduce((a, r) => a + r.n, 0)
     const priorityCounts: Record<string, number> = countsOf(priorityRows)
-    priorityCounts['none'] = (await groupsMeeting('priority')) - sum(priorityRows)
+    priorityCounts[FILTER_NONE] = (await groupsMeeting('priority')) - sum(priorityRows)
     priorityCounts[FILTER_ANY] = sum(priorityRows)
     const priorityCountsOut = asResultingTotal(priorityCounts)
     const positionCounts: Record<string, number> = countsOf(positionRows)
-    positionCounts['none'] = (await groupsMeeting('position')) - sum(positionRows)
+    positionCounts[FILTER_NONE] = (await groupsMeeting('position')) - sum(positionRows)
     positionCounts[FILTER_ANY] = sum(positionRows)
     const positionCountsOut = asResultingTotal(positionCounts)
     const tagCounts: Record<string, number> = Object.fromEntries(

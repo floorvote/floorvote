@@ -3,7 +3,7 @@ import { render } from '@testing-library/react'
 import { billsFilterValuesFromSearch, type BillsFilterValues } from './billsQuery'
 import { buildListSummary, type SummaryFieldDef } from './listSummary'
 import { buildActiveFilterGroups, type ActiveFilterGroupArgs } from './activeFilterGroups'
-import { FILTER_ANY } from './FilterPanel'
+import { FILTER_ANY } from '../../../../shared/billFilter'
 
 const values = (qs: string, over: Partial<BillsFilterValues> = {}): BillsFilterValues =>
   ({ ...billsFilterValuesFromSearch(new URLSearchParams(qs)), ...over })
