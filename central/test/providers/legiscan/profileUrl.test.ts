@@ -25,6 +25,12 @@ describe('LegiScan profileUrl', () => {
     expect(profileUrl({ biography: 'javascript:alert(1)', ballotpedia: 'Ana_Diaz' })).toBe('https://ballotpedia.org/Ana_Diaz')
     expect(profileUrl({ biography: 'data:text/html,hi' })).toBeNull()
   })
+  it('skips a bio page that is not a string, without throwing', () => {
+    for (const biography of [123, { href: 'https://x.example' }, ['https://x.example'], true]) {
+      expect(legiscan.profileUrl!({ bio: { social: { biography } } as never, ballotpedia: 'Ana_Diaz' })).toBe('https://ballotpedia.org/Ana_Diaz')
+      expect(legiscan.profileUrl!({ bio: { social: { biography } } as never, ballotpedia: null })).toBeNull()
+    }
+  })
   it('keeps the legiscan.com page as personUrl', () => {
     expect(legiscan.personUrl!({ state: 'RI', name: 'Ana Diaz', peopleId: 1 })).toBe('https://legiscan.com/RI/people/Ana-Diaz/id/1')
   })

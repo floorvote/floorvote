@@ -141,6 +141,27 @@ describe('legislator profile links: only http and https are sent', () => {
     expect(sponsorUrl('Ana Diaz')).toBe('https://ballotpedia.org/Ana_Diaz')
   })
 
+  it.each([['a number', 123], ['an object', { href: 'https://x.example' }], ['an array', ['https://x.example']], ['true', true]])(
+    'renders the bill with no link from a bio page that is %s, falling through to Ballotpedia',
+    async (_label, biography) => {
+      await seedBill([
+        { peopleId: 1, name: 'Ana Diaz', bioJson: JSON.stringify({ social: { biography } }), ballotpedia: 'Ana_Diaz' },
+        { peopleId: 2, name: 'Ben Cole', bioJson: JSON.stringify({ social: { biography } }) },
+      ])
+      const { sponsorUrl, voterUrl } = await detail()
+      expect(sponsorUrl('Ana Diaz')).toBe('https://ballotpedia.org/Ana_Diaz')
+      expect(voterUrl('Ana Diaz')).toBe('https://ballotpedia.org/Ana_Diaz')
+      expect(sponsorUrl('Ben Cole')).toBe(LEGISCAN_PAGE('RI', 'Ben Cole', 2))
+      expect(voterUrl('Ben Cole')).toBeNull()
+    })
+
+  it('renders the bill when a provider that declares nothing has a non-string bio page', async () => {
+    await seedBill([{ peopleId: 1, name: 'Ana Diaz', provider: 'mga', bioJson: JSON.stringify({ social: { biography: 123 } }) }], { provider: 'mga', state: 'MD' })
+    const { sponsorUrl, voterUrl } = await detail()
+    expect(sponsorUrl('Ana Diaz')).toBeNull()
+    expect(voterUrl('Ana Diaz')).toBeNull()
+  })
+
   it('never sends an unsafe bio page for a provider that declares no profile url', async () => {
     await seedBill([{ peopleId: 1, name: 'Ana Diaz', provider: 'mga', bioJson: bio('javascript:alert(1)') }], { provider: 'mga', state: 'MD' })
     const { sponsorUrl } = await detail()

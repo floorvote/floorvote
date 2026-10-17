@@ -2511,6 +2511,41 @@ describe('GET /bills/:id legislator votes', () => {
     ])
   })
 
+  describe("a sponsor's profile link", () => {
+    async function billFor(sponsors: unknown[]) {
+      const token = await seedSession(await seedUser({ role: 'member' }))
+      const billId = await seedBill({ externalId: 'legiscan:102' })
+      const central = {
+        fetch: vi.fn(async (req: Request) => new URL(req.url).pathname === '/api/bills/legiscan:102'
+          ? Response.json({ sponsors })
+          : Response.json({}, { status: 404 })),
+      }
+      const res = await app.request(`/api/bills/${billId}`, { headers: { Cookie: `session=${token}` } }, { ...env, CENTRAL: central })
+      expect(res.status).toBe(200)
+      return await res.json() as { sponsorUrl: string | null; coSponsors: { name: string; url: string | null }[] }
+    }
+    const sponsor = (name: string, url: unknown, primary = false) => ({ name, party: null, role: null, primary, personId: null, url })
+
+    it('passes an http(s) url through for the primary sponsor and co-sponsors', async () => {
+      const body = await billFor([sponsor('Ann Able', 'https://legislature.example/able', true), sponsor('Bo Baker', 'http://legislature.example/baker')])
+      expect(body.sponsorUrl).toBe('https://legislature.example/able')
+      expect(body.coSponsors.find(s => s.name === 'Bo Baker')?.url).toBe('http://legislature.example/baker')
+    })
+
+    it.each([['javascript:', 'javascript:alert(1)'], ['data:', 'data:text/html,<script>alert(1)</script>'], ['protocol-relative', '//legislature.example/able']])(
+      'drops a %s url for the primary sponsor and for a co-sponsor', async (_label, url) => {
+        const body = await billFor([sponsor('Ann Able', url, true), sponsor('Bo Baker', url)])
+        expect(body.sponsorUrl).toBeNull()
+        expect(body.coSponsors.find(s => s.name === 'Bo Baker')?.url).toBeNull()
+      })
+
+    it('drops a url that is not a string', async () => {
+      const body = await billFor([sponsor('Ann Able', { href: 'https://x.example' }, true), sponsor('Bo Baker', 123)])
+      expect(body.sponsorUrl).toBeNull()
+      expect(body.coSponsors.find(s => s.name === 'Bo Baker')?.url).toBeNull()
+    })
+  })
+
   describe("a voter's profile link", () => {
     const counts = [{ option: 'yes', value: 3 }, { option: 'no', value: 0 }, { option: 'not voting', value: 0 }, { option: 'absent', value: 0 }]
     async function voteSummaryFor(legislatorVotes: unknown[]) {

@@ -33,6 +33,12 @@ describe('a voter with a profile url', () => {
     expect(screen.getByRole('link', { name: 'Ana Diaz' })).toHaveClass('blue-link')
   })
 
+  it('has the same external-link icon sponsor links have, hidden from the link name', async () => {
+    await renderExpanded([{ name: 'Ana Diaz', vote: 'Yea', url: 'https://legislature.example/members/diaz' }])
+    const link = screen.getByRole('link', { name: 'Ana Diaz' })
+    expect(link.querySelector('svg')).not.toBeNull()
+  })
+
   it('keeps the name as the voter element, so the list and its order are unchanged', async () => {
     await renderExpanded([
       { name: 'Ana Diaz', vote: 'Yea', url: 'https://legislature.example/members/diaz' },
