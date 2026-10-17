@@ -217,12 +217,13 @@ export async function buildBillDetail(
     // The team events its comment thread shows lines for, in one ordered read. Its own grouping events
     // say where its group formed or split (a companion's are about the companion). The field changes are
     // the group's, made on any member: a value is shared, so a change to it is one the whole group made.
+    // A deactivated member's are hidden, as their comments are (activeUser), and FloorVote's, with no user row, stay.
     db.select({ id: teamEvents.id, type: teamEvents.type, billId: teamEvents.billId, actorId: teamEvents.actorUserId, createdAt: teamEvents.createdAt, metadata: teamEvents.metadata, actorName: userDisplayNameSql })
       .from(teamEvents)
       .leftJoin(users, eq(teamEvents.actorUserId, users.id))
       .where(or(
         and(eq(teamEvents.billId, billId), inArray(teamEvents.type, ['grouped', 'split'] satisfies GroupingEventType[])),
-        and(inGroupOf(teamEvents.billId, billId), eq(teamEvents.type, FIELD_CHANGED)),
+        and(inGroupOf(teamEvents.billId, billId), eq(teamEvents.type, FIELD_CHANGED), activeUser),
       ))
       .orderBy(teamEvents.createdAt, rowidOf(teamEvents))
       .all(),
