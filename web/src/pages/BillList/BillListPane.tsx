@@ -210,12 +210,6 @@ export function BillListPane() {
   const legacyId = useMatch('/bills/:billId')?.params.billId
   const paths = useMemo(() => bills.map(b => billUrl({ id: b.id, state: b.state, sessionSlug: b.sessionSlug, billNumber: b.billNumber })), [bills])
 
-  // Bring the current bill into view only when it is off-screen, and only when
-  // the bill changes (or the list first arrives) — never when "Show more"
-  // appends, which would yank the reader back from where they scrolled.
-  // `loading` is a dependency because the list renders only once it is false:
-  // were the bills and the end of loading ever committed separately, an effect
-  // that ran in between would find no list and never run again.
   // The summary is of the list the pane shows: the same resolved query its
   // request is built from, so the line and the rows cannot disagree.
   const summary = useMemo(() => resolved && buildListSummary({
@@ -225,6 +219,12 @@ export function BillListPane() {
     isMultiState: multiState,
   }), [resolved, multiState])
 
+  // Bring the current bill into view only when it is off-screen, and only when
+  // the bill changes (or the list first arrives) — never when "Show more"
+  // appends, which would yank the reader back from where they scrolled.
+  // `loading` is a dependency because the list renders only once it is false:
+  // were the bills and the end of loading ever committed separately, an effect
+  // that ran in between would find no list and never run again.
   const hasBills = bills.length > 0
   useLayoutEffect(() => {
     const row = scrollRef.current?.querySelector<HTMLElement>('[aria-current="page"]')

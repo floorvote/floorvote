@@ -347,6 +347,22 @@ describe('BillListPane: filter and sort summary', () => {
     expect(within(pane).getByText('1 filter · Sorted by default order')).toBeInTheDocument()
   })
 
+  it('counts the New matches pill the sidebar links to, rather than saying "All bills"', async () => {
+    listAt('/bills?newMatches=1')
+    const pane = await paneReady()
+    expect(within(pane).getByText('1 filter · Sorted by default order')).toBeInTheDocument()
+    expect(within(pane).queryByText(/All bills/)).toBeNull()
+    hover(within(pane).getByRole('button', { name: /1 filter/ }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('New matches')
+  })
+
+  it('counts the Not yet voted pill together with the priority tiers the unvoted widget links with', async () => {
+    listAt('/bills?priority=high&priority=medium&priority=low&unvoted=1')
+    const pane = await paneReady()
+    expect(within(pane).getByText('4 filters · Sorted by default order')).toBeInTheDocument()
+    expect(within(pane).getByRole('button', { name: /4 filters/ })).toHaveAccessibleDescription(/Not yet voted/)
+  })
+
   it('counts a search term as one filter', async () => {
     listAt('/bills?q=water')
     const pane = await paneReady()

@@ -1,4 +1,5 @@
 import type { BillsFilterValues } from './billsQuery'
+import { filterDimensionLabel, type FilterDimensionKey } from '../../lib/filterDimensions'
 import { activeFilterLabelGroups, type ChipFieldDef } from './activeFilterGroups'
 import type { SortColumn } from './types'
 
@@ -15,7 +16,7 @@ export type ListSummary = {
   text: string
   /** The sort, as the Bills page's column header names it. */
   sortName: string
-  /** Chips plus a search term, each selected value counted once. */
+  /** Chips, scope pills, and a search term, each selected value counted once. */
   filterCount: number
   /** One label per counted filter, worded as the Bills page's chips are. */
   filters: string[]
@@ -33,12 +34,24 @@ export const DEFAULT_SORT_NAME = 'default order'
 
 const unique = <T,>(xs: T[]): T[] => [...new Set(xs)]
 
+// The scope pills, in the registry's order. The Bills page draws them beside the
+// search box rather than as chips, but they narrow the list like any filter, and
+// the app links to lists that carry only one (/bills?newMatches=1), so a summary
+// that left them out would read "All bills" over a narrowed list. (The ticket
+// counts only chips; counting these is a deliberate departure.)
+const SCOPE_PILLS: { key: FilterDimensionKey; on: (v: BillsFilterValues) => boolean }[] = [
+  { key: 'myBills', on: v => v.myBills },
+  { key: 'newMatches', on: v => v.newMatches },
+  { key: 'unvoted', on: v => v.unvoted },
+  { key: 'drafts', on: v => v.drafts },
+]
+
 /**
  * What a bill list's filters and sort come to, for the split pane's summary
- * line. "Filters" are what the Bills page shows as chips (the scope pills — My
- * bills, Not yet voted, New matches, Drafts — are not chips, so they are not
- * counted) plus a search term, which the chip row never carries but a member
- * still counts as a filter.
+ * line. "Filters" are the Bills page's chips, its scope pills (My bills, New
+ * matches, Not yet voted, Drafts), and a search term, which the chip row never
+ * carries but a member still counts as a filter. The all-of/any-of operator is
+ * not a filter.
  */
 export function buildListSummary({ values, view, customFieldDefs = [], isMultiState = false }: ListSummaryInput): ListSummary {
   const cfFilters = Object.fromEntries(Object.entries(values.cfFilters).map(([k, v]) => [k, unique(v)]))
@@ -59,7 +72,8 @@ export function buildListSummary({ values, view, customFieldDefs = [], isMultiSt
   }).flatMap(g => g.labels)
 
   const term = values.search.trim()
-  const filters = term ? [`Search: “${term}”`, ...chipLabels] : chipLabels
+  const pillLabels = SCOPE_PILLS.filter(p => p.on(values)).map(p => filterDimensionLabel(p.key))
+  const filters = [...(term ? [`Search: “${term}”`] : []), ...pillLabels, ...chipLabels]
   const sortName = values.sortCol === 'default' ? DEFAULT_SORT_NAME : SORT_NAMES[values.sortCol] ?? DEFAULT_SORT_NAME
   const viewName = view?.name.trim() ? view.name.trim() : null
   const lead = viewName

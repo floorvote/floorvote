@@ -48,10 +48,35 @@ describe('buildListSummary: the headline', () => {
     expect(s.filterCount).toBe(3)
   })
 
-  it('does not count the scope pills, which the Bills page never draws as chips', () => {
-    const s = summarize('myBills=1&unvoted=1&newMatches=1&drafts=1&match=any')
-    expect(s.text).toBe('All bills · Sorted by default order')
-    expect(s.filters).toEqual([])
+  it.each([
+    ['myBills', 'My bills'], ['newMatches', 'New matches'], ['unvoted', 'Not yet voted'], ['drafts', 'Drafts'],
+  ])('counts the %s scope pill as one filter, and never says "All bills" for it', (param, label) => {
+    const s = summarize(`${param}=1`)
+    expect(s.text).toBe('1 filter · Sorted by default order')
+    expect(s.filterCount).toBe(1)
+    expect(s.filters).toEqual([label])
+  })
+
+  it('counts a scope pill alongside the regular filters, listing it first of them', () => {
+    const s = summarize('priority=high&unvoted=1&year=2026', { search: 'water' })
+    expect(s.text).toBe('4 filters · Sorted by default order')
+    expect(s.filters).toEqual(['Search: “water”', 'Not yet voted', expect.stringMatching(/high/i), 'Year: 2026'])
+  })
+
+  it('counts all four scope pills', () => {
+    const s = summarize('myBills=1&unvoted=1&newMatches=1&drafts=1')
+    expect(s.filterCount).toBe(4)
+    expect(s.filters).toEqual(['My bills', 'New matches', 'Not yet voted', 'Drafts'])
+  })
+
+  it('does not count the all-of/any-of operator, which is not a filter', () => {
+    expect(summarize('match=any').text).toBe('All bills · Sorted by default order')
+  })
+
+  it('names a saved view even when its query holds a scope pill, and still lists the pill', () => {
+    const s = summarize('newMatches=1', {}, { view: { name: 'Inbox' } })
+    expect(s.text).toBe('Inbox · Sorted by default order')
+    expect(s.filters).toEqual(['New matches'])
   })
 
   it('counts every value of a long list', () => {
