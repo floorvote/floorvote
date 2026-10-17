@@ -843,6 +843,17 @@ describe('what one pass reads, and what it keeps', () => {
     expect(feed.detailIds.slice(first)).toEqual([UPCOMING])
     expect((await eventOf(UPCOMING))).toMatchObject({ date: '2026-10-23' })
   })
+
+  it('keeps the copy it read again for an unreadable one, so the next pass reads nothing', async () => {
+    await syncCalendar()
+    await env.DB.prepare(`UPDATE provider_cache SET value = 'not json' WHERE key = ?`).bind(`meeting/119/${UPCOMING}`).run()
+    await syncCalendar()
+    const row = await env.DB.prepare(`SELECT value FROM provider_cache WHERE provider = 'govinfo' AND key = ?`).bind(`meeting/119/${UPCOMING}`).first<{ value: string }>()
+    expect(row && JSON.parse(row.value).meeting.eventId).toBe(UPCOMING)
+    const second = feed.detailIds.length
+    await syncCalendar()
+    expect(feed.detailIds.slice(second)).toEqual([])
+  })
 })
 
 describe('when the API fails', () => {
@@ -1041,6 +1052,39 @@ describe('what the list does while it is read', () => {
 })
 
 describe('while the meetings are still being read for the first time', () => {
+  const isWarm = async () => !!(await env.DB.prepare(`SELECT key FROM provider_cache WHERE provider = 'govinfo' AND key = 'warm/119'`).first())
+  /** More new meetings than a pass reads, all with higher event ids than the recorded ones, so they are read first. */
+  function newerThanAPass() {
+    for (let i = 0; i < DETAILS_PER_PASS + 5; i++) feed.add(String(200000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+  }
+
+  it('goes cold again when a kept meeting can no longer be read and this pass has no request left for it', async () => {
+    linkBills()
+    await pass()
+    expect(await isWarm()).toBe(true)
+    newerThanAPass()
+    await env.DB.prepare(`UPDATE provider_cache SET value = 'not json' WHERE key = ?`).bind(`meeting/119/${UPCOMING}`).run()
+    const before = feed.detailIds.length
+    await pass()
+    // The lost meeting waits behind the new ones, so a bill's calendar can't yet say it has none.
+    expect(feed.detailIds.slice(before)).not.toContain(UPCOMING)
+    expect(await isWarm()).toBe(false)
+  })
+
+  it('stays warm while only new meetings wait to be read', async () => {
+    linkBills()
+    await pass()
+    newerThanAPass()
+    await pass()
+    expect(await isWarm()).toBe(true)
+  })
+
+  it('is not warm after a pass whose list named no meeting', async () => {
+    for (const id of [...feed.meetings.keys()]) feed.remove(id)
+    await syncCalendar()
+    expect(await isWarm()).toBe(false)
+  })
+
   /** More meetings than a pass reads, so the first passes leave the cache cold: 22 recorded and this many at 60 a pass. */
   function overfill(n = 80) {
     for (let i = 0; i < n; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
