@@ -34,6 +34,7 @@ import { clearRollCallCaches } from '../../src/providers/govinfo/client'
 import { clearMeetingCaches, DETAILS_PER_PASS, LIST_PAGE_SIZE } from '../../src/providers/govinfo/meetings'
 import { runBodyEventSync } from '../../src/cron/body-events'
 import { toHandle } from '../../src/lib/billHandle'
+import { providerContext } from '../../src/lib/providerContext'
 import { mainSeam, resetCentral, type Run } from '../helpers/mainSeam'
 import { buildZip, fileType, fixtureFiles, serveZip } from '../helpers/govinfoZip'
 import { rollCallBillFiles, rollCallNetwork } from '../helpers/govinfoRollCalls'
@@ -106,6 +107,9 @@ beforeEach(async () => {
   // The instance follows Congress with keywords that match four recorded bills' titles.
   await seam.addTenant('US', ['alaska native village', 'arkansas valley conduit', 'agriculture, rural development', 'choice for veterans'])
   await seam.claim('US', 'govinfo')
+  // Congress's bills and its session are already in central when the key is set, as they are in a deployment
+  // that claimed US before it turned on the calendar.
+  await seam.sync()
 })
 
 afterEach(() => {
@@ -168,10 +172,13 @@ describe('without a Congress.gov key', () => {
     expect(govinfo.envKeys).toEqual(['CONGRESS_API_KEY'])
     linkBills()
     const run = keyless.makeRun()
-    expect(await runBodyEventSync(govinfo, run.env as any, db())).toEqual([])
-    const { messages } = await keyless.syncAndIngest(run)
-    expect(messages.length).toBeGreaterThan(0)
+    // Five months asked, and nothing in any of them.
+    expect(await runBodyEventSync(govinfo, run.env as any, db())).toEqual([{ state: 'US', months: 5, failed: 0, events: 0, written: 0 }])
+    await keyless.syncAndIngest(run)
+    const messages = await keyless.ingest([await billId('HB43'), await billId('SB296')], run)
+    expect(messages).toHaveLength(2)
     for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
+    expect((await bill('HB43')).sponsors.length).toBeGreaterThan(0)
     expect(feed.requests).toEqual([])
     expect(calls.filter(u => u.startsWith('https://api.congress.gov'))).toEqual([])
     expect((await getJson(`/tenants/usteam/body-events?${WINDOW}`, run))).toMatchObject({ events: [] })
@@ -239,6 +246,17 @@ describe('with a key, a recorded meeting', () => {
     expect(await getJson('/bills/labels?state=US')).toMatchObject({ hasEvents: true, capabilities: { bodyEvents: true } })
   })
 
+  it('serves a range only the meetings dated within it, both ends included', async () => {
+    const ctx = providerContext(govinfo, makeRun().env as any, db())
+    const on = async (from: string, to: string) => (await govinfo.listBodyEvents!('US', { from, to }, ctx)).map(e => e.event_id).sort()
+    expect(await on('2026-09-15', '2026-09-15')).toEqual(['119544', '119553', '119567'])
+    expect(await on('2026-09-16', '2026-09-16')).toEqual(['119538', '119558', '119573', '338746'])
+    expect(await on('2026-09-15', '2026-09-16')).toEqual(['119538', '119544', '119553', '119558', '119567', '119573', '338746'])
+    expect(await on('2026-10-24', '2026-11-30')).toEqual([])
+    // Meetings of every month the recorded ones fall in are in some range: 2025's, too.
+    expect((await on('2025-06-24', '2025-06-24'))).toEqual(['118298'])
+  })
+
   it('reads the date and time in Eastern, whichever the season', async () => {
     feed.add('900001', HEARING, m => { m.date = '2026-12-09T15:30:00Z' })
     await pass()
@@ -297,6 +315,33 @@ describe('with a key, a recorded meeting', () => {
     expect(hearing.committee.committeeId).toBe(String(minted[0].id))
     const rows = await db().select().from(schema.committees).where(eq(schema.committees.committeeId, minted[0].id)).all()
     expect(rows).toEqual([expect.objectContaining({ name: hearing.committee.name, chamber: 'H', state: 'US', provider: 'govinfo' })])
+  })
+
+  it('shows a joint committee\'s meeting with no congress.gov page named, under a committee of neither chamber', async () => {
+    await pass()
+    const e = await eventOf('338796')
+    expect(e).toMatchObject({ kind: 'hearing', type: 'Open Hearing', date: '2026-09-28', url: null, committee: { name: expect.stringMatching(/Commission/) } })
+    const rows = await db().select().from(schema.committees).where(eq(schema.committees.committeeId, Number(e.committee.committeeId))).all()
+    expect(rows).toEqual([expect.objectContaining({ chamber: 'J', provider: 'govinfo' })])
+  })
+
+  it('shows a Senate business meeting that takes up sixty bills, each on the agenda', async () => {
+    await pass()
+    const e = await eventOf('338795')
+    expect(e).toMatchObject({ kind: 'meeting', type: 'Open Business Meeting', date: '2026-09-30', time: '10:00', url: 'https://www.congress.gov/event/119th-Congress/senate-event/338795' })
+    expect(e.agenda).toHaveLength(61)
+    expect(e.agenda.filter((a: any) => a.billNumber).length).toBe(60)
+    expect(e.agenda.map((a: any) => a.billNumber).filter(Boolean).every((n: string) => /^(HB|SB)\d+$/.test(n))).toBe(true)
+  })
+
+  it('writes nothing, and re-ingests nothing, on a pass after which nothing has changed', async () => {
+    linkBills()
+    await pass()
+    const run = makeRun()
+    const [report] = await runBodyEventSync(govinfo, run.env as any, db())
+    expect(report).toMatchObject({ failed: 0, events: IN_WINDOW, written: 0 })
+    await seam.sync(run)
+    expect(queuedIds(run)).toEqual([])
   })
 
   it('holds a meeting by a committee the API gives no name for, naming no committee on it', async () => {
@@ -882,7 +927,7 @@ describe('when the API fails', () => {
     expect((await events()).byUid.has(uid('900002'))).toBe(false)
     feed.edit('900002', m => { m.date = '2026-11-18T15:00:00Z' })
     await syncCalendar()
-    expect((await eventOf('900002'))).toMatchObject({ date: '2026-11-18', time: '10:15' })
+    expect((await eventOf('900002'))).toMatchObject({ date: '2026-11-18', time: '10:00' })
   })
 
   it('keeps what it read before a failure, so the pass after it reads only the rest', async () => {
@@ -919,11 +964,12 @@ describe('when the API fails', () => {
 
   it('never lets a failing calendar stop bills from syncing and ingesting', async () => {
     feed.override.list = () => new Response('down', { status: 500 })
-    const { messages } = await pass()
+    await pass()
     expect(feed.listRequests.length).toBeGreaterThan(0)
-    expect(messages.length).toBeGreaterThan(0)
+    const messages = await seam.ingest([await billId('HB43'), await billId('SB296')])
+    expect(messages).toHaveLength(2)
     for (const m of messages) expect(m.retry).not.toHaveBeenCalled()
-    expect((await bill('HB43')).number).toBe('HB43')
+    expect((await bill('HB43')).sponsors.length).toBeGreaterThan(0)
   })
 
   it('asks again on the next pass after a failure', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  easternTime, isCancelled, meetingType, parseMeeting, parseMeetingList,
-  type ListedMeeting,
+  easternTime, entriesByBill, holdingCommittees, isCancelled, meetingBodyEvent, meetingEntry, meetingType, parseMeeting, parseMeetingList,
+  type ListedMeeting, type Meeting,
 } from '../../../src/providers/govinfo/meetings'
 import { meetingInventory, meetingListInventory } from '../../../src/providers/govinfo/inventory'
 import { vocabulary } from '../../../src/providers/govinfo/vocabulary'
@@ -358,6 +358,96 @@ describe('the list of meetings', () => {
   ]
   it.each(badLists)('is a failure when it %s', (_what, text, message) => {
     expect(() => parseMeetingList(text, 119)).toThrow(message)
+  })
+})
+
+describe('what a calendar shows of a meeting', () => {
+  const ids = (code: string) => ({ hsed02: 3_000_000_001, hsju00: 3_000_000_002, hsas00: 3_000_000_003 } as Record<string, number>)[code]
+  const meeting = (over: Partial<Meeting> = {}): Meeting => ({ ...read('119544'), ...over })
+
+  it('names a meeting for its committee and type, in the words the API uses for the type', async () => {
+    expect((await meetingBodyEvent(meeting({ type: 'Open Business Meeting', committees: [{ systemCode: 'hsas00', name: 'House Armed Services' }] }), ids)).title)
+      .toBe('House Armed Services open business meeting')
+    expect((await meetingBodyEvent(meeting({ committees: [] }), ids)).title).toBe('House hearing')
+    expect((await meetingBodyEvent(meeting({ committees: [], chamber: 'senate' }), ids)).title).toBe('Senate hearing')
+    expect((await meetingBodyEvent(meeting({ committees: [], chamber: 'nochamber' }), ids)).title).toBe('Joint hearing')
+  })
+
+  it('holds a meeting under its first committee that has a name, and names the others', async () => {
+    const e = await meetingBodyEvent(meeting({ committees: [
+      { systemCode: 'hsju00', name: null }, { systemCode: 'hsed02', name: 'Education' }, { systemCode: 'hsas00', name: 'Armed Services' },
+    ] }), ids)
+    expect(e.committee).toEqual({ committee_id: 3_000_000_001, name: 'Education', chamber: 'H' })
+    expect(e.joint_with).toBe('Armed Services')
+    expect(holdingCommittees([meeting({ committees: [{ systemCode: 'hsju00', name: null }, { systemCode: 'hsed02', name: 'Education' }] })])).toEqual(['hsed02'])
+  })
+
+  it('names no committee when central has no id for the one holding the meeting', async () => {
+    expect((await meetingBodyEvent(meeting(), () => undefined)).committee).toBeNull()
+  })
+
+  it('puts the title first on the agenda, cut at 500 characters, and then each bill by its LegiScan number', async () => {
+    const e = await meetingBodyEvent(meeting({ title: 'x'.repeat(600), bills: [{ type: 'HR', number: '12' }, { type: 'SJRES', number: '7' }, { type: 'HCONRES', number: '3' }] }), ids)
+    expect(e.agenda[0].topic).toHaveLength(500)
+    expect(e.agenda[0].topic.endsWith('…')).toBe(true)
+    expect(e.agenda.slice(1)).toEqual([
+      { topic: 'H.R. 12', bill_number: 'HB12' }, { topic: 'S.J.Res. 7', bill_number: 'SJR7' }, { topic: 'H.Con.Res. 3', bill_number: 'HCR3' },
+    ])
+    expect((await meetingBodyEvent(meeting({ title: '' }), ids)).agenda).toEqual([])
+  })
+
+  it('describes a bill\'s entry by the meeting\'s name and subject, cut at 280 characters', async () => {
+    const m = meeting({ committees: [{ systemCode: 'hsed02', name: 'Education' }], title: 'A subject' })
+    expect((await meetingEntry(m)).description).toBe('Education hearing: A subject')
+    expect((await meetingEntry(meeting({ committees: [{ systemCode: 'hsed02', name: 'Education' }], title: '' }))).description).toBe('Education hearing')
+    const long = (await meetingEntry(meeting({ title: 'y'.repeat(400) }))).description
+    expect(long.endsWith('…')).toBe(true)
+    expect(long.length).toBeLessThanOrEqual('House Education and Workforce Subcommittee on Health, Employment, Labor, and Pensions hearing: '.length + 280)
+  })
+
+  it('makes an entry of the meeting\'s event id, kind, date, time, and place, and flags it only when it is cancelled', async () => {
+    const e = await meetingEntry(meeting())
+    expect(e).toEqual({
+      type_id: 1, type: 'Hearing', date: '2026-09-15', time: '10:15', location: '2175 Rayburn House Office Building',
+      description: expect.any(String), event_hash: expect.stringMatching(/^[0-9a-f]{32}$/), event_id: '119544',
+    })
+    expect(e).not.toHaveProperty('cancelled')
+    expect(await meetingEntry(meeting({ status: 'Postponed' }))).toMatchObject({ cancelled: true })
+    expect((await meetingEntry(meeting({ time: null, location: null }))).time).toBe('')
+    expect((await meetingEntry(meeting({ time: null, location: null }))).location).toBe('')
+  })
+
+  it('changes the hash with anything shown, and with nothing else', async () => {
+    const base = (await meetingBodyEvent(meeting(), ids)).event_hash
+    const hash = async (over: Partial<Meeting>) => (await meetingBodyEvent(meeting(over), ids)).event_hash
+    for (const over of [
+      { date: '2026-09-16' }, { time: '11:00' }, { time: null }, { type: 'Markup' }, { title: 'Another' }, { location: '100 Main Street' },
+      { committees: [{ systemCode: 'hsed02', name: 'Renamed' }] }, { bills: [{ type: 'HR' as const, number: '1' }] }, { status: 'Canceled' },
+    ]) expect(await hash(over), JSON.stringify(over)).not.toBe(base)
+    // Not an update time, a status that doesn't cancel, or a chamber nothing shows.
+    expect(await hash({ updateDate: '2030-01-01T00:00:00Z' })).toBe(base)
+    expect(await hash({ status: 'Rescheduled' })).toBe(base)
+    expect((await meetingEntry(meeting({ status: 'Rescheduled' }))).event_hash).toBe((await meetingEntry(meeting())).event_hash)
+    // The body event and the entry of one meeting change together.
+    expect((await meetingEntry(meeting({ time: '11:00' }))).event_hash).toBe(await hash({ time: '11:00' }))
+  })
+
+  it('gives each bill its meetings\' entries by date, cancelled and past ones too, and leaves out a bill with none', async () => {
+    const a = meeting({ eventId: '2', date: '2026-10-02', bills: [{ type: 'HR', number: '1' }, { type: 'S', number: '2' }] })
+    const b = meeting({ eventId: '1', date: '2026-10-01', status: 'Canceled', bills: [{ type: 'HR', number: '1' }] })
+    const c = meeting({ eventId: '3', date: '2026-10-03', bills: [] })
+    const byBill = await entriesByBill([a, b, c])
+    expect([...byBill.keys()].sort()).toEqual(['119/HR1', '119/S2'])
+    expect(byBill.get('119/HR1')!.map(e => [e.event_id, e.date, e.cancelled ?? false])).toEqual([['1', '2026-10-01', true], ['2', '2026-10-02', false]])
+    expect(byBill.get('119/S2')!.map(e => e.event_id)).toEqual(['2'])
+  })
+
+  it('takes a meeting\'s entries in an order that doesn\'t depend on the order the meetings came in', async () => {
+    const ms = ['5', '3', '4'].map(eventId => meeting({ eventId, date: '2026-10-01', bills: [{ type: 'HR', number: '1' }] }))
+    const forward = await entriesByBill(ms)
+    const backward = await entriesByBill([...ms].reverse())
+    expect(JSON.stringify([...forward])).toBe(JSON.stringify([...backward]))
+    expect(forward.get('119/HR1')!.map(e => e.event_id)).toEqual(['3', '4', '5'])
   })
 })
 
