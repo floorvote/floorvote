@@ -60,7 +60,9 @@ const asText = (b: Uint8Array) => new TextDecoder('utf-8', { fatal: true }).deco
 describe('stored HTML bill text decoding', () => {
   it('serves undeclared windows-1252 bytes as characters, not U+FFFD, to the analysis path and the panel', async () => {
     const r = await serve(raw(CP1252_BODY), 'text/html')
-    expect(r.json).toEqual({ type: 'html', content: CP1252_DECODED })
+    // The decoded text comes pinned to the document it was read from (#568), so
+    // claim sources quote the same characters a reader sees.
+    expect(r.json).toEqual({ type: 'html', content: CP1252_DECODED, docId: expect.any(String), textHash: expect.any(String) })
     expect(r.inlineStatus).toBe(200)
     expect(asText(r.inlineBytes)).toBe(CP1252_DECODED)
     expect(r.json.content).not.toContain('�')
@@ -141,7 +143,7 @@ describe('stored HTML bill text decoding', () => {
 
   it('serves an empty body as empty text', async () => {
     const r = await serve(new Uint8Array(0), 'text/html')
-    expect(r.json).toEqual({ type: 'html', content: '' })
+    expect(r.json).toEqual({ type: 'html', content: '', docId: expect.any(String), textHash: expect.any(String) })
     expect(r.inlineStatus).toBe(200)
     expect(r.inlineBytes.byteLength).toBe(0)
   })

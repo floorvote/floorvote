@@ -55,6 +55,34 @@ max_concurrency = 1
 # max_batch_timeout = 30
 # max_concurrency = 1
 
+# Optional: a separate ingestor queue for Maryland (MGA) bills, so a Maryland
+# cutover's thousands of bills never hold up LegiScan's. Without it they share
+# INGESTOR_QUEUE. Each bill's text is a download the MGA client paces at one a
+# second per isolate, so keep max_concurrency at 1 or the aggregate rate scales
+# with concurrency. Bind it before claiming Maryland for the MGA.
+# [[env.legiscan.queues.producers]]
+# binding = "MGA_INGESTOR_QUEUE"
+# queue = "central-mga-ingestor"
+# [[env.legiscan.queues.consumers]]
+# queue = "central-mga-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_concurrency = 1
+
+# Optional: a separate ingestor queue for Virginia (LIS) bills, so a Virginia
+# cutover's thousands of bills never hold up LegiScan's. Without it they share
+# INGESTOR_QUEUE. The LIS client paces itself at two requests a second per
+# isolate, so keep max_concurrency at 1 or the aggregate rate scales with
+# concurrency. Bind it before claiming Virginia for the LIS.
+# [[env.legiscan.queues.producers]]
+# binding = "LIS_INGESTOR_QUEUE"
+# queue = "central-lis-ingestor"
+# [[env.legiscan.queues.consumers]]
+# queue = "central-lis-ingestor"
+# max_batch_size = 5
+# max_batch_timeout = 30
+# max_concurrency = 1
+
 # Optional: drain the tenants' shared dead-letter queue.
 #
 # Tenant consumers name a dead_letter_queue so a message that exhausts its retry
@@ -119,9 +147,6 @@ EMAIL_PROVIDER = "cloudflare"
 # Congress (US) from GovInfo Bill Status (www.govinfo.gov, src/providers/govinfo)
 # needs no key. A full read of the 119th Congress takes about 5.5 seconds of CPU
 # in a Worker, so no [limits] cpu_ms is needed for it.
-# For one release only, this older var still seeds a state's claim on the
-# first sync, when the state has none. Remove it once the claim exists.
-# LIMS_STATES = "DC"
 
 [env.legiscan.triggers]
 crons = ["0 * * * *"]
@@ -158,7 +183,7 @@ namespace_id = "3001"
 # LIS_API_KEY           — Virginia LIS API key (optional; with it, Virginia bills from lis carry their text; non-commercial use only)
 # ADMIN_SECRET          — protects /admin/* and /tenants/* routes
 # CF_QUEUES_TOKEN       — Cloudflare API token (Queues: Edit) for dynamic per-tenant delivery
-# RESEND_API_KEY        — magic-link email (if EMAIL_PROVIDER=resend)
+# RESEND_API_KEY        — magic-link email, only if central sends through Resend (not needed with EMAIL_PROVIDER=cloudflare and the EMAIL binding)
 # SUPERADMIN_JWT_PRIVATE_KEY — ES256 private JWK; central is the sole JWT issuer
 # SUPERADMIN_EMAILS     — comma-separated superadmin allowlist
 # CF_ANALYTICS_TOKEN    — Cloudflare API token (Account Analytics: Read, D1: Read)

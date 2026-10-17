@@ -21,6 +21,7 @@ The two interactive HTML companions are the exception: GitHub renders `.html` as
 | `legiscan-notes.md` | LegiScan operational + licensing notes (quota, `skipFetch`, attribution). |
 | `rebranding.md` | Renaming resources via `RESOURCE_PREFIX` for forks. |
 | `fork-upgrade.md` | Moving a fork that runs DC on LIMS onto upstream: the rehearsal script, deploy order, and what to cherry-pick. |
+| `release-notes-next.md` | Draft entries for the next GitHub release, reviewed with the code that earns them, then pasted into the release body. |
 | `openstates.md` | The removed OpenStates central: where to find it (`openstates-final` tag), what it knew, and why it was removed. |
 
 The contributor-facing guide to adding a provider is published on the docs site (`docs/content/contributing/providers.md`). It links here for the internals.

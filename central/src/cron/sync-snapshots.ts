@@ -50,7 +50,7 @@ export async function runSnapshotSync(
   provider: Provider, env: Env, db: Db, opts: { force?: boolean } = {},
 ): Promise<SnapshotPassReport[]> {
   if (!isSnapshotProvider(provider)) return []
-  const owned = statesOwnedBy(await loadStateOwners(env, db), provider.id)
+  const owned = statesOwnedBy(await loadStateOwners(db), provider.id)
   if (owned.length === 0) return []
   if (!providerConfigured(provider, env)) {
     console.warn(`[sync-${provider.id}] owns ${owned.join(', ')} but isn't configured on this central (missing its API key?); not syncing`)
@@ -391,8 +391,6 @@ export async function importProviderMeasures(
 
   const ctx = providerContext(provider, env, db)
   const found = await provider.importMeasures(numbers, ctx)
-  // Owners seeded before any session is slugged: the plain slug goes to the owner's session.
-  await loadStateOwners(env, db)
   const result: ImportReport = { imported: [], notFound: found.notFound, invalid: found.invalid }
   const queue = ingestQueueFor(provider, env)
   const covering = [{ tenantId, stateCoverage: tenant.stateCoverage, queueId: tenant.queueId ?? null }]
