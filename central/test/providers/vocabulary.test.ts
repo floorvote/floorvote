@@ -79,6 +79,25 @@ describe('the codes each provider writes', () => {
     expect(codes('lis')).toEqual([301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312])
   })
 
+  it('covers the eleven statuses the GovInfo derivation writes, in the 400s', () => {
+    expect(codes('govinfo')).toEqual([401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411])
+    const statuses = getProvider('govinfo').vocabulary.statuses
+    expect(Object.values(statuses).map(s => s.label)).toEqual([
+      'Introduced', 'In committee', 'Reported', 'Passed House', 'Passed Senate', 'Passed both chambers',
+      'Presented to the President', 'Failed', 'Vetoed', 'Became law', 'Agreed to',
+    ])
+    // A law and an agreed-to resolution are done. Everything else can still move, a failed vote and a veto included.
+    expect(Object.values(statuses).filter(s => s.terminal).map(s => s.label)).toEqual(['Became law', 'Agreed to'])
+  })
+
+  it('declares the four GovInfo bill types and the four extras later tickets fill', () => {
+    const v = getProvider('govinfo').vocabulary
+    expect(Object.keys(v.billTypes).sort()).toEqual(['B', 'CR', 'JR', 'R'])
+    expect(Object.fromEntries(Object.entries(v.extras ?? {}).map(([k, e]) => [k, e.display]))).toEqual({
+      summary: 'text', publicLaw: 'identifier', policyArea: 'text', costEstimate: 'link',
+    })
+  })
+
   it('reads each of LIMS\'s 16 statuses, and no status, by the name LIMS gives it', () => {
     const lims = getProvider('lims').vocabulary.statuses
     expect(Object.keys(lims)).toHaveLength(17)
@@ -109,6 +128,15 @@ describe('the relationship labels each provider maps', () => {
 
   it('maps Maryland\'s "Cross-filed" to identical', () => {
     expect(relationships('mga')?.default).toMatchObject({ 'Cross-filed': 'identical' })
+  })
+
+  it('maps Congress\'s "Identical bill" to identical, and its other labels to related', () => {
+    expect(relationships('govinfo')?.default).toMatchObject({
+      'Identical bill': 'identical',
+      'Related bill': 'related',
+      'Procedurally related': 'related',
+    })
+    expect(Object.entries(relationships('govinfo')!.default).filter(([, k]) => k === 'identical').map(([l]) => l)).toEqual(['Identical bill'])
   })
 })
 

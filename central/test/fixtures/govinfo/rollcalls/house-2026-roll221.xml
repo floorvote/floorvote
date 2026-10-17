@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rollcall-vote>
+  <vote-metadata>
+    <majority>R</majority>
+    <congress>119</congress>
+    <session>2nd</session>
+    <chamber>U.S. House of Representatives</chamber>
+    <rollcall-num>221</rollcall-num>
+    <legis-num>H R 9238</legis-num>
+    <vote-question>On Motion to Suspend the Rules and Pass</vote-question>
+    <vote-type>2/3 YEA-AND-NAY</vote-type>
+    <vote-result>Failed</vote-result>
+    <action-date>11-Jun-2026</action-date>
+    <action-time time-etz="10:34">10:34 AM</action-time>
+    <vote-desc>To amend the FISA Amendments Act of 2008 to extend the authorities of title VII of the Foreign Intelligence Surveillance Act of 1978, and for other purposes</vote-desc>
+    <vote-totals>
+      <totals-by-party-header>
+        <party-header>Party</party-header>
+        <yea-header>Yeas</yea-header>
+        <nay-header>Nays</nay-header>
+        <present-header>Answered “Present”</present-header>
+        <not-voting-header>Not Voting</not-voting-header>
+      </totals-by-party-header>
+      <totals-by-party>
+        <party>Republican</party>
+        <yea-total>190</yea-total>
+        <nay-total>19</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>9</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Democratic</party>
+        <yea-total>7</yea-total>
+        <nay-total>199</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>6</not-voting-total>
+      </totals-by-party>
+      <totals-by-party>
+        <party>Independent</party>
+        <yea-total>1</yea-total>
+        <nay-total>0</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>0</not-voting-total>
+      </totals-by-party>
+      <totals-by-vote>
+        <total-stub>Totals</total-stub>
+        <yea-total>198</yea-total>
+        <nay-total>218</nay-total>
+        <present-total>0</present-total>
+        <not-voting-total>15</not-voting-total>
+      </totals-by-vote>
+    </vote-totals>
+  </vote-metadata>
+  <vote-data>
+    <recorded-vote>
+      <legislator name-id="A000370" sort-field="Adams" unaccented-name="Adams" party="D" state="NC" role="legislator">Adams</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001323" sort-field="Begich" unaccented-name="Begich" party="R" state="AK" role="legislator">Begich</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001302" sort-field="Biggs (AZ)" unaccented-name="Biggs (AZ)" party="R" state="AZ" role="legislator">Biggs (AZ)</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="B001309" sort-field="Burchett" unaccented-name="Burchett" party="R" state="TN" role="legislator">Burchett</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001067" sort-field="Clarke (NY)" unaccented-name="Clarke (NY)" party="D" state="NY" role="legislator">Clarke (NY)</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001061" sort-field="Cleaver" unaccented-name="Cleaver" party="D" state="MO" role="legislator">Cleaver</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="C001068" sort-field="Cohen" unaccented-name="Cohen" party="D" state="TN" role="legislator">Cohen</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="D000629" sort-field="Davids (KS)" unaccented-name="Davids (KS)" party="D" state="KS" role="legislator">Davids (KS)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="D000032" sort-field="Donalds" unaccented-name="Donalds" party="R" state="FL" role="legislator">Donalds</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="E000071" sort-field="Ellzey" unaccented-name="Ellzey" party="R" state="TX" role="legislator">Ellzey</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="F000480" sort-field="Fong" unaccented-name="Fong" party="R" state="CA" role="legislator">Fong</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="F000462" sort-field="Frankel, Lois" unaccented-name="Frankel, Lois" party="D" state="FL" role="legislator">Frankel, Lois</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="G000599" sort-field="Goldman (NY)" unaccented-name="Goldman (NY)" party="D" state="NY" role="legislator">Goldman (NY)</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="H001052" sort-field="Harris (MD)" unaccented-name="Harris (MD)" party="R" state="MD" role="legislator">Harris (MD)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="J000311" sort-field="Jack" unaccented-name="Jack" party="R" state="GA" role="legislator">Jack</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="J000299" sort-field="Johnson (LA)" unaccented-name="Johnson (LA)" party="R" state="LA" role="speaker">Johnson (LA)</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="K000398" sort-field="Kean" unaccented-name="Kean" party="R" state="NJ" role="legislator">Kean</legislator>
+      <vote>Not Voting</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="K000402" sort-field="Kennedy (NY)" unaccented-name="Kennedy (NY)" party="D" state="NY" role="legislator">Kennedy (NY)</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="L000273" sort-field="Leger Fernandez" unaccented-name="Leger Fernandez" party="D" state="NM" role="legislator">Leger Fernandez</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001208" sort-field="McBath" unaccented-name="McBath" party="D" state="GA" role="legislator">McBath</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001204" sort-field="Meuser" unaccented-name="Meuser" party="R" state="PA" role="legislator">Meuser</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="M001210" sort-field="Murphy" unaccented-name="Murphy" party="R" state="NC" role="legislator">Murphy</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="P000197" sort-field="Pelosi" unaccented-name="Pelosi" party="D" state="CA" role="legislator">Pelosi</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="R000603" sort-field="Rouzer" unaccented-name="Rouzer" party="R" state="NC" role="legislator">Rouzer</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001185" sort-field="Sewell" unaccented-name="Sewell" party="D" state="AL" role="legislator">Sewell</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="S001220" sort-field="Strong" unaccented-name="Strong" party="R" state="AL" role="legislator">Strong</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="T000491" sort-field="Tran" unaccented-name="Tran" party="D" state="CA" role="legislator">Tran</legislator>
+      <vote>Nay</vote>
+    </recorded-vote>
+    <recorded-vote>
+      <legislator name-id="W000821" sort-field="Westerman" unaccented-name="Westerman" party="R" state="AR" role="legislator">Westerman</legislator>
+      <vote>Yea</vote>
+    </recorded-vote>
+  </vote-data>
+</rollcall-vote>

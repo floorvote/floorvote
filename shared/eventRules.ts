@@ -24,8 +24,10 @@ import { matchesUnion } from './keywords'
  * so a rule can be as broad or as narrow as the team wants. Topics are the
  * instance's own content: nothing in code presets them.
  *
- * The api applies the rules (api/src/lib/eventRules.ts), and the settings page
- * previews them, both with `eventMatchesRules`.
+ * The api applies the rules (api/src/lib/eventRules.ts) with `eventMatchesRules`.
+ * Since #420 the Calendar page's control edits them, offering every event or
+ * chosen committees only; the rest of this shape keeps matching for rules
+ * saved before it.
  */
 export interface EventRules {
   /** Committees, by central committee id, each with its name for display and joint hearings. */
@@ -202,4 +204,69 @@ export function rulesFromCouncilCalendar(legacy: unknown, committees: readonly {
   }
   if (keywords.length > 0) out.topics.push({ name: COUNCIL_CALENDAR_TOPIC, keywords: [...new Set(keywords)] })
   return out
+}
+
+/**
+ * What a saved rule keeps beyond the Calendar control's one choice (#420): the
+ * control offers every event or chosen committees, so a rule saved earlier
+ * with kinds, event types, topics, tracked bills, or a committee narrowed to
+ * a kind keeps all of it. It matches exactly as before and shows in the
+ * control as one line with Remove.
+ */
+export interface LegacyParts {
+  kinds: string[]
+  topics: string[]
+  trackedBills: boolean
+  narrowedCommittees: { name: string; kind: string }[]
+}
+
+export function legacyParts(rules: EventRules | null): LegacyParts {
+  return {
+    kinds: rules?.kinds ?? [],
+    topics: (rules?.topics ?? []).map(t => t.name),
+    trackedBills: rules?.trackedBills === true,
+    narrowedCommittees: (rules?.committees ?? []).flatMap(c => c.kind ? [{ name: c.name, kind: c.kind }] : []),
+  }
+}
+
+export function hasLegacyParts(parts: LegacyParts): boolean {
+  return parts.kinds.length > 0 || parts.topics.length > 0 || parts.trackedBills || parts.narrowedCommittees.length > 0
+}
+
+/** "Kept from an earlier setting: ..." for the control's menu, or '' when nothing is kept. */
+export function legacyNote(parts: LegacyParts): string {
+  if (!hasLegacyParts(parts)) return ''
+  const phrases = [
+    ...parts.kinds.map(k => `every ${k} event`),
+    ...parts.narrowedCommittees.map(c => `${c.name}, ${c.kind} events only`),
+    ...parts.topics.map(t => `the topic "${t}"`),
+    ...(parts.trackedBills ? ['events with a bill we track'] : []),
+  ]
+  const list = phrases.length <= 2 ? phrases.join(' and ') : `${phrases.slice(0, -1).join(', ')}, and ${phrases[phrases.length - 1]}`
+  return `Kept from an earlier setting: ${list}.`
+}
+
+/** The rules with every legacy part removed: each committee's every event, and nothing else. */
+export function withoutLegacyParts(rules: EventRules): EventRules {
+  return {
+    committees: rules.committees.map(({ committeeId, name }) => ({ committeeId, name })),
+    kinds: [],
+    topics: [],
+    trackedBills: false,
+  }
+}
+
+/**
+ * The rules with one committee chosen or not, the rest as it was. With no
+ * rules, choosing a committee starts rules that select only it. A committee
+ * already listed stays as it is, with any narrowing it has.
+ */
+export function withCommittee(rules: EventRules | null, committee: { committeeId: string; name: string }, on: boolean): EventRules {
+  const base = rules ?? EMPTY_EVENT_RULES
+  const listed = base.committees.some(c => c.committeeId === committee.committeeId)
+  if (on) {
+    if (listed) return base
+    return { ...base, committees: [...base.committees, { committeeId: committee.committeeId, name: committee.name }] }
+  }
+  return { ...base, committees: base.committees.filter(c => c.committeeId !== committee.committeeId) }
 }
