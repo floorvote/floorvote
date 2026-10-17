@@ -671,6 +671,16 @@ The decoder picks a charset in this order:
 
 PDFs are binary and never go through the decoder.
 
+### Stored PDFs
+
+A stored object under a `.pdf` key counts as a PDF only when its bytes start with `%PDF-`, with nothing before it (no byte order mark, no space): the type recorded on the object is whatever the provider sent, and an error page often arrives as `text/html`. One helper, `startsWithPdfMagic` in `central/src/lib/storedPdf.ts`, makes that check for all three places that decide it:
+
+- **Ingest** (`validateTextPayload` in `queue/processor.ts`) refuses a PDF-typed download that doesn't start with the magic, before it stores an `r2_key`.
+- **`GET /bills/:id/text/:docId`** (the text panel's "Open in new tab") streams a `.pdf` object as `application/pdf` only when it starts with the magic (`pdfStreamOrNull`, which reads only the first five bytes through the same helper).
+- **`GET /bills/:id/text`** (the analysis path) base64-encodes a `.pdf` object only when it starts with the magic.
+
+Both routes answer anything else, an empty body or one shorter than five bytes included, with `502` and `{"error":"stored document is not a valid PDF"}`, and neither caches the refusal, so the document is served once its bytes are replaced. Stored HTML is not checked.
+
 There is no backfill, and none is needed: the R2 objects are unchanged. A bill that was analyzed from garbled text keeps that analysis until its next run, which reads the decoded text. That happens when the bill gets a new text version, or when an operator forces a re-analysis (`POST /admin/reprocess-bill/:externalId` for one bill, `POST /admin/reprocess-llm-all` for many), which bypasses the text-hash dedup described above. Until then the bill text panel is already correct, because it reads the same endpoint.
 
 The tenant has no per-bill relational tables — supplements, amendments, sponsors, votes, calendar, etc. are read live from central by the tenant API's bill-detail route.

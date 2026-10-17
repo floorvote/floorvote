@@ -119,7 +119,8 @@ describe('stored PDFs are served as PDFs, whatever type was recorded', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('application/pdf')
     expect(bytes.byteLength).toBe(big.byteLength)
-    expect(bytes).toEqual(big)
+    // Buffer.equals, not toEqual: comparing two 3 MB arrays with toEqual took ~10 s, close to the 20 s timeout under load.
+    expect(Buffer.from(bytes).equals(Buffer.from(big))).toBe(true)
   })
 
   it('serves a PDF that is exactly the five magic bytes', async () => {
@@ -243,9 +244,14 @@ describe('the response cache', () => {
     await first.settle()
 
     await env.BILLS_BUCKET.put(r2Key, PDF, { httpMetadata: { contentType: 'application/pdf' } })
-    const b = await inline(docId)
+    // Drain the body and settle the cache write, so no stream is left pulling from R2
+    // when the next test's storage is torn down.
+    const second = makeCtx()
+    const b = await inline(docId, second.ctx)
     expect(b.status).toBe(200)
     expect(b.headers.get('content-type')).toBe('application/pdf')
+    await b.arrayBuffer()
+    await second.settle()
   })
 })
 
@@ -282,7 +288,8 @@ describe('the JSON text route byte-checks stored PDFs', () => {
     const res = await json()
     expect(res.status).toBe(200)
     const body = await res.json() as { content: string }
-    expect(Uint8Array.from(Buffer.from(body.content, 'base64'))).toEqual(big)
+    // Buffer.equals, not toEqual: a 3 MB array comparison is slow enough to time out under load.
+    expect(Buffer.from(body.content, 'base64').equals(Buffer.from(big))).toBe(true)
   })
 
   it('returns a PDF that is exactly the five magic bytes', async () => {
