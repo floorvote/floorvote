@@ -437,6 +437,13 @@ function centralChecks(db: DatabaseSync, before: Snapshot, report: RehearsalRepo
   report.notes.push(owners.length === 0
     ? `No ownership rows. Right after deploying central, and before the next top of the hour, claim ${unclaimed} for LIMS: ${claimStates.map(s => `POST /api/admin/state-providers/${s}`).join(' and ')}, each with {"provider":"lims"}. Nothing else writes the row. Confirm it with GET /api/admin/state-providers.`
     : `Ownership rows already present: ${owners.map(o => o.replace(' ', ' → ')).join(', ')}.`)
+  // Slugs never change once assigned, and the first cron tick slugs every
+  // session. LegiScan's DC sessions go first while DC has no row, so a claim
+  // after that tick leaves the current Council Period with "-2" for good.
+  const legiscanSessions = count(db, `SELECT COUNT(*) AS n FROM sessions WHERE state = 'DC' AND provider = 'legiscan'`)
+  if (legiscanSessions > 0) {
+    report.notes.push(`${legiscanSessions} LegiScan DC session${legiscanSessions === 1 ? '' : 's'} in this central. Claim DC for LIMS before the first cron tick after deploying: a claim after it leaves DC's session URLs on LegiScan's sessions for good, and the current Council Period gets "-2".`)
+  }
   if (hasTable(db, 'council_events')) {
     report.notes.push(`council_events (${count(db, 'SELECT COUNT(*) AS n FROM council_events')} rows) stays. Upstream's body_events replaces it, and it can be dropped by hand once upstream's calendar sync runs.`)
   }

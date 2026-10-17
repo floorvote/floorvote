@@ -174,6 +174,16 @@ describe('the fork upgrade rehearsal', () => {
     expect(md.checks.map(c => c.name)).toContain('No LegiScan bill in MD is linked to an instance, so a claim of MD for LIMS won\'t be refused')
   })
 
+  it('warns when the central holds LegiScan DC sessions, whose slugs a late claim can leave with LegiScan for good', () => {
+    const db = forkCopy('central')
+    const quiet = rehearse(forkCopy('central'), 'central', 'central', upstreamMigrations('central'))
+    expect(quiet.notes.filter(n => /LegiScan DC session/.test(n))).toEqual([])
+    db.exec(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name) VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26')`)
+    const report = rehearse(db, 'central', 'central', upstreamMigrations('central'))
+    expect(report.checks.filter(c => !c.ok)).toEqual([])
+    expect(report.notes).toContainEqual(expect.stringMatching(/^1 LegiScan DC session\b.*Claim DC for LIMS before the first cron tick.*-2/))
+  })
+
   it('reports ownership rows a copy already has, which the upgrade leaves as they are', () => {
     const db = forkCopy('central')
     // A copy that already ran the ownership table (a fork past #303).

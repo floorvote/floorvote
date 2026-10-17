@@ -40,6 +40,8 @@ vi.stubGlobal('fetch', fetchMock)
 
 import { runSnapshotSync } from '../../src/cron/sync-snapshots'
 import { runBodyEventSync } from '../../src/cron/body-events'
+import { runSync } from '../../src/cron/sync'
+import { assignSessionSlugs } from '../../src/lib/sessionSlugs'
 import { processIngestorQueue } from '../../src/queue/processor'
 import { lims } from '../../src/providers/lims'
 import { tenantQueueBindingName } from '../../src/lib/tenantQueue'
@@ -211,6 +213,7 @@ beforeEach(async () => {
       const { month, year } = JSON.parse(String(init?.body)) as { month: string; year: string }
       return json(`${year}-${month.padStart(2, '0')}` === '2026-10' ? october : [])
     }
+    if (url.startsWith('https://api.legiscan.com/')) return json({ status: 'OK', sessions: [], masterlist: {} })
     if (url.startsWith(LIMS)) return feed[url.slice(LIMS.length)]?.() ?? new Response('not found', { status: 404 })
     if (url.startsWith('https://lims.dccouncil.gov/downloads/')) return new Response(PDF, { headers: { 'content-type': 'application/pdf' } })
     throw new Error(`no network in this test: ${url}`)
@@ -331,6 +334,33 @@ describe('a fork\'s production central, moved onto upstream', () => {
     await claimDc(makeEnv())
     await runSnapshotSync(lims, makeEnv().env, db())
     expect((await getJson('/admin/state-providers')).states).toEqual([expect.objectContaining({ state: 'DC', provider: 'lims' })])
+  })
+
+  it('claims DC after the first cron tick, which slugs sessions before any claim: the claim answers 200 and the Council Period keeps its plain slug', async () => {
+    await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
+    // The first tick after deploying runs the slug job and the LegiScan sync,
+    // with DC unowned. A guard rather than a red test: the fork holds only LIMS
+    // DC sessions, so nothing LegiScan's can take the plain slug.
+    await assignSessionSlugs(db())
+    await runSync(makeEnv().env, db())
+    const slug = () => rows(`SELECT slug FROM sessions WHERE session_id = 1000000026`)
+    expect(await slug()).toEqual([{ slug: 'cp26' }])
+
+    const run = makeEnv()
+    expect((await app(run, 'POST', '/admin/state-providers/DC', { provider: 'lims' })).status).toBe(200)
+    await assignSessionSlugs(db())
+    expect(await slug()).toEqual([{ slug: 'cp26' }])
+  })
+
+  it('leaves the Council Period with "-2" for good when a LegiScan DC session took the plain slug before the claim', async () => {
+    await applyD1Migrations(env.DB, parseMigrations(legiscanMigrations))
+    await env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name, provider)
+      VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26', 'legiscan')`).run()
+    await assignSessionSlugs(db())
+    await app(makeEnv(), 'POST', '/admin/state-providers/DC', { provider: 'lims' })
+    await assignSessionSlugs(db())
+    expect(await rows(`SELECT session_id, slug FROM sessions WHERE session_id IN (2050, 1000000026) ORDER BY session_id`))
+      .toEqual([{ session_id: 2050, slug: 'cp26' }, { session_id: 1000000026, slug: 'cp26-2' }])
   })
 
   it('keeps the identity of every bill calendar entry instances hold, through the LIMS re-ingest', async () => {

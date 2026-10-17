@@ -142,7 +142,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
      -H 'content-type: application/json' -d '{"provider":"lims"}'
    ```
 
-   It answers 200 when no LegiScan DC bill is tracked, which the preflight checked. Claim before the next top of the hour. A state with no ownership row is LegiScan's, so without a claim, the next LegiScan sync could link LegiScan's copies of DC bills to instances, and the claim would then be refused (409). Nothing else writes DC's row. Upstream no longer reads `LIMS_STATES` (#319), and your migrations write no row, so the claim is the only way DC moves to LIMS, with no safety net for a late one. A fork on a build older than the ownership table (#303) has no row until it claims. `central/test/cron/fork-upgrade.test.ts` covers the claim, a refused claim, and `LIMS_STATES` left set or removed.
+   It answers 200 when no LegiScan DC bill is tracked, which the preflight checked. Claim before the next top of the hour. A state with no ownership row is LegiScan's, so without a claim, the next LegiScan sync could link LegiScan's copies of DC bills to instances, and the claim would then be refused (409). Nothing else writes DC's row. Upstream no longer reads `LIMS_STATES` (#319), and your migrations write no row, so the claim is the only way DC moves to LIMS, with no safety net for a late one. A fork on a build older than the ownership table (#303) has no row until it claims. A late claim can also leave DC's session URLs on LegiScan's sessions for good when the central holds LegiScan DC sessions: slugs never change, the first cron tick slugs every session, and LegiScan's sessions go first while DC has no row, so the current Council Period gets "-2" (the rehearsal notes it). `central/test/cron/fork-upgrade.test.ts` covers the claim, a refused claim, a claim after the first tick, and `LIMS_STATES` left set or removed.
 
 3. **Each instance.** `cd api && npm run deploy:tenant -- <tenant>`. Until an instance is upgraded, its old Council mirror calls `/bills/council-events`, which upstream central doesn't have, and fails without changing the rows it holds. Its directory pages fail the same way until your ported directory route is deployed.
 
@@ -178,7 +178,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
 ## If Something Goes Wrong
 
-- **The claim answered 409,** and DC has no row, so LegiScan keeps syncing it. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. Find it, give it back to LIMS, then claim DC again. The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one:
+- **The claim answered 409,** and DC has no row, so LegiScan keeps syncing it. The 409 names the instances tracking LegiScan DC bills. Most likely a DC bill the old code wrote between the migrations and the deploy is labeled LegiScan's. Find it, give it back to LIMS, then claim DC again. The statements below relabel bills, sessions, and people. `central/test/cron/fork-upgrade.test.ts` covers only the `bills` one. If the `SELECT` finds nothing, and the bills the 409 names have ids below 1000000000, they are LegiScan's own DC bills, and the claim was late: a LegiScan sync linked them before DC had a row, so the instances hold LegiScan copies of those bills until they are unlinked. Skip the relabel, and go to the unlink-or-cutover paragraph below.
 
   ```sql
   SELECT bill_id, bill_number FROM bills
@@ -193,7 +193,7 @@ Deploy central, claim DC, then deploy every instance, all before the next top of
 
   The old code writes sessions and people in that window too, so give those back as well.
 
-  If instances really track LegiScan DC bills outside LIMS's ranges (the preflight wasn't 0), move DC with a cutover instead, starting with its dry run (`docs/internal/sync-pipeline.md`, "Moving a state to another provider (cutover)"). A cutover can't move a LegiScan bill whose LIMS copy an instance already holds: the dry run lists it as a conflict, and with nothing else to move the cutover is refused. Check in each instance named that it holds the LIMS copy (its bill id is in LIMS's range, 1000000000 up to 2000000000), then unlink the LegiScan copy in central, and claim DC:
+  If instances really track LegiScan DC bills outside LIMS's ranges (the preflight wasn't 0, or it was 0 and the claim came late), move DC with a cutover instead, starting with its dry run (`docs/internal/sync-pipeline.md`, "Moving a state to another provider (cutover)"). A cutover can't move a LegiScan bill whose LIMS copy an instance already holds: the dry run lists it as a conflict, and with nothing else to move the cutover is refused. Check in each instance named that it holds the LIMS copy (its bill id is in LIMS's range, 1000000000 up to 2000000000), then unlink the LegiScan copy in central, and claim DC:
 
   ```sql
   DELETE FROM bill_tenants WHERE tenant_id = '<tenant>' AND bill_id IN (<the conflicting LegiScan bill ids>);

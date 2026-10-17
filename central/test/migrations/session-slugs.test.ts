@@ -4,7 +4,6 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../../src/db/schema'
 import { legiscanMigrations, parseMigrations, setupDb, type MigrationFiles } from '../helpers/migrations'
 import { assignSessionSlugs } from '../../src/lib/sessionSlugs'
-import { loadStateOwners } from '../../src/lib/stateProviders'
 import { app } from '../../src/index-legiscan'
 
 // A central upgrading onto session slugs: built from the migrations before
@@ -153,7 +152,6 @@ describe('session slugs on an upgraded central', () => {
     await env.DB.prepare(`INSERT INTO sessions (session_id, state_id, state, year_start, year_end, session_title, session_name, provider)
       VALUES (2050, 9, 'DC', 2025, 2026, '2025-2026 Council Period 26', '2025-2026 Council Period 26', 'legiscan')`).run()
     const db = drizzle(env.DB, { schema })
-    await loadStateOwners(db)
     await assignSessionSlugs(db)
     expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM state_providers').first<{ n: number }>()).toEqual({ n: 0 })
     expect(await slugsIn('DC')).toEqual({ 1000000026: 'cp26-2', 2050: 'cp26', 2100: '2025-2026' })

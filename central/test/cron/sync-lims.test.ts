@@ -406,7 +406,6 @@ describe('status changes, ownership, and the previous Council Period', () => {
     const db = drizzle(env.DB, { schema })
     await db.delete(schema.stateProviders)
     await db.insert(schema.bills).values({ billId: 1_950_000, sessionId: 2150, state: 'DC', stateId: 51, billNumber: 'B26-0400', changeHash: 'h', title: 't' } as any)
-    await db.insert(schema.billTenants).values({ billId: 1_950_000, tenantId: 'oca', matchType: 'keyword' })
     const { env: e, limsQueue } = makeEnv({ LIMS_STATES: 'DC' })
 
     expect(await runLimsSync(e, db)).toEqual([])
