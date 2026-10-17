@@ -153,13 +153,13 @@ const CONFIG = {
 
 
 
-function renderBillDetail(overrides: Record<string, unknown>) {
+function renderBillDetail(overrides: Record<string, unknown>, config: Record<string, unknown> = {}, customFields: unknown[] = []) {
   const bill = { ...BILL, ...overrides }
   routerMock.loaderData = bill
   vi.spyOn(api, 'apiFetch').mockImplementation(async (path: string) => {
     if (path === '/bills/42') return bill as never
-    if (path === '/config') return { ...CONFIG } as never
-    if (path === '/config/custom-fields') return [] as never
+    if (path === '/config') return { ...CONFIG, ...config } as never
+    if (path === '/config/custom-fields') return customFields as never
     if (path === '/roles' || path === '/users') return [] as never
     return {} as never
   })
@@ -300,10 +300,11 @@ describe('the header of a grouped bill', () => {
   })
 })
 
-// The one muted line above the comments and the team's values that says they
-// are shared with the group's other bills.
+// The one muted line above the comments and the org's position that says they
+// are shared with the group's other bills, in the page's own terms: Comments,
+// member votes, and the configured org noun's position.
 describe('the line saying what a companion group shares', () => {
-  const SENTENCE_FOR = (names: string) => `Discussion, votes, and the team's values are shared with ${names}.`
+  const SENTENCE_FOR = (names: string, noun = 'association') => `Comments, votes, and ${noun} position are shared with ${names}.`
   const FOURTH = link('d2001', 'S1714', 'NJ', '2026')
   const NO_COMMENTS = { comments: [], commentsTotal: 0, groupingEvents: [] }
   const line = () => screen.getByTestId('group-shares-line')
@@ -316,6 +317,24 @@ describe('the line saying what a companion group shares', () => {
     expect(line()).toHaveTextContent(SENTENCE_FOR('S1713'))
   })
 
+  it("names the configured org noun's position, as the position card does", async () => {
+    renderBillDetail({ ...GROUPED, ...NO_COMMENTS, groupBills: [THIS, COMPANION] }, { orgNoun: 'alliance' })
+    await screen.findByText('Alliance position')
+    expect(line()).toHaveTextContent(SENTENCE_FOR('S1713', 'alliance'))
+  })
+
+  it('names custom fields too once the instance defines at least one', async () => {
+    const field = { id: 'cf1', name: 'Committee lead', slug: null, type: 'text', options: null, displayOrder: 0, pinned: false }
+    renderBillDetail({ ...GROUPED, ...NO_COMMENTS, groupBills: [THIS, COMPANION] }, {}, [field])
+    await waitFor(() => expect(line()).toHaveTextContent('Comments, votes, association position, and custom fields are shared with S1713.'))
+  })
+
+  it('falls back to the default noun before /config answers', async () => {
+    renderBillDetail({ ...GROUPED, ...NO_COMMENTS, groupBills: [THIS, COMPANION] }, { orgNoun: undefined })
+    await screen.findByText('Test Bill')
+    expect(line()).toHaveTextContent(SENTENCE_FOR('S1713', 'team'))
+  })
+
   it('sits above the two-column area, below the header', async () => {
     renderBillDetail({ ...GROUPED, groupBills: [THIS, COMPANION] })
     await screen.findByText('c1 text')
@@ -324,7 +343,7 @@ describe('the line saying what a companion group shares', () => {
     expect(columns.contains(line())).toBe(false)
     expect(line().compareDocumentPosition(columns) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByTestId('bill-group-badges').compareDocumentPosition(line()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // The comments and the team's values live in that two-column area, below the line.
+    // The comments and the position live in that two-column area, below the line.
     expect(line().compareDocumentPosition(document.getElementById('section-comments')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
@@ -424,7 +443,7 @@ describe('the line saying what a companion group shares', () => {
     renderBillDetail({ ...GROUPED, ...NO_COMMENTS, groupBills: [THIS, COMPANION, THIRD] })
     await screen.findByText('Test Bill')
     // One paragraph holds the whole sentence, not one block per badge.
-    const paragraph = screen.getAllByRole('paragraph').filter(p => p.textContent?.startsWith('Discussion'))
+    const paragraph = screen.getAllByRole('paragraph').filter(p => p.textContent?.startsWith('Comments, votes'))
     expect(paragraph).toHaveLength(1)
     expect(paragraph[0]).toHaveTextContent(SENTENCE_FOR('S1713 and H2000'))
     // Nothing in it is hidden from assistive technology.
