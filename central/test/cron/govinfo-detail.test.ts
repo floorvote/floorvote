@@ -358,6 +358,16 @@ describe('sponsors', () => {
     expect(rows.map(r => r.district)).toEqual([`${s.state}-AL`])
   })
 
+  it('writes the real at-large members, whom the feed gives district 0, as the at-large seat of their state', async () => {
+    // HR 6222's cosponsors include the delegate of the District of Columbia and the Representative of Delaware.
+    expect(arr(obj('hr6222').bill.cosponsors.item).filter((c: any) => c.district === '0').map((c: any) => c.state).sort()).toEqual(['DC', 'DE'])
+    await ingest('HB6222')
+    const districts = (await db().select().from(schema.people).all()).map(p => p.district)
+    expect(districts).toContain('DE-AL')
+    expect(districts).toContain('DC-AL')
+    expect(districts.filter(d => /-0$/.test(d ?? ''))).toEqual([])
+  })
+
   it('serves a bill with no cosponsors its sponsor alone', async () => {
     expect(obj('hr7895').bill.cosponsors).toBeUndefined()
     await ingest('HB7895')
