@@ -209,7 +209,8 @@ function readPerson(file: string, node: XmlNode, what: string): DetailPerson {
     firstName, middleName, lastName,
     party: childText(node, 'party'),
     role,
-    district: role === 'Sen' ? state : `${state}-${district || 'AL'}`,
+    // The feed gives an at-large seat no district at all, or district 0 (Delaware, and the delegates).
+    district: role === 'Sen' ? state : `${state}-${district === '' || district === '0' ? 'AL' : district}`,
   }
 }
 
