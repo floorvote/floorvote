@@ -548,6 +548,8 @@ type BillDetailData = {
   commentsTotal: number
   /** Whether the signed-in member muted this bill's comments. */
   commentsMuted: boolean
+  /** Whether the member would get reply notifications here: they commented on the bill or its companion group. */
+  commentsParticipant: boolean
 }
 
 /**
@@ -679,6 +681,11 @@ export function BillDetail() {
   const [voteCounts, setVoteCounts] = useState(prefetchedBill?.voteCounts ?? { support: 0, oppose: 0, neutral: 0, total: 0 })
   const [comments, setComments] = useState<Comment[]>(prefetchedBill?.comments ?? [])
   const commentsMute = useCommentsMute({ billId: bill?.id ?? '', initialMuted: bill?.commentsMuted ?? false })
+  // Mute shows to a participant, and to anyone already muted (so they can unmute).
+  // The page's own just-posted comment counts without a refetch. Reading the
+  // loaded `commentsMuted` rather than the live toggle keeps the button in place
+  // after a non-participant unmutes.
+  const canMuteComments = !!bill && (bill.commentsParticipant || bill.commentsMuted || commentsMute.muted || comments.some(c => c.userId === user?.id))
   // Lines where the bill's companion group formed or split, placed among the comments by time.
   const groupingLines = useMemo(() => placeGroupingLines(comments, bill?.groupingEvents ?? []), [comments, bill?.groupingEvents])
   const [openPickerFor, setOpenPickerFor] = useState<string | null>(null)
@@ -2960,7 +2967,7 @@ export function BillDetail() {
               <div style={SECTION_LABEL}>
                 Comments{comments.length > 0 && <span style={{ ...COUNT_BADGE, textTransform: 'none', letterSpacing: 0, marginLeft: 6 }}>{comments.length}</span>}
               </div>
-              <CommentsMuteButton muted={commentsMute.muted} pending={commentsMute.pending} onToggle={commentsMute.toggle} />
+              {canMuteComments && <CommentsMuteButton muted={commentsMute.muted} pending={commentsMute.pending} onToggle={commentsMute.toggle} />}
             </div>
             {commentsMute.muted && <CommentsMutedNote />}
             {comments.map((comment, idx) => (

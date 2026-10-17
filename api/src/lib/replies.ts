@@ -1,8 +1,10 @@
 // Reply notifications: a new comment notifies the bill's other participants.
 //
-// A participant is a member with a non-deleted comment on the bill. Voting,
-// writing a private note, and being mentioned do not make anyone one. The
-// fan-out runs on create only, so editing a comment never notifies.
+// A participant is a member with a non-deleted comment on the bill or another
+// bill in its companion group. Voting, writing a private note, reacting, and
+// being mentioned do not make anyone one. The fan-out runs on create only, so
+// editing a comment never notifies. The bill page decides whether to offer Mute
+// with the same rule (`isReplyParticipant`), so the control and the emails agree.
 //
 // Each participant gets a `reply` notification in the app, and one email unless
 // they turned reply emails off or an admin turned conversation emails off for
@@ -13,7 +15,7 @@
 // A member who muted the bill (#355) gets neither. Each reply email carries a
 // one-click List-Unsubscribe and a footer link, both signed for that member and
 // bill, that mute it.
-import { and, eq, exists, isNull, ne, notExists } from 'drizzle-orm'
+import { and, eq, exists, isNull, ne, notExists, type SQL } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { users, bills, sessions, comments, billMutes } from '../db/schema'
 import { writeNotifications } from './notifications'
@@ -46,6 +48,28 @@ interface ReplyEnv {
 type Participant = { id: string; email: string; emailReplies: boolean }
 
 /**
+ * The comment rows that make their author a reply participant: live comments on
+ * the bill or any bill in its companion group, which is one conversation. The
+ * one place the rule lives, shared by the fan-out and the bill page's Mute
+ * control.
+ */
+function participantComments(billId: string): SQL {
+  return and(inGroupOf(comments.billId, billId), isNull(comments.deletedAt))!
+}
+
+/**
+ * Whether the member would get reply notifications for the bill's conversation:
+ * they have a live comment on the bill or in its companion group. A mute, their
+ * reply-email setting, and who wrote the next comment don't change it. The bill
+ * page offers Mute to a participant.
+ */
+export async function isReplyParticipant(db: Db, userId: string, billId: string): Promise<boolean> {
+  const row = await db.select({ id: comments.id }).from(comments)
+    .where(and(eq(comments.userId, userId), participantComments(billId))).limit(1).get()
+  return !!row
+}
+
+/**
  * The members to notify about a new comment: everyone else with a live comment
  * on the bill or another bill in its companion group, minus the author and
  * anyone who muted any bill in the group. Deactivated members and members
@@ -60,8 +84,7 @@ async function replyRecipients(db: Db, billId: string, authorUserId: string): Pr
     .where(and(
       // A companion group is one conversation, so its participants are everyone
       // who commented on any of its bills.
-      inGroupOf(comments.billId, billId),
-      isNull(comments.deletedAt),
+      participantComments(billId),
       ne(users.id, authorUserId),
       activeUser,
       exists(db.select({ id: sessions.id }).from(sessions).where(eq(sessions.userId, users.id))),

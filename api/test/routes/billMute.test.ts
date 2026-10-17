@@ -540,7 +540,7 @@ describe('muting comments on a bill', () => {
       const commentId = await comment('ben', '<p>Never mind</p>')
       expect(await participantOnPage('ben')).toBe(true)
 
-      expect((await request(`/api/comments/${commentId}`, 'DELETE', 'ben')).status).toBe(200)
+      expect((await request(`/api/comments/${commentId}`, 'DELETE', 'ben')).status).toBe(204)
 
       expect(await participantOnPage('ben')).toBe(false)
     })

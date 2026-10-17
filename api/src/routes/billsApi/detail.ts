@@ -21,6 +21,7 @@ import { displayName, userDisplayNameSql } from '../../lib/displayName'
 import { titleOf, userTitleSql } from '../../lib/userTitle'
 import { groupMemberIds, groupVotes, inGroupOf, loadGroupBills, loadGroupNotes, mergeGroupNotes } from '../../lib/companionGroups'
 import { loadGroupTeamValues } from '../../lib/teamFields'
+import { isReplyParticipant } from '../../lib/replies'
 import { claimLinksEnabled, readClaimSources } from '../../lib/claimSources'
 import type { GroupingEvent, GroupingEventMetadata, GroupingEventType } from '../../../../shared/companionGroups'
 
@@ -105,7 +106,7 @@ export async function buildBillDetail(
   // each read below resolves across the group (lib/companionGroups.ts). For an
   // ungrouped bill the group is the bill alone.
   const votes = groupVotes(db, billId)
-  const [groupBills, myVoteRow, myNotes, myMuteRow, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
+  const [groupBills, myVoteRow, myNotes, myMuteRow, isParticipant, teamValues, voteRows, commentRows, commentCountRow, textRows, priorityEventRow, groupingRows] = await Promise.all([
     loadGroupBills(db, billId),
     db.select({ position: votes.position }).from(votes).where(eq(votes.userId, currentUser.id)).get(),
     loadGroupNotes(db, billId, currentUser.id),
@@ -113,6 +114,7 @@ export async function buildBillDetail(
     db.select({ userId: billMutes.userId }).from(billMutes)
       .where(and(inGroupOf(billMutes.billId, billId), eq(billMutes.userId, currentUser.id)))
       .get(),
+    isReplyParticipant(db, currentUser.id, billId),
     // The team fields (position, priority, custom fields, analysis, triage),
     // each the one set most recently on any member (lib/teamFields.ts).
     loadGroupTeamValues(db, billId),
@@ -395,6 +397,10 @@ export async function buildBillDetail(
     myNote: mergeGroupNotes(myNotes),
     myNotes,
     commentsMuted: !!myMuteRow,
+    // Whether the member would get reply notifications here (they commented on
+    // the bill or its group), decided by the rule the reply emails use. The page
+    // offers Mute only to a participant, and Unmute to anyone muted.
+    commentsParticipant: isParticipant,
     position: positionWithName,
     voteCounts,
     comments: formattedComments,
