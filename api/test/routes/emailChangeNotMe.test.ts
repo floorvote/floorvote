@@ -416,6 +416,8 @@ describe('pressing the button', () => {
   })
 
   it('still signs the member out, and says so, when no alert could be sent', async () => {
+    // Both providers are down: the binding throws, and the fallback (Resend) answers 500.
+    stubFetch(() => new Response('upstream error', { status: 500 }))
     sendFails = true
     const r = await press(token)
     expect(r).toMatchObject({ status: 200, body: { ok: true, alerted: false } })

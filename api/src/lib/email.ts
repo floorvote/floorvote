@@ -6,7 +6,7 @@ import { recordAuthEvent } from './authEvents'
 import { htmlToText } from '../../../shared/htmlToText'
 import {
   createSender, resolveFrom as sharedResolveFrom, resolveFromBulk as sharedResolveFromBulk,
-  resolveReplyTo as sharedResolveReplyTo, type SignInMessage,
+  resolveReplyTo as sharedResolveReplyTo, type EmailSender, type SenderEnv, type SignInMessage,
 } from '../../../shared/emailSender'
 import {
   cloudflareProvider, resendProvider, primaryProviderName, fallbackProviderName,
@@ -23,9 +23,19 @@ import { PermanentSendError } from './emailErrors'
 
 // The shared purpose-level sender (shared/emailSender.ts) is replacing this
 // module's send functions, one kind of email at a time (#705). Sign-in links
-// already go through it, via sendMagicLink below. sendEmail, sendBatch, and
-// sendFeedback remain for the emails not yet moved; they use the same provider
-// adapters (shared/emailProviders.ts).
+// go through it via sendMagicLink below, and the account and notification
+// emails (email change, mentions, replies) through `senderFor`. sendEmail,
+// sendBatch, and sendFeedback remain for the emails not yet moved; they use
+// the same provider adapters (shared/emailProviders.ts).
+
+/**
+ * The shared sender for the API. With a `db`, every attempt of a purpose that
+ * counts goes to email health (`email_send_stats` and the Resend usage
+ * readout). Without one, nothing is counted.
+ */
+export function senderFor(env: SenderEnv, db?: AppDb): EmailSender {
+  return createSender(env, { recorder: db ? emailHealthRecorder(db) : undefined })
+}
 
 export type { ProviderName, CloudflareEmailBinding }
 
@@ -313,7 +323,7 @@ export async function sendMagicLink(
       }
       : undefined,
   })
-  const r = await createSender(env, { recorder: db ? emailHealthRecorder(db) : undefined }).send(message)
+  const r = await senderFor(env, db).send(message)
   if (r.ok) return
   const msg = r.provider ? `Email send failed (${r.provider}): ${r.error}` : r.error
   throw r.permanent ? new PermanentSendError(msg) : new Error(msg)

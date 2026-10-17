@@ -16,8 +16,9 @@
  * address can't receive mail) or temporary (worth trying again later).
  *
  * Adding a purpose: add its message type to `PurposeMessage` and its rule to
- * `RULES`. Today only sign-in is here: tenant login, admin-sent login and
- * invite links, and the invite queue. #707 to #710 move the rest.
+ * `RULES`. Today: sign-in (tenant login, admin-sent login and invite links, the
+ * invite queue), account (the email-change emails and the "this wasn't me"
+ * report), and notification (mentions and replies). #708 to #710 move the rest.
  *
  * Tests pass in-memory providers through `SenderOptions.providers`; the real
  * adapters live in `./emailProviders`.
@@ -151,9 +152,12 @@ const RULES: Rules = {
   // into a demo arrives by one, so they always send. (The API's invite routes
   // already refuse demo writes. This is the second lock on that door.)
   'sign-in': { fallback: true, counts: true, from: 'default', suppressedInDemo: (m) => m.link === 'invite' },
-  // STUB (red phase, #707): placeholder rules, deliberately not the real ones.
-  account: { fallback: false, counts: false, from: 'bulk', suppressedInDemo: () => false },
-  notification: { fallback: false, counts: false, from: 'bulk', suppressedInDemo: () => false },
+  // The email-change emails and the "this wasn't me" report. A member waits on
+  // them, so they fall back, and a demo instance never sends them.
+  account: { fallback: true, counts: true, from: 'default', suppressedInDemo: () => true },
+  // Mentions and replies. Same rule as account mail: a member is waiting on the
+  // conversation, so a first-provider outage shouldn't drop it.
+  notification: { fallback: true, counts: true, from: 'default', suppressedInDemo: () => true },
 }
 
 function ruleFor(message: PurposeMessage): Rule<PurposeMessage> {

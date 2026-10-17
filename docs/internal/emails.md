@@ -56,10 +56,17 @@ the other provider is configured. A permanent one never does.
 | Purpose | Emails | Falls back | Counts toward email health | Demo mode |
 |---|---|---|---|---|
 | Sign-in | tenant login, admin-sent login and invite links, the invite queue | yes | yes, when a recorder is supplied | invites suppressed, login sends |
+| Account | the email-change confirmation link, the notice to the old address, the "this wasn't me" report | yes | yes, when a recorder is supplied | suppressed |
+| Notification | mentions, replies (a reply keeps its thread and one-click mute headers) | yes | yes, when a recorder is supplied | suppressed |
 
 The API supplies `emailHealthRecorder(db)`, and central supplies none, so central
 counts nothing. A sign-in message carries its `auth_events` writer, called once
 per attempt. Other emails still use `sendEmail` and `sendBatch` until they move.
+
+The email-change confirmation turns the sender's verdict into the member's
+answer: a permanent failure is "That address can't receive email" (400), and a
+temporary one, meaning both providers failed, is "try again" (502). The pending
+change is deleted either way.
 
 ## The shell contract
 
