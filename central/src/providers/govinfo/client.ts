@@ -24,6 +24,11 @@ export function billStatusZipUrl(congress: number, type: GovInfoType): string {
   return `${GOVINFO_BASE}/bulkdata/BILLSTATUS/${congress}/${type}/BILLSTATUS-${congress}-${type}.zip`
 }
 
+/** One bill's Bill Status file, by its own address: `.../119/hr/BILLSTATUS-119hr3132.xml`. */
+export function billStatusFileUrl(congress: number, type: GovInfoType, number: string): string {
+  return `${GOVINFO_BASE}/bulkdata/BILLSTATUS/${congress}/${type}/BILLSTATUS-${congress}${type}${number}.xml`
+}
+
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
 
 /** An HTTP date as an ISO time (`2026-10-17T00:19:30Z`), or null when there is none or it isn't one. */
@@ -66,5 +71,37 @@ export async function readBillStatusZip(
     return { found: true, entries }
   } catch (err) {
     throw new Error(`GovInfo ${congress}/${type}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+/**
+ * One bill's own Bill Status file, as text, for the ingest of a tracked bill:
+ * the full read keeps only a compact record, so the detail (history, sponsors,
+ * texts, and the rest) comes from downloading the file again. One file is at
+ * most a few megabytes (the largest in the 119th Congress is 2.5 MB), so it is
+ * read whole.
+ *
+ * Every answer but a 200 throws, a 404 too: a bill the full read listed has a
+ * file, so a missing one is GovInfo changing something, and the ingest is
+ * retried. So does a body that isn't UTF-8 text. What the text holds is the
+ * caller's to check.
+ */
+export async function fetchBillStatusFile(
+  congress: number,
+  type: GovInfoType,
+  number: string,
+  onRequest?: () => void,
+): Promise<string> {
+  const url = billStatusFileUrl(congress, type, number)
+  try {
+    const res = await rateLimitedFetch(url, { headers: { Accept: 'application/xml' } },
+      { ratePerSec: GOVINFO_RATE_PER_SEC, bucketKey: 'govinfo', onRequest })
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`HTTP ${res.status}`)
+    }
+    return utf8.decode(await res.arrayBuffer())
+  } catch (err) {
+    throw new Error(`GovInfo ${congress}/${type}/${number}: ${err instanceof Error ? err.message : String(err)}`)
   }
 }

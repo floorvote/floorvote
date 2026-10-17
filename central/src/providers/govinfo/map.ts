@@ -1,5 +1,6 @@
 import { sha256Hex, type CentralMeasure, type SyncEntry } from '../sdk'
 import { child, childText, deriveStatus } from './status'
+import type { ResolvedDetail } from './detail'
 import { parseXml, XmlError, type XmlNode } from './xml'
 
 /**
@@ -8,8 +9,9 @@ import { parseXml, XmlError, type XmlNode } from './xml'
  *
  * A full read turns every file in the zips into a compact record (below), and
  * core stores that record for each bill, not the file. The record is enough to
- * keyword-match a bill, list it, and give it a status. A later ticket's ingest
- * downloads the full file again for a bill's sponsors, history, and texts.
+ * keyword-match a bill, list it, and give it a status. The ingest of a tracked
+ * bill downloads the full file again for its sponsors, history, texts, and the
+ * rest (detail.ts).
  */
 
 export const GOVINFO_STATE = 'US'
@@ -74,7 +76,7 @@ const HASH_SKIPS = ['updateDate', 'updateDateIncludingText', 'dublinCore'] as co
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** The file isn't Bill Status XML for the bill it should be. */
-function invalid(file: string, why: string): Error {
+export function invalidBillFile(file: string, why: string): Error {
   return new Error(`${file} isn't a valid Bill Status file: ${why}`)
 }
 
@@ -102,26 +104,26 @@ export async function parseBillFile(
   try {
     ({ root, spans } = parseXml(xml, { spans: HASH_SKIPS }))
   } catch (err) {
-    if (err instanceof XmlError) throw invalid(name, err.message)
+    if (err instanceof XmlError) throw invalidBillFile(name, err.message)
     throw err
   }
-  if (root.name !== 'billStatus') throw invalid(name, `its root is <${root.name}>, not <billStatus>`)
+  if (root.name !== 'billStatus') throw invalidBillFile(name, `its root is <${root.name}>, not <billStatus>`)
   const bill = child(root, 'bill')
-  if (!bill) throw invalid(name, 'it has no <bill>')
+  if (!bill) throw invalidBillFile(name, 'it has no <bill>')
 
   const type = childText(bill, 'type') as CongressBillType
-  if (!Object.hasOwn(BILL_TYPE, type)) throw invalid(name, `its bill type "${type}" isn't one of Congress's eight`)
-  if (type !== expected.type) throw invalid(name, `it is a ${type} in the ${expected.type} zip`)
+  if (!Object.hasOwn(BILL_TYPE, type)) throw invalidBillFile(name, `its bill type "${type}" isn't one of Congress's eight`)
+  if (type !== expected.type) throw invalidBillFile(name, `it is a ${type} in the ${expected.type} zip`)
   const congress = Number(childText(bill, 'congress'))
-  if (congress !== expected.congress) throw invalid(name, `it is from Congress ${childText(bill, 'congress') || '(none)'}, not ${expected.congress}`)
+  if (congress !== expected.congress) throw invalidBillFile(name, `it is from Congress ${childText(bill, 'congress') || '(none)'}, not ${expected.congress}`)
   const number = childText(bill, 'number')
-  if (!/^[1-9]\d*$/.test(number)) throw invalid(name, 'its bill has no number')
+  if (!/^[1-9]\d*$/.test(number)) throw invalidBillFile(name, 'its bill has no number')
   const origin = childText(bill, 'originChamberCode')
-  if (origin !== 'H' && origin !== 'S') throw invalid(name, `its origin chamber "${origin}" isn't H or S`)
+  if (origin !== 'H' && origin !== 'S') throw invalidBillFile(name, `its origin chamber "${origin}" isn't H or S`)
   const introducedDate = childText(bill, 'introducedDate')
-  if (!DATE.test(introducedDate)) throw invalid(name, 'its bill has no introduced date')
+  if (!DATE.test(introducedDate)) throw invalidBillFile(name, 'its bill has no introduced date')
   const title = childText(bill, 'title')
-  if (!title) throw invalid(name, 'its bill has no title')
+  if (!title) throw invalidBillFile(name, 'its bill has no title')
 
   const derived = deriveStatus(bill, type)
   const official = child(bill, 'titles')?.children
@@ -229,15 +231,16 @@ export function toGovInfoEntry(r: GovInfoRecord, billId: number, hash: string): 
 }
 
 /**
- * One bill's measure, from its stored record alone. The ingest of sponsors,
- * history, committees, texts, and votes comes from the full file in a later
- * ticket; until then a bill carries what a full read learned.
+ * One bill's measure: the bill-level fields from its stored record, and the
+ * rest (history, sponsors, texts, committees, subjects, related bills, and
+ * extras) from the detail read out of its whole file (detail.ts).
  */
 export function buildGovInfoMeasure(
   r: GovInfoRecord,
   billId: number,
   hash: string,
   session: CentralMeasure['session'],
+  detail: ResolvedDetail,
 ): CentralMeasure {
   const info = BILL_TYPE[r.type]
   const bodyId = (c: 'H' | 'S') => (c === 'H' ? 1 : 2)
@@ -259,22 +262,12 @@ export function buildGovInfoMeasure(
     current_body_id: bodyId(r.currentChamber),
     url: '',
     state_link: r.url,
-    pending_committee_id: 0,
     session_id: session.session_id,
     session,
-    committee: null,
-    referrals: [],
     progress: [],
-    sponsors: [],
-    history: r.latestAction
-      ? [{ date: r.latestAction.date, action: r.latestAction.text, chamber: '', chamber_id: 0, importance: 2 }]
-      : [],
-    sasts: [],
-    subjects: [],
     votes: [],
-    texts: [],
     amendments: [],
     supplements: [],
-    extras: {},
+    ...detail,
   }
 }

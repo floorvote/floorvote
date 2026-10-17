@@ -65,10 +65,10 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+/** The zip of one type, which the sync reads. Every bill's detail comes from its own file, not the zip. */
 function serveZips() {
   return (type: string) => serveZip(buildZip(
     [...files].filter(([name]) => fileType(name) === type).map(([name, data]) => ({ name, data })),
-    // The zips are only for the sync. Every bill's detail comes from its own file.
   ), { headers: { 'last-modified': 'Sat, 17 Oct 2026 00:19:30 GMT' } }).response
 }
 
@@ -188,6 +188,26 @@ describe('history', () => {
     ].map(s => expect.stringContaining(s.slice(0, 20))))
   })
 
+  it('drops the Library of Congress\'s older introduction action even when it has no text, as many Senate bills\' do', async () => {
+    edit('s296', x => x.replace('<actions>', `<actions>
+      <item>
+        <actionDate>2025-01-29</actionDate>
+        <type>IntroReferral</type>
+        <actionCode>Intro-S</actionCode>
+        <sourceSystem><code>9</code><name>Library of Congress</name></sourceSystem>
+      </item>`))
+    await ingest('SB296')
+    const { actions } = await bill('SB296')
+    expect(actions).toHaveLength(arr(obj('s296').bill.actions.item).length)
+    expect(actions.filter((a: any) => /^Introduced in Senate/.test(a.description))).toHaveLength(1)
+  })
+
+  it('keeps one when the Library of Congress introduces a bill twice over, as it does for a few', async () => {
+    edit('hr837', x => x.replace(/(<item>\s*<actionDate>2025-01-31<\/actionDate>\s*<text>Introduced in House<\/text>\s*<type>IntroReferral<\/type>\s*<actionCode>1000<\/actionCode>[\s\S]*?<\/item>)/, '$1$1'))
+    await ingest('HB837')
+    expect((await bill('HB837')).actions.filter((a: any) => a.description === 'Introduced in House')).toHaveLength(1)
+  })
+
   it('keeps the single "Introduced" action of a Senate bill', async () => {
     await ingest('SB296')
     const { actions } = await bill('SB296')
@@ -206,12 +226,15 @@ describe('history', () => {
     })
     await ingest('HB3132')
     const dates = (await bill('HB3132')).actions.map((a: any) => a.date)
-    expect(dates).toHaveLength(arr(obj('hr3132').bill.actions.item).length)
+    // Five actions in the feed, two of them the Library of Congress's "Introduced in House".
+    const feed = arr(obj('hr3132').bill.actions.item)
+    expect(feed.filter((a: any) => a.text === 'Introduced in House')).toHaveLength(2)
+    expect(dates).toHaveLength(feed.length - 1)
     expect(dates).toEqual([...dates].sort())
   })
 
   it('takes each action\'s chamber from its source system: House floor and committee, Senate, and none for the Library of Congress', async () => {
-    await ingest('HB837')
+    await ingest('HB837', 'HB131')
     const { actions } = await bill('HB837')
     const chamberOf = (text: string) => {
       const action = actions.find((a: any) => a.description.startsWith(text))
@@ -383,6 +406,17 @@ describe('texts', () => {
     await ingest('HB10167')
     const enrolled = (await bill('HB10167')).texts.find((t: any) => t.note === 'Enrolled')
     expect(enrolled).toMatchObject({ date: '2026-09-28', links: [{ url: pdfUrl('BILLS-119hr10167enr'), mediaType: 'application/pdf' }] })
+  })
+
+  it.each([
+    ['hr3132', 'HB3132', 'Introduced in House', 'Introduced', '2025-05-01', 'the day the bill was introduced'],
+    ['hr10167', 'HB10167', 'Engrossed in House', 'Engrossed', '2026-09-14', 'the day the House passed it'],
+    ['s2503', 'SB2503', 'Engrossed in Senate', 'Engrossed', '2025-12-17', 'the day the Senate passed it'],
+    ['hres492', 'HR492', 'Engrossed in House', 'Engrossed', '2025-06-11', 'the day the House agreed to it'],
+  ])('gives a %s version with no date, "%s", its action\'s date: %s', async (name, number, type, note, date) => {
+    edit(name, x => x.replace(new RegExp(`(<type>${type}</type>\\s*)<date>[^<]*</date>`), '$1<date/>'))
+    await ingest(number)
+    expect((await bill(number)).texts.find((t: any) => t.note === note)).toMatchObject({ date })
   })
 
   it('takes a concurrent resolution\'s enrolled version\'s date from its second passage too', async () => {
@@ -685,7 +719,9 @@ describe('extras', () => {
     expect(summary.value).not.toMatch(/&[a-z]+;|&#\d+;/)
     expect(summary.value).toContain(obj('hr43').bill.summaries.summary[1].text.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim().slice(0, 25))
     // The earlier summary isn't shown.
-    expect(summary.value).not.toContain(obj('hr43').bill.summaries.summary[0].text.replace(/<[^>]+>/g, '').slice(0, 60))
+    expect(summary.value).not.toContain('Introduced in House')
+    expect(summary.value).toContain('This act removes')
+    expect(summary.value).not.toContain('This bill removes')
     expect(extras.fields.filter((f: any) => f.key === 'summary')).toHaveLength(1)
   })
 
@@ -834,6 +870,9 @@ describe('failing closed', () => {
     ['a committee of no known chamber', 'hr3132', (x: string) => x.replace('<chamber>House</chamber>', '<chamber>Joint</chamber>')],
     ['a text version with a link that isn\'t GovInfo\'s', 'hr3132', (x: string) => x.replace('https://www.govinfo.gov/content/pkg/BILLS-119hr3132ih', 'https://example.com/content/pkg/BILLS-119hr3132ih')],
     ['a text version with a link that names no package', 'hr3132', (x: string) => x.replace('/content/pkg/BILLS-119hr3132ih/xml/BILLS-119hr3132ih.xml', '/content/pkg/')],
+    ['a text version linking two packages', 'hr3132', (x: string) => x.replace('<url>https://www.govinfo.gov/content/pkg/BILLS-119hr3132ih/xml/BILLS-119hr3132ih.xml</url>', '<url>https://www.govinfo.gov/content/pkg/BILLS-119hr3132ih/xml/BILLS-119hr3132ih.xml</url></item><item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr3132eh/xml/BILLS-119hr3132eh.xml</url>')],
+    ['a reported version with no date, which names no action to take one from', 'hr7895', (x: string) => x.replace(/(<type>Reported in House<\/type>\s*)<date>[^<]*<\/date>/, '$1<date/>')],
+    ['a text version with a date that isn\'t one', 'hr3132', (x: string) => x.replace('<date>2025-05-01T04:00:00Z</date>', '<date>May first</date>')],
     ['a text version with no type', 'hr3132', (x: string) => x.replace('<type>Introduced in House</type>', '')],
     ['an enrolled version with no date and no passage to take one from', 'hr10167', (x: string) => x.replace(/<actionCode>(8000|17000)<\/actionCode>/g, '<actionCode>8001</actionCode>')],
     ['a related bill of no known type', 'hr131', (x: string) => x.replace('<number>296</number>\n        <type>S</type>', '<number>296</number>\n        <type>XYZ</type>')],
@@ -841,7 +880,7 @@ describe('failing closed', () => {
     ['a related bill with no relationship', 'hr131', (x: string) => x.replace(/<relationshipDetails>[\s\S]*?<\/relationshipDetails>/, '<relationshipDetails/>')],
     ['a legislative subject with no name', 'hr3132', (x: string) => x.replace('<name>Administrative law and regulatory procedures</name>', '')],
   ])('writes nothing and retries on %s', async (_what, name, change) => {
-    const number = { hr3132: 'HB3132', hr10167: 'HB10167', hr131: 'HB131' }[name]!
+    const number = { hr3132: 'HB3132', hr10167: 'HB10167', hr131: 'HB131', hr7895: 'HB7895' }[name]!
     await ingestFailing(broken(number, name, change))
     await nothingWritten()
   })
@@ -893,9 +932,10 @@ describe('every recorded bill', () => {
       expect(b.texts, all[i]).toHaveLength(withFile.length)
       expect(b.subjects, all[i]).toHaveLength(arr(feed.subjects?.legislativeSubjects?.item).length)
       const actions = arr(feed.actions?.item)
-      // The Library of Congress lists "Introduced in House" under two codes, and a few bills twice over: one stays.
-      const introduced = actions.filter((a: any) => /^Introduced in (House|Senate)$/.test(a.text)).length
-      expect(b.actions, all[i]).toHaveLength(actions.length - Math.max(0, introduced - 1))
+      // The Library of Congress lists an introduction under its older code, Intro-H or Intro-S, too, and a few bills are introduced twice over: one stays.
+      const kept = actions.filter((a: any) => !/^Intro-[HS]$/.test(a.actionCode))
+      const introduced = kept.filter((a: any) => /^Introduced in (House|Senate)$/.test(a.text)).length
+      expect(b.actions, all[i]).toHaveLength(kept.length - Math.max(0, introduced - 1))
     }
   })
 })

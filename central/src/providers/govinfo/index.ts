@@ -1,4 +1,5 @@
-import { GOVINFO_TYPES, readBillStatusZip } from './client'
+import { fetchBillStatusFile, GOVINFO_TYPES, readBillStatusZip, type GovInfoType } from './client'
+import { detailKeys, readBillDetail, resolveDetail } from './detail'
 import {
   buildGovInfoMeasure, congressName, congressOn, govinfoNativeKey, GOVINFO_STATE, parseBillFile, toGovInfoEntry, US_STATE_ID,
   type CongressBillType, type GovInfoRecord,
@@ -17,10 +18,11 @@ import type { Provider, ProviderRecord, SyncSession } from '../sdk'
  * reduced to a compact record (map.ts, `GovInfoRecord`) with a hash that
  * ignores the dates GovInfo restamps. Ids come from central's id table.
  *
- * What a bill carries so far is what a full read learns: its number, titles,
- * status, and latest action. Changed-only passes, a bill's sponsors, history,
- * and texts, roll call votes, and committee meetings come in later tickets
- * under #612.
+ * A full read gives a bill its number, titles, status, and latest action. A
+ * tracked bill's ingest downloads its own file again for the rest: history,
+ * sponsors, texts, committees, subjects, related bills, and extras (detail.ts).
+ * Changed-only passes, roll call votes, and committee meetings come in later
+ * tickets under #612.
  */
 export const govinfo: Provider = {
   id: 'govinfo',
@@ -88,15 +90,35 @@ export const govinfo: Provider = {
     return toGovInfoEntry(record.raw as GovInfoRecord, record.billId, record.hash)
   },
 
-  async fetchMeasure({ billId, sessionId, nativeKey, record, session }) {
+  /**
+   * A tracked bill's full record: its bill-level fields from the compact record
+   * the full read stored, and the rest from its own file, downloaded again.
+   * The file is read and checked whole before any id is minted, so a file that
+   * can't be read writes nothing and the ingest is retried. Roll calls and
+   * committee meetings come in later tickets under #612, from the same file's
+   * recorded votes and from the Congress.gov API.
+   */
+  async fetchMeasure({ billId, sessionId, nativeKey, record, session }, ctx) {
     if (!record || !nativeKey || sessionId === null) throw new Error(`bill ${billId} has no stored GovInfo record; the GovInfo sync has not seen it`)
     const r = record.raw as GovInfoRecord
+    const type = r.type.toLowerCase() as GovInfoType
+    const xml = await fetchBillStatusFile(r.congress, type, r.number, () => ctx.logCall('govinfo:BillStatusFile', { congress: r.congress, type, number: r.number }))
+    const detail = readBillDetail(`BILLSTATUS-${r.congress}${type}${r.number}.xml`, xml, r)
+    const keys = detailKeys(detail)
+    // One id table call a kind, in turn: each is a batch of its own.
+    const ids = {
+      person: await ctx.ids('person', keys.person),
+      doc: await ctx.ids('doc', keys.doc),
+      committee: await ctx.ids('committee', keys.committee),
+      subject: await ctx.ids('subject', keys.subject),
+      bill: await ctx.ids('bill', keys.bill),
+    }
     return buildGovInfoMeasure(r, billId, record.hash, {
       session_id: sessionId,
       session_name: session?.sessionName ?? congressName(r.congress),
       year_start: session?.yearStart ?? 2 * r.congress + 1787,
       year_end: session?.yearEnd ?? 2 * r.congress + 1788,
-    })
+    }, await resolveDetail(detail, ids))
   },
 
   vocabulary,
