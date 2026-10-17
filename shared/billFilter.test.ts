@@ -317,7 +317,7 @@ describe('the definitions', () => {
   it('name every filter of the value, once each, with a kind', () => {
     const names = BILL_FILTER_DEFS.map(d => d.name)
     expect(new Set(names).size).toBe(names.length)
-    expect([...names, 'cf'].sort()).toEqual(Object.keys(EMPTY_BILL_FILTER).sort())
+    expect([...names].sort()).toEqual(Object.keys(EMPTY_BILL_FILTER).sort())
     expect(new Set(BILL_FILTER_DEFS.map(d => d.kind))).toEqual(new Set(['multi-select', 'toggle', 'range', 'text', 'custom-field']))
   })
 
@@ -334,6 +334,7 @@ describe('the definitions', () => {
       status: ['a'], stage: ['a'], year: ['a'], session: ['a'], state: ['a'], position: ['a'], priority: ['a'], tag: ['a'],
       subject: [{ state: 'a', name: 'b' }], minRelevance: 1, q: 'a', myBills: true, unvoted: true, newMatches: true, drafts: true, match: 'any',
     })).split('&').map(p => p.slice(0, p.indexOf('=')))
-    expect(keys.sort()).toEqual([...BILL_FILTER_DEFS.map(d => d.name)].sort())
+    // A custom field's key is `cf_<its slug or id>`, so it is the one name not written as itself.
+    expect(keys.sort()).toEqual(BILL_FILTER_DEFS.map(d => d.name).filter(n => n !== 'cf').sort())
   })
 })
