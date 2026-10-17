@@ -25,6 +25,14 @@ export type Env = {
    */
   LIS_API_KEY?: string
   /**
+   * Congress.gov API key, an api.data.gov key (src/providers/govinfo). Optional:
+   * with it, GovInfo reads Congress's committee meetings, and shows them on the
+   * body calendar and on the calendars of the bills they take up. Without it,
+   * those calendars are empty, and nothing else changes. Sent only in the
+   * `X-Api-Key` header of a request to api.congress.gov.
+   */
+  CONGRESS_API_KEY?: string
+  /**
    * "DC" to seed DC's ownership row for LIMS on the first sync, when DC has no
    * row (lib/stateProviders.ts). Kept for one release.
    */

@@ -1,0 +1,30 @@
+{
+  "committeeMeeting": {
+    "chamber": "Senate",
+    "committees": [
+      {
+        "name": "Senate Intelligence (Select)",
+        "systemCode": "slin00",
+        "url": "https://api.congress.gov/v3/committee/senate/slin00?format=json"
+      }
+    ],
+    "congress": 119,
+    "date": "2026-04-22T19:00:00Z",
+    "eventId": "338325",
+    "location": {
+      "building": "Hart Senate Office Building",
+      "room": "219"
+    },
+    "meetingStatus": "Scheduled",
+    "title": "Closed hearings to examine certain intelligence matters.",
+    "type": "Closed Hearing",
+    "updateDate": "2026-04-28T13:05:38Z"
+  },
+  "request": {
+    "chamber": "senate",
+    "congress": "119",
+    "contentType": "application/json",
+    "eventId": "338325",
+    "format": "json"
+  }
+}

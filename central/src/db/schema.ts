@@ -497,6 +497,17 @@ export const providerIds = sqliteTable('provider_ids', {
 })
 
 /**
+ * What a provider keeps between runs (ProviderContext.cache): text entries under
+ * keys it names. See migrations-legiscan/0042_provider_cache.sql and lib/providerCache.ts.
+ */
+export const providerCache = sqliteTable('provider_cache', {
+  provider:  text('provider').notNull(),
+  key:       text('key').notNull(),
+  value:     text('value').notNull(),
+  updatedAt: text('updated_at').notNull().default(sql`(datetime('now'))`),
+}, t => [primaryKey({ columns: [t.provider, t.key] })])
+
+/**
  * Cutovers: a state moved from one provider to another with every matched bill
  * keeping its central row id (lib/cutover.ts, migrations-legiscan/0036_cutovers.sql).
  */

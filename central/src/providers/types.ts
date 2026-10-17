@@ -413,6 +413,22 @@ export interface ProviderContext<K extends ProviderEnvKey = ProviderEnvKey> {
    */
   ids(kind: string, nativeKeys: readonly string[]): Promise<Map<string, number>>
   /**
+   * What the provider keeps between runs: small text entries under keys it
+   * names, for what it fetched once and shouldn't fetch again (a feed that
+   * answers one request per record, and allows few requests, is the case it
+   * exists for). Durable, and the provider's own: no provider reads
+   * another's. Nothing expires, so a provider drops what it no longer needs.
+   * An entry is text, so the provider serializes what it keeps.
+   */
+  cache: {
+    /** Every entry whose key starts with `prefix` (the empty prefix lists them all), by key. */
+    list(prefix: string): Promise<Map<string, string>>
+    /** Add these entries, replacing any with the same key. */
+    put(entries: Readonly<Record<string, string>>): Promise<void>
+    /** Remove these keys. A key that isn't there is ignored. */
+    drop(keys: readonly string[]): Promise<void>
+  }
+  /**
    * The central ids already minted for these keys, without minting any: a key
    * central has never seen is left out. For linking to a record the provider
    * isn't sure exists, such as the earlier session's copy of a carried-over
