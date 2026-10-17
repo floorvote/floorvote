@@ -5,7 +5,7 @@ import {
   buildGovInfoMeasure, congressName, congressOn, govinfoNativeKey, GOVINFO_STATE, parseBillFile, toGovInfoEntry, US_STATE_ID,
   type CongressBillType, type GovInfoRecord,
 } from './map'
-import { entriesByBill, holdingCommittees, keptMeetings, meetingBodyEvent, readMeetings } from './meetings'
+import { entriesByBill, holdingCommittees, isWarm, keptMeetings, meetingBodyEvent, readMeetings } from './meetings'
 import { vocabulary } from './vocabulary'
 import { sha256Hex, type Provider, type ProviderRecord, type SyncSession } from '../sdk'
 
@@ -94,11 +94,13 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
     if (published === 0) throw new Error(`GovInfo ${congress}: none of the eight Bill Status zips exists (404)`)
     // With a key, a bill's record carries the calendar entries of the meetings that take it up, as the last
     // pass that finished left them (meetings.ts), so a bill whose meetings change is a bill whose record changed.
-    if (ctx.env.CONGRESS_API_KEY) {
+    // Only once every meeting has been read once (meetings.ts, isWarm): before that a bill with no meetings
+    // may have one not read yet, so its record says nothing, and neither does its calendar. After it, a bill
+    // with none has an empty list, which is a calendar with nothing on it.
+    if (ctx.env.CONGRESS_API_KEY && await isWarm(ctx, congress)) {
       const byBill = await entriesByBill(await keptMeetings(ctx, congress))
       for (const f of found) {
-        const entries = byBill.get(f.key)
-        if (!entries) continue
+        const entries = byBill.get(f.key) ?? []
         f.record.meetings = entries
         f.hash = await sha256Hex(`${f.hash}\n${JSON.stringify(entries)}`)
       }
@@ -118,7 +120,13 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
   async listBodyEvents(_state, range, ctx) {
     const key = ctx.env.CONGRESS_API_KEY
     if (!key) return []
-    const meetings = (await readMeetings(ctx, key, congressOn(ctx.today).congress)).filter(m => range.from <= m.date && m.date <= range.to)
+    const { congress, yearStart } = congressOn(ctx.today)
+    const inRange = (m: { date: string }) => range.from <= m.date && m.date <= range.to
+    const meetings = (await readMeetings(ctx, key, congress)).filter(inRange)
+    // The earlier Congress ends on January 3 and core still asks for last month, so a range that starts before the
+    // new Congress does also holds the earlier one's meetings, as last kept. A meeting that was held is never cancelled
+    // for the list that named it having changed. Nothing is asked of the API, and nothing of theirs is pruned.
+    if (range.from < `${yearStart}-01-03`) meetings.push(...(await keptMeetings(ctx, congress - 1)).filter(inRange))
     const codes = holdingCommittees(meetings)
     const ids = codes.length > 0 ? await ctx.ids('committee', codes) : new Map<string, number>()
     return Promise.all(meetings.map(m => meetingBodyEvent(m, code => ids.get(code))))
@@ -169,7 +177,7 @@ export const govinfo: Provider<'CONGRESS_API_KEY'> = {
     }, { ...(await resolveDetail(detail, ids)), ...resolveVotes(nativeKey, rolls, ids) })
     // With a key, the calendar is the record's meetings, and none is a calendar with nothing on it. Without
     // one the measure has no calendar at all, which is no word on the entries a bill already has.
-    if (ctx.env.CONGRESS_API_KEY) measure.calendar = r.meetings ?? []
+    if (ctx.env.CONGRESS_API_KEY && r.meetings !== undefined) measure.calendar = r.meetings
     return measure
   },
 

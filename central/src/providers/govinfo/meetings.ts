@@ -266,8 +266,8 @@ export function meetingType(type: string): { typeId: number; kind: CalendarKind 
 
 // ---- Requests
 
-function listUrl(congress: number, offset: number): string {
-  return `${CONGRESS_API}/committee-meeting/${congress}?format=json&limit=${LIST_PAGE_SIZE}&offset=${offset}`
+function listUrl(congress: number, offset: number, since?: string): string {
+  return `${CONGRESS_API}/committee-meeting/${congress}?format=json&limit=${LIST_PAGE_SIZE}&offset=${offset}${since ? `&fromDateTime=${since}` : ''}`
 }
 
 function detailUrl(congress: number, listed: ListedMeeting): string {
@@ -293,32 +293,61 @@ async function get(url: string, key: string, onRequest: () => void, what: string
 
 type Context = Pick<ProviderContext, 'cache' | 'logCall' | 'today'>
 
-/** Every meeting the list names for a Congress, page after page. Its count must be what it lists, or the list changed under the read. */
-async function readList(ctx: Context, key: string, congress: number): Promise<ListedMeeting[]> {
-  const all = new Map<string, ListedMeeting>()
+/** How far before a read began the second look at the list reaches, so a meeting changed as the read began is in it. */
+const SINCE_MARGIN_MS = 10 * 60 * 1000
+
+/** The pages of the list, or, with `since`, of the meetings changed since then: each meeting once, and the count the last page gave. */
+async function readPages(ctx: Context, key: string, congress: number, since?: string): Promise<{ meetings: Map<string, ListedMeeting>; count: number }> {
+  const meetings = new Map<string, ListedMeeting>()
   let count = 0
   for (let page = 0, offset = 0; ; page++, offset += LIST_PAGE_SIZE) {
     if (page >= MAX_PAGES) throw new Error(`Congress.gov meeting list: more than ${MAX_PAGES} pages`)
-    const text = await get(listUrl(congress, offset), key, () => ctx.logCall('govinfo:CongressMeetingList', { congress, offset }), `Congress.gov meeting list (offset ${offset})`)
-    const { entries, count: n } = parseMeetingList(text, congress)
-    if (page === 0) count = n
-    else if (n !== count) throw new Error(`Congress.gov meeting list: its count changed from ${count} to ${n} while it was read`)
-    for (const e of entries) {
-      // A meeting updated while the list is read moves up it, and is on two pages.
-      all.set(e.eventId, e)
-    }
+    const text = await get(listUrl(congress, offset, since), key,
+      () => ctx.logCall('govinfo:CongressMeetingList', { congress, offset, ...(since ? { since } : {}) }), `Congress.gov meeting list (offset ${offset})`)
+    const parsed = parseMeetingList(text, congress)
+    count = parsed.count
+    // A meeting changed while the list is read moves up it, and may be on two pages: the later read is the newer.
+    for (const e of parsed.entries) meetings.set(e.eventId, e)
     if (offset + LIST_PAGE_SIZE >= count) break
-    if (entries.length === 0) throw new Error(`Congress.gov meeting list: it ends at ${all.size} of ${count} meetings`)
+    if (parsed.entries.length === 0) throw new Error(`Congress.gov meeting list: it ends at ${meetings.size} of ${count} meetings`)
   }
-  // Fewer than its count means one moved from a page not yet read to one already read, and was missed.
-  if (all.size !== count) throw new Error(`Congress.gov meeting list: it names ${all.size} meetings, not its count of ${count}; it changed while it was read`)
-  return [...all.values()]
+  return { meetings, count }
+}
+
+/**
+ * Every meeting the list names for a Congress. The list is paged newest update
+ * first, and takes a pass of a minute or more to read, so a meeting changed
+ * meanwhile moves to the front, after pages already read, and a page read later
+ * misses it. So a second look follows the pages: the meetings changed since a
+ * little before the read began, merged over them, the newer answer winning. Short
+ * of the count the last page gave even then, the list isn't whole, and it throws.
+ */
+async function readList(ctx: Context, key: string, congress: number): Promise<ListedMeeting[]> {
+  const began = Date.now()
+  const { meetings, count } = await readPages(ctx, key, congress)
+  const since = new Date(began - SINCE_MARGIN_MS).toISOString().slice(0, 19) + 'Z'
+  for (const [id, e] of (await readPages(ctx, key, congress, since)).meetings) meetings.set(id, e)
+  if (meetings.size < count) throw new Error(`Congress.gov meeting list: it names ${meetings.size} meetings, short of its count of ${count}; it changed while it was read`)
+  return [...meetings.values()]
 }
 
 // ---- What is kept
 
 const COMMITTED = (congress: number) => `meeting/${congress}/`
 const STAGED = (congress: number) => `staged/${congress}/`
+/** Present once a finished pass has found no meeting that was never read: the first full read is done. */
+const WARM = (congress: number) => `warm/${congress}`
+
+/**
+ * Whether every meeting of the Congress has been read once. Until it has, a
+ * bill's calendar can't say it has no meeting, since the meeting may be one not
+ * read yet, so the bill sync attaches none and a bill's ingest sends no calendar
+ * (which core takes as no word on the entries the bill has, a cut-over bill's
+ * carried hearings among them).
+ */
+export async function isWarm(ctx: Pick<ProviderContext, 'cache'>, congress: number): Promise<boolean> {
+  return (await ctx.cache.list(WARM(congress))).has(WARM(congress))
+}
 
 /** A meeting as kept, with the update time the list gave when it was read (which may differ in form from the meeting's own). */
 interface Kept { seen: string; meeting: Meeting }
@@ -447,6 +476,8 @@ async function runPass(ctx: Context, key: string, congress: number): Promise<Mee
     }
   }
   await ctx.cache.put(promote)
+  // The first full read is done once every listed meeting has a kept copy, however old.
+  if (listed.every(l => committed.kept.has(l.eventId)) && !(await isWarm(ctx, congress))) await ctx.cache.put({ [WARM(congress)]: new Date().toISOString() })
   // Staged entries are done with, kept for a meeting the list no longer names or not; so are kept meetings it no longer names.
   await ctx.cache.drop([
     ...staged.unreadable,
