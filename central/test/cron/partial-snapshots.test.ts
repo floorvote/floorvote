@@ -75,10 +75,10 @@ const sentTo = (q: { send: any; sendBatch: any }) => [
  * queued (unless `ingest` is false, as when the ingests fail). Returns the
  * pass reports, the bills queued, and what each instance was sent.
  */
-async function pass(opts: { force?: boolean; ingestorFails?: boolean; ingest?: boolean } = {}) {
+async function pass(opts: { force?: boolean; ingestorFails?: boolean; ingest?: boolean; db?: ReturnType<typeof drizzle<typeof schema>> } = {}) {
   const db = drizzle(env.DB, { schema })
   const e = makeEnv(opts)
-  const reports = await runSnapshotSync(example, e.env, db, { force: opts.force })
+  const reports = await runSnapshotSync(example, e.env, opts.db ?? db, { force: opts.force })
   const messages = e.ingestor.sendBatch.mock.calls.flatMap((c: any) => c[0])
     .map((m: any) => ({ body: m.body, ack: vi.fn(), retry: vi.fn() }))
   if (opts.ingest !== false) {
@@ -424,5 +424,100 @@ describe('concurrent partial and full passes', () => {
     expect(exampleFeed.asked.at(-1)).toBeNull()
     expect(await served('B26-0002')).toEqual({ 'B26-0002': [B2.Title, 'Enacted'] })
     expect(await storedEtag()).toBe('w4')
+  })
+})
+
+/**
+ * A db over the test D1 that, the first time a statement whose SQL matches
+ * `pattern` runs, signals `reached` and waits for `release` first: a way to
+ * stop a pass between two of its queries while another pass runs.
+ */
+function heldDb(pattern: RegExp) {
+  let armed = true
+  let signal!: () => void
+  let release!: () => void
+  const reached = new Promise<void>(r => { signal = r })
+  const released = new Promise<void>(r => { release = r })
+  const wait = async () => { signal(); await released }
+  const wrap = (stmt: any): any => ({
+    bind: (...params: unknown[]) => wrap(stmt.bind(...params)),
+    all: async (...a: unknown[]) => { await wait(); return stmt.all(...a) },
+    raw: async (...a: unknown[]) => { await wait(); return stmt.raw(...a) },
+    first: async (...a: unknown[]) => { await wait(); return stmt.first(...a) },
+    run: async (...a: unknown[]) => { await wait(); return stmt.run(...a) },
+  })
+  const d1 = new Proxy(env.DB, {
+    get(target, prop) {
+      if (prop === 'prepare') {
+        return (query: string) => {
+          const stmt = target.prepare(query)
+          if (!armed || !pattern.test(query)) return stmt
+          armed = false
+          return wrap(stmt)
+        }
+      }
+      const value = (target as any)[prop]
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  return { db: drizzle(d1 as D1Database, { schema }), reached, release }
+}
+
+/** Each stored record's updated_at, by bill number. */
+async function storedUpdatedAt() {
+  const rows = await env.DB.prepare('SELECT native_key, updated_at FROM provider_records').all<{ native_key: string; updated_at: string }>()
+  return Object.fromEntries(rows.results.map(r => [r.native_key, r.updated_at]))
+}
+
+describe('a pass that matches on stored records', () => {
+  // The hash read in storeRecords, and the ETag compare-and-swap.
+  const HASH_READ = /"raw_hash" from "provider_records" where "provider_records"."bill_id" in/
+  const ETAG_SWAP = /^update "sessions" set "snapshot_etag"/
+
+  // An unchanged pass, and a partial one whose watermark didn't move, rewrite
+  // the ETag they read, so the compare-and-swap can't see a forced run that
+  // committed a change between their read of the stored records and their
+  // own write. Neither may write back a record it read from storage.
+  it.each([
+    ['an unchanged pass', { records: [], unchanged: true }],
+    ['a partial pass whose watermark didn\'t move', { records: [], etag: 'w1', partial: true }],
+  ])('%s never writes a stored record back over a forced run\'s change', async (_name, answer) => {
+    await readInFull()
+    const held = heldDb(HASH_READ)
+    feed(answer)
+    const cron = pass({ db: held.db })
+    await held.reached
+
+    // A forced run stores B2, and stops before its ETag swap.
+    const forcedDb = heldDb(ETAG_SWAP)
+    feed({ records: [A, B2, C], etag: 'w3' })
+    const forced = pass({ force: true, db: forcedDb.db })
+    await forcedDb.reached
+    expect(await storedTitles()).toMatchObject({ 'B26-0002': B2.Title })
+
+    // The cron pass finishes first, then the forced run.
+    held.release()
+    await cron
+    forcedDb.release()
+    await forced
+
+    expect(await storedTitles()).toEqual({ 'B26-0001': A.Title, 'B26-0002': B2.Title, 'B26-0003': C.Title })
+    expect(await served('B26-0002')).toEqual({ 'B26-0002': [B2.Title, 'Enacted'] })
+  })
+
+  it('an unchanged pass writes no stored record, and a partial one writes only those it names', async () => {
+    await readInFull()
+    await env.DB.prepare(`UPDATE provider_records SET updated_at = '2000-01-01 00:00:00'`).run()
+    const sentinel = { 'B26-0001': '2000-01-01 00:00:00', 'B26-0002': '2000-01-01 00:00:00', 'B26-0003': '2000-01-01 00:00:00' }
+
+    feed({ records: [], unchanged: true })
+    await pass()
+    expect(await storedUpdatedAt()).toEqual(sentinel)
+
+    feed({ records: [B2], etag: 'w2', partial: true })
+    await pass()
+    const after = await storedUpdatedAt()
+    expect(after['B26-0002']).not.toBe('2000-01-01 00:00:00')
+    expect(after).toMatchObject({ 'B26-0001': sentinel['B26-0001'], 'B26-0003': sentinel['B26-0003'] })
   })
 })

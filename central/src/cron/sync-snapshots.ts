@@ -272,7 +272,12 @@ async function runSnapshotPass(
   // An empty answer is nothing new.
   if (records.length === 0) return { records: 0, queued: 0, refreshed: 0 }
 
-  const entries = await storeRecords(provider, session, records, db, ctx)
+  // Only what the provider just listed is written. A record read from
+  // storage is never written back: a forced run may have stored a newer one
+  // since, which an unchanged pass or a partial one whose watermark didn't
+  // move would otherwise overwrite under an ETag the guard below can't tell
+  // apart.
+  const entries = await storeRecords(provider, session, records, db, ctx, new Set(listed.map(r => r.billId)))
   const queue = ingestQueueFor(provider, env)
   // Every bill a cutover moved here gets its first ingest, tracked or not.
   const queued = new Set(await applyMasterList(session, entries, covering, env, db, queue,
@@ -327,10 +332,12 @@ function withChanges(stored: ProviderRecord[], changed: ProviderRecord[]): Provi
 
 /**
  * Store each record whose hash changed in provider_records, and return the
- * full-pass entries for all of them.
+ * full-pass entries for all of them. With `writable`, only the records it
+ * names are stored, and the rest are only mapped.
  */
 async function storeRecords(
   provider: SnapshotProvider, session: SessionRow, records: ProviderRecord[], db: Db, ctx: ProviderContext,
+  writable?: Set<number>,
 ) {
   // Stored hashes (to skip unchanged records) and stored descriptions (a list
   // record may have none; the ingestor fills them, and the pass would
@@ -356,7 +363,7 @@ async function storeRecords(
   }
   const entries = []
   for (const record of records) {
-    if (storedHash.get(record.billId) !== record.hash) {
+    if ((!writable || writable.has(record.billId)) && storedHash.get(record.billId) !== record.hash) {
       const values = {
         billId: record.billId,
         provider: provider.id,
