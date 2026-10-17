@@ -5,6 +5,7 @@ import { getDb } from '../../src/db/client'
 import { processCentralNotification } from '../../src/queue/processor'
 import { associationConfig } from '../../src/db/schema'
 import { buildBillDetail } from '../../src/routes/billsApi/detail'
+import { computeClaimSourceCounts } from '../../src/lib/claimSourceCounts'
 import type { TenantQueueMessage } from '../../src/types'
 
 // Claim sources from the analysis call, stored on the bill and pinned to the
@@ -23,6 +24,15 @@ const claimLinksEnabledMock = vi.hoisted(() => vi.fn())
 vi.mock('../../src/lib/claimSources', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/claimSources')>()
   return { ...actual, claimLinksEnabled: claimLinksEnabledMock }
+})
+
+// The durable cut-off count (#573) is the real one by default. A test makes it
+// throw to show that counting can never fail an analysis.
+const recordCutOffMock = vi.hoisted(() => vi.fn())
+vi.mock('../../src/lib/claimSourceCounts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/claimSourceCounts')>()
+  recordCutOffMock.mockImplementation(actual.recordClaimSourcesCutOff)
+  return { ...actual, recordClaimSourcesCutOff: recordCutOffMock }
 })
 
 const BILL_ID = 'legiscan:9001'
@@ -276,6 +286,60 @@ describe('the shed retry and a cut-off response', () => {
     expect(r.ai_processed_at).not.toBeNull()
     expect(r.ai_error).toBeNull()
     expect(r).toMatchObject({ claim_sources: null, claim_sources_doc_id: null, claim_sources_text_hash: null })
+  })
+})
+
+describe('counting a recovered cut-off (#573)', () => {
+  const cutOffThenRecover = () => {
+    const cut = JSON.stringify({ ...analysis, claimSources: [...sources, ...sources] }).slice(0, -25)
+    geminiGenerateMock
+      .mockResolvedValueOnce({ text: cut })
+      .mockResolvedValueOnce({ text: JSON.stringify(analysis) })
+  }
+  const stored = async () => (await env.DB.prepare(`SELECT value FROM association_config WHERE key = 'claim_sources_cutoff_retries'`).first<{ value: string }>())?.value ?? null
+
+  it('adds one to the instance count each time the retry without claim sources is what stored the summary', async () => {
+    cutOffThenRecover()
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(await stored()).toBe('1')
+    expect((await computeClaimSourceCounts(getDb(env.DB))).cutOffRetries).toBe(1)
+  })
+
+  it('counts a second recovered cut-off on another analysis', async () => {
+    cutOffThenRecover()
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    cutOffThenRecover()
+    await processCentralNotification({ ...msg, forceAI: true }, testEnv, getDb(env.DB))
+    expect(await stored()).toBe('2')
+  })
+
+  it('counts nothing for an analysis whose claim sources parsed', async () => {
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(await stored()).toBeNull()
+  })
+
+  it('counts nothing when the setting is off and claim sources are not asked for', async () => {
+    claimLinksEnabledMock.mockResolvedValue(false)
+    model(analysis)
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(await stored()).toBeNull()
+  })
+
+  it('counts nothing for an analysis that failed even after the retry', async () => {
+    const cut = JSON.stringify({ ...analysis, claimSources: sources }).slice(0, -25)
+    geminiGenerateMock.mockResolvedValue({ text: cut })
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    expect(await stored()).toBeNull()
+  })
+
+  it('still stores the analysis when the count cannot be written', async () => {
+    recordCutOffMock.mockRejectedValueOnce(new Error('database is locked'))
+    cutOffThenRecover()
+    await processCentralNotification(msg, testEnv, getDb(env.DB))
+    const r = await row()
+    expect(r.tenant_summary).toBe('Requires a drop box in each county.')
+    expect(r.ai_processed_at).not.toBeNull()
+    expect(r.ai_error).toBeNull()
   })
 })
 

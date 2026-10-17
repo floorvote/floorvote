@@ -8,6 +8,7 @@ import { getSettingNumber } from '../lib/settings'
 import { nowDb } from '../lib/dbTime'
 import { fetchAiUsage } from '../lib/aiGatewayAnalytics'
 import { legiscanCallsOnly, legiscanCallsThisMonth, monthStartDb } from '../lib/legiscanBudget'
+import { resolveTenantRpc } from '../lib/tenantRpc'
 
 // Every dashboard query of api_call_log uses legiscanCallsOnly
 // (lib/legiscanBudget.ts), so the dashboard shows only LegiScan calls and other
@@ -639,6 +640,26 @@ dashRoutes.get('/tenants/:id', async (c) => {
     },
     meta: { generatedAt: new Date().toISOString() },
   })
+})
+
+// How well one instance's claim links resolve (#573): counts of its stored claim
+// sources by status, and two signals about analyses that stored none. Asked of
+// the instance over its service binding, as the unknown-login list is, so
+// central stores nothing and the instance's members have no way to read it. The
+// instance reuses its scan for a while and returns when it ran (`computedAt`).
+dashRoutes.get('/tenants/:id/claim-sources', async (c) => {
+  const id = c.req.param('id')
+  const db = drizzle(c.env.DB, { schema })
+  const tenant = await db.select({ id: schema.tenants.tenantId }).from(schema.tenants).where(eq(schema.tenants.tenantId, id)).get()
+  if (!tenant) return c.json({ error: { code: 'not_found', message: 'Tenant not found' } }, 404)
+  const rpc = resolveTenantRpc(c.env, id)
+  if (!rpc) return c.json({ error: { code: 'not_bound', message: 'Tenant is not bound to central, so its claim link counts cannot be read' } }, 501)
+  try {
+    return c.json({ data: await rpc.claimSourceCounts(), meta: { generatedAt: new Date().toISOString() } })
+  } catch (err) {
+    // Includes an instance from before this feature, whose entrypoint has no such method.
+    return c.json({ error: { code: 'tenant_call_failed', message: err instanceof Error ? err.message : 'tenant call failed' } }, 502)
+  }
 })
 
 dashRoutes.get('/activity', async (c) => {

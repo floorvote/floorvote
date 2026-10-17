@@ -25,6 +25,12 @@ export interface ProcessBillResult {
   affectedCitations: string[]
   /** Claim sources when they were asked for (possibly empty), else null. */
   claimSources: ClaimSource[] | null
+  /**
+   * True when the response was cut off inside the claim sources and this result
+   * is from the retry without them (#573). `claimSources` is null then, which
+   * alone looks like never asked, so the processor counts these.
+   */
+  claimSourcesRetried?: true
 }
 
 // ── Shared constants ──────────────────────────────────────────────────────────
@@ -326,7 +332,7 @@ async function callGemini(
     // stored. Ask once more without them rather than fail the analysis. Not
     // capped with maxItems, which would change the schema #347 measured.
     console.warn(`[llm] response for ${params.billNumber} did not parse with claim sources asked; retrying without them`)
-    return validateAndClamp(JSON.parse(await generate(null)), null)
+    return { ...validateAndClamp(JSON.parse(await generate(null)), null), claimSourcesRetried: true }
   }
   return validateAndClamp(parsed, claimSources)
 }
