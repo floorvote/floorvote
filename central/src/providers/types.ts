@@ -38,6 +38,14 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
   readonly displayName: string
 
   /**
+   * What members call the body whose calendar `listBodyEvents` returns, such
+   * as "Council": the Calendar page's control reads "Council events". Only a
+   * provider that publishes a calendar needs one; without it the control reads
+   * "Legislature events".
+   */
+  readonly bodyName?: string
+
+  /**
    * The credit instances show for this provider's data, in the footer of
    * every instance covering one of its states: the publisher's name and link,
    * one plain sentence on where the data comes from and its terms, and the
@@ -73,14 +81,6 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
    * claim for a provider that isn't configured is refused, and its sync skips.
    */
   configured?(env: Readonly<Pick<Env, K>>): boolean
-
-  /**
-   * The env key that named the provider's states before the ownership table,
-   * such as 'LIMS_STATES' (comma-separated). For one release, the first sync
-   * writes an ownership row for each state it names that has no row, under the
-   * same refusal rule as a claim. Goes away with that seeding.
-   */
-  readonly statesEnvKey?: K
 
   /** Every session the provider lists for a state, current and prior. */
   listSessions(state: string, ctx: ProviderContext<K>): Promise<SyncSession[]>
@@ -125,6 +125,16 @@ export interface Provider<K extends ProviderEnvKey = ProviderEnvKey> {
 
   /** A sponsor's profile page on the provider's site, for a person record with no link of its own. */
   personUrl?(person: { state: string; name: string; peopleId: number }): string
+
+  /**
+   * A person's own profile page, for a link on their name wherever it appears:
+   * a sponsor, or a voter in a roll call. Built from what central stored for
+   * the person, `bio` (the parsed `bio_json`) and `ballotpedia`, so it needs no
+   * call to the provider. Null when it has none. Core sends only an http(s) URL,
+   * and a voter with no profile URL is plain text. `personUrl` stays the last
+   * resort for a sponsor alone. Omitted when the provider has no per-person page.
+   */
+  profileUrl?(person: { bio: { social?: { biography?: string } } | null; ballotpedia: string | null }): string | null
 
   /**
    * Keep the calendar identity central gave every entry before identities
@@ -519,6 +529,14 @@ export interface ProviderSnapshot {
    * keeps the stored ETag.
    */
   unchanged?: boolean
+  /**
+   * `records` are only the records that changed since `SnapshotSession.etag`
+   * (a partial snapshot). Core runs the pass on its stored records with
+   * these replacing the ones they name, by bill id, and never removes a
+   * record one leaves out. Answering a null ETag (a read in full) with a
+   * partial snapshot is an error, and the pass fails closed.
+   */
+  partial?: boolean
 }
 
 /**

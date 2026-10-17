@@ -8,8 +8,10 @@ import {
 import type { Env } from '../../types'
 import { centralFetch } from '../../lib/centralFetch'
 import { isHandle, toHandle } from '../../../../shared/billHandle'
+import { httpUrl } from '../../../../shared/httpUrl'
 import { isRelationshipKind, type RelationshipKind } from '../../../../shared/relationshipKinds'
 import type { BillExtras } from '../../../../shared/providerExtras'
+import { dbTsToEpoch } from '../../../../shared/time'
 import { billSlug, filedSlug } from '../../lib/sessionSlug'
 import { loadDemoBillCalendar } from '../../lib/demoCalendar'
 import { activeUser } from '../../lib/accountDeletion'
@@ -27,7 +29,7 @@ type CentralBillRich = {
   statusDate?: string | null
   legiscanUrl?: string | null
   sponsors?: Array<{ name: string; party: string | null; role: string | null; primary: boolean; personId: string | null; url: string | null }>
-  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string }> }>
+  votes?: Array<{ id: string; motionText: string; date: string; result: string; chamber: string; counts: Array<{ option: string; value: number }>; legislatorVotes?: Array<{ personId: string; name: string; vote: string; url?: string | null }> }>
   relatedBills?: Array<{ identifier: string; sastBillId?: number; session: string; relationType: string; kind?: string }>
   calendar?: Array<{ eventHash: string; typeId: number; type: string; kind?: string | null; date: string; time: string | null; location: string | null; description: string | null }>
   supplements?: Array<{ supplementId: number; typeId: number; type: string; date: string | null; dateResolved: string | null; dateInferred: boolean; title: string | null; description: string | null; mime: string | null; url: string | null; stateLink: string | null }>
@@ -51,6 +53,25 @@ type CentralBillRich = {
   referrals?: Array<{ date: string | null; committeeId: string | null; name: string; chamber: string | null }>
 }
 
+/**
+ * When each of these bills first had a comment the thread would show, as an epoch. A bill with none is absent.
+ * Timestamps come in two shapes (see dbTsToEpoch), so the earliest is found here rather than in SQL.
+ */
+async function firstCommentTimes(db: ReturnType<typeof getDb>, billIds: string[]): Promise<Map<string, number>> {
+  const first = new Map<string, number>()
+  if (billIds.length === 0) return first
+  const rows = await db.select({ billId: comments.billId, createdAt: comments.createdAt })
+    .from(comments)
+    .innerJoin(users, eq(comments.userId, users.id))
+    .where(and(inArray(comments.billId, [...new Set(billIds)]), isNull(comments.deletedAt), activeUser))
+    .all()
+  for (const r of rows) {
+    const at = dbTsToEpoch(r.createdAt)
+    if (at < (first.get(r.billId) ?? Infinity)) first.set(r.billId, at)
+  }
+  return first
+}
+
 export async function buildBillDetail(
   db: ReturnType<typeof getDb>,
   billId: string,
@@ -65,11 +86,14 @@ export async function buildBillDetail(
   const subjectsSuppressed = isSubjectsSuppressedForState(suppressedSubjectStates, bill.state)
 
   // Fetch rich supplemental data from central for LegiScan bills (calendar, supplements, votes, etc.)
-  // Purely a read — no queue messages, no API calls, no AI.
+  // No AI here. `view` tells central this is a page view: when the bill is a
+  // stub whose detail is stale, central refreshes it in the background
+  // (central/src/lib/stubRefresh.ts), and this read doesn't wait for it. A demo
+  // sends no flag, since its anonymous visitors would spend the provider budget.
   let centralRich: CentralBillRich | null = null
   if (isHandle(bill.externalId)) {
     try {
-      const res = await centralFetch(env, `/bills/${bill.externalId}`)
+      const res = await centralFetch(env, `/bills/${bill.externalId}${env.DEMO_MODE === 'true' ? '' : '?view=1'}`)
       if (res.ok) centralRich = await res.json() as CentralBillRich
     } catch {
       // Non-fatal — bill detail still works without the supplemental data
@@ -147,15 +171,22 @@ export async function buildBillDetail(
       .all(),
   ])
   const billNumberOf = new Map(groupBills.map(b => [b.billId, b.billNumber]))
-  const groupingEvents: GroupingEvent[] = groupingRows.map(e => ({
+  const groupingMeta = groupingRows.map(e => JSON.parse(e.metadata) as GroupingEventMetadata)
+  // Which of the bills each event joined or left had a comment posted before it. The thread shows an
+  // automatic grouping or split line only for that: those comments now appear here, or no longer do.
+  // A comment counts when the thread would show it, so not a deleted one or a deactivated member's,
+  // and a comment at the very second of the event counts as before it, since the thread sets it above the line.
+  const firstComment = await firstCommentTimes(db, groupingMeta.flatMap(m => m.with.map(b => b.billId)))
+  const groupingEvents: GroupingEvent[] = groupingRows.map((e, i) => ({
     id: e.id,
     type: e.type as GroupingEventType,
     createdAt: e.createdAt,
     // Null when FloorVote grouped the bills itself.
     actorName: e.actorName ?? null,
-    with: (JSON.parse(e.metadata) as GroupingEventMetadata).with,
-    replaced: (JSON.parse(e.metadata) as GroupingEventMetadata).replaced ?? [],
-    ...((JSON.parse(e.metadata) as GroupingEventMetadata).undoneSplits?.length ? { undoneSplits: (JSON.parse(e.metadata) as GroupingEventMetadata).undoneSplits } : {}),
+    with: groupingMeta[i].with,
+    commentBills: groupingMeta[i].with.filter(b => (firstComment.get(b.billId) ?? Infinity) <= dbTsToEpoch(e.createdAt)),
+    replaced: groupingMeta[i].replaced ?? [],
+    ...(groupingMeta[i].undoneSplits?.length ? { undoneSplits: groupingMeta[i].undoneSplits } : {}),
   }))
 
   const voteCounts = { support: 0, oppose: 0, neutral: 0, total: 0 }
@@ -291,7 +322,7 @@ export async function buildBillDetail(
     priorityMeta: priorityEventRow ? { setByName: priorityEventRow.setByName, updatedAt: priorityEventRow.createdAt } : null,
     sponsor: bill.sponsor,
     sponsorParty: bill.sponsorParty,
-    sponsorUrl: centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl,
+    sponsorUrl: httpUrl(centralRich?.sponsors?.find(s => s.primary)?.url ?? bill.sponsorUrl),
     coSponsors: centralRich?.sponsors
       ? (() => {
           // The primary sponsor shown in bill.sponsor is the first primary-flagged sponsor.
@@ -301,14 +332,13 @@ export async function buildBillDetail(
           const primaryName = bill.sponsor
           return centralRich.sponsors
             .filter(s => s.name !== primaryName)
-            .map(s => ({ name: s.name, url: s.url ?? null, party: s.party ?? null, primary: s.primary ?? false }))
+            .map(s => ({ name: s.name, url: httpUrl(s.url), party: s.party ?? null, primary: s.primary ?? false }))
         })()
       : (bill.coSponsors ? JSON.parse(bill.coSponsors) : []),
     lastAction: bill.lastAction,
     lastActionDate: bill.lastActionDate,
     history: bill.history ? JSON.parse(bill.history) : [],
     relatedBillIds: resolvedRelated,
-    companionBillIds: bill.companionBillIds ? JSON.parse(bill.companionBillIds) : [],
     matchType: bill.matchType,
     newMatchAt: bill.newMatchAt ?? null,
     // Triaging any member triages the group.
@@ -361,7 +391,8 @@ export async function buildBillDetail(
       nv: v.counts.find(c => c.option === 'not voting')?.value ?? 0,
       absent: v.counts.find(c => c.option === 'absent')?.value ?? 0,
       passed: v.result === 'pass' ? 1 : 0,
-      legislatorVotes: v.legislatorVotes ?? [],
+      // Each voter's profile link as central sent it, if it is an http(s) URL.
+      legislatorVotes: (v.legislatorVotes ?? []).map(l => ({ ...l, url: httpUrl(typeof l.url === 'string' ? l.url : null) })),
     })) ?? undefined,
     subjects: subjectsSuppressed ? [] : parseSubjects(bill.subjects),
     calendar: env.DEMO_MODE === 'true'

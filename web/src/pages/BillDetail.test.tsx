@@ -137,7 +137,6 @@ const BILL = {
   voteSummary: [],
   subjects: [],
   relatedBillIds: [],
-  companionBillIds: [],
   texts: [],
   calendar: [],
   supplements: [],
@@ -674,6 +673,35 @@ describe('BillDetail sponsors row', () => {
     expect(await screen.findByText('Prime Sponsor')).toBeInTheDocument()
     expect(screen.getByText('Cosponsor 9')).toBeInTheDocument()
   })
+})
+
+describe('BillDetail sponsor links', () => {
+  beforeEach(() => vi.restoreAllMocks())
+
+  it('links a sponsor and a co-sponsor with an http(s) url, in a new tab', async () => {
+    makeMockApiFetch({
+      sponsor: 'Prime Sponsor', sponsorUrl: 'https://legislature.example/prime',
+      coSponsors: [{ name: 'Cosponsor One', party: null, url: 'http://legislature.example/one', primary: false }],
+    })
+    render(<MemoryRouter><BillDetail /></MemoryRouter>)
+    const prime = await screen.findByRole('link', { name: /Prime Sponsor/ })
+    expect(prime).toHaveAttribute('href', 'https://legislature.example/prime')
+    expect(prime).toHaveAttribute('target', '_blank')
+    expect(screen.getByRole('link', { name: /Cosponsor One/ })).toHaveAttribute('href', 'http://legislature.example/one')
+  })
+
+  it.each([['javascript:', 'javascript:alert(1)'], ['data:', 'data:text/html,<script>alert(1)</script>'], ['protocol-relative', '//legislature.example/x'], ['relative', '/members/x']])(
+    'renders a sponsor and a co-sponsor whose url is %s as plain text', async (_label, url) => {
+      makeMockApiFetch({
+        sponsor: 'Prime Sponsor', sponsorUrl: url,
+        coSponsors: [{ name: 'Cosponsor One', party: null, url, primary: false }],
+      })
+      render(<MemoryRouter><BillDetail /></MemoryRouter>)
+      expect(await screen.findByText('Prime Sponsor')).toBeInTheDocument()
+      expect(screen.getByText('Cosponsor One')).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /Prime Sponsor|Cosponsor One/ })).toBeNull()
+      expect(document.querySelector(`a[href="${url}"]`)).toBeNull()
+    })
 })
 
 describe('BillDetail reaction hover name list stays in sync with the count', () => {

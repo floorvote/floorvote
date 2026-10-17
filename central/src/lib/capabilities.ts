@@ -12,12 +12,19 @@ export interface Capabilities {
   bodyEvents: boolean
   /** The provider sends deadlines: a calendar event type of kind `deadline`. */
   deadlines: boolean
+  /**
+   * What members call the body that holds those events ("Council"), for the
+   * Calendar page's "Council events" control. Present only with `bodyEvents`,
+   * and only when the provider names one (`Provider.bodyName`).
+   */
+  bodyName?: string
 }
 
 export function providerCapabilities(provider: Provider): Capabilities {
   return {
     bodyEvents: !!provider.listBodyEvents,
     deadlines: Object.values(provider.vocabulary.eventTypes).some(t => t.kind === 'deadline'),
+    ...(provider.listBodyEvents && provider.bodyName ? { bodyName: provider.bodyName } : {}),
   }
 }
 
@@ -29,8 +36,8 @@ export function stateCapabilities(owners: StateOwners, state: string): Capabilit
 /**
  * The capabilities of each state a coverage list names that has any, by
  * state. `*` covers every state, and lists each state with an ownership row
- * whose provider has one. A state left out has none, which is right for every
- * state without a row while the default provider has none itself.
+ * whose provider has one. A state left out has none. A state named without a
+ * row has the default provider's, which sends deadlines.
  */
 export function coverageCapabilities(owners: StateOwners, coverage: readonly string[]): Record<string, Capabilities> {
   const states = coverage.includes('*') ? [...owners.keys()] : coverage

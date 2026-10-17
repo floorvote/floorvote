@@ -1,6 +1,6 @@
 import { color, fontSize, fontWeight } from './tokens'
 import { PRIORITY_COLORS, POSITION_FEED_ICON } from './billChipColors'
-import { COMMENT_PREVIEW_MAX, formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBillEvents } from './feedUtils'
+import { COMMENT_PREVIEW_MAX, formatBillUpdateDetail, stripHtml, type ChangeRecord, type FeedEvent, type GroupedBill, type GroupedBillEvents } from './feedUtils'
 import { formatHearingTime } from './hearingTime'
 import { stripMarkdown } from './markdown'
 import { billDisplayTitle } from './billTitle'
@@ -31,11 +31,26 @@ export type BillCardRow = {
   userId: string
   /** When true, render a priority square instead of a glyph (priority_set events). */
   square?: boolean
+  /** The bill the row's event is on, so a row in a companion group's card opens its own bill. */
+  billId: string | null
+  /**
+   * The number of the bill the row's event is on, shown in front of the text, in
+   * a companion group's card: the card stands for the group, so each row says
+   * which of its bills it happened on. Null in a bill's own card.
+   */
+  billLabel: string | null
 }
 export type BillCardModel = {
   billNumber: string; state: string | null; sessionSlug: string | null
   title: string; summary: string | null; priority: 'high' | 'medium' | 'low' | null
   rows: BillCardRow[]
+  /** A companion group's card: the bills with events in it, for the header. Absent in a bill's own card. */
+  bills?: GroupedBill[]
+}
+
+/** A row's text as it reads in a card: in front of it, the number of its bill when the card is a companion group's. */
+export function billCardRowText(row: Pick<BillCardRow, 'text' | 'billLabel'>): string {
+  return row.billLabel ? `${row.billLabel}: ${row.text}` : row.text
 }
 export const CARD_STYLE = {
   headerBg: color.surfaceSubtle, border: color.borderDefault,
@@ -101,21 +116,23 @@ function hearingLine(event: FeedEvent): string {
 
 export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
   const rows: BillCardRow[] = []
+  const inGroup = group.groupKey != null
   for (const event of group.events) {
+    const ofBill = { billId: event.billId, billLabel: inGroup && event.billId !== null ? event.billNumber : null }
     if (event.type === 'bill_updated') {
       getBillUpdateChanges(event).forEach((change, idx) => {
         rows.push({
           key: `${event.id}-change-${idx}`, iconName: CHANGE_ICONS[change.changeType] ?? 'change_history',
           iconColor: color.textSecondary, iconFill: 0, text: formatBillUpdateDetail(change),
           bg: SUMMARY_BG, hash: changeRowHash(change), createdAt: event.createdAt, showTime: true,
-          userId: event.userId,
+          userId: event.userId, ...ofBill,
         })
       })
     } else if (HEARING_TYPES.has(event.type)) {
       rows.push({
         key: event.id, iconName: 'gavel', iconColor: color.billBadgeNavy, iconFill: 0,
         text: hearingLine(event), bg: SUMMARY_BG, hash: '#section-hearings',
-        createdAt: event.createdAt, showTime: true, userId: event.userId,
+        createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
       })
     } else if (event.type === 'bill_matched') {
       // Passive, system-generated: a new keyword match became fully analyzed. Handled
@@ -124,7 +141,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
       rows.push({
         key: event.id, iconName: 'new_releases', iconColor: color.accentBlue, iconFill: 0,
         text: 'New bill matching your keywords', bg: color.white, hash: '',
-        createdAt: event.createdAt, showTime: true, userId: event.userId,
+        createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
       })
     } else {
       const cfg = USER_EVENT_ICONS[event.type] ?? { name: 'circle', color: color.textMuted }
@@ -135,7 +152,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
       rows.push({
         key: event.id, iconName: cfg.name, iconColor, iconFill: cfg.fill ?? 0,
         text: userDetailLine(event), bg: color.white, hash: userEventHash(event),
-        createdAt: event.createdAt, showTime: true, userId: event.userId,
+        createdAt: event.createdAt, showTime: true, userId: event.userId, ...ofBill,
         ...(isPriority ? { square: true } : {}),
       })
     }
@@ -144,6 +161,7 @@ export function buildBillCardModel(group: GroupedBillEvents): BillCardModel {
     billNumber: group.billNumber, state: group.billState, sessionSlug: group.billSessionSlug,
     title: billDisplayTitle({ title: group.billTitle, isDraft: group.billIsDraft }), summary: group.billSummary != null ? stripMarkdown(group.billSummary) : null,
     priority: group.billPriority as 'high' | 'medium' | 'low' | null, rows,
+    ...(inGroup && group.bills ? { bills: group.bills } : {}),
   }
 }
 

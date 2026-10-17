@@ -1,8 +1,7 @@
 import { and, asc, countDistinct, eq, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { bills, billTenants, sessions, stateProviders } from '../db/schema'
-import { DEFAULT_PROVIDER_ID, PROVIDERS } from '../providers'
-import { providerConfigured } from './providerRouting'
-import type { Db, Env } from '../types'
+import { DEFAULT_PROVIDER_ID } from '../providers'
+import type { Db } from '../types'
 
 /**
  * State ownership: which provider central reads each state from, one row per
@@ -53,18 +52,10 @@ export function statesOwnedBy(owners: StateOwners, providerId: string): string[]
   return [...owners].filter(([, provider]) => provider === providerId).map(([state]) => state)
 }
 
-/**
- * Every state's owner, as a sync reads it. For one release it first seeds rows
- * from the providers' old env vars (seedFromEnv), so whichever sync runs first
- * writes them and every sync agrees. `reportRefusals` logs each refused seed:
- * only the LegiScan sync sets it, so a refusal is logged once an hour, not
- * once per job.
- */
-export async function loadStateOwners(env: Env, db: Db, opts: { reportRefusals?: boolean } = {}): Promise<StateOwners> {
-  const read = async () => new Map((await db.select({ state: stateProviders.state, provider: stateProviders.provider })
-    .from(stateProviders).all()).map(r => [r.state, r.provider]))
-  const owners = await read()
-  return (await seedFromEnv(env, db, owners, !!opts.reportRefusals)) ? read() : owners
+/** Every state's owner, as a sync reads it: the table's rows, and nothing else. */
+export async function loadStateOwners(db: Db): Promise<StateOwners> {
+  const rows = await db.select({ state: stateProviders.state, provider: stateProviders.provider }).from(stateProviders).all()
+  return new Map(rows.map(r => [r.state, r.provider]))
 }
 
 /** One state's owner, read now. */
@@ -114,7 +105,7 @@ export async function claimState(db: Db, state: string, providerId: string): Pro
     }
     const refusal = await trackedBills(db, state, owner)
     if (refusal.trackedBills > 0) return { ok: false, ...refusal }
-    if (await writeClaim(db, state, providerId, owner, 'claim')) {
+    if (await writeClaim(db, state, providerId, owner)) {
       const written = await db.select().from(stateProviders).where(eq(stateProviders.state, state)).get()
       return { ok: true, changed: true, ownership: written! }
     }
@@ -142,23 +133,21 @@ async function trackedBills(db: Db, state: string, owner: string): Promise<Claim
 /**
  * Write a state's row in one statement that holds only while `owner` still
  * owns the state and has no tracked bills there, so a link or another claim
- * landing between the check and the write can't get past the rule. A 'seed'
- * writes only a state with no row. Returns whether it wrote.
+ * landing between the check and the write can't get past the rule. Returns
+ * whether it wrote.
  */
-async function writeClaim(db: Db, state: string, providerId: string, owner: string, mode: 'claim' | 'seed'): Promise<boolean> {
+async function writeClaim(db: Db, state: string, providerId: string, owner: string): Promise<boolean> {
   // Query builders rather than db.run, so the claim and the forgetting of
   // the state's snapshot ETags go in one batch and a claim can't land
   // without them. Drizzle inserts every state_providers column in schema
   // order: state, provider, status, previous_provider, claimed_at.
-  const insert = db.insert(stateProviders).select(sql`
+  const claim = db.insert(stateProviders).select(sql`
     SELECT ${state}, ${providerId}, 'active', ${owner}, datetime('now')
     WHERE NOT EXISTS (
       SELECT 1 FROM bills INNER JOIN bill_tenants ON bill_tenants.bill_id = bills.bill_id
       WHERE bills.state = ${state} AND bills.provider = ${owner}
     )`)
-  const claim = mode === 'seed'
-    ? insert.onConflictDoNothing()
-    : insert.onConflictDoUpdate({
+    .onConflictDoUpdate({
       target: stateProviders.state,
       set: {
         provider: sql`excluded.provider`, status: sql`excluded.status`,
@@ -189,55 +178,4 @@ export function forgetSnapshotEtagsStatement(db: Db, d1: D1Database, state: stri
 function forgetEtags(db: Db, state: string, condition: SQL) {
   return db.update(sessions).set({ snapshotEtag: null })
     .where(and(eq(sessions.state, state), isNotNull(sessions.snapshotEtag), condition))
-}
-
-/**
- * For one release, then to be removed: each state that a provider's old env
- * var names (Provider.statesEnvKey, such as LIMS_STATES) and that has no row
- * gets one, under the claim's refusal rule, so a central that turned a
- * provider on that way keeps it with no steps. A refused state stays on
- * LegiScan, and with `reportRefusals` the refusal is logged. A provider that
- * isn't configured seeds nothing, since its env var alone never turned it on.
- * Returns whether it tried a write.
- */
-async function seedFromEnv(env: Env, db: Db, owners: StateOwners, reportRefusals: boolean): Promise<boolean> {
-  let tried = false
-  for (const provider of PROVIDERS) {
-    const key = provider.statesEnvKey
-    if (!key || !providerConfigured(provider, env)) continue
-    const value = env[key]
-    const named = (typeof value === 'string' ? value : '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
-    for (const state of named) {
-      if (owners.has(state) || (provider.states && !provider.states.includes(state))) continue
-      tried = true
-      const refusal = await trackedBills(db, state, DEFAULT_PROVIDER_ID)
-      if (refusal.trackedBills > 0) {
-        if (reportRefusals) await reportRefusedSeed(db, state, provider.id, key, refusal)
-      } else if (await writeClaim(db, state, provider.id, DEFAULT_PROVIDER_ID, 'seed')) {
-        console.log(`[state-providers] ${state} now syncs from ${provider.id}, seeded from ${key}. ` +
-          `${key} can be removed now that the row exists.`)
-      }
-    }
-  }
-  return tried
-}
-
-/**
- * Log a refused seed. When the env var's provider has tracked bills in the
- * state as well, instances hold bills from both providers: a split state,
- * which no claim or seed can settle, so it is logged as an error for an
- * operator. Either way the state stays with its owner and keeps syncing.
- */
-async function reportRefusedSeed(db: Db, state: string, providerId: string, key: string, refusal: ClaimRefusal): Promise<void> {
-  const own = await trackedBills(db, state, providerId)
-  if (own.trackedBills > 0) {
-    console.error(`[state-providers] ${state} is split: ${refusal.owner} has ${refusal.trackedBills} tracked bills there ` +
-      `(instances: ${refusal.instances.join(', ')}) and ${providerId} has ${own.trackedBills} ` +
-      `(instances: ${own.instances.join(', ')}). Not seeding ${state} for ${providerId} from ${key}. ` +
-      `${state} stays on ${refusal.owner}, and an operator needs to move one provider's bills off it.`)
-    return
-  }
-  console.warn(`[state-providers] not seeding ${state} for ${providerId} from ${key}: ` +
-    `${refusal.owner} has ${refusal.trackedBills} tracked bills there (instances: ${refusal.instances.join(', ')}). ` +
-    `${state} stays on ${refusal.owner} until a cutover moves them.`)
 }

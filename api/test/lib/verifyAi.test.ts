@@ -67,6 +67,17 @@ describe('verifyAi', () => {
     expect(args.taxonomy.map((t: { name: string }) => t.name)).toEqual(['Clerk Duties'])
   })
 
+  it('asks for claim sources as the pipeline does, when central pins the text it served', async () => {
+    central({ text: new Response(JSON.stringify({ type: 'html', content: '<p>The full text</p>', docId: '77', textHash: 'h77' }), { status: 200 }) })
+    await verifyAi(gatewayEnv, getDb(env.DB), 'legiscan:42')
+    expect(vi.mocked(processBill).mock.calls[0][0].claimSources).toBe(true)
+  })
+
+  it('does not ask for claim sources when central sends no doc id, as the pipeline does not', async () => {
+    await verifyAi(gatewayEnv, getDb(env.DB), 'legiscan:42')
+    expect(vi.mocked(processBill).mock.calls[0][0].claimSources).toBe(false)
+  })
+
   it('falls back to the title and abstract when central has no text, and says so', async () => {
     central({ text: new Response('{}', { status: 404 }) })
     const r = await verifyAi(gatewayEnv, getDb(env.DB), 'legiscan:42')

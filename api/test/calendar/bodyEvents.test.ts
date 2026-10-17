@@ -234,6 +234,13 @@ describe('state capabilities', () => {
     expect(config.capabilities).toEqual(CAPABLE)
   })
 
+  it('carry the name members call the legislature\'s body, for the Calendar page\'s control (#420)', async () => {
+    central = { capabilities: { DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } }, events: [bodyEvent()] }
+    await sync()
+    const config = await (await SELF.fetch('http://localhost/api/config', { headers: { Cookie: `session=${token}` } })).json() as any
+    expect(config.capabilities).toEqual({ DC: { bodyEvents: true, deadlines: true, bodyName: 'Council' } })
+  })
+
   it('are asked for every hour while no covered state has body events, so a newly claimed state shows within the hour', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))

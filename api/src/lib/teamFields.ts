@@ -241,6 +241,42 @@ export function holdsGroupPriority(of: BillsTable): SQL {
       OR (COALESCE(g.priority_set_at, '') = COALESCE(${of.prioritySetAt}, '') AND g.id > ${of.id})))))`
 }
 
+/** Some bill in `of`'s group has a priority, `of`'s own included: the group is prioritized. The opposite of `groupHasNoPriority`. */
+export function groupHasPriority(of: BillsTable): SQL {
+  return sql`(${of.priority} IS NOT NULL OR (${of.groupKey} IS NOT NULL AND EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
+}
+
+/**
+ * The priority each of these companion groups currently has: the one set most
+ * recently on any member (`holdsGroupPriority`'s rule, so the later
+ * `priority_set_at` wins, none being oldest, and a tie goes to the larger bill
+ * id). A group none of whose members has one is left out. For rows of a feed,
+ * digest, or calendar, which read it once per page of rows, so every row of a
+ * group wears the group's priority whichever member it was set on. Read apart
+ * from the rows' own query, so a correlated subquery never sits in a query
+ * that sorts (the feed's plan must not need a temp B-tree).
+ */
+export async function loadGroupPriorities(db: AppDb, groupKeys: ReadonlyArray<string | null | undefined>): Promise<Map<string, 'high' | 'medium' | 'low'>> {
+  const rows: Array<{ billId: string; groupKey: string; priority: 'high' | 'medium' | 'low'; setAt: string | null }> = []
+  for (const part of chunk([...new Set(groupKeys.filter((k): k is string => !!k))], 90)) {
+    for (const r of await db.select({ billId: bills.id, groupKey: bills.groupKey, priority: bills.priority, setAt: bills.prioritySetAt })
+      .from(bills).where(and(inArray(bills.groupKey, part), isNotNull(bills.priority))).all()) {
+      rows.push({ billId: r.billId, groupKey: r.groupKey!, priority: r.priority!, setAt: r.setAt })
+    }
+  }
+  const out = new Map<string, 'high' | 'medium' | 'low'>()
+  for (const key of new Set(rows.map(r => r.groupKey))) {
+    const holder = mostRecent(rows.filter(r => r.groupKey === key), r => r.setAt)
+    if (holder) out.set(key, holder.priority)
+  }
+  return out
+}
+
+/** The priority a row of a bill wears: its group's when the bill is in one (`loadGroupPriorities`), else its own. */
+export function priorityWorn(bill: { priority: 'high' | 'medium' | 'low' | null; groupKey: string | null }, groupPriorities: ReadonlyMap<string, 'high' | 'medium' | 'low'>): 'high' | 'medium' | 'low' | null {
+  return bill.groupKey === null ? bill.priority : (groupPriorities.get(bill.groupKey) ?? null)
+}
+
 /** No bill in `of`'s group has a priority. */
 export function groupHasNoPriority(of: BillsTable): SQL {
   return sql`(${of.priority} IS NULL AND (${of.groupKey} IS NULL OR NOT EXISTS (SELECT 1 FROM bills g WHERE g.group_key = ${of.groupKey} AND g.priority IS NOT NULL)))`
