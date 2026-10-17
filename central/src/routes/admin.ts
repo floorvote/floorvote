@@ -140,7 +140,7 @@ adminRoutes.post('/state-providers/:state/cutover', async (c) => {
       ok: true, cutover: id, state, from: plan.from.id, to: plan.to.id,
       bills: { matched: report.bills.matched, tracked: report.bills.tracked,
         unmatched: { old: report.bills.unmatched.old.length, new: report.bills.unmatched.new.length } },
-      people: { matched: report.people.matched, weak: report.people.weak },
+      people: { matched: report.people.matched, weak: report.people.weak, bioguide: report.people.bioguide },
       sync,
     })
   } catch (err) {

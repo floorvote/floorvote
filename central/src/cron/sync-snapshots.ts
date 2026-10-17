@@ -206,6 +206,7 @@ async function upsertProviderPeople(db: Db, providerId: string, list: ProviderPe
       ...(p.first_name !== undefined ? { firstName: p.first_name } : {}),
       ...(p.middle_name !== undefined ? { middleName: p.middle_name } : {}),
       ...(p.last_name !== undefined ? { lastName: p.last_name } : {}),
+      ...(p.bioguide_id !== undefined ? { bioguideId: p.bioguide_id } : {}),
       ...(p.bio !== undefined ? { bioJson: JSON.stringify(p.bio) } : {}),
       provider: providerId,
     }

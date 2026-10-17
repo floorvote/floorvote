@@ -28,18 +28,24 @@ export interface PersonFacts {
   role?: string | null
   roleId?: number | null
   district?: string | null
+  /** The member's Bioguide id, which Congress's members have in either provider. Blank is none. */
+  bioguideId?: string | null
 }
 
-/** What two people's records agreed on, beyond their state. */
-export type MatchedOn = 'name' | 'chamber' | 'district'
+/** What two people's records agreed on, beyond their state: a Bioguide id alone, or the rest. */
+export type MatchedOn = 'bioguide' | 'name' | 'chamber' | 'district'
 
 export interface PersonMatch<A extends PersonFacts, B extends PersonFacts> {
   from: A
   to: B
-  /** How closely the names agreed: whole first and last names, last name and first initial, or last name alone. */
-  name: 'full' | 'initial' | 'last'
+  /**
+   * How closely the names agreed: whole first and last names, last name and
+   * first initial, or last name alone. Null for a match by Bioguide id, which
+   * compares no names.
+   */
+  name: 'full' | 'initial' | 'last' | null
   on: MatchedOn[]
-  /** Not confirmed by chamber and district both, such as a match on names alone. */
+  /** Not confirmed by chamber and district both, such as a match on names alone. Never true of a match by Bioguide id. */
   weak: boolean
 }
 
@@ -51,6 +57,11 @@ export interface PeopleMatch<A extends PersonFacts, B extends PersonFacts> {
   unmatchedFrom: A[]
   /** New people left unmatched, other than the ambiguous ones. */
   unmatchedTo: B[]
+  /**
+   * Bioguide ids two or more people on one side share. They match no one,
+   * by the id or by name, since there's no telling which is which.
+   */
+  sharedBioguide: ({ side: 'old'; bioguideId: string; people: A[] } | { side: 'new'; bioguideId: string; people: B[] })[]
 }
 
 const TITLE = /^(?:the honorable|honorable|hon|delegate|del|senator|sen|representative|rep|assemblymember|assemblyman|assemblywoman|councilmember|council member|chairman|chairwoman|chairperson|chair|mr|mrs|ms|dr)\.?\s+/i
@@ -101,7 +112,12 @@ export function districtOf(p: PersonFacts): string | null {
   return m ? `${Number(m[1])}${m[2]}` : d.replace(/[^a-z0-9]/g, '')
 }
 
-type Tier = PersonMatch<PersonFacts, PersonFacts>['name']
+/** A person's Bioguide id, compared without case or spaces, or null when blank. */
+export function bioguideOf(p: PersonFacts): string | null {
+  return p.bioguideId?.trim().toUpperCase() || null
+}
+
+type Tier = NonNullable<PersonMatch<PersonFacts, PersonFacts>['name']>
 
 function sameName(tier: Tier, a: { first: string | null; last: string }, b: { first: string | null; last: string }): boolean {
   if (!a.last || a.last !== b.last) return false
@@ -111,9 +127,15 @@ function sameName(tier: Tier, a: { first: string | null; last: string }, b: { fi
 }
 
 /**
- * Match legislators across two providers of one state, on name, chamber, and
- * district: each compared only where both records have it, and any that
- * disagree rule a pair out. Names are tried closest first (whole names, then
+ * Match legislators across two providers of one state. Two people with the
+ * same Bioguide id match on it alone, strongly, before anything else is
+ * compared. A Bioguide id people on one side share matches no one, and they're
+ * left out of the name comparisons too.
+ *
+ * Everyone else is matched on name, chamber, and district: each compared only
+ * where both records have it, and any that disagree rule a pair out, as two
+ * different Bioguide ids do. One side having a Bioguide id the other lacks
+ * doesn't. Names are tried closest first (whole names, then
  * last name and first initial, then last name alone where a record has no
  * first name), and a pair counts only when each is the other's one candidate,
  * so two Smiths in one chamber match no one. People left out that way are out
@@ -122,12 +144,13 @@ function sameName(tier: Tier, a: { first: string | null; last: string }, b: { fi
  * reported as such, and still kept.
  */
 export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: A[], to: B[]): PeopleMatch<A, B> {
-  const facts = new Map<PersonFacts, { names: { first: string | null; last: string }; chamber: string | null; district: string | null }>()
-  for (const p of [...from, ...to]) facts.set(p, { names: nameParts(p), chamber: chamberOf(p), district: districtOf(p) })
+  const facts = new Map<PersonFacts, { names: { first: string | null; last: string }; chamber: string | null; district: string | null; bioguide: string | null }>()
+  for (const p of [...from, ...to]) facts.set(p, { names: nameParts(p), chamber: chamberOf(p), district: districtOf(p), bioguide: bioguideOf(p) })
   const compatible = (a: PersonFacts, b: PersonFacts) => {
     const fa = facts.get(a)!, fb = facts.get(b)!
     return (!fa.chamber || !fb.chamber || fa.chamber === fb.chamber)
       && (!fa.district || !fb.district || fa.district === fb.district)
+      && (!fa.bioguide || !fb.bioguide || fa.bioguide === fb.bioguide)
   }
   const related = (tier: Tier, a: PersonFacts, b: PersonFacts) => sameName(tier, facts.get(a)!.names, facts.get(b)!.names) && compatible(a, b)
 
@@ -136,6 +159,42 @@ export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: 
   const matchedFrom = new Set<A>()
   const matched: PersonMatch<A, B>[] = []
   const ambiguous: PeopleMatch<A, B>['ambiguous'] = []
+  const sharedBioguide: PeopleMatch<A, B>['sharedBioguide'] = []
+  const setAsideTo: B[] = []
+
+  // Bioguide ids first, like a bill's match key: one person on each side
+  // matches, and an id people on one side share matches neither.
+  const byBioguide = <P extends PersonFacts>(list: P[]) => {
+    const out = new Map<string, P[]>()
+    for (const p of list) {
+      const id = facts.get(p)!.bioguide
+      if (id) out.set(id, [...(out.get(id) ?? []), p])
+    }
+    return out
+  }
+  const fromById = byBioguide(from)
+  const toById = byBioguide(to)
+  for (const id of new Set([...fromById.keys(), ...toById.keys()])) {
+    const olds = fromById.get(id) ?? []
+    const news = toById.get(id) ?? []
+    if (olds.length === 1 && news.length === 1) {
+      matched.push({ from: olds[0], to: news[0], name: null, on: ['bioguide'], weak: false })
+      matchedFrom.add(olds[0])
+      freeFrom.delete(olds[0])
+      freeTo.delete(news[0])
+      continue
+    }
+    if (olds.length <= 1 && news.length <= 1) continue
+    if (olds.length > 1) sharedBioguide.push({ side: 'old', bioguideId: id, people: olds })
+    if (news.length > 1) sharedBioguide.push({ side: 'new', bioguideId: id, people: news })
+    for (const o of olds) freeFrom.delete(o)
+    for (const p of news) {
+      freeTo.delete(p)
+      if (olds.length > 0) ambiguous.push({ person: p, candidates: olds })
+      else setAsideTo.push(p)
+    }
+  }
+
   for (const tier of ['full', 'initial', 'last'] as const) {
     // Each tier reads who is still free at its start, so the order people
     // are listed in decides nothing.
@@ -163,5 +222,5 @@ export function matchPeople<A extends PersonFacts, B extends PersonFacts>(from: 
       freeTo.delete(person)
     }
   }
-  return { matched, ambiguous, unmatchedFrom: from.filter(p => !matchedFrom.has(p)), unmatchedTo: [...freeTo] }
+  return { matched, ambiguous, unmatchedFrom: from.filter(p => !matchedFrom.has(p)), unmatchedTo: [...setAsideTo, ...freeTo], sharedBioguide }
 }

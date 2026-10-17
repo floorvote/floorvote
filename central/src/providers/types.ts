@@ -535,6 +535,8 @@ export interface ProviderPerson {
   first_name?: string | null
   middle_name?: string | null
   last_name?: string | null
+  /** The member's Bioguide id, for Congress. A cutover matches people on it when both providers have one. */
+  bioguide_id?: string | null
   bio?: MeasurePerson['bio']
 }
 
