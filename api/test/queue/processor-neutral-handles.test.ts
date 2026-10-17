@@ -7,6 +7,7 @@ import { bills, billIdenticalLinks, calendarEvents } from '../../src/db/schema'
 import { buildVEvent } from '../../src/lib/ical'
 import { hearingUid } from '../../src/lib/hearingUid'
 import { resetDb, applyMigrations, seedBill } from '../helpers'
+import { processBill } from '../../src/lib/llm'
 
 // Release 1 of the neutral handle rename (#305): a tenant accepts a bill handle
 // in either form, a neutral one from a future central included, and applies it
@@ -322,5 +323,62 @@ describe('a tenant whose rows are already stored under the neutral handle', () =
     await processQueue(batch as any, testEnv as any, db())
     expect(batch.every(m => m.ack.mock.calls.length === 1 && m.retry.mock.calls.length === 0)).toBe(true)
     expect((await allBills()).map(r => r.externalId).sort()).toEqual(['bill:840', 'bill:841', 'legiscan:842'])
+  })
+
+  it.each(['legiscan:900', 'bill:900'])('updates the legacy row, and only it, when both spellings are stored and a %s delivery arrives', async (handle) => {
+    // Both rows can exist only if the bill was duplicated before this fix. The delivery must
+    // pick one deterministically (the form this release stores), add no third row, and leave
+    // the other as it was.
+    const legacy = await seedBill({ billNumber: 'H 900', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:900', title: 'legacy row', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
+    const neutral = await seedBill({ billNumber: 'H 900b', state: 'RI', session: '2026 Regular Session', externalId: 'bill:900', title: 'neutral row', matchType: 'keyword', priority: 'high', aiProcessedAt: '2026-06-01T00:00:00Z' })
+    await process(msg(handle))
+    const rows = await allBills()
+    expect(rows).toHaveLength(2)
+    expect(rows.find(r => r.id === legacy)).toMatchObject({ externalId: 'legiscan:900', title: 'Mail ballot processing 900' })
+    expect(rows.find(r => r.id === neutral)).toMatchObject({ externalId: 'bill:900', title: 'neutral row' })
+  })
+
+  it('still updates the row when the migration renames it between the lookup and the write', async () => {
+    withText = true
+    const id = await seedBill({ billNumber: 'H 910', state: 'RI', session: '2026 Regular Session', externalId: 'legiscan:910', matchType: 'keyword', priority: 'high' })
+    vi.mocked(processBill).mockImplementationOnce(async () => {
+      await db().update(bills).set({ externalId: 'bill:910' }).where(eq(bills.id, id))
+      return { summary: 'Test summary', tags: ['Elections'], relevanceScore: 7 } as any
+    })
+    await process(msg('legiscan:910', { forceAI: true }))
+    const rows = await allBills()
+    expect(rows.map(r => [r.id, r.externalId])).toEqual([[id, 'bill:910']])
+  })
+
+  it('still retries a shed message when the bill cannot be read to record the shed', async () => {
+    withText = true
+    await seedMigrated(920, { aiProcessedAt: undefined })
+    let failReads = false
+    const flaky = new Proxy(db(), {
+      get(target, prop) {
+        if (prop === 'select' && failReads) throw new Error('D1 unavailable')
+        const v = Reflect.get(target, prop, target)
+        return typeof v === 'function' ? v.bind(target) : v
+      },
+    })
+    vi.mocked(processBill).mockImplementationOnce(() => {
+      failReads = true
+      throw Object.assign(new Error('Service Unavailable'), { status: 503 })
+    })
+    const m = { body: msg('legiscan:920', { forceAI: true, matchType: 'keyword' }), attempts: 1, ack: vi.fn(), retry: vi.fn() }
+    await expect(processQueue([m] as any, testEnv as any, flaky as any)).resolves.toBeUndefined()
+    expect(m.retry).toHaveBeenCalledTimes(1)
+    expect(m.ack).not.toHaveBeenCalled()
+  })
+
+  it('records the shed on a migrated row', async () => {
+    withText = true
+    const id = await seedMigrated(921, { aiProcessedAt: undefined })
+    vi.mocked(processBill).mockImplementationOnce(() => { throw Object.assign(new Error('Service Unavailable'), { status: 503 }) })
+    const m = { body: msg('legiscan:921', { forceAI: true, matchType: 'keyword' }), attempts: 2, ack: vi.fn(), retry: vi.fn() }
+    await processQueue([m] as any, testEnv as any, db())
+    expect(m.retry).toHaveBeenCalledTimes(1)
+    const row = await db().select({ aiError: bills.aiError }).from(bills).where(eq(bills.id, id)).get()
+    expect(row?.aiError).toContain('AI provider shed (attempt 2')
   })
 })

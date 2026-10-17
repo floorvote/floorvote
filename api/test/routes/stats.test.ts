@@ -175,6 +175,19 @@ describe('GET /stats/sidebar — upcoming hearings from central', () => {
     expect(body.upcomingHearings[0].bills[0].billNumber).toBe('A1129')
   })
 
+  it.each(['legiscan:2099974', 'bill:2099974'])('lists the hearing of a priority bill stored as %s (#305)', async (stored) => {
+    await getDb(env.DB).update(bills).set({ externalId: stored }).where(eq(bills.billNumber, 'A1129'))
+    const central = {
+      fetch: async () => Response.json([{
+        eventHash: 'eh1', type: 'Hearing', kind: 'hearing', date: dateFromNow(3), time: '10:00:00', location: 'Room 11',
+        description: 'Committee hearing', billId: 2099974, billNumber: 'A1129', billTitle: 'Drop boxes', state: 'NJ', sessionName: null,
+      }]),
+    }
+    const res = await app.request('/api/stats/sidebar', { headers: { Cookie: `session=${memberToken}` } }, { ...env, CENTRAL: central } as never)
+    const body = await res.json() as { upcomingHearings: Array<{ bills: Array<{ billNumber: string }> }> }
+    expect(body.upcomingHearings.map(h => h.bills.map(b => b.billNumber))).toEqual([['A1129']])
+  })
+
   it('leaves out a deadline, which central sends with its own kind', async () => {
     const central = {
       fetch: async () => Response.json([
