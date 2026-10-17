@@ -90,7 +90,10 @@ export class MeetingFeed {
   }
 
   /** The requests made to the API, by kind. */
-  get listRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url)) }
+  /** The pages of the whole list. */
+  get listRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && !r.url.includes('fromDateTime')) }
+  /** The list of the meetings changed since a time, which a read makes to catch what changed while it paged. */
+  get recentRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\?/.test(r.url) && r.url.includes('fromDateTime')) }
   get detailRequests(): Requested[] { return this.requests.filter(r => /\/committee-meeting\/\d+\/[a-z]+\/\d+\?/.test(r.url)) }
 
   /** The event ids whose detail was asked for, in order. */
@@ -130,7 +133,8 @@ export class MeetingFeed {
       const limit = Math.min(Number(u.searchParams.get('limit') ?? 20), 250)
       const forced = this.override.list?.(offset)
       if (forced) return forced
-      const all = this.sorted().filter(m => String(m.congress) === list[1])
+      const from = u.searchParams.get('fromDateTime')
+      const all = this.sorted().filter(m => String(m.congress) === list[1] && (!from || m.updateDate >= from))
       const page = all.slice(offset, offset + limit)
       const next = offset + limit < all.length
         ? `${CONGRESS_API}/committee-meeting/${list[1]}?offset=${offset + limit}&limit=${limit}&format=json`

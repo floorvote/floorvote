@@ -683,7 +683,7 @@ describe('what the API is asked, and what is kept of it', () => {
     const rows = await logged()
     expect(feed.requests.length).toBeGreaterThan(0)
     expect(rows).toHaveLength(feed.requests.length)
-    expect(rows.filter(r => r.callType === 'govinfo:CongressMeetingList')).toHaveLength(feed.listRequests.length)
+    expect(rows.filter(r => r.callType === 'govinfo:CongressMeetingList')).toHaveLength(feed.listRequests.length + feed.recentRequests.length)
     expect(rows.filter(r => r.callType === 'govinfo:CongressMeeting')).toHaveLength(feed.detailRequests.length)
     // They name what was asked for, and nothing else.
     const detail = rows.find(r => r.callType === 'govinfo:CongressMeeting')!
@@ -749,8 +749,9 @@ describe('what one pass reads, and what it keeps', () => {
     await syncCalendar()
     await syncCalendar()
     expect(feed.detailIds).toHaveLength(first)
-    // One list request a pass.
+    // One read of the list a pass: its pages, and the meetings changed since the read began.
     expect(feed.listRequests).toHaveLength(3)
+    expect(feed.recentRequests).toHaveLength(3)
   })
 
   it('asks again for a meeting the list says changed, and only that one', async () => {
@@ -766,8 +767,9 @@ describe('what one pass reads, and what it keeps', () => {
     const run = makeRun()
     clearMeetingCaches()
     await runBodyEventSync(govinfo, run.env as any, db())
-    // Five months asked of the provider, one list request.
+    // Five months asked of the provider, one read of the list.
     expect(feed.listRequests).toHaveLength(1)
+    expect(feed.recentRequests).toHaveLength(1)
     expect(feed.detailIds.length).toBe(feed.meetings.size)
   })
 
@@ -776,8 +778,8 @@ describe('what one pass reads, and what it keeps', () => {
     const first = feed.requests.length
     clearMeetingCaches()
     await syncCalendar()
-    // Just the list.
-    expect(feed.requests.length - first).toBe(1)
+    // Just the list: a page of it, and the meetings changed since the read began.
+    expect(feed.requests.length - first).toBe(2)
     expect((await events()).events).toHaveLength(IN_WINDOW)
   })
 
@@ -988,6 +990,222 @@ describe('when the API fails', () => {
     const run = makeRun()
     await runBodyEventSync(govinfo, run.env as any, db())
     expect(feed.listRequests).toHaveLength(1)
+  })
+})
+
+describe('what the list does while it is read', () => {
+  it('asks, after its pages, for the meetings changed since just before the read began', async () => {
+    await syncCalendar()
+    expect(feed.recentRequests).toHaveLength(1)
+    const p = new URL(feed.recentRequests[0].url).searchParams
+    // The clock is frozen at 13:00 UTC, and the margin is ten minutes.
+    expect(p.get('fromDateTime')).toBe('2026-10-17T12:50:00Z')
+    expect(p.get('limit')).toBe('250')
+    expect(p.get('offset')).toBe('0')
+    const rows = await logged()
+    expect(rows.filter(r => r.callType === 'govinfo:CongressMeetingList').length).toBe(feed.listRequests.length + 1)
+  })
+
+  it('finds a meeting that moved up the list from a page not yet read, and so does not fail', async () => {
+    for (let i = 0; i < 300; i++) feed.add(String(500000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    // The list is 250 a page, newest update first. A meeting on the second page is changed after the first is read.
+    let changed = false
+    feed.override.list = offset => {
+      if (offset === 250 && !changed) {
+        changed = true
+        feed.edit(HEARING, m => { m.title = 'Retitled while the list was read' })
+      }
+      return null
+    }
+    await syncCalendar()
+    expect(changed).toBe(true)
+    // The pass finished, and shows the meeting as changed.
+    expect((await events()).events).toHaveLength(IN_WINDOW)
+    expect((await eventOf(HEARING)).agenda[0].topic).toBe('Retitled while the list was read')
+  })
+
+  it('finds a meeting added while it is read', async () => {
+    for (let i = 0; i < 300; i++) feed.add(String(500000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+    let added = false
+    feed.override.list = offset => {
+      if (offset === 250 && !added) {
+        added = true
+        feed.add('900200', HEARING, m => { m.date = '2026-11-18T15:00:00Z' })
+      }
+      return null
+    }
+    await syncCalendar()
+    expect(added).toBe(true)
+    expect((await eventOf('900200'))).toMatchObject({ date: '2026-11-18' })
+  })
+})
+
+describe('while the meetings are still being read for the first time', () => {
+  /** Eighty more meetings than a pass reads, so the first pass leaves the cache cold. */
+  function overfill() {
+    for (let i = 0; i < 80; i++) feed.add(String(100000 + i), HEARING, m => { m.date = '2025-03-01T15:00:00Z' })
+  }
+  const rowsOf = async (number: string) => db().select().from(schema.billCalendar).where(eq(schema.billCalendar.billId, await billId(number))).all()
+
+  /** A live calendar entry the bill already has, from an earlier ingest by this provider. */
+  async function preset() {
+    await db().insert(schema.billCalendar).values({
+      id: 'earlier-entry', billId: await billId('HB43'), typeId: 1, type: 'Hearing', date: '2026-08-01', time: '10:00', location: '',
+      description: 'An earlier hearing', eventId: '555555', identityKey: 'id:555555', eventHash: 'earlier', missedPulls: 0, cancelledAt: null,
+    })
+  }
+
+  it('says nothing of a bill\'s calendar until every meeting has been read once, so no entry is counted missing', async () => {
+    overfill()
+    linkBills()
+    await preset()
+    await pass()
+    // The first pass read 60 of 102 meetings: the cache is cold.
+    expect(feed.detailIds).toHaveLength(DETAILS_PER_PASS)
+    await seam.ingest(await billId('HB43'))
+    await pass()
+    await seam.ingest(await billId('HB43'))
+    // The second read the rest, and finished only now. Until then no pull of the bill counted its entry missing.
+    expect(feed.detailIds.length).toBe(feed.meetings.size)
+    expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')).toMatchObject({ missedPulls: 0, cancelledAt: null })
+  })
+
+  it('shows no meeting on a bill while it is cold, and all of them once it is warm, counting the missing entry then', async () => {
+    overfill()
+    linkBills()
+    await preset()
+    await pass()
+    expect((await rowsOf('HB43')).filter(r => r.eventId !== '555555')).toEqual([])
+    expect(await billEntries('HB43')).toHaveLength(1)
+    await pass()
+    // Warm: the record carries its meetings, the bill was ingested again, and the earlier entry is missed once.
+    expect((await billEntries('HB43')).map((c: any) => c.date)).toEqual(['2026-08-01', '2026-09-15', '2026-10-23'])
+    expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')).toMatchObject({ missedPulls: 1, cancelledAt: null })
+    await seam.ingest(await billId('HB43'))
+    expect((await rowsOf('HB43')).find(r => r.id === 'earlier-entry')?.cancelledAt).not.toBeNull()
+  })
+
+  it('leaves a cut-over bill\'s carried calendar alone while it is cold, and pairs it once it is warm', async () => {
+    overfill()
+    linkBills()
+    const hb43 = await billId('HB43')
+    // A bill a cutover moved here from LegiScan, with the LegiScan hearing instances know under LegiScan's identity.
+    await db().update(schema.bills).set({ carriedFrom: 'legiscan', carriedWaits: null }).where(eq(schema.bills.billId, hb43))
+    await db().insert(schema.billCalendar).values({
+      id: 'carried-hearing', billId: hb43, typeId: 1, type: 'Hearing', date: '2026-10-23', time: '10:00', location: '',
+      description: 'Hearing on H.R. 43', eventId: null, identityKey: '1|hearing on h.r. 43', eventHash: 'ls', missedPulls: 0, cancelledAt: null,
+    })
+    await pass()
+    await seam.ingest(hb43)
+    const held = (await rowsOf('HB43')).find(r => r.id === 'carried-hearing')
+    // Still waiting for a calendar to carry it to: not cancelled, not carried.
+    expect(held).toMatchObject({ cancelledAt: null, identityKey: '1|hearing on h.r. 43' })
+    expect((await db().select().from(schema.bills).where(eq(schema.bills.billId, hb43)).get())?.carriedFrom).toBe('legiscan')
+
+    await pass()
+    await seam.ingest(hb43)
+    const carried = (await rowsOf('HB43')).find(r => r.id === 'carried-hearing')
+    // Warm: the October 23 hearing pairs with the meeting that day and keeps the identity instances have.
+    expect(carried).toMatchObject({ cancelledAt: null, identityKey: '1|hearing on h.r. 43', eventId: '119583', date: '2026-10-23' })
+    expect((await db().select().from(schema.bills).where(eq(schema.bills.billId, hb43)).get())?.carriedFrom).toBeNull()
+  })
+
+  it('counts no missed pull against a live entry of the provider\'s own while it is cold', async () => {
+    overfill()
+    linkBills()
+    await pass()
+    await seam.ingest(await billId('HB43'))
+    // Cold, so no entries yet, and a second cold ingest changes nothing.
+    await db().insert(schema.billCalendar).values({
+      id: 'live', billId: await billId('SB296'), typeId: 1, type: 'Hearing', date: '2026-10-06', time: '09:00', location: '', description: 'x',
+      eventId: '119575', identityKey: 'id:119575', eventHash: 'h', missedPulls: 0, cancelledAt: null,
+    })
+    await seam.ingest(await billId('SB296'))
+    expect((await rowsOf('SB296')).find(r => r.id === 'live')).toMatchObject({ missedPulls: 0, cancelledAt: null })
+  })
+
+  it('has no bill carry an empty calendar before the first full read, then an empty one for a bill with no meeting', async () => {
+    overfill()
+    linkBills()
+    await pass()
+    // Cold: no record has meetings, not even an empty list.
+    const cold = await env.DB.prepare(`SELECT raw_json AS raw FROM provider_records WHERE provider = 'govinfo'`).all<{ raw: string }>()
+    expect(cold.results.length).toBeGreaterThan(20)
+    expect(cold.results.filter(r => 'meetings' in JSON.parse(r.raw))).toEqual([])
+    await pass()
+    const warm = await env.DB.prepare(`SELECT raw_json AS raw FROM provider_records WHERE provider = 'govinfo'`).all<{ raw: string }>()
+    // Warm: every record has them, the bills with no meeting an empty list.
+    expect(warm.results.every(r => Array.isArray(JSON.parse(r.raw).meetings))).toBe(true)
+    expect(warm.results.filter(r => JSON.parse(r.raw).meetings.length > 0).length).toBe(3)
+  })
+})
+
+describe('across the change of Congress', () => {
+  it('keeps serving the earlier Congress\'s meetings for the months before the new one begins, so December\'s held meetings are never cancelled', async () => {
+    vi.setSystemTime(new Date('2026-12-20T13:00:00Z'))
+    feed.add('900100', HEARING, m => { m.date = '2026-12-09T15:00:00Z' })
+    await syncCalendar()
+    expect((await eventOf('900100'))).toMatchObject({ date: '2026-12-09', cancelled: false })
+
+    // January 20, 2027: the 120th Congress, which lists one meeting, in January.
+    vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
+    feed.add('990001', HEARING, m => { m.congress = 120; m.date = '2027-01-14T15:00:00Z' })
+    const run = makeRun()
+    for (let i = 0; i < 26; i++) {
+      clearMeetingCaches()
+      await runBodyEventSync(govinfo, run.env as any, db())
+    }
+    const body = await getJson('/tenants/usteam/body-events?from=2026-11-01&to=2027-03-31')
+    const byUid = new Map<string, any>(body.events.map((e: any) => [e.uid, e]))
+    expect(byUid.get(uid('990001'))).toMatchObject({ date: '2027-01-14', cancelled: false })
+    // Every 119th meeting of November and December is still live a day on, and more.
+    expect(byUid.get(uid('900100'))).toMatchObject({ date: '2026-12-09', cancelled: false })
+    expect([...byUid.values()].filter(e => e.date >= '2026-11-01' && e.date < '2027-01-03' && e.cancelled)).toEqual([])
+    expect([...byUid.values()].filter(e => e.date >= '2026-11-01' && e.date < '2027-01-03').length).toBeGreaterThan(0)
+  })
+
+  it('asks the API for the new Congress only, and serves the earlier one from what it kept', async () => {
+    vi.setSystemTime(new Date('2026-12-20T13:00:00Z'))
+    feed.add('900100', HEARING, m => { m.date = '2026-12-09T15:00:00Z' })
+    await syncCalendar()
+    vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
+    feed.requests.length = 0
+    await syncCalendar()
+    expect(feed.requests.length).toBeGreaterThan(0)
+    expect(feed.requests.every(r => r.url.includes('/committee-meeting/120'))).toBe(true)
+    expect(feed.detailRequests).toEqual([])
+    // The December meetings the earlier Congress held are still served, from what was kept.
+    const ctx = providerContext(govinfo, makeRun().env as any, db())
+    const december = await govinfo.listBodyEvents!('US', { from: '2026-12-01', to: '2026-12-31' }, ctx)
+    expect(december.length).toBeGreaterThan(0)
+    expect(feed.requests.every(r => r.url.includes('/committee-meeting/120'))).toBe(true)
+  })
+
+  it('keeps the earlier Congress\'s kept meetings, which the window still needs', async () => {
+    vi.setSystemTime(new Date('2026-12-20T13:00:00Z'))
+    await syncCalendar()
+    vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
+    await syncCalendar()
+    const kept = await env.DB.prepare(`SELECT key FROM provider_cache WHERE key LIKE 'meeting/119/%'`).all()
+    expect(kept.results.length).toBe(feed.meetings.size)
+  })
+
+  it('serves nothing of the earlier Congress for a month after the new one began', async () => {
+    vi.setSystemTime(new Date('2026-12-20T13:00:00Z'))
+    await syncCalendar()
+    vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
+    const ctx = providerContext(govinfo, makeRun().env as any, db())
+    clearMeetingCaches()
+    const feb = await govinfo.listBodyEvents!('US', { from: '2027-02-01', to: '2027-02-28' }, ctx)
+    expect(feb).toEqual([])
+    // January 1 and 2 are the earlier Congress's still: it ends at noon on the 3rd.
+    feed.add('900101', HEARING, m => { m.date = '2027-01-02T15:00:00Z' })
+    vi.setSystemTime(new Date('2026-12-21T13:00:00Z'))
+    await syncCalendar()
+    vi.setSystemTime(new Date('2027-01-20T13:00:00Z'))
+    clearMeetingCaches()
+    const jan = await govinfo.listBodyEvents!('US', { from: '2027-01-01', to: '2027-01-31' }, ctx)
+    expect(jan.map(e => e.event_id)).toEqual(['900101'])
   })
 })
 
